@@ -70,7 +70,6 @@
   validateInitialPrompt,
   validateRepoPath,
 } from '$lib/utils/workspace-validation';
-  import { unifiedIdService } from '$shared/services/unified-id.service';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import {
   faMagicWandSparkles,
@@ -1794,11 +1793,10 @@
         }
       }
 
-      // Generate a fresh agent ID for every create attempt. Reusing an ID from
-      // a previous (failed) attempt makes the daemon reject the duplicate
-      // agent_session.id, permanently poisoning retries.
+      // No client-minted agentId: the daemon assigns the initial agent's id
+      // and returns it on the create result (supersedes the fresh-id-per-
+      // attempt fix — with no client id there is nothing to poison retries).
       const initialAgent = {
-        agentId: unifiedIdService.generateAgentId(),
         name: agentName,
         model: resolvedModel,
         specialist: specialistId, // Now accepts any specialist ID (not restricted to enum)
@@ -1842,7 +1840,10 @@
 
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
-      const workspace = result.data;
+      const workspace = result.data.workspace;
+      // The daemon assigns the initial agent's id and returns it on the
+      // create result; the FE no longer pre-mints one.
+      const initialAgentId = result.data.initialAgent?.id;
 
       // If a PR context mention was used, store the PR number on the workspace
       // so PR discovery can find the right PR later. Daemon-backed
@@ -1927,8 +1928,11 @@
 
       // Initial-agent delivery (message + sends) is owned by the daemon; the
       // FE only records which agent is the initial one so the UI can highlight
-      // and focus it.
-      appStore.dispatch(setInitialAgentId(workspace.id, initialAgent.agentId));
+      // and focus it. The id is daemon-assigned (from the create result); when
+      // it is somehow absent, skip the highlight/focus rather than invent one.
+      if (initialAgentId) {
+        appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
+      }
 
       // Pre-store the workspace state so the workspace page mounts on the
       // initial-agent conversation as its only tab (full-width, no spec split).
@@ -1939,7 +1943,9 @@
         version: 2,
         workspace: { id: workspace.id, status: 'loading' },
         mainPanel: { type: 'empty' },
-        drawer: { open: true, type: 'agent' as const, itemId: initialAgent.agentId },
+        drawer: initialAgentId
+          ? { open: true, type: 'agent' as const, itemId: initialAgentId }
+          : { open: false, type: null, itemId: null },
         navigation: { history: [], currentIndex: -1 },
         ui: { hasInitialized: false },
       };
@@ -1951,7 +1957,7 @@
         appStore.dispatch(
           updateWorkspaceEntity(workspace.id, {
             agentSummary: {
-              agentIds: [initialAgent.agentId],
+              agentIds: initialAgentId ? [initialAgentId] : [],
             },
           }),
         );

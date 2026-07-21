@@ -130,10 +130,14 @@ export class LiveAgentsClient implements AgentsClient {
   // (widened in P2-12a) so the caller can upsert without a follow-up `agent.get`.
   async create(request: AgentCreateRequest): Promise<AgentSession> {
     // create requires an idempotencyKey (§5.6). The widened P2-12a wire also
-    // accepts optional `name` / `agentId` / `provider` / `agentType` /
-    // `metadata` / `workspacePath` / `workspaceContext`; each is only sent
-    // when the caller supplied it so the daemon sees `undefined` params
-    // (equivalent to omitted) rather than explicit nulls it would reject.
+    // accepts optional `name` / `provider` / `agentType` / `metadata` /
+    // `workspacePath` / `workspaceContext`; each is only sent when the caller
+    // supplied it so the daemon sees `undefined` params (equivalent to
+    // omitted) rather than explicit nulls it would reject.
+    //
+    // `agentId` is intentionally NEVER forwarded: the daemon assigns the
+    // session id and returns it on the created agent. Callers must adopt the
+    // response id (a follow-up intentd change rejects client-supplied ids).
     const params: Record<string, unknown> = {
       workspaceId: request.workspaceId,
       idempotencyKey: newIdempotencyKey(),
@@ -144,7 +148,6 @@ export class LiveAgentsClient implements AgentsClient {
     }
     if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
     if (request.name !== undefined) params.name = request.name;
-    if (request.agentId !== undefined) params.agentId = request.agentId;
     if (request.provider !== undefined) params.provider = request.provider;
     if (request.agentType !== undefined) params.agentType = request.agentType;
     if (request.metadata !== undefined) params.metadata = request.metadata;

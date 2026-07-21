@@ -50,7 +50,6 @@ import {
   PROVIDER_MODEL_TIERS,
 } from "$shared/config/provider-config";
 import { cleanErrorMessage } from "$shared/errors/messages";
-import { unifiedIdService } from "$shared/services/unified-id.service";
 import { SPECIALISTS } from "$lib/constants/specialists";
 import { generateSpecialistAgentName } from "$lib/utils/agent-name-generator";
 import { createChiefVirtualWorkspace } from "$store/renderer/slices/workspace-agents/chief-virtual-workspace";
@@ -444,7 +443,8 @@ async function handleLaunchAgent(
   const [wsId, config, options] = action.payload;
   try {
     const deps = await loadCreationDeps();
-    const agentId = config.id ?? unifiedIdService.generateAgentId();
+    // No client-minted agent id: the daemon assigns the id on `agent.create`
+    // and the factory adopts it from the response.
     const model = config.model ?? deps.selectWorkspaceDefaultModel.select(appStore.state, wsId);
     const activeProvider = deps.selectActiveProviderId.select(appStore.state);
     const provider =
@@ -455,7 +455,6 @@ async function handleLaunchAgent(
       wsId,
       {
         ...config,
-        id: agentId,
         workspaceId: WorkspaceId(wsId),
         model,
         provider,

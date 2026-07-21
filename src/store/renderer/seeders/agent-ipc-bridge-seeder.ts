@@ -86,19 +86,20 @@ async function forwardToOrchestrator(
  *
  * The FE's `CreateRequest` carries more fields than `agent.create` accepts;
  * we forward only the parameters the daemon router consumes (`workspaceId`,
- * `name`, `model`, `specialistId`, `agentId`, `idempotencyKey`). The
- * `specialist` value lives under `metadata.specialist` (set by the specialist
- * picker in `agent-creation-service.ts`) — surface it as the daemon's
- * `specialistId`. The FE-minted `agentId` is forwarded verbatim so the daemon
- * adopts the same id: the follow-up `agent.sendMessage` (queued right after
- * the create) then targets a persisted session instead of racing to `-32602
- * not found: agent session`.
+ * `name`, `model`, `specialistId`, `idempotencyKey`). The `specialist` value
+ * lives under `metadata.specialist` (set by the specialist picker in
+ * `agent-creation-service.ts`) — surface it as the daemon's `specialistId`.
  *
- * Response envelope: `UnifiedAgentFactory.createInBackend` reads
- * `result.success` (typedInvoke wraps everything in `IpcResponse<T>`), so we
- * return `{ success: true, data: { agent, sessionId } }` with the daemon's
- * raw `agent` object passed through. The renderer constructs its own
- * `AgentSession` from the request — only success matters here.
+ * No `agentId` is forwarded: the daemon assigns the session id and returns it
+ * on the response's `agent.id`. Callers must adopt that id for any follow-up
+ * `agent.sendMessage` (a follow-up intentd change rejects client-supplied
+ * agent ids outright).
+ *
+ * Response envelope: callers read `result.success` (typedInvoke wraps
+ * everything in `IpcResponse<T>`), so we return
+ * `{ success: true, data: { agent, sessionId } }` with the daemon's raw
+ * `agent` object passed through and `sessionId` echoing the daemon-assigned
+ * `agent.id`.
  */
 registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
   const request = asRecord(arg);
@@ -117,17 +118,14 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
     specialistId: readString(metadata, "specialist"),
     idempotencyKey: newIdempotencyKey(),
   };
-  const clientAgentId = readString(request, "agentId");
-  if (clientAgentId) {
-    params.agentId = clientAgentId;
-  }
   try {
     const result = await backendRequest<{ agent?: unknown }>("agent.create", params);
+    const agent = (result as { agent?: unknown })?.agent;
     return {
       success: true,
       data: {
-        agent: (result as { agent?: unknown })?.agent,
-        sessionId: readString(request, "agentId"),
+        agent,
+        sessionId: readString(asRecord(agent), "id"),
       },
     };
   } catch (error) {

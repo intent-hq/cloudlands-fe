@@ -33,12 +33,13 @@ vi.mock('$store/renderer/store', async () => {
 // Mock the widened AgentsClient seam (AUDIT-P2-12b): `createInBackend` now
 // routes agent creation through `appClient.agents.create` (→ daemon
 // `agent.create`, PROTOCOL §5.5) instead of the legacy `AGENT_CHANNELS.CREATE`
-// IPC. The mock echoes the FE-supplied id back per the daemon contract.
+// IPC. The daemon assigns the session id and returns it on the response —
+// the mock mints its own id, mirroring the daemon contract.
 vi.mock('$lib/client', () => ({
   appClient: {
     agents: {
-      create: vi.fn(async (request: { agentId?: string; workspaceId: string; name?: string }) => ({
-        id: request.agentId ?? 'agent-123',
+      create: vi.fn(async (request: { workspaceId: string; name?: string }) => ({
+        id: 'agent-daemon-assigned-123',
         backendSessionId: null,
         workspaceId: request.workspaceId,
         name: request.name ?? 'Test Agent',
@@ -216,13 +217,65 @@ describe('UnifiedAgentFactory', () => {
       // consumed by the daemon (§5.5). `prompt` carries the behaviorPrompt.
       expect(request.workspaceId).toBe(String(mockWorkspace.id));
       expect(request.workspacePath).toBe(mockWorkspace.repositoryPath);
-      expect(request.agentId).toBe('agent-fixed-1');
+      // The daemon assigns the agent id — no client id may reach the wire,
+      // even when the caller supplied config.id.
+      expect(request.agentId).toBeUndefined();
+      expect('agentId' in request).toBe(false);
       expect(request.name).toBe('Wire Agent');
       expect(request.model).toBe('sonnet4.5');
       expect(request.provider).toBe('auggie');
       expect(request.agentType).toBe('chat');
       expect(request.prompt).toBe('be nice');
       expect(request.metadata).toMatchObject({ source: 'wire-test' });
+    });
+
+    it('adopts the daemon-assigned agent id from the create response', async () => {
+      agentsApi.create.mockClear();
+      const config: UnifiedAgentConfig = {
+        id: 'agent-client-optimistic',
+        name: 'Adopt Agent',
+        workspaceId: mockWorkspace.id as any,
+      };
+
+      const result = await factory.createAgent(mockWorkspace, config);
+
+      expect(result.success).toBe(true);
+      // The returned session and agentId are keyed by the daemon's id, not
+      // the caller's optimistic one — follow-up sends target the daemon id.
+      expect(String(result.agent?.id)).toBe('agent-daemon-assigned-123');
+      expect(String(result.agentId)).toBe('agent-daemon-assigned-123');
+    });
+
+    it('sends the initial message to the daemon-assigned id, only after create resolves', async () => {
+      agentsApi.create.mockClear();
+      const { invoke } = await import('$lib/electron-bridge');
+      const invokeMock = vi.mocked(invoke);
+      invokeMock.mockClear();
+      invokeMock.mockResolvedValue({ success: true } as never);
+
+      const config: UnifiedAgentConfig = {
+        id: 'agent-client-optimistic',
+        name: 'Ordered Agent',
+        workspaceId: mockWorkspace.id as any,
+        initialMessage: 'Hello from the test',
+      };
+
+      const result = await factory.createAgent(mockWorkspace, config);
+      expect(result.success).toBe(true);
+
+      // The initial-message send is fired after createAgent resolves the
+      // daemon id (fire-and-forget); flush it before asserting.
+      await vi.waitFor(() => {
+        const streamCall = invokeMock.mock.calls.find(
+          ([channel]) => channel === 'agent:backend:stream-message',
+        );
+        expect(streamCall).toBeDefined();
+        const [, payload] = streamCall! as [string, Record<string, unknown>];
+        // The send targets the DAEMON-assigned id — never the optimistic one —
+        // so it can no longer race to `-32602 not found: agent session`.
+        expect(payload.agentId).toBe('agent-daemon-assigned-123');
+        expect(payload.sessionId).toBe('agent-daemon-assigned-123');
+      });
     });
   });
 });

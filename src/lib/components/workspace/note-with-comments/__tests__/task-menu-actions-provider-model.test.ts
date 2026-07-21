@@ -192,10 +192,11 @@ describe('task menu actions provider model', () => {
     expect(agentsCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         workspaceId: 'ws-1',
-        agentId: 'agent-optimistic',
         model: 'selector-workspace-model',
       }),
     );
+    // No client-supplied agentId: the daemon assigns the agent id on create.
+    expect(agentsCreateMock.mock.calls[0][0]).not.toHaveProperty('agentId');
     expect(agentsCreateMock.mock.calls[0][0].model).not.toBe(
       legacyState.model.workspaceModels['ws-1'],
     );

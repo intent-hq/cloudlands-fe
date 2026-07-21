@@ -51,7 +51,6 @@
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
   import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
-  import { unifiedIdService } from '$shared/services/unified-id.service';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
@@ -629,7 +628,6 @@
         behaviorPrompt,
         specialistId,
       } = await resolveOnboardingModel(reduxState);
-      const agentId = unifiedIdService.generateAgentId();
       const agentType = createAgentTypeId('workspace');
 
       // Parse context from the rich textarea
@@ -701,7 +699,6 @@
         linearIssue,
         sentryIssue,
         initialAgent: {
-          agentId: String(agentId),
           name: 'Coordinator',
           model: effectiveModel,
           prompt,
@@ -721,12 +718,16 @@
 
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
-      const workspace = result.data;
+      const workspace = result.data.workspace;
+      // The daemon assigns the initial agent's id and returns it on the
+      // create result; the FE no longer pre-mints one.
+      const agentId = result.data.initialAgent?.id;
       logger.info('Workspace created with paths', {
         id: workspace.id,
         path: workspace.path,
         repositoryPath: workspace.repositoryPath,
         worktreePath: workspace.worktreePath,
+        initialAgentId: agentId,
       });
 
       // Daemon-backed (`workspace.update`, PROTOCOL §5.1) via workspaceClient —
@@ -782,8 +783,11 @@
 
       // Initial-agent delivery (message + sends) is owned by the daemon; the
       // FE only records which agent is the initial one so the UI can highlight
-      // and focus it.
-      appStore.dispatch(setInitialAgentId(workspace.id, String(agentId)));
+      // and focus it. The id is daemon-assigned (from the create result); when
+      // it is somehow absent, skip the highlight/focus rather than invent one.
+      if (agentId) {
+        appStore.dispatch(setInitialAgentId(workspace.id, agentId));
+      }
 
       // Same intent as CompactWorkspaceInitializer: land on the initial-agent
       // conversation as the only tab, full-width. The spec note remains
@@ -794,7 +798,9 @@
           version: 2,
           workspace: { id: workspace.id, status: 'loading' },
           mainPanel: { type: 'empty' },
-          drawer: { open: true, type: 'agent' as const, itemId: String(agentId) },
+          drawer: agentId
+            ? { open: true, type: 'agent' as const, itemId: agentId }
+            : { open: false, type: null, itemId: null },
           navigation: { history: [], currentIndex: -1 },
           ui: { hasInitialized: false },
         }),

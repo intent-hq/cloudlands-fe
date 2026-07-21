@@ -72,7 +72,6 @@
   import confetti from 'canvas-confetti';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { unifiedIdService } from '$shared/services/unified-id.service';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
   import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
@@ -1197,15 +1196,12 @@
       const repoPath = $workspace.repositoryPath;
       const baseBranch = $workspace.baseRef || $workspace.branch || 'main';
 
-      // Generate a unique agent ID for the initial agent
-      const initialAgentId = unifiedIdService.generateAgentId();
-
       // Get model from model store
       const selectedModel = $selectedModel$ || DEFAULT_AGENT_MODEL;
 
-      // Prepare the initial agent configuration
+      // Prepare the initial agent configuration. No client-minted agentId:
+      // the daemon assigns the id and returns it on the create result.
       const initialAgent = {
-        agentId: String(initialAgentId),
         name: 'Starting new Space',
         model: selectedModel ?? undefined, // undefined means use specialist default
         prompt: prompt.trim() || undefined,
@@ -1241,7 +1237,7 @@
         throw new Error(result.error || 'Failed to create space');
       }
 
-      const newWorkspace = result.data;
+      const newWorkspace = result.data.workspace;
       appStore.dispatch(setWorkspaceEntity(newWorkspace));
 
       logger.info('Workspace created successfully from Accept Changes', {

@@ -1597,10 +1597,18 @@ export class WorkspaceService {
 
       // Save initial agent config if provided
       if (request.initialAgent) {
-        // Validate agent ID to prevent path traversal
-        const agentId = request.initialAgent.agentId;
-        if (!agentId || agentId.includes('..') || agentId.includes('/') || agentId.includes('\\')) {
-          logger.warn('Invalid agent ID for initial agent config', { agentId });
+        // The daemon assigns the agent id and returns it on the `agent.create`
+        // response — clients must not pre-mint one. A legacy caller may still
+        // pass `agentId`; validate it defensively (path traversal) but never
+        // require it.
+        const requestedAgentId = request.initialAgent.agentId;
+        if (
+          requestedAgentId &&
+          (requestedAgentId.includes('..') ||
+            requestedAgentId.includes('/') ||
+            requestedAgentId.includes('\\'))
+        ) {
+          logger.warn('Invalid agent ID for initial agent config', { agentId: requestedAgentId });
           return {
             ok: false,
             error: 'Invalid agent ID format',
@@ -1690,9 +1698,11 @@ export class WorkspaceService {
         );
 
         // Save agent config with proper structure for persistence service
-        // The persistence service expects either versioned data or legacy unversioned data
+        // The persistence service expects either versioned data or legacy
+        // unversioned data. The id is daemon-assigned on `agent.create`; it is
+        // filled in after the daemon responds.
         const agentSession = {
-          id: agentId,
+          id: '' as string,
           backendSessionId: null, // Pending session, no backendSessionId yet
           workspaceId: id,
           name: request.initialAgent.name || 'Coordinator',
@@ -1742,15 +1752,15 @@ export class WorkspaceService {
         };
 
         // Persist the initial-agent session on the daemon (PROTOCOL.md §5.5
-        // `agent.create`). The daemon adopts the FE-supplied `agentId` verbatim
-        // and harvests the persisted gap fields from `metadata`
-        // (`contextReferences` / `imageBlocks` also passed top-level so they
-        // win over the metadata copies).
+        // `agent.create`). No `agentId` is sent — the daemon assigns the
+        // session id and returns it on the response. The daemon harvests the
+        // persisted gap fields from `metadata` (`contextReferences` /
+        // `imageBlocks` also passed top-level so they win over the metadata
+        // copies).
         try {
-          await getBackendClient().request('agent.create', {
+          const createResult = (await getBackendClient().request('agent.create', {
             workspaceId: id,
             workspacePath: specialistPath,
-            agentId,
             name: agentSession.name,
             model: effectiveModel,
             provider,
@@ -1758,15 +1768,18 @@ export class WorkspaceService {
             metadata: agentSession.metadata,
             contextReferences: (request.initialAgent as any).contextReferences,
             imageBlocks: (request.initialAgent as any).imageBlocks,
-          });
+          })) as { agent?: { id?: string } } | undefined;
+          const createdAgentId = createResult?.agent?.id;
+          if (createdAgentId) {
+            agentSession.id = createdAgentId;
+          }
           logger.info('Saved initial agent config', {
             workspaceId: id,
-            agentId: request.initialAgent.agentId,
+            agentId: createdAgentId,
           });
         } catch (error) {
           logger.warn('Failed to save initial agent config via daemon agent.create', {
             workspaceId: id,
-            agentId: request.initialAgent.agentId,
             error: (error as Error).message,
           });
         }

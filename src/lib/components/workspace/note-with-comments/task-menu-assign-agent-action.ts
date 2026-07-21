@@ -73,7 +73,9 @@ export async function runAssignAgentTaskMenuAction({
     return;
   }
 
-  // Step 1: Generate IDs immediately for optimistic UI
+  // Step 1: Generate IDs immediately for optimistic UI. The agent id here is
+  // a LOCAL placeholder only (task-item marker + association key); it is never
+  // sent to the daemon — the daemon assigns the real agent id on create.
   const optimisticAgentId = unifiedIdService.generateAgentId();
   const optimisticNoteId = unifiedIdService.generateNoteId();
   const taskKey = createTaskAgentAssociationKeyForAgent(optimisticAgentId);
@@ -199,7 +201,6 @@ export async function runAssignAgentTaskMenuAction({
     try {
       await appClient.agents.create({
         workspaceId: workspace.id,
-        agentId: optimisticAgentId,
         name: sanitizedTitle,
         agentType: 'task-loop',
         model,

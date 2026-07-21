@@ -51,7 +51,9 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       model: 'opus',
       specialist: 'implementor',
       name: 'widened',
-      agentId: 'agent-p212a-1',
+      // Even when a legacy caller passes an id, it must NOT hit the wire —
+      // the daemon assigns the session id.
+      agentId: 'agent-legacy-client',
       provider: 'auggie',
       agentType: 'task-loop',
       metadata: { tag: 'unit' },
@@ -71,7 +73,6 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
         specialistId: 'implementor',
         behaviorPrompt: 'do the thing',
         name: 'widened',
-        agentId: 'agent-p212a-1',
         provider: 'auggie',
         agentType: 'task-loop',
         metadata: { tag: 'unit' },
@@ -80,6 +81,8 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
         idempotencyKey: expect.any(String),
       }),
     });
+    // The client-supplied agentId is dropped before the request is sent.
+    expect(backend.requests[0]?.params).not.toHaveProperty('agentId');
   });
 
   it('create omits absent optional params (backward-compat with the pre-P2-12a callers)', async () => {
