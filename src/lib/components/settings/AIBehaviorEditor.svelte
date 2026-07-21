@@ -374,7 +374,7 @@
     );
     // Show success toast with file path
     const folderPath = $specialistsFolderPath;
-    const expectedPath = folderPath ? `${folderPath}/${createdId}.md` : `~/.augment/specialists/${createdId}.md`;
+    const expectedPath = folderPath ? `${folderPath}/${createdId}.md` : `~/.intent/specialists/${createdId}.md`;
     toast.success(`Created "${newName.trim()}"`, {
       description: expectedPath.replace(/^\/Users\/[^/]+/, '~'),
     });
@@ -503,13 +503,13 @@
       <!-- Contextual info -->
       <p class="text-sm text-muted-foreground mt-2">
         {#if isBuiltIn && !hasOverrides}
-          This is a built-in specialist. Editing its model or prompt creates a personal override at <code class="bg-muted px-1 py-0.5 rounded">~/.augment/specialists/{currentSpecialist.id}.md</code>.
+          This is a built-in specialist. Editing its model or prompt creates a personal override at <code class="bg-muted px-1 py-0.5 rounded">~/.intent/specialists/{currentSpecialist.id}.md</code>.
         {:else if isBuiltIn && hasOverrides}
           You've customized this built-in specialist. Your overrides are saved at <code class="bg-muted px-1 py-0.5 rounded">{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code>. Click Reset to restore defaults.
         {:else if sourceLabel === 'Project'}
           This specialist is shared with your team via Git at <code class="bg-muted px-1 py-0.5 rounded">{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code>.
         {:else}
-          Your personal specialist, saved at <code class="bg-muted px-1 py-0.5 rounded">{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code>. To share with your team, create a copy at <code class="bg-muted px-1 py-0.5 rounded">&lt;repo&gt;/.augment/specialists/</code> and commit it to Git.
+          Your personal specialist, saved at <code class="bg-muted px-1 py-0.5 rounded">{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code>. To share with your team, create a copy at <code class="bg-muted px-1 py-0.5 rounded">&lt;repo&gt;/.intent/specialists/</code> and commit it to Git.
         {/if}
       </p>
       <p class="text-sm text-muted-foreground mt-2">
@@ -581,7 +581,7 @@
     <div class="mb-4">
       <h2 class="text-base font-medium text-foreground">Create Specialist</h2>
       <p class="text-sm text-muted-foreground mt-1">
-        Creates a file in <code class="bg-muted px-1 py-0.5 rounded">~/.augment/specialists/</code>
+        Creates a file in <code class="bg-muted px-1 py-0.5 rounded">~/.intent/specialists/</code>
       </p>
     </div>
 
