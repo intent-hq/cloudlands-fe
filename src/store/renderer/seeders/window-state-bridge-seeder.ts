@@ -10,8 +10,8 @@
  * `windowWorkspaceIds` / `windowOpenWorkspaceTabs` maps stayed empty. That
  * broke every consumer of that window-tracking state: the Window menu,
  * `sendToWorkspaceWindows` (dropped `notification:show`, so no notification
- * sound), per-workspace focus gating, and the NotificationService lifecycle
- * driven by `window-workspace-state-changed`.
+ * sound), and the per-workspace focus gating / click routing used by the
+ * app-wide NotificationService.
  *
  * Same pattern as auto-update-bridge-seeder: forward verbatim when the
  * preload bridge exists; resolve undefined when it does not (browser dev /

@@ -36,6 +36,7 @@ vi.mock('electron', () => ({
   app: { on: vi.fn(), show: vi.fn() },
   BrowserWindow: {
     getAllWindows: vi.fn(() => []),
+    getFocusedWindow: vi.fn(() => null),
     fromId: vi.fn(() => null),
   },
   Notification: class {
@@ -48,6 +49,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../../system/main/system.ipc', () => ({
+  getFocusedWindowWorkspaceId: () => undefined,
   getWindowIdsForWorkspace: () => [],
   sendToWorkspaceWindows: vi.fn(),
 }));
@@ -70,7 +72,7 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
 
   it('reads notifications.enabled from the daemon via settings.get', async () => {
     const { NotificationService } = await import('./notification.service');
-    const svc = new NotificationService('workspace-1');
+    const svc = new NotificationService();
     // ctor kicks off hydration; give the microtask a chance to run.
     await flush();
     const call = requestMock.mock.calls.find(([m]) => m === 'settings.get');
@@ -82,7 +84,7 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
   it('sends only settings.get for the enabled flag (never write)', async () => {
     const { NotificationService } = await import('./notification.service');
     // Trigger hydration by constructing the service.
-    new NotificationService('workspace-1');
+    new NotificationService();
     await flush();
     // No writes should happen from the service.
     const writes = requestMock.mock.calls.filter(([m]) => m === 'settings.update');
@@ -95,13 +97,14 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
       './notification.service'
     );
     __resetNotificationCacheForTesting();
-    const svc = new NotificationService('workspace-1');
+    const svc = new NotificationService();
     await flush();
     // The daemon call errored; behavior is still "enabled by default".
     // We assert by invoking handleAgentIdle and verifying it does not early-
     // return due to disabled state (it will short-circuit on the "no window
     // is focused" path, not the "disabled" path).
     await svc.handleAgentIdle({
+      workspaceId: 'workspace-1',
       data: {
         agentId: 'a',
         agentName: 'test',
@@ -127,10 +130,11 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
       './notification.service'
     );
     __resetNotificationCacheForTesting();
-    const svc = new NotificationService('workspace-1');
+    const svc = new NotificationService();
     await flush();
     requestMock.mockClear();
     await svc.handleAgentIdle({
+      workspaceId: 'workspace-1',
       data: {
         agentId: 'a',
         agentName: 'test',

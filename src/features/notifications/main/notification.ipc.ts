@@ -20,12 +20,7 @@ export function setupNotificationIPC(): void {
   // Test notification handler
   ipcMain.handle(NOTIFICATION_CHANNELS.TEST, async () => {
     try {
-      // Get workspace ID from the sender's context
-      // For now, we'll use a default workspace ID
-      // In a real scenario, this would come from the renderer context
-      const workspaceId = 'default';
-
-      const service = getNotificationService(workspaceId);
+      const service = getNotificationService();
       const result = service.showTestNotification();
 
       if (result.success) {

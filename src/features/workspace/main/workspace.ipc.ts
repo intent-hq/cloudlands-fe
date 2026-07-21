@@ -26,7 +26,6 @@ import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 import { InstructionService } from '../../agent/main/instruction-service';
 import { execAsync } from '../../../shared/git/git-env';
-import { getNotificationService } from '../../notifications/main/notification.service';
 import { GitService } from '../../git/main/git.service';
 import { getWorkspaceGitInfo } from '../../git/main/git-router';
 import { getBackendClient } from '../../backend/main/backend.ipc';
@@ -515,16 +514,6 @@ export function setupWorkspaceIPC(): void {
           }
 
 
-          // Clean up notification service
-          try {
-            const { disposeNotificationService } =
-              await import('../../notifications/main/notification.service');
-            disposeNotificationService(id);
-            logger.debug('[WorkspaceIPC] Notification service cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.debug('[WorkspaceIPC] Notification service cleanup not available', { error });
-          }
-
           // Stop all running scripts and dispose ScriptProcessManager
           try {
             await disposeScriptProcessManager(id);
@@ -576,7 +565,7 @@ export function setupWorkspaceIPC(): void {
   //
   // ⚠️  IMPORTANT: This handler has critical side effects beyond just "opening" the workspace:
   //    1. Starts ChangeDetectorManager monitoring (git polling for file changes)
-  //    2. Warms caches / starts notification and scripts services
+  //    2. Warms caches / starts scripts services
   //
   // Without these side effects, the UI will NOT receive file change updates,
   // causing the activity log and changed files list to appear empty.
@@ -749,19 +738,6 @@ export function setupWorkspaceIPC(): void {
                 }
               })();
 
-              // Initialize notification service for this workspace
-              const notificationServicePromise = (async () => {
-                try {
-                  const notificationService = getNotificationService(id);
-                  notificationService.start();
-                  logger.info('Notification service started', { workspaceId: id });
-                } catch (error) {
-                  logger.error('Failed to start notification service', error as Error, {
-                    workspaceId: id,
-                  });
-                }
-              })();
-
               // Initialize workspace scripts: clean stale PIDs and start autoStart services
               const scriptsInitPromise = (async () => {
                 try {
@@ -827,7 +803,6 @@ export function setupWorkspaceIPC(): void {
               await Promise.all([
                 activityLogPromise,
                 cacheWarmingPromise,
-                notificationServicePromise,
                 scriptsInitPromise,
                 specialistWatcherPromise,
               ]);
@@ -927,18 +902,6 @@ export function setupWorkspaceIPC(): void {
           logger.warn('Failed to shut down unified watcher during delete', error as Error, {
             workspaceId: validatedId,
           });
-        }
-
-        // Clean up notification service
-        try {
-          const { disposeNotificationService } =
-            await import('../../notifications/main/notification.service');
-          disposeNotificationService(validatedId);
-          logger.debug('Notification service cleanup before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.debug('Notification service cleanup not available before delete', { error });
         }
 
         // Clean up agent context registry
