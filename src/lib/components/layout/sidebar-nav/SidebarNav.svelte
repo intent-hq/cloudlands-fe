@@ -107,7 +107,7 @@
     { id: 'new-workspace', icon: faPlus, label: 'New' },
     { id: 'active', icon: faBell, label: 'Active', badge: () => unreadCount },
     { id: 'all-workspaces', icon: faLayerGroup, label: 'All' },
-    { id: 'chief', icon: faWandMagicSparkles, label: 'Chief of Staff' },
+    { id: 'chief', icon: faWandMagicSparkles, label: 'Assistant' },
     { id: 'settings', icon: faCog, label: 'Settings' },
   ];
 

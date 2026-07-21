@@ -3,7 +3,7 @@
  *
  * Shared type definitions for the file-based specialist system.
  * Specialists can be defined as markdown files with YAML frontmatter
- * stored in ~/.augment/specialists/
+ * stored in ~/.intent/specialists/
  *
  * Example specialist file (my-specialist.md):
  * ```markdown
@@ -22,8 +22,8 @@
 
 /**
  * Source of a specialist definition
- * - 'project': Repo-local file in <repo>/.augment/specialists/
- * - 'user': User-defined file in ~/.augment/specialists/
+ * - 'project': Repo-local file in <repo>/.intent/specialists/
+ * - 'user': User-defined file in ~/.intent/specialists/
  * - 'bundled': Ships with the app (in resources/specialists/)
  * - 'builtin': Legacy hardcoded specialists (fallback only)
  * - 'electron-store': Custom specialists stored in electron-store (legacy)
@@ -140,7 +140,7 @@ export interface SpecialistFilesResult {
 }
 
 /**
- * The specialists folder name under ~/.augment/
+ * The specialists folder name under ~/.intent/
  */
 export const SPECIALISTS_FOLDER = 'specialists';
 
