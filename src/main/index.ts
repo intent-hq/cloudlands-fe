@@ -233,6 +233,7 @@ import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
+import { syncNotificationServices } from '../features/notifications/main/notification.service';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
@@ -1197,6 +1198,15 @@ app.whenReady().then(async () => {
       workspaceService.trimCachesToOpenWorkspaces(openWorkspaceIds);
     } catch (error) {
       logger.warn('Failed to trim inactive workspace caches', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    // Reconcile desktop-notification agent:idle subscriptions with the set of
+    // open workspaces (successor to the dead legacy workspace:open trigger).
+    try {
+      syncNotificationServices(openWorkspaceIds);
+    } catch (error) {
+      logger.warn('Failed to sync notification services', {
         error: error instanceof Error ? error.message : String(error),
       });
     }
