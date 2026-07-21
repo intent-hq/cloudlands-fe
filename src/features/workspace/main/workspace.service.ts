@@ -1772,11 +1772,17 @@ export class WorkspaceService {
           const createdAgentId = createResult?.agent?.id;
           if (createdAgentId) {
             agentSession.id = createdAgentId;
+            logger.info('Saved initial agent config', {
+              workspaceId: id,
+              agentId: createdAgentId,
+            });
+          } else {
+            // Without the daemon-assigned id the created session cannot be
+            // addressed/fetched later — this is not a successful save.
+            logger.warn('agent.create response missing daemon-assigned agent id', {
+              workspaceId: id,
+            });
           }
-          logger.info('Saved initial agent config', {
-            workspaceId: id,
-            agentId: createdAgentId,
-          });
         } catch (error) {
           logger.warn('Failed to save initial agent config via daemon agent.create', {
             workspaceId: id,

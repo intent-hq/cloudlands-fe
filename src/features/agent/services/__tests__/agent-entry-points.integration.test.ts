@@ -35,9 +35,11 @@ vi.mock('../agent-factory', async () => {
     UnifiedAgentFactory: class extends (actual as any).UnifiedAgentFactory {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       async createInBackend(agent: any, workspacePath: string) {
-        // Mock successful backend creation
+        // Mock successful backend creation. The daemon-assigned id is now
+        // required on the response — the factory hard-fails without it.
         return {
           success: true,
+          agentId: `agent-daemon-assigned-${agent.id}`,
           agent: {
             ...agent,
             backendSessionId: `mock-backend-session-${agent.id}`,

@@ -157,7 +157,7 @@ describe('task menu actions provider model', () => {
       id: 'task-note-1',
     });
     agentsCreateMock.mockResolvedValue({
-      id: 'agent-optimistic',
+      id: 'agent-daemon-assigned',
       name: 'Task Agent',
     });
     createAgentMock.mockResolvedValue({
@@ -202,8 +202,7 @@ describe('task menu actions provider model', () => {
     );
   });
 
-  it('persists menu-assigned duplicate tasks with a stable agent key', async () => {
-    createPrerequisiteMock.mockResolvedValueOnce({ success: false, error: 'backend unavailable' });
+  it('persists menu-assigned duplicate tasks keyed to the daemon-assigned agent id', async () => {
     const storeDispatch = vi.fn();
 
     await runAssignAgentTaskMenuAction({
@@ -222,11 +221,37 @@ describe('task menu actions provider model', () => {
       ([action]) => action.type === 'taskAgentAssociations/addTaskAgentAssociation',
     )?.[0];
 
+    // The association (which syncs to the daemon via task.linkAgent) must be
+    // keyed to the daemon-assigned id, never the local placeholder.
     expect(addAssociationAction.payload[2]).toMatchObject({
       taskText: 'Ship feature',
-      taskKey: createTaskAgentAssociationKeyForAgent('agent-optimistic'),
-      agentId: 'agent-optimistic',
+      taskKey: createTaskAgentAssociationKeyForAgent('agent-daemon-assigned'),
+      agentId: 'agent-daemon-assigned',
     });
+  });
+
+  it('does not dispatch any task-agent association when task note creation fails', async () => {
+    createPrerequisiteMock.mockResolvedValueOnce({ success: false, error: 'backend unavailable' });
+    const storeDispatch = vi.fn();
+
+    await runAssignAgentTaskMenuAction({
+      editor: createEditorWithDuplicateTasks(),
+      workspace,
+      noteId: 'note-1',
+      taskData: { text: 'Ship feature', position: '5' },
+      parentNoteTitle: 'Parent note',
+      model: 'selector-workspace-model',
+      debounceUpdate: vi.fn(),
+      storeDispatch,
+      logger,
+    });
+
+    // The placeholder id must never reach a daemon-synced store action.
+    const addAssociationAction = storeDispatch.mock.calls.find(
+      ([action]) => action.type === 'taskAgentAssociations/addTaskAgentAssociation',
+    );
+    expect(addAssociationAction).toBeUndefined();
+    expect(agentsCreateMock).not.toHaveBeenCalled();
   });
 
   it('launches task breakdown agents through the saga-owned request', () => {
