@@ -363,6 +363,13 @@ export interface UnifiedAgentConfig {
   provider?: string; // Provider ID (e.g., 'auggie', 'claude-code', 'codex') - from activeProviderStore.activeProviderId
   systemPrompt?: string; // System prompt for the agent (built from agentType)
   initialMessage?: string;
+  /**
+   * Caller-owned logical app-message id for the initial user message. When the
+   * caller stages its own optimistic message before invoking the factory, this
+   * keeps the wire send and the staged message on one identity so appMessageId
+   * dedup collapses them (duplicate-first-message guard).
+   */
+  appMessageId?: string;
   /** Frontend createSession sends the initial prompt after backend creation. */
   skipInitialPrompt?: boolean;
   contextReferences?: any[];

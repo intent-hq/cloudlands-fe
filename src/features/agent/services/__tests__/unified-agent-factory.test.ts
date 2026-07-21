@@ -19,6 +19,11 @@ import {
 } from '../agent-factory';
 import type { Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
+import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
+
+const { mockStoreDispatch } = vi.hoisted(() => ({
+  mockStoreDispatch: vi.fn(),
+}));
 
 // Mock configured app Store
 vi.mock('$store/renderer/store', async () => {
@@ -26,7 +31,7 @@ vi.mock('$store/renderer/store', async () => {
 
   return createAppStoreMockModule({
     state: () => ({ workspaceAgents: { byWorkspaceId: {} }, workspace: { activeWorkspaceId: 'test-ws' } }),
-    dispatch: vi.fn(),
+    dispatch: mockStoreDispatch,
   });
 });
 
@@ -269,6 +274,108 @@ describe('UnifiedAgentFactory', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('missing daemon-assigned agent id');
       expect(result.agent).toBeUndefined();
+    });
+
+    it('forwards the optimistic initial user message appMessageId on the backend send (dup-first-message guard)', async () => {
+      const { invoke } = await import('$lib/electron-bridge');
+      const invokeMock = vi.mocked(invoke);
+      invokeMock.mockClear();
+      invokeMock.mockResolvedValue({ success: true } as never);
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Initial Agent',
+        workspaceId: mockWorkspace.id as any,
+        initialMessage: 'Initial prompt',
+      });
+      expect(result.success).toBe(true);
+
+      await vi.waitFor(() => {
+        expect(invokeMock).toHaveBeenCalledWith(
+          AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
+          expect.any(Object),
+        );
+      });
+
+      const addMessageCall = mockStoreDispatch.mock.calls.find(
+        ([action]) => action?.type === 'agentSessions/addMessage',
+      );
+      const streamMessageCall = invokeMock.mock.calls.find(
+        ([channel]) => channel === AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
+      );
+
+      expect(addMessageCall).toBeDefined();
+      expect(streamMessageCall).toBeDefined();
+      // The optimistic user message staged in the store and the wire send
+      // must share one logical id so the daemon-echoed canonical message
+      // merges with the optimistic one instead of rendering twice.
+      const [, streamPayload] = streamMessageCall! as [string, Record<string, unknown>];
+      const [addMessageAction] = addMessageCall! as [{ payload: [string, { appMessageId?: string }] }];
+      expect(streamPayload.userAppMessageId).toBe(addMessageAction.payload[1].appMessageId);
+      expect(streamPayload.userAppMessageId).toBeTruthy();
+    });
+
+    it('honors a caller-owned appMessageId for the initial user message', async () => {
+      const { invoke } = await import('$lib/electron-bridge');
+      const invokeMock = vi.mocked(invoke);
+      invokeMock.mockClear();
+      invokeMock.mockResolvedValue({ success: true } as never);
+
+      const appMessageId = 'app_msg_initializer-owned';
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Initial Agent',
+        workspaceId: mockWorkspace.id as any,
+        initialMessage: 'Initial prompt',
+        appMessageId,
+      });
+      expect(result.success).toBe(true);
+
+      await vi.waitFor(() => {
+        expect(invokeMock).toHaveBeenCalledWith(
+          AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
+          expect.any(Object),
+        );
+      });
+
+      const addMessageCall = mockStoreDispatch.mock.calls.find(
+        ([action]) => action?.type === 'agentSessions/addMessage',
+      );
+      const streamMessageCall = invokeMock.mock.calls.find(
+        ([channel]) => channel === AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
+      );
+
+      const [, streamPayload] = streamMessageCall! as [string, Record<string, unknown>];
+      const [addMessageAction] = addMessageCall! as [{ payload: [string, { appMessageId?: string }] }];
+      expect(streamPayload.userAppMessageId).toBe(appMessageId);
+      expect(addMessageAction.payload[1].appMessageId).toBe(appMessageId);
+    });
+
+    it('ignores an empty caller appMessageId and mints one instead', async () => {
+      const { invoke } = await import('$lib/electron-bridge');
+      const invokeMock = vi.mocked(invoke);
+      invokeMock.mockClear();
+      invokeMock.mockResolvedValue({ success: true } as never);
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Initial Agent',
+        workspaceId: mockWorkspace.id as any,
+        initialMessage: 'Initial prompt',
+        appMessageId: '   ',
+      });
+      expect(result.success).toBe(true);
+
+      await vi.waitFor(() => {
+        expect(invokeMock).toHaveBeenCalledWith(
+          AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
+          expect.any(Object),
+        );
+      });
+
+      const streamMessageCall = invokeMock.mock.calls.find(
+        ([channel]) => channel === AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
+      );
+      const [, streamPayload] = streamMessageCall! as [string, Record<string, unknown>];
+      expect(typeof streamPayload.userAppMessageId).toBe('string');
+      expect((streamPayload.userAppMessageId as string).trim().length).toBeGreaterThan(0);
     });
 
     it('sends the initial message to the daemon-assigned id, only after create resolves', async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentSession, AgentMessage, QueuedMessage } from '$shared/types';
+import { AgentStatus, type AgentSession, type AgentMessage, type QueuedMessage } from '$shared/types';
+import { AgentActivationState } from '$shared/types/agent-session';
 import type { AgentSessionState } from './agent-session-types';
 import type { StoreState } from '../../types';
 import {
@@ -47,6 +48,7 @@ import {
   selectAgentSessionIsStreaming,
   selectAgentSessionStreamingContent,
   selectAgentSessionWorkspaceId,
+  selectAgentActivationWaitComplete,
   selectAgentQueuedMessages,
   selectAgentIsResponding,
   selectAgentIsThinking,
@@ -1387,6 +1389,41 @@ describe('agent-session selectors', () => {
     const state = storeWith({ byAgentId: { a1: session } });
     expect(selectAgentSessionExists.select(state, 'a1')).toBe(true);
     expect(selectAgentSessionExists.select(state, 'unknown')).toBe(false);
+  });
+
+  describe('selectAgentActivationWaitComplete', () => {
+    // Upstream #709 guard: an ACTIVE activation is terminal even when the
+    // backendSessionId hasn't landed yet — re-waiting would strand the first
+    // send of a never-messaged initial coordinator.
+    it('treats ACTIVE activation as complete without backendSessionId', () => {
+      const session = makeSession('a1', 'ws-1', {
+        backendSessionId: null,
+        activationState: AgentActivationState.ACTIVE,
+        status: AgentStatus.Pending,
+      });
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentActivationWaitComplete.select(state, 'a1')).toBe(true);
+    });
+
+    it('keeps never-activated pending sessions incomplete until activation finishes', () => {
+      const session = makeSession('a1', 'ws-1', {
+        backendSessionId: null,
+        activationState: undefined,
+        status: AgentStatus.Pending,
+      });
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentActivationWaitComplete.select(state, 'a1')).toBe(false);
+    });
+
+    it('treats ERROR activation as terminal so callers can surface the error', () => {
+      const session = makeSession('a1', 'ws-1', {
+        backendSessionId: null,
+        activationState: AgentActivationState.ERROR,
+        status: AgentStatus.Pending,
+      });
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentActivationWaitComplete.select(state, 'a1')).toBe(true);
+    });
   });
 
   it('selectAgentSessionIsStreaming returns the raw streaming flag', () => {
