@@ -63,10 +63,13 @@ describe("model-catalog-bridge-seeder", () => {
 
       expect(mockedRequest).toHaveBeenCalledWith("models.list", { providerId });
       expect(response.success).toBe(true);
-      expect(response.data).toEqual([
+      // claude-code additionally gets the curated `default` alias appended
+      // (see the dedicated alias tests below).
+      expect(response.data?.slice(0, 2)).toEqual([
         { value: "model-a", label: "Model A", description: "desc", isDefault: true },
         { value: "model-b", label: "Model B" },
       ]);
+      expect(response.data).toHaveLength(providerId === "claude-code" ? 3 : 2);
       expect(response.warning).toBeUndefined();
       expect(response.stale).toBeUndefined();
     },
@@ -108,6 +111,39 @@ describe("model-catalog-bridge-seeder", () => {
     ]);
     expect(response.warning).toBe("Codex not installed; using static model list");
     expect(response.stale).toBe(true);
+  });
+
+  it("merges the curated claude-code `default` alias into non-empty live catalogs", async () => {
+    // Regression (PR #216 review, finding 1): the daemon's live ACP parse does
+    // not emit `default`, but `claude-code:default` is the smart-tier alias
+    // and must stay valid/pickable when the live probe succeeds.
+    mockedRequest.mockResolvedValue({
+      providerId: "claude-code",
+      models: [{ id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" }],
+      source: "claude-code",
+    });
+
+    const response = await mockInvoke<Envelope>("claude-code:get-models");
+
+    expect(response.success).toBe(true);
+    expect(response.data?.map((m) => m.value)).toEqual(["claude-sonnet-4-5", "default"]);
+  });
+
+  it("does not fabricate the claude-code alias when the catalog is empty, nor duplicate it", async () => {
+    mockedRequest.mockResolvedValue({
+      providerId: "claude-code",
+      models: [],
+      warning: "Claude Code not available",
+    });
+    const empty = await mockInvoke<Envelope>("claude-code:get-models");
+    expect(empty.data).toEqual([]);
+
+    mockedRequest.mockResolvedValue({
+      providerId: "claude-code",
+      models: [{ id: "default", name: "Default (Claude Code)" }],
+    });
+    const withAlias = await mockInvoke<Envelope>("claude-code:get-models");
+    expect(withAlias.data?.map((m) => m.value)).toEqual(["default"]);
   });
 
   it("drops malformed rows (missing id/name) instead of failing the envelope", async () => {

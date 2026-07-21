@@ -11,6 +11,7 @@
 import { Logger } from '../../shared/logger';
 import {
   wireModelsToProviderModels,
+  withProviderAliasRows,
   type ProviderModelInfo,
   type WireModelsListResult,
 } from '../../shared/models/wire-model-info';
@@ -45,7 +46,9 @@ export async function listProviderModels(
 
   try {
     const result = await getBackendClient().request<WireModelsListResult>('models.list', params);
-    const catalog: ProviderModelCatalog = { models: wireModelsToProviderModels(result) };
+    const catalog: ProviderModelCatalog = {
+      models: withProviderAliasRows(providerId, wireModelsToProviderModels(result)),
+    };
     if (typeof result?.source === 'string') catalog.source = result.source;
     if (result?.stale === true) catalog.stale = true;
     if (typeof result?.warning === 'string' && result.warning) catalog.warning = result.warning;

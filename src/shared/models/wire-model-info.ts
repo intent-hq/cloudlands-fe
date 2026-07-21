@@ -77,3 +77,31 @@ export function wireModelsToProviderModels(result: WireModelsListResult): Provid
   if (!Array.isArray(result?.models)) return [];
   return result.models.flatMap((row) => wireModelToProviderModel(row) ?? []);
 }
+
+/** The curated claude-code `default` alias row (matches the daemon tier table's `smart` tier). */
+export const CLAUDE_CODE_DEFAULT_MODEL: ProviderModelInfo = {
+  value: 'default',
+  label: 'Default (Claude Code)',
+  description: 'Use Claude Code default model',
+};
+
+/**
+ * STOPGAP (see cloudlands-fe PR #216 review, finding 1): the daemon's live
+ * claude-code ACP parse does not inject the curated `default` alias — it only
+ * appears in the daemon's static tier fallback. The pre-thin-client FE merged
+ * it into live lists so `claude-code:default` (the `smart` tier) validated
+ * and the picker kept its "Default" row. Merge it here at the shared wire
+ * seam until intentd injects the alias in `fetch_claude_code_models`, at
+ * which point this becomes a no-op and can be deleted.
+ *
+ * Only non-empty live lists are augmented: an empty list is an honest
+ * "unavailable" terminal state whose warning semantics must be preserved.
+ */
+export function withProviderAliasRows(
+  providerId: string,
+  models: ProviderModelInfo[],
+): ProviderModelInfo[] {
+  if (providerId !== 'claude-code' || models.length === 0) return models;
+  if (models.some((m) => m.value === CLAUDE_CODE_DEFAULT_MODEL.value)) return models;
+  return [...models, CLAUDE_CODE_DEFAULT_MODEL];
+}
