@@ -22,15 +22,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
+          node-version: '22'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      # Stages the pinned intentd release (intentd.version) at resources/sidecar;
+      # fails fast when the pinned release or its Windows asset doesn't exist.
+      - name: Fetch pinned intentd sidecar
+        shell: bash
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: |
+          if [ -z "$INTENTD_READ_PAT" ]; then
+            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
+            exit 1
+          fi
+          node scripts/fetch-sidecar.cjs
 
       # ── DigiCert signing setup (official action) ──────────────────────
       - name: Check integrated signing configuration
@@ -80,6 +97,9 @@ jobs:
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
+          # detects the pre-staged binary and leaves it in place.
+          INTENTD_BIN: ${{ github.workspace }}\resources\sidecar\intentd.exe
           INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: ${{ steps.integrated_signing.outputs.enabled == 'true' && 'true' || '' }}
           INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
           SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
@@ -87,7 +107,7 @@ jobs:
           SM_CLIENT_CERT_FILE: D:\\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
         run: |
-          npm run dist:win
+          pnpm run dist:win
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # ── Post-build validation (when signing is enabled) ───────────────
