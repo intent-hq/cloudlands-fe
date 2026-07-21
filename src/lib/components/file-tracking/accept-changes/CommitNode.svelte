@@ -55,6 +55,7 @@
   // Lazily-fetched per-file data for metadata-only commits.
   let fetchedFiles = $state<CommitFile[] | null>(null);
   let fetchedForHash: string | null = null;
+  let destroyed = false;
 
   async function copyCommitHash() {
     await navigator.clipboard.writeText(commit.hash);
@@ -67,6 +68,7 @@
 
   onDestroy(() => {
     if (copyTimeout) clearTimeout(copyTimeout);
+    destroyed = true;
   });
 
   function fetchFilesIfNeeded() {
@@ -75,7 +77,7 @@
     // `commitDetails` folds transport errors to `null`; the list simply stays
     // empty on failure and a re-expand won't refetch until the hash changes.
     appClient.git.commitDetails(workspaceId, commit.hash).then((result) => {
-      if (result && fetchedForHash === commit.hash) {
+      if (result && !destroyed && fetchedForHash === commit.hash) {
         fetchedFiles = result.fileDetails.length > 0
           ? result.fileDetails
           : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
