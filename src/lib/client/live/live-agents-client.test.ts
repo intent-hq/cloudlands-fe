@@ -51,7 +51,9 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       model: 'opus',
       specialist: 'implementor',
       name: 'widened',
-      agentId: 'agent-p212a-1',
+      // Even when a legacy caller passes an id, it must NOT hit the wire —
+      // the daemon assigns the session id.
+      agentId: 'agent-legacy-client',
       provider: 'auggie',
       agentType: 'task-loop',
       metadata: { tag: 'unit' },
@@ -71,7 +73,6 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
         specialistId: 'implementor',
         behaviorPrompt: 'do the thing',
         name: 'widened',
-        agentId: 'agent-p212a-1',
         provider: 'auggie',
         agentType: 'task-loop',
         metadata: { tag: 'unit' },
@@ -80,6 +81,8 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
         idempotencyKey: expect.any(String),
       }),
     });
+    // The client-supplied agentId is dropped before the request is sent.
+    expect(backend.requests[0]?.params).not.toHaveProperty('agentId');
   });
 
   it('create omits absent optional params (backward-compat with the pre-P2-12a callers)', async () => {
@@ -108,6 +111,19 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     ]) {
       expect(params).not.toHaveProperty(key);
     }
+  });
+
+  it('create throws when the daemon response lacks the daemon-assigned agent.id', async () => {
+    // The daemon-assigned id is the only way to address follow-up sends —
+    // a missing/empty id must fail loudly, not coerce into an empty session key.
+    backend.onRequest('agent.create', () => ({
+      agent: { workspaceId: 'ws-p212a', status: 'pending' },
+    }));
+    const client = new LiveAgentsClient();
+
+    await expect(client.create({ workspaceId: 'ws-p212a' })).rejects.toThrow(
+      /missing daemon-assigned agent\.id/,
+    );
   });
 
   it('send forwards agent.sendMessage with workspaceId + minted messageId', async () => {

@@ -33,7 +33,6 @@ function withoutSpecialist(metadata: Record<string, unknown>): Record<string, un
 export function buildCreateWorkspaceRequestFromProposal(
   proposal: WorkspaceCreateProposal,
   editedFields: Record<string, unknown> | undefined,
-  generateAgentId: () => string,
 ): CreateWorkspaceRequest {
   const params = (proposal.payload.params ?? {}) as Partial<CreateWorkspaceRequest>;
   const initialAgent = recordValue(params.initialAgent) as Partial<InitialAgentRequest> | undefined;
@@ -42,7 +41,11 @@ export function buildCreateWorkspaceRequestFromProposal(
   const hasSpecialistEdit =
     typeof editedFields?.specialist === 'string' || editedFields?.specialist === null;
   const agentMetadata = hasSpecialistEdit ? withoutSpecialist(metadata) : metadata;
-  const agentId = typeof initialAgent?.agentId === 'string' ? initialAgent.agentId : generateAgentId();
+
+  // No client-supplied agentId: the daemon assigns the initial agent's id and
+  // returns it on the `workspace.create` result. Strip any id carried on the
+  // proposal payload so it never reaches the wire.
+  const { agentId: _droppedAgentId, ...initialAgentFields } = initialAgent ?? {};
 
   return {
     ...params,
@@ -53,8 +56,7 @@ export function buildCreateWorkspaceRequestFromProposal(
     isNewRepo: booleanOverride(editedFields?.isNewRepo, params.isNewRepo),
     scope: stringOverride(editedFields?.scope, params.scope),
     initialAgent: {
-      ...initialAgent,
-      agentId,
+      ...initialAgentFields,
       name: initialAgent?.name ?? 'Coordinator',
       prompt: stringOverride(editedFields?.initialPrompt, initialAgent?.prompt),
       specialist,

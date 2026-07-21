@@ -128,19 +128,48 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   /**
    * `workspace.create` (§5.1): requires an idempotencyKey (§5.6); the daemon
    * ignores unknown params, so the full request is forwarded for
-   * forward-compatibility. The daemon returns `{ workspace }` — normalized and
-   * surfaced on the result so the creation flow (legacy `workspace:create`
-   * bridge) can hand callers the created entity without a follow-up read.
+   * forward-compatibility. The daemon returns `{ workspace, initialAgent? }` —
+   * the workspace is normalized and surfaced on the result so the creation
+   * flow can hand callers the created entity without a follow-up read, and
+   * `initialAgent` (the daemon-assigned agent projection, present when the
+   * request carried an `initialAgent`) is surfaced verbatim so callers adopt
+   * the daemon-assigned agent id instead of pre-minting one.
    */
   async create(request: CreateWorkspaceRequest): Promise<WorkspaceCreateResult> {
     try {
-      const result = await backendRequest<{ workspace?: unknown }>("workspace.create", {
-        ...request,
-        idempotencyKey: newIdempotencyKey(),
-      });
+      const result = await backendRequest<{ workspace?: unknown; initialAgent?: unknown }>(
+        "workspace.create",
+        {
+          ...request,
+          idempotencyKey: newIdempotencyKey(),
+        },
+      );
       const raw = result?.workspace;
+      const rawAgent = result?.initialAgent;
+      let initialAgent: ({ id: string } & Record<string, unknown>) | undefined;
+      if (rawAgent !== undefined && rawAgent !== null) {
+        // The daemon-assigned `initialAgent.id` is the only way callers can
+        // address the created agent (no client id is sent). A present-but-
+        // malformed projection is a wire divergence — fail loudly instead of
+        // masking it as "no initialAgent".
+        if (
+          typeof rawAgent !== "object" ||
+          typeof (rawAgent as { id?: unknown }).id !== "string" ||
+          ((rawAgent as { id: string }).id.length === 0)
+        ) {
+          return {
+            success: false,
+            error: "workspace.create returned an initialAgent without a valid daemon-assigned id",
+          };
+        }
+        initialAgent = rawAgent as { id: string } & Record<string, unknown>;
+      }
       return raw && typeof raw === "object"
-        ? { success: true, workspace: normalizeWorkspace(raw as Record<string, unknown>) }
+        ? {
+            success: true,
+            workspace: normalizeWorkspace(raw as Record<string, unknown>),
+            ...(initialAgent ? { initialAgent } : {}),
+          }
         : { success: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

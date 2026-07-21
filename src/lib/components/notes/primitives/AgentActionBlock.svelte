@@ -17,7 +17,6 @@
 
 
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { unifiedIdService } from '$shared/services/unified-id.service';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -77,10 +76,8 @@
           content: input.content,
         })) || [];
 
-      const newAgentId = unifiedIdService.generateAgentId();
       const state = appStore.state;
       const action = createAgentFromConfigRequested(workspaceId, {
-        id: newAgentId,
         name: primitive.goal.length > 40 ? primitive.goal.slice(0, 40) + '...' : primitive.goal,
         workspaceId: WorkspaceId(workspaceId),
         model: selectWorkspaceDefaultModel.select(state, workspaceId),
@@ -96,7 +93,8 @@
       appStore.dispatch(action);
 
       const createdAgent = await action.promise;
-      agentId = createdAgent.id || newAgentId;
+      // The daemon assigns the agent id; adopt it from the created session.
+      agentId = createdAgent.id;
       running = false;
 
       // Update primitive with running status and agent link

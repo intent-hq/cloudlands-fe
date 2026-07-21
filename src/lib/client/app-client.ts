@@ -112,9 +112,10 @@ export interface MutationResult {
  *   §5.5 rename; kept as `prompt` here for caller ergonomics).
  * - `name` names the session at creation instead of the auto-generated
  *   `"Agent <hex>"` fallback.
- * - `agentId` is honored verbatim by the daemon (`agent-{uuid}` shape); used
- *   so the caller can address `agent.sendMessage` at the same id it just
- *   handed us (fixes the create→send race).
+ * - `agentId` is DEPRECATED: the daemon assigns the session id and returns it
+ *   on the created agent. Callers must adopt the response id before any
+ *   follow-up `agent.sendMessage`; a follow-up intentd change rejects
+ *   client-supplied agent ids outright.
  * - `provider` / `agentType` / `metadata` / `workspacePath` / `workspaceContext`
  *   are the widened FE-facing spawn hints — the daemon persists `provider` on
  *   the session; the rest are accepted but not yet stored (deferred).
@@ -231,9 +232,16 @@ export interface WorkspaceUpdateResult extends MutationResult {
   workspace?: Workspace;
 }
 
-/** `workspace.create` outcome — carries the daemon's created workspace on success. */
+/**
+ * `workspace.create` outcome — carries the daemon's created workspace on
+ * success plus, when the request included an `initialAgent`, the daemon's
+ * created agent projection (`AgentLite` shape, same as the `agent.create`
+ * result's `agent`). The daemon assigns the agent id; callers must adopt
+ * `initialAgent.id` instead of pre-minting one.
+ */
 export interface WorkspaceCreateResult extends MutationResult {
   workspace?: Workspace;
+  initialAgent?: { id: string } & Record<string, unknown>;
 }
 
 export interface WorkspacesClient {
