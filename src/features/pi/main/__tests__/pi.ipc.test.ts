@@ -1,18 +1,25 @@
 /**
- * Tests for the Pi IPC model-listing handler and ACP shape parsing.
+ * Tests for the Pi IPC handlers.
  *
- * Covers:
- * - parseModelsFromSessionUpdate handling every supported ACP shape.
- * - The GET_MODELS handler returning DEFAULT_MODELS (never empty) when
- *   resolvePiCommand() returns null.
+ * GET_MODELS is a thin call to the daemon's per-provider catalog
+ * (`models.list { providerId: 'pi' }`, PROTOCOL §6.7); these tests assert the
+ * wire request shape and the envelope mapping (data / warning / stale /
+ * success:false on transport failure).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const { mockBackendRequest } = vi.hoisted(() => ({
+  mockBackendRequest: vi.fn(),
+}));
+
 vi.mock('../pi-resolver', () => ({
   installPiMcpAdapter: vi.fn(),
   isPiMcpAdapterInstalled: vi.fn(),
-  resolvePiCommand: vi.fn(),
+}));
+
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockBackendRequest }),
 }));
 
 // Capture the handler registered via ipcMain.handle so we can invoke it directly.
@@ -28,86 +35,66 @@ vi.mock('electron', () => ({
 import {
   installPiMcpAdapter,
   isPiMcpAdapterInstalled,
-  resolvePiCommand,
 } from '../pi-resolver';
 import { PI_CHANNELS } from '../../../../shared/ipc/channels';
-import { parseModelsFromSessionUpdate, setupPiIPC } from '../pi.ipc';
-
-describe('parseModelsFromSessionUpdate', () => {
-  const model = { modelId: 'gpt-x', name: 'GPT X', description: 'fast' };
-
-  it('parses wrapped models.availableModels (params)', () => {
-    const result = parseModelsFromSessionUpdate({ models: { availableModels: [model] } });
-    expect(result).toEqual([{ value: 'gpt-x', label: 'GPT X', description: 'fast' }]);
-  });
-
-  it('parses unwrapped availableModels (params)', () => {
-    const result = parseModelsFromSessionUpdate({ availableModels: [model] });
-    expect(result).toEqual([{ value: 'gpt-x', label: 'GPT X', description: 'fast' }]);
-  });
-
-  it('parses models.available variant', () => {
-    const result = parseModelsFromSessionUpdate({ models: { available: [model] } });
-    expect(result).toEqual([{ value: 'gpt-x', label: 'GPT X', description: 'fast' }]);
-  });
-
-  it('parses models wrapped under params.update', () => {
-    const result = parseModelsFromSessionUpdate({
-      update: { models: { availableModels: [model] } },
-    });
-    expect(result).toEqual([{ value: 'gpt-x', label: 'GPT X', description: 'fast' }]);
-  });
-
-  it('parses models wrapped under params.sessionUpdate', () => {
-    const result = parseModelsFromSessionUpdate({
-      sessionUpdate: { availableModels: [model] },
-    });
-    expect(result).toEqual([{ value: 'gpt-x', label: 'GPT X', description: 'fast' }]);
-  });
-
-  it('returns empty array when no models present', () => {
-    expect(parseModelsFromSessionUpdate(undefined)).toEqual([]);
-    expect(parseModelsFromSessionUpdate({})).toEqual([]);
-  });
-});
+import { setupPiIPC } from '../pi.ipc';
 
 describe('Pi GET_MODELS handler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBackendRequest.mockReset();
     registeredHandlers.clear();
   });
 
-  it('returns DEFAULT_MODELS (never empty) when resolvePiCommand returns null', async () => {
-    vi.mocked(resolvePiCommand).mockResolvedValue(null);
-
+  function getHandler() {
     setupPiIPC();
     const handler = registeredHandlers.get(PI_CHANNELS.GET_MODELS);
     expect(handler).toBeDefined();
+    return handler!;
+  }
 
-    const response = await handler!({});
+  it('maps the daemon models.list rows into the success envelope', async () => {
+    mockBackendRequest.mockResolvedValue({
+      providerId: 'pi',
+      models: [{ id: 'default', name: 'Default (Pi)', description: 'Use Pi default model' }],
+      source: 'pi',
+    });
 
-    expect(response.success).toBe(true);
-    expect(Array.isArray(response.data)).toBe(true);
-    expect(response.data.length).toBeGreaterThan(0);
-    expect(response.data).toEqual([
-      { value: 'default', label: 'Default (Pi)', description: 'Use Pi default model' },
-    ]);
-    expect(response.warning).toBe('Pi command unavailable; using default model');
+    const response = await getHandler()({});
+
+    expect(mockBackendRequest).toHaveBeenCalledWith('models.list', { providerId: 'pi' });
+    expect(response).toEqual({
+      success: true,
+      data: [{ value: 'default', label: 'Default (Pi)', description: 'Use Pi default model' }],
+    });
   });
 
-  it('surfaces failure via { success: false, error } when probing throws (AUDIT-P0-2)', async () => {
-    // AUDIT-P0-2: a probe failure must surface to the renderer instead of
-    // being masked as a success-shaped DEFAULT_MODELS list with a warning.
-    vi.mocked(resolvePiCommand).mockRejectedValue(new Error('probe boom'));
+  it('forwards forceRefresh and surfaces daemon warning/stale labeling', async () => {
+    mockBackendRequest.mockResolvedValue({
+      providerId: 'pi',
+      models: [{ id: 'default', name: 'Default (Pi)' }],
+      stale: true,
+      warning: 'Pi probe failed; serving last-known model list',
+    });
 
-    setupPiIPC();
-    const handler = registeredHandlers.get(PI_CHANNELS.GET_MODELS);
-    expect(handler).toBeDefined();
+    const response = await getHandler()({}, { forceRefresh: true });
 
-    const response = await handler!({});
+    expect(mockBackendRequest).toHaveBeenCalledWith('models.list', {
+      providerId: 'pi',
+      forceRefresh: true,
+    });
+    expect(response.success).toBe(true);
+    expect(response.stale).toBe(true);
+    expect(response.warning).toBe('Pi probe failed; serving last-known model list');
+  });
+
+  it('surfaces wire/transport failure via { success: false, error }', async () => {
+    mockBackendRequest.mockRejectedValue(new Error('daemon unreachable'));
+
+    const response = await getHandler()({});
 
     expect(response.success).toBe(false);
-    expect(response.error).toBe('Failed to query Pi models: probe boom');
+    expect(response.error).toBe('daemon unreachable');
     expect(response.data).toBeUndefined();
   });
 });

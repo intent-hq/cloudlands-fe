@@ -48,6 +48,7 @@
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
+  import GrokLogo from '../ui/GrokLogo.svelte';
   import Logo from '../Logo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import {
@@ -120,6 +121,7 @@
     codex: { docsUrl: 'https://developers.openai.com/codex/cli#cli-setup', requiresAuth: false },
     opencode: { docsUrl: 'https://opencode.ai/docs#install', requiresAuth: false },
     droid: { docsUrl: 'https://docs.factory.ai/cli/getting-started/overview', requiresAuth: false },
+    grok: { docsUrl: 'https://docs.x.ai/build/overview', requiresAuth: false },
     cortex: {
       docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex',
       requiresAuth: false,
@@ -135,6 +137,7 @@
     mock: 'mock',
     opencode: 'opencode',
     droid: 'droid',
+    grok: 'grok',
     cortex: 'cortex',
     pi: 'pi',
   };
@@ -549,6 +552,8 @@
 
     {@render skeleton('droid')}
 
+    {@render skeleton('grok')}
+
     {#if providerAvailability && !providerAvailability.hiddenProviders?.includes('cortex')}
       {@render skeleton('cortex')}
     {/if}
@@ -923,6 +928,8 @@
           d="M12 2a1.5 1.5 0 0 1 .75 2.8V7h3.75A3.5 3.5 0 0 1 20 10.5v6a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 4 16.5v-6A3.5 3.5 0 0 1 7.5 7h3.75V4.8A1.5 1.5 0 0 1 12 2ZM8.75 11.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5Zm6.5 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5Z"
         />
       </svg>
+    {:else if providerId === 'grok'}
+      <GrokLogo class="size-5" size={20} />
     {:else if providerId === 'cortex'}
       <svg
         class="size-5"

@@ -7,10 +7,6 @@ on:
         description: 'Version number (e.g., 1.0.0)'
         required: true
         type: string
-      intentd_base_sha:
-        description: 'Bootstrap: intentd base commit SHA for first release (when no previous tag/manifest exists)'
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -93,53 +89,29 @@ jobs:
           INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
         run: |
           if [ -z "$INTENTD_READ_PAT" ]; then
-            echo "::error::INTENTD_READ_PAT secret is required to checkout intent-hq/intentd"
+            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
             exit 1
           fi
           echo "INTENTD_READ_PAT is configured"
 
-      - name: Checkout intentd
-        uses: actions/checkout@v4
-        with:
-          repository: intent-hq/intentd
-          ref: main
-          token: ${{ secrets.INTENTD_READ_PAT }}
-          path: intentd-repo
+      - name: Read pinned intentd version
+        id: intentd_pin
+        run: |
+          INTENTD_VERSION=$(node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            import { parseVersionPin } from './scripts/fetch-sidecar-lib.mjs';
+            console.log(parseVersionPin(readFileSync('intentd.version', 'utf8')));
+          ")
+          echo "version=${INTENTD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Pinned intentd version: ${INTENTD_VERSION}"
 
-      - name: Capture intentd SHA and check for duplicate tag
-        id: intentd_info
+      # Downloads the pinned intentd release asset, verifies its sha256, and stages
+      # the binary at resources/sidecar/intentd. Fails fast with a clear error when
+      # the pinned release or its per-target assets don't exist on intent-hq/intentd.
+      - name: Fetch pinned intentd sidecar
         env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          cd intentd-repo
-          INTENTD_SHA=$(git rev-parse HEAD)
-          echo "sha=${INTENTD_SHA}" >> "$GITHUB_OUTPUT"
-          echo "Captured intentd SHA: ${INTENTD_SHA}"
-
-          # Check if tag already exists on intentd
-          if git ls-remote --tags origin | grep -qF "refs/tags/v${VERSION}"; then
-            echo "::error::Tag v${VERSION} already exists on intent-hq/intentd. Use a different version number."
-            exit 1
-          fi
-          echo "Tag v${VERSION} does not exist on intentd, proceeding"
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: intentd-repo -> target
-
-      - name: Build intentd sidecar
-        run: |
-          cd intentd-repo
-          cargo build --release --target aarch64-apple-darwin
-          pwd_path="$(pwd)"
-          echo "Built intentd at: ${pwd_path}/target/aarch64-apple-darwin/release/intentd"
-          ls -lh target/aarch64-apple-darwin/release/intentd
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: node scripts/fetch-sidecar.cjs
 
       - name: Set version in package.json
         run: pnpm run version:set "${{ inputs.version }}"
@@ -173,7 +145,9 @@ jobs:
         run: pnpm run dist:mac
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
-          INTENTD_BIN: ${{ github.workspace }}/intentd-repo/target/aarch64-apple-darwin/release/intentd
+          # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
+          # detects the pre-staged binary and leaves it in place.
+          INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
           CSC_LINK: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE_PWD }}
           CLOUDLANDS_APPLE_ID: ${{ secrets.CLOUDLANDS_APPLE_ID }}
@@ -189,7 +163,9 @@ jobs:
       - name: Find previous release
         id: prev_release
         env:
-          GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          # RELEASE_PAT has repo scope on cloudlands-releases; keeps INTENTD_READ_PAT
+          # scoped to downloading intentd release assets only
+          GH_TOKEN: ${{ steps.token.outputs.token }}
           VERSION: ${{ inputs.version }}
         run: |
           # Find the previous versioned release (highest vX.Y.Z tag strictly less than current version)
@@ -242,76 +218,12 @@ jobs:
             echo "tag=${PREV_RELEASE}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Resolve intentd base SHA for release notes
-        id: intentd_base
-        env:
-          GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
-          VERSION: ${{ inputs.version }}
-          INTENTD_BASE_SHA_INPUT: ${{ inputs.intentd_base_sha }}
-          PREV_RELEASE: ${{ steps.prev_release.outputs.tag }}
-        run: |
-          set -e
-
-          if [ -z "$PREV_RELEASE" ]; then
-            echo "No previous versioned release found on cloudlands-releases"
-            INTENTD_BASE=""
-          else
-            echo "Previous versioned release: ${PREV_RELEASE}"
-
-            # Resolution order: intentd tag v{prev} → manifest → input
-
-            # Try 1: Check if intentd has a matching tag
-            cd intentd-repo
-            if git ls-remote --tags origin | grep -qF "refs/tags/${PREV_RELEASE}"; then
-              echo "Found intentd tag ${PREV_RELEASE}"
-              INTENTD_BASE="${PREV_RELEASE}"
-            else
-              echo "No intentd tag ${PREV_RELEASE}, trying manifest..."
-              cd ..
-
-              # Try 2: Download release-manifest.json from previous release using gh API
-              if gh release download "${PREV_RELEASE}" --repo intent-hq/cloudlands-releases \
-                  --pattern release-manifest.json --dir . 2>/dev/null; then
-                INTENTD_BASE=$(jq -r '.intentdSha // empty' release-manifest.json)
-                if [ -n "$INTENTD_BASE" ]; then
-                  echo "Found intentd SHA in manifest: ${INTENTD_BASE}"
-                else
-                  echo "Manifest exists but has no intentdSha field"
-                  INTENTD_BASE=""
-                fi
-              else
-                echo "No manifest found for ${PREV_RELEASE}"
-                INTENTD_BASE=""
-              fi
-            fi
-          fi
-
-          # Fallback to workflow input if no base found
-          if [ -z "$INTENTD_BASE" ] && [ -n "$INTENTD_BASE_SHA_INPUT" ]; then
-            echo "Using intentd_base_sha input: ${INTENTD_BASE_SHA_INPUT}"
-            INTENTD_BASE="$INTENTD_BASE_SHA_INPUT"
-          fi
-
-          # Fail if still no base
-          if [ -z "$INTENTD_BASE" ]; then
-            echo "::error::Could not resolve intentd base SHA. This is the first release and requires the intentd_base_sha workflow input."
-            echo "::error::Please re-run the workflow with an intentd base commit SHA (e.g., the intentd SHA from the previous beta release)."
-            exit 1
-          fi
-
-          echo "intentd_base=${INTENTD_BASE}" >> "$GITHUB_OUTPUT"
-          echo "✅ Resolved intentd base: ${INTENTD_BASE}"
-
       - name: Generate release notes
         env:
-          # Per-repo tokens: INTENTD_READ_PAT is scoped to intent-hq/intentd and 404s on
-          # cloudlands-fe API calls, so the fe side uses the workflow's default token
           FE_TOKEN: ${{ github.token }}
-          INTENTD_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           VERSION: ${{ inputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
-          INTENTD_BASE: ${{ steps.intentd_base.outputs.intentd_base }}
-          INTENTD_HEAD: ${{ steps.intentd_info.outputs.sha }}
+          INTENTD_VERSION: ${{ steps.intentd_pin.outputs.version }}
           FE_HEAD_SHA: ${{ steps.fe_info.outputs.sha }}
         run: |
           if [ -z "$PREV_FE_TAG" ]; then
@@ -325,47 +237,18 @@ jobs:
 
           echo "Generating release notes: ${PREV_FE_TAG}...v${VERSION}"
           echo "  FE: ${PREV_FE_TAG}...${FE_HEAD_SHA}"
-          echo "  intentd: ${INTENTD_BASE}...${INTENTD_HEAD}"
+          echo "  intentd pin: v${INTENTD_VERSION}"
 
           node scripts/generate-release-notes.mjs \
             --version "${VERSION}" \
             --fe-base "${PREV_FE_TAG}" \
             --fe-head "${FE_HEAD_SHA}" \
-            --intentd-base "${INTENTD_BASE}" \
-            --intentd-head "${INTENTD_HEAD}" \
+            --intentd-version "${INTENTD_VERSION}" \
             --out release-notes.md \
             --manifest-out release-manifest.json
 
           echo "Generated release notes:"
           cat release-notes.md
-
-      - name: Push intentd tag
-        env:
-          RELEASE_PAT: ${{ steps.token.outputs.token }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          cd intentd-repo
-
-          # Set git identity for annotated tag
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Git-over-HTTPS on github.com requires Basic auth (same format
-          # actions/checkout persists); a Bearer header is rejected with
-          # "invalid credentials". Build the header from the PAT (masked in logs)
-          # and scope it to the single push via `git -c` so the write-capable
-          # credential never persists on disk. The read-only INTENTD_READ_PAT
-          # header persisted by checkout must be removed first: git sends every
-          # configured extraheader value, and a second AUTHORIZATION header
-          # would break auth. No later step performs git operations here.
-          AUTH_B64=$(printf 'x-access-token:%s' "${RELEASE_PAT}" | base64 | tr -d '\n')
-          echo "::add-mask::${AUTH_B64}"
-          git config --unset-all http.https://github.com/.extraheader || true
-
-          git tag -a "v${VERSION}" -m "Release v${VERSION}"
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${AUTH_B64}" \
-            push origin "refs/tags/v${VERSION}"
-          echo "✅ Pushed tag v${VERSION} to intent-hq/intentd"
 
       - name: Publish to GitHub Releases (versioned tag)
         env:

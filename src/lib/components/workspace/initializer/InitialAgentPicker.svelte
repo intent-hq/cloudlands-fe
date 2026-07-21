@@ -99,7 +99,9 @@
       mock: 'mock',
       opencode: 'opencode',
       droid: 'droid',
+      grok: 'grok',
       cortex: 'cortex',
+      pi: 'pi',
     };
     const key = keyMap[providerId];
     if (key && providerAvailability.providers[key]) {

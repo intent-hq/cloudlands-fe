@@ -33,7 +33,34 @@ const destBin = path.join(destDir, `intentd${ext}`);
 if (!fs.existsSync(sourceBin)) {
   console.error(`Error: intentd binary not found at ${sourceBin}`);
   console.error("Build it first: cd packages/intentd && cargo build --release");
+  console.error("Or fetch the pinned release: node scripts/fetch-sidecar.cjs");
   process.exit(1);
+}
+
+// Release CI stages the pinned sidecar via fetch-sidecar.cjs and points INTENTD_BIN at
+// the staging path itself; copying a file onto itself would truncate it, so skip.
+// Compare canonical realpaths (case-normalized on win32) so case-insensitive
+// filesystems and aliased paths can't defeat the guard, falling back to dev/ino
+// only when both inode values are meaningful (Windows can report ino as 0).
+const isSameFile = (a, b) => {
+  try {
+    let ra = fs.realpathSync.native(a);
+    let rb = fs.realpathSync.native(b);
+    if (process.platform === "win32") {
+      ra = ra.toLowerCase();
+      rb = rb.toLowerCase();
+    }
+    if (ra === rb) return true;
+    const sa = fs.statSync(a);
+    const sb = fs.statSync(b);
+    return sa.ino !== 0 && sb.ino !== 0 && sa.dev === sb.dev && sa.ino === sb.ino;
+  } catch {
+    return false;
+  }
+};
+if (isSameFile(sourceBin, destBin)) {
+  console.log(`intentd binary already staged at ${destBin} — nothing to copy`);
+  process.exit(0);
 }
 
 fs.mkdirSync(destDir, { recursive: true });

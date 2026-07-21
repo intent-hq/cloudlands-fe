@@ -15,7 +15,7 @@ import {
   getEnhancedPath,
 } from './auggie-path';
 import { hostExec } from '../../../shared/main/host-exec';
-import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
+import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 
@@ -23,157 +23,6 @@ import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 export { findAuggiePathAsync, getEnhancedPath };
 
 const logger = new Logger('AuggieIPC');
-
-// ============================================================================
-// Model List Cache
-// ============================================================================
-//
-// The auggie CLI model list is fetched by shelling out to `auggie model list`,
-// which is slow enough that repeated calls (e.g., from model-override validation
-// in agent-interaction-tools.ts) noticeably stall agent creation. We cache the
-// most recent successful result for 5 minutes; the cache is an internal
-// implementation detail of this handler.
-
-type AuggieModel = {
-  value: string;
-  label: string;
-  description?: string;
-  modelGroupPriority?: number;
-  isLegacyModel?: boolean;
-  costTier?: number;
-  badges?: Array<{ color: string; label: string; variant?: string }>;
-  effortLevels?: string[];
-  isDefault?: boolean;
-  priority?: number;
-};
-
-const auggieModelCache = createProviderModelCache<AuggieModel>({
-  providerId: 'auggie',
-  // Must never throw: failures are logged inside fetchAuggieModels and
-  // surfaced as null so callers can distinguish "unavailable" from "empty".
-  fetch: async () => {
-    try {
-      return await fetchAuggieModels();
-    } catch (error) {
-      logger.error('Auggie model fetch failed', { error: (error as Error).message });
-      return null;
-    }
-  },
-});
-
-/**
- * Return the cached auggie model values (bare model IDs) if the cache is
- * populated and fresh, otherwise attempt to fetch the live list and cache it.
- *
- * Returns `null` when the live list is unavailable (e.g., auggie CLI not
- * installed or the shell-out failed). Callers can distinguish "unavailable"
- * from "empty" so that validation can skip with an info log rather than a
- * spurious warning.
- */
-export async function getCachedAuggieModels(): Promise<string[] | null> {
-  const models = await getAuggieModelsWithCache();
-  if (!models) return null;
-  return models.map((m) => m.value);
-}
-
-/**
- * Internal: fetch (or return cached) live auggie model list.
- * Shared between the IPC handler and the main-side cache accessor.
- * Returns `null` on failure; the cache is only populated on success.
- */
-async function getAuggieModelsWithCache(): Promise<AuggieModel[] | null> {
-  return auggieModelCache.get();
-}
-
-export async function hydrateAuggieModelCacheFromDisk(): Promise<void> {
-  await auggieModelCache.hydrateFromDisk();
-}
-
-/**
- * Internal: shell out to auggie CLI and parse the model list. No caching here.
- * Returns `null` on both parse-failure and hard failure so callers can
- * distinguish "unavailable" from an authoritative empty list.
- */
-async function fetchAuggieModels(): Promise<AuggieModel[] | null> {
-  try {
-    const auggiePath = await findAuggiePathAsync();
-    logger.info('Found auggie path for model list', { auggiePath });
-
-    let models: AuggieModel[] | null = null;
-
-    // Try JSON format first
-    try {
-      const { stdout: jsonStdout, stderr: jsonStderr } =
-        await executeAuggieCommand('model list --json');
-      if (jsonStderr) {
-        logger.warn('Auggie model list --json stderr output', { stderr: jsonStderr });
-      }
-      logger.info('Auggie model list --json stdout', { length: jsonStdout?.length });
-      models = parseModelListJson(jsonStdout);
-      if (models) {
-        logger.info(`Parsed ${models.length} models from JSON output`);
-      }
-    } catch (jsonError) {
-      logger.warn('Auggie model list --json failed, falling back to plain text', {
-        error: (jsonError as Error).message,
-      });
-    }
-
-    // Fall back to plain text format
-    if (!models) {
-      const { stdout, stderr } = await executeAuggieCommand('model list');
-      if (stderr) {
-        logger.warn('Auggie model list stderr output', { stderr });
-      }
-      logger.info('Auggie model list stdout', { stdout, length: stdout?.length });
-      models = parseModelListOutput(stdout);
-    }
-
-    if (models && models.length > 0) {
-      const filteredModels = models.filter((m) => !m.isLegacyModel);
-      const sortedModels = filteredModels.sort((a, b) => {
-        const aGroup = a.modelGroupPriority ?? 999;
-        const bGroup = b.modelGroupPriority ?? 999;
-        if (aGroup !== bGroup) return aGroup - bGroup;
-        const aPriority = a.priority ?? 999;
-        const bPriority = b.priority ?? 999;
-        if (aPriority !== bPriority) return aPriority - bPriority;
-        return a.label.localeCompare(b.label);
-      });
-      return sortedModels;
-    }
-
-    return null;
-  } catch (error) {
-    const errorWithOutput = error as Error & {
-      stdout?: string;
-      stderr?: string;
-      code?: number | string;
-      killed?: boolean;
-    };
-    logger.error('Auggie model list command failed', {
-      message: errorWithOutput.message,
-      exitCode: errorWithOutput.code,
-      killed: errorWithOutput.killed,
-      stdout: errorWithOutput.stdout?.substring(0, 500),
-      stderr: errorWithOutput.stderr?.substring(0, 500),
-    });
-
-    // Some platforms: auggie may crash during exit but still produce valid stdout.
-    const outputToParse = errorWithOutput.stdout || errorWithOutput.stderr || '';
-    if (outputToParse) {
-      const parsed = parseModelListOutput(outputToParse);
-      if (parsed.length > 0) {
-        logger.warn('Auggie CLI exited with error but produced valid model output', {
-          error: errorWithOutput.message,
-          modelCount: parsed.length,
-        });
-        return parsed;
-      }
-    }
-    return null;
-  }
-}
 
 // ============================================================================
 // Auggie CLI Version Requirements
@@ -275,105 +124,6 @@ async function checkNodeVersion(): Promise<{
       error: err instanceof Error ? err.message : String(err),
     });
     return { nodeVersionOk: false };
-  }
-}
-
-// ============================================================================
-// Model Parsing Helper
-// ============================================================================
-
-/**
- * Parse auggie model list output and extract model information.
- * Returns an array of models with value and label, or empty array if parsing fails.
- *
- * Expected CLI output format:
- *   Available models:
- *    - Display Name [model-id]
- *    - Default Model [model-id]  (default)
- *        Description text on next line
- */
-export function parseModelListOutput(
-  stdout: string,
-): Array<{ value: string; label: string; description?: string }> {
-  const models: Array<{ value: string; label: string; description?: string }> = [];
-  const lines = stdout.split('\n');
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmedLine = lines[i].trim();
-
-    // Skip empty lines and headers
-    if (!trimmedLine || trimmedLine.startsWith('Available models')) {
-      continue;
-    }
-
-    // Match the format: " - Model Name [model-id]" with optional trailing content like "(default)"
-    const modelMatch = trimmedLine.match(/^-\s+(.+?)\s*\[([^\]]+)\]/);
-    if (modelMatch) {
-      const label = modelMatch[1].trim();
-      const value = modelMatch[2].trim();
-
-      // Check if the next line is a description (indented, doesn't start with -)
-      let description: string | undefined;
-      if (i + 1 < lines.length) {
-        const nextLine = lines[i + 1].trim();
-        if (nextLine && !nextLine.startsWith('-') && !nextLine.startsWith('Available')) {
-          description = nextLine;
-          i++; // Skip the description line
-        }
-      }
-
-      models.push({ value, label, ...(description ? { description } : {}) });
-    }
-  }
-
-  return models;
-}
-
-/**
- * Parse auggie model list --json output.
- * Returns an array of models with rich metadata, or null if parsing fails.
- */
-function parseModelListJson(stdout: string): Array<{
-  value: string;
-  label: string;
-  description?: string;
-  modelGroupPriority?: number;
-  isLegacyModel?: boolean;
-  costTier?: number;
-  badges?: Array<{ color: string; label: string; variant?: string }>;
-  effortLevels?: string[];
-  isDefault?: boolean;
-  priority?: number;
-}> | null {
-  try {
-    const parsed = JSON.parse(stdout);
-    if (!parsed || !Array.isArray(parsed.models)) {
-      return null;
-    }
-
-    return parsed.models
-      .filter(
-        (m: Record<string, unknown>) =>
-          typeof m.shortName === 'string' && typeof m.displayName === 'string',
-      )
-      .map((m: Record<string, unknown>) => ({
-        value: m.shortName as string,
-        label: m.displayName as string,
-        ...(m.description ? { description: m.description as string } : {}),
-        ...(m.modelGroupPriority != null
-          ? { modelGroupPriority: m.modelGroupPriority as number }
-          : {}),
-        ...(m.isLegacyModel ? { isLegacyModel: true } : {}),
-        ...(m.costTier != null ? { costTier: m.costTier as number } : {}),
-        ...(Array.isArray(m.badges) && m.badges.length > 0 ? { badges: m.badges } : {}),
-        ...(Array.isArray(m.effortLevels) && m.effortLevels.length > 0
-          ? { effortLevels: m.effortLevels }
-          : {}),
-        ...(m.isDefault ? { isDefault: true } : {}),
-        ...(m.priority != null ? { priority: m.priority as number } : {}),
-      }));
-  } catch {
-    return null;
   }
 }
 
@@ -755,44 +505,12 @@ export function setupAuggieIPC() {
     },
   );
 
-  // Get available models from auggie CLI. Caching is handled in
-  // getAuggieModelsWithCache() (defined at module scope) so that the main-side
-  // model-override validator can reuse the same cache without re-shelling.
-  ipcMain.handle(AUGGIE_CHANNELS.GET_MODELS, async () => {
-    try {
-      logger.info('Getting models from auggie CLI');
-      const models = await getAuggieModelsWithCache();
-      if (models && models.length > 0) {
-        logger.info(`Successfully retrieved ${models.length} models from auggie CLI`);
-        return { success: true, data: models };
-      }
-      const auggiePath = await findAuggiePathAsync();
-      if (!auggiePath) {
-        return {
-          success: false,
-          error: 'Auggie CLI not found. Please install auggie first.',
-        };
-      }
-      if (models && models.length === 0) {
-        logger.warn('Auggie model list returned no parseable models');
-        return {
-          success: false,
-          error: 'Could not parse auggie model list output. Please try again.',
-        };
-      }
-      // models === null: hard failure inside fetchAuggieModels
-      return {
-        success: false,
-        error: 'Auggie CLI failed to return a model list. Please try again.',
-      };
-    } catch (error) {
-      logger.error('Error getting models', error as Error);
-      return {
-        success: false,
-        error: (error as Error).message || 'Failed to get models',
-      };
-    }
-  });
+  // Get available models for auggie — daemon-owned catalog (PROTOCOL §6.7)
+  ipcMain.handle(
+    AUGGIE_CHANNELS.GET_MODELS,
+    async (_event, params?: { forceRefresh?: boolean }) =>
+      getProviderModelsEnvelope('auggie', params),
+  );
 
   // Get the latest session file
   ipcMain.handle(AUGGIE_CHANNELS.GET_LATEST_SESSION, async () => {

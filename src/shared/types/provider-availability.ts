@@ -48,6 +48,7 @@ export interface ProviderAvailabilityResult {
     opencode: ProviderStatus;
     pi: ProviderStatus;
     droid: ProviderStatus;
+    grok: ProviderStatus;
   };
   /** Provider IDs that are hidden because their required env var or feature code is not set */
   hiddenProviders: string[];

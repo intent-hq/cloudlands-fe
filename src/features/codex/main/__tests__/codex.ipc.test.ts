@@ -1,3 +1,12 @@
+/**
+ * Tests for the Codex IPC handlers.
+ *
+ * GET_MODELS is a thin call to the daemon's per-provider catalog
+ * (`models.list { providerId: 'codex' }`, PROTOCOL §6.7) — the daemon owns
+ * the ACP/app-server probes and the static fallback. These tests assert the
+ * wire request shape and the envelope mapping.
+ */
+
 import {
   beforeEach,
   describe,
@@ -8,14 +17,9 @@ import {
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
+  backendRequest: vi.fn(),
   resolveCodexModelListCommands: vi.fn(),
   getManagedCodexAcpStatus: vi.fn(),
-  // AUDIT-R1c: the four ACP probes now spawn through the daemon
-  // (`host.execStream`, PROTOCOL §5.14) via `startAcpChildStream`. The mock
-  // lets each test decide whether the daemon-side stream starts, streams
-  // handshake responses, or fails to start.
-  startAcpChildStream: vi.fn(),
-  webContentsSend: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -24,18 +28,10 @@ vi.mock('electron', () => ({
       mocks.handlers.set(channel, handler);
     }),
   },
-  BrowserWindow: {
-    getAllWindows: vi.fn(() => [
-      {
-        isDestroyed: () => false,
-        webContents: { send: mocks.webContentsSend },
-      },
-    ]),
-  },
 }));
 
-vi.mock('../../../../shared/main/acp-child-stream', () => ({
-  startAcpChildStream: mocks.startAcpChildStream,
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mocks.backendRequest }),
 }));
 
 vi.mock('../codex-resolver', () => ({
@@ -46,18 +42,6 @@ vi.mock('../codex-acp-manager', () => ({
   getManagedCodexAcpStatus: mocks.getManagedCodexAcpStatus,
 }));
 
-// `CodexAppServerAcpAdapter` is still constructed by the module under test —
-// mock it minimally so the import doesn't touch the real transport. The
-// adapter methods are only reached when startAcpChildStream succeeds.
-vi.mock('../codex-app-server-transport', () => ({
-  CodexAppServerAcpAdapter: vi.fn().mockImplementation(() => ({
-    initialize: vi.fn(),
-    listModels: vi.fn().mockResolvedValue({ data: [] }),
-    dispose: vi.fn(),
-    on: vi.fn(),
-  })),
-}));
-
 async function setupAndGetModels() {
   const { setupCodexIPC } = await import('../codex.ipc');
   setupCodexIPC();
@@ -66,116 +50,92 @@ async function setupAndGetModels() {
   return handler;
 }
 
-async function getCodexCliParser() {
-  const { parseModelsFromCodexCliResponse } = await import('../codex.ipc');
-  return parseModelsFromCodexCliResponse;
-}
-
 describe('codex IPC model listing', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.handlers.clear();
+    mocks.backendRequest.mockReset();
     mocks.resolveCodexModelListCommands.mockReset();
-    mocks.startAcpChildStream.mockReset();
-    mocks.webContentsSend.mockReset();
     mocks.getManagedCodexAcpStatus.mockReturnValue({ state: 'not_installed', version: '0.16.0' });
   });
 
-  // AUDIT-R1c: the FE probes route through the daemon (`host.execStream`)
-  // via `startAcpChildStream`. When the daemon-side stream cannot be started
-  // — the daemon is unavailable or times out — GET_MODELS falls back to the
-  // static Codex list with an "unavailable" warning.
-  it('routes every candidate through startAcpChildStream and falls back to the static list when the stream cannot start', async () => {
-    mocks.startAcpChildStream.mockRejectedValue(new Error('stream unavailable'));
-    mocks.resolveCodexModelListCommands.mockResolvedValue([
-      {
-        command: '/opt/homebrew/bin/codex',
-        argsPrefix: ['app-server', '--listen', 'stdio://'],
-        usesNpx: false,
-        source: 'codex-app-server',
-        codexCliVersion: '0.128.0',
-      },
-    ]);
+  it('requests models.list { providerId: "codex" } and maps rows to value/label', async () => {
+    mocks.backendRequest.mockResolvedValue({
+      providerId: 'codex',
+      models: [
+        {
+          id: 'gpt-5.3-codex/high',
+          name: 'GPT-5.3 Codex (High)',
+          description: 'Deep reasoning',
+        },
+      ],
+      source: 'codex',
+    });
 
     const handler = await setupAndGetModels();
-    const result = await handler();
+    const result = await handler({});
 
-    expect(result.success).toBe(true);
-    expect(result.data.length).toBeGreaterThan(0);
-    expect(result.warning).toBe(
-      'Codex dynamic model list unavailable; using static model list',
-    );
-    expect(mocks.startAcpChildStream).toHaveBeenCalledWith(
-      '/opt/homebrew/bin/codex',
-      expect.objectContaining({
-        args: ['app-server', '--listen', 'stdio://'],
-      }),
-    );
+    expect(mocks.backendRequest).toHaveBeenCalledWith('models.list', { providerId: 'codex' });
+    expect(result).toEqual({
+      success: true,
+      data: [
+        {
+          value: 'gpt-5.3-codex/high',
+          label: 'GPT-5.3 Codex (High)',
+          description: 'Deep reasoning',
+        },
+      ],
+    });
   });
 
-  it('attempts every candidate before falling back so `attemptedSources` covers the full list', async () => {
-    mocks.startAcpChildStream.mockRejectedValue(new Error('stream unavailable'));
-    mocks.resolveCodexModelListCommands.mockResolvedValue([
-      {
-        command: '/opt/homebrew/bin/codex',
-        argsPrefix: ['app-server', '--listen', 'stdio://'],
-        usesNpx: false,
-        source: 'codex-app-server',
-        codexCliVersion: '0.128.0',
-      },
-      {
-        command: process.execPath,
-        argsPrefix: ['/managed/codex-acp.js'],
-        usesNpx: false,
-        source: 'managed-codex-acp',
-        env: { ELECTRON_RUN_AS_NODE: '1' },
-      },
-    ]);
+  it('passes forceRefresh through and preserves the daemon static-fallback warning', async () => {
+    mocks.backendRequest.mockResolvedValue({
+      providerId: 'codex',
+      models: [{ id: 'gpt-5.3-codex/medium', name: 'GPT-5.3 Codex (Medium)' }],
+      source: 'static',
+      warning: 'Codex not installed; using static model list',
+    });
 
     const handler = await setupAndGetModels();
-    const result = await handler();
+    const result = await handler({}, { forceRefresh: true });
 
+    expect(mocks.backendRequest).toHaveBeenCalledWith('models.list', {
+      providerId: 'codex',
+      forceRefresh: true,
+    });
     expect(result.success).toBe(true);
-    expect(result.data.length).toBeGreaterThan(0);
-    expect(result.warning).toBe(
-      'Codex dynamic model list unavailable; using static model list',
-    );
-    expect(mocks.startAcpChildStream).toHaveBeenCalledTimes(2);
-    expect(mocks.startAcpChildStream).toHaveBeenNthCalledWith(
-      1,
-      '/opt/homebrew/bin/codex',
-      expect.objectContaining({ args: ['app-server', '--listen', 'stdio://'] }),
-    );
-    expect(mocks.startAcpChildStream).toHaveBeenNthCalledWith(
-      2,
-      process.execPath,
-      expect.objectContaining({
-        args: ['/managed/codex-acp.js'],
-        env: { ELECTRON_RUN_AS_NODE: '1' },
-      }),
-    );
-  });
-
-  it('returns the static fallback warning when no dynamic path is available', async () => {
-    mocks.resolveCodexModelListCommands.mockResolvedValue([]);
-
-    const handler = await setupAndGetModels();
-    const result = await handler();
-
-    expect(result.success).toBe(true);
-    expect(result.data.length).toBeGreaterThan(0);
     expect(result.warning).toBe('Codex not installed; using static model list');
-    expect(mocks.startAcpChildStream).not.toHaveBeenCalled();
   });
 
-  it('returns no models for malformed codex CLI model/list responses', async () => {
-    const parseModels = await getCodexCliParser();
+  it('surfaces wire/transport failure via { success: false, error }', async () => {
+    mocks.backendRequest.mockRejectedValue(new Error('daemon unreachable'));
 
-    expect(() => parseModels('{"jsonrpc":"2.0","id":1,"result":{"models":[')).not.toThrow();
-    expect(parseModels('{"jsonrpc":"2.0","id":1,"result":{"models":[')).toEqual([]);
-    expect(parseModels({ error: { code: -32000, message: 'model list failed' } })).toEqual([]);
-    expect(parseModels({ result: {} })).toEqual([]);
-    expect(parseModels({ result: { models: { model: 'gpt-5.5' } } })).toEqual([]);
+    const handler = await setupAndGetModels();
+    const result = await handler({});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('daemon unreachable');
+    expect(result.data).toBeUndefined();
+  });
+
+  it('drops malformed rows (missing id/name) instead of failing the envelope', async () => {
+    mocks.backendRequest.mockResolvedValue({
+      providerId: 'codex',
+      models: [
+        { id: 'gpt-5.3-codex/low', name: 'GPT-5.3 Codex (Low)' },
+        { id: '', name: 'No id' },
+        { name: 'Missing id' },
+        { id: 'missing-name' },
+      ],
+    });
+
+    const handler = await setupAndGetModels();
+    const result = await handler({});
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      { value: 'gpt-5.3-codex/low', label: 'GPT-5.3 Codex (Low)' },
+    ]);
   });
 });

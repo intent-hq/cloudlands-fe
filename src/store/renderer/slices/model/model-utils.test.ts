@@ -6,33 +6,11 @@ import {
   vi,
 } from 'vitest';
 
-vi.mock('$features/auggie/auggie-models.client', () => ({
-  getAuggieModels: vi.fn(),
+vi.mock('$features/providers/provider-models.client', () => ({
+  getProviderModels: vi.fn(),
 }));
 
-vi.mock('$features/claude-code/claude-code-models.client', () => ({
-  getClaudeCodeModels: vi.fn(),
-}));
-
-vi.mock('$features/codex/codex-models.client', () => ({
-  getCodexModels: vi.fn(),
-  getCodexModelsWithMetadata: vi.fn(),
-}));
-
-vi.mock('$features/cortex/cortex-models.client', () => ({
-  getCortexModels: vi.fn(),
-}));
-
-vi.mock('$features/droid/droid-models.client', () => ({
-  getDroidModels: vi.fn(),
-}));
-
-vi.mock('$features/opencode/opencode-models.client', () => ({
-  getOpencodeModels: vi.fn(),
-}));
-
-import { getAuggieModels } from '$features/auggie/auggie-models.client';
-import { getCodexModelsWithMetadata } from '$features/codex/codex-models.client';
+import { getProviderModels } from '$features/providers/provider-models.client';
 import {
   fetchModelsForProvider,
   getModelsForProvider,
@@ -45,35 +23,58 @@ describe('model-utils', () => {
   });
 
   it('propagates provider client errors instead of returning an empty list', async () => {
-    vi.mocked(getAuggieModels).mockRejectedValue(new Error('Auggie: CLI not found'));
+    vi.mocked(getProviderModels).mockRejectedValue(new Error('Auggie: CLI not found'));
 
     await expect(fetchModelsForProvider('auggie')).rejects.toThrow('Auggie: CLI not found');
     await expect(getModelsForProvider('auggie')).rejects.toThrow('Auggie: CLI not found');
   });
 
   it('prefixes non-default provider models after a successful fetch', async () => {
-    vi.mocked(getCodexModelsWithMetadata).mockResolvedValue({
+    vi.mocked(getProviderModels).mockResolvedValue({
       models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }],
     });
 
     await expect(getModelsForProvider('codex')).resolves.toEqual([
       { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' },
     ]);
+    expect(vi.mocked(getProviderModels)).toHaveBeenCalledWith('codex', {});
   });
 
-  it('preserves Codex fallback warnings for loading-state callers', async () => {
-    vi.mocked(getCodexModelsWithMetadata).mockResolvedValue({
+  it('preserves daemon fallback warnings and stale flags for loading-state callers', async () => {
+    vi.mocked(getProviderModels).mockResolvedValue({
       models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }],
       warning: 'Codex not installed; using static model list',
+      stale: true,
     });
 
     await expect(getModelsForProviderForLoadingState('codex')).resolves.toEqual({
       models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' }],
       warning: 'Codex not installed; using static model list',
+      stale: true,
     });
+  });
+
+  it('forwards forceRefresh to the provider models client (picker ↻ path)', async () => {
+    vi.mocked(getProviderModels).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6' }],
+    });
+
+    await getModelsForProviderForLoadingState('auggie', { forceRefresh: true });
+
+    expect(vi.mocked(getProviderModels)).toHaveBeenCalledWith('auggie', { forceRefresh: true });
   });
 
   it('returns an empty model list for the mock provider without throwing', async () => {
     await expect(fetchModelsForProvider('mock')).resolves.toEqual([]);
+    expect(vi.mocked(getProviderModels)).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty grok model list with an honest warning instead of throwing', async () => {
+    await expect(getModelsForProviderForLoadingState('grok')).resolves.toEqual({
+      models: [],
+      warning: 'Grok model list unavailable in this build',
+      stale: undefined,
+    });
+    expect(vi.mocked(getProviderModels)).not.toHaveBeenCalled();
   });
 });

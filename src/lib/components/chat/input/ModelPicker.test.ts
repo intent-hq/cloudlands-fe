@@ -412,6 +412,34 @@ describe('ModelPicker multi-provider mode', () => {
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
   });
 
+  it('passes forceRefresh: true when the per-group refresh button is clicked', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }],
+    });
+    enabledProviderIds$.set(['auggie']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const refreshButton = await screen.findByRole('button', {
+      name: /Refresh .* models/,
+    });
+
+    vi.mocked(getModelsForProviderForLoadingState).mockClear();
+    await fireEvent.click(refreshButton);
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
+        forceRefresh: true,
+      });
+    });
+  });
+
   it('retries once per current provider when silent fallback sees unavailable models', async () => {
     const modelsByProvider = {
       auggie: [] as { value: string; label: string; description: string }[],
