@@ -450,8 +450,10 @@ export const PROVIDER_MODEL_TIERS: Record<
   },
   codex: { fast: 'gpt-5.3-codex/medium', balanced: 'gpt-5.3-codex/high', smart: 'gpt-5.3-codex/xhigh' },
   cortex: { fast: 'claude-sonnet-4-5', balanced: 'claude-opus-4-5', smart: 'claude-opus-4-5' },
-  // Note: opencode, droid, and grok models are dynamic and fetched from the CLI at runtime.
-  // Do NOT add hardcoded opencode/droid/grok entries here — model names change frequently.
+  // Note: opencode and droid models are dynamic and fetched via the daemon's
+  // models.list catalog at runtime; grok has no model source in this build
+  // (model-utils returns an empty list with a warning). Do NOT add hardcoded
+  // opencode/droid/grok entries here — model names change frequently.
   // Tier resolution for these providers falls back to using the parent agent's model.
 };
 
