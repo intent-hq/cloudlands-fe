@@ -92,6 +92,41 @@ function objectArray<T>(value: unknown): T[] | undefined {
   return Array.isArray(value) ? (value.filter(isRecord) as T[]) : undefined;
 }
 
+// Warn only once when a non-cloneable bag needed sanitizing, to avoid log spam
+// (persists fire on every mutating action).
+let warnedNonCloneableBag = false;
+
+/**
+ * Safety net: `settings.update` structured-clones its payload across IPC, so a Svelte
+ * `$state` proxy (or any other non-cloneable value) that leaked into the store would
+ * throw DataCloneError and silently break persistence. Verify cloneability and fall
+ * back to a plain-JSON round-trip when needed. Never throws — returns `null` when the
+ * bag cannot be sanitized either (e.g. circular refs), so the caller skips the write.
+ */
+function toCloneableBag(
+  bag: WorkspaceInitializerHydrationState,
+): WorkspaceInitializerHydrationState | null {
+  try {
+    structuredClone(bag);
+    return bag;
+  } catch (cloneError) {
+    if (!warnedNonCloneableBag) {
+      warnedNonCloneableBag = true;
+      logger.warn(
+        `Sanitized non-structured-cloneable ${SETTINGS_PATH} bag before persisting; ` +
+          "a non-serializable value (e.g. a $state proxy) reached the store",
+        { error: cloneError },
+      );
+    }
+    try {
+      return JSON.parse(JSON.stringify(bag)) as WorkspaceInitializerHydrationState;
+    } catch (error) {
+      logger.error(`Cannot sanitize ${SETTINGS_PATH} bag; skipping persist`, { error });
+      return null;
+    }
+  }
+}
+
 /** Persist the current state bag to the daemon (fire-and-forget; failures only log). */
 function persistStateBag(): void {
   const state = appStore.state.workspaceInitializer;
@@ -105,8 +140,10 @@ function persistStateBag(): void {
     remoteSetups: getItems(state.remoteSetups),
     lastSubmittedAgent: state.lastSubmittedAgent,
   };
+  const cloneable = toCloneableBag(bag);
+  if (cloneable === null) return;
   void appClient.settings
-    .update([{ path: SETTINGS_PATH, value: bag }])
+    .update([{ path: SETTINGS_PATH, value: cloneable }])
     .catch((error) => logger.error(`Failed to persist ${SETTINGS_PATH}`, { error }));
 }
 

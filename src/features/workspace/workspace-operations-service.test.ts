@@ -37,7 +37,17 @@ vi.mock("$lib/electron-bridge", async (importOriginal) => {
   return { ...actual, invoke: vi.fn() };
 });
 
+// FAKE daemon transport: the unload-flush wire test routes the stubbed client
+// seam through the REAL WorkspaceClient, whose live path bottoms out here so
+// the exact JSON-RPC method + params can be asserted per PROTOCOL.md §5.1.
+vi.mock("$lib/client/live/backend-transport", async () => {
+  const mod = await import("../../test/mocks/backend-transport.mock");
+  return mod.mockBackendTransportModule;
+});
+
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
+import { installMockBackend } from "../../test/mocks/backend-transport.mock";
+import { flushPendingWorkspaceDeletions } from "./workspace-operations-service";
 import { hasRunningAgents } from "$lib/utils/delete-warning-utils";
 import { invoke } from "$lib/electron-bridge";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
@@ -141,6 +151,94 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
 
     await vi.advanceTimersByTimeAsync(UNDO_MS);
     expect(ws.delete).toHaveBeenCalledWith("ws-d");
+  });
+
+  describe("flush pending deletions on window teardown", () => {
+    it("commits the pending workspace.delete when the window unloads before the undo window", async () => {
+      seed(makeWorkspace({ id: "ws-flush" }));
+
+      appStore.dispatch(requestDeleteWorkspace("ws-flush"));
+      await flush();
+      expect(ws.delete).not.toHaveBeenCalled();
+
+      window.dispatchEvent(new Event("pagehide"));
+
+      // The commit initiates the delete synchronously so the request is handed
+      // to the transport before teardown completes.
+      expect(ws.delete).toHaveBeenCalledWith("ws-flush");
+
+      // The undo timer was disarmed — no double delete when it would elapse.
+      await vi.advanceTimersByTimeAsync(UNDO_MS);
+      expect(ws.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it("sends the exact workspace.delete wire request (PROTOCOL §5.1) on flush", async () => {
+      // Route the seam-stubbed delete through the REAL WorkspaceClient so the
+      // flush exercises the genuine wire path against the mock daemon.
+      const actual = await vi.importActual<
+        typeof import("$store/renderer/slices/workspace/utils/workspace.client")
+      >("$store/renderer/slices/workspace/utils/workspace.client");
+      ws.delete.mockImplementation((id: WorkspaceId) => actual.workspaceClient.delete(id));
+      const backend = installMockBackend();
+      backend.onRequest("workspace.delete", () => ({}));
+
+      seed(makeWorkspace({ id: "ws-wire" }));
+      appStore.dispatch(requestDeleteWorkspace("ws-wire"));
+      await flush();
+      expect(backend.requests).toEqual([]);
+
+      flushPendingWorkspaceDeletions();
+      await flush();
+
+      expect(backend.requests).toEqual([
+        { method: "workspace.delete", params: { workspaceId: "ws-wire" } },
+      ]);
+    });
+
+    it("keeps Undo inert when the flush already committed the deletion", async () => {
+      seed(makeWorkspace({ id: "ws-inert" }));
+
+      appStore.dispatch(requestDeleteWorkspace("ws-inert"));
+      await flush();
+
+      // A beforeunload flush fires without the window actually unloading
+      // (cancelled navigation / dev HMR) — the delete is committed.
+      window.dispatchEvent(new Event("beforeunload"));
+      expect(ws.delete).toHaveBeenCalledWith("ws-inert");
+
+      // Clicking Undo afterwards must NOT resurrect the entity locally —
+      // the daemon already received the delete.
+      const { toast } = await import("svelte-sonner");
+      const [, options] = vi.mocked(toast.warning).mock.calls.at(-1)! as [
+        string,
+        { action: { onClick: () => void } },
+      ];
+      options.action.onClick();
+      await flush();
+
+      expect(stored("ws-inert")).toBeUndefined();
+    });
+
+    it("does not delete an undone workspace when the flush fires afterwards", async () => {
+      seed(makeWorkspace({ id: "ws-undone" }));
+
+      appStore.dispatch(requestDeleteWorkspace("ws-undone"));
+      await flush();
+
+      const { toast } = await import("svelte-sonner");
+      const [, options] = vi.mocked(toast.warning).mock.calls.at(-1)! as [
+        string,
+        { action: { onClick: () => void } },
+      ];
+      options.action.onClick();
+
+      window.dispatchEvent(new Event("beforeunload"));
+      flushPendingWorkspaceDeletions();
+      await vi.advanceTimersByTimeAsync(UNDO_MS);
+
+      expect(ws.delete).not.toHaveBeenCalled();
+      expect(stored("ws-undone")).toBeDefined();
+    });
   });
 
   it("routes a running-agents delete to the warning modal instead of deleting", async () => {
