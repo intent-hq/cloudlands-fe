@@ -1379,8 +1379,13 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
     clearTimeout(existing);
   }
   const timer = setTimeout(() => {
-    appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
     tasksRefreshTimersByWorkspace.delete(workspaceId);
+    // Re-check at fire time: the slice may have been cleared (workspace
+    // unmounted/deleted) during the debounce window.
+    const stillInitialized =
+      appStore.state.workspaceTasks?.byWorkspaceId[workspaceId]?.initialized === true;
+    if (!stillInitialized) return;
+    appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
   }, TASKS_REFRESH_DEBOUNCE_MS);
   tasksRefreshTimersByWorkspace.set(workspaceId, timer);
 }

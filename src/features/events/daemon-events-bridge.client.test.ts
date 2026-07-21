@@ -2625,6 +2625,27 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
 
     expect(taskListCalls(BURST_WS)).toHaveLength(1);
   });
+
+  it('a pending refetch is dropped if the tasks slice is cleared during the debounce window', async () => {
+    const CLEARED_WS = 'ws-bridge-tasks-cleared';
+    const { loadWorkspaceTasksSucceeded, clearWorkspaceTasks } = await import(
+      '$store/renderer/slices/workspace-tasks/workspace-tasks-slice'
+    );
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(CLEARED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    handler(noteEnvelope(CLEARED_WS, 'note:deleted', 'note-y'));
+    // Workspace unmounted/deleted while the debounce is pending — the timer
+    // re-checks `initialized` at fire time and must not issue a task.list.
+    appStore.dispatch(clearWorkspaceTasks(CLEARED_WS));
+    vi.advanceTimersByTime(2000);
+
+    expect(taskListCalls(CLEARED_WS)).toHaveLength(0);
+  });
 });
 
 
