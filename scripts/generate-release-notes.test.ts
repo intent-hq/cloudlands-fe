@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -183,6 +184,35 @@ describe('generate-release-notes CLI', () => {
       if (savedFeToken !== undefined) process.env.FE_TOKEN = savedFeToken;
       else delete process.env.FE_TOKEN;
       if (savedGithubToken !== undefined) process.env.GITHUB_TOKEN = savedGithubToken;
+    }
+  });
+
+  it('fails fast with a clear error on an invalid --intentd-version', () => {
+    // Run as a child process because the script exits via process.exit
+    const outFile = join(tempDir, 'notes.md');
+    const script = join(__dirname, 'generate-release-notes.mjs');
+
+    for (const invalid of ['foo', 'v']) {
+      let exitCode = 0;
+      let stderr = '';
+      try {
+        execFileSync(process.execPath, [
+          script,
+          '--version', '1.0.0',
+          '--fe-base', 'v0.9.0',
+          '--fe-head', 'v1.0.0',
+          '--intentd-version', invalid,
+          '--out', outFile,
+        ], { env: { ...process.env, GITHUB_TOKEN: 'fake-token' }, encoding: 'utf8' });
+      } catch (error) {
+        const e = error as { status?: number; stderr?: string };
+        exitCode = e.status ?? 0;
+        stderr = e.stderr ?? '';
+      }
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain(`Invalid --intentd-version "${invalid}"`);
+      expect(existsSync(outFile)).toBe(false);
     }
   });
 });
