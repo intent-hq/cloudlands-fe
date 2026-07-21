@@ -168,7 +168,11 @@ export interface CommitInfo {
   authorEmail?: string;
   timestamp: number;
   date?: string;
-  files: CommitFile[];
+  /**
+   * Omitted by the metadata-only list payloads (`file-tracking.loadCommits`,
+   * PROTOCOL §5.19); fetched on demand via `git.commitDetails` (§5.6).
+   */
+  files?: CommitFile[];
   filesChanged?: number;
   stage: 'local' | 'pushed' | 'pr' | 'merged';
   isPushed?: boolean;

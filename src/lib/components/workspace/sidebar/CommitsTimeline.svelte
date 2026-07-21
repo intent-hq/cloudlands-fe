@@ -11,8 +11,11 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import {
   ChangeStage,
+  type CommitFile,
+  type CommitInfo,
   type TrackedChange,
 } from '$features/file-tracking/types';
+  import { appClient } from '$lib/client';
   import {
   selectFileTrackingCommits as selectFtCommits,
   selectFileTrackingBoundarySha as selectFtBoundarySha,
@@ -124,6 +127,60 @@
 
   // Local component state
   let expandedCommits = $state<Set<string>>(new Set());
+  // Lazily-fetched per-file data keyed by commit hash: the list payload is
+  // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
+  // PROTOCOL §5.19), so files are fetched via `git.commitDetails` (§5.6) on
+  // first expand. `null` marks an in-flight fetch (no file rows yet); it is
+  // cleared on failure so a later expand retries. Reset on workspace switch so
+  // the cache doesn't grow unbounded or leak across workspaces.
+  let commitFileCache = $state<Record<string, CommitFile[] | null>>({});
+  let cacheWorkspaceId = workspaceId;
+  $effect(() => {
+    if (workspaceId !== cacheWorkspaceId) {
+      cacheWorkspaceId = workspaceId;
+      commitFileCache = {};
+      expandedCommits = new Set();
+    }
+  });
+
+  function getCommitFiles(commit: CommitInfo): CommitFile[] {
+    return commit.files ?? commitFileCache[commit.hash] ?? [];
+  }
+
+  function clearCommitFileMarker(hash: string) {
+    if (commitFileCache[hash] === null) {
+      const { [hash]: _, ...rest } = commitFileCache;
+      commitFileCache = rest;
+    }
+  }
+
+  async function fetchCommitFiles(hash: string): Promise<CommitFile[]> {
+    const cached = commitFileCache[hash];
+    if (cached) return cached;
+    // `commitDetails` folds transport errors to `null`; the row simply shows
+    // no files on failure and a later expand retries (the in-flight marker is
+    // cleared on both failure paths).
+    const result = await appClient.git.commitDetails(workspaceId, hash);
+    if (!result) {
+      clearCommitFileMarker(hash);
+      return [];
+    }
+    const files: CommitFile[] =
+      result.fileDetails.length > 0
+        ? result.fileDetails
+        : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
+    commitFileCache = { ...commitFileCache, [hash]: files };
+    return files;
+  }
+
+  function fetchCommitFilesIfNeeded(commit: CommitInfo) {
+    if (commit.files || commitFileCache[commit.hash] !== undefined || !workspaceId) return;
+    commitFileCache = { ...commitFileCache, [commit.hash]: null };
+    fetchCommitFiles(commit.hash).catch((error) => {
+      logger.error('Failed to fetch commit details', { hash: commit.hash, error });
+      clearCommitFileMarker(commit.hash);
+    });
+  }
   let commitEdit = $state<{ hash: string | null; value: string; inputRef: HTMLInputElement | null }>({ hash: null, value: '', inputRef: null });
   let undoState = $state<{ commitHash: string | null; undoing: boolean; undoingCommit: boolean }>({ commitHash: null, undoing: false, undoingCommit: false });
   let commitContextMenu: { x: number; y: number; commitHash: string } | null = $state(null);
@@ -327,21 +384,24 @@
     }
   }
 
-  function toggleCommitExpanded(hash: string) {
+  function toggleCommitExpanded(commit: CommitInfo) {
     const newSet = new Set(expandedCommits);
-    if (newSet.has(hash)) {
-      newSet.delete(hash);
+    if (newSet.has(commit.hash)) {
+      newSet.delete(commit.hash);
     } else {
-      newSet.add(hash);
+      newSet.add(commit.hash);
+      fetchCommitFilesIfNeeded(commit);
     }
     expandedCommits = newSet;
   }
 
   async function handleCommitFileClick(filePath: string, commitHash: string) {
     logger.info('[handleCommitFileClick] File clicked in commit', { filePath, commitHash });
-    const commit = allCommits.find((c) => c.hash === commitHash);
+    const commit =
+      allCommits.find((c) => c.hash === commitHash) ??
+      olderCommits.find((c) => c.hash === commitHash);
     if (commit && workspaceId) {
-      const file = commit.files?.find((f) => f.path === filePath);
+      const file = getCommitFiles(commit).find((f) => f.path === filePath);
       if (file) {
         try {
           logger.info('[handleCommitFileClick] Fetching content from commit', { filePath, commitHash });
@@ -556,20 +616,25 @@
         return;
       }
     }
-    const undoCommitsMetadata: UndoCommitMetadata[] = [];
-    for (let i = 0; i <= commitIndex; i++) {
-      const c = allCommits[i];
-      if (!c.isPushed) {
-        undoCommitsMetadata.push({
-          hash: c.hash,
-          agentId: c.agentId,
-          linkedNoteId: c.linkedNoteId,
-          files: c.files?.map((f) => f.path),
-        });
-      }
-    }
     undoState.commitHash = commit.hash;
     undoState.undoingCommit = true;
+    // The commit list is metadata-only, so resolve the touched file paths
+    // (attribution restore inputs) via git.commitDetails at undo time — a
+    // bounded fetch over just the commits being undone.
+    const commitsToUndo = allCommits.slice(0, commitIndex + 1).filter((c) => !c.isPushed);
+    const undoCommitsMetadata: UndoCommitMetadata[] = await Promise.all(
+      commitsToUndo.map(async (c) => ({
+        hash: c.hash,
+        agentId: c.agentId,
+        linkedNoteId: c.linkedNoteId,
+        files: c.files
+          ? c.files.map((f) => f.path)
+          : await fetchCommitFiles(c.hash).then(
+              (files) => files.map((f) => f.path),
+              () => [],
+            ),
+      })),
+    );
     try {
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'undo-commit', {
         upToCommitHash: resetToHash,
@@ -610,7 +675,8 @@
         {/if}
         {@const isOperatingOnThis = undoState.commitHash === commit.hash}
         {@const isExpanded = expandedCommits.has(commit.hash)}
-        {@const files = (commit.files ?? []).map((f) => ({
+        {@const commitFiles = getCommitFiles(commit)}
+        {@const files = commitFiles.map((f) => ({
           path: f.path,
           additions: f.additions,
           deletions: f.deletions,
@@ -622,33 +688,33 @@
             class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
           >
-            {#if commit.files && commit.files.length > 0}
-              <Button
-                variant="ghost-light"
-                size="icon-xs"
-                class="absolute left-0.75 bg-sidebar {commit.agentId
-                  ? 'opacity-0 group-hover:opacity-100'
-                  : 'opacity-0 group-hover:opacity-100'} hover:text-foreground! -ml-1"
-                onclick={(e: MouseEvent) => {
-                  e.stopPropagation();
-                  toggleCommitExpanded(commit.hash);
-                }}
-                title="Toggle file list"
-              >
-                <Fa
-                  icon={faChevronDown}
-                  size={12}
-                  class="text-subtle shrink-0 transition-transform {isExpanded
-                    ? 'rotate-0'
-                    : '-rotate-90'}"
-                />
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              class="absolute left-0.75 bg-sidebar {commit.agentId
+                ? 'opacity-0 group-hover:opacity-100'
+                : 'opacity-0 group-hover:opacity-100'} hover:text-foreground! -ml-1"
+              onclick={(e: MouseEvent) => {
+                e.stopPropagation();
+                toggleCommitExpanded(commit);
+              }}
+              title="Toggle file list"
+            >
+              <Fa
+                icon={faChevronDown}
+                size={12}
+                class="text-subtle shrink-0 transition-transform {isExpanded
+                  ? 'rotate-0'
+                  : '-rotate-90'}"
+              />
+              {#if commitFiles.length > 0}
                 <LineChangesBadge
-                  additions={commit.files.reduce((sum, f) => sum + (f.additions || 0), 0)}
-                  deletions={commit.files.reduce((sum, f) => sum + (f.deletions || 0), 0)}
+                  additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
+                  deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
                   size="xs"
                 />
-              </Button>
-            {/if}
+              {/if}
+            </Button>
 
             <!-- Show auggie avatar instead of commit icon when made by an agent - hides on hover to show chevron -->
             {#if commit.agentId}
@@ -858,7 +924,8 @@
     <div class="space-y-0.5 opacity-60 hover:opacity-100 transition-opacity">
       {#each olderCommits as commit (commit.hash)}
         {@const isExpanded = expandedCommits.has(commit.hash)}
-        {@const files = (commit.files ?? []).map((f) => ({
+        {@const commitFiles = getCommitFiles(commit)}
+        {@const files = commitFiles.map((f) => ({
           path: f.path,
           additions: f.additions,
           deletions: f.deletions,
@@ -869,31 +936,31 @@
             class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
           >
-            {#if commit.files && commit.files.length > 0}
-              <Button
-                variant="ghost-light"
-                size="icon-xs"
-                class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
-                onclick={(e: MouseEvent) => {
-                  e.stopPropagation();
-                  toggleCommitExpanded(commit.hash);
-                }}
-                title="Toggle file list"
-              >
-                <Fa
-                  icon={faChevronDown}
-                  size={12}
-                  class="text-subtle shrink-0 transition-transform {isExpanded
-                    ? 'rotate-0'
-                    : '-rotate-90'}"
-                />
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+              onclick={(e: MouseEvent) => {
+                e.stopPropagation();
+                toggleCommitExpanded(commit);
+              }}
+              title="Toggle file list"
+            >
+              <Fa
+                icon={faChevronDown}
+                size={12}
+                class="text-subtle shrink-0 transition-transform {isExpanded
+                  ? 'rotate-0'
+                  : '-rotate-90'}"
+              />
+              {#if commitFiles.length > 0}
                 <LineChangesBadge
-                  additions={commit.files.reduce((sum, f) => sum + (f.additions || 0), 0)}
-                  deletions={commit.files.reduce((sum, f) => sum + (f.deletions || 0), 0)}
+                  additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
+                  deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
                   size="xs"
                 />
-              </Button>
-            {/if}
+              {/if}
+            </Button>
 
             <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
             <button
