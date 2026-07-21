@@ -102,9 +102,14 @@ async function main() {
   const destBin = path.join(DEST_DIR, binaryName);
   const tag = lib.releaseTag(version);
 
-  if (!force && fs.existsSync(destBin) && fs.existsSync(STAMP_FILE)) {
-    const stamp = JSON.parse(fs.readFileSync(STAMP_FILE, 'utf8'));
-    if (stamp.version === version && stamp.target === target) {
+  if (!force && fs.existsSync(destBin)) {
+    let stamp = null;
+    try {
+      stamp = JSON.parse(fs.readFileSync(STAMP_FILE, 'utf8'));
+    } catch {
+      // Missing or corrupted stamp (e.g. prior run killed mid-write): fall through and re-fetch.
+    }
+    if (stamp?.version === version && stamp?.target === target) {
       console.log(
         `intentd ${version} (${target}) already staged at ${destBin} — skipping (use --force to re-fetch)`,
       );
