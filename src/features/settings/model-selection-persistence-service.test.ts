@@ -24,6 +24,8 @@ import {
   setSelectedModel,
   setWorkspaceModel,
 } from "$store/renderer/slices/model/model-slice";
+import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
+import { getDefaultProviderId } from "$shared/config/provider-config";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -50,6 +52,47 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
         { path: "model.providerDefaults", value: appStore.state.model.providerModels },
       ],
     });
+  });
+
+  it("attributes a compound selectModel pick to the provider in the id, not the active provider", async () => {
+    const defaultProviderId = getDefaultProviderId();
+    appStore.dispatch(setActiveProvider(defaultProviderId));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    updateSpy.mockClear();
+
+    appStore.dispatch(selectModel("opencode:opencode-go/kimi-k3"));
+    await flush();
+
+    expect(appStore.state.model.providerModels.opencode).toBe("opencode:opencode-go/kimi-k3");
+    expect(appStore.state.model.providerModels[defaultProviderId]).toBeUndefined();
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [
+        { path: "model.providerDefaults", value: appStore.state.model.providerModels },
+      ],
+    });
+  });
+
+  it("attributes a compound selectModel pick matching the active provider to that provider", async () => {
+    appStore.dispatch(setActiveProvider("opencode"));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    updateSpy.mockClear();
+
+    appStore.dispatch(selectModel("opencode:opencode-go/kimi-k3"));
+    await flush();
+
+    expect(appStore.state.model.providerModels).toEqual({
+      opencode: "opencode:opencode-go/kimi-k3",
+    });
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [
+        { path: "model.providerDefaults", value: appStore.state.model.providerModels },
+      ],
+    });
+
+    appStore.dispatch(setActiveProvider(getDefaultProviderId()));
+    await flush();
   });
 
   it("persists model.providerDefaults on a direct per-provider selection", async () => {
