@@ -37,7 +37,11 @@
  *      notes-read-service, which dispatches `applyNoteCreated`/
  *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
  *      agent-side note writes (add_to_note etc.) appear live in the notes
- *      panel while the workspace is open.
+ *      panel while the workspace is open. The same events also trigger a
+ *      debounced `loadWorkspaceTasksRequested` refetch (initialized
+ *      workspaces only) — task notes are plain notes, so a created/deleted
+ *      task note changes the BE-owned `task.list` stats rollup without a
+ *      `task:status-changed` edge.
  *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on the
  *      workspace-tasks slice so a task ticked complete/in-progress by an agent
  *      or a sibling client updates the tasks pane / progress card without a
@@ -235,6 +239,15 @@ let ownSubscriptionId: string | undefined;
  */
 const changesRefreshTimersByWorkspace = new Map<string, ReturnType<typeof setTimeout>>();
 const CHANGES_REFRESH_DEBOUNCE_MS = 1000;
+
+/**
+ * Debounce timers for workspace-tasks refetch per workspace. Agents write
+ * notes in bursts (spec edits, task-block conversion), so `note:*` events are
+ * debounced ~1s per workspace before refetching `task.list` — mirroring the
+ * changes-refresh pattern above.
+ */
+const tasksRefreshTimersByWorkspace = new Map<string, ReturnType<typeof setTimeout>>();
+const TASKS_REFRESH_DEBOUNCE_MS = 1000;
 
 function workspaceIdOf(event: WorkspaceEvent | undefined): string | null {
   if (!event || typeof event !== 'object') return null;
@@ -873,6 +886,12 @@ function handlePermissionResolvedEvent(event: WorkspaceEvent): void {
  * which fetches the fresh note via `notes.list(workspaceId)` on
  * `note:created`/`note:updated` and dispatches the matching `applyNote*`
  * action, or dispatches `applyNoteDeleted` immediately on `note:deleted`.
+ *
+ * Task notes are plain notes (task state lives in note metadata), so these
+ * events can also change the BE-owned `task.list` stats rollup without any
+ * `task:status-changed` edge — e.g. a NEW task note appended to a workspace
+ * whose stats showed `completed === total` left the sidebar stuck on
+ * "Complete". Trigger a debounced workspace-tasks refetch as well.
  */
 function handleNoteEvent(
   event: WorkspaceEvent,
@@ -883,6 +902,7 @@ function handleNoteEvent(
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
   applyNoteFromEvent(workspaceId, noteId, type);
+  debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
 /**
@@ -1340,6 +1360,34 @@ function debouncedChangesRefresh(workspaceId: string): void {
     changesRefreshTimersByWorkspace.delete(workspaceId);
   }, CHANGES_REFRESH_DEBOUNCE_MS);
   changesRefreshTimersByWorkspace.set(workspaceId, timer);
+}
+
+/**
+ * Debounced workspace-tasks refetch for `note:*` events. A created/updated/
+ * deleted note can change the BE-owned `task.list` stats rollup (task state
+ * lives in note metadata), so refetch via `loadWorkspaceTasksRequested` —
+ * but only for workspaces whose workspace-tasks slice is already initialized.
+ * Uninitialized workspaces have never been viewed; eagerly loading their
+ * tasks would fan out one `task.list` per note event across all workspaces.
+ */
+function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
+  const initialized =
+    appStore.state.workspaceTasks?.byWorkspaceId[workspaceId]?.initialized === true;
+  if (!initialized) return;
+  const existing = tasksRefreshTimersByWorkspace.get(workspaceId);
+  if (existing) {
+    clearTimeout(existing);
+  }
+  const timer = setTimeout(() => {
+    tasksRefreshTimersByWorkspace.delete(workspaceId);
+    // Re-check at fire time: the slice may have been cleared (workspace
+    // unmounted/deleted) during the debounce window.
+    const stillInitialized =
+      appStore.state.workspaceTasks?.byWorkspaceId[workspaceId]?.initialized === true;
+    if (!stillInitialized) return;
+    appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
+  }, TASKS_REFRESH_DEBOUNCE_MS);
+  tasksRefreshTimersByWorkspace.set(workspaceId, timer);
 }
 
 /**
@@ -1924,4 +1972,8 @@ export function __resetDaemonEventsBridgeForTests(): void {
     clearTimeout(timer);
   }
   changesRefreshTimersByWorkspace.clear();
+  for (const timer of tasksRefreshTimersByWorkspace.values()) {
+    clearTimeout(timer);
+  }
+  tasksRefreshTimersByWorkspace.clear();
 }
