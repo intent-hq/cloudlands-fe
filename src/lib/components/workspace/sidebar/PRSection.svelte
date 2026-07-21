@@ -13,6 +13,8 @@
 } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import {
   ChangeStage,
+  type CommitFile,
+  type CommitInfo,
   type TrackedChange,
 } from '$features/file-tracking/types';
   import {
@@ -39,17 +41,12 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { handleLink } from '$features/navigation/link-handler';
 
-
-
   import {
   selectSidebarCreatePRWhenReady,
   selectAcceptChangesState,
 } from '$store/renderer/slices/changes/changes-selectors';
 
-
-
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
@@ -76,7 +73,7 @@
   faSpinner,
   faStop,
 } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import {
   readable,
   writable,
@@ -206,10 +203,84 @@
   // Panel layout manager
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
 
-  // PR files derived from pushed commits
-  const prFiles = $derived(aggregatePRFiles(pushedCommits));
+  // PR files derived from pushed commits. The commit list payload is
+  // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
+  // PROTOCOL §5.19), so per-commit files are fetched via `git.commitDetails`
+  // (§5.6) on first PR expand and merged into the aggregation. `null` marks
+  // an in-flight fetch (cleared on failure so a later expand retries); the
+  // cache resets on workspace switch so it can't leak across workspaces.
+  let prCommitFileCache = $state<Record<string, CommitFile[] | null>>({});
+  let prCacheWorkspaceId = workspaceId;
+  $effect(() => {
+    if (workspaceId !== prCacheWorkspaceId) {
+      prCacheWorkspaceId = workspaceId;
+      prCommitFileCache = {};
+      expandedPRs = new Set();
+    }
+  });
+
+  const resolvedPushedCommits = $derived(
+    (pushedCommits as CommitInfo[]).map((c) => {
+      const cached = prCommitFileCache[c.hash];
+      return c.files || !cached ? c : { ...c, files: cached };
+    }),
+  );
+  const prFiles = $derived(aggregatePRFiles(resolvedPushedCommits));
+  // Whether any pushed commit's file list is still unknown (unfetched or in
+  // flight) — the chevron stays visible until we know the PR has no files.
+  const prFilesUnknown = $derived(
+    (pushedCommits as CommitInfo[]).some((c) => !c.files && !prCommitFileCache[c.hash]),
+  );
   const prTotalAdditions = $derived(prFiles.reduce((sum, f) => sum + f.additions, 0));
   const prTotalDeletions = $derived(prFiles.reduce((sum, f) => sum + f.deletions, 0));
+
+  function clearPRCommitFileMarker(hash: string) {
+    if (prCommitFileCache[hash] === null) {
+      const { [hash]: _, ...rest } = prCommitFileCache;
+      prCommitFileCache = rest;
+    }
+  }
+
+  function fetchPRCommitFilesIfNeeded() {
+    if (!workspaceId) return;
+    const requestWorkspaceId = workspaceId;
+    for (const commit of pushedCommits as CommitInfo[]) {
+      if (commit.files || prCommitFileCache[commit.hash] !== undefined) continue;
+      prCommitFileCache = { ...prCommitFileCache, [commit.hash]: null };
+      // `commitDetails` folds transport errors to `null` (no rows; a later
+      // expand retries). In-flight results are dropped if the workspace
+      // switched mid-request so they can't repopulate the reset cache.
+      appClient.git
+        .commitDetails(requestWorkspaceId, commit.hash)
+        .then((result) => {
+          if (workspaceId !== requestWorkspaceId) return;
+          if (!result) {
+            clearPRCommitFileMarker(commit.hash);
+            return;
+          }
+          const files: CommitFile[] =
+            result.fileDetails.length > 0
+              ? result.fileDetails
+              : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
+          prCommitFileCache = { ...prCommitFileCache, [commit.hash]: files };
+        })
+        .catch((error) => {
+          logger.error('Failed to fetch commit details for PR files', { hash: commit.hash, error });
+          if (workspaceId !== requestWorkspaceId) return;
+          clearPRCommitFileMarker(commit.hash);
+        });
+    }
+  }
+
+  // Pushed commits arriving while a PR is already expanded (a push landing
+  // mid-view) get their files fetched too. Gated on user interaction; the
+  // cache reads are untracked so cleared failure markers don't auto-refetch —
+  // retries stay tied to an explicit re-expand.
+  $effect(() => {
+    if (expandedPRs.size > 0 && pushedCommits.length > 0) {
+      untrack(() => fetchPRCommitFilesIfNeeded());
+    }
+  });
 
   // Local state
   let prDrawerOpen = $state(false);
@@ -561,6 +632,7 @@
       newSet.delete(prNumber);
     } else {
       newSet.add(prNumber);
+      fetchPRCommitFilesIfNeeded();
     }
     expandedPRs = newSet;
   }
@@ -920,7 +992,7 @@
               {@const statusIcon =
                 pr.status === 'merged' ? faCodeMerge : faCodePullRequest}
               {@const isPRExpanded = expandedPRs.has(pr.number)}
-              {@const hasPRFiles = prFiles.length > 0}
+              {@const hasPRFiles = prFiles.length > 0 || prFilesUnknown}
               <div>
                 <!-- PR header -->
                 <div
