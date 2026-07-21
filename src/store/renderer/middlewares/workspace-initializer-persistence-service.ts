@@ -100,9 +100,12 @@ let warnedNonCloneableBag = false;
  * Safety net: `settings.update` structured-clones its payload across IPC, so a Svelte
  * `$state` proxy (or any other non-cloneable value) that leaked into the store would
  * throw DataCloneError and silently break persistence. Verify cloneability and fall
- * back to a plain-JSON round-trip when needed.
+ * back to a plain-JSON round-trip when needed. Never throws — returns `null` when the
+ * bag cannot be sanitized either (e.g. circular refs), so the caller skips the write.
  */
-function toCloneableBag(bag: WorkspaceInitializerHydrationState): WorkspaceInitializerHydrationState {
+function toCloneableBag(
+  bag: WorkspaceInitializerHydrationState,
+): WorkspaceInitializerHydrationState | null {
   try {
     structuredClone(bag);
     return bag;
@@ -114,7 +117,12 @@ function toCloneableBag(bag: WorkspaceInitializerHydrationState): WorkspaceIniti
           "a non-serializable value (e.g. a $state proxy) reached the store",
       );
     }
-    return JSON.parse(JSON.stringify(bag)) as WorkspaceInitializerHydrationState;
+    try {
+      return JSON.parse(JSON.stringify(bag)) as WorkspaceInitializerHydrationState;
+    } catch (error) {
+      logger.error(`Cannot sanitize ${SETTINGS_PATH} bag; skipping persist`, { error });
+      return null;
+    }
   }
 }
 
@@ -131,8 +139,10 @@ function persistStateBag(): void {
     remoteSetups: getItems(state.remoteSetups),
     lastSubmittedAgent: state.lastSubmittedAgent,
   };
+  const cloneable = toCloneableBag(bag);
+  if (cloneable === null) return;
   void appClient.settings
-    .update([{ path: SETTINGS_PATH, value: toCloneableBag(bag) }])
+    .update([{ path: SETTINGS_PATH, value: cloneable }])
     .catch((error) => logger.error(`Failed to persist ${SETTINGS_PATH}`, { error }));
 }
 

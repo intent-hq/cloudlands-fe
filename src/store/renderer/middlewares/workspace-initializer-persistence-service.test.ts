@@ -276,6 +276,42 @@ describe.sequential("workspace-initializer-persistence-service (PROTOCOL §5.12 
     expect(() => structuredClone(persistedBag)).not.toThrow();
   });
 
+  it("skips the persist without throwing when the bag cannot be sanitized either", async () => {
+    // Non-cloneable AND non-JSON-serializable: structuredClone throws on the Proxy
+    // trap, and JSON.stringify throws on the circular reference inside the target.
+    const circular: Record<string, unknown> = {
+      id: "remote-circular",
+      name: "Circular Remote",
+      host: "circular.example.com",
+      port: 22,
+      username: "user",
+      workspacePath: "/workspace",
+    };
+    circular.self = circular;
+    const unsanitizable = new Proxy(circular, {}) as unknown as WorkspaceInitializerRemoteSetup;
+    expect(() => structuredClone(unsanitizable)).toThrow();
+    expect(() => JSON.stringify(unsanitizable)).toThrow();
+
+    // The dispatch (and the persist it triggers) must not throw synchronously…
+    expect(() =>
+      appStore.dispatch(
+        setCompactWorkspaceInitializerFormState({
+          repoPath: "/circular-repo",
+          remoteSetup: unsanitizable,
+        }),
+      ),
+    ).not.toThrow();
+    await flush();
+
+    // …and no settings.update is sent for the unsanitizable bag.
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    // Restore a sanitizable bag so later tests are unaffected.
+    appStore.dispatch(setCompactWorkspaceInitializerFormState({ repoPath: "/recovered" }));
+    await flush();
+    expect(updateSpy).toHaveBeenCalled();
+  });
+
   it("persists state bag on setWorkspaceInitializerLastSelectedRepo", async () => {
     appStore.dispatch(
       setWorkspaceInitializerLastSelectedRepo({ path: "/repo", type: "local" }),
