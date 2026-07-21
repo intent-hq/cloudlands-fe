@@ -205,8 +205,9 @@ function saveTerminalMetadataToStorage(
     terminalId,
     workspaceId,
     createdAt: current?.createdAt ?? createdAt ?? "",
-    // No explicit title keeps the stored one (which may be a daemon-provided
-    // name like "Setup Script") instead of clobbering it with the fallback.
+    // No explicit title keeps the stored one (e.g. a previously saved
+    // "Setup" / "Command: …" title) instead of clobbering it with the
+    // generic fallback.
     title: title || current?.title || getTerminalName(terminalId),
   };
   const metadata =

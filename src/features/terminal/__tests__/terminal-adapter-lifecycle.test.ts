@@ -323,6 +323,39 @@ describe('TerminalAdapter cursor suppression on exit', () => {
     expect(xterm.write).not.toHaveBeenCalledWith('\x1b[?25l');
   });
 
+  it('keeps the cursor suppressed when reattaching to an already-exited PTY', async () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ width: 800, height: 600 }),
+    });
+    const terminals = fakeTerminalsClient();
+    terminals.list = vi.fn(async () => [
+      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false },
+    ]) as any;
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'pty-0',
+      container,
+      appClient: { terminals },
+    });
+    // Simulate a disconnected adapter being reattached (e.g. tab switch after
+    // the process exited while detached).
+    (adapter as any).stateMachine.transition('initialize');
+    (adapter as any).stateMachine.transition('connect');
+    (adapter as any).stateMachine.transition('connected');
+    (adapter as any).stateMachine.transition('disconnect');
+    const xterm = (adapter as any).xterm;
+    xterm.options.cursorBlink = true;
+    xterm.write.mockClear();
+
+    await adapter.reattach(container);
+
+    expect(xterm.options.cursorBlink).toBe(false);
+    expect(xterm.write).toHaveBeenCalledWith('\x1b[?25l');
+
+    adapter.detach();
+  });
+
   it('restores the cursor when a fresh PTY is created after a previous exit', async () => {
     const container = document.createElement('div');
     Object.defineProperty(container, 'getBoundingClientRect', {

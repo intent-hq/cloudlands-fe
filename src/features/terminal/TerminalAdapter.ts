@@ -1326,12 +1326,18 @@ export class TerminalAdapter {
         `[reattach] Terminal ${this.terminalId} not in CONNECTED state (${currentState}), attempting to restore`,
       );
       // Check if terminal exists on backend and transition accordingly
-      if (await this.terminalExistsOnBackend()) {
+      const backendTerminal = await this.findBackendTerminal();
+      if (backendTerminal) {
         if (currentState === TerminalState.DISCONNECTED || currentState === TerminalState.ERROR) {
           this.stateMachine.transition('reconnect');
           this.stateMachine.transition('reconnected');
         } else if (currentState === TerminalState.CONNECTING) {
           this.stateMachine.transition('connected');
+        }
+        // Reattached to a PTY whose process already exited — keep the cursor
+        // suppressed, matching the initialize() hydration path.
+        if (backendTerminal.isExecuting === false) {
+          this.hideCursorOnExit();
         }
         logger.info(
           `[reattach] Terminal ${this.terminalId} state restored to ${this.stateMachine.getState()}`,
@@ -1693,11 +1699,11 @@ export class TerminalAdapter {
 
     try {
       // Check if PTY still exists on backend via daemon `terminal.list`
-      const alive = await this.terminalExistsOnBackend();
+      const backendTerminal = await this.findBackendTerminal();
 
       if (this.isDisposed) return; // Check again after async call
 
-      if (alive) {
+      if (backendTerminal) {
         // PTY exists — re-setup IPC handlers and transition back to CONNECTED
         logger.info(
           `[auto-reconnect] Terminal ${this.terminalId}: PTY exists on backend, re-establishing connection`,
@@ -1710,6 +1716,12 @@ export class TerminalAdapter {
         // Resize to match current xterm dimensions
         if (this.xterm.cols && this.xterm.rows) {
           this.resize(this.xterm.cols, this.xterm.rows);
+        }
+
+        // Reconnected to a PTY whose process already exited — keep the
+        // cursor suppressed, matching the initialize() hydration path.
+        if (backendTerminal.isExecuting === false) {
+          this.hideCursorOnExit();
         }
 
         this.callbacks.onReady?.();
