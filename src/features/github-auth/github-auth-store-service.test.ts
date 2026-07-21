@@ -20,6 +20,7 @@ import {
   githubAuthChanged,
   setAuthenticating,
   setDeviceFlowInfo,
+  setOAuthInfo,
   startGitHubAuth,
 } from "$store/renderer/slices/github-auth/github-auth-slice";
 import {
@@ -67,7 +68,21 @@ describe("githubAuthStoreService (fake seam, real store)", () => {
     expect(ghState().isAuthenticating).toBe(false);
   });
 
+  it("startAuth carries needsScopeUpdate through the alreadyAuthenticated path", async () => {
+    api.startAuth.mockResolvedValueOnce({
+      success: true,
+      alreadyAuthenticated: true,
+      needsScopeUpdate: true,
+    });
+
+    await startGitHubAuthFlow();
+
+    expect(ghState().isAuthenticated).toBe(true);
+    expect(ghState().needsScopeUpdate).toBe(true);
+  });
+
   it("startAuth surfaces the error when the seam reports failure", async () => {
+    appStore.dispatch(setOAuthInfo("https://github.com/login/device", false));
     api.startAuth.mockResolvedValueOnce({ success: false, error: "nope" });
 
     await startGitHubAuthFlow();
@@ -75,6 +90,8 @@ describe("githubAuthStoreService (fake seam, real store)", () => {
     expect(api.startAuth).toHaveBeenCalledTimes(1);
     expect(ghState().error).toBe("nope");
     expect(ghState().isAuthenticating).toBe(false);
+    // Terminal errors clear the pending-flow verification URI too.
+    expect(ghState().oauthUrl).toBeNull();
   });
 
   it("startAuth stores the OAuth URL then polls to completion", async () => {

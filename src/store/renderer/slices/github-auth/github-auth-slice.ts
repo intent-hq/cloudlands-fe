@@ -135,6 +135,7 @@ export const githubAuthReducer = createReducer<GitHubAuthState>(initialState)
     ...state,
     error,
     isAuthenticating: false,
+    oauthUrl: null,
     deviceFlow: null,
   }))
   .with(clearGitHubAuthError, (state) => ({

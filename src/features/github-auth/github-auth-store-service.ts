@@ -150,6 +150,9 @@ export async function startGitHubAuthFlow(): Promise<void> {
       return;
     }
     if (result.alreadyAuthenticated) {
+      // Carry the daemon-reported scope status so configured-but-needs-update
+      // is not left stale until the next initialize/refresh.
+      appStore.dispatch(setOAuthInfo(null, result.needsScopeUpdate ?? false));
       appStore.dispatch(authCompleted(null));
       return;
     }
