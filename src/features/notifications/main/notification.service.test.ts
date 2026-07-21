@@ -404,6 +404,42 @@ describe('NotificationService daemon agent:idle subscription', () => {
     requestMock.mockImplementation(defaultImpl!);
   });
 
+  it('releases the superseded subscription id when concurrent same-epoch subscribes both resolve', async () => {
+    // Reconnect handler racing an armed status-retry: two subscribes in the
+    // same epoch resolve with different ids — the second overwrites the first,
+    // which must be unsubscribed instead of leaking daemon-side.
+    const defaultImpl = requestMock.getMockImplementation();
+    const pendingSubscribes: Array<(v: { subscriptionId: string }) => void> = [];
+    requestMock.mockImplementation(async (method: string, params?: unknown) => {
+      if (method === 'events.subscribe') {
+        return new Promise((r) => {
+          pendingSubscribes.push(r);
+        });
+      }
+      return defaultImpl!(method, params);
+    });
+
+    const service = new NotificationService();
+    service.start();
+    await flush();
+    (service as any).subscribeToIdleEvents();
+    await flush();
+    expect(pendingSubscribes).toHaveLength(2);
+
+    pendingSubscribes[0]({ subscriptionId: 'sub-first' });
+    await flush();
+    pendingSubscribes[1]({ subscriptionId: 'sub-second' });
+    await flush();
+
+    expect(service['subscriptionId']).toBe('sub-second');
+    expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'sub-first',
+    });
+
+    service.stop();
+    requestMock.mockImplementation(defaultImpl!);
+  });
+
   it('retries events.subscribe on the first status→connected transition when the initial subscribe failed (initial-connect gap)', async () => {
     // Regression: start() before the daemon client's FIRST successful connect.
     // The initial subscribe rejects and `reconnected` never fires (it requires

@@ -246,7 +246,16 @@ export class NotificationService {
         }
         return;
       }
+      // Concurrent same-epoch subscribes (reconnect handler racing an armed
+      // status-retry) can both land here; release the superseded id so it
+      // doesn't leak daemon-side for the connection lifetime.
+      const previousId = this.subscriptionId;
       this.subscriptionId = subscriptionId;
+      if (previousId && previousId !== subscriptionId) {
+        void getBackendClient()
+          .request('events.unsubscribe', { subscriptionId: previousId })
+          .catch(() => {});
+      }
       this.clearStatusRetry();
     } catch (error) {
       logger.warn(
