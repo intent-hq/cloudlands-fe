@@ -252,6 +252,30 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
+    it("does not warn on codex when a local codex-acp is present even without npx", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            codex: { available: true, path: "/usr/local/bin/codex" },
+            "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
+          },
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      // A local adapter alone suppresses the warning — npx is only the fallback.
+      expect(response.data?.providers.codex).toEqual({
+        available: true,
+        authenticated: true,
+      });
+    });
+
     it("keeps codex unavailable when only the codex-acp adapter is installed (CLI missing)", async () => {
       routeDaemon({
         "host.checkAuggie": { available: false },
@@ -400,6 +424,27 @@ describe("provider-status-bridge-seeder", () => {
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
 
+      expect(response).toEqual({
+        success: true,
+        providerId: "codex",
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it("rechecks codex without a warning when a local codex-acp is present even without npx", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          if (name === "codex") return { available: true, path: "/usr/local/bin/codex" };
+          if (name === "codex-acp") return { available: true, path: "/usr/local/bin/codex-acp" };
+          return { available: false };
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+
+      // A local adapter alone suppresses the warning — npx is only the fallback.
       expect(response).toEqual({
         success: true,
         providerId: "codex",

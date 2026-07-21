@@ -1,6 +1,8 @@
 /**
- * Codex (codex-acp) constants shared between the main-process resolver and
- * the renderer mock-router seeders.
+ * Codex (codex-acp) constants for the renderer mock-router seeders, in the
+ * sharable-constants pattern of `constants/claude-code.ts`. The main-process
+ * resolver does not consume these yet — it installs a managed codex-acp as a
+ * fallback instead of warning — but may import them if a warning is added.
  */
 
 /**
