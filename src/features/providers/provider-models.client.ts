@@ -73,7 +73,13 @@ function toErrorMessage(error: unknown): string {
 }
 
 function toProviderError(providerId: string, message: string): Error {
-  const providerName = getProviderConfig(providerId).displayName || providerId;
+  // Only prefix with the display name for known providers — getProviderConfig()
+  // falls back to the default provider for unknown IDs, which would mislabel
+  // the error with a different provider's name.
+  const providerName =
+    providerId in PROVIDER_MODEL_CHANNELS
+      ? getProviderConfig(providerId).displayName || providerId
+      : providerId;
   return new Error(
     message.startsWith(`${providerName}:`) ? message : `${providerName}: ${message}`,
   );

@@ -6,14 +6,20 @@
  * models for a provider different from the global active provider.
  */
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import { getProviderModels } from '$features/providers/provider-models.client';
+import {
+  getProviderModels,
+  type ProviderModelEntry,
+} from '$features/providers/provider-models.client';
 import {
   ACP_PROVIDERS,
   getDefaultProviderId,
   getProviderConfig,
 } from '$shared/config/provider-config';
-/** Provider model row shape (all providers share the daemon catalog shape). */
-export type ProviderModel = AuggieModel;
+/**
+ * Provider model row shape — the provider-agnostic daemon catalog shape
+ * shared by all seven providers (`models.list`, PROTOCOL §6.7).
+ */
+export type ProviderModel = ProviderModelEntry;
 
 type ProviderModelsWithWarning = {
   models: ProviderModel[];
