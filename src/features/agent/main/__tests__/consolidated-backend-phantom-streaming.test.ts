@@ -178,7 +178,8 @@ describe('ConsolidatedBackendService phantom streaming-state recovery', () => {
       expect(result.agent.isResponding).toBe(false);
     });
 
-    it('preserves in-flight flags when a message is genuinely still streaming', async () => {
+    it('preserves in-flight flags when a live stream handler exists', async () => {
+      streamManagerMock.isActive.mockReturnValue(true);
       const backend = await makeBackend();
       const session = makeSession({
         messages: [
@@ -196,6 +197,30 @@ describe('ConsolidatedBackendService phantom streaming-state recovery', () => {
 
       expect(result.success).toBe(true);
       expect(result.agent.isStreaming).toBe(true);
+      expect(result.agent.messages[0].isStreaming).toBe(true);
+    });
+
+    it('clears stale message-level isStreaming flags when no handler exists', async () => {
+      const backend = await makeBackend();
+      const session = makeSession({
+        messages: [
+          {
+            id: 'msg-assistant',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'partial' }],
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+          },
+        ],
+      });
+
+      const result = await backend.resumeSession(session);
+
+      expect(result.success).toBe(true);
+      expect(result.agent.isStreaming).toBe(false);
+      expect(result.agent.isProcessing).toBe(false);
+      expect(result.agent.isResponding).toBe(false);
+      expect(result.agent.messages[0].isStreaming).toBe(false);
     });
   });
 
@@ -216,6 +241,33 @@ describe('ConsolidatedBackendService phantom streaming-state recovery', () => {
       expect(record.session.isProcessing).toBe(false);
       expect(record.session.isResponding).toBe(false);
       expect(record.session.status).toBe(AgentStatus.Idle);
+    });
+
+    it('heals snapshots whose last message was persisted mid-stream', async () => {
+      const session = makeSession({
+        messages: [
+          {
+            id: 'msg-assistant',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'partial' }],
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+          },
+        ],
+      });
+      metadataFsMock.readdir.mockResolvedValue([
+        { isFile: () => true, name: 'agent-stuck.json' },
+      ] as any);
+      metadataFsMock.readFile.mockResolvedValue(JSON.stringify(session));
+      const backend = await makeBackend();
+
+      const loaded = await backend.loadPersistedSessions('amber-forest');
+
+      expect(loaded).toBe(1);
+      const record = backend.sessions.get('agent-stuck');
+      expect(record.session.isStreaming).toBe(false);
+      expect(record.session.status).toBe(AgentStatus.Idle);
+      expect(record.session.messages[0].isStreaming).toBe(false);
     });
   });
 

@@ -52,4 +52,14 @@ describe('AdaptivePollingManager listener cap', () => {
       expect.stringContaining('MaxListenersExceededWarning'),
     );
   });
+
+  it('control: the warning path is observable through the mocked logger', () => {
+    const manager = AdaptivePollingManager.getInstance();
+    manager.setMaxListeners(1);
+
+    manager.on('intervalChanged', () => {});
+    manager.on('intervalChanged', () => {});
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('MaxListenersExceededWarning'));
+  });
 });

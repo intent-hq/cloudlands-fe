@@ -336,8 +336,11 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       // app restart) can have isProcessing/isStreaming/isResponding still
       // true even though no live stream handler exists. Clear those phantom
       // flags before the record enters memory so the UI never shows a
-      // permanently "thinking" agent.
-      normalizeStreamingState(agentSession);
+      // permanently "thinking" agent. Gated on stream liveness: when a
+      // handler is genuinely active (e.g. resume during an in-flight turn),
+      // nothing is touched; without one, stale message-level isStreaming
+      // flags from a periodic mid-stream save are cleared too.
+      normalizeStreamingState(agentSession, this.hasActiveStream(agentId), true);
 
       logger.info('Resuming agent session', {
         agentId,
@@ -1168,9 +1171,10 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
           // Clear phantom in-flight flags persisted from a previous process
           // (isStreaming/isProcessing/isResponding stuck true after a hard
-          // exit). Sessions whose messages are still marked streaming are
-          // left untouched so a genuinely mid-stream snapshot is preserved.
-          normalizeStreamingState(session);
+          // exit). Gated on stream liveness: without a live handler, stale
+          // message-level isStreaming flags from a periodic mid-stream save
+          // are cleared too, since a fresh load can never resume that stream.
+          normalizeStreamingState(session, this.hasActiveStream(session.id), true);
 
           // Only load sessions for this workspace
           if (session.workspaceId === createWorkspaceId(workspaceId)) {
