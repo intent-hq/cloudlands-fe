@@ -44,7 +44,6 @@
   const cardMeta: Partial<Record<SidebarNavItem, { title: string; description: string }>> = {
     'new-workspace': { title: 'Create new workspace', description: '' },
     active: { title: 'Active workspaces', description: '' },
-    chief: { title: 'Chief of Staff', description: 'App-level assistant' },
     'all-workspaces': { title: 'All workspaces', description: '' },
   };
 

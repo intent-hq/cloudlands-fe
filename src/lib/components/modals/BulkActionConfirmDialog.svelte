@@ -29,10 +29,13 @@
 
   let dialogRef: HTMLDivElement | null = $state(null);
 
-  // Focus dialog when it opens so Escape key works
+  // Focus dialog when it opens so Escape key works. Deferred a microtask so
+  // it lands after any Portal relocation in the same flush (moving a focused
+  // node in the DOM drops focus back to <body>).
   $effect(() => {
     if (open && dialogRef) {
-      dialogRef.focus();
+      const el = dialogRef;
+      queueMicrotask(() => el.focus());
     }
   });
 

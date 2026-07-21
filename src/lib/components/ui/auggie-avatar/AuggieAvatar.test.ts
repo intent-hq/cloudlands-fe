@@ -6,6 +6,7 @@ const {
   selectAgentIsThinkingMock,
   selectAgentProviderMock,
   getRandomColorsWithSeedMock,
+  themeState,
 } = vi.hoisted(() => {
   type ReadableLike<T> = { subscribe(run: (value: T) => void): () => void };
   const providerForAgent = (id: string | undefined) =>
@@ -32,6 +33,7 @@ const {
     })),
     selectAgentProviderMock,
     getRandomColorsWithSeedMock: vi.fn(() => ['#111111', '#222222'] as const),
+    themeState: { isDark: false },
   };
 });
 
@@ -47,7 +49,7 @@ vi.mock('$store/renderer/store', () => ({
 vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
   selectIsDarkTheme: vi.fn(() => ({
     subscribe: (run: (value: boolean) => void) => {
-      run(false);
+      run(themeState.isDark);
       return () => {};
     },
   })),
@@ -75,6 +77,7 @@ describe('AuggieAvatar Thinking selector ownership', () => {
     selectAgentIsThinkingMock.mockClear();
     selectAgentProviderMock.mockClear();
     getRandomColorsWithSeedMock.mockClear();
+    themeState.isDark = false;
   });
 
   afterEach(() => cleanup());
@@ -101,6 +104,17 @@ describe('AuggieAvatar Thinking selector ownership', () => {
     );
 
     expect(stops).toEqual(['transparent', 'transparent']);
+    expect(getRandomColorsWithSeedMock).not.toHaveBeenCalled();
+  });
+
+  it('uses a visible muted fallback in dark mode when no seed or agentId is provided', () => {
+    themeState.isDark = true;
+    const { container } = render(AuggieAvatar, { props: { size: 20 } });
+    const stops = Array.from(container.querySelectorAll('stop')).map((stop) =>
+      stop.getAttribute('stop-color'),
+    );
+
+    expect(stops).toEqual(['var(--color-muted-foreground)', 'var(--color-muted-foreground)']);
     expect(getRandomColorsWithSeedMock).not.toHaveBeenCalled();
   });
 

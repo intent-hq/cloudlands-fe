@@ -22,7 +22,10 @@
  *                 daemon), auth via `auggie model list` (`host.exec`).
  *  - claude-code: `claude` CLI installed (prerequisite for claude-agent-acp),
  *                 auth via `claude auth status` exit code.
- *  - codex:       `codex-acp` installed, auth via `codex login status`.
+ *  - codex:       `codex` CLI installed (prerequisite for the codex-acp
+ *                 adapter), auth via `codex login status`. When the CLI is
+ *                 present but neither a local `codex-acp` nor npx (the pinned
+ *                 adapter fallback runner) resolves, a warning is attached.
  *  - opencode:    `opencode` installed, readiness via `opencode models`
  *                 returning at least one `provider/model` line.
  *  - pi:          binary presence only (no stable auth signal).
@@ -50,6 +53,7 @@ import {
 import { ACP_PROVIDERS } from "$shared/config/provider-config";
 import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
+import { CODEX_ADAPTER_MISSING_WARNING } from "$shared/constants/codex";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import type {
   ProviderAvailabilityResult,
@@ -84,14 +88,22 @@ const OPENCODE_READY_TIMEOUT_MS = 10000;
 const NOT_LOGGED_IN_RE =
   /not currently logged in|not logged in|not authenticated|login required|please log in/i;
 
-/** Availability binary per provider (mirrors the main-process resolvers). */
+/**
+ * Availability binary per provider (mirrors the main-process resolvers).
+ * codex keys off the real `codex` CLI — the codex-acp adapter is a
+ * launch-time detail (local binary or pinned npx fallback), not the
+ * "is codex installed" signal (mirrors isCodexInstalled in codex-resolver).
+ */
 const PROVIDER_BINARIES: Record<string, string> = {
   "claude-code": "claude",
-  codex: "codex-acp",
+  codex: "codex",
   opencode: "opencode",
   pi: "pi",
   droid: "droid",
 };
+
+/** The codex ACP adapter binary — only consulted for the codex warning. */
+const CODEX_ACP_BINARY = "codex-acp";
 
 /**
  * Compare a probed version against a minimum. Extracts the first
@@ -214,10 +226,11 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const [auggieCheck, toolsResult] = await Promise.all([
     checkAuggie().catch(() => ({ available: false }) as HostCheckResult),
     backendRequest<HostToolAvailabilityResult>("host.toolAvailability", {
-      // `codex` (the real CLI) rides along for the codex auth probe —
-      // availability itself keys off the `codex-acp` adapter. `npx` rides
-      // along for the claude-code adapter check (it always runs via npx).
-      tools: [...Object.values(PROVIDER_BINARIES), "codex", "npx"],
+      // `codex-acp` (the adapter) rides along for the codex warning —
+      // availability itself keys off the real `codex` CLI. `npx` rides
+      // along for the claude-code adapter check (it always runs via npx)
+      // and as the codex adapter's pinned fallback runner.
+      tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, "npx"],
     }).catch(() => ({ tools: {} }) as HostToolAvailabilityResult),
   ]);
   const tools = toolsResult?.tools ?? {};
@@ -233,6 +246,15 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     claudeCode.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
   const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
+  // codex's ACP adapter is a local codex-acp binary or the pinned npx
+  // fallback — warn when the CLI is present but neither can run.
+  if (
+    codex.available &&
+    tool(CODEX_ACP_BINARY).available !== true &&
+    tool("npx").available !== true
+  ) {
+    codex.warning = CODEX_ADAPTER_MISSING_WARNING;
+  }
   const opencode: ProviderStatus = {
     available: tool(PROVIDER_BINARIES.opencode).available === true,
   };
@@ -252,7 +274,10 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
         )
       : Promise.resolve(undefined),
     codex.available
-      ? probeExitCodeAuth(tool("codex").path, ACP_PROVIDERS.codex.authCheckArgs ?? [])
+      ? probeExitCodeAuth(
+          tool(PROVIDER_BINARIES.codex).path,
+          ACP_PROVIDERS.codex.authCheckArgs ?? [],
+        )
       : Promise.resolve(undefined),
     opencode.available
       ? probeOpenCodeReady(tool(PROVIDER_BINARIES.opencode).path)
@@ -313,13 +338,22 @@ async function checkSingleProvider(providerId: string): Promise<ProviderStatus> 
     );
   }
   if (providerId === "codex") {
-    // Auth runs against the real `codex` CLI, not the codex-acp adapter.
-    const codexCli = await backendRequest<HostCheckResult>("host.findBinary", {
-      name: "codex",
-    }).catch(() => undefined);
+    // Availability (and auth) key off the real `codex` CLI; the codex-acp
+    // adapter (local binary or pinned npx fallback) is only probed for the
+    // warning. Failed probes are unknowns, not confirmed absences — no
+    // warning then (same rule as claude-code above).
+    const [acp, npx] = await Promise.all([
+      backendRequest<HostCheckResult>("host.findBinary", { name: CODEX_ACP_BINARY }).catch(
+        () => undefined,
+      ),
+      backendRequest<HostCheckResult>("host.findBinary", { name: "npx" }).catch(() => undefined),
+    ]);
+    if (acp && acp.available !== true && npx && npx.available !== true) {
+      status.warning = CODEX_ADAPTER_MISSING_WARNING;
+    }
     return withAuth(
       status,
-      await probeExitCodeAuth(codexCli?.path, ACP_PROVIDERS.codex.authCheckArgs ?? []),
+      await probeExitCodeAuth(found?.path, ACP_PROVIDERS.codex.authCheckArgs ?? []),
     );
   }
   if (providerId === "opencode") {
@@ -341,8 +375,10 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => {
  * providers:get-paths — resolved CLI paths for the settings path-config rows
  * (ProviderSelector only consumes auggie / claude-code / codex). Composed from
  * the daemon host surface: `host.checkAuggie` resolves auggie (providers.paths
- * override, then PATH) and `host.findBinary` resolves the other CLIs.
- * Preserves the legacy main handler's CommandResponse envelope.
+ * override, then PATH) and `host.findBinary` resolves the other CLIs — for
+ * codex that is the real `codex` CLI (mirrors main's getCodexPath), not the
+ * codex-acp adapter. Preserves the legacy main handler's CommandResponse
+ * envelope.
  */
 registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
   const findPath = async (name: string): Promise<string | null> => {
