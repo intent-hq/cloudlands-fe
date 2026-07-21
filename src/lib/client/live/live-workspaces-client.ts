@@ -146,12 +146,24 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       );
       const raw = result?.workspace;
       const rawAgent = result?.initialAgent;
-      const initialAgent =
-        rawAgent &&
-        typeof rawAgent === "object" &&
-        typeof (rawAgent as { id?: unknown }).id === "string"
-          ? (rawAgent as { id: string } & Record<string, unknown>)
-          : undefined;
+      let initialAgent: ({ id: string } & Record<string, unknown>) | undefined;
+      if (rawAgent !== undefined && rawAgent !== null) {
+        // The daemon-assigned `initialAgent.id` is the only way callers can
+        // address the created agent (no client id is sent). A present-but-
+        // malformed projection is a wire divergence — fail loudly instead of
+        // masking it as "no initialAgent".
+        if (
+          typeof rawAgent !== "object" ||
+          typeof (rawAgent as { id?: unknown }).id !== "string" ||
+          ((rawAgent as { id: string }).id.length === 0)
+        ) {
+          return {
+            success: false,
+            error: "workspace.create returned an initialAgent without a valid daemon-assigned id",
+          };
+        }
+        initialAgent = rawAgent as { id: string } & Record<string, unknown>;
+      }
       return raw && typeof raw === "object"
         ? {
             success: true,

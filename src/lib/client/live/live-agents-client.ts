@@ -166,6 +166,13 @@ export class LiveAgentsClient implements AgentsClient {
     if (!raw || typeof raw !== "object") {
       throw new Error("agent.create returned no agent object");
     }
+    // The daemon-assigned `agent.id` is the only way to address follow-up
+    // sends/streams (no client id is forwarded). Fail loudly rather than let
+    // normalizeAgent coerce a missing id into an empty-string session key.
+    const rawId = (raw as Record<string, unknown>).id;
+    if (typeof rawId !== "string" || rawId.length === 0) {
+      throw new Error("agent.create response missing daemon-assigned agent.id");
+    }
     return normalizeAgent(raw as Record<string, unknown>);
   }
   async send(agentId: string, message: string): Promise<MutationResult> {

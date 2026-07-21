@@ -246,6 +246,31 @@ describe('UnifiedAgentFactory', () => {
       expect(String(result.agentId)).toBe('agent-daemon-assigned-123');
     });
 
+    it('fails creation when the daemon response carries no agent id', async () => {
+      agentsApi.create.mockClear();
+      // Daemon returns a session without an id (wire divergence): the factory
+      // must abort BEFORE any upsert/send instead of proceeding with the
+      // provisional id the daemon doesn't recognize.
+      agentsApi.create.mockResolvedValueOnce({
+        backendSessionId: null,
+        workspaceId: 'test-workspace-id',
+        name: 'No Id Agent',
+        status: 'Idle',
+        messages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as never);
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'No Id Agent',
+        workspaceId: mockWorkspace.id as any,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('missing daemon-assigned agent id');
+      expect(result.agent).toBeUndefined();
+    });
+
     it('sends the initial message to the daemon-assigned id, only after create resolves', async () => {
       agentsApi.create.mockClear();
       const { invoke } = await import('$lib/electron-bridge');

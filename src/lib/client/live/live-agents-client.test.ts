@@ -113,6 +113,19 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     }
   });
 
+  it('create throws when the daemon response lacks the daemon-assigned agent.id', async () => {
+    // The daemon-assigned id is the only way to address follow-up sends —
+    // a missing/empty id must fail loudly, not coerce into an empty session key.
+    backend.onRequest('agent.create', () => ({
+      agent: { workspaceId: 'ws-p212a', status: 'pending' },
+    }));
+    const client = new LiveAgentsClient();
+
+    await expect(client.create({ workspaceId: 'ws-p212a' })).rejects.toThrow(
+      /missing daemon-assigned agent\.id/,
+    );
+  });
+
   it('send forwards agent.sendMessage with workspaceId + minted messageId', async () => {
     // First backend call resolves the agent (priming workspaceId cache);
     // second is the actual agent.sendMessage mutation.

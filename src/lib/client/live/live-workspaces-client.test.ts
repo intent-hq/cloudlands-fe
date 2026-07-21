@@ -80,6 +80,25 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     expect(result.initialAgent).toMatchObject({ id: "agent-daemon-1", name: "Coordinator" });
   });
 
+  it("create fails loudly when the daemon returns an initialAgent without a valid id", async () => {
+    // Wire divergence: an initialAgent projection without a daemon-assigned
+    // id must surface as an error, not be masked as "no initialAgent".
+    mockedRequest.mockResolvedValueOnce({
+      workspace: {
+        id: "66666666-6666-4666-8666-666666666666",
+        title: "Bad agent",
+        status: "Active",
+      },
+      initialAgent: { name: "Coordinator" },
+    });
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: "Bad agent" } as CreateWorkspaceRequest);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("initialAgent");
+  });
+
   it("create omits initialAgent from the result when the daemon returns none", async () => {
     mockedRequest.mockResolvedValueOnce({
       workspace: { id: "55555555-5555-4555-8555-555555555555", title: "Bare", status: "Active" },

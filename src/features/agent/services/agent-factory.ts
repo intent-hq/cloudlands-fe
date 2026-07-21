@@ -463,16 +463,21 @@ export class UnifiedAgentFactory {
           };
         }
 
-        if (backendResult.agentId) {
-          agent.id = createAgentId(backendResult.agentId);
-        } else {
-          // Defensive: a daemon that satisfies the create but omits the agent
-          // id would leave the FE keyed off the provisional id, and every
-          // follow-up send would race to `-32602 not found: agent session`.
-          logger.warn('agent.create response carried no agent id; keeping provisional id', {
+        if (!backendResult.agentId) {
+          // The daemon-assigned id IS the contract now: proceeding with the
+          // provisional id would upsert/send against a session the daemon
+          // doesn't recognize (guaranteed `-32602 not found: agent session`).
+          // Fail hard before any store dispatch or message send.
+          logger.error('agent.create response carried no agent id; aborting creation', {
             provisionalAgentId,
           });
+          return {
+            success: false,
+            error: 'agent.create response missing daemon-assigned agent id',
+            sessionId,
+          };
         }
+        agent.id = createAgentId(backendResult.agentId);
       }
 
       logger.debug('Backend agent created', {
