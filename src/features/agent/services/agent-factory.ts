@@ -531,12 +531,15 @@ export class UnifiedAgentFactory {
       const hasContextReferences = (normalized.contextReferences?.length ?? 0) > 0;
       const hasImageBlocks = (normalized.imageBlocks?.length ?? 0) > 0;
       // Mint the logical app-message id ONCE so the optimistic user message
-      // (Step 10) and the wire send (Step 11) share the same identity — the
-      // daemon-echoed canonical message then merges with the optimistic one
-      // via appMessageId dedup instead of rendering a duplicate first message.
+      // (Step 10, non-backend agents) and the wire send (Step 11) share the
+      // same identity. The daemon accepts but does not yet echo
+      // `userAppMessageId` (PROTOCOL §5.5), so today's dedup still falls back
+      // to content-hash matching; this lands the FE half of the identity
+      // round-trip so appMessageId dedup takes over once the daemon echoes it.
+      // Callers may supply their own id (empty/whitespace values are ignored).
       const initialUserAppMessageId =
         hasInitialMessage || hasContextReferences || hasImageBlocks
-          ? (normalized.appMessageId ?? createAppMessageId())
+          ? normalized.appMessageId?.trim() || createAppMessageId()
           : undefined;
 
       if ((hasInitialMessage || hasContextReferences || hasImageBlocks) && !isBackend) {

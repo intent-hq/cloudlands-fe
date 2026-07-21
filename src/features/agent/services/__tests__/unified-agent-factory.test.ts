@@ -349,6 +349,35 @@ describe('UnifiedAgentFactory', () => {
       expect(addMessageAction.payload[1].appMessageId).toBe(appMessageId);
     });
 
+    it('ignores an empty caller appMessageId and mints one instead', async () => {
+      const { invoke } = await import('$lib/electron-bridge');
+      const invokeMock = vi.mocked(invoke);
+      invokeMock.mockClear();
+      invokeMock.mockResolvedValue({ success: true } as never);
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Initial Agent',
+        workspaceId: mockWorkspace.id as any,
+        initialMessage: 'Initial prompt',
+        appMessageId: '   ',
+      });
+      expect(result.success).toBe(true);
+
+      await vi.waitFor(() => {
+        expect(invokeMock).toHaveBeenCalledWith(
+          AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
+          expect.any(Object),
+        );
+      });
+
+      const streamMessageCall = invokeMock.mock.calls.find(
+        ([channel]) => channel === AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
+      );
+      const [, streamPayload] = streamMessageCall! as [string, Record<string, unknown>];
+      expect(typeof streamPayload.userAppMessageId).toBe('string');
+      expect((streamPayload.userAppMessageId as string).trim().length).toBeGreaterThan(0);
+    });
+
     it('sends the initial message to the daemon-assigned id, only after create resolves', async () => {
       agentsApi.create.mockClear();
       const { invoke } = await import('$lib/electron-bridge');

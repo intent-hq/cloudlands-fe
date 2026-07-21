@@ -224,6 +224,10 @@ export const selectAgentSessionExists = store.createSelector(
  * Select whether first-send activation has reached a terminal store state.
  * Active/backed sessions are ready to send; activation errors are terminal so
  * callers can surface the stored activation error instead of waiting forever.
+ *
+ * Note: no production call site consumes this today — the live send path
+ * guards activation inline in `agent-stream-lifecycle.ts` (`needsActivation`).
+ * The selector is kept correct for future first-send waiters.
  */
 export const selectAgentActivationWaitComplete = store.createSelector(
   (state, agentId: string): boolean => {
