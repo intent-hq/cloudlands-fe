@@ -92,6 +92,32 @@ function objectArray<T>(value: unknown): T[] | undefined {
   return Array.isArray(value) ? (value.filter(isRecord) as T[]) : undefined;
 }
 
+// Warn only once when a non-cloneable bag needed sanitizing, to avoid log spam
+// (persists fire on every mutating action).
+let warnedNonCloneableBag = false;
+
+/**
+ * Safety net: `settings.update` structured-clones its payload across IPC, so a Svelte
+ * `$state` proxy (or any other non-cloneable value) that leaked into the store would
+ * throw DataCloneError and silently break persistence. Verify cloneability and fall
+ * back to a plain-JSON round-trip when needed.
+ */
+function toCloneableBag(bag: WorkspaceInitializerHydrationState): WorkspaceInitializerHydrationState {
+  try {
+    structuredClone(bag);
+    return bag;
+  } catch {
+    if (!warnedNonCloneableBag) {
+      warnedNonCloneableBag = true;
+      logger.warn(
+        `Sanitized non-structured-cloneable ${SETTINGS_PATH} bag before persisting; ` +
+          "a non-serializable value (e.g. a $state proxy) reached the store",
+      );
+    }
+    return JSON.parse(JSON.stringify(bag)) as WorkspaceInitializerHydrationState;
+  }
+}
+
 /** Persist the current state bag to the daemon (fire-and-forget; failures only log). */
 function persistStateBag(): void {
   const state = appStore.state.workspaceInitializer;
@@ -106,7 +132,7 @@ function persistStateBag(): void {
     lastSubmittedAgent: state.lastSubmittedAgent,
   };
   void appClient.settings
-    .update([{ path: SETTINGS_PATH, value: bag }])
+    .update([{ path: SETTINGS_PATH, value: toCloneableBag(bag) }])
     .catch((error) => logger.error(`Failed to persist ${SETTINGS_PATH}`, { error }));
 }
 

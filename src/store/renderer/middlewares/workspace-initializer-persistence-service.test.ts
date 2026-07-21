@@ -225,6 +225,57 @@ describe.sequential("workspace-initializer-persistence-service (PROTOCOL §5.12 
     });
   });
 
+  it("sanitizes a non-structured-cloneable bag to plain JSON before settings.update (STAB DataCloneError regression)", async () => {
+    // A Proxy mimics a Svelte $state proxy: structuredClone (used by IPC) throws
+    // DataCloneError on it, but JSON round-tripping yields the plain target values.
+    const proxiedRemoteSetup = new Proxy(
+      {
+        id: "remote-proxy",
+        name: "Proxy Remote",
+        host: "proxy.example.com",
+        port: 22,
+        username: "user",
+        workspacePath: "/workspace",
+      },
+      {},
+    ) as WorkspaceInitializerRemoteSetup;
+    expect(() => structuredClone(proxiedRemoteSetup)).toThrow();
+
+    appStore.dispatch(
+      setCompactWorkspaceInitializerFormState({
+        repoPath: "/proxy-repo",
+        remoteSetup: proxiedRemoteSetup,
+      }),
+    );
+    await flush();
+
+    // Exact wire request per PROTOCOL §5.12: settings.update with the sanitized bag
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [
+        {
+          path: "workspaceInitializer.state",
+          value: expect.objectContaining({
+            compactFormState: {
+              repoPath: "/proxy-repo",
+              remoteSetup: {
+                id: "remote-proxy",
+                name: "Proxy Remote",
+                host: "proxy.example.com",
+                port: 22,
+                username: "user",
+                workspacePath: "/workspace",
+              },
+            },
+          }),
+        },
+      ],
+    });
+
+    // The persisted payload must itself be structured-cloneable (plain JSON, no proxies)
+    const persistedBag = updateSpy.mock.calls.at(-1)?.[0].changes[0].value;
+    expect(() => structuredClone(persistedBag)).not.toThrow();
+  });
+
   it("persists state bag on setWorkspaceInitializerLastSelectedRepo", async () => {
     appStore.dispatch(
       setWorkspaceInitializerLastSelectedRepo({ path: "/repo", type: "local" }),
