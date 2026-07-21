@@ -68,4 +68,13 @@ describe('model-utils', () => {
     await expect(fetchModelsForProvider('mock')).resolves.toEqual([]);
     expect(vi.mocked(getProviderModels)).not.toHaveBeenCalled();
   });
+
+  it('returns an empty grok model list with an honest warning instead of throwing', async () => {
+    await expect(getModelsForProviderForLoadingState('grok')).resolves.toEqual({
+      models: [],
+      warning: 'Grok model list unavailable in this build',
+      stale: undefined,
+    });
+    expect(vi.mocked(getProviderModels)).not.toHaveBeenCalled();
+  });
 });

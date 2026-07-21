@@ -43,6 +43,7 @@ export interface ProviderAvailabilityResult {
     cortex: ProviderStatus;
     pi: ProviderStatus;
     droid: ProviderStatus;
+    grok: ProviderStatus;
   };
   /** Provider IDs that are hidden because their required env var is not set */
   hiddenProviders?: string[];
@@ -117,6 +118,7 @@ export async function getProviderAvailability(
       mock: cachedResult.providers.mock?.available ?? false,
       opencode: cachedResult.providers.opencode.available,
       droid: cachedResult.providers.droid?.available ?? false,
+      grok: cachedResult.providers.grok?.available ?? false,
     });
 
     return cachedResult;
@@ -158,6 +160,7 @@ function getDefaultResult(): ProviderAvailabilityResult {
       opencode: { available: false },
       pi: { available: false },
       droid: { available: false },
+      grok: { available: false },
     },
     hiddenProviders: [],
   };
