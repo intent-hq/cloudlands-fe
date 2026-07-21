@@ -1,10 +1,11 @@
 /**
  * @vitest-environment jsdom
  *
- * Regression test: every `workspace.create` attempt must send a FRESH
- * `initialAgent.agentId`. Previously the ID was cached in sessionStorage and
- * only rotated on success (clearForm), so a failed create poisoned all
- * retries with a duplicate agent_session.id the daemon rejects.
+ * Regression test: `workspace.create` must NOT send a client-minted
+ * `initialAgent.agentId` — the daemon assigns the id and returns it on the
+ * create result. This supersedes the earlier fresh-id-per-attempt fix
+ * (STAB-143): with no client id on the wire, a failed create can no longer
+ * poison retries with a duplicate agent_session.id.
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -161,7 +162,7 @@ function seedAutoCreatePrefill() {
   );
 }
 
-describe('CompactWorkspaceInitializer fresh agent ID per create attempt', () => {
+describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
@@ -172,7 +173,7 @@ describe('CompactWorkspaceInitializer fresh agent ID per create attempt', () => 
     sessionStorage.clear();
   });
 
-  it('sends a different initialAgent.agentId on the retry after a failed create', async () => {
+  it('never sends initialAgent.agentId, including on the retry after a failed create', async () => {
     mocks.create.mockRejectedValue(new Error('daemon rejected create'));
 
     seedAutoCreatePrefill();
@@ -190,15 +191,15 @@ describe('CompactWorkspaceInitializer fresh agent ID per create attempt', () => 
     await component.applyPrefill();
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
 
-    const firstAgentId = mocks.create.mock.calls[0][0].initialAgent.agentId;
-    const secondAgentId = mocks.create.mock.calls[1][0].initialAgent.agentId;
-
-    expect(firstAgentId).toMatch(/^agent-/);
-    expect(secondAgentId).toMatch(/^agent-/);
-    expect(secondAgentId).not.toBe(firstAgentId);
+    for (const call of mocks.create.mock.calls) {
+      const initialAgent = call[0].initialAgent;
+      expect(initialAgent).toBeDefined();
+      expect(initialAgent.agentId).toBeUndefined();
+      expect('agentId' in initialAgent).toBe(false);
+    }
   });
 
-  it('does not persist the agent ID in sessionStorage', async () => {
+  it('does not persist any agent ID in sessionStorage', async () => {
     mocks.create.mockRejectedValue(new Error('daemon rejected create'));
 
     seedAutoCreatePrefill();

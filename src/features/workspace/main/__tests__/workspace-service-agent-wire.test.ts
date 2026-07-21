@@ -100,7 +100,6 @@ describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
       repositoryPath: '/path/to/repo',
       skipWorktree: true,
       initialAgent: {
-        agentId: 'agent-init',
         name: 'Initial',
         prompt: 'Kick things off',
         model: 'sonnet',
@@ -120,9 +119,10 @@ describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
     const [, params] = createCalls[0];
     const body = params as Record<string, unknown>;
 
-    // Wire-shape guarantees per PROTOCOL.md §5.5 `agent.create`.
+    // Wire-shape guarantees per PROTOCOL.md §5.5 `agent.create`. No client
+    // `agentId` is sent — the daemon assigns the session id and returns it.
     expect(body.workspaceId).toBe(result.data.id);
-    expect(body.agentId).toBe('agent-init');
+    expect('agentId' in body).toBe(false);
     expect(body.name).toBe('Initial');
     expect(body.model).toBe('sonnet');
     expect(body.provider).toBe('auggie');

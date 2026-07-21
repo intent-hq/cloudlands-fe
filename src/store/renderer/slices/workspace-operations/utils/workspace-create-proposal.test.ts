@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { WorkspaceCreateProposal } from '$shared/types/proposal';
 import { buildCreateWorkspaceRequestFromProposal } from './workspace-create-proposal';
 
@@ -12,7 +12,6 @@ function makeProposal(params: Record<string, unknown>): WorkspaceCreateProposal 
 
 describe('buildCreateWorkspaceRequestFromProposal', () => {
   it('overrides create params from edited workspace fields', () => {
-    const generateAgentId = vi.fn(() => 'agent-generated');
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({
         repositoryPath: '/repo/original',
@@ -37,7 +36,6 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
         initialPrompt: 'Edited prompt',
         specialist: 'implementor',
       },
-      generateAgentId,
     );
 
     expect(request).toMatchObject({
@@ -48,7 +46,6 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       isNewRepo: true,
       scope: 'packages/app',
       initialAgent: {
-        agentId: 'agent-generated',
         name: 'Coordinator',
         prompt: 'Edited prompt',
         specialist: 'implementor',
@@ -61,11 +58,11 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
         },
       },
     });
-    expect(generateAgentId).toHaveBeenCalledTimes(1);
+    // The daemon assigns the initial agent's id — the request must not carry one.
+    expect(request.initialAgent?.agentId).toBeUndefined();
   });
 
-  it('preserves an existing initial agent id and defaults missing fields', () => {
-    const generateAgentId = vi.fn(() => 'agent-generated');
+  it('strips a client-supplied initial agent id and defaults missing fields', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({
         repositoryPath: '/repo/original',
@@ -78,17 +75,16 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
         },
       }),
       undefined,
-      generateAgentId,
     );
 
     expect(request.initialAgent).toMatchObject({
-      agentId: 'agent-existing',
       name: 'Existing coordinator',
       prompt: 'Original prompt',
       agentType: 'task-breakdown',
       metadata: { isInitialAgent: true },
     });
-    expect(generateAgentId).not.toHaveBeenCalled();
+    // Even a proposal payload carrying an id must not forward it on the wire.
+    expect(request.initialAgent?.agentId).toBeUndefined();
   });
 
   it('clears specialist metadata when specialist edit is null', () => {
@@ -101,7 +97,6 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
         },
       }),
       { specialist: null },
-      vi.fn(() => 'agent-generated'),
     );
 
     expect(request.initialAgent?.specialist).toBeUndefined();
@@ -121,7 +116,6 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
         },
       }),
       {},
-      vi.fn(() => 'agent-generated'),
     );
 
     expect(request.initialAgent).toMatchObject({

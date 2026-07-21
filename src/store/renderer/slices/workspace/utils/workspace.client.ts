@@ -275,11 +275,16 @@ export class WorkspaceClient {
     return result as Result<Workspace[], string>;
   }
 
-  async create(request: CreateWorkspaceRequest): Promise<Result<Workspace, string>> {
+  async create(
+    request: CreateWorkspaceRequest,
+  ): Promise<Result<{ workspace: Workspace; initialAgent?: { id: string } }, string>> {
     // Daemon-backed mutation (`workspace.create`, PROTOCOL §5.1) through the
     // AppClient seam; the legacy `workspace:create` main-process IPC path is
     // gone. The daemon owns the full orchestration inside one idempotent op
     // (clone-if-githubUrl → worktree → spec seed → initial agent → prompt).
+    // The daemon assigns the initial agent's id and returns it as
+    // `initialAgent` — surfaced here so callers adopt it instead of
+    // pre-minting an id on the request.
     const ia = request.initialAgent;
     logger.info(
       `[WorkspaceClient] create called: title=${request.title}, hasInitialAgent=${!!ia}, specialist=${ia?.specialist}, model=${ia?.model}, keys=${ia ? Object.keys(ia).join(',') : 'none'}`,
@@ -288,6 +293,7 @@ export class WorkspaceClient {
     logger.info('[WorkspaceClient] create result', {
       success: result.success,
       scope: request.scope,
+      initialAgentId: result.success ? result.initialAgent?.id : undefined,
       error: result.success ? undefined : result.error,
     });
     if (result.success && result.workspace) {
@@ -295,7 +301,13 @@ export class WorkspaceClient {
       // read (the daemon also emits `workspace:created`, but callers awaiting
       // this promise should not observe stale list snapshots).
       this.clearCache();
-      return { ok: true, data: normalizeWorkspacePaths(result.workspace) };
+      return {
+        ok: true,
+        data: {
+          workspace: normalizeWorkspacePaths(result.workspace),
+          initialAgent: result.initialAgent,
+        },
+      };
     }
     return { ok: false, error: result.error || 'Failed to create workspace' };
   }

@@ -1378,7 +1378,13 @@ export interface CreateWorkspaceRequest {
   isNewRepo?: boolean; // If true, initialize a new git repository at repositoryPath
   skipWorktree?: boolean; // If true, create workspace without a git worktree
   initialAgent?: {
-    agentId: string;
+    /**
+     * DEPRECATED: the daemon assigns the initial agent's id and returns it on
+     * the `workspace.create` result (`initialAgent.id`). Clients must no
+     * longer pre-mint or send this field; a follow-up intentd change rejects
+     * client-supplied agent ids outright.
+     */
+    agentId?: string;
     name?: string;
     model?: string;
     prompt?: string;

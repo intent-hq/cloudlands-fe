@@ -6,8 +6,9 @@
  * owns the JSON-RPC framing + idempotencyKey (asserted in
  * `live-workspaces-client.test.ts`); these tests pin the wrapper's contract:
  * forward the request verbatim (including `initialAgent`), map the
- * `WorkspaceCreateResult` back into the legacy `Result<Workspace, string>`
- * shape, and normalize workspace paths on success.
+ * `WorkspaceCreateResult` into a `Result<{ workspace, initialAgent? }, string>`
+ * (surfacing the daemon-assigned initial agent id), and normalize workspace
+ * paths on success.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CreateWorkspaceRequest } from "$shared/types";
@@ -44,8 +45,8 @@ describe("WorkspaceClient.create (AppClient seam, PROTOCOL §5.1)", () => {
       githubUrl: "https://github.com/example/repo",
       clonePath: "/tmp/clones/repo",
       scope: "apps/web",
+      // No agentId: the daemon assigns the initial agent's id.
       initialAgent: {
-        agentId: "agent-abc",
         prompt: "Do the thing",
         specialist: "implementor",
         model: "opus4.7",
@@ -72,6 +73,7 @@ describe("WorkspaceClient.create (AppClient seam, PROTOCOL §5.1)", () => {
         repositoryPath: "C:\\repo",
         worktreePath: "C:\\repo\\wt",
       } as never,
+      initialAgent: { id: "agent-daemon-1" },
     });
     const client = new WorkspaceClient();
 
@@ -79,10 +81,12 @@ describe("WorkspaceClient.create (AppClient seam, PROTOCOL §5.1)", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.data.id).toBe("ws-2");
-      expect(result.data.path).toBe("C:/repo/worktree");
-      expect(result.data.repositoryPath).toBe("C:/repo");
-      expect(result.data.worktreePath).toBe("C:/repo/wt");
+      expect(result.data.workspace.id).toBe("ws-2");
+      expect(result.data.workspace.path).toBe("C:/repo/worktree");
+      expect(result.data.workspace.repositoryPath).toBe("C:/repo");
+      expect(result.data.workspace.worktreePath).toBe("C:/repo/wt");
+      // The daemon-assigned initial agent id is surfaced for adoption.
+      expect(result.data.initialAgent?.id).toBe("agent-daemon-1");
     }
   });
 

@@ -73,10 +73,16 @@ export async function runAssignAgentTaskMenuAction({
     return;
   }
 
-  // Step 1: Generate IDs immediately for optimistic UI
+  // Step 1: Generate IDs immediately for optimistic UI. The agent id here is
+  // a LOCAL placeholder only (task-item marker); it is never sent to the
+  // daemon — the daemon assigns the real agent id on create, and the marker
+  // is re-keyed to that id once known. Until then, NO daemon-synced store
+  // action is dispatched with the placeholder (addTaskAgentAssociation
+  // triggers `task.linkAgent` on the wire via the associations middleware).
   const optimisticAgentId = unifiedIdService.generateAgentId();
   const optimisticNoteId = unifiedIdService.generateNoteId();
-  const taskKey = createTaskAgentAssociationKeyForAgent(optimisticAgentId);
+  let agentId: string = optimisticAgentId;
+  let taskKey = createTaskAgentAssociationKeyForAgent(optimisticAgentId);
 
   // Step 2: Set delegatedAgentId on task item immediately (shows "Spinning up...")
   // Use external-update meta to prevent triggering onUpdate/debounceUpdate for better perf
@@ -105,22 +111,10 @@ export async function runAssignAgentTaskMenuAction({
         taskPosition,
         agentId: optimisticAgentId,
       });
-
-      // Step 2b: Persist the task-agent association immediately
-      // This ensures the association survives external content updates that may
-      // replace the editor content before the backend operation completes
-      storeDispatch(addTaskAgentAssociation(workspace.id, noteId, {
-        taskText,
-        taskKey,
-        agentId: optimisticAgentId,
-        noteId,
-        createdAt: Date.now(),
-      }));
-      logger.debug('Persisted task-agent association for optimistic update', {
-        taskText,
-        taskKey,
-        agentId: optimisticAgentId,
-      });
+      // NOTE: the task-agent association is NOT dispatched here — the
+      // placeholder id must not reach the daemon via `task.linkAgent`. The
+      // association is dispatched after `agents.create` returns the
+      // daemon-assigned id (Step 5b below).
     }
   }
 
@@ -173,9 +167,9 @@ export async function runAssignAgentTaskMenuAction({
     // Create the Task Note via the live tasks client (daemon `task.createPrerequisite`).
     // `peerOrder` is not part of the §7.9 arm and is dropped; the daemon assigns
     // ordering. The auto-agent behavior (initialMessage + `task.assignAgent`) is
-    // preserved trivially via a follow-up `agents.create` using the pre-generated
-    // id; the initial-message send and explicit assignment are NOT re-issued here
-    // (known gap versus the retired main-process handler).
+    // preserved via a follow-up `agents.create`; the initial-message send and
+    // explicit assignment are NOT re-issued here (known gap versus the retired
+    // main-process handler).
     const createResult = await appClient.tasks.createPrerequisite(
       noteId,
       sanitizedTitle,
@@ -197,9 +191,8 @@ export async function runAssignAgentTaskMenuAction({
     const newTaskNoteId = createResult.id;
 
     try {
-      await appClient.agents.create({
+      const createdAgent = await appClient.agents.create({
         workspaceId: workspace.id,
-        agentId: optimisticAgentId,
         name: sanitizedTitle,
         agentType: 'task-loop',
         model,
@@ -210,10 +203,54 @@ export async function runAssignAgentTaskMenuAction({
           isBackground: true,
         },
       });
+
+      // Step 5b: adopt the daemon-assigned agent id. Re-key the task-item
+      // marker and only NOW dispatch the association (which syncs to the
+      // daemon via `task.linkAgent`) — never with the local placeholder.
+      agentId = String(createdAgent.id);
+      taskKey = createTaskAgentAssociationKeyForAgent(agentId);
+
+      if (editor) {
+        editor
+          .chain()
+          .command(({ tr }) => {
+            tr.setMeta('external-update', true);
+            return true;
+          })
+          .command(({ tr, state }) => {
+            let rekeyed = false;
+            state.doc.descendants((node, pos) => {
+              if (rekeyed) return false;
+              if (node.type.name === 'taskItem' && node.attrs.delegatedAgentId === optimisticAgentId) {
+                tr.setNodeMarkup(pos, undefined, {
+                  ...node.attrs,
+                  delegatedAgentId: agentId,
+                });
+                rekeyed = true;
+                return false;
+              }
+              return true;
+            });
+            return rekeyed;
+          })
+          .run();
+      }
+
+      storeDispatch(addTaskAgentAssociation(workspace.id, noteId, {
+        taskText,
+        taskKey,
+        agentId,
+        noteId,
+        createdAt: Date.now(),
+      }));
+      logger.debug('Persisted task-agent association with daemon-assigned id', {
+        taskText,
+        taskKey,
+        agentId,
+      });
     } catch (agentError) {
       logger.warn('Failed to create agent for new Task Note', {
         taskNoteId: newTaskNoteId,
-        agentId: optimisticAgentId,
         error: agentError instanceof Error ? agentError.message : String(agentError),
       });
     }
@@ -234,13 +271,18 @@ export async function runAssignAgentTaskMenuAction({
     // As last resort, find by task text
     // Use external-update meta to prevent triggering onUpdate/debounceUpdate for better perf
     if (editor) {
-      // Helper to find task by agentId
+      // Helper to find task by agentId (adopted daemon id, with the local
+      // placeholder as fallback in case the re-key markup did not land)
       const findTaskByAgentId = (): { pos: number; node: any } | null => {
         let foundPos = -1;
         let foundNode: any = null;
         editor.state.doc.descendants((node, pos) => {
           if (foundPos >= 0) return false;
-          if (node.type.name === 'taskItem' && node.attrs.delegatedAgentId === optimisticAgentId) {
+          if (
+            node.type.name === 'taskItem' &&
+            (node.attrs.delegatedAgentId === agentId ||
+              node.attrs.delegatedAgentId === optimisticAgentId)
+          ) {
             foundPos = pos;
             foundNode = node;
             return false;
@@ -287,12 +329,12 @@ export async function runAssignAgentTaskMenuAction({
       // Step 2: If not found, restore associations and try again
       if (!taskMatch && workspace?.id && noteId) {
         logger.debug('[convertToLinkedTask] Task not found by agentId, restoring associations', {
-          agentId: optimisticAgentId,
+          agentId,
         });
         restoreTaskAgentAssociations(editor, [{
           taskText,
           taskKey,
-          agentId: optimisticAgentId,
+          agentId,
           noteId,
           createdAt: Date.now(),
         }], logger);
@@ -302,7 +344,7 @@ export async function runAssignAgentTaskMenuAction({
       // Step 3: If still not found, try by occurrence key/text as last resort
       if (!taskMatch) {
         logger.debug('[convertToLinkedTask] Task still not found by agentId, trying by task key/text', {
-          agentId: optimisticAgentId,
+          agentId,
           taskKey,
           occurrenceTaskKey,
           taskText,
@@ -312,7 +354,7 @@ export async function runAssignAgentTaskMenuAction({
 
       if (!taskMatch) {
         logger.warn('[convertToLinkedTask] Task item not found by agentId or text', {
-          agentId: optimisticAgentId,
+          agentId,
           noteId: taskNote.id,
             taskKey,
           taskText,
@@ -364,12 +406,12 @@ export async function runAssignAgentTaskMenuAction({
 
         if (!convertResult) {
           logger.warn('Failed to convert checklist item to linked task in editor', {
-            optimisticAgentId,
+            agentId,
             taskNoteId: taskNote.id,
           });
         } else {
           logger.info('Converted checklist item to linked task', {
-            optimisticAgentId,
+            agentId,
             taskNoteId: taskNote.id,
           });
 
