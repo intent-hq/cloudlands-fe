@@ -4,16 +4,18 @@ This document describes the end-to-end release process for Intent (cloudlands-fe
 
 ## Overview
 
-Releases are built and published by the **Release Beta** workflow in GitHub Actions. The workflow:
+Releases are built and published by the **Release Beta** workflow in GitHub Actions. The `intentd` sidecar is **not built from source** — it is downloaded from the pinned `intent-hq/intentd` GitHub Release recorded in the `intentd.version` file (intentd releases on its own cycle). The workflow:
 
-1. Builds the macOS app with the bundled `intentd` sidecar (fetched from `intent-hq/intentd` main)
-2. Signs and notarizes the app using Apple Developer ID certificates
-3. Generates release notes by comparing commit ranges across both `cloudlands-fe` and `intentd` repos
-4. Tags the `intentd` commit (`v{VERSION}`) used in the build
+1. Reads the pinned intentd version from `intentd.version` and fetches the matching release asset via `scripts/fetch-sidecar.cjs` (sha256-verified, staged at `resources/sidecar/intentd`); it fails fast if the pinned release or its assets don't exist
+2. Builds the macOS app with the staged `intentd` sidecar
+3. Signs and notarizes the app using Apple Developer ID certificates
+4. Generates release notes from the `cloudlands-fe` commit range; the intentd section links to the pinned intentd release
 5. Publishes artifacts to `intent-hq/cloudlands-releases` on GitHub, including:
    - DMG installer, ZIP archive, blockmap files, and `latest-mac.yml` (auto-updater feed)
-   - `release-manifest.json` — metadata capturing the exact `intentd` SHA and version
+   - `release-manifest.json` — metadata capturing the fe tag/SHA and the pinned `intentdVersion`
 6. Opens a version-bump PR to update `package.json` on the `main` branch
+
+No tags are pushed to `intent-hq/intentd`. To ship a newer intentd, update the `intentd.version` pin on `main` via a normal PR before cutting the release.
 
 ## Prerequisites
 
@@ -28,13 +30,13 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
 - **`CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD`** - App-specific password for notarization
 - **`CLOUDLANDS_APPLE_TEAM_ID`** - Apple Developer Team ID (e.g., `6947A73B2N`)
 - **`RELEASE_PAT`** - Personal Access Token (classic or fine-grained) with:
-  - Classic: `repo` scope on `intent-hq/cloudlands-fe`, `intent-hq/cloudlands-releases`, and `intent-hq/intentd`
-  - Fine-grained: `Contents: Read and write` + `Pull requests: Read and write`, with repository access to `cloudlands-fe`, `cloudlands-releases`, and `intentd` (PR permissions unused for intentd)
-- **`INTENTD_READ_PAT`** - Personal Access Token with read access to `intent-hq/intentd`, `intent-hq/cloudlands-fe`, and `intent-hq/cloudlands-releases`:
+  - Classic: `repo` scope on `intent-hq/cloudlands-fe` and `intent-hq/cloudlands-releases`
+  - Fine-grained: `Contents: Read and write` + `Pull requests: Read and write`, with repository access to `cloudlands-fe` and `cloudlands-releases`
+- **`INTENTD_READ_PAT`** - Personal Access Token with read-only access to `intent-hq/intentd` (used by `scripts/fetch-sidecar.cjs` to download the pinned intentd release assets while the repo is private):
   - Classic: `repo` scope (read-only use)
-  - Fine-grained: `Contents: Read-only` with repository access to all three repos (used for generating release notes and downloading release manifests)
+  - Fine-grained: `Contents: Read-only` with repository access to `intentd`
 
-**Important:** If `INTENTD_READ_PAT` expires, the workflow will fail at the "Checkout intentd" step with an authentication error.
+**Important:** If `INTENTD_READ_PAT` expires, the workflow will fail at the "Fetch pinned intentd sidecar" step with a release-not-found error.
 
 ## Cutting a Beta Release
 
@@ -44,7 +46,7 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
 
    Enter the version number in semver format (e.g., `2.0.5`). The workflow validates the format and checks that the tag doesn't already exist.
 
-   **Optional:** Provide the `intentd_base_sha` workflow input when the previous release has no intentd tag and no `release-manifest.json` (e.g., first automated release after manual releases, or a gap in the release sequence). This is the baseline intentd commit SHA for computing release notes. The workflow auto-resolves the base SHA from: (1) intentd tag matching the previous cloudlands-fe release, (2) `release-manifest.json` from the previous release, or (3) the `intentd_base_sha` input. If all three fail, the workflow errors with a clear message requiring the input.
+   The bundled intentd version comes from the `intentd.version` pin on `main` — there are no intentd-related workflow inputs. Make sure the pinned release exists on `intent-hq/intentd` (with assets for the build targets) before triggering, or the workflow will fail fast at the fetch step.
 
 2. **Wait for the build**
 
@@ -69,11 +71,8 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
    # Verify the version in latest-mac.yml
    curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | grep version
 
-   # Inspect the release manifest (captures intentd SHA and version)
+   # Inspect the release manifest (captures fe tag/SHA and the pinned intentdVersion)
    curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/release-manifest.json" | jq .
-
-   # Verify intentd tag was created and view the tag reference
-   gh api "repos/intent-hq/intentd/git/refs/tags/v${VERSION}" --jq '.ref'
    ```
 
 4. **Verify the rolling beta channel**
@@ -154,19 +153,19 @@ After verifying a beta release, promote it to the stable channel using the **Rel
 
 ## Troubleshooting
 
-### INTENTD_READ_PAT Expiry
+### Pinned intentd Release Not Found
 
-**Symptom:** Workflow fails at "Checkout intentd" with authentication error.
+**Symptom:** "Fetch pinned intentd sidecar" step fails with "Release v{X.Y.Z} not found in intent-hq/intentd" (or a missing-asset/missing-checksum error).
 
-**Fix:** The `INTENTD_READ_PAT` token has expired. Regenerate a fine-grained Personal Access Token with `Contents: Read-only` on `intent-hq/intentd` and update the secret in repository settings.
+**Fix:** Either the release for the version pinned in `intentd.version` hasn't been published on `intent-hq/intentd` (or lacks the per-target binary + sha256 assets), or `INTENTD_READ_PAT` has expired/lacks read access to the private repo. Publish the pinned intentd release, or update the `intentd.version` pin to an existing release via a PR to main. If the token expired, regenerate a fine-grained Personal Access Token with `Contents: Read-only` on `intent-hq/intentd` and update the secret in repository settings.
 
 ### RELEASE_PAT Permissions
 
-**Symptom:** "Open version-bump PR to main" step fails with a permissions error, or the workflow completes but no PR is visible. Alternatively, "Push intentd tag" step fails.
+**Symptom:** "Open version-bump PR to main" step fails with a permissions error, or the workflow completes but no PR is visible.
 
 **Fix:** The `RELEASE_PAT` is missing required permissions:
 - For cloudlands-fe PRs: `Pull requests: Read and write` (fine-grained) or `repo` scope (classic)
-- For intentd tags: `Contents: Read and write` on `intent-hq/intentd` (fine-grained) or `repo` scope (classic)
+- For cloudlands-releases publishing: `Contents: Read and write` (fine-grained) or `repo` scope (classic)
 
 Update the token's permissions in GitHub settings. Note: the workflow is idempotent and will re-use an existing PR if the branch already exists.
 
@@ -178,15 +177,15 @@ Update the token's permissions in GitHub settings. Note: the workflow is idempot
 
 ### Duplicate Version Tag
 
-**Symptom:** "Tag v<version> already exists on origin" error (on cloudlands-fe or intentd).
+**Symptom:** "Tag v<version> already exists on origin" error (on cloudlands-fe).
 
 **Fix:** A release with this version already exists. Use a different version number or delete the existing tag if it was created in error.
 
 ### Release Notes Generation Fails
 
-**Symptom:** Workflow fails with "Could not resolve intentd base SHA. This is the first release and requires the intentd_base_sha workflow input."
+**Symptom:** Workflow fails with "No previous versioned release found on cloudlands-releases. Cannot generate release notes."
 
-**Fix:** The workflow cannot find an intentd tag matching the previous cloudlands-fe release, and the previous release has no `release-manifest.json` asset, and no `intentd_base_sha` input was provided. Re-run the workflow and provide the `intentd_base_sha` input — the baseline intentd commit SHA for computing release notes (e.g., the intentd SHA from the last manual beta or the intentd commit used in the previous release). Future releases will auto-resolve the base from the intentd tag or manifest.
+**Fix:** The workflow could not find a previous `vX.Y.Z` release on `intent-hq/cloudlands-releases` to use as the base of the fe commit range. Verify that previous versioned releases exist and that `RELEASE_PAT` can read `intent-hq/cloudlands-releases`.
 
 ### Stable Promotion SHA Mismatch
 
