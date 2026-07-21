@@ -1166,10 +1166,10 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
           const content = await metadataFS.readFile(filePath, 'utf-8');
           const session = JSON.parse(content) as AgentSession;
 
-          // Clear any phantom in-flight flags persisted from a previous
-          // process. Without a live stream handler at load time, an agent
-          // can never be legitimately streaming, so isStreaming/isProcessing/
-          // isResponding must be false.
+          // Clear phantom in-flight flags persisted from a previous process
+          // (isStreaming/isProcessing/isResponding stuck true after a hard
+          // exit). Sessions whose messages are still marked streaming are
+          // left untouched so a genuinely mid-stream snapshot is preserved.
           normalizeStreamingState(session);
 
           // Only load sessions for this workspace
