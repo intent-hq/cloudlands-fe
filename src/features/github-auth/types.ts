@@ -90,6 +90,11 @@ export interface GitHubAuthState {
   updatedScopes?: string;
   /** OAuth URL for authentication */
   oauthUrl?: string;
+  /**
+   * Still-pending device flow from `github.authStatus` (§5.27) so a
+   * reconnecting client resumes the in-flight flow after a refresh.
+   */
+  deviceFlow?: GitHubDeviceFlow | null;
 }
 
 /**

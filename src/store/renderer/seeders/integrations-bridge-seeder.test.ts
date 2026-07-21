@@ -156,6 +156,7 @@ describe('integrations-bridge-seeder', () => {
         },
         needsScopeUpdate: false,
         oauthUrl: undefined,
+        deviceFlow: null,
       });
     });
 
@@ -169,6 +170,50 @@ describe('integrations-bridge-seeder', () => {
       expect(state.isAuthenticated).toBe(false);
       expect(state.user).toBeNull();
       expect(mockedRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('get-auth-state surfaces a still-pending device flow so a reload resumes it (§5.27)', async () => {
+      const pendingFlow = {
+        status: 'pending',
+        userCode: 'WXYZ-9876',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 500,
+        interval: 5,
+      };
+      mockedRequest.mockResolvedValueOnce({
+        isConfigured: false,
+        oauthUrl: 'https://github.com/login/device',
+        configuredButNeedsUpdate: false,
+        updatedScopes: '',
+        deviceFlow: pendingFlow,
+      });
+
+      const state = await mockInvoke<{ deviceFlow: unknown; oauthUrl: string }>(
+        GITHUB_AUTH_CHANNELS.GET_AUTH_STATE,
+      );
+
+      expect(state.deviceFlow).toEqual(pendingFlow);
+      expect(state.oauthUrl).toBe('https://github.com/login/device');
+    });
+
+    it('get-auth-state nulls out a terminal (non-pending) device flow', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        isConfigured: false,
+        oauthUrl: '',
+        configuredButNeedsUpdate: false,
+        updatedScopes: '',
+        deviceFlow: {
+          status: 'expired',
+          userCode: 'OLD1-CODE',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 0,
+          interval: 5,
+        },
+      });
+
+      const state = await mockInvoke<{ deviceFlow: unknown }>(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE);
+
+      expect(state.deviceFlow).toBeNull();
     });
 
     it('get-status surfaces github.authStatus verbatim (FE shape parity fields included)', async () => {

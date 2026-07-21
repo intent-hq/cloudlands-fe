@@ -162,6 +162,71 @@ describe("githubAuthStoreService (fake seam, real store)", () => {
     expect(ghState().deviceFlow).toBeNull();
   });
 
+  it("initialize resumes a still-pending device flow after a refresh (§5.27)", async () => {
+    api.getAuthState.mockResolvedValueOnce({
+      isAuthenticated: false,
+      requiresDaemonAuth: false,
+      user: null,
+      needsScopeUpdate: false,
+      oauthUrl: "https://github.com/login/device",
+      deviceFlow: {
+        status: "pending",
+        userCode: "RSME-4321",
+        verificationUri: "https://github.com/login/device",
+        expiresIn: 400,
+        interval: 5,
+      },
+    });
+    api.checkAuthComplete.mockResolvedValue({
+      success: true,
+      data: { user: null, isComplete: false },
+    });
+
+    await initializeGitHubAuthFlow();
+    await flush();
+
+    expect(ghState().deviceFlow?.userCode).toBe("RSME-4321");
+    expect(ghState().isAuthenticating).toBe(true);
+    expect(api.checkAuthComplete).toHaveBeenCalled();
+    // Stop the resumed fallback poll so it does not leak into later tests.
+    await cancelGitHubAuthFlow();
+  });
+
+  it("initialize does not resume a terminal device flow", async () => {
+    api.getAuthState.mockResolvedValueOnce({
+      isAuthenticated: false,
+      requiresDaemonAuth: false,
+      user: null,
+      needsScopeUpdate: false,
+      oauthUrl: null,
+      deviceFlow: null,
+    });
+
+    await initializeGitHubAuthFlow();
+    await flush();
+
+    expect(ghState().deviceFlow).toBeNull();
+    expect(api.checkAuthComplete).not.toHaveBeenCalled();
+  });
+
+  it("auth-changed authorized with a null identity re-hydrates via the boot path", async () => {
+    api.getUser.mockResolvedValueOnce(null);
+    api.getAuthState.mockResolvedValueOnce({
+      isAuthenticated: true,
+      requiresDaemonAuth: false,
+      user: { login: "rehydrated", name: null, email: null, avatar_url: "" },
+      needsScopeUpdate: false,
+      oauthUrl: null,
+      deviceFlow: null,
+    });
+
+    await handleGitHubAuthChanged("authorized");
+    await flush();
+
+    expect(api.getAuthState).toHaveBeenCalledTimes(1);
+    expect(ghState().user?.login).toBe("rehydrated");
+  });
+
   it("auth-changed authorized fetches identity and completes (§6.5)", async () => {
     api.getUser.mockResolvedValueOnce({
       login: "eventuser",

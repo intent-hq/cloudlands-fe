@@ -43,7 +43,6 @@
 
   let authStartedHere = false;
   let hasAutoStarted = false;
-  let hasOpenedBrowser = $state(false);
 
   // Auto-start auth flow if requested (e.g., when modal opens due to PR creation failure)
   onMount(() => {
@@ -64,7 +63,6 @@
 
   function handleConnect() {
     authStartedHere = true;
-    hasOpenedBrowser = false;
     appStore.dispatch(startGitHubAuth());
   }
 
@@ -72,13 +70,11 @@
     if (authStartedHere) {
       appStore.dispatch(cancelGitHubAuth());
     }
-    hasOpenedBrowser = false;
     onClose();
   }
 
   function handleRetry() {
     appStore.dispatch(clearGitHubAuthError());
-    hasOpenedBrowser = false;
     handleConnect();
   }
 
@@ -138,16 +134,13 @@
             <GitHubDeviceCodeCard
               userCode={$deviceFlow$.userCode}
               verificationUri={$deviceFlow$.verificationUri}
-              onOpen={() => (hasOpenedBrowser = true)}
             />
-            {#if hasOpenedBrowser}
-              <div class="flex items-center justify-center gap-2 mt-4 text-subtle text-sm">
-                <div
-                  class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
-                ></div>
-                <span>Waiting for authorization...</span>
-              </div>
-            {/if}
+            <div class="flex items-center justify-center gap-2 mt-4 text-subtle text-sm">
+              <div
+                class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
+              ></div>
+              <span>Waiting for authorization...</span>
+            </div>
           </div>
         {:else if $isAuthenticating$}
           <div class="loading">

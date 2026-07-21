@@ -36,6 +36,9 @@ import type {
 } from '$features/sentry-auth/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { LiveIntegrationsClient } from '$lib/client/live/live-integrations-client';
+import { createLogger } from '$lib/utils/client-logger';
+
+const logger = createLogger('IntegrationsBridgeSeeder');
 
 /** Single mapping point for `github.getUser` → FE `GitHubUser`. */
 const liveIntegrations = new LiveIntegrationsClient();
@@ -79,6 +82,9 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE, async (): Promise<Gi
     // While a device flow is live, `authStatus.oauthUrl` carries the
     // verification URI (§5.27); empty otherwise.
     oauthUrl: status?.oauthUrl || undefined,
+    // Surface a still-pending flow so a reconnecting client resumes it
+    // (§5.27: "the flow survives client refreshes").
+    deviceFlow: status?.deviceFlow?.status === 'pending' ? status.deviceFlow : null,
   };
 });
 
@@ -136,6 +142,12 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartA
         interval: typeof result.interval === 'number' ? result.interval : undefined,
       };
     }
+    // §5.27: connect either succeeds with all fields or errors -32603 (the
+    // catch branch). Reaching here means a wire divergence — log the payload
+    // shape (keys only, never values) so the BE-side bug is diagnosable.
+    logger.error('github.connect returned an unexpected payload shape', {
+      keys: result && typeof result === 'object' ? Object.keys(result) : typeof result,
+    });
     return { success: false, error: 'GitHub device flow could not be started.' };
   } catch (error) {
     return { success: false, error: errorMessage(error) };

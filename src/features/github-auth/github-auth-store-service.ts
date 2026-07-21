@@ -71,6 +71,23 @@ export async function initializeGitHubAuthFlow(): Promise<void> {
         oauthUrl: authState.oauthUrl ?? null,
       }),
     );
+    // Resume a still-pending device flow after a client refresh (§5.27:
+    // "the flow survives client refreshes") — restore the code card and
+    // restart the fallback poll at the daemon-suggested cadence.
+    const pending = authState.deviceFlow;
+    if (!authState.isAuthenticated && pending?.status === "pending") {
+      appStore.dispatch(setAuthenticating(true));
+      appStore.dispatch(
+        setDeviceFlowInfo({
+          userCode: pending.userCode,
+          verificationUri: pending.verificationUri,
+          expiresIn: pending.expiresIn,
+          interval: pending.interval,
+        }),
+      );
+      const pollMs = Math.max((pending.interval || 5) * 1000, AUTH_POLL_INTERVAL);
+      void pollForGitHubAuthCompletion(pollMs);
+    }
   } catch (error) {
     logger.error("initialize error", error);
   }
@@ -198,6 +215,12 @@ export async function handleGitHubAuthChanged(
       cancelActivePoll();
       const user = await githubAuthClient.getUser();
       appStore.dispatch(authCompleted(user));
+      if (user === null) {
+        // getUser() folds transient failures to null; re-hydrate through the
+        // boot path so the identity converges instead of rendering a
+        // half-hydrated "connected" state.
+        void initializeGitHubAuthFlow();
+      }
       break;
     }
     case "expired":
