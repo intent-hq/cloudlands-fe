@@ -39,13 +39,21 @@ if (!fs.existsSync(sourceBin)) {
 
 // Release CI stages the pinned sidecar via fetch-sidecar.cjs and points INTENTD_BIN at
 // the staging path itself; copying a file onto itself would truncate it, so skip.
-// Compare dev/ino rather than path strings so case-insensitive filesystems (Windows,
-// default macOS) and aliased paths can't defeat the guard.
+// Compare canonical realpaths (case-normalized on win32) so case-insensitive
+// filesystems and aliased paths can't defeat the guard, falling back to dev/ino
+// only when both inode values are meaningful (Windows can report ino as 0).
 const isSameFile = (a, b) => {
   try {
+    let ra = fs.realpathSync.native(a);
+    let rb = fs.realpathSync.native(b);
+    if (process.platform === "win32") {
+      ra = ra.toLowerCase();
+      rb = rb.toLowerCase();
+    }
+    if (ra === rb) return true;
     const sa = fs.statSync(a);
     const sb = fs.statSync(b);
-    return sa.dev === sb.dev && sa.ino === sb.ino;
+    return sa.ino !== 0 && sb.ino !== 0 && sa.dev === sb.dev && sa.ino === sb.ino;
   } catch {
     return false;
   }

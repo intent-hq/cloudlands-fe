@@ -145,6 +145,12 @@ async function main() {
 
   // Normalize the pin to a bare semver; intentd release tags are `v<version>`
   const intentdVersion = args['intentd-version'].replace(/^v/, '');
+  if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(intentdVersion)) {
+    console.error(
+      `Invalid --intentd-version "${args['intentd-version']}" (expected e.g. 1.2.3, 1.2.3-beta.1, or v1.2.3)`,
+    );
+    process.exit(1);
+  }
   const intentdTag = `v${intentdVersion}`;
 
   console.log(`Generating release notes for Intent v${args.version}...\n`);
