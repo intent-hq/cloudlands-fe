@@ -184,7 +184,7 @@
       const history = terminalHistoryTracker.getHistory(t.terminalId);
       return {
         id: t.terminalId,
-        name: t.title || `Terminal ${t.terminalId.substring(0, 8)}`,
+        name: t.title || 'Terminal',
         lastCommand: history?.lastCommand,
         lastOutput: history?.lastOutput,
         hasRunningProcess: history?.isExecuting || false,
@@ -249,8 +249,9 @@
         // customName from a previously renamed terminal must not carry over.
         appStore.dispatch(removeTerminal(workspaceId, result.id));
 
-        // Save terminal metadata
-        terminalManager.saveTerminalMetadata(result.id, workspaceId, 'Terminal');
+        // Save terminal metadata without a hardcoded title — the reducer keeps
+        // any daemon-provided name and only falls back to 'Terminal'.
+        terminalManager.saveTerminalMetadata(result.id, workspaceId);
 
         // Reload terminals to include the new one
         loadTerminals(workspaceId);

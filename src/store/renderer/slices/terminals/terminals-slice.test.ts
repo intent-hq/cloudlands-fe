@@ -314,9 +314,64 @@ describe("terminalsReducer", () => {
         createdAt: "old",
       });
     });
+
+    it("should preserve a daemon-provided name when no title is given (no 'Terminal' clobber)", () => {
+      // Regression: opening/attaching a hydrated terminal dispatches
+      // saveTerminalMetadata without an explicit title; the daemon name
+      // (e.g. "Setup Script" from terminal.list) must survive.
+      const stateWith: TerminalOverlayState = {
+        ...initialState,
+        workspaces: {
+          [WS]: {
+            isOpen: false,
+            activeTerminalId: null,
+            terminals: col([{ id: "pty-0", name: "Setup Script" }]),
+            terminalsLoaded: false,
+            isLoadingTerminals: false,
+            recentlyCreatedTerminals: [],
+          },
+        },
+      };
+
+      const state = terminalsReducer(
+        stateWith,
+        saveTerminalMetadata(WS, "pty-0", undefined, "2026-07-21T00:00:00.000Z")
+      );
+
+      expect(getItem(getWs(state).terminals, "pty-0")?.name).toBe("Setup Script");
+    });
+
+    it("should fall back to 'Terminal' when neither title nor existing name is present", () => {
+      const state = terminalsReducer(
+        initialState,
+        saveTerminalMetadata(WS, "pty-3", undefined, "2026-07-21T00:00:00.000Z")
+      );
+
+      expect(getItem(getWs(state).terminals, "pty-3")?.name).toBe("Terminal");
+    });
   });
 
   describe("loadWorkspaceTerminals", () => {
+    it("should carry the daemon name into TerminalTab.name on hydration (before local metadata exists)", () => {
+      // Regression: terminals listed by the daemon before any local metadata
+      // exists must display the daemon `name` (e.g. "Setup Script"), never a
+      // pty-X-derived label.
+      const terminals = [
+        { id: "pty-0", name: "Setup Script", isConnected: true, isExecuting: false },
+        { id: "pty-1", name: "Terminal", isConnected: true, isExecuting: true },
+      ];
+      const state = terminalsReducer(
+        initialState,
+        loadWorkspaceTerminals(WS, terminals, null)
+      );
+
+      const setup = getItem(getWs(state).terminals, "pty-0");
+      expect(setup?.name).toBe("Setup Script");
+      // Display resolution is customName || name || 'Terminal'.
+      expect(setup?.customName || setup?.name || "Terminal").toBe("Setup Script");
+      expect(getItem(getWs(state).terminals, "pty-1")?.name).toBe("Terminal");
+    });
+
     it("should load terminals with saved state", () => {
       const terminals = [
         { id: "t1", name: "T1" },
