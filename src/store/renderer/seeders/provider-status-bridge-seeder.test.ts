@@ -19,6 +19,7 @@ import { mockInvoke } from "$shared/ipc-mock-router";
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from "$shared/ipc/channels";
 import { MINIMUM_AUGGIE_VERSION } from "$shared/constants/auggie";
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
+import { CODEX_ADAPTER_MISSING_WARNING } from "$shared/constants/codex";
 import type { ProviderAvailabilityResult } from "$shared/types/provider-availability";
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -37,11 +38,11 @@ function routeDaemon(responses: MethodResponses): void {
 const NO_TOOLS = {
   tools: {
     claude: { available: false },
-    "codex-acp": { available: false },
+    codex: { available: false },
     opencode: { available: false },
     pi: { available: false },
     droid: { available: false },
-    codex: { available: false },
+    "codex-acp": { available: false },
     npx: { available: false },
   },
 };
@@ -71,7 +72,7 @@ describe("provider-status-bridge-seeder", () => {
 
       expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
       expect(mockedRequest).toHaveBeenCalledWith("host.toolAvailability", {
-        tools: ["claude", "codex-acp", "opencode", "pi", "droid", "codex", "npx"],
+        tools: ["claude", "codex", "opencode", "pi", "droid", "codex-acp", "npx"],
       });
       expect(response.success).toBe(true);
       expect(response.data?.hasAnyProvider).toBe(false);
@@ -138,8 +139,8 @@ describe("provider-status-bridge-seeder", () => {
     });
 
     it("runs the claude-code / codex exit-code auth probes against the right CLIs", async () => {
-      // Availability keys: claude (prerequisite CLI) and codex-acp (adapter);
-      // auth runs `claude auth status` and `codex login status` (real CLI).
+      // Availability keys: claude and codex (the real prerequisite CLIs);
+      // auth runs `claude auth status` and `codex login status`.
       routeDaemon({
         "host.checkAuggie": { available: false },
         "host.toolAvailability": {
@@ -202,6 +203,74 @@ describe("provider-status-bridge-seeder", () => {
         authenticated: true,
         warning: CLAUDE_CODE_NPX_MISSING_WARNING,
       });
+    });
+
+    it("reports codex available on the real CLI alone (no local adapter needed)", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            codex: { available: true, path: "/usr/local/bin/codex" },
+            npx: { available: true, path: "/usr/local/bin/npx" },
+          },
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      // npx can run the pinned codex-acp fallback — no warning.
+      expect(response.data?.providers.codex).toEqual({
+        available: true,
+        authenticated: true,
+      });
+    });
+
+    it("warns when the codex CLI is installed but neither codex-acp nor npx can run the adapter", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            codex: { available: true, path: "/usr/local/bin/codex" },
+          },
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.codex).toEqual({
+        available: true,
+        authenticated: true,
+        warning: CODEX_ADAPTER_MISSING_WARNING,
+      });
+    });
+
+    it("keeps codex unavailable when only the codex-acp adapter is installed (CLI missing)", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
+          },
+        },
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.codex).toEqual({ available: false });
+      expect(response.data?.hasAnyProvider).toBe(false);
+      // No auth probe for an uninstalled CLI.
+      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
     });
   });
 
@@ -285,6 +354,99 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
+    it("rechecks codex against the real CLI — warning when neither codex-acp nor npx resolves", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          return name === "codex"
+            ? { available: true, path: "/usr/local/bin/codex" }
+            : { available: false };
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex-acp" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "npx" });
+      // Auth runs against the real codex CLI.
+      expect(mockedRequest).toHaveBeenCalledWith("host.exec", {
+        command: "/usr/local/bin/codex",
+        args: ["login", "status"],
+        timeoutMs: 5000,
+      });
+      expect(response).toEqual({
+        success: true,
+        providerId: "codex",
+        data: {
+          available: true,
+          authenticated: true,
+          warning: CODEX_ADAPTER_MISSING_WARNING,
+        },
+      });
+    });
+
+    it("rechecks codex without a warning when npx can run the pinned adapter fallback", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          if (name === "codex") return { available: true, path: "/usr/local/bin/codex" };
+          if (name === "npx") return { available: true, path: "/usr/local/bin/npx" };
+          return { available: false };
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "codex",
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it("does not warn on codex when the adapter probes fail (unknown, not confirmed absence)", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          if (name === "codex") return { available: true, path: "/usr/local/bin/codex" };
+          throw new Error("transport down");
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "codex",
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it("reports codex unavailable when the real CLI is missing even if codex-acp is installed", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          return name === "codex-acp"
+            ? { available: true, path: "/usr/local/bin/codex-acp" }
+            : { available: false };
+        },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
+      expect(response).toEqual({
+        success: true,
+        providerId: "codex",
+        data: { available: false },
+      });
+      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+    });
+
     it("reports pi presence-only (no auth signal → authenticated stays undefined)", async () => {
       routeDaemon({
         "host.findBinary": { available: true, path: "/usr/local/bin/pi" },
@@ -318,9 +480,9 @@ describe("provider-status-bridge-seeder", () => {
         "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
         "host.findBinary": (params) => {
           const { name } = params as { name: string };
-          return name === "claude"
-            ? { available: true, path: "/opt/homebrew/bin/claude" }
-            : { available: false };
+          if (name === "claude") return { available: true, path: "/opt/homebrew/bin/claude" };
+          if (name === "codex") return { available: true, path: "/opt/homebrew/bin/codex" };
+          return { available: false };
         },
       });
 
@@ -330,13 +492,14 @@ describe("provider-status-bridge-seeder", () => {
 
       expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
       expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "claude" });
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex-acp" });
+      // codex resolves the real CLI (mirrors main's getCodexPath), not codex-acp.
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
       expect(response).toEqual({
         success: true,
         data: {
           auggie: "/usr/local/bin/auggie",
           "claude-code": "/opt/homebrew/bin/claude",
-          codex: null,
+          codex: "/opt/homebrew/bin/codex",
         },
       });
     });
@@ -464,8 +627,8 @@ describe("provider-status-bridge-seeder", () => {
     it("resolves each provider's binary and reports presence honestly", async () => {
       routeDaemon({
         "host.findBinary": (params: unknown) => ({
-          available: (params as { name: string }).name === "codex-acp",
-          path: "/usr/local/bin/codex-acp",
+          available: (params as { name: string }).name === "codex",
+          path: "/usr/local/bin/codex",
         }),
       });
 
@@ -477,7 +640,8 @@ describe("provider-status-bridge-seeder", () => {
         success: true,
         available: false,
       });
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex-acp" });
+      // codex keys off the real CLI, not the codex-acp adapter.
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
       expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "claude" });
     });
 
