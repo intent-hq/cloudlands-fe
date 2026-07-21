@@ -1019,6 +1019,7 @@ export const EVENT_CHANNELS = [
   'agent:plan-required', // Agent plan upgrade required notification (enterprise users without Intent access)
   'notification:show', // Notification shown event for sound playback in renderer
   'notification:navigate', // Notification click navigates to workspace
+  'system:memory-pressure', // Memory pressure level transitioned (normal/warning/critical)
   'app:workspace-operation-requested', // App-level MCP workspace operation request (main → renderer saga)
   // Auto-update events
   'auto-update:status-changed',

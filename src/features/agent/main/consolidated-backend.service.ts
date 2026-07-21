@@ -42,6 +42,7 @@ import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import { memoryManager } from './utils/memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
+import { normalizeStreamingState } from '$shared/utils/agent-streaming-state';
 
 // Node.js modules for backend operations
 let ipcMain: any;
@@ -330,6 +331,13 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     try {
       const agentId = createAgentId(agentSession.id);
       const workspaceId = createWorkspaceId(agentSession.workspaceId);
+
+      // Sessions loaded from disk after a hard exit (memory eviction, crash,
+      // app restart) can have isProcessing/isStreaming/isResponding still
+      // true even though no live stream handler exists. Clear those phantom
+      // flags before the record enters memory so the UI never shows a
+      // permanently "thinking" agent.
+      normalizeStreamingState(agentSession);
 
       logger.info('Resuming agent session', {
         agentId,
@@ -1158,6 +1166,12 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
           const content = await metadataFS.readFile(filePath, 'utf-8');
           const session = JSON.parse(content) as AgentSession;
 
+          // Clear any phantom in-flight flags persisted from a previous
+          // process. Without a live stream handler at load time, an agent
+          // can never be legitimately streaming, so isStreaming/isProcessing/
+          // isResponding must be false.
+          normalizeStreamingState(session);
+
           // Only load sessions for this workspace
           if (session.workspaceId === createWorkspaceId(workspaceId)) {
             // Recreate the record
@@ -1773,8 +1787,17 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         let sentToAny = false;
 
         for (const window of targetWindows) {
+          // window.isDestroyed() can return false while the underlying
+          // webContents/render frame has already been torn down by Electron
+          // asynchronously. Without this guard send() throws
+          // "Render frame was disposed before WebFrameMain could be accessed"
+          // on every health:check tick once a window has been closed.
+          const webContents = window.webContents;
+          if (!webContents || webContents.isDestroyed()) {
+            continue;
+          }
           try {
-            window.webContents.send(event, data);
+            webContents.send(event, data);
             sentToAny = true;
           } catch (error) {
             logger.error('[setupEventForwarding] Failed to send to window', {
