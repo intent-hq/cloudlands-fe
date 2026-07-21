@@ -236,10 +236,10 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     // drops such call sites entirely — settings:getAll escaped to a runtime
     // UnbridgedMockIpcChannelError that way. Guards the depth-aware parser.
     expect(invoked.has('auto-update:get-state')).toBe(true);
-    // Passthrough-wrapper call site (`invokeModelChannel('droid:get-models')`,
-    // droid-models.client.ts). Guards the wrapper-name detection — the 7
-    // `*:get-models` channels escaped the audit through these wrappers.
-    expect(invoked.has('droid:get-models')).toBe(true);
+    // The 7 `*:get-models` channels are dispatched through a runtime
+    // provider → channel map (provider-models.client.ts), so they are
+    // dynamic call sites — recorded in DYNAMIC_INVOKE_CALL_SITES below.
+    expect(DYNAMIC_INVOKE_CALL_SITES.has('droid:get-models')).toBe(true);
     // Group-alias local (`const BACKEND = IPC_CHANNELS.BACKEND` →
     // `api.invoke(BACKEND.REQUEST, …)`, backend-transport.ts). Guards the
     // per-file alias resolver.
@@ -351,7 +351,21 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
  * the coverage and dead-entry checks; remove an entry when its call site is
  * retired or rewritten as a statically-resolvable invoke.
  */
-const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([]);
+const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
+  // provider-models.client.ts dispatches the 7 uniform `<provider>:get-models`
+  // channels through its PROVIDER_MODEL_CHANNELS map; the concrete channel is
+  // selected at runtime by providerId, so the scanner cannot see them.
+  ['auggie:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
+  [
+    'claude-code:get-models',
+    'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)',
+  ],
+  ['codex:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
+  ['cortex:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
+  ['droid:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
+  ['opencode:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
+  ['pi:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
+]);
 
 /**
  * Live daemon transport — the renderer↔intentd JSON-RPC bridge

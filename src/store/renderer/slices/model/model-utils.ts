@@ -6,68 +6,35 @@
  * models for a provider different from the global active provider.
  */
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import { getAuggieModels } from '$features/auggie/auggie-models.client';
-import type { ClaudeCodeModel } from '$features/claude-code/claude-code-models.client';
-import { getClaudeCodeModels } from '$features/claude-code/claude-code-models.client';
-import type { CodexModel } from '$features/codex/codex-models.client';
-import { getCodexModelsWithMetadata } from '$features/codex/codex-models.client';
-import type { CortexModel } from '$features/cortex/cortex-models.client';
-import { getCortexModels } from '$features/cortex/cortex-models.client';
-import type { DroidModel } from '$features/droid/droid-models.client';
-import { getDroidModels } from '$features/droid/droid-models.client';
-import type { OpenCodeModel } from '$features/opencode/opencode-models.client';
-import { getOpencodeModels } from '$features/opencode/opencode-models.client';
-import type { PiModel } from '$features/pi/pi-models.client';
-import { getPiModels } from '$features/pi/pi-models.client';
+import { getProviderModels } from '$features/providers/provider-models.client';
 import {
   ACP_PROVIDERS,
   getDefaultProviderId,
   getProviderConfig,
 } from '$shared/config/provider-config';
-/** Union type for all provider model types */
-export type ProviderModel =
-  | AuggieModel
-  | ClaudeCodeModel
-  | CodexModel
-  | CortexModel
-  | DroidModel
-  | OpenCodeModel
-  | PiModel;
+/** Provider model row shape (all providers share the daemon catalog shape). */
+export type ProviderModel = AuggieModel;
 
 type ProviderModelsWithWarning = {
   models: ProviderModel[];
   warning?: string;
+  stale?: boolean;
 };
 
 /**
- * Fetch raw models for a specific provider.
- * Maps provider ID to the appropriate model fetching function.
- * Normalizes aliases (e.g. 'acp' → 'auggie') via getProviderConfig().
+ * Fetch raw models for a specific provider through the uniform daemon-backed
+ * `<provider>:get-models` channel (`models.list { providerId }`, PROTOCOL
+ * §6.7). Normalizes aliases (e.g. 'acp' → 'auggie') via getProviderConfig().
  */
 async function fetchProviderModelsWithWarning(
   providerId: string,
+  options: { forceRefresh?: boolean } = {},
 ): Promise<ProviderModelsWithWarning> {
   const normalizedId = getProviderConfig(providerId).id;
-  switch (normalizedId) {
-    case 'auggie':
-      return { models: await getAuggieModels() };
-    case 'claude-code':
-      return { models: await getClaudeCodeModels() };
-    case 'codex':
-      return await getCodexModelsWithMetadata();
-    case 'cortex':
-      return { models: await getCortexModels() };
-    case 'droid':
-      return { models: await getDroidModels() };
-    case 'opencode':
-      return { models: await getOpencodeModels() };
-    case 'pi':
-      return { models: await getPiModels() };
-    case 'mock':
-      return { models: [] };
-    default:
-      throw new Error(`Unsupported model provider: ${providerId}`);
+  if (normalizedId === 'mock') {
+    return { models: [] };
   }
+  return await getProviderModels(normalizedId, options);
 }
 
 export async function fetchModelsForProvider(providerId: string): Promise<ProviderModel[]> {
@@ -90,15 +57,20 @@ function prefixModelsForProvider(providerId: string, models: ProviderModel[]): A
   });
 }
 
-export async function getModelsForProviderForLoadingState(providerId: string): Promise<{
+export async function getModelsForProviderForLoadingState(
+  providerId: string,
+  options: { forceRefresh?: boolean } = {},
+): Promise<{
   models: AuggieModel[];
   warning?: string;
+  stale?: boolean;
 }> {
   const normalizedId = getProviderConfig(providerId).id;
-  const result = await fetchProviderModelsWithWarning(normalizedId);
+  const result = await fetchProviderModelsWithWarning(normalizedId, options);
   return {
     models: prefixModelsForProvider(normalizedId, result.models),
     warning: result.warning,
+    stale: result.stale,
   };
 }
 

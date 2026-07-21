@@ -326,7 +326,10 @@
     refreshingProviders = new Set([...refreshingProviders, providerId]);
     const gen = fetchGeneration;
     try {
-      const result = await getModelsForProviderForLoadingState(providerId);
+      // True force refresh: the daemon skips its cache and awaits a fresh
+      // probe (PROTOCOL §6.7), so the spinner spins for the real probe
+      // duration and the returned list replaces the group immediately.
+      const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
       if (fetchGeneration !== gen) return;
       setProviderWarningState(providerId, result.warning);
       if (isAgentProviderOverride && providerId === effectiveProviderId) {

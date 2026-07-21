@@ -1,14 +1,17 @@
 /**
  * Regression test for opencode host.exec cwd parameter.
  *
- * Verifies that opencode CLI invocations (`models`, `--version`) do NOT
- * send a `cwd` parameter to the daemon's `host.exec` — a regression from
+ * Verifies that the opencode `--version` availability probe does NOT send a
+ * `cwd` parameter to the daemon's `host.exec` — a regression from
  * cloudlands-fe PR #7 that passed `cwd: os.homedir()` without a `workspaceId`,
  * causing the daemon to reject with `-32602`.
  *
  * PROTOCOL.md §5.14 states that `cwd` requires `workspaceId` for the containment
  * guard. OpenCode reads global config/auth from `$HOME`/XDG env, not the working
  * directory, so the `cwd` was unnecessary.
+ *
+ * (Model listing no longer shells out from the FE at all — it is a thin
+ * `models.list { providerId: 'opencode' }` daemon call, PROTOCOL §6.7.)
  */
 
 import {
@@ -59,39 +62,6 @@ describe('opencode IPC - cwd parameter regression', () => {
     // Clear ipcMain.handle mock call history to keep tests order-independent
     const { ipcMain } = await import('electron');
     vi.mocked(ipcMain.handle).mockClear();
-  });
-
-  it('does NOT send cwd or workspaceId when fetching models', async () => {
-    // Mock successful response with PROTOCOL-shaped payload
-    mockBackendRequest.mockResolvedValueOnce({
-      stdout: 'openai/gpt-5.2\nanthropic/claude-sonnet-4\n',
-      stderr: '',
-      exitCode: 0,
-    });
-
-    // Fresh import to get uncached module
-    vi.resetModules();
-    const { getCachedOpencodeModels } = await import('../opencode.ipc');
-    const result = await getCachedOpencodeModels();
-
-    // Assert the response was parsed correctly
-    expect(result).toEqual(['openai/gpt-5.2', 'anthropic/claude-sonnet-4']);
-
-    // Assert the wire request contains expected fields and NO cwd/workspaceId
-    expect(mockBackendRequest).toHaveBeenCalledTimes(1);
-    expect(mockBackendRequest).toHaveBeenCalledWith(
-      'host.exec',
-      expect.objectContaining({
-        command: '/mocked/opencode',
-        args: ['models', '--log-level', 'DEBUG'],
-        timeoutMs: 10000,
-      }),
-    );
-
-    // Explicitly assert cwd and workspaceId are absent
-    const [_method, params] = mockBackendRequest.mock.calls[0];
-    expect(params).not.toHaveProperty('cwd');
-    expect(params).not.toHaveProperty('workspaceId');
   });
 
   it('does NOT send cwd or workspaceId when checking availability', async () => {

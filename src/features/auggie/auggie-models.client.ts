@@ -1,39 +1,10 @@
 /**
  * Auggie Models Client
  *
- * Client-side functions for getting available models from auggie
+ * The FE-wide model row type (`AuggieModel`) and display helpers. Model
+ * listing goes through the shared provider models client
+ * (`$features/providers/provider-models.client`).
  */
-
-import { invoke } from '$lib/electron-bridge';
-import { createLogger } from '$lib/utils/client-logger';
-
-const logger = createLogger('AuggieModelsClient');
-
-function toErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === 'string' && error) return error;
-  return 'Unknown error';
-}
-
-function toAuggieError(message: string): Error {
-  return new Error(message.startsWith('Auggie:') ? message : `Auggie: ${message}`);
-}
-
-/**
- * Invoke a provider model IPC channel, preferring the real Electron bridge
- * (`window.electronAPI`) so the request reaches the live main-process handler
- * (`auggie:get-models`). The default `$lib/electron-bridge` invoke is wired to
- * the in-memory mock IPC router, which has no handler for this channel, so on a
- * live build it resolves to `undefined` and the model list comes back empty.
- * Falls back to the mock-routed invoke when no real bridge is present (unit
- * tests / non-Electron environments).
- */
-async function invokeModelChannel<T>(channel: string): Promise<T> {
-  if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
-    return (await window.electronAPI.invoke(channel)) as T;
-  }
-  return await invoke<T>(channel);
-}
 
 export interface AuggieModelBadge {
   color: string;
@@ -60,47 +31,6 @@ export interface AuggieModel {
   isDefault?: boolean;
   /** Within-group ordering priority. Lower = higher in the list. */
   priority?: number;
-}
-
-/**
- * Get available models from auggie CLI
- */
-export async function getAuggieModels(): Promise<AuggieModel[]> {
-  // Skip in Node.js environment (backend)
-  if (typeof window === 'undefined') {
-    logger.debug('Skipping auggie models fetch - not in browser environment');
-    return [];
-  }
-
-  try {
-    logger.debug('Getting models from auggie');
-
-    const result = await invokeModelChannel<{
-      success: boolean;
-      data?: AuggieModel[];
-      warning?: string;
-      error?: string;
-    }>('auggie:get-models');
-
-    if (!result?.success) {
-      const errorMessage = result?.error || result?.warning || 'No response from auggie model service';
-      logger.error(`Failed to get models from auggie: ${errorMessage}`);
-      throw toAuggieError(errorMessage);
-    }
-
-    if (result.warning) {
-      logger.warn(result.warning);
-    }
-
-    if (result.data && result.data.length > 0) {
-      return result.data;
-    }
-
-    throw toAuggieError(result.warning || 'No models returned');
-  } catch (error) {
-    logger.error('Error getting models from auggie', { error });
-    throw toAuggieError(toErrorMessage(error));
-  }
 }
 
 /**
