@@ -52,7 +52,13 @@ function decodeBase64(value: unknown): string {
   }
 }
 
-/** Coerce a raw `terminal.list` entry into a `TerminalTab` for the renderer slice. */
+/**
+ * Coerce a raw `terminal.list` entry into a `TerminalTab` for the renderer
+ * slice. The daemon shape is `{ id, name, cwd, isExecutingCommand }` (PROTOCOL
+ * §5.9) — `name` is the display name given at spawn (e.g. "Setup Script") and
+ * flows straight into `TerminalTab.name`; display fallbacks live in the
+ * selectors (`customName || name || 'Terminal'`), never a raw id-derived label.
+ */
 function toTerminalTab(raw: unknown, fallbackWorkspaceId?: string): TerminalTab | null {
   if (!raw || typeof raw !== "object") return null;
   const entry = raw as Record<string, unknown>;
@@ -62,10 +68,13 @@ function toTerminalTab(raw: unknown, fallbackWorkspaceId?: string): TerminalTab 
     typeof entry.workspaceId === "string" ? entry.workspaceId : fallbackWorkspaceId;
   return {
     id,
-    name: typeof entry.title === "string" ? entry.title : `Terminal ${id.slice(0, 8)}`,
+    name: typeof entry.name === "string" ? entry.name : "",
     workspaceId,
     createdAt: typeof entry.createdAt === "string" ? entry.createdAt : undefined,
     isConnected: true,
+    ...(typeof entry.isExecutingCommand === "boolean"
+      ? { isExecuting: entry.isExecutingCommand }
+      : {}),
   };
 }
 

@@ -160,11 +160,14 @@ describe("LiveTerminalsClient wire requests (fake transport)", () => {
     });
   });
 
-  it("list forwards terminal.list and shapes entries into TerminalTab", async () => {
+  it("list forwards terminal.list and maps daemon { id, name, cwd, isExecutingCommand } entries into TerminalTab", async () => {
+    // Daemon shape per PROTOCOL §5.9 / intent-services terminal_ops::list:
+    // `name` is the spawn-time display name (e.g. "Setup Script"),
+    // `isExecutingCommand` is the child's liveness.
     mockedRequest.mockResolvedValueOnce({
       terminals: [
-        { terminalId: "term-1", workspaceId: "ws-1", title: "shell", createdAt: "2026-06-30T00:00:00Z" },
-        { id: "term-2", workspaceId: "ws-1" },
+        { id: "pty-0", name: "Setup Script", cwd: "/tmp/proj", isExecutingCommand: false },
+        { id: "pty-1", name: "Terminal", cwd: "/tmp/proj", isExecutingCommand: true },
       ],
     });
     const client = new LiveTerminalsClient();
@@ -173,19 +176,32 @@ describe("LiveTerminalsClient wire requests (fake transport)", () => {
     expect(mockedRequest).toHaveBeenCalledWith("terminal.list", { workspaceId: "ws-1" });
     expect(tabs).toEqual([
       {
-        id: "term-1",
-        name: "shell",
-        workspaceId: "ws-1",
-        createdAt: "2026-06-30T00:00:00Z",
-        isConnected: true,
-      },
-      {
-        id: "term-2",
-        name: "Terminal term-2",
+        id: "pty-0",
+        name: "Setup Script",
         workspaceId: "ws-1",
         createdAt: undefined,
         isConnected: true,
+        isExecuting: false,
       },
+      {
+        id: "pty-1",
+        name: "Terminal",
+        workspaceId: "ws-1",
+        createdAt: undefined,
+        isConnected: true,
+        isExecuting: true,
+      },
+    ]);
+  });
+
+  it("list never fabricates an id-derived label when the daemon omits name (no pty-X flicker)", async () => {
+    mockedRequest.mockResolvedValueOnce({ terminals: [{ id: "pty-7" }] });
+    const client = new LiveTerminalsClient();
+
+    const tabs = await client.list("ws-1");
+    // Empty name → display falls back to 'Terminal' in the selectors, never "Terminal pty-7".
+    expect(tabs).toEqual([
+      { id: "pty-7", name: "", workspaceId: "ws-1", createdAt: undefined, isConnected: true },
     ]);
   });
 

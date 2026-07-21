@@ -214,3 +214,166 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     expect(terminals.resize).toHaveBeenCalledWith('term-1', 120, 40);
   });
 });
+
+describe('TerminalAdapter cursor suppression on exit', () => {
+  beforeEach(() => {
+    xtermMock.instances.length = 0;
+    vi.clearAllMocks();
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    });
+    Object.defineProperty(window, 'requestAnimationFrame', {
+      configurable: true,
+      value: (callback: FrameRequestCallback) => setTimeout(callback, 0),
+    });
+    (globalThis as any).ResizeObserver = class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    };
+    (globalThis as any).IntersectionObserver = class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    };
+    (window as any).electronAPI = {
+      invoke: vi.fn().mockResolvedValue({ success: false }),
+      on: vi.fn(() => 'listener-id'),
+      offById: vi.fn(),
+    };
+  });
+
+  it('disables cursor blink and hides the cursor on live terminal:exit', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    let capturedHandlers: any;
+    terminals.subscribeEvents = vi.fn((_id: string, handlers: any) => {
+      capturedHandlers = handlers;
+      return () => {};
+    }) as any;
+    const onExit = vi.fn();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+      onExit,
+    });
+    (adapter as any).stateMachine.transition('initialize');
+    (adapter as any).stateMachine.transition('connect');
+    (adapter as any).stateMachine.transition('connected');
+    (adapter as any).setupIpcEventHandlers();
+
+    const xterm = (adapter as any).xterm;
+    xterm.options.cursorBlink = true;
+
+    capturedHandlers.onExit({ terminalId: 'term-1', exitCode: 0 });
+
+    expect(xterm.options.cursorBlink).toBe(false);
+    expect(xterm.write).toHaveBeenCalledWith('\x1b[?25l');
+    expect(onExit).toHaveBeenCalledWith(0);
+  });
+
+  it('hides the cursor when hydrating a terminal whose backend reports isExecuting=false', async () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ width: 800, height: 600 }),
+    });
+    const terminals = fakeTerminalsClient();
+    // Daemon terminal.list shape: already-exited PTY (isExecutingCommand: false
+    // on the wire → isExecuting: false on TerminalTab).
+    terminals.list = vi.fn(async () => [
+      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false },
+    ]) as any;
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'pty-0',
+      container,
+      appClient: { terminals },
+    });
+
+    await adapter.initialize(true);
+
+    const xterm = (adapter as any).xterm;
+    expect(xterm.options.cursorBlink).toBe(false);
+    expect(xterm.write).toHaveBeenCalledWith('\x1b[?25l');
+    // Reconnected to the existing PTY, no new create.
+    expect(terminals.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cursor blinking when hydrating a terminal that is still executing', async () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ width: 800, height: 600 }),
+    });
+    const terminals = fakeTerminalsClient();
+    terminals.list = vi.fn(async () => [
+      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: true },
+    ]) as any;
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'pty-0',
+      container,
+      appClient: { terminals },
+    });
+
+    await adapter.initialize(true);
+
+    const xterm = (adapter as any).xterm;
+    expect(xterm.options.cursorBlink).not.toBe(false);
+    expect(xterm.write).not.toHaveBeenCalledWith('\x1b[?25l');
+  });
+
+  it('keeps the cursor suppressed when reattaching to an already-exited PTY', async () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ width: 800, height: 600 }),
+    });
+    const terminals = fakeTerminalsClient();
+    terminals.list = vi.fn(async () => [
+      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false },
+    ]) as any;
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'pty-0',
+      container,
+      appClient: { terminals },
+    });
+    // Simulate a disconnected adapter being reattached (e.g. tab switch after
+    // the process exited while detached).
+    (adapter as any).stateMachine.transition('initialize');
+    (adapter as any).stateMachine.transition('connect');
+    (adapter as any).stateMachine.transition('connected');
+    (adapter as any).stateMachine.transition('disconnect');
+    const xterm = (adapter as any).xterm;
+    xterm.options.cursorBlink = true;
+    xterm.write.mockClear();
+
+    await adapter.reattach(container);
+
+    expect(xterm.options.cursorBlink).toBe(false);
+    expect(xterm.write).toHaveBeenCalledWith('\x1b[?25l');
+
+    adapter.detach();
+  });
+
+  it('restores the cursor when a fresh PTY is created after a previous exit', async () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () => ({ width: 800, height: 600 }),
+    });
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'pty-0',
+      container,
+      appClient: { terminals },
+    });
+
+    // Terminal not on backend → initialize goes through the create path.
+    await adapter.initialize(true);
+
+    const xterm = (adapter as any).xterm;
+    expect(xterm.options.cursorBlink).toBe(true);
+    expect(xterm.write).toHaveBeenCalledWith('\x1b[?25h');
+  });
+});
