@@ -319,7 +319,10 @@ describe("LiveGitClient reads (fake transport)", () => {
   });
 
   // §5.19 `file-tracking.loadCommits` returns `{ commits: CommitWithAttribution[] }`
-  // (hash/message/author/date/filesChanged/isPushed/files?/agentId?/linkedNoteId?).
+  // (hash/message/author/date/isPushed/files?/filesChanged?/agentId?/linkedNoteId?).
+  // The list payload is metadata-only: `files`/`filesChanged` are omitted and
+  // carried through as absent (not healed to `[]`/`0`) so consumers lazily
+  // fetch `git.commitDetails` on demand.
   it("commits forwards file-tracking.loadCommits and maps CommitWithAttribution[] into CommitInfo[]", async () => {
     mockedRequest.mockResolvedValueOnce({
       commits: [
@@ -342,7 +345,6 @@ describe("LiveGitClient reads (fake transport)", () => {
           message: "pushed one",
           author: "Ada",
           date: "2025-01-01T00:00:00Z",
-          filesChanged: 0,
           isPushed: true,
         },
       ],
@@ -377,12 +379,13 @@ describe("LiveGitClient reads (fake transport)", () => {
         author: "Ada",
         timestamp: Date.parse("2025-01-01T00:00:00Z"),
         date: "2025-01-01T00:00:00Z",
-        files: [],
-        filesChanged: 0,
         stage: "pushed",
         isPushed: true,
       },
     ]);
+    // Metadata-only entry: files stays absent, not [].
+    expect("files" in commits[1]).toBe(false);
+    expect("filesChanged" in commits[1]).toBe(false);
   });
 
   it("commits resolves [] when the daemon errors", async () => {

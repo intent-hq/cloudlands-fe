@@ -162,28 +162,28 @@ function toCommitFile(raw: unknown): CommitFile | null {
 
 /**
  * Map a daemon `file-tracking.loadCommits` entry (§5.19 `CommitWithAttribution`:
- * hash/message/author/date/filesChanged/isPushed/files?/agentId?/linkedNoteId?)
- * into the renderer `CommitInfo`.
+ * hash/message/author/date/isPushed/files?/filesChanged?/agentId?/linkedNoteId?)
+ * into the renderer `CommitInfo`. `files`/`filesChanged` are omitted by the
+ * metadata-only list payload — carried through as absent (not healed to `[]`)
+ * so consumers lazily fetch `git.commitDetails` on demand.
  */
 function toCommitInfo(raw: unknown): CommitInfo | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const hash = typeof r.hash === "string" ? r.hash : "";
   if (!hash) return null;
-  const rawFiles = Array.isArray(r.files) ? r.files : [];
-  const files: CommitFile[] = rawFiles
-    .map(toCommitFile)
-    .filter((f): f is CommitFile => f !== null);
   const isPushed = Boolean(r.isPushed);
   const info: CommitInfo = {
     hash,
     message: typeof r.message === "string" ? r.message : "",
     author: typeof r.author === "string" ? r.author : "",
     timestamp: dateToTimestamp(r.date),
-    files,
     stage: isPushed ? "pushed" : "local",
     isPushed,
   };
+  if (Array.isArray(r.files)) {
+    info.files = r.files.map(toCommitFile).filter((f): f is CommitFile => f !== null);
+  }
   if (typeof r.filesChanged === "number") info.filesChanged = r.filesChanged;
   if (typeof r.date === "string") info.date = r.date;
   if (typeof r.agentId === "string") info.agentId = r.agentId;
