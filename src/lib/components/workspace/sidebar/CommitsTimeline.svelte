@@ -131,8 +131,17 @@
   // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
   // PROTOCOL §5.19), so files are fetched via `git.commitDetails` (§5.6) on
   // first expand. `null` marks an in-flight fetch (no file rows yet); it is
-  // cleared on failure so a later expand retries.
+  // cleared on failure so a later expand retries. Reset on workspace switch so
+  // the cache doesn't grow unbounded or leak across workspaces.
   let commitFileCache = $state<Record<string, CommitFile[] | null>>({});
+  let cacheWorkspaceId = workspaceId;
+  $effect(() => {
+    if (workspaceId !== cacheWorkspaceId) {
+      cacheWorkspaceId = workspaceId;
+      commitFileCache = {};
+      expandedCommits = new Set();
+    }
+  });
 
   function getCommitFiles(commit: CommitInfo): CommitFile[] {
     return commit.files ?? commitFileCache[commit.hash] ?? [];
