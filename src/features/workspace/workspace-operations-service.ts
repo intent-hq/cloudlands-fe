@@ -199,11 +199,13 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
 
   let undone = false;
   const commit = async () => {
+    // Bail when the registry entry is gone — already committed (a second
+    // invocation, e.g. a timer callback queued before a flush cleared it)
+    // or undone. Keeps commit idempotent: the delete is sent at most once.
     const pending = pendingWorkspaceDeletions.get(workspace.id);
-    if (pending) {
-      clearTimeout(pending.timer);
-      pendingWorkspaceDeletions.delete(workspace.id);
-    }
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingWorkspaceDeletions.delete(workspace.id);
     if (undone) return;
     const result = await workspaceClient.delete(workspace.id);
     if (!result.ok) {
