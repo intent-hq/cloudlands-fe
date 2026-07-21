@@ -1,8 +1,8 @@
-# Cloudlands FE
+# cloudlands-fe
 
-Electron + SvelteKit + TypeScript desktop frontend for the `intentd` daemon. It
-is consumed as the `packages/cloudlands-fe` git submodule of
-[intent-hq/monorepo](https://github.com/intent-hq/monorepo).
+Electron + SvelteKit + TypeScript desktop frontend for **Intent** that talks to
+the `intentd` daemon. It is consumed as the `packages/cloudlands-fe` git
+submodule of [intent-hq/monorepo](https://github.com/intent-hq/monorepo).
 
 ## Architecture
 
@@ -33,8 +33,8 @@ SvelteKit renderer  <->  AppClient (JSON-RPC boundary)  <->  intentd daemon
 
 ### As part of the monorepo (recommended)
 
-Cloudlands FE is normally developed as the `packages/cloudlands-fe` submodule of
-the monorepo:
+`cloudlands-fe` is normally developed as the `packages/cloudlands-fe` submodule
+of the monorepo:
 
 ```bash
 # Clone the monorepo with submodules
