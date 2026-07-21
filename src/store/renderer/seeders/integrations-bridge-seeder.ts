@@ -164,23 +164,32 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN, async () => {
 });
 
 // `github.cancelAuth` (§5.27) — cancels the pending flow; the daemon's poll
-// task exits cooperatively. Always `ok: true`, `cancelled` reports whether a
-// pending flow was actually removed.
+// task exits cooperatively. The contract shape is `{ ok: true, cancelled }`
+// (failures arrive as JSON-RPC errors), so only a confirmed `ok: true` maps
+// to a successful envelope — anything else is treated as a failed cancel.
 registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async () => {
   try {
-    await backendRequest('github.cancelAuth');
+    const result = await backendRequest<{ ok?: boolean }>('github.cancelAuth');
+    if (result?.ok !== true) {
+      return { success: false, error: 'The daemon did not confirm the cancel.' };
+    }
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
 });
 
-// `github.revoke` (§5.27) — deletes the stored token daemon-side; mapped to
-// the same `{ success, error? }` envelope as the other auth channels so the
-// store service only clears local auth state on a confirmed revoke.
+// `github.revoke` (§5.27) — deletes the stored token daemon-side; the
+// contract shape is `{ ok: true }` (failures arrive as JSON-RPC errors).
+// Mapped to the same `{ success, error? }` envelope as the other auth
+// channels, and only a confirmed `ok: true` counts — the store service must
+// not clear local auth state while the daemon still holds a token.
 registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LOGOUT, async () => {
   try {
-    await backendRequest('github.revoke');
+    const result = await backendRequest<{ ok?: boolean }>('github.revoke');
+    if (result?.ok !== true) {
+      return { success: false, error: 'The daemon did not confirm the revoke.' };
+    }
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };

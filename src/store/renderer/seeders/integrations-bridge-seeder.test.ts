@@ -382,10 +382,26 @@ describe('integrations-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledWith('github.cancelAuth');
     });
 
+    it('cancel maps a non-ok github.cancelAuth result to a failed envelope', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: false });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH)).toEqual({
+        success: false,
+        error: 'The daemon did not confirm the cancel.',
+      });
+    });
+
     it('logout forwards to github.revoke and maps to the success envelope', async () => {
       mockedRequest.mockResolvedValueOnce({ ok: true });
       expect(await mockInvoke(GITHUB_AUTH_CHANNELS.LOGOUT)).toEqual({ success: true });
       expect(mockedRequest).toHaveBeenCalledWith('github.revoke');
+    });
+
+    it('logout maps a non-ok github.revoke result to a failed envelope', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: false, guidance: 'revoke refused' });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.LOGOUT)).toEqual({
+        success: false,
+        error: 'The daemon did not confirm the revoke.',
+      });
     });
 
     it('logout maps a github.revoke failure to a failed envelope', async () => {
