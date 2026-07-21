@@ -382,10 +382,18 @@ describe('integrations-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledWith('github.cancelAuth');
     });
 
-    it('logout forwards to github.revoke and returns its envelope', async () => {
+    it('logout forwards to github.revoke and maps to the success envelope', async () => {
       mockedRequest.mockResolvedValueOnce({ ok: true });
-      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.LOGOUT)).toEqual({ ok: true });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.LOGOUT)).toEqual({ success: true });
       expect(mockedRequest).toHaveBeenCalledWith('github.revoke');
+    });
+
+    it('logout maps a github.revoke failure to a failed envelope', async () => {
+      mockedRequest.mockRejectedValueOnce(new Error('revoke failed'));
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.LOGOUT)).toEqual({
+        success: false,
+        error: 'revoke failed',
+      });
     });
   });
 
