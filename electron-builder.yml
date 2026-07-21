@@ -24,6 +24,9 @@ extraResources:
     to: intentd
     filter:
       - "**/*"
+      # Keep the fetch-sidecar stamp (build machinery with a timestamp) out of
+      # packaged builds so identical pinned binaries produce identical artifacts.
+      - "!.intentd-fetch-stamp.json"
 
 # Unpack renderer files from asar to avoid MIME type issues
 # Also unpack MCP server files since Node.js can't execute scripts from within asar
