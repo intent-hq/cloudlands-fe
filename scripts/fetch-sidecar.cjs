@@ -18,7 +18,7 @@
  * Flags: --force re-fetches even when the staged sidecar already matches the pin.
  *
  * Idempotent: a stamp file (resources/sidecar/.intentd-fetch-stamp.json) records what
- * was staged; matching version+target skips the download.
+ * was staged; matching version+target+staged-binary-hash skips the download.
  */
 const fs = require('node:fs');
 const os = require('node:os');
@@ -79,6 +79,21 @@ function listArchiveEntries(archivePath) {
     .filter((line) => line.length > 0);
 }
 
+function assertNoLinkEntries(lib, archivePath) {
+  // Symlink/hardlink entries can redirect later extraction writes outside extractDir
+  // even when every entry path is relative and ..-free, so refuse them outright
+  // (cargo-dist archives never contain links).
+  const output =
+    archivePath.endsWith('.zip') && process.platform !== 'win32'
+      ? execFileSync('unzip', ['-Z', archivePath], { encoding: 'utf8' })
+      : execFileSync('tar', ['-tvf', archivePath], { encoding: 'utf8' });
+  if (output.split('\n').some((line) => lib.isLinkListingLine(line))) {
+    throw new Error(
+      `Refusing to extract ${path.basename(archivePath)}: archive contains symlink/hardlink entries`,
+    );
+  }
+}
+
 function extractArchive(lib, archivePath, extractDir) {
   // Reject path-traversal (zip-slip/tar-slip) entries before extracting; the checksum
   // asset comes from the same release, so it is no defense against a malicious archive.
@@ -88,6 +103,7 @@ function extractArchive(lib, archivePath, extractDir) {
       `Refusing to extract ${path.basename(archivePath)}: unsafe entry paths: ${unsafe.slice(0, 5).join(', ')}`,
     );
   }
+  assertNoLinkEntries(lib, archivePath);
   if (archivePath.endsWith('.zip') && process.platform !== 'win32') {
     execFileSync('unzip', ['-o', '-q', archivePath, '-d', extractDir]);
   } else {
@@ -128,7 +144,13 @@ async function main() {
     } catch {
       // Missing or corrupted stamp (e.g. prior run killed mid-write): fall through and re-fetch.
     }
-    if (stamp?.version === version && stamp?.target === target) {
+    if (
+      stamp?.version === version &&
+      stamp?.target === target &&
+      // Guard against a corrupted/partial staged binary: only skip when it still
+      // hashes to what was staged. Old stamps without binSha256 re-fetch once.
+      stamp?.binSha256 === lib.sha256Hex(fs.readFileSync(destBin))
+    ) {
       console.log(
         `intentd ${version} (${target}) already staged at ${destBin} — skipping (use --force to re-fetch)`,
       );
@@ -197,7 +219,18 @@ async function main() {
     if (process.platform !== 'win32') fs.chmodSync(destBin, 0o755);
     fs.writeFileSync(
       STAMP_FILE,
-      `${JSON.stringify({ version, target, asset: assetName, sha256: actual, fetchedAt: new Date().toISOString() }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          version,
+          target,
+          asset: assetName,
+          sha256: actual,
+          binSha256: lib.sha256Hex(fs.readFileSync(destBin)),
+          fetchedAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      )}\n`,
     );
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

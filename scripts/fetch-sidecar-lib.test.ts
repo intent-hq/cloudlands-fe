@@ -3,6 +3,7 @@ import {
   TARGET_BY_PLATFORM_ARCH,
   assetCandidates,
   checksumAssetName,
+  isLinkListingLine,
   isSafeArchiveEntry,
   parseChecksumFile,
   parseVersionPin,
@@ -144,6 +145,21 @@ describe('isSafeArchiveEntry', () => {
     expect(isSafeArchiveEntry('\\\\server\\share')).toBe(false);
     expect(isSafeArchiveEntry('C:\\Windows\\evil')).toBe(false);
     expect(isSafeArchiveEntry('')).toBe(false);
+  });
+});
+
+describe('isLinkListingLine', () => {
+  it('flags symlink and hardlink entries in verbose listings', () => {
+    expect(isLinkListingLine('lrwxr-xr-x  0 user staff 0 Jan  1 00:00 evil -> /etc/passwd')).toBe(
+      true,
+    );
+    expect(isLinkListingLine('hrw-r--r--  0 user staff 0 Jan  1 00:00 link file')).toBe(true);
+  });
+
+  it('passes regular files and directories', () => {
+    expect(isLinkListingLine('-rwxr-xr-x  0 user staff 12345 Jan  1 00:00 intentd')).toBe(false);
+    expect(isLinkListingLine('drwxr-xr-x  0 user staff 0 Jan  1 00:00 dir/')).toBe(false);
+    expect(isLinkListingLine('')).toBe(false);
   });
 });
 

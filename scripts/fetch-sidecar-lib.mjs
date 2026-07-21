@@ -134,3 +134,12 @@ export function isSafeArchiveEntry(entryPath) {
   if (/^[A-Za-z]:/.test(entryPath)) return false;
   return !entryPath.split(/[\\/]/).includes('..');
 }
+
+/**
+ * True when a verbose archive listing line (`tar -tvf` / `unzip -Z`) describes a
+ * symlink or hardlink entry — links can redirect extraction writes outside the
+ * target dir even when every entry path is relative and `..`-free.
+ */
+export function isLinkListingLine(line) {
+  return /^[lh]/.test(line);
+}
