@@ -33,8 +33,8 @@ SvelteKit renderer  <->  AppClient (JSON-RPC boundary)  <->  intentd daemon
 
 ### As part of the monorepo (recommended)
 
-`cloudlands-fe` is normally developed as the `packages/cloudlands-fe` submodule of
-the monorepo:
+`cloudlands-fe` is normally developed as the `packages/cloudlands-fe` submodule
+of the monorepo:
 
 ```bash
 # Clone the monorepo with submodules
