@@ -114,6 +114,7 @@
     codex: { color1: '#CBE6FF', color2: '#DDBEFC', isLight: true },
     opencode: { color1: '#000', color2: '#1E1E1E' },
     droid: { color1: '#F0822F', color2: '#E55A2B' },
+    grok: { color1: '#000000', color2: '#252525' },
     cortex: { color1: '#FFA2A3', color2: '#FFA2A3' },
   };
 
@@ -173,6 +174,11 @@
       // starts an interactive session that prompts for login when needed.
       loginCommand: 'droid',
       docsUrl: 'https://docs.factory.ai/cli/getting-started/overview',
+    },
+    grok: {
+      installCommand: 'npm i -g @xai-official/grok',
+      loginCommand: 'grok login',
+      docsUrl: 'https://docs.x.ai/build/overview',
     },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',

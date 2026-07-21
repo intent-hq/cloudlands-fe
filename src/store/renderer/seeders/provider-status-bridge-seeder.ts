@@ -32,6 +32,9 @@
  *  - droid:       binary presence only; the main-process ACP stdio probe is
  *                 not portable to the renderer, so auth stays undefined
  *                 (honest unknown, never a fake positive).
+ *  - grok:        binary presence only; readiness is owned by the daemon's
+ *                 provider discovery and the FE runs no grok probe, so auth
+ *                 stays undefined (honest unknown, never a fake positive).
  *  - cortex/mock: gated behind a feature code / env var the renderer cannot
  *                 verify — hidden and unavailable, matching main's
  *                 default-deny gating.
@@ -100,6 +103,7 @@ const PROVIDER_BINARIES: Record<string, string> = {
   opencode: "opencode",
   pi: "pi",
   droid: "droid",
+  grok: "grok",
 };
 
 /** The codex ACP adapter binary — only consulted for the codex warning. */
@@ -260,6 +264,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   };
   const pi: ProviderStatus = { available: tool(PROVIDER_BINARIES.pi).available === true };
   const droid: ProviderStatus = { available: tool(PROVIDER_BINARIES.droid).available === true };
+  const grok: ProviderStatus = { available: tool(PROVIDER_BINARIES.grok).available === true };
   const cortex: ProviderStatus = { available: false };
   const mock: ProviderStatus = { available: false };
 
@@ -295,8 +300,9 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       codex.available ||
       opencode.available ||
       pi.available ||
-      droid.available,
-    providers: { auggie, claudeCode, codex, cortex, mock, opencode, pi, droid },
+      droid.available ||
+      grok.available,
+    providers: { auggie, claudeCode, codex, cortex, mock, opencode, pi, droid, grok },
     hiddenProviders,
   };
 }
@@ -359,7 +365,8 @@ async function checkSingleProvider(providerId: string): Promise<ProviderStatus> 
   if (providerId === "opencode") {
     return withAuth(status, await probeOpenCodeReady(found?.path));
   }
-  // pi (no stable auth signal) / droid (ACP probe not portable): presence only.
+  // pi (no stable auth signal) / droid (ACP probe not portable) / grok
+  // (readiness owned by the daemon): presence only.
   return status;
 }
 

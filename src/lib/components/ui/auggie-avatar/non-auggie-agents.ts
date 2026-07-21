@@ -3,6 +3,7 @@ export const KNOWN_NON_AUGGIE_PROVIDER_IDS = new Set([
   'codex',
   'opencode',
   'droid',
+  'grok',
   'cortex',
   'pi',
 ]);
