@@ -99,28 +99,6 @@ export function pickCompatibleModelForProvider({
   return null;
 }
 
-/**
- * Resolve the preferred default model from the available models list.
- * Uses the globally selected model first if available, then falls back to
- * UI_MODEL_PREFERENCE order, then the first available model.
- *
- * This is the single source of truth for "what model should we use when
- * the user hasn't explicitly picked one and there's no specialist".
- */
-export function resolvePreferredDefaultModel(
-  availableModelValues: string[],
-  globalSelectedModel?: string,
-): string | undefined {
-  if (globalSelectedModel && availableModelValues.includes(globalSelectedModel)) {
-    return globalSelectedModel;
-  }
-
-  const preferred = resolvePreferredModel(MODEL_DEFAULTS.UI_MODEL_PREFERENCE, availableModelValues);
-  if (preferred) return preferred;
-
-  return availableModelValues[0];
-}
-
 export async function resolveCompatibleModelForProvider(
   providerId: string,
   {

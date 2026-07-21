@@ -1,8 +1,8 @@
-# Cloudlands FE
+# cloudlands-fe
 
-Electron + SvelteKit + TypeScript desktop frontend for the `intentd` daemon. It
-is consumed as the `packages/cloudlands-fe` git submodule of
-[intent-hq/monorepo](https://github.com/intent-hq/monorepo).
+Electron + SvelteKit + TypeScript desktop frontend for **Intent** that talks to
+the `intentd` daemon. It is consumed as the `packages/cloudlands-fe` git
+submodule of [intent-hq/monorepo](https://github.com/intent-hq/monorepo).
 
 ## Architecture
 
@@ -33,8 +33,8 @@ SvelteKit renderer  <->  AppClient (JSON-RPC boundary)  <->  intentd daemon
 
 ### As part of the monorepo (recommended)
 
-Cloudlands FE is normally developed as the `packages/cloudlands-fe` submodule of
-the monorepo:
+`cloudlands-fe` is normally developed as the `packages/cloudlands-fe` submodule
+of the monorepo:
 
 ```bash
 # Clone the monorepo with submodules
@@ -72,6 +72,30 @@ pnpm run format         # Prettier (write)
 pnpm run test:unit      # Vitest unit suite
 pnpm run test:playwright # Playwright tests
 ```
+
+## intentd sidecar pin
+
+The bundled `intentd` sidecar is pinned to an **exact released version** in
+[`intentd.version`](./intentd.version): a bare semver with no leading `v`,
+matching a `vX.Y.Z` / `vX.Y.Z-beta.N` tag on
+[intent-hq/intentd](https://github.com/intent-hq/intentd).
+
+- **Bumping the pin**: edit `intentd.version` in a normal reviewable PR, then run
+  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify.
+- **Fetching the pinned sidecar**: `node scripts/fetch-sidecar.cjs` downloads the
+  cargo-dist release asset for the current platform/arch, verifies its sha256
+  against the release's `.sha256` asset, and stages the binary at
+  `resources/sidecar/intentd[.exe]`. While the intentd repo is private, set
+  `INTENTD_READ_PAT` (or `GH_TOKEN`/`GITHUB_TOKEN`) to a token with read access.
+  The script is idempotent; use `--force` to re-fetch.
+- **Local dev builds**: `scripts/copy-sidecar.cjs` still stages a locally built
+  binary from `packages/intentd/target/release` (`make build-sidecar` /
+  `make dev` in the monorepo).
+
+The platform/arch → release-asset mapping lives in
+`scripts/fetch-sidecar-lib.mjs` (unit-tested in
+`scripts/fetch-sidecar-lib.test.ts`); update it there if the intentd release
+target list changes.
 
 ## Project layout
 

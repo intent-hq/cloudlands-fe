@@ -61,7 +61,8 @@
   import {
   selectSpecialists,
   selectEffectiveBehaviorPrompt,
-  selectUserOverrides,
+  selectEffectiveModel,
+  selectEffectiveCodingAgent,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -70,7 +71,6 @@
   validateInitialPrompt,
   validateRepoPath,
 } from '$lib/utils/workspace-validation';
-  import { unifiedIdService } from '$shared/services/unified-id.service';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import {
   faMagicWandSparkles,
@@ -103,13 +103,8 @@
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import {
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  PROVIDER_MODEL_TIERS,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
-  import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
+  import { parseCompoundModelId } from '$shared/config/provider-config';
+  import { resolveSubmitModel } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
@@ -643,7 +638,9 @@
         skipWorktree,
         stayOnHomePage,
       };
-      appStore.dispatch(setCompactWorkspaceInitializerFormState(formState));
+      // Snapshot to strip $state proxies (e.g. remoteSetup) — Redux state must be
+      // structured-cloneable for daemon persistence (src/store/renderer/AGENTS.md §2).
+      appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(formState)));
     }
   });
 
@@ -1728,48 +1725,33 @@
 
       // Resolve the model for the selected specialist + provider so the agent is created
       // with the correct compound model ID (e.g., 'codex:gpt-5.3-codex').
+      // Uses the same shared effective-model resolution the InitialAgentPicker displays,
+      // so the created agent gets exactly the model shown in the picker. An explicit
+      // user override (modelWasOverridden) always wins.
       // Without this, model would be undefined and the backend falls back to DEFAULT_AGENT_MODEL
       // (an auggie model), which breaks provider inheritance when the coordinator delegates.
-      let resolvedModel: string | undefined;
-      if (modelWasOverridden) {
-        resolvedModel = selectedModel;
-      } else if (selectedSpecialist) {
-        // Check for user model override first (from specialist settings)
-        const reduxState = appStore.state;
-        const specialistOverride =
-          selectUserOverrides.select(reduxState).modelOverrides[selectedSpecialist];
-        if (specialistOverride) {
-          resolvedModel = specialistOverride;
-          logger.info('Using specialist model override', {
-            specialistId: selectedSpecialist,
-            override: specialistOverride,
-          });
-        } else {
-          const specialist = selectSpecialists
-            .select(reduxState)
-            .find((s) => s.id === selectedSpecialist);
-          if (specialist?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
-            const baseModel = getDefaultModelForProvider(
-              selectedProvider,
-              specialist.defaultModelTier,
-            );
-            const defaultProviderId = getDefaultProviderId();
-            resolvedModel =
-              selectedProvider !== defaultProviderId
-                ? `${selectedProvider}:${baseModel}`
-                : baseModel;
-          } else if (specialist?.defaultModel) {
-            resolvedModel = specialist.defaultModel;
-          }
-        }
-      } else {
-        // No specialist selected (General/blank agent) and user didn't override the model.
-        // Resolve using the same preference list that the UI model picker displays,
-        // so the model the user sees matches the model actually used.
-        // Fall back to the global store selection when models haven't loaded yet.
-        const availableValues = $availableModels$.map((m) => m.value);
-        resolvedModel =
-          resolvePreferredDefaultModel(availableValues, $selectedModel$) ?? $selectedModel$;
+      const reduxState = appStore.state;
+      let resolvedModel = resolveSubmitModel({
+        modelWasOverridden,
+        overriddenModel: selectedModel,
+        specialistId: selectedSpecialist,
+        selectedProvider,
+        availableModelValues: $availableModels$.map((m) => m.value),
+        globalSelectedModel: $selectedModel$,
+        effectiveCodingAgent: selectedSpecialist
+          ? selectEffectiveCodingAgent.select(reduxState, selectedSpecialist)
+          : undefined,
+        effectiveModel: selectedSpecialist
+          ? selectEffectiveModel.select(reduxState, selectedSpecialist)
+          : undefined,
+        specialistInfo: selectedSpecialist
+          ? selectSpecialists.select(reduxState).find((s) => s.id === selectedSpecialist)
+          : undefined,
+      });
+      // No specialist selected (General/blank agent) and user didn't override the model:
+      // fall back to the global store selection when models haven't loaded yet.
+      if (!resolvedModel && !modelWasOverridden && !selectedSpecialist) {
+        resolvedModel = $selectedModel$;
       }
 
       // Validate resolvedModel against available models. Tier-mapped model IDs
@@ -1794,11 +1776,10 @@
         }
       }
 
-      // Generate a fresh agent ID for every create attempt. Reusing an ID from
-      // a previous (failed) attempt makes the daemon reject the duplicate
-      // agent_session.id, permanently poisoning retries.
+      // No client-minted agentId: the daemon assigns the initial agent's id
+      // and returns it on the create result (supersedes the fresh-id-per-
+      // attempt fix — with no client id there is nothing to poison retries).
       const initialAgent = {
-        agentId: unifiedIdService.generateAgentId(),
         name: agentName,
         model: resolvedModel,
         specialist: specialistId, // Now accepts any specialist ID (not restricted to enum)
@@ -1842,7 +1823,10 @@
 
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
-      const workspace = result.data;
+      const workspace = result.data.workspace;
+      // The daemon assigns the initial agent's id and returns it on the
+      // create result; the FE no longer pre-mints one.
+      const initialAgentId = result.data.initialAgent?.id;
 
       // If a PR context mention was used, store the PR number on the workspace
       // so PR discovery can find the right PR later. Daemon-backed
@@ -1927,8 +1911,11 @@
 
       // Initial-agent delivery (message + sends) is owned by the daemon; the
       // FE only records which agent is the initial one so the UI can highlight
-      // and focus it.
-      appStore.dispatch(setInitialAgentId(workspace.id, initialAgent.agentId));
+      // and focus it. The id is daemon-assigned (from the create result); when
+      // it is somehow absent, skip the highlight/focus rather than invent one.
+      if (initialAgentId) {
+        appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
+      }
 
       // Pre-store the workspace state so the workspace page mounts on the
       // initial-agent conversation as its only tab (full-width, no spec split).
@@ -1939,7 +1926,9 @@
         version: 2,
         workspace: { id: workspace.id, status: 'loading' },
         mainPanel: { type: 'empty' },
-        drawer: { open: true, type: 'agent' as const, itemId: initialAgent.agentId },
+        drawer: initialAgentId
+          ? { open: true, type: 'agent' as const, itemId: initialAgentId }
+          : { open: false, type: null, itemId: null },
         navigation: { history: [], currentIndex: -1 },
         ui: { hasInitialized: false },
       };
@@ -1951,7 +1940,7 @@
         appStore.dispatch(
           updateWorkspaceEntity(workspace.id, {
             agentSummary: {
-              agentIds: [initialAgent.agentId],
+              agentIds: initialAgentId ? [initialAgentId] : [],
             },
           }),
         );
@@ -2060,7 +2049,8 @@
       cleanedState.scope = scope;
       cleanedState.scopeRepoPath = scope ? repoPath : undefined;
     }
-    appStore.dispatch(setCompactWorkspaceInitializerFormState(cleanedState));
+    // Snapshot to strip $state proxies before dispatching into Redux (see $effect above)
+    appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(cleanedState)));
   }
 
   function handleIssueSelect(_text: string, metadata?: IssueSelectionData) {

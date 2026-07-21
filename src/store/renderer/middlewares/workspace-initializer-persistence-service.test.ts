@@ -225,6 +225,93 @@ describe.sequential("workspace-initializer-persistence-service (PROTOCOL §5.12 
     });
   });
 
+  it("sanitizes a non-structured-cloneable bag to plain JSON before settings.update (STAB DataCloneError regression)", async () => {
+    // A Proxy mimics a Svelte $state proxy: structuredClone (used by IPC) throws
+    // DataCloneError on it, but JSON round-tripping yields the plain target values.
+    const proxiedRemoteSetup = new Proxy(
+      {
+        id: "remote-proxy",
+        name: "Proxy Remote",
+        host: "proxy.example.com",
+        port: 22,
+        username: "user",
+        workspacePath: "/workspace",
+      },
+      {},
+    ) as WorkspaceInitializerRemoteSetup;
+    expect(() => structuredClone(proxiedRemoteSetup)).toThrow();
+
+    appStore.dispatch(
+      setCompactWorkspaceInitializerFormState({
+        repoPath: "/proxy-repo",
+        remoteSetup: proxiedRemoteSetup,
+      }),
+    );
+    await flush();
+
+    // Exact wire request per PROTOCOL §5.12: settings.update with the sanitized bag
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [
+        {
+          path: "workspaceInitializer.state",
+          value: expect.objectContaining({
+            compactFormState: {
+              repoPath: "/proxy-repo",
+              remoteSetup: {
+                id: "remote-proxy",
+                name: "Proxy Remote",
+                host: "proxy.example.com",
+                port: 22,
+                username: "user",
+                workspacePath: "/workspace",
+              },
+            },
+          }),
+        },
+      ],
+    });
+
+    // The persisted payload must itself be structured-cloneable (plain JSON, no proxies)
+    const persistedBag = updateSpy.mock.calls.at(-1)?.[0].changes[0].value;
+    expect(() => structuredClone(persistedBag)).not.toThrow();
+  });
+
+  it("skips the persist without throwing when the bag cannot be sanitized either", async () => {
+    // Non-cloneable AND non-JSON-serializable: structuredClone throws on the Proxy
+    // trap, and JSON.stringify throws on the circular reference inside the target.
+    const circular: Record<string, unknown> = {
+      id: "remote-circular",
+      name: "Circular Remote",
+      host: "circular.example.com",
+      port: 22,
+      username: "user",
+      workspacePath: "/workspace",
+    };
+    circular.self = circular;
+    const unsanitizable = new Proxy(circular, {}) as unknown as WorkspaceInitializerRemoteSetup;
+    expect(() => structuredClone(unsanitizable)).toThrow();
+    expect(() => JSON.stringify(unsanitizable)).toThrow();
+
+    // The dispatch (and the persist it triggers) must not throw synchronously…
+    expect(() =>
+      appStore.dispatch(
+        setCompactWorkspaceInitializerFormState({
+          repoPath: "/circular-repo",
+          remoteSetup: unsanitizable,
+        }),
+      ),
+    ).not.toThrow();
+    await flush();
+
+    // …and no settings.update is sent for the unsanitizable bag.
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    // Restore a sanitizable bag so later tests are unaffected.
+    appStore.dispatch(setCompactWorkspaceInitializerFormState({ repoPath: "/recovered" }));
+    await flush();
+    expect(updateSpy).toHaveBeenCalled();
+  });
+
   it("persists state bag on setWorkspaceInitializerLastSelectedRepo", async () => {
     appStore.dispatch(
       setWorkspaceInitializerLastSelectedRepo({ path: "/repo", type: "local" }),

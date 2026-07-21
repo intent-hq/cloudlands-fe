@@ -3,7 +3,7 @@
  *
  * Provides access to specialist configurations for the InstructionService.
  * Reads specialists from (in priority order):
- * 1. User file-based specialists (~/.augment/specialists/*.md) - highest priority
+ * 1. User file-based specialists (~/.intent/specialists/*.md) - highest priority
  * 2. Bundled specialists (resources/specialists/*.md)
  * 3. Custom specialists from electron-store (deprecated, migrated to files)
  * 4. Hardcoded SPECIALISTS array (last-resort fallback if file loading fails)
@@ -141,7 +141,7 @@ export async function initSpecialistsService(): Promise<void> {
       // migrations (custom-specialists / specialists-overrides) are retired
       // with the legacy `settings` store (PROTOCOL.md §5.12). Fresh-start
       // posture: any user data still in the legacy store is not carried
-      // forward; users author specialists directly in ~/.augment/specialists.
+      // forward; users author specialists directly in ~/.intent/specialists.
       logger.info('Specialists service initialized (file-based)');
 
       // Pre-load file-based specialists (includes bundled + user files)
@@ -272,8 +272,8 @@ function resolveSpecialistCodingAgent(
 /**
  * Get the effective configuration for a specialist.
  * Priority order (Wave 2 — fully file-based):
- * 1. Project-level files (<repo>/.augment/specialists/*.md) — highest
- * 2. User-level files (~/.augment/specialists/*.md)
+ * 1. Project-level files (<repo>/.intent/specialists/*.md) — highest
+ * 2. User-level files (~/.intent/specialists/*.md)
  * 3. Bundled files (resources/specialists/*.md)
  * 4. Hardcoded SPECIALISTS array (last-resort fallback)
  *

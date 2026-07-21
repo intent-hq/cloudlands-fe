@@ -16,6 +16,8 @@
 
   interface Props {
     pr: PRInfo;
+    /** Forwarded to nested CommitNodes for lazy `git.commitDetails` fetches. */
+    workspaceId?: string;
     noBorder?: boolean;
     defaultExpanded?: boolean;
     onFileClick?: (path: string, commitHash?: string, staged?: boolean) => void;
@@ -25,6 +27,7 @@
 
   let {
     pr,
+    workspaceId,
     noBorder = false,
     defaultExpanded = false,
     onFileClick,
@@ -92,7 +95,14 @@
     {#if expanded && pr.commits && pr.commits.length > 0}
       <div class="pl-4 pt-2 pb-2 space-y-1" transition:slide={{ duration: 150 }}>
         {#each pr.commits as commit (commit.hash)}
-          <CommitNode {commit} nested showViewAction {onFileClick} onView={onOpenCommit} />
+          <CommitNode
+            {commit}
+            {workspaceId}
+            nested
+            showViewAction
+            {onFileClick}
+            onView={onOpenCommit}
+          />
         {/each}
       </div>
     {/if}

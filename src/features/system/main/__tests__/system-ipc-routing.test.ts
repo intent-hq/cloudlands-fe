@@ -10,12 +10,14 @@ const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(),
   fromId: vi.fn(),
   appOn: vi.fn(),
+  appEmit: vi.fn(),
   broadcastToBrowserIpcClients: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
   app: {
     on: electronMocks.appOn,
+    emit: electronMocks.appEmit,
     getAppPath: vi.fn(() => '/tmp/app'),
     getVersion: vi.fn(() => '0.0.0'),
     getName: vi.fn(() => 'Intent'),
@@ -89,5 +91,32 @@ describe('sendToWorkspaceWindows routing', () => {
       {},
       undefined,
     );
+  });
+});
+
+describe('window close cleanup', () => {
+  it('emits window-workspace-state-changed when a window closes so open-workspace listeners reconcile', () => {
+    // system.ipc.ts registers this at module scope.
+    const createdHandler = electronMocks.appOn.mock.calls.find(
+      ([event]) => event === 'browser-window-created',
+    )?.[1] as ((event: unknown, window: unknown) => void) | undefined;
+    expect(createdHandler).toBeDefined();
+
+    const closedHandlers: Array<() => void> = [];
+    const window = {
+      id: 42,
+      on: vi.fn((event: string, cb: () => void) => {
+        if (event === 'closed') closedHandlers.push(cb);
+      }),
+    };
+    createdHandler!({}, window);
+    expect(closedHandlers).toHaveLength(1);
+
+    // Regression: the closed cleanup used to delete the tracking maps
+    // silently, leaking notification services (and their daemon agent:idle
+    // subscriptions) for workspaces only open in the closed window.
+    electronMocks.appEmit.mockClear();
+    closedHandlers[0]();
+    expect(electronMocks.appEmit).toHaveBeenCalledWith('window-workspace-state-changed');
   });
 });

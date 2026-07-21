@@ -45,7 +45,7 @@ describe('WorkspaceService workspace creation dedupe', () => {
       repositoryPath: '/path/to/repo',
       skipWorktree: true,
       initialAgent: {
-        agentId: 'agent-first',
+        name: 'First',
         prompt: 'Review PR #123',
       },
     };
@@ -55,7 +55,7 @@ describe('WorkspaceService workspace creation dedupe', () => {
       service.createWorkspace({
         ...request,
         initialAgent: {
-          agentId: 'agent-second',
+          name: 'Second',
           prompt: 'Review PR #123',
         },
       }),

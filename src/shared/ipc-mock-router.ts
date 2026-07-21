@@ -120,16 +120,16 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // the caller wraps the invoke in try/catch and folds absence to 'unknown'.
   ['app:get-version', undefined],
   // Electron native window-chrome state pushed by boot-path $effects: the
-  // Window-menu tab list (+layout SET_OPEN_WORKSPACE_TABS), menu enablement
-  // (+layout SET_IN_WORKSPACE), the native window title (WindowTitleBar
-  // SET_TITLE), and browser-panel focus tracking for menu shortcuts
-  // (PanelLayout SET_BROWSER_FOCUSED). There is no window chrome in this
-  // build and no daemon surface for it; every caller is fire-and-forget with
-  // `.catch(() => {})`, so resolving undefined keeps startup quiet.
-  // (window:open-new is bridged to window.open in misc-ui-events-seeder.)
+  // native window title (WindowTitleBar SET_TITLE) and browser-panel focus
+  // tracking for menu shortcuts (PanelLayout SET_BROWSER_FOCUSED). There is
+  // no window chrome in this build and no daemon surface for it; every caller
+  // is fire-and-forget with `.catch(() => {})`, so resolving undefined keeps
+  // startup quiet.
+  // (window:open-new is bridged to window.open in misc-ui-events-seeder;
+  // window:set-in-workspace and window:set-open-workspace-tabs are forwarded
+  // to the real preload bridge in window-state-bridge-seeder so main-process
+  // window-workspace tracking works in the packaged app.)
   ['window:set-browser-focused', undefined],
-  ['window:set-in-workspace', undefined],
-  ['window:set-open-workspace-tabs', undefined],
   ['window:set-title', undefined],
   // Per-agent auto-commit status badges (ChatPanel refreshAutoCommitStatuses).
   // The daemon auto-commits via git.agentCommit (PROTOCOL §5.6) but exposes no

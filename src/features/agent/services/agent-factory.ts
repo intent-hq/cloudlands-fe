@@ -298,24 +298,25 @@ export class UnifiedAgentFactory {
       // Step 4: Normalized config is validated server-side by the daemon on `agent.create`.
       metrics.validationTime = Date.now() - validationStart;
 
-      // Step 5: Generate IDs using unified service (or use provided ID)
-      // Note: streamId is no longer generated - agentId is the canonical key for streams
-      // Note: sessionId is typed as AgentId in the codebase (not SessionId), so we use generateAgentId()
+      // Step 5: The agent id is daemon-assigned. `agent.create` (PROTOCOL
+      // §5.5) no longer receives a client-minted id — the daemon returns the
+      // canonical session id on the response and the FE adopts it (below).
+      // `sessionId` remains a local placeholder for `backendSessionId`
+      // truthiness (it is never sent on the wire; stream channels key off the
+      // agent id).
       const idGenStart = Date.now();
-      const agentId = config.id ? createAgentId(config.id) : unifiedIdService.generateAgentId();
       const sessionId = unifiedIdService.generateAgentId();
       metrics.idGenerationTime = Date.now() - idGenStart;
 
-      // Debug logging to track ID usage
       if (config.id) {
-        logger.info('📌 Using provided agent ID', { providedId: config.id, agentId });
-      } else {
-        logger.info('🆕 Generated new agent ID', { agentId });
+        // Legacy callers may still pass an optimistic id; it is used only as
+        // a local fallback when no daemon round-trip occurs (backend context).
+        logger.info('📌 config.id provided; daemon-assigned id will take precedence', {
+          providedId: config.id,
+        });
       }
 
       logger.info('📋 Creating agent with configuration', {
-        agentId,
-        sessionId,
         workspaceId: workspace.id,
         name: normalized.name,
         source: normalized.source,
@@ -388,8 +389,14 @@ export class UnifiedAgentFactory {
       }
 
       // Step 7: Create agent session object (system prompt will be built by backend)
+      // The id starts as a provisional local value (config.id or a generated
+      // placeholder) and is REPLACED by the daemon-assigned id right after
+      // `createInBackend` — before any store dispatch or message send.
+      const provisionalAgentId = config.id
+        ? createAgentId(config.id)
+        : unifiedIdService.generateAgentId();
       const agent: AgentSession = {
-        id: agentId,
+        id: provisionalAgentId,
         backendSessionId: sessionId,
         workspaceId: workspace.id as BrandedWorkspaceId,
         name: normalized.name,
@@ -420,12 +427,17 @@ export class UnifiedAgentFactory {
         return {
           success: false,
           error: 'Workspace does not have a valid path',
-          agentId,
           sessionId,
         };
       }
 
-      // Step 8: Create agent in backend via IPC (only in frontend)
+      // Step 8: Create agent in backend via IPC (only in frontend). The
+      // daemon assigns the session id and returns it; the FE adopts it here —
+      // BEFORE the session upsert and the follow-up initial-message send — so
+      // every downstream reference (store key, stream channel,
+      // `agent.sendMessage`) targets the daemon's id. No client id is sent,
+      // so "already exists" collisions (the old retry-with-new-ID path) can
+      // no longer occur.
       if (!isBackend) {
         const backendStart = Date.now();
 
@@ -440,52 +452,36 @@ export class UnifiedAgentFactory {
         metrics.backendCreationTime = Date.now() - backendStart;
 
         if (!backendResult.success) {
-          // Special handling for task-focused agents when agent already exists
-          const isTaskAgent =
-            normalized.metadata?.agentType === 'task-focused' ||
-            normalized.metadata?.source === 'task-menu' ||
-            normalized.metadata?.source === 'bubble-menu';
-
-          if (isTaskAgent && backendResult.error?.includes('already exists')) {
-            logger.info('Task-focused agent collision detected, retrying with new ID', {
-              originalAgentId: agentId,
-              error: backendResult.error,
-            });
-
-            // Generate a new ID with timestamp to ensure uniqueness
-            const newAgentId = `agent-task-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-            // Retry with the new ID
-            const retryConfig = {
-              ...config,
-              id: newAgentId,
-              metadata: {
-                ...config.metadata,
-                __originalId: agentId,
-                __retryAttempt: true,
-              },
-            };
-
-            // Recursive call with new ID
-            return this.createAgent(workspace, retryConfig);
-          }
-
           logger.error('Backend agent creation failed', {
             error: backendResult.error,
-            agentId,
             duration: metrics.backendCreationTime,
           });
           return {
             success: false,
             error: backendResult.error,
-            agentId,
             sessionId,
           };
         }
+
+        if (!backendResult.agentId) {
+          // The daemon-assigned id IS the contract now: proceeding with the
+          // provisional id would upsert/send against a session the daemon
+          // doesn't recognize (guaranteed `-32602 not found: agent session`).
+          // Fail hard before any store dispatch or message send.
+          logger.error('agent.create response carried no agent id; aborting creation', {
+            provisionalAgentId,
+          });
+          return {
+            success: false,
+            error: 'agent.create response missing daemon-assigned agent id',
+            sessionId,
+          };
+        }
+        agent.id = createAgentId(backendResult.agentId);
       }
 
       logger.debug('Backend agent created', {
-        agentId,
+        agentId: agent.id,
         backendCreationTime: metrics.backendCreationTime,
       });
 
@@ -630,7 +626,7 @@ export class UnifiedAgentFactory {
       return {
         success: true,
         agent,
-        agentId,
+        agentId: agent.id,
         sessionId,
       };
     } catch (error) {
@@ -714,6 +710,12 @@ export class UnifiedAgentFactory {
    * and the main-process `ConsolidatedBackendService` + `ACPProvider` spawn
    * chain (deleted in AUDIT-P2-12b). `skipInitialPrompt` is a legacy
    * main-process flag that is unused by the daemon and intentionally dropped.
+   *
+   * No `agentId` is sent: the daemon assigns the session id and returns it on
+   * the response's `agent.id`, which is surfaced back to `createAgent` so the
+   * FE adopts it before any follow-up `agent.sendMessage` (fixes the
+   * create→send race at its root; a follow-up intentd change rejects
+   * client-supplied agent ids outright).
    */
   private async createInBackend(
     agent: AgentSession,
@@ -730,13 +732,12 @@ export class UnifiedAgentFactory {
     },
     provider?: string,
     _skipInitialPrompt?: boolean,
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; agentId?: string; error?: string }> {
     try {
       const request = {
         workspaceId: String(agent.workspaceId),
         workspacePath,
         name: agent.name,
-        agentId: String(agent.id), // Daemon adopts FE-supplied id verbatim
         model: agent.model ?? undefined, // Coerce null to undefined for wire format
         provider, // Provider ID (e.g., 'auggie', 'claude-code', 'codex') from activeProviderStore
         agentType: agent.metadata?.agentType, // Daemon builds system prompt from this
@@ -746,7 +747,6 @@ export class UnifiedAgentFactory {
       };
 
       logger.info('📤 Creating agent via daemon (agent.create)', {
-        agentId: agent.id,
         model: request.model,
         provider: request.provider,
         hasBehaviorPrompt: !!request.prompt,
@@ -758,18 +758,7 @@ export class UnifiedAgentFactory {
 
       const created = await appClient.agents.create(request);
 
-      // Defensive: the daemon (PROTOCOL §5.5) adopts the FE-supplied `agentId`
-      // verbatim. A divergence here would race the follow-up `agent.sendMessage`
-      // back to `-32602 not found: agent session`. Warn loudly so the mismatch
-      // is surfaced before the send lands.
-      if (created.id && String(created.id) !== String(agent.id)) {
-        logger.warn('Daemon returned a different agent id than the FE supplied', {
-          requestedAgentId: agent.id,
-          returnedAgentId: created.id,
-        });
-      }
-
-      return { success: true };
+      return { success: true, agentId: created.id ? String(created.id) : undefined };
     } catch (error) {
       logger.error('Daemon agent.create failed', error);
       return {

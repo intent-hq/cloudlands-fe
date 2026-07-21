@@ -73,7 +73,7 @@ describe("agent-ipc-bridge-seeder", () => {
   });
 
   describe("agent:create → daemon agent.create", () => {
-    it("forwards workspaceId / name / model / specialistId / agentId and wraps the result in IpcResponse<{agent,sessionId}>", async () => {
+    it("forwards workspaceId / name / model / specialistId and wraps the result in IpcResponse<{agent,sessionId}>", async () => {
       // PROTOCOL-shaped daemon response for `agent.create` (§5.5):
       // `{ agent: { id, name } }` — the bridge must accept this verbatim.
       mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-42", name: "Coordinator" } });
@@ -86,7 +86,6 @@ describe("agent-ipc-bridge-seeder", () => {
         workspaceId: WORKSPACE_ID,
         workspacePath: "/tmp/ws",
         name: "Coordinator",
-        agentId: "agent-42",
         model: "claude-opus",
         metadata: { specialist: "coordinator" },
       };
@@ -94,17 +93,15 @@ describe("agent-ipc-bridge-seeder", () => {
 
       const response = await mockInvoke(AGENT_CHANNELS.CREATE, request);
 
-      // The FE-minted `agentId` MUST flow through to `agent.create` verbatim
-      // so the daemon adopts it — otherwise the follow-up `agent.sendMessage`
-      // (queued right after the create) targets a non-existent session and
-      // the FE surfaces `-32602 not found: agent session` (PROTOCOL §5.5).
+      // No `agentId` on the wire: the daemon assigns the session id and
+      // returns it on the response's `agent.id`; the bridge echoes that id as
+      // `sessionId` so callers adopt the daemon-assigned id.
       expect(mockedRequest).toHaveBeenCalledWith("agent.create", {
         workspaceId: WORKSPACE_ID,
         name: "Coordinator",
         model: "claude-opus",
         specialistId: "coordinator",
         idempotencyKey: "idk-test",
-        agentId: "agent-42",
       });
       // `typedInvoke` consumers (UnifiedAgentFactory.createInBackend) gate on
       // `isSuccessResponse`, so the bridge envelope MUST satisfy that guard.
@@ -115,15 +112,35 @@ describe("agent-ipc-bridge-seeder", () => {
       });
     });
 
-    it("omits agentId from the daemon call when the FE request does not carry one (daemon mints its own)", async () => {
+    it("never forwards a client-supplied agentId to the daemon (daemon mints its own)", async () => {
       mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-be-99", name: "anon" } });
-      await mockInvoke(AGENT_CHANNELS.CREATE, {
+      const response = await mockInvoke(AGENT_CHANNELS.CREATE, {
         workspaceId: WORKSPACE_ID,
         workspacePath: "/tmp/ws",
+        // A legacy caller may still pass an id — it must be dropped.
+        agentId: "agent-legacy-client",
       });
       const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
       expect(params).toBeDefined();
       expect("agentId" in params).toBe(false);
+      // The daemon-assigned id is surfaced back as the sessionId.
+      expect(response).toEqual({
+        success: true,
+        data: { agent: { id: "agent-be-99", name: "anon" }, sessionId: "agent-be-99" },
+      });
+    });
+
+    it("returns an IpcResponse error when the daemon response lacks agent.id", async () => {
+      // Without the daemon-assigned id the FE cannot address follow-up sends;
+      // the bridge must fail loudly instead of returning sessionId: undefined.
+      mockedRequest.mockResolvedValueOnce({ agent: { name: "no-id" } });
+      const response = await mockInvoke<{ success: boolean; error?: { code: string; message: string } }>(
+        AGENT_CHANNELS.CREATE,
+        { workspaceId: WORKSPACE_ID },
+      );
+      expect(response.success).toBe(false);
+      expect(response.error?.code).toBe("BACKEND_ERROR");
+      expect(response.error?.message).toContain("agent.id");
     });
 
     it("returns an IpcResponse error when workspaceId is missing (no daemon call)", async () => {

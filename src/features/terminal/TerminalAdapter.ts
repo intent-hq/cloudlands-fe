@@ -33,6 +33,7 @@ import {
   closeActiveTerminalRequested,
   toggleTerminalOverlay,
 } from '$store/renderer/slices/terminals/terminals-slice';
+import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-slice';
 
 const logger = new Logger('TerminalAdapter');
 
@@ -327,8 +328,10 @@ export class TerminalAdapter {
       const rows = this.xterm.rows;
 
       // Check if terminal exists on backend (daemon `terminal.list` per
-      // PROTOCOL §5.9; the entry is keyed by `terminalId`).
-      const terminalExists = await this.terminalExistsOnBackend();
+      // PROTOCOL §5.9; entries are `{ id, name, cwd, isExecutingCommand }`,
+      // matched on `TerminalTab.id`).
+      const backendTerminal = await this.findBackendTerminal();
+      const terminalExists = backendTerminal !== null;
 
       // Restore buffer based on whether terminal exists on backend
       // - If terminal exists on backend: use backend buffer (has real PTY output)
@@ -377,6 +380,13 @@ export class TerminalAdapter {
         // Resize the backend PTY to match current xterm dimensions (must be after CONNECTED state)
         this.resize(cols, rows);
 
+        // Hydrating a terminal whose process already exited
+        // (`isExecutingCommand: false` on the daemon `terminal.list` entry):
+        // suppress the cursor just like a live `terminal:exit`.
+        if (backendTerminal?.isExecuting === false) {
+          this.hideCursorOnExit();
+        }
+
         // Notify ready
         this.callbacks.onReady?.();
       }
@@ -419,6 +429,10 @@ export class TerminalAdapter {
       // Mark as connected
       this.stateMachine.transition('connected');
 
+      // Fresh PTY — make sure the cursor is visible/blinking again after a
+      // previous exit suppressed it.
+      this.restoreCursor();
+
       // Notify ready
       this.callbacks.onReady?.();
     } catch (error) {
@@ -428,18 +442,46 @@ export class TerminalAdapter {
   }
 
   /**
-   * Check whether the daemon currently has a PTY with `this.terminalId`.
-   * Folds transport errors to `false` so the caller treats them as "not
-   * present" and goes through the create path.
+   * Fetch this PTY's `terminal.list` entry from the daemon, or `null` when it
+   * is not listed. Folds transport errors to `null` so the caller treats them
+   * as "not present" and goes through the create path.
    */
-  private async terminalExistsOnBackend(): Promise<boolean> {
+  private async findBackendTerminal(): Promise<TerminalTab | null> {
     try {
       const list = await this.terminals.list(this.workspaceId);
-      return list.some((t) => t.id === this.terminalId);
+      return list.find((t) => t.id === this.terminalId) ?? null;
     } catch (error) {
-      logger.warn(`Could not check terminal existence: ${error}`);
-      return false;
+      logger.warn('Could not check terminal existence:', error);
+      return null;
     }
+  }
+
+  /**
+   * Check whether the daemon currently has a PTY with `this.terminalId`.
+   */
+  private async terminalExistsOnBackend(): Promise<boolean> {
+    return (await this.findBackendTerminal()) !== null;
+  }
+
+  /**
+   * Stop the blinking cursor once the terminal's process has exited: disable
+   * xterm's cursor blink and hide the cursor (DECTCEM `\x1b[?25l`). Applied on
+   * live `terminal:exit` and when hydrating an already-exited terminal.
+   */
+  private hideCursorOnExit(): void {
+    if (this.isDisposed) return;
+    this.xterm.options.cursorBlink = false;
+    this.xterm.write('\x1b[?25l');
+  }
+
+  /**
+   * Restore cursor visibility/blink when a fresh PTY is (re)created for this
+   * adapter after a previous exit.
+   */
+  private restoreCursor(): void {
+    if (this.isDisposed) return;
+    this.xterm.options.cursorBlink = true;
+    this.xterm.write('\x1b[?25h');
   }
 
   /**
@@ -606,6 +648,7 @@ export class TerminalAdapter {
       onExit: ({ exitCode }) => {
         if (handlerDisabled || this.isDisposed) return;
         this.exitedNormally = true;
+        this.hideCursorOnExit();
         this.callbacks.onExit?.(exitCode);
         this.stateMachine.transition('disconnect');
       },
@@ -1283,12 +1326,18 @@ export class TerminalAdapter {
         `[reattach] Terminal ${this.terminalId} not in CONNECTED state (${currentState}), attempting to restore`,
       );
       // Check if terminal exists on backend and transition accordingly
-      if (await this.terminalExistsOnBackend()) {
+      const backendTerminal = await this.findBackendTerminal();
+      if (backendTerminal) {
         if (currentState === TerminalState.DISCONNECTED || currentState === TerminalState.ERROR) {
           this.stateMachine.transition('reconnect');
           this.stateMachine.transition('reconnected');
         } else if (currentState === TerminalState.CONNECTING) {
           this.stateMachine.transition('connected');
+        }
+        // Reattached to a PTY whose process already exited — keep the cursor
+        // suppressed, matching the initialize() hydration path.
+        if (backendTerminal.isExecuting === false) {
+          this.hideCursorOnExit();
         }
         logger.info(
           `[reattach] Terminal ${this.terminalId} state restored to ${this.stateMachine.getState()}`,
@@ -1650,11 +1699,11 @@ export class TerminalAdapter {
 
     try {
       // Check if PTY still exists on backend via daemon `terminal.list`
-      const alive = await this.terminalExistsOnBackend();
+      const backendTerminal = await this.findBackendTerminal();
 
       if (this.isDisposed) return; // Check again after async call
 
-      if (alive) {
+      if (backendTerminal) {
         // PTY exists — re-setup IPC handlers and transition back to CONNECTED
         logger.info(
           `[auto-reconnect] Terminal ${this.terminalId}: PTY exists on backend, re-establishing connection`,
@@ -1667,6 +1716,12 @@ export class TerminalAdapter {
         // Resize to match current xterm dimensions
         if (this.xterm.cols && this.xterm.rows) {
           this.resize(this.xterm.cols, this.xterm.rows);
+        }
+
+        // Reconnected to a PTY whose process already exited — keep the
+        // cursor suppressed, matching the initialize() hydration path.
+        if (backendTerminal.isExecuting === false) {
+          this.hideCursorOnExit();
         }
 
         this.callbacks.onReady?.();
@@ -1775,6 +1830,7 @@ export class TerminalAdapter {
 
       this.setupIpcEventHandlers();
       this.stateMachine.transition('reconnected');
+      this.restoreCursor();
       this.callbacks.onReady?.();
     } catch (error) {
       this.stateMachine.reportError(error as Error);

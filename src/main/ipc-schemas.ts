@@ -183,7 +183,9 @@ export const WorkspaceCreateSchema = z.object({
   skipWorktree: z.boolean().optional(), // If true, skip creating a git worktree and use repositoryPath directly
   initialAgent: z
     .object({
-      agentId: z.string(),
+      // DEPRECATED: the daemon assigns the initial agent's id; clients must
+      // not send one. Kept optional for legacy callers only.
+      agentId: z.string().optional(),
       name: z.string().optional(),
       model: z.string().optional(),
       provider: z.string().optional(), // Provider ID (e.g., 'auggie', 'claude-code', 'codex')
