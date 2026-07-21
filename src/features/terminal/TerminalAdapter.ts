@@ -328,7 +328,8 @@ export class TerminalAdapter {
       const rows = this.xterm.rows;
 
       // Check if terminal exists on backend (daemon `terminal.list` per
-      // PROTOCOL §5.9; the entry is keyed by `terminalId`).
+      // PROTOCOL §5.9; entries are `{ id, name, cwd, isExecutingCommand }`,
+      // matched on `TerminalTab.id`).
       const backendTerminal = await this.findBackendTerminal();
       const terminalExists = backendTerminal !== null;
 
@@ -382,7 +383,7 @@ export class TerminalAdapter {
         // Hydrating a terminal whose process already exited
         // (`isExecutingCommand: false` on the daemon `terminal.list` entry):
         // suppress the cursor just like a live `terminal:exit`.
-        if (backendTerminal.isExecuting === false) {
+        if (backendTerminal?.isExecuting === false) {
           this.hideCursorOnExit();
         }
 
