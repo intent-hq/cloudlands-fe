@@ -569,6 +569,75 @@ describe('agent-session-slice reducer', () => {
       ]);
     });
 
+    it('merges a local optimistic user message with an echo lacking appMessageId (older-daemon fallback)', () => {
+      const optimisticMessage: AgentMessage = {
+        id: 'optimistic_app_msg_fallback',
+        appMessageId: 'app_msg_fallback',
+        role: 'user',
+        timestamp: '2024-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'Approve both tasks.' }],
+      };
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [optimisticMessage] })),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-fallback-user-message',
+          type: 'agent:user-message:sent',
+          timestamp: '2024-01-01T00:00:03.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            messageId: 'msg_canonical_user_fallback',
+            content: 'Approve both tasks.',
+          },
+        } as any),
+      );
+
+      expect(getMsgs(state, 'a1')).toMatchObject([
+        { id: 'msg_canonical_user_fallback', appMessageId: 'app_msg_fallback', role: 'user' },
+      ]);
+    });
+
+    it('keeps same-content user messages with different appMessageIds distinct', () => {
+      const firstSend: AgentMessage = {
+        id: 'optimistic_app_msg_first',
+        appMessageId: 'app_msg_first',
+        role: 'user',
+        timestamp: '2024-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'Yes' }],
+      };
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [firstSend] })),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-second-send-user-message',
+          type: 'agent:user-message:sent',
+          timestamp: '2024-01-01T00:00:03.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            messageId: 'msg_canonical_second_send',
+            appMessageId: 'app_msg_second',
+            content: 'Yes',
+          },
+        } as any),
+      );
+
+      expect(getMsgs(state, 'a1')).toHaveLength(2);
+      expect(getMsgs(state, 'a1').map((m) => m.appMessageId)).toEqual([
+        'app_msg_first',
+        'app_msg_second',
+      ]);
+    });
+
     it('ignores malformed cross-client user message workspace events', () => {
       const state = agentSessionReducer(
         agentSessionReducer(initialState, upsertSession(makeSession('a1'))),
@@ -3126,7 +3195,7 @@ describe('addMessage with shared logical dedup', () => {
     expect(messages.map((m) => m.id)).toEqual(['msg_final']);
   });
 
-  it('keeps final-final assistant replies when exactly one message has appMessageId and turnNumber is missing', () => {
+  it('merges final-final assistant replies via content fallback when exactly one message has appMessageId', () => {
     const existing = makeContentMessage('local-uuid', 'assistant', 'Hello world');
     const incoming = {
       ...makeContentMessage('msg_backend', 'assistant', 'Hello world', '2024-01-01T00:00:02.000Z'),
@@ -3137,7 +3206,9 @@ describe('addMessage with shared logical dedup', () => {
       upsertSession(makeSession('a1', 'ws-1', { messages: [existing] })),
     );
     state = agentSessionReducer(state, addMessage('a1', incoming));
-    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['local-uuid', 'msg_backend']);
+    expect(getMsgs(state, 'a1')).toMatchObject([
+      { id: 'msg_backend', appMessageId: 'app_msg_incoming' },
+    ]);
   });
 
   it('keeps close-timestamp canonical assistant messages from different turns', () => {
@@ -3456,7 +3527,7 @@ describe('upsertSession with shared logical dedup', () => {
     expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_canonical']);
   });
 
-  it('keeps final-final assistant replies with exactly one appMessageId on upsert when turnNumber is missing', () => {
+  it('merges final-final assistant replies with exactly one appMessageId on upsert via content fallback', () => {
     const localMsg: AgentMessage = {
       id: 'local-uuid',
       role: 'assistant',
@@ -3472,7 +3543,9 @@ describe('upsertSession with shared logical dedup', () => {
     };
     const session = makeSession('a1', 'ws-1', { messages: [localMsg, canonicalMsg] });
     const state = agentSessionReducer(initialState, upsertSession(session));
-    expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['local-uuid', 'msg_canonical']);
+    expect(getMsgs(state, 'a1')).toMatchObject([
+      { id: 'msg_canonical', appMessageId: 'app_msg_canonical' },
+    ]);
   });
 
   it('deduplicates stale streaming placeholder with finalized message on upsert when appMessageIds differ', () => {
