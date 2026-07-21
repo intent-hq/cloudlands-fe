@@ -130,6 +130,19 @@ describe("agent-ipc-bridge-seeder", () => {
       });
     });
 
+    it("returns an IpcResponse error when the daemon response lacks agent.id", async () => {
+      // Without the daemon-assigned id the FE cannot address follow-up sends;
+      // the bridge must fail loudly instead of returning sessionId: undefined.
+      mockedRequest.mockResolvedValueOnce({ agent: { name: "no-id" } });
+      const response = await mockInvoke<{ success: boolean; error?: { code: string; message: string } }>(
+        AGENT_CHANNELS.CREATE,
+        { workspaceId: WORKSPACE_ID },
+      );
+      expect(response.success).toBe(false);
+      expect(response.error?.code).toBe("BACKEND_ERROR");
+      expect(response.error?.message).toContain("agent.id");
+    });
+
     it("returns an IpcResponse error when workspaceId is missing (no daemon call)", async () => {
       const response = await mockInvoke<{ success: boolean; error?: { code: string } }>(
         AGENT_CHANNELS.CREATE,

@@ -121,12 +121,22 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
   try {
     const result = await backendRequest<{ agent?: unknown }>("agent.create", params);
     const agent = (result as { agent?: unknown })?.agent;
+    const sessionId = readString(asRecord(agent), "id");
+    if (!sessionId) {
+      // The daemon-assigned id is the whole contract now: without it the FE
+      // cannot address any follow-up send. Surface a clear backend error
+      // instead of a malformed success envelope with sessionId: undefined.
+      return {
+        success: false,
+        error: {
+          code: "BACKEND_ERROR",
+          message: "agent.create response missing daemon-assigned agent.id",
+        },
+      };
+    }
     return {
       success: true,
-      data: {
-        agent,
-        sessionId: readString(asRecord(agent), "id"),
-      },
+      data: { agent, sessionId },
     };
   } catch (error) {
     return {
