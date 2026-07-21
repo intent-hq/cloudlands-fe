@@ -315,7 +315,9 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
   .with(saveTerminalMetadata, (state, { payload: [wsId, termId, title, createdAt] }) => {
     const ws = getWs(state, wsId);
     const existing = getItem(ws.terminals, termId);
-    const name = title || getTerminalName(termId);
+    // No explicit title must never clobber a daemon-provided name (e.g.
+    // "Setup Script" from `terminal.list`) with the generic fallback.
+    const name = title || existing?.name || getTerminalName(termId);
     const terminal: TerminalTab = {
       ...(existing ?? { id: termId }),
       id: termId,

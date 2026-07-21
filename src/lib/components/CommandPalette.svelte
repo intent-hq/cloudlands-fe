@@ -284,7 +284,7 @@
           return {
             id: t.terminalId,
             type: 'terminal' as const,
-            label: t.title || `Terminal ${t.terminalId.slice(-4)}`,
+            label: t.title || 'Terminal',
             description,
             icon: faTerminal,
             timestamp: new Date(t.createdAt).getTime(),
