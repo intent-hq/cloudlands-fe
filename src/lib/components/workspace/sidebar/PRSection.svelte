@@ -209,7 +209,7 @@
   // (§5.6) on first PR expand and merged into the aggregation. `null` marks
   // an in-flight fetch (cleared on failure so a later expand retries); the
   // cache resets on workspace switch so it can't leak across workspaces.
-  let prCommitFileCache = $state<Record<string, CommitFile[] | null>>({});
+  let prCommitFileCache = $state<Partial<Record<string, CommitFile[] | null>>>({});
   let prCacheWorkspaceId = workspaceId;
   $effect(() => {
     if (workspaceId !== prCacheWorkspaceId) {
