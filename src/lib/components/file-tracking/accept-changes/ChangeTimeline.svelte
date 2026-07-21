@@ -1674,7 +1674,7 @@
                     class="border border-border rounded-md overflow-hidden shadow-xs bg-background relative z-10"
                     transition:fly={{ y: 6, duration: 200 }}
                   >
-                    <CommitNode {commit} noBorder {onFileClick} />
+                    <CommitNode {commit} {workspaceId} noBorder {onFileClick} />
                   </div>
 
                   <!-- Action bar at bottom of commit -->
@@ -1998,6 +1998,7 @@
                     >
                       <CommitNode
                         {commit}
+                        {workspaceId}
                         noBorder
                         showViewAction
                         {onFileClick}
@@ -2035,7 +2036,7 @@
           {#if hasPRs}
             <div class="pl-10 pr-3 pb-3 space-y-3">
               {#each prs as pr (pr.number)}
-                <PRNode {pr} {onFileClick} {onOpenPR} {onOpenCommit} />
+                <PRNode {pr} {workspaceId} {onFileClick} {onOpenPR} {onOpenCommit} />
               {/each}
             </div>
           {/if}
