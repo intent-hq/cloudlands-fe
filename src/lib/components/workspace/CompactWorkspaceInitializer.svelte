@@ -638,7 +638,9 @@
         skipWorktree,
         stayOnHomePage,
       };
-      appStore.dispatch(setCompactWorkspaceInitializerFormState(formState));
+      // Snapshot to strip $state proxies (e.g. remoteSetup) — Redux state must be
+      // structured-cloneable for daemon persistence (src/store/renderer/AGENTS.md §2).
+      appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(formState)));
     }
   });
 
@@ -2047,7 +2049,8 @@
       cleanedState.scope = scope;
       cleanedState.scopeRepoPath = scope ? repoPath : undefined;
     }
-    appStore.dispatch(setCompactWorkspaceInitializerFormState(cleanedState));
+    // Snapshot to strip $state proxies before dispatching into Redux (see $effect above)
+    appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(cleanedState)));
   }
 
   function handleIssueSelect(_text: string, metadata?: IssueSelectionData) {

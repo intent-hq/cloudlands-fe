@@ -150,6 +150,42 @@ function getArchivedWorkspacesForRepo(repoKey: string, workspaces: Workspace[]):
 }
 
 /**
+ * Pending workspace deletions awaiting commit, keyed by workspaceId. Transient,
+ * UI-only state (never Redux, per src/store/renderer/AGENTS.md §2) — mirrors the
+ * soft-hide-then-commit registry in `agent-mutation-service`. Each entry holds
+ * the armed undo timer plus the commit closure so the unload flush below can
+ * fire the wire call before the renderer (and its 15s setTimeout) dies.
+ */
+interface PendingWorkspaceDeletion {
+  timer: ReturnType<typeof setTimeout>;
+  commit: () => Promise<void>;
+}
+const pendingWorkspaceDeletions = new Map<string, PendingWorkspaceDeletion>();
+
+/**
+ * Immediately commit every pending (undo-window) workspace deletion. Wired to
+ * window teardown below: the deferred `workspace.delete` commit otherwise rides
+ * a setTimeout that dies with the renderer, silently resurrecting the deleted
+ * workspace on the next launch. Each commit initiates its wire request
+ * synchronously, so the requests are handed to the transport before teardown
+ * completes. Idempotent — commit clears its own registry entry, and an undone
+ * deletion is already out of the registry.
+ */
+export function flushPendingWorkspaceDeletions(): void {
+  for (const pending of [...pendingWorkspaceDeletions.values()]) {
+    void pending.commit();
+  }
+}
+
+// Commit pending deletions on window teardown — same convention as the
+// beforeunload flush in `unified-save-queue.ts`; `pagehide` additionally
+// covers teardown paths where beforeunload does not fire.
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", flushPendingWorkspaceDeletions);
+  window.addEventListener("pagehide", flushPendingWorkspaceDeletions);
+}
+
+/**
  * Optimistically remove the workspace, then commit the delete after the undo
  * window unless the user undid it. A failed delete restores the entity.
  */
@@ -163,6 +199,13 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
 
   let undone = false;
   const commit = async () => {
+    // Bail when the registry entry is gone — already committed (a second
+    // invocation, e.g. a timer callback queued before a flush cleared it)
+    // or undone. Keeps commit idempotent: the delete is sent at most once.
+    const pending = pendingWorkspaceDeletions.get(workspace.id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingWorkspaceDeletions.delete(workspace.id);
     if (undone) return;
     const result = await workspaceClient.delete(workspace.id);
     if (!result.ok) {
@@ -175,14 +218,21 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
   };
 
   const timer = setTimeout(() => void commit(), UNDO_DURATION_MS);
+  pendingWorkspaceDeletions.set(workspace.id, { timer, commit });
 
   toast.warning(`Deleted ${workspace.title || "space"}`, {
     duration: UNDO_DURATION_MS,
     action: {
       label: "Undo",
       onClick: () => {
+        // Already committed (e.g. a teardown flush fired without the window
+        // actually unloading — cancelled navigation / dev HMR): the delete has
+        // reached the daemon, so Undo must stay inert instead of resurrecting
+        // the entity locally and diverging from the daemon.
+        if (!pendingWorkspaceDeletions.has(workspace.id)) return;
         undone = true;
         clearTimeout(timer);
+        pendingWorkspaceDeletions.delete(workspace.id);
         appStore.dispatch(clearWorkspacePendingDeletion(workspace.id));
         appStore.dispatch(setWorkspaceEntity(workspace));
       },
