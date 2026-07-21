@@ -10,9 +10,9 @@
  * The former `workspace-config` electron-store held the entire `AppConfig`
  * blob; this module is the successor for the daemon-owned subset. Non-secret
  * sub-keys are hydrated into `ConfigManager` on startup so callers see the
- * daemon-authoritative value. The secret `ai.apiToken` is never hydrated in
- * plaintext (the daemon only ever exposes a redacted placeholder on read);
- * writes push through to the daemon secret store.
+ * daemon-authoritative value. Secret keys are never hydrated in plaintext
+ * (the daemon only ever exposes a redacted placeholder on read); writes push
+ * through to the daemon secret store.
  *
  * FE-local `AppConfig` sub-keys (`appearance`, `editor`, `shortcuts`,
  * `experimental`, and the `workspace.*` UI knobs) are intentionally NOT
@@ -26,18 +26,13 @@ const logger = new Logger('ConfigDaemonSync');
 
 /** Daemon settings-catalog paths that mirror `AppConfig` sub-keys. */
 export const NON_SECRET_DAEMON_KEYS = [
-  'ai.apiUrl',
-  'ai.model',
-  'ai.temperature',
-  'ai.maxTokens',
-  'ai.streamingSpeed',
   'permissions.rules',
   'userRules',
   'workspaceRules',
 ] as const;
 
 /** Sensitive keys — writes push through, reads never hydrate plaintext. */
-export const SECRET_DAEMON_KEYS = ['ai.apiToken'] as const;
+export const SECRET_DAEMON_KEYS = [] as const;
 
 export const ALL_DAEMON_KEYS = [...NON_SECRET_DAEMON_KEYS, ...SECRET_DAEMON_KEYS] as const;
 
