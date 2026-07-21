@@ -54,7 +54,11 @@ export const setAuthenticating = createAction<[isAuthenticating: boolean]>(
   "githubAuth/setAuthenticating",
 );
 
-/** Set OAuth URL and needsScopeUpdate after startAuth response */
+/**
+ * Set the device-flow verification URI (carried as `oauthUrl`, §5.27) and
+ * needsScopeUpdate after the startAuth response. Not a browser-redirect
+ * OAuth URL.
+ */
 export const setOAuthInfo = createAction(
   "githubAuth/setOAuthInfo",
   (oauthUrl: string | null, needsScopeUpdate: boolean) => ({ oauthUrl, needsScopeUpdate }),

@@ -198,24 +198,46 @@ export async function checkGitHubAuthStatusOnce(): Promise<void> {
   await checkAuthCompleteOnce();
 }
 
-/** Cancel an in-progress auth flow. */
+/**
+ * Cancel an in-progress auth flow. The flow is only cleared locally when the
+ * daemon confirms the cancel — otherwise its device flow would keep running
+ * while the UI shows it cancelled.
+ */
 export async function cancelGitHubAuthFlow(): Promise<void> {
   cancelActivePoll();
   try {
-    await githubAuthClient.cancelAuth();
+    const result = await githubAuthClient.cancelAuth();
+    if (result?.success !== true) {
+      appStore.dispatch(
+        setGitHubAuthError(result?.error || 'Failed to cancel GitHub authentication.'),
+      );
+      return;
+    }
   } catch (error) {
     logger.error('cancelAuth error', error);
+    appStore.dispatch(setGitHubAuthError('Failed to cancel GitHub authentication.'));
+    return;
   }
   appStore.dispatch(authCancelled());
 }
 
-/** Log out and clear cached auth state. */
+/**
+ * Log out (daemon-side revoke). Local auth state is only cleared when the
+ * revoke succeeds — otherwise the daemon still holds a valid token and the
+ * signed-out UI would desync until the next refresh.
+ */
 export async function logoutGitHubFlow(): Promise<void> {
   cancelActivePoll();
   try {
-    await githubAuthClient.logout();
+    const result = await githubAuthClient.logout();
+    if (result?.success !== true) {
+      appStore.dispatch(setGitHubAuthError(result?.error || 'Failed to log out of GitHub.'));
+      return;
+    }
   } catch (error) {
     logger.error('logout error', error);
+    appStore.dispatch(setGitHubAuthError('Failed to log out of GitHub.'));
+    return;
   }
   appStore.dispatch(logoutCompleted());
 }

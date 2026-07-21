@@ -175,11 +175,15 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async () => {
   }
 });
 
+// `github.revoke` (§5.27) — deletes the stored token daemon-side; mapped to
+// the same `{ success, error? }` envelope as the other auth channels so the
+// store service only clears local auth state on a confirmed revoke.
 registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LOGOUT, async () => {
   try {
-    return await backendRequest('github.revoke');
+    await backendRequest('github.revoke');
+    return { success: true };
   } catch (error) {
-    return { ok: false, guidance: errorMessage(error) };
+    return { success: false, error: errorMessage(error) };
   }
 });
 

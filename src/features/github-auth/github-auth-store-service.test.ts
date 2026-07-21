@@ -154,7 +154,7 @@ describe('githubAuthStoreService (fake seam, real store)', () => {
   });
 
   it('cancel invokes the seam and clears the authenticating flag', async () => {
-    api.cancelAuth.mockResolvedValueOnce(undefined);
+    api.cancelAuth.mockResolvedValueOnce({ success: true });
 
     await cancelGitHubAuthFlow();
 
@@ -162,14 +162,39 @@ describe('githubAuthStoreService (fake seam, real store)', () => {
     expect(ghState().isAuthenticating).toBe(false);
   });
 
+  it('cancel surfaces an error (not authCancelled) when the daemon cancel fails', async () => {
+    api.cancelAuth.mockResolvedValueOnce({ success: false, error: 'cancel failed' });
+
+    await cancelGitHubAuthFlow();
+
+    expect(ghState().error).toBe('cancel failed');
+  });
+
   it('logout invokes the seam and resets authentication', async () => {
-    api.logout.mockResolvedValueOnce(undefined);
+    api.logout.mockResolvedValueOnce({ success: true });
 
     await logoutGitHubFlow();
 
     expect(api.logout).toHaveBeenCalledTimes(1);
     expect(ghState().isAuthenticated).toBe(false);
     expect(ghState().user).toBeNull();
+  });
+
+  it('logout keeps auth state when the daemon revoke fails', async () => {
+    api.getAuthState.mockResolvedValueOnce({
+      isAuthenticated: true,
+      requiresDaemonAuth: false,
+      user: { login: 'octocat', name: null, email: null, avatar_url: '' },
+      needsScopeUpdate: false,
+      oauthUrl: null,
+    });
+    await initializeGitHubAuthFlow();
+    api.logout.mockResolvedValueOnce({ success: false, error: 'revoke failed' });
+
+    await logoutGitHubFlow();
+
+    expect(ghState().isAuthenticated).toBe(true);
+    expect(ghState().error).toBe('revoke failed');
   });
 
   it('dispatching startGitHubAuth invokes the seam (middleware wiring)', async () => {
@@ -238,6 +263,7 @@ describe('githubAuthStoreService (fake seam, real store)', () => {
     expect(ghState().isAuthenticating).toBe(true);
     expect(api.checkAuthComplete).toHaveBeenCalled();
     // Stop the resumed fallback poll so it does not leak into later tests.
+    api.cancelAuth.mockResolvedValueOnce({ success: true });
     await cancelGitHubAuthFlow();
   });
 
