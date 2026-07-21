@@ -20,7 +20,10 @@ import {
 } from 'electron';
 import { Logger } from '../../../shared/logger';
 import type { AgentIdleEvent } from '../../events/types';
-import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
+import type {
+  ConnectionStatus,
+  JsonRpcNotification,
+} from '../../backend/main/json-rpc-client';
 import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
 import {
   getWindowIdsForWorkspace,
@@ -117,6 +120,8 @@ export class NotificationService {
   private subscribeEpoch = 0;
   private notificationListener?: (n: JsonRpcNotification) => void;
   private reconnectDisposer?: () => void;
+  /** Detaches the pending connect-retry `status` listener, when armed. */
+  private statusRetryDisposer?: () => void;
   private activeNotifications = new Set<Notification>();
 
   constructor(workspaceId: string) {
@@ -147,6 +152,7 @@ export class NotificationService {
     this.subscribeEpoch++;
     this.reconnectDisposer?.();
     this.reconnectDisposer = undefined;
+    this.clearStatusRetry();
     const listener = this.notificationListener;
     this.notificationListener = undefined;
     const subscriptionId = this.subscriptionId;
@@ -173,6 +179,11 @@ export class NotificationService {
    * `events.subscribe`. Mirrors the terminal-registry / script-manager
    * long-lived subscription pattern: the listener persists across reconnects
    * (same singleton client); only the subscription id is re-issued.
+   *
+   * The notification listener and reconnect disposer are attached
+   * synchronously (before the first `await`), so a later `stop()` always
+   * observes and detaches them — it can never interleave with a
+   * half-attached state.
    */
   private async attachIdleSubscription(): Promise<void> {
     try {
@@ -234,12 +245,45 @@ export class NotificationService {
         return;
       }
       this.subscriptionId = subscriptionId;
+      this.clearStatusRetry();
     } catch (error) {
-      logger.warn('events.subscribe for agent:idle failed; notifications will not fire', {
-        workspaceId: this.workspaceId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.warn(
+        'events.subscribe for agent:idle failed; will retry on the next connected transition',
+        {
+          workspaceId: this.workspaceId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      // Initial-connect gap (RESUB-1 covers reconnects only): when start()
+      // runs before the daemon client's FIRST successful connect, this
+      // subscribe fails and `reconnected` never fires (it requires an
+      // earlier connected state). Arm a `status` listener so the next
+      // `connected` transition re-issues the subscribe.
+      if (epoch === this.subscribeEpoch && this.started) {
+        this.armStatusRetry();
+      }
     }
+  }
+
+  /** Re-issue `events.subscribe` on the client's next `connected` transition. */
+  private armStatusRetry(): void {
+    if (this.statusRetryDisposer) return;
+    const client = getBackendClient();
+    const listener = (status: ConnectionStatus): void => {
+      if (status !== 'connected') return;
+      this.clearStatusRetry();
+      // Guard against double-subscribe: the reconnect handler (or a late
+      // in-flight subscribe) may have already produced a live id.
+      if (!this.started || this.subscriptionId) return;
+      void this.subscribeToIdleEvents();
+    };
+    client.on('status', listener);
+    this.statusRetryDisposer = () => client.off('status', listener);
+  }
+
+  private clearStatusRetry(): void {
+    this.statusRetryDisposer?.();
+    this.statusRetryDisposer = undefined;
   }
 
   /**
@@ -526,6 +570,25 @@ export function disposeNotificationService(workspaceId: string): void {
   if (service) {
     service.stop();
     instances.delete(workspaceId);
+  }
+}
+
+/**
+ * Reconcile running notification services against the set of workspaces open
+ * in any Electron window (current view + background tabs). Called from the
+ * `window-workspace-state-changed` app event — the successor trigger to the
+ * dead legacy `workspace:open` IPC path. Starts a service for every open
+ * workspace and disposes services for workspaces no longer open anywhere.
+ */
+export function syncNotificationServices(openWorkspaceIds: string[]): void {
+  const open = new Set(openWorkspaceIds);
+  for (const workspaceId of open) {
+    getNotificationService(workspaceId).start();
+  }
+  for (const workspaceId of [...instances.keys()]) {
+    if (!open.has(workspaceId)) {
+      disposeNotificationService(workspaceId);
+    }
   }
 }
 
