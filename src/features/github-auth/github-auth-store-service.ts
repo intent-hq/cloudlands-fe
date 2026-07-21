@@ -16,10 +16,10 @@
  * importing them would evaluate `store.createSelector` while the store module is
  * still mid-initialization through the middleware chain).
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import type { GitHubUser } from "$features/github-auth/types";
-import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
-import { store as appStore } from "$store/renderer/store";
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { GitHubUser } from '$features/github-auth/types';
+import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
+import { store as appStore } from '$store/renderer/store';
 import {
   authCancelled,
   authCompleted,
@@ -36,10 +36,10 @@ import {
   setGitHubAuthState,
   setOAuthInfo,
   startGitHubAuth,
-} from "$store/renderer/slices/github-auth/github-auth-slice";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/github-auth/github-auth-slice';
+import { createLogger } from '$lib/utils/client-logger';
 
-const logger = createLogger("GitHubAuthService");
+const logger = createLogger('GitHubAuthService');
 
 /** Fallback polling interval for checking auth completion (5 seconds — the
  * device-flow default cadence; `github:auth-changed` events are the primary
@@ -77,7 +77,7 @@ export async function initializeGitHubAuthFlow(): Promise<void> {
     // restart the fallback poll at the daemon-suggested interval, clamped
     // to no faster than AUTH_POLL_INTERVAL.
     const pending = authState.deviceFlow;
-    if (!authState.isAuthenticated && pending?.status === "pending") {
+    if (!authState.isAuthenticated && pending?.status === 'pending') {
       appStore.dispatch(setAuthenticating(true));
       appStore.dispatch(
         setDeviceFlowInfo({
@@ -97,7 +97,7 @@ export async function initializeGitHubAuthFlow(): Promise<void> {
       appStore.dispatch(setAuthenticating(false));
     }
   } catch (error) {
-    logger.error("initialize error", error);
+    logger.error('initialize error', error);
   }
 }
 
@@ -110,7 +110,7 @@ async function checkAuthCompleteOnce(): Promise<boolean> {
       return true;
     }
   } catch (error) {
-    logger.error("poll check failed", error);
+    logger.error('poll check failed', error);
   }
   return false;
 }
@@ -133,7 +133,7 @@ export async function pollForGitHubAuthCompletion(
     await delay(pollIntervalMs);
     if (token.cancelled) return;
     if (Date.now() - startTime > timeoutMs) {
-      appStore.dispatch(setGitHubAuthError("Authentication timed out. Please try again."));
+      appStore.dispatch(setGitHubAuthError('Authentication timed out. Please try again.'));
       break;
     }
     if (await checkAuthCompleteOnce()) break;
@@ -147,7 +147,7 @@ export async function startGitHubAuthFlow(): Promise<void> {
   try {
     const result = await githubAuthClient.startAuth();
     if (!result.success) {
-      appStore.dispatch(setGitHubAuthError(result.error || "Failed to start authentication"));
+      appStore.dispatch(setGitHubAuthError(result.error || 'Failed to start authentication'));
       return;
     }
     if (result.alreadyAuthenticated) {
@@ -157,32 +157,39 @@ export async function startGitHubAuthFlow(): Promise<void> {
       appStore.dispatch(authCompleted(null));
       return;
     }
-    appStore.dispatch(setOAuthInfo(result.oauthUrl ?? null, result.needsScopeUpdate ?? false));
-    if (result.userCode && result.verificationUri) {
-      appStore.dispatch(
-        setDeviceFlowInfo({
-          userCode: result.userCode,
-          verificationUri: result.verificationUri,
-          expiresIn: result.expiresIn ?? 0,
-          interval: result.interval ?? 5,
-        }),
-      );
+    // A successful start carries all device-flow fields (§5.27 `github.connect`).
+    // Do not default missing ones — a partial payload is a wire divergence and
+    // is surfaced as an error rather than papered over.
+    const { userCode, verificationUri, expiresIn, interval } = result;
+    if (
+      !userCode ||
+      !verificationUri ||
+      typeof expiresIn !== 'number' ||
+      typeof interval !== 'number'
+    ) {
+      logger.error('startAuth returned an incomplete device-flow payload', {
+        keys: Object.keys(result),
+      });
+      appStore.dispatch(setGitHubAuthError('GitHub device flow could not be started.'));
+      return;
     }
+    appStore.dispatch(setOAuthInfo(result.oauthUrl ?? null, result.needsScopeUpdate ?? false));
+    appStore.dispatch(setDeviceFlowInfo({ userCode, verificationUri, expiresIn, interval }));
     // `github:auth-changed` is the primary completion signal; this poll is
     // the fallback for a missed event, at the daemon's suggested interval
     // clamped to no faster than AUTH_POLL_INTERVAL.
-    const pollMs = Math.max((result.interval ?? 5) * 1000, AUTH_POLL_INTERVAL);
+    const pollMs = Math.max(interval * 1000, AUTH_POLL_INTERVAL);
     await pollForGitHubAuthCompletion(pollMs);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : 'Unknown error';
     appStore.dispatch(
       setGitHubAuthError(
-        message.includes("Unauthorized channel")
-          ? "GitHub auth IPC was blocked. Please restart the app so the preload allowlist is refreshed."
+        message.includes('Unauthorized channel')
+          ? 'GitHub auth IPC was blocked. Please restart the app so the preload allowlist is refreshed.'
           : message,
       ),
     );
-    logger.error("startAuth error", error);
+    logger.error('startAuth error', error);
   }
 }
 
@@ -197,7 +204,7 @@ export async function cancelGitHubAuthFlow(): Promise<void> {
   try {
     await githubAuthClient.cancelAuth();
   } catch (error) {
-    logger.error("cancelAuth error", error);
+    logger.error('cancelAuth error', error);
   }
   appStore.dispatch(authCancelled());
 }
@@ -208,7 +215,7 @@ export async function logoutGitHubFlow(): Promise<void> {
   try {
     await githubAuthClient.logout();
   } catch (error) {
-    logger.error("logout error", error);
+    logger.error('logout error', error);
   }
   appStore.dispatch(logoutCompleted());
 }
@@ -220,10 +227,10 @@ export async function logoutGitHubFlow(): Promise<void> {
  * signed-out.
  */
 export async function handleGitHubAuthChanged(
-  status: "authorized" | "expired" | "denied" | "error" | "revoked",
+  status: 'authorized' | 'expired' | 'denied' | 'error' | 'revoked',
 ): Promise<void> {
   switch (status) {
-    case "authorized": {
+    case 'authorized': {
       cancelActivePoll();
       // getUser() folds failures to null, but guard anyway so a rejection
       // cannot strand the flow with the poll already cancelled.
@@ -231,7 +238,7 @@ export async function handleGitHubAuthChanged(
       try {
         user = await githubAuthClient.getUser();
       } catch (error) {
-        logger.error("getUser after authorized failed", error);
+        logger.error('getUser after authorized failed', error);
       }
       appStore.dispatch(authCompleted(user));
       if (user === null) {
@@ -241,19 +248,19 @@ export async function handleGitHubAuthChanged(
       }
       break;
     }
-    case "expired":
+    case 'expired':
       cancelActivePoll();
-      appStore.dispatch(setGitHubAuthError("The device code expired. Please try again."));
+      appStore.dispatch(setGitHubAuthError('The device code expired. Please try again.'));
       break;
-    case "denied":
+    case 'denied':
       cancelActivePoll();
-      appStore.dispatch(setGitHubAuthError("Authorization was denied on GitHub."));
+      appStore.dispatch(setGitHubAuthError('Authorization was denied on GitHub.'));
       break;
-    case "error":
+    case 'error':
       cancelActivePoll();
-      appStore.dispatch(setGitHubAuthError("GitHub authorization failed. Please try again."));
+      appStore.dispatch(setGitHubAuthError('GitHub authorization failed. Please try again.'));
       break;
-    case "revoked":
+    case 'revoked':
       cancelActivePoll();
       appStore.dispatch(logoutCompleted());
       break;
