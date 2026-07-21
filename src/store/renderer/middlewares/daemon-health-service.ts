@@ -32,6 +32,9 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let statusListener: ((payload: { status: string }) => void) | null = null;
 let booted = false;
 let pollInFlight = false;
+// Bumped on dispose so a poll that resolves after a dispose(+reboot) cycle
+// cannot clear the in-flight flag or dispatch stale results.
+let pollGeneration = 0;
 
 /**
  * Poll system.status and dispatch success/failure.
@@ -40,10 +43,13 @@ let pollInFlight = false;
 async function pollStatus(): Promise<void> {
   if (pollInFlight) return;
   pollInFlight = true;
+  const generation = pollGeneration;
   try {
     const result = await backendRequest<SystemStatusWirePayload>('system.status');
+    if (generation !== pollGeneration) return;
     appStore.dispatch(systemStatusSuccess(result));
   } catch (_error) {
+    if (generation !== pollGeneration) return;
     // Poll failure — heartbeat/health-check failure while connected, or connection already down.
     // Dispatch failure action and, if we're still supposedly connected, also dispatch heartbeatFailed.
     //
@@ -59,7 +65,9 @@ async function pollStatus(): Promise<void> {
       appStore.dispatch(heartbeatFailed());
     }
   } finally {
-    pollInFlight = false;
+    if (generation === pollGeneration) {
+      pollInFlight = false;
+    }
   }
 }
 
@@ -143,5 +151,8 @@ export function disposeDaemonHealthService(): void {
     statusListener = null;
   }
   booted = false;
+  // Invalidate any in-flight poll so its late resolution can't dispatch stale
+  // results or clear the flag for a rebooted service.
+  pollGeneration++;
   pollInFlight = false;
 }

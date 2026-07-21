@@ -192,6 +192,58 @@ describe('daemon-health-service', () => {
     });
   });
 
+  it('ignores polls that resolve after dispose (stale-generation guard)', async () => {
+    let pollCount = 0;
+    let resolvePoll: ((value: unknown) => void) | null = null;
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'connected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async (payload: { method?: string }) => {
+      if (payload.method === 'system.status') {
+        pollCount++;
+        if (pollCount === 1) {
+          // Hold the first poll open until the test resolves it.
+          await new Promise((resolve) => {
+            resolvePoll = resolve;
+          });
+        }
+        return {
+          ok: true,
+          result: {
+            running: true,
+            listenMode: 'uds',
+            transports: ['uds'],
+            port: null,
+            clients: pollCount,
+            agents: 0,
+            protocolVersion: '2.0',
+            host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+          } as SystemStatusWirePayload,
+        };
+      }
+      return { ok: false, error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' } };
+    });
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => {
+      expect(pollCount).toBe(1);
+    });
+
+    // Dispose while the first poll is still in flight, then reboot.
+    disposeDaemonHealthService();
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => {
+      expect(pollCount).toBe(2);
+    });
+    // The rebooted service's poll (clients: 2) landed in state.
+    expect(appStore.state.daemonHealth.stats?.clients).toBe(2);
+
+    // Late resolution of the pre-dispose poll must not overwrite newer state.
+    resolvePoll!(undefined);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.stats?.clients).toBe(2);
+  });
+
   it('transitions health to down on disconnected status', async () => {
     const statusEvents: Array<{ status: string }> = [];
     registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
