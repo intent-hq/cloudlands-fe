@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Fake the live backend transport so the settings seam routes settings.update
 // through an in-memory stub (no Electron). `vi.hoisted` keeps the spy visible
@@ -39,6 +39,13 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     await flush();
     updateSpy.mockReset();
     updateSpy.mockResolvedValue({ applied: [] });
+  });
+
+  afterEach(async () => {
+    // Restore the active provider even when an assertion fails mid-test so
+    // ordering-dependent state never leaks into later tests.
+    appStore.dispatch(setActiveProvider(getDefaultProviderId()));
+    await flush();
   });
 
   it("maps the selectModel trigger to the active provider and persists model.providerDefaults", async () => {
@@ -90,9 +97,6 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
         { path: "model.providerDefaults", value: appStore.state.model.providerModels },
       ],
     });
-
-    appStore.dispatch(setActiveProvider(getDefaultProviderId()));
-    await flush();
   });
 
   it("persists model.providerDefaults on a direct per-provider selection", async () => {
