@@ -109,12 +109,13 @@ function toCloneableBag(
   try {
     structuredClone(bag);
     return bag;
-  } catch {
+  } catch (cloneError) {
     if (!warnedNonCloneableBag) {
       warnedNonCloneableBag = true;
       logger.warn(
         `Sanitized non-structured-cloneable ${SETTINGS_PATH} bag before persisting; ` +
           "a non-serializable value (e.g. a $state proxy) reached the store",
+        { error: cloneError },
       );
     }
     try {
