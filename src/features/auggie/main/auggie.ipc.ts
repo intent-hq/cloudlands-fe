@@ -15,6 +15,7 @@ import {
   getEnhancedPath,
 } from './auggie-path';
 import { hostExec } from '../../../shared/main/host-exec';
+import { getProviderAuthVerdict } from '../../../shared/main/provider-auth-status';
 import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
@@ -312,34 +313,17 @@ export function setupAuggieIPC() {
         };
       }
 
-      // Auth probe via `host.exec`: `auggie model list` is fast and its stderr
-      // contains a stable "not logged in" marker. Mirrors the existing pattern
-      // in provider-availability.service#checkAuggieAuth. On RPC failure we
-      // report unauthenticated + a debug log rather than falling back locally.
-      try {
-        const probe = await hostExec(auggiePath, {
-          args: ['model', 'list'],
-          timeoutMs: 8000,
-        });
-        if (probe.timedOut) {
-          logger.debug('Auggie auth probe timed out');
-        } else {
-          const output = `${probe.stdout}\n${probe.stderr}`;
-          const isUnauthenticated =
-            /not currently logged in|not logged in|not authenticated|login required|please log in/i.test(
-              output,
-            );
-          if (probe.exitCode === 0 && !isUnauthenticated) {
-            status.authenticated = true;
-            status.authDetails = 'auggie model list succeeded (host.exec probe)';
-          } else if (isUnauthenticated) {
-            status.authDetails = 'auggie reports not logged in';
-          }
-        }
-      } catch (probeError) {
-        logger.debug('Auggie auth probe (host.exec) failed', {
-          error: probeError instanceof Error ? probeError.message : String(probeError),
-        });
+      // Auth verdict via the daemon's `host.providerAuthStatus`
+      // (intent-hq/intentd#339): the daemon owns the probe and its caching.
+      // `force: true` so a login that just completed is picked up. RPC
+      // failure / unknown folds to unauthenticated (honest degradation, no
+      // local probe).
+      const verdict = await getProviderAuthVerdict('auggie', { force: true });
+      if (verdict === true) {
+        status.authenticated = true;
+        status.authDetails = 'daemon host.providerAuthStatus reports authenticated';
+      } else if (verdict === false) {
+        status.authDetails = 'auggie reports not logged in';
       }
 
       return {
@@ -406,8 +390,8 @@ export function setupAuggieIPC() {
   // Authenticate with Augment. The FE-side interactive OAuth flow
   // (spawning `auggie login`, stdout scraping, JSON paste, direct token
   // exchange) is retired per Decision 3. The FE now detects auth via
-  // `host.checkAuggie` + a `host.exec` probe and returns instructions for
-  // the user to run `auggie login` themselves.
+  // `host.checkAuggie` + `host.providerAuthStatus` and returns instructions
+  // for the user to run `auggie login` themselves.
   //
   // The `{ action }` param is preserved for renderer compat: `start` and
   // `complete` return the instruction payload; `poll` re-runs detection so
@@ -456,30 +440,14 @@ export function setupAuggieIPC() {
         };
       }
 
-      // Probe auth state. If already logged in, tell the renderer so it can
-      // skip the login step. Otherwise return the instruction to run
-      // `auggie login` interactively (host.exec is buffered and cannot host
-      // the OAuth interactive TTY session; the user runs it in their own
-      // terminal).
-      let authenticated = false;
-      try {
-        const probe = await hostExec(auggiePath, {
-          args: ['model', 'list'],
-          timeoutMs: 8000,
-        });
-        if (!probe.timedOut) {
-          const output = `${probe.stdout}\n${probe.stderr}`;
-          const isUnauthenticated =
-            /not currently logged in|not logged in|not authenticated|login required|please log in/i.test(
-              output,
-            );
-          authenticated = probe.exitCode === 0 && !isUnauthenticated;
-        }
-      } catch (probeError) {
-        logger.debug('Auggie auth probe (host.exec) failed', {
-          error: probeError instanceof Error ? probeError.message : String(probeError),
-        });
-      }
+      // Auth verdict via the daemon (`host.providerAuthStatus`, force to
+      // bypass the daemon's cache — the user may have just logged in). If
+      // already logged in, tell the renderer so it can skip the login step.
+      // Otherwise return the instruction to run `auggie login` interactively
+      // (the daemon cannot host the OAuth interactive TTY session; the user
+      // runs it in their own terminal).
+      const authenticated =
+        (await getProviderAuthVerdict('auggie', { force: true })) === true;
 
       if (authenticated) {
         return {

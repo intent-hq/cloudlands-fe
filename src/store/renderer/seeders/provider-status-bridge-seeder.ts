@@ -4,13 +4,15 @@
  * per-provider `*:check-availability` probes, and the `auggie:install` /
  * `auggie:authenticate` guidance flows to real daemon probes
  * (`host.checkAuggie` / `host.toolAvailability` / `host.findBinary` /
- * `host.checkGit` / `host.exec`, PROTOCOL §5.14) instead of the retired
- * "installed + authenticated mock@example.com" seeding.
+ * `host.checkGit` / `host.providerAuthStatus`, PROTOCOL §5.14) instead of
+ * the retired "installed + authenticated mock@example.com" seeding.
  *
- * Per the integration principle BE = source of truth: availability comes from
- * the daemon's binary resolution and auth comes from CLI probes executed on
- * the daemon host — never synthesized. Uninstalled / unauthenticated states
- * surface honestly (`available:false` / `authenticated:false|undefined`) so
+ * Per the integration principle BE = source of truth: availability comes
+ * from the daemon's binary resolution and auth comes from the daemon's
+ * `host.providerAuthStatus` sweep (intent-hq/intentd#339) — the daemon owns
+ * every CLI/ACP probe, output-marker parse, and cache; the FE never runs an
+ * auth-check command itself. Uninstalled / unauthenticated states surface
+ * honestly (`available:false` / `authenticated:false|undefined`) so
  * AuggieSetupGate, ProviderSelector, and AgentGrid render the truth and show
  * their static install/login guidance.
  *
@@ -18,23 +20,20 @@
  * `features/providers/main/provider-availability.service.ts` and
  * `features/auggie/main/auggie.ipc.ts` (STATUS), which the renderer cannot
  * reach in this mock-router build:
- *  - auggie:      `host.checkAuggie` (settings precedence + PATH scan on the
- *                 daemon), auth via `auggie model list` (`host.exec`).
- *  - claude-code: `claude` CLI installed (prerequisite for claude-agent-acp),
- *                 auth via `claude auth status` exit code.
+ *  - auggie:      availability via `host.checkAuggie` (settings precedence +
+ *                 PATH scan on the daemon).
+ *  - claude-code: `claude` CLI installed (prerequisite for claude-agent-acp).
+ *                 When the CLI is present but npx (the adapter's only runner)
+ *                 does not resolve, a warning is attached.
  *  - codex:       `codex` CLI installed (prerequisite for the codex-acp
- *                 adapter), auth via `codex login status`. When the CLI is
- *                 present but neither a local `codex-acp` nor npx (the pinned
- *                 adapter fallback runner) resolves, a warning is attached.
- *  - opencode:    `opencode` installed, readiness via `opencode models`
- *                 returning at least one `provider/model` line.
- *  - pi:          binary presence only (no stable auth signal).
- *  - droid:       binary presence only; the main-process ACP stdio probe is
- *                 not portable to the renderer, so auth stays undefined
- *                 (honest unknown, never a fake positive).
- *  - grok:        binary presence only; readiness is owned by the daemon's
- *                 provider discovery and the FE runs no grok probe, so auth
- *                 stays undefined (honest unknown, never a fake positive).
+ *                 adapter). When the CLI is present but neither a local
+ *                 `codex-acp` nor npx (the pinned adapter fallback runner)
+ *                 resolves, a warning is attached.
+ *  - opencode / pi / droid / grok: binary presence via
+ *                 `host.toolAvailability` / `host.findBinary`.
+ *  - auth (all):  `host.providerAuthStatus` — `true`/`false` verdicts attach
+ *                 to available providers; the wire `null` (unknown) folds to
+ *                 undefined so no indicator renders.
  *  - cortex/mock: gated behind a feature code / env var the renderer cannot
  *                 verify — hidden and unavailable, matching main's
  *                 default-deny gating.
@@ -58,6 +57,13 @@ import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from "$shared/constants/
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
 import { CODEX_ADAPTER_MISSING_WARNING } from "$shared/constants/codex";
 import { backendRequest } from "$lib/client/live/backend-transport";
+import {
+  PROVIDER_AUTH_STATUS_METHOD,
+  buildProviderAuthStatusParams,
+  toAuthVerdictMap,
+  type ProviderAuthStatusParams,
+  type ProviderAuthStatusResponse,
+} from "$shared/provider-auth-status";
 import type {
   ProviderAvailabilityResult,
   ProviderStatus,
@@ -74,22 +80,6 @@ interface HostCheckResult {
 interface HostToolAvailabilityResult {
   tools?: Record<string, HostCheckResult>;
 }
-
-/** Daemon `host.exec` result shape (PROTOCOL §5.14). */
-interface HostExecResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-  timedOut?: boolean;
-}
-
-/** Auth probe timeout — matches provider-availability.service.ts. */
-const AUTH_CHECK_TIMEOUT_MS = 5000;
-/** `opencode models` can be slower than a simple auth read (main uses 10s). */
-const OPENCODE_READY_TIMEOUT_MS = 10000;
-/** Stable "not logged in" markers in auggie CLI output. */
-const NOT_LOGGED_IN_RE =
-  /not currently logged in|not logged in|not authenticated|login required|please log in/i;
 
 /**
  * Availability binary per provider (mirrors the main-process resolvers).
@@ -129,67 +119,24 @@ function meetsMinimumVersion(version: string, minimum: string): boolean {
   return true;
 }
 
-/** One-shot exec on the daemon host (argv-based, no shell — PROTOCOL §5.14). */
-async function hostExec(
-  command: string,
-  args: string[],
-  timeoutMs: number,
-): Promise<HostExecResult> {
-  return await backendRequest<HostExecResult>("host.exec", { command, args, timeoutMs });
-}
-
 /**
- * Auggie auth probe: `auggie model list` is fast and its output carries a
- * stable "not logged in" marker. true = authenticated, false = explicitly
- * logged out, undefined = probe failed/timed out (unknown, no indicator).
+ * Auth verdicts from the daemon's `host.providerAuthStatus`
+ * (intent-hq/intentd#339) as an id → verdict map. The daemon owns the
+ * CLI/ACP probes and their caching; the wire `null` (unknown) folds to
+ * undefined and an RPC failure folds to an empty map (every provider reads
+ * as unknown, no indicator — honest degradation).
  */
-async function probeAuggieAuth(cliPath: string): Promise<boolean | undefined> {
+async function getAuthVerdicts(
+  options: ProviderAuthStatusParams = {},
+): Promise<Record<string, boolean | undefined>> {
   try {
-    const result = await hostExec(cliPath, ["model", "list"], AUTH_CHECK_TIMEOUT_MS);
-    if (result.timedOut) return undefined;
-    if (NOT_LOGGED_IN_RE.test(`${result.stdout}\n${result.stderr}`)) return false;
-    if (result.exitCode === 0) return true;
-    return undefined;
+    const response = await backendRequest<ProviderAuthStatusResponse>(
+      PROVIDER_AUTH_STATUS_METHOD,
+      buildProviderAuthStatusParams(options),
+    );
+    return toAuthVerdictMap(response);
   } catch {
-    return undefined;
-  }
-}
-
-/**
- * Exit-code auth probe (`claude auth status` / `codex login status`).
- * Exit 0 = authenticated, non-zero = not, undefined on timeout/RPC failure.
- */
-async function probeExitCodeAuth(
-  cliPath: string | undefined,
-  authCheckArgs: string[],
-): Promise<boolean | undefined> {
-  if (!cliPath || authCheckArgs.length === 0) return undefined;
-  try {
-    const result = await hostExec(cliPath, authCheckArgs, AUTH_CHECK_TIMEOUT_MS);
-    if (result.timedOut) return undefined;
-    return result.exitCode === 0;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * OpenCode readiness: `opencode models` returns at least one `provider/model`
- * line only when some provider is credentialed (auth.json, env vars, or a
- * project .env) — mirrors checkOpenCodeReady in the main service.
- */
-async function probeOpenCodeReady(cliPath: string | undefined): Promise<boolean | undefined> {
-  if (!cliPath) return undefined;
-  try {
-    const result = await hostExec(cliPath, ["models"], OPENCODE_READY_TIMEOUT_MS);
-    if (result.timedOut) return undefined;
-    if (result.exitCode !== 0) return false;
-    return result.stdout.split("\n").some((line) => {
-      const trimmed = line.trim();
-      return trimmed.length > 0 && trimmed.includes("/") && !trimmed.startsWith("#");
-    });
-  } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -222,12 +169,12 @@ function withAuth(status: ProviderStatus, authenticated: boolean | undefined): P
 
 /**
  * Aggregate availability for all providers — the daemon resolves every binary
- * in one `host.toolAvailability` round-trip, then auth probes run in parallel
- * for the providers that are installed.
+ * in one `host.toolAvailability` round-trip and the auth verdicts arrive in
+ * one `host.providerAuthStatus` sweep.
  */
 async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const hiddenProviders = computeHiddenProviders();
-  const [auggieCheck, toolsResult] = await Promise.all([
+  const [auggieCheck, toolsResult, authVerdicts] = await Promise.all([
     checkAuggie().catch(() => ({ available: false }) as HostCheckResult),
     backendRequest<HostToolAvailabilityResult>("host.toolAvailability", {
       // `codex-acp` (the adapter) rides along for the codex warning —
@@ -236,6 +183,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       // and as the codex adapter's pinned fallback runner.
       tools: [...Object.values(PROVIDER_BINARIES), CODEX_ACP_BINARY, "npx"],
     }).catch(() => ({ tools: {} }) as HostToolAvailabilityResult),
+    getAuthVerdicts(),
   ]);
   const tools = toolsResult?.tools ?? {};
   const tool = (name: string): HostCheckResult => tools[name] ?? { available: false };
@@ -268,30 +216,13 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const cortex: ProviderStatus = { available: false };
   const mock: ProviderStatus = { available: false };
 
-  const [auggieAuth, claudeAuth, codexAuth, opencodeAuth] = await Promise.all([
-    auggie.available && auggieCheck.path
-      ? probeAuggieAuth(auggieCheck.path)
-      : Promise.resolve(undefined),
-    claudeCode.available
-      ? probeExitCodeAuth(
-          tool(PROVIDER_BINARIES["claude-code"]).path,
-          ACP_PROVIDERS["claude-code"].authCheckArgs ?? [],
-        )
-      : Promise.resolve(undefined),
-    codex.available
-      ? probeExitCodeAuth(
-          tool(PROVIDER_BINARIES.codex).path,
-          ACP_PROVIDERS.codex.authCheckArgs ?? [],
-        )
-      : Promise.resolve(undefined),
-    opencode.available
-      ? probeOpenCodeReady(tool(PROVIDER_BINARIES.opencode).path)
-      : Promise.resolve(undefined),
-  ]);
-  withAuth(auggie, auggieAuth);
-  withAuth(claudeCode, claudeAuth);
-  withAuth(codex, codexAuth);
-  withAuth(opencode, opencodeAuth);
+  withAuth(auggie, authVerdicts["auggie"]);
+  withAuth(claudeCode, authVerdicts["claude-code"]);
+  withAuth(codex, authVerdicts["codex"]);
+  withAuth(opencode, authVerdicts["opencode"]);
+  withAuth(pi, authVerdicts["pi"]);
+  withAuth(droid, authVerdicts["droid"]);
+  withAuth(grok, authVerdicts["grok"]);
 
   return {
     hasAnyProvider:
@@ -307,13 +238,18 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   };
 }
 
-/** Single-provider recheck (AgentGrid card refresh) — same probes as above. */
+/** Single-provider recheck (AgentGrid card refresh) — same verdicts as
+ * above, but with `force: true` so a login that just completed bypasses the
+ * daemon's auth cache. */
 async function checkSingleProvider(providerId: string): Promise<ProviderStatus> {
+  const checkAuth = async (): Promise<boolean | undefined> =>
+    (await getAuthVerdicts({ providerId, force: true }))[providerId];
+
   if (providerId === "auggie") {
     const check = await checkAuggie();
     const status: ProviderStatus = { available: check.available === true };
-    if (status.available && check.path) {
-      return withAuth(status, await probeAuggieAuth(check.path));
+    if (status.available) {
+      return withAuth(status, await checkAuth());
     }
     return status;
   }
@@ -338,10 +274,7 @@ async function checkSingleProvider(providerId: string): Promise<ProviderStatus> 
     if (npx && npx.available !== true) {
       status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
     }
-    return withAuth(
-      status,
-      await probeExitCodeAuth(found?.path, ACP_PROVIDERS["claude-code"].authCheckArgs ?? []),
-    );
+    return withAuth(status, await checkAuth());
   }
   if (providerId === "codex") {
     // Availability (and auth) key off the real `codex` CLI; the codex-acp
@@ -357,17 +290,11 @@ async function checkSingleProvider(providerId: string): Promise<ProviderStatus> 
     if (acp && acp.available !== true && npx && npx.available !== true) {
       status.warning = CODEX_ADAPTER_MISSING_WARNING;
     }
-    return withAuth(
-      status,
-      await probeExitCodeAuth(found?.path, ACP_PROVIDERS.codex.authCheckArgs ?? []),
-    );
+    return withAuth(status, await checkAuth());
   }
-  if (providerId === "opencode") {
-    return withAuth(status, await probeOpenCodeReady(found?.path));
-  }
-  // pi (no stable auth signal) / droid (ACP probe not portable) / grok
-  // (readiness owned by the daemon): presence only.
-  return status;
+  // opencode / pi / droid / grok: presence via host.findBinary, auth from
+  // the daemon's providerAuthStatus verdict.
+  return withAuth(status, await checkAuth());
 }
 
 registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => {
@@ -508,10 +435,11 @@ registerMockIpcHandler(AUGGIE_CHANNELS.STATUS, async () => {
     return { success: true, data: status };
   }
 
-  // Auth probe via `host.exec`. No identity is fabricated: authDetails stays
-  // undefined (the daemon has no user-info surface), so consumers render
-  // their generic "Authenticated" state instead of a fake email.
-  if ((await probeAuggieAuth(auggiePath)) === true) {
+  // Auth verdict from the daemon (`host.providerAuthStatus`, force to pick
+  // up a login that just completed). No identity is fabricated: authDetails
+  // stays undefined (the daemon has no user-info surface), so consumers
+  // render their generic "Authenticated" state instead of a fake email.
+  if ((await getAuthVerdicts({ providerId: "auggie", force: true }))["auggie"] === true) {
     status.authenticated = true;
   }
   return { success: true, data: status };
@@ -569,15 +497,18 @@ registerMockIpcHandler(AUGGIE_CHANNELS.INSTALL, async () => ({
 
 /**
  * `auggie:authenticate` — probes the real auth state on the daemon host
- * (`host.checkAuggie` + the `auggie model list` probe). Already-logged-in
- * resolves `authenticated: true` (callers toast + refresh); otherwise the
- * manual `auggie login` instructions render. There is no interactive login
- * arm on the daemon, so no login flow is fabricated.
+ * (`host.checkAuggie` + the daemon's `host.providerAuthStatus` verdict).
+ * Already-logged-in resolves `authenticated: true` (callers toast +
+ * refresh); otherwise the manual `auggie login` instructions render. There
+ * is no interactive login arm on the daemon, so no login flow is fabricated.
  */
 registerMockIpcHandler(AUGGIE_CHANNELS.AUTHENTICATE, async () => {
   try {
     const check = await checkAuggie();
-    if (check.available && check.path && (await probeAuggieAuth(check.path)) === true) {
+    if (
+      check.available &&
+      (await getAuthVerdicts({ providerId: "auggie", force: true }))["auggie"] === true
+    ) {
       return { success: true, data: { authenticated: true } };
     }
     if (!check.available) {

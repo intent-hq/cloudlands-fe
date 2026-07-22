@@ -3,9 +3,11 @@
  *
  * Asserts `providers:get-availability`, `providers:check-single`, and
  * `auggie:status` forward to the canonical daemon probes (`host.checkAuggie`,
- * `host.toolAvailability`, `host.findBinary`, `host.checkGit`, `host.exec` —
- * PROTOCOL §5.14) and derive HONEST status from the responses: uninstalled /
- * unauthenticated states surface as-is, no mock@example.com fake positives.
+ * `host.toolAvailability`, `host.findBinary`, `host.checkGit`,
+ * `host.providerAuthStatus` — PROTOCOL §5.14 / intent-hq/intentd#339) and
+ * derive HONEST status from the responses: uninstalled / unauthenticated
+ * states surface as-is, no mock@example.com fake positives, and the FE never
+ * runs an auth-check command via `host.exec` itself.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -48,6 +50,37 @@ const NO_TOOLS = {
   },
 };
 
+/** Provider ids the daemon's providerAuthStatus sweep covers. */
+const AUTH_PROVIDER_IDS = [
+  "auggie",
+  "claude-code",
+  "codex",
+  "opencode",
+  "pi",
+  "droid",
+  "grok",
+] as const;
+
+/**
+ * PROTOCOL-shaped `host.providerAuthStatus` sweep response: every provider
+ * defaults to the wire's `null` (unknown) unless overridden.
+ */
+function authSweep(
+  verdicts: Partial<Record<(typeof AUTH_PROVIDER_IDS)[number], boolean | null>> = {},
+) {
+  return {
+    providers: AUTH_PROVIDER_IDS.map((id) => ({
+      id,
+      authenticated: verdicts[id] ?? null,
+    })),
+  };
+}
+
+/** Single-provider `host.providerAuthStatus` response. */
+function authOne(id: string, authenticated: boolean | null) {
+  return { providers: [{ id, authenticated }] };
+}
+
 type Envelope<T> = { success: boolean; data?: T; error?: string };
 
 describe("provider-status-bridge-seeder", () => {
@@ -60,11 +93,12 @@ describe("provider-status-bridge-seeder", () => {
     vi.clearAllMocks();
   });
 
-  describe("providers:get-availability → host.checkAuggie + host.toolAvailability", () => {
+  describe("providers:get-availability → host.checkAuggie + host.toolAvailability + host.providerAuthStatus", () => {
     it("reports nothing installed honestly — no fake mock@example.com positives", async () => {
       routeDaemon({
         "host.checkAuggie": { available: false },
         "host.toolAvailability": NO_TOOLS,
+        "host.providerAuthStatus": authSweep(),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -75,6 +109,9 @@ describe("provider-status-bridge-seeder", () => {
       expect(mockedRequest).toHaveBeenCalledWith("host.toolAvailability", {
         tools: ["claude", "codex", "opencode", "pi", "droid", "grok", "codex-acp", "npx"],
       });
+      // The auth sweep carries no providerId / force — the daemon's cache
+      // is respected on the aggregate path.
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {});
       expect(response.success).toBe(true);
       expect(response.data?.hasAnyProvider).toBe(false);
       expect(response.data?.providers.auggie).toEqual({ available: false });
@@ -83,26 +120,23 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.hiddenProviders).toEqual(
         expect.arrayContaining(["cortex", "mock"]),
       );
-      // No auth probes fire when nothing is installed.
+      // The FE never runs auth-check commands itself.
       expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
     });
 
-    it("probes auggie auth via `auggie model list` (host.exec) when installed", async () => {
+    it("derives auggie auth from the daemon's providerAuthStatus sweep when installed", async () => {
       routeDaemon({
         "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
         "host.toolAvailability": NO_TOOLS,
-        "host.exec": { stdout: "claude-sonnet-4\n", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authSweep({ auggie: true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
         PROVIDERS_CHANNELS.GET_AVAILABILITY,
       );
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.exec", {
-        command: "/usr/local/bin/auggie",
-        args: ["model", "list"],
-        timeoutMs: 5000,
-      });
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {});
+      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
       expect(response.data?.hasAnyProvider).toBe(true);
       expect(response.data?.providers.auggie).toEqual({ available: true, authenticated: true });
     });
@@ -111,11 +145,7 @@ describe("provider-status-bridge-seeder", () => {
       routeDaemon({
         "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
         "host.toolAvailability": NO_TOOLS,
-        "host.exec": {
-          stdout: "",
-          stderr: "You are not currently logged in. Run `auggie login`.",
-          exitCode: 1,
-        },
+        "host.providerAuthStatus": authSweep({ auggie: false }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -139,9 +169,7 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.hasAnyProvider).toBe(false);
     });
 
-    it("runs the claude-code / codex exit-code auth probes against the right CLIs", async () => {
-      // Availability keys: claude and codex (the real prerequisite CLIs);
-      // auth runs `claude auth status` and `codex login status`.
+    it("attaches per-provider verdicts from one sweep — claude-code in, codex out", async () => {
       routeDaemon({
         "host.checkAuggie": { available: false },
         "host.toolAvailability": {
@@ -153,12 +181,66 @@ describe("provider-status-bridge-seeder", () => {
             npx: { available: true, path: "/usr/local/bin/npx" },
           },
         },
-        "host.exec": (params: unknown) => {
-          const { command } = params as { command: string };
-          // claude authenticated, codex not.
-          return command.endsWith("/claude")
-            ? { stdout: "Logged in", stderr: "", exitCode: 0 }
-            : { stdout: "", stderr: "Not logged in", exitCode: 1 };
+        "host.providerAuthStatus": authSweep({ "claude-code": true, codex: false }),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {});
+      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+      expect(response.data?.providers.claudeCode).toEqual({
+        available: true,
+        authenticated: true,
+      });
+      expect(response.data?.providers.codex).toEqual({ available: true, authenticated: false });
+    });
+
+    it("attaches droid / grok / pi verdicts (previously unprobed FE-side)", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            pi: { available: true, path: "/usr/local/bin/pi" },
+            droid: { available: true, path: "/usr/local/bin/droid" },
+            grok: { available: true, path: "/usr/local/bin/grok" },
+          },
+        },
+        "host.providerAuthStatus": authSweep({ pi: true, droid: false, grok: null }),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.pi).toEqual({ available: true, authenticated: true });
+      expect(response.data?.providers.droid).toEqual({ available: true, authenticated: false });
+      // Wire `null` = unknown → no authenticated field (no indicator).
+      expect(response.data?.providers.grok).toEqual({ available: true });
+    });
+
+    it("does not attach verdicts to unavailable providers", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": NO_TOOLS,
+        "host.providerAuthStatus": authSweep({ codex: true }),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.codex).toEqual({ available: false });
+    });
+
+    it("degrades auth to unknown when only the providerAuthStatus RPC fails", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.toolAvailability": NO_TOOLS,
+        "host.providerAuthStatus": () => {
+          throw new Error("transport down");
         },
       });
 
@@ -166,21 +248,8 @@ describe("provider-status-bridge-seeder", () => {
         PROVIDERS_CHANNELS.GET_AVAILABILITY,
       );
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.exec", {
-        command: "/usr/local/bin/claude",
-        args: ["auth", "status"],
-        timeoutMs: 5000,
-      });
-      expect(mockedRequest).toHaveBeenCalledWith("host.exec", {
-        command: "/usr/local/bin/codex",
-        args: ["login", "status"],
-        timeoutMs: 5000,
-      });
-      expect(response.data?.providers.claudeCode).toEqual({
-        available: true,
-        authenticated: true,
-      });
-      expect(response.data?.providers.codex).toEqual({ available: true, authenticated: false });
+      expect(response.success).toBe(true);
+      expect(response.data?.providers.auggie).toEqual({ available: true });
     });
 
     it("warns when the claude CLI is installed but npx is missing (adapter runs via npx)", async () => {
@@ -192,7 +261,7 @@ describe("provider-status-bridge-seeder", () => {
             claude: { available: true, path: "/usr/local/bin/claude" },
           },
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authSweep({ "claude-code": true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -216,7 +285,7 @@ describe("provider-status-bridge-seeder", () => {
             npx: { available: true, path: "/usr/local/bin/npx" },
           },
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authSweep({ codex: true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -239,7 +308,7 @@ describe("provider-status-bridge-seeder", () => {
             codex: { available: true, path: "/usr/local/bin/codex" },
           },
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authSweep({ codex: true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -263,7 +332,7 @@ describe("provider-status-bridge-seeder", () => {
             "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
           },
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authSweep({ codex: true }),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -286,6 +355,7 @@ describe("provider-status-bridge-seeder", () => {
             "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
           },
         },
+        "host.providerAuthStatus": authSweep(),
       });
 
       const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
@@ -294,20 +364,26 @@ describe("provider-status-bridge-seeder", () => {
 
       expect(response.data?.providers.codex).toEqual({ available: false });
       expect(response.data?.hasAnyProvider).toBe(false);
-      // No auth probe for an uninstalled CLI.
+      // The FE never runs auth-check commands itself.
       expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
     });
   });
 
-  describe("providers:check-single → host.checkAuggie / host.findBinary", () => {
-    it("rechecks auggie (string arg) with the same availability + auth probes", async () => {
+  describe("providers:check-single → host.checkAuggie / host.findBinary + host.providerAuthStatus", () => {
+    it("rechecks auggie (string arg) with a forced single-provider auth verdict", async () => {
       routeDaemon({
         "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
-        "host.exec": { stdout: "claude-sonnet-4\n", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("auggie", true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "auggie");
 
+      // Single rechecks follow "Login" / "Check again" clicks — force
+      // bypasses the daemon's auth cache.
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
+        providerId: "auggie",
+        force: true,
+      });
       expect(response).toEqual({
         success: true,
         providerId: "auggie",
@@ -323,7 +399,7 @@ describe("provider-status-bridge-seeder", () => {
             ? { available: true, path: "/usr/local/bin/claude" }
             : { available: false };
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("claude-code", true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
@@ -347,7 +423,7 @@ describe("provider-status-bridge-seeder", () => {
           if (name === "claude") return { available: true, path: "/usr/local/bin/claude" };
           throw new Error("transport down");
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("claude-code", true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
@@ -367,7 +443,7 @@ describe("provider-status-bridge-seeder", () => {
           if (name === "npx") return { available: true, path: "/usr/local/bin/npx" };
           return { available: false };
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("claude-code", true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
@@ -387,7 +463,7 @@ describe("provider-status-bridge-seeder", () => {
             ? { available: true, path: "/usr/local/bin/codex" }
             : { available: false };
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("codex", true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
@@ -395,11 +471,10 @@ describe("provider-status-bridge-seeder", () => {
       expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
       expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex-acp" });
       expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "npx" });
-      // Auth runs against the real codex CLI.
-      expect(mockedRequest).toHaveBeenCalledWith("host.exec", {
-        command: "/usr/local/bin/codex",
-        args: ["login", "status"],
-        timeoutMs: 5000,
+      // Auth comes from the daemon's forced single-provider verdict.
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
+        providerId: "codex",
+        force: true,
       });
       expect(response).toEqual({
         success: true,
@@ -420,7 +495,7 @@ describe("provider-status-bridge-seeder", () => {
           if (name === "npx") return { available: true, path: "/usr/local/bin/npx" };
           return { available: false };
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("codex", true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
@@ -440,7 +515,7 @@ describe("provider-status-bridge-seeder", () => {
           if (name === "codex-acp") return { available: true, path: "/usr/local/bin/codex-acp" };
           return { available: false };
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("codex", true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
@@ -460,7 +535,7 @@ describe("provider-status-bridge-seeder", () => {
           if (name === "codex") return { available: true, path: "/usr/local/bin/codex" };
           throw new Error("transport down");
         },
-        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("codex", true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "codex");
@@ -490,20 +565,80 @@ describe("provider-status-bridge-seeder", () => {
         providerId: "codex",
         data: { available: false },
       });
-      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+      // No auth verdict is fetched for an uninstalled CLI.
+      expect(mockedRequest).not.toHaveBeenCalledWith(
+        "host.providerAuthStatus",
+        expect.anything(),
+      );
     });
 
-    it("reports pi presence-only (no auth signal → authenticated stays undefined)", async () => {
+    it("rechecks pi with a forced auth verdict (daemon owns the probe)", async () => {
       routeDaemon({
         "host.findBinary": { available: true, path: "/usr/local/bin/pi" },
+        "host.providerAuthStatus": authOne("pi", true),
       });
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "pi");
 
       expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "pi" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
+        providerId: "pi",
+        force: true,
+      });
       expect(response).toEqual({
         success: true,
         providerId: "pi",
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it("rechecks droid with the daemon verdict — logged-out surfaces as false", async () => {
+      routeDaemon({
+        "host.findBinary": { available: true, path: "/usr/local/bin/droid" },
+        "host.providerAuthStatus": authOne("droid", false),
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "droid");
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
+        providerId: "droid",
+        force: true,
+      });
+      expect(response).toEqual({
+        success: true,
+        providerId: "droid",
+        data: { available: true, authenticated: false },
+      });
+    });
+
+    it("folds a wire null verdict to no authenticated field (unknown, no indicator)", async () => {
+      routeDaemon({
+        "host.findBinary": { available: true, path: "/usr/local/bin/grok" },
+        "host.providerAuthStatus": authOne("grok", null),
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "grok");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "grok",
+        data: { available: true },
+      });
+    });
+
+    it("degrades auth to unknown when the providerAuthStatus RPC fails", async () => {
+      routeDaemon({
+        "host.findBinary": { available: true, path: "/usr/local/bin/opencode" },
+        "host.providerAuthStatus": () => {
+          throw new Error("transport down");
+        },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "opencode");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "opencode",
         data: { available: true },
       });
     });
@@ -562,7 +697,7 @@ describe("provider-status-bridge-seeder", () => {
     });
   });
 
-  describe("auggie:status → host.checkAuggie + host.findBinary(node) + host.checkGit + host.exec", () => {
+  describe("auggie:status → host.checkAuggie + host.findBinary(node) + host.checkGit + host.providerAuthStatus", () => {
     type AuggieStatus = {
       installed: boolean;
       authenticated: boolean;
@@ -602,11 +737,14 @@ describe("provider-status-bridge-seeder", () => {
         binaryInstallAvailable: false,
         managedBinaryInstalled: false,
       });
-      // No auth probe for an uninstalled CLI.
-      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+      // No auth verdict is fetched for an uninstalled CLI.
+      expect(mockedRequest).not.toHaveBeenCalledWith(
+        "host.providerAuthStatus",
+        expect.anything(),
+      );
     });
 
-    it("marks below-minimum versions versionOk:false and skips the auth probe", async () => {
+    it("marks below-minimum versions versionOk:false and skips the auth verdict", async () => {
       routeDaemon({
         "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.10.0" },
         "host.findBinary": { available: false },
@@ -622,24 +760,27 @@ describe("provider-status-bridge-seeder", () => {
         versionOk: false,
         authenticated: false,
       });
-      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
+      expect(mockedRequest).not.toHaveBeenCalledWith(
+        "host.providerAuthStatus",
+        expect.anything(),
+      );
     });
 
-    it("derives authenticated:true from the model-list probe WITHOUT fabricating authDetails", async () => {
+    it("derives authenticated:true from the daemon verdict WITHOUT fabricating authDetails", async () => {
       routeDaemon({
         "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
         "host.findBinary": { available: true, path: "/usr/local/bin/node", version: "v22.4.1" },
         "host.checkGit": { available: true, version: "git version 2.43.0" },
-        "host.exec": { stdout: "claude-sonnet-4\n", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("auggie", true),
       });
 
       const response = await mockInvoke<Envelope<AuggieStatus>>(AUGGIE_CHANNELS.STATUS);
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.exec", {
-        command: "/usr/local/bin/auggie",
-        args: ["model", "list"],
-        timeoutMs: 5000,
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
+        providerId: "auggie",
+        force: true,
       });
+      expect(mockedRequest).not.toHaveBeenCalledWith("host.exec", expect.anything());
       expect(response.data).toMatchObject({
         installed: true,
         version: "0.14.0",
@@ -709,7 +850,7 @@ describe("provider-status-bridge-seeder", () => {
     });
   });
 
-  describe("auggie:install / auggie:authenticate → manual guidance + real auth probe", () => {
+  describe("auggie:install / auggie:authenticate → manual guidance + daemon auth verdict", () => {
     it("returns the manual npm install instructions (no fabricated install flow)", async () => {
       const response = await mockInvoke<
         Envelope<{ instructions?: string[]; command?: string }>
@@ -720,27 +861,26 @@ describe("provider-status-bridge-seeder", () => {
       expect(mockedRequest).not.toHaveBeenCalled();
     });
 
-    it("resolves authenticated:true when the daemon-host auth probe passes", async () => {
+    it("resolves authenticated:true when the daemon verdict passes", async () => {
       routeDaemon({
         "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
-        "host.exec": { stdout: "model-a\nmodel-b", stderr: "", exitCode: 0 },
+        "host.providerAuthStatus": authOne("auggie", true),
       });
       const response = await mockInvoke<Envelope<{ authenticated?: boolean }>>(
         AUGGIE_CHANNELS.AUTHENTICATE,
         { action: "start" },
       );
       expect(response).toEqual({ success: true, data: { authenticated: true } });
-      expect(mockedRequest).toHaveBeenCalledWith("host.exec", {
-        command: "/usr/local/bin/auggie",
-        args: ["model", "list"],
-        timeoutMs: 5000,
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerAuthStatus", {
+        providerId: "auggie",
+        force: true,
       });
     });
 
     it("returns `auggie login` instructions when installed but logged out", async () => {
       routeDaemon({
         "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
-        "host.exec": { stdout: "Not logged in", stderr: "", exitCode: 1 },
+        "host.providerAuthStatus": authOne("auggie", false),
       });
       const response = await mockInvoke<
         Envelope<{ instructions?: string[]; command?: string; authenticated?: boolean }>
