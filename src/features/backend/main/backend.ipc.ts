@@ -9,6 +9,12 @@
  *   - `backend:subscribe` → forward `events.subscribe`, return its result.
  *   - `backend:unsubscribe` → forward `events.unsubscribe`.
  *   - `backend:get-status` → current connection status.
+ *   - `backend:spawn-sidecar` → spawn the app-managed sidecar on demand (the
+ *     user chose the fallback in the daemon-loss UI, #439). Probes the socket
+ *     first and never spawns alongside a live daemon; concurrent calls spawn
+ *     at most once. Once mode flips to `sidecar` there is no mid-session
+ *     auto-switching back — the JsonRpcClient target (socket path) is
+ *     unchanged, so we simply stay connected to whatever serves the socket.
  * Daemon JSON-RPC notifications are broadcast to every window on
  * `backend:notification`; connection-status changes on `backend:status`. The
  * status payload carries a `reconnected: true` marker on the successful
@@ -27,6 +33,8 @@ import {
   type JsonRpcNotification,
 } from './json-rpc-client';
 import { JsonRpcError } from './json-rpc-errors';
+import { formatTransportInfo } from './transport-info';
+import { onSidecarGaveUp, spawnSidecarOnDemand } from './intentd-sidecar';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 
 const logger = new Logger('Backend-IPC');
@@ -37,50 +45,6 @@ let handlersRegistered = false;
 
 /** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
-
-/**
- * Sanitize a URL by removing userinfo (user:pass@) and query parameters.
- * Returns scheme://host:port/path, or undefined if parsing fails.
- * Never exposes secrets, tokens, or credentials.
- */
-function sanitizeUrl(rawUrl: string): string | undefined {
-  try {
-    const url = new URL(rawUrl);
-    // Strip userinfo (username:password@)
-    url.username = '';
-    url.password = '';
-    // Strip query parameters and hash
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Shape transport config into a renderer-safe payload for backend:status and
- * backend:get-status. The mode discriminates 'sidecar-uds' (local UDS) from
- * 'external-ws' (remote WebSocket); target is the WS URL when remote, undefined
- * for sidecar. Sanitizes URLs to strip userinfo and query parameters (secrets/tokens).
- */
-function formatTransportInfo(config: {
-  transport: 'uds' | 'tcp' | 'ws';
-  socketPath?: string;
-  wsUrl?: string;
-  host?: string;
-  port?: number;
-}): { mode: 'sidecar-uds' | 'external-ws'; target?: string } {
-  if (config.transport === 'uds') {
-    return { mode: 'sidecar-uds' };
-  }
-  if (config.transport === 'ws') {
-    const sanitized = config.wsUrl ? sanitizeUrl(config.wsUrl) : undefined;
-    return { mode: 'external-ws', target: sanitized };
-  }
-  // TCP transport is a remote stub; treat it like external WebSocket for UI purposes.
-  return { mode: 'external-ws', target: `tcp:${config.host}:${config.port}` };
-}
 
 /** Lazily create, wire, and start the shared main-process JSON-RPC client. */
 export function getBackendClient(): JsonRpcClient {
@@ -222,6 +186,60 @@ export function registerBackendHandlers(): void {
     const client = getBackendClient();
     const transport = formatTransportInfo(client.getConfig());
     return { status: client.getStatus(), transport };
+  });
+
+  ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => {
+    try {
+      // The on-demand sidecar always binds the local UDS socket. A WS/TCP
+      // client keeps reconnecting to its original target and would never
+      // reach the daemon we spawned, stranding the renderer on a pending
+      // spawn — refuse instead.
+      const transport = getBackendClient().getConfig().transport;
+      if (transport !== 'uds') {
+        return {
+          ok: false,
+          spawned: false,
+          reason: `connection target is not a local socket (transport: ${transport})`,
+        };
+      }
+      const result = await spawnSidecarOnDemand(
+        process.env,
+        app.isPackaged,
+        process.resourcesPath,
+        process.cwd(),
+      );
+      if (result.ok) {
+        // The daemon-loss modal resolves as soon as the spawn kicked off; the
+        // JsonRpcClient's ≤5s reconnect loop picks up the socket once the
+        // daemon is serving and broadcasts `backend:status` as usual.
+        const client = getBackendClient();
+        broadcast(BACKEND.STATUS, {
+          status: client.getStatus(),
+          transport: formatTransportInfo(client.getConfig()),
+        });
+      }
+      return result;
+    } catch (error) {
+      return { ok: false, spawned: false, error: toErrorPayload(error) };
+    }
+  });
+
+  // Crash-looping sidecar: the restart policy exhausted its attempts. Reuse
+  // the `backend:status` channel with a `sidecarGaveUp` marker (same pattern
+  // as `reconnected`) so the renderer surfaces the daemon-loss modal instead
+  // of the sidecar dying invisibly (#439).
+  onSidecarGaveUp((reason) => {
+    const instance = getBackendClient();
+    // Report the client's ACTUAL status: in the probe→spawn TOCTOU race the
+    // crash-looping child lost the socket to an external daemon the client
+    // has meanwhile connected to — hardcoding 'disconnected' would flip a
+    // healthy renderer to 'down' until the next poll corrected it.
+    broadcast(BACKEND.STATUS, {
+      status: instance.getStatus(),
+      sidecarGaveUp: true,
+      reason,
+      transport: formatTransportInfo(instance.getConfig()),
+    });
   });
 
   logger.info('Backend bridge IPC handlers registered');

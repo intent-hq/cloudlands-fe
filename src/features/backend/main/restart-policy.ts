@@ -32,6 +32,13 @@ export interface RestartDecision {
   reason: string;
   /** Remaining restart attempts after this decision (if applicable) */
   remainingAttempts?: number;
+  /**
+   * True when the policy exhausted its restart attempts (crash loop). Lets
+   * callers distinguish "gave up" from an intentional stop — both return
+   * `shouldRestart: false` — so the crash loop can be surfaced to the user
+   * instead of the sidecar dying invisibly.
+   */
+  gaveUp?: boolean;
 }
 
 /**
@@ -91,6 +98,7 @@ export class RestartPolicy {
         shouldRestart: false,
         delayMs: 0,
         reason,
+        gaveUp: true,
       };
     }
 

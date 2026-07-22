@@ -108,6 +108,14 @@ describe('RestartPolicy', () => {
       expect(finalDecision.shouldRestart).toBe(false);
       expect(finalDecision.reason).toContain('Max restart attempts');
       expect(finalDecision.reason).toContain('5');
+      expect(finalDecision.gaveUp).toBe(true);
+    });
+
+    it('does not mark gaveUp on restart decisions', () => {
+      policy.onSpawn();
+      const decision = policy.onExit(1, null);
+      expect(decision.shouldRestart).toBe(true);
+      expect(decision.gaveUp).toBeUndefined();
     });
   });
 
@@ -171,6 +179,8 @@ describe('RestartPolicy', () => {
       const decision = policy.onExit(0, null);
       expect(decision.shouldRestart).toBe(false);
       expect(decision.reason).toContain('Intentional stop');
+      // Intentional stop is NOT a give-up: no crash-loop surfacing.
+      expect(decision.gaveUp).toBeUndefined();
     });
 
     it('resets state after intentional stop', () => {

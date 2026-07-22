@@ -20,8 +20,13 @@ import {
   systemStatusSuccess,
   systemStatusFailure,
   heartbeatFailed,
+  spawnSidecarRequested,
+  spawnSidecarFailed,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import type { SystemStatusWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import type {
+  BackendTransportInfo,
+  SystemStatusWirePayload,
+} from '$store/renderer/slices/daemon-health/daemon-health-types';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
@@ -32,6 +37,8 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let statusListener: ((payload: { status: string }) => void) | null = null;
 let booted = false;
 let pollInFlight = false;
+// One-shot latch: the version-mismatch toast fires at most once per boot.
+let versionMismatchNotified = false;
 // Bumped on dispose so a poll that resolves after a dispose(+reboot) cycle
 // cannot clear the in-flight flag or dispatch stale results.
 let pollGeneration = 0;
@@ -100,6 +107,60 @@ function stopPolling(): void {
 }
 
 /**
+ * Surface a one-time, dismissible, non-blocking notice when the main process
+ * adopted an external daemon whose version differs from the bundled
+ * intentd.version pin (warn-only — never blocks). The toast lib is imported
+ * lazily to keep this middleware dependency-light.
+ */
+function maybeNotifyVersionMismatch(transport?: BackendTransportInfo): void {
+  if (!transport?.versionMismatch || versionMismatchNotified) return;
+  versionMismatchNotified = true;
+  void import('$lib/components/ui/toast')
+    .then(({ toast }) => {
+      // The daemon may report its version with or without a leading "v"
+      // (compareToPinnedVersion tolerates both) — normalize to avoid "vv".
+      const daemonVersion = transport.daemonVersion
+        ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
+        : '';
+      toast.warning(
+        `Connected to an external intentd daemon${daemonVersion} whose version differs from the bundled version. Some features may not work as expected.`,
+        { duration: 15_000 },
+      );
+    })
+    .catch(() => {
+      // Toast not available yet (e.g. during initial load) — un-latch so a
+      // later status event retries instead of losing the warning for the
+      // whole session. The mismatch is still logged in the main process.
+      versionMismatchNotified = false;
+    });
+}
+
+/**
+ * Invoke backend:spawn-sidecar (#439 fallback). On failure, dispatch
+ * spawnSidecarFailed so the daemon-loss UI surfaces the error; on success the
+ * pending flag clears when the reconnect lands as a 'connected' status event.
+ */
+async function spawnSidecar(): Promise<void> {
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (!api) {
+    appStore.dispatch(spawnSidecarFailed('electronAPI is not available'));
+    return;
+  }
+  try {
+    const result = (await api.invoke(BACKEND.SPAWN_SIDECAR)) as
+      | { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } }
+      | undefined;
+    if (!result?.ok) {
+      appStore.dispatch(
+        spawnSidecarFailed(result?.error?.message ?? result?.reason ?? 'Failed to spawn sidecar'),
+      );
+    }
+  } catch (error) {
+    appStore.dispatch(spawnSidecarFailed(error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/**
  * Boot-time setup: listen to backend:status and start polling.
  */
 function boot(): void {
@@ -110,15 +171,33 @@ function boot(): void {
   if (!api) return;
 
   // Listen for backend:status events (connection status changes).
-  statusListener = (payload: { status: string; transport?: { mode: 'sidecar-uds' | 'external-ws'; target?: string } }) => {
-    appStore.dispatch(connectionStatusChanged(payload.status, payload.transport));
+  // Disconnect broadcasts may additionally carry sidecarGaveUp/reason (#439).
+  statusListener = (payload: {
+    status: string;
+    transport?: BackendTransportInfo;
+    sidecarGaveUp?: boolean;
+    reason?: string;
+  }) => {
+    appStore.dispatch(
+      connectionStatusChanged(payload.status, payload.transport, {
+        sidecarGaveUp: payload.sidecarGaveUp,
+        reason: payload.reason,
+      }),
+    );
+    maybeNotifyVersionMismatch(payload.transport);
   };
   api.on(BACKEND.STATUS, statusListener);
 
   // Fetch initial connection status.
-  void api.invoke(BACKEND.GET_STATUS).then((result: { status: string; transport?: { mode: 'sidecar-uds' | 'external-ws'; target?: string } }) => {
-    appStore.dispatch(connectionStatusChanged(result.status, result.transport));
-  });
+  void api
+    .invoke(BACKEND.GET_STATUS)
+    .then((result: { status: string; transport?: BackendTransportInfo }) => {
+      appStore.dispatch(connectionStatusChanged(result.status, result.transport));
+      maybeNotifyVersionMismatch(result.transport);
+    })
+    .catch(() => {
+      // Bridge not ready yet — status events + polling converge the state.
+    });
 
   // Start polling.
   startPolling();
@@ -136,6 +215,10 @@ export function createDaemonHealthMiddleware(): StoreMiddleware {
     if (action.type === pollSystemStatus.type) {
       void pollStatus();
     }
+    // User asked for the sidecar fallback from the daemon-loss UI (#439).
+    if (action.type === spawnSidecarRequested.type) {
+      void spawnSidecar();
+    }
     return result;
   };
 }
@@ -151,6 +234,7 @@ export function disposeDaemonHealthService(): void {
     statusListener = null;
   }
   booted = false;
+  versionMismatchNotified = false;
   // Invalidate any in-flight poll so its late resolution can't dispatch stale
   // results or clear the flag for a rebooted service.
   pollGeneration++;

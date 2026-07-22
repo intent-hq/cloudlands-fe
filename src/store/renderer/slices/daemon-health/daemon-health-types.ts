@@ -45,10 +45,18 @@ export interface SystemStatusWirePayload {
 /**
  * FE connection mode to the intentd daemon.
  * Additive transport info from backend:get-status and backend:status.
+ *   - `sidecar-uds`  → local UDS to the daemon Electron spawned.
+ *   - `external-uds` → local UDS to a daemon Electron did not spawn (adopted
+ *     an already-running daemon, or an env socket override).
+ *   - `external-ws`  → remote WebSocket (or TCP stub).
  */
 export interface BackendTransportInfo {
-  mode: 'sidecar-uds' | 'external-ws';
+  mode: 'sidecar-uds' | 'external-uds' | 'external-ws';
   target?: string;
+  /** Version reported by an adopted external daemon (version handshake). */
+  daemonVersion?: string;
+  /** True when the adopted daemon's version differs from the bundled intentd.version pin (warn-only). */
+  versionMismatch?: boolean;
 }
 
 /**
@@ -86,4 +94,24 @@ export interface DaemonHealthState {
   lastUpdated: string | null;
   /** Whether a poll is in flight. */
   polling: boolean;
+  /**
+   * Last-known transport info from backend:get-status / backend:status.
+   * Kept at the top level (unlike stats.transport) so the connection mode
+   * survives disconnects — the daemon-loss UI needs it while health is 'down'.
+   */
+  transport: BackendTransportInfo | null;
+  /**
+   * True when the sidecar supervisor exhausted its restart policy and stopped
+   * restarting the daemon (#439). Cleared on the next successful connect.
+   */
+  sidecarGaveUp: boolean;
+  /** Reason string from the sidecar give-up broadcast, if any. */
+  sidecarGaveUpReason: string | null;
+  /**
+   * True while an on-demand sidecar spawn (backend:spawn-sidecar) is pending —
+   * from the user's request until the daemon reconnects or the spawn fails.
+   */
+  sidecarSpawnPending: boolean;
+  /** Error string when the last on-demand sidecar spawn failed. */
+  sidecarSpawnError: string | null;
 }

@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   healthCheckProbe,
+  stopIntentdSidecar,
   __resetIntentdSidecarForTesting,
   __setSidecarProcessForTesting,
   __startWatchdogForTesting,
@@ -425,5 +426,44 @@ describe('Watchdog N-strikes policy', () => {
     // SIGKILL should NOT be sent (only SIGTERM)
     expect(mockProcess.kill).toHaveBeenCalledTimes(1);
     expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGKILL');
+  });
+});
+
+/**
+ * External mode: `sidecarProcess === null` (we adopted a daemon we did not
+ * spawn). No kill path may ever run — we must never signal an unowned PID.
+ */
+describe('no kill path when sidecarProcess is null (external mode)', () => {
+  const mockConnect = vi.mocked(net.connect);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetIntentdSidecarForTesting();
+  });
+
+  afterEach(() => {
+    __resetIntentdSidecarForTesting();
+    vi.useRealTimers();
+  });
+
+  it('watchdog never probes or kills when sidecarProcess is null', async () => {
+    vi.useFakeTimers();
+    __setSidecarProcessForTesting(null);
+
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Run well past several probe intervals and kill grace periods.
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // The watchdog bails out before probing: no socket connection is ever
+    // opened, so no kill decision can be reached.
+    expect(mockConnect).not.toHaveBeenCalled();
+  });
+
+  it('stopIntentdSidecar returns without signalling when sidecarProcess is null', async () => {
+    __setSidecarProcessForTesting(null);
+    // Must resolve immediately without touching any process handle; a throw
+    // or a stray kill would fail the test (there is no process to signal).
+    await expect(stopIntentdSidecar(100)).resolves.toBeUndefined();
   });
 });
