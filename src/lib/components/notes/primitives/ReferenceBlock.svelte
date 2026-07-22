@@ -99,8 +99,14 @@
     if (primitive.snapshot) {
       resolvedCode = primitive.snapshot.code;
       editorContent = primitive.snapshot.code;
-      resolvedLanguage = primitive.snapshot.languageId || 'text';
+      // Some producers emit the legacy `language` field instead of `languageId`.
+      resolvedLanguage =
+        primitive.snapshot.languageId ||
+        (primitive.snapshot as { language?: string }).language ||
+        'text';
       resolvedRange = primitive.target?.range || null;
+    } else {
+      error = 'No code snapshot stored for this reference';
     }
     loading = false;
   }
