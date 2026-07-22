@@ -3,6 +3,7 @@ import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import {
   getDefaultProviderId,
   getProviderConfig,
+  resolveProviderEnabled,
 } from "$shared/config/provider-config";
 
 export type ProviderSettingsState = {
@@ -72,7 +73,7 @@ export const providerSettingsReducer = createReducer<ProviderSettingsState>(init
       ...state,
       enabledProviders: {
         ...state.enabledProviders,
-        [providerId]: !(state.enabledProviders[providerId] ?? false),
+        [providerId]: !resolveProviderEnabled(state.enabledProviders, providerId),
       },
     };
   })

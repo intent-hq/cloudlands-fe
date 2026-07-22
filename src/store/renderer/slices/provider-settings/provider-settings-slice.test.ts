@@ -130,8 +130,17 @@ describe("providerSettingsReducer", () => {
       expect(state.enabledProviders["auggie"]).toBe(false);
     });
 
-    it("should toggle auggie (disableable)", () => {
+    it("should toggle unset auggie off (default provider is enabled-if-unset)", () => {
       const state = providerSettingsReducer(initialState, toggleProvider("auggie"));
+      expect(state.enabledProviders["auggie"]).toBe(false);
+    });
+
+    it("should toggle auggie back on from an explicit false", () => {
+      const prev: ProviderSettingsState = {
+        ...initialState,
+        enabledProviders: { auggie: false },
+      };
+      const state = providerSettingsReducer(prev, toggleProvider("auggie"));
       expect(state.enabledProviders["auggie"]).toBe(true);
     });
   });

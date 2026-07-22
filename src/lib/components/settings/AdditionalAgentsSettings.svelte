@@ -3,7 +3,7 @@
   import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { toggleProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 
-  import { ACP_PROVIDERS } from '$shared/config/provider-config';
+  import { ACP_PROVIDERS, resolveProviderEnabled } from '$shared/config/provider-config';
   import { store as appStore } from '$store/renderer/store';
 
   const enabledProviders$ = selectEnabledProviders();
@@ -32,7 +32,7 @@
           </p>
         </div>
         <Toggle
-          pressed={$enabledProviders$[provider.id] === true}
+          pressed={resolveProviderEnabled($enabledProviders$, provider.id)}
           onclick={() => appStore.dispatch(toggleProvider(provider.id))}
           variant="indicator"
           size="xs"

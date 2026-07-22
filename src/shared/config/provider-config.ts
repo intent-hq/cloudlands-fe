@@ -437,6 +437,22 @@ export function getAlwaysEnabledProviders(): ACPProviderConfig[] {
 }
 
 /**
+ * Resolve a provider's effective enabled state from the persisted enabled map.
+ * Providers that cannot be disabled are always enabled. The default provider
+ * is enabled when it has no persisted entry (fresh state); every other
+ * provider defaults to disabled when unset. An explicit true/false entry
+ * always wins once the user toggles the provider.
+ */
+export function resolveProviderEnabled(
+  enabledProviders: Record<string, boolean>,
+  providerId: string,
+): boolean {
+  const config = getProviderConfig(providerId);
+  if (config.canBeDisabled === false) return true;
+  return enabledProviders[providerId] ?? providerId === getDefaultProviderId();
+}
+
+/**
  * Model capability tiers for each provider.
  * - fast: Quick, cheap models for background tasks (commit messages, PR descriptions)
  * - balanced: General purpose models for most tasks
