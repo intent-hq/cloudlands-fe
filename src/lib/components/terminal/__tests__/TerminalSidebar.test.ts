@@ -259,3 +259,51 @@ describe('TerminalSidebar detection flow', () => {
     });
   });
 });
+
+describe('TerminalSidebar context menu Escape handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    scriptEntries.value = [
+      {
+        id: 'script-1',
+        name: 'build',
+        command: 'npm run build',
+        mode: 'command',
+        category: 'build',
+        source: 'user',
+        runtime: { status: 'idle', exitCode: null },
+      },
+    ] as any[];
+    activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
+  });
+
+  function pressEscape(): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+    return event;
+  }
+
+  it('closes the context menu on Escape via the escape-layer stack', async () => {
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    await fireEvent.contextMenu(screen.getByText('build'));
+    await waitFor(() => expect(screen.getByText('Edit')).toBeTruthy());
+
+    const event = pressEscape();
+
+    await waitFor(() => expect(screen.queryByText('Edit')).toBeNull());
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('does not consume Escape while the context menu is closed', async () => {
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    const event = pressEscape();
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+});

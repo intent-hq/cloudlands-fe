@@ -39,6 +39,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import {
   faCheck,
   faFloppyDisk,
@@ -772,16 +773,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     }
   });
 
-  // Close context menu on Escape key
-  function handleWindowKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && contextMenuPos) {
-      closeContextMenu();
-    }
-  }
+  // Escape layer: while the context menu is open it is the topmost overlay,
+  // so Escape closes only the menu (not a lower overlay)
+  $effect(() => {
+    if (!contextMenuPos) return;
+    return pushEscapeLayer(() => closeContextMenu());
+  });
   /* eslint-disable @typescript-eslint/no-unused-vars -- template-level vars used by Svelte runtime */
 </script>
-
-<svelte:window onkeydown={handleWindowKeydown} />
 
 <!-- Sidebar Container -->
 <div
