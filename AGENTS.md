@@ -88,8 +88,9 @@ pnpm tsc -p tsconfig.preload.json --noEmit  # preload
 
 The renderer is a **thin presenter** over the daemon. Correctness, business rules, and
 persistence live in `intentd`; the FE renders what the daemon sends and dispatches user
-intent back. The wire contract is
-[`../../docs/PROTOCOL.md`](../../docs/PROTOCOL.md);
+intent back. The wire contract is the monorepo's
+[`docs/PROTOCOL.md`](../../docs/PROTOCOL.md) (the relative link resolves in a
+monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`);
 treat it as the single source of truth.
 
 ### Less logic on the client
@@ -106,7 +107,7 @@ treat it as the single source of truth.
 - Render exactly what the daemon sends. Do **not** heal, patch, normalize, or transform
   BE-owned payloads on the way in — no defensive defaults to mask missing fields, no
   client-side "fixups" of shapes, no quiet renames.
-- Any wire mismatch is resolved at the **diverging side** versus
+- Any wire mismatch is resolved at the **diverging side** versus the monorepo's
   `docs/PROTOCOL.md`: the BE is the preferred fix-site (it owns the
   contract), or PROTOCOL.md is updated when the documented shape itself is wrong. The FE
   is never bent to silently absorb a divergence.

@@ -3,7 +3,7 @@
  *
  * Most domains reach the live intentd daemon via JSON-RPC (`backend:request`/
  * `backend:listen`). Exceptions: `browser` reads/writes `recentUrls` from
- * localStorage (FE-local state per IMPLEMENTATION_SPEC §9 Group C, no daemon
+ * localStorage (deliberately FE-local state, no daemon
  * persistence); `system` uses JSON-RPC `system.status` and calls `autoUpdateClient`
  * for update state.
  *

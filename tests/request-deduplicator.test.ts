@@ -222,7 +222,7 @@ describe('RequestDeduplicator', () => {
     });
   });
 
-  // Wire contract per docs/PROTOCOL.md (§5 agent.sendMessage):
+  // Wire contract per the monorepo's docs/PROTOCOL.md (§5 agent.sendMessage):
   // the deduplicator wraps the IPC invoke, so concurrent identical calls must
   // share ONE BE invocation and sequential resolved calls must each issue a
   // FRESH BE invocation. Uses the shared in-memory ipc-mock-router as the BE
