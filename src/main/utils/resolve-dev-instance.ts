@@ -1,6 +1,22 @@
 // NOTE: Git-specific environment variables are applied per-command in shared/git/git-env.ts
 // to avoid leaking non-interactive settings into user terminals.
 
+import * as path from 'path';
+
+// Base userData directory name for cloudlands-fe on all platforms, in both dev and
+// packaged builds (e.g. ~/Library/Application Support/intent-cloudlands on macOS).
+// Decoupled from the Electron app name so renaming the app cannot silently move data.
+export const USER_DATA_DIR_NAME = 'intent-cloudlands';
+
+/**
+ * Compute the base userData directory for cloudlands-fe from the platform appData
+ * directory (Electron's app.getPath('appData')). Pure so it is testable without
+ * Electron; callers pass the resolved appData path in.
+ */
+export function resolveUserDataBasePath(appDataPath: string): string {
+  return path.join(appDataPath, USER_DATA_DIR_NAME);
+}
+
 // Base dev port used only for deriving display instance numbers in window/menu titles
 // (kept in sync with scripts/dev-launcher.mjs PORT_CONFIG.devPort.start). Userland
 // namespacing uses the absolute DEV_PORT via resolveDevUserDataDirName() below.

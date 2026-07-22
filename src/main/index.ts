@@ -19,13 +19,24 @@ const { ipcMain, app, BrowserWindow } = require('electron');
 // See memoryMonitor.onPressure handler below for usage
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
 
+// EARLY: Redirect userData to the "intent-cloudlands" directory under the platform
+// appData dir (e.g. ~/Library/Application Support/intent-cloudlands on macOS), on all
+// platforms and in both dev and packaged builds. The app starts fresh here — no
+// migration from the old app-name-derived directory. This must run before the
+// dev-instance namespacing below and before setupConsoleLogCapture() so the
+// SingletonLock and logs land in the new directory.
+import * as path from 'path';
+import {
+  resolveDevUserDataDirName,
+  resolveUserDataBasePath,
+} from './utils/resolve-dev-instance.js';
+app.setPath('userData', resolveUserDataBasePath(app.getPath('appData')));
+
 // EARLY: Support multiple dev instances by using unique userData paths.
 // Namespaced by absolute DEV_PORT so cloudlands-fe cannot collide with other Electron
 // dev apps (e.g. the reference Intent build's "dev-instance-N" scheme) on the
-// SingletonLock. This must run before setupConsoleLogCapture() so logs go to the
-// correct userData directory.
-import * as path from 'path';
-import { resolveDevUserDataDirName } from './utils/resolve-dev-instance.js';
+// SingletonLock, yielding intent-cloudlands/cloudlands-dev[-PORT] in dev. This must
+// run before setupConsoleLogCapture() so logs go to the correct userData directory.
 const devUserDataSegment = resolveDevUserDataDirName();
 if (devUserDataSegment) {
   const uniqueUserData = path.join(app.getPath('userData'), devUserDataSegment);
