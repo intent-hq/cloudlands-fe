@@ -1,8 +1,9 @@
 import { store } from "../../store";
 import {
+  ACP_PROVIDERS,
   type ACPProviderConfig,
-  getAlwaysEnabledProviders,
   getProviderConfig,
+  resolveProviderEnabled,
 } from "$shared/config/provider-config";
 
 export const selectActiveProviderId = store.createSelector(
@@ -31,18 +32,21 @@ export const selectEnabledProviders = store.createSelector(
 
 export const selectIsProviderEnabled = store.createSelector(
   (state, providerId: string): boolean => {
-    const config = getProviderConfig(providerId);
-    if (config.canBeDisabled === false) return true;
-    return state.providerSettings.enabledProviders[providerId] ?? false;
+    return resolveProviderEnabled(state.providerSettings.enabledProviders, providerId);
   }
 );
 
 export const selectEnabledProviderIds = store.createSelector(
   (state): string[] => {
-    const enabled = new Set(getAlwaysEnabledProviders().map((p) => p.id));
+    const enabledProviders = state.providerSettings.enabledProviders;
+    const enabled = new Set(
+      Object.values(ACP_PROVIDERS)
+        .filter((p) => resolveProviderEnabled(enabledProviders, p.id))
+        .map((p) => p.id)
+    );
     enabled.add(selectActiveProviderId.select(state));
 
-    for (const [providerId, isEnabled] of Object.entries(state.providerSettings.enabledProviders)) {
+    for (const [providerId, isEnabled] of Object.entries(enabledProviders)) {
       if (isEnabled) {
         enabled.add(providerId);
       }

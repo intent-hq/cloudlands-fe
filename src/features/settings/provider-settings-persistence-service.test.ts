@@ -109,6 +109,30 @@ describe("provider-settings-persistence-service (PROTOCOL §5.12 settings.update
     });
   });
 
+  it("persists auggie:false when disabling the default-enabled provider from fresh state", async () => {
+    await seedEnabledProviders({});
+
+    appStore.dispatch(setProviderEnabled({ providerId: "auggie", enabled: false }));
+    await flush();
+
+    expect(appStore.state.providerSettings.enabledProviders.auggie).toBe(false);
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [{ path: "providers.enabled", value: { auggie: false } }],
+    });
+  });
+
+  it("persists auggie:false when toggling unset auggie (enabled-if-unset default)", async () => {
+    await seedEnabledProviders({});
+
+    appStore.dispatch(toggleProvider("auggie"));
+    await flush();
+
+    expect(appStore.state.providerSettings.enabledProviders.auggie).toBe(false);
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [{ path: "providers.enabled", value: { auggie: false } }],
+    });
+  });
+
   it("does NOT write back on loadEnabledProvidersFromStorage (no hydration loop)", async () => {
     appStore.dispatch(loadEnabledProvidersFromStorage({ opencode: true, codex: false }));
     await flush();
