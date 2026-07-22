@@ -12,8 +12,10 @@
  *   apply only to the behavioral contract below; the send path is verified
  *   to own NO stream handler at all.
  *
- * Saga migration: stream lifecycle should forward raw updates while sagas own
- *   Redux-state-dependent missing-target refresh/reconcile behavior.
+ * Registry retirement: the stream-handler-registry (per-agent Electron IPC
+ *   listeners for restored sessions, ping/pong heartbeat bookkeeping) is fully
+ *   removed — restored-session streaming flows through the daemon events
+ *   bridge exactly like live sends.
  *
  * These tests use structural source-code analysis to verify the production
  * code contains the correct guard conditions and dispatch patterns, rather
@@ -100,37 +102,14 @@ describe('Stream lifecycle is a thin stream adapter', () => {
     expect(sendMessageBody).not.toContain('dispatchAgentStream(');
   });
 
-  it('restored stream branches emit source=restored saga-owned updates', () => {
-    expect(source).not.toContain('export function registerStreamHandlerForSession');
-    const restoredIdx = source.indexOf('function registerStreamHandlerForSession');
-    expect(restoredIdx).toBeGreaterThanOrEqual(0);
-    const helperIdx = source.indexOf('const emitStreamUpdate', restoredIdx);
-    const listenerIdx = source.indexOf('const streamListenerId = window.electronAPI.on', helperIdx);
-    const restoredBody = source.slice(restoredIdx, listenerIdx);
-    const chunkIdx = restoredBody.indexOf("data.type === 'chunk'");
-    const contentBlocksIdx = restoredBody.indexOf("data.type === 'content-blocks'");
-    const completeIdx = restoredBody.indexOf("data.type === 'complete'");
-    const statusIdx = restoredBody.indexOf("data.type === 'status'");
-    const errorIdx = restoredBody.indexOf("data.type === 'error'", statusIdx);
-    const chunkBranch = restoredBody.slice(chunkIdx, contentBlocksIdx);
-    const contentBlocksBranch = restoredBody.slice(contentBlocksIdx, completeIdx);
-    const completeBranch = restoredBody.slice(completeIdx, statusIdx);
-    const statusBranch = restoredBody.slice(statusIdx, errorIdx);
-
-    expect(restoredBody).toContain("source: 'restored'");
-    expect(restoredBody).toContain('agentStreamUpdateReceived({');
-    for (const branch of [chunkBranch, contentBlocksBranch, completeBranch]) {
-      expect(branch).not.toContain('dispatchStreamStatusEvent({');
-    }
-    expect(restoredBody).not.toContain('dispatchAgentStream(');
-    expect(restoredBody).toContain('chunkUpdateCoalescer.schedule(data)');
-    expect(restoredBody).toContain("emitStreamUpdate('chunk', data)");
-    expect(restoredBody).toContain("emitStreamUpdate('content-blocks', data)");
-    expect(restoredBody).toContain("emitStreamUpdate('complete', data)");
-    expect(statusBranch).toContain('dispatchStreamStatusEvent({');
-    expect(statusBranch).not.toContain('agentStreamUpdateReceived({');
-    expect(restoredBody).toContain('dispatchStreamStatusEvent({');
-    expect(restoredBody).not.toContain('getAgentSession(');
-    expect(restoredBody).not.toContain('requestRestoredRefreshThenMaybeFallback');
+  it('the restored-session stream handler path and registry are fully retired', () => {
+    // Restored-session streaming flows through the daemon events bridge like
+    // live sends — no per-agent Electron IPC listener registration remains.
+    expect(source).not.toContain('stream-handler-registry');
+    expect(source).not.toContain('registerStreamHandlerForSession');
+    expect(source).not.toContain('ensureStreamHandler');
+    expect(source).not.toContain('registerPingHandler');
+    expect(source).not.toContain('window.electronAPI.on(');
+    expect(source).not.toContain("source: 'restored'");
   });
 });
