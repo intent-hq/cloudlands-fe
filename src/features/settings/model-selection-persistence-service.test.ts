@@ -1,12 +1,18 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Fake the live backend transport so the settings seam routes settings.update
-// through an in-memory stub (no Electron). `vi.hoisted` keeps the spy visible
-// to the hoisted vi.mock factory.
-const { updateSpy } = vi.hoisted(() => ({ updateSpy: vi.fn() }));
+// through an in-memory stub (no Electron). `vi.hoisted` keeps the spies visible
+// to the hoisted vi.mock factory. `modelsListSpy` observes the `models.list`
+// wire call that reloadModelsForProvider (model-reload middleware) issues, so
+// tests can assert whether a cross-provider pick triggered a catalog reload.
+const { updateSpy, modelsListSpy } = vi.hoisted(() => ({
+  updateSpy: vi.fn(),
+  modelsListSpy: vi.fn(),
+}));
 vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: (method: string, params?: unknown) => {
     if (method === "settings.update") return updateSpy(params);
+    if (method === "models.list") return modelsListSpy(params);
     return Promise.resolve(undefined);
   },
   backendSubscribe: () => Promise.resolve({ subscriptionId: "sub-model-1" }),
@@ -35,10 +41,12 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
   });
 
   beforeEach(async () => {
-    // Drain any writes queued by earlier dispatches before resetting the spy.
+    // Drain any writes queued by earlier dispatches before resetting the spies.
     await flush();
     updateSpy.mockReset();
     updateSpy.mockResolvedValue({ applied: [] });
+    modelsListSpy.mockReset();
+    modelsListSpy.mockResolvedValue({ models: [] });
   });
 
   afterEach(async () => {
@@ -84,6 +92,75 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     });
   });
 
+  it("switches the active provider on a cross-provider compound pick and persists providers.active", async () => {
+    const defaultProviderId = getDefaultProviderId();
+    appStore.dispatch(setActiveProvider(defaultProviderId));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    updateSpy.mockClear();
+
+    appStore.dispatch(selectModel("opencode:opencode-go/kimi-k3"));
+    await flush();
+
+    expect(appStore.state.providerSettings.activeProviderId).toBe("opencode");
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [{ path: "providers.active", value: "opencode" }],
+    });
+  });
+
+  it("reloads the model catalog (models.list) on a cross-provider compound pick", async () => {
+    appStore.dispatch(setActiveProvider(getDefaultProviderId()));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    modelsListSpy.mockClear();
+
+    appStore.dispatch(selectModel("opencode:opencode-go/kimi-k3"));
+    await flush();
+
+    // The switch dispatched reloadModelsForProvider, which cleared the
+    // previous provider's catalog and refetched via `models.list`.
+    expect(modelsListSpy).toHaveBeenCalled();
+  });
+
+  it("does NOT dispatch a provider switch on a same-provider compound pick", async () => {
+    appStore.dispatch(setActiveProvider("opencode"));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    updateSpy.mockClear();
+    modelsListSpy.mockClear();
+
+    appStore.dispatch(selectModel("opencode:opencode-go/kimi-k3"));
+    await flush();
+
+    expect(appStore.state.providerSettings.activeProviderId).toBe("opencode");
+    const persistedPaths = updateSpy.mock.calls.flatMap(([params]) =>
+      (params as { changes: { path: string }[] }).changes.map((c) => c.path),
+    );
+    expect(persistedPaths).not.toContain("providers.active");
+    expect(modelsListSpy).not.toHaveBeenCalled();
+  });
+
+  it("does NOT switch providers or reload the catalog on a malformed compound prefix", async () => {
+    const defaultProviderId = getDefaultProviderId();
+    appStore.dispatch(setActiveProvider(defaultProviderId));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    updateSpy.mockClear();
+    modelsListSpy.mockClear();
+
+    appStore.dispatch(selectModel("not-a-provider:some-model"));
+    await flush();
+
+    // An unknown prefix must not flip activeProviderId globally (and thus
+    // never persists providers.active) nor trigger a catalog reload.
+    expect(appStore.state.providerSettings.activeProviderId).toBe(defaultProviderId);
+    const persistedPaths = updateSpy.mock.calls.flatMap(([params]) =>
+      (params as { changes: { path: string }[] }).changes.map((c) => c.path),
+    );
+    expect(persistedPaths).not.toContain("providers.active");
+    expect(modelsListSpy).not.toHaveBeenCalled();
+  });
+
   it("attributes a compound selectModel pick matching the active provider to that provider", async () => {
     appStore.dispatch(setActiveProvider("opencode"));
     appStore.dispatch(loadProviderModelsFromStorage({}));
@@ -116,6 +193,19 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     // The model slice normalizes the compound form when storing; the point
     // here is the attribution: no empty-string provider bucket is created.
     expect(appStore.state.model.providerModels[defaultProviderId]).toBe("orphan-model");
+    // No provider switch, so no catalog reload either.
+    expect(modelsListSpy).not.toHaveBeenCalled();
+  });
+
+  it("does NOT reload the catalog on a bare (non-compound) selectModel pick", async () => {
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    modelsListSpy.mockClear();
+
+    appStore.dispatch(selectModel("sonnet-test-1"));
+    await flush();
+
+    expect(modelsListSpy).not.toHaveBeenCalled();
   });
 
   it("persists model.providerDefaults on a direct per-provider selection", async () => {
