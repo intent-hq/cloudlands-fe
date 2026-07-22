@@ -25,6 +25,7 @@
 } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
   import { closeCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
 
   const isOpen = selectIsCheatSheetOpen();
@@ -50,15 +51,13 @@
     }
   }
 
-  function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      handleClose();
-    }
-  }
+  // Escape layer: registered only while open so stacked overlays dismiss
+  // one at a time in LIFO order
+  $effect(() => {
+    if (!$isOpen) return;
+    return pushEscapeLayer(() => handleClose());
+  });
 </script>
-
-<svelte:window onkeydown={handleKeyDown} />
 
 {#if $isOpen}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->

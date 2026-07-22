@@ -10,12 +10,10 @@
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
-  import {
-  tick,
-  onMount,
-} from 'svelte';
+  import { tick } from 'svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   // TipTap NodeViewProps
   let { node, selected, updateAttributes }: NodeViewProps = $props();
@@ -184,15 +182,11 @@
     }
   }
 
-  // Keyboard listener for Escape to close fullscreen
-  onMount(() => {
-    const handleGlobalKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullscreen) {
-        closeFullscreen();
-      }
-    };
-    document.addEventListener('keydown', handleGlobalKeydown);
-    return () => document.removeEventListener('keydown', handleGlobalKeydown);
+  // Escape layer: registered only while fullscreen so stacked overlays
+  // dismiss one at a time in LIFO order
+  $effect(() => {
+    if (!isFullscreen) return;
+    return pushEscapeLayer(() => closeFullscreen());
   });
 
   // Auto-focus fullscreen dialog for accessibility

@@ -28,6 +28,7 @@
   import Fa from 'svelte-fa';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { cn } from '$lib/utils';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { store as appStore } from '$store/renderer/store';
   import {
     clearPathNavigationError,
@@ -133,17 +134,23 @@
 
   const directoryEntries = $derived(listing?.entries.filter((e) => e.isDirectory) ?? []);
 
+  // Escape layer: registered only while open so stacked overlays dismiss one
+  // at a time in LIFO order. Declines when the path input is focused — it
+  // owns its own Escape (cancel edit) via handlePathInputKeydown.
+  $effect(() => {
+    if (!open) return;
+    return pushEscapeLayer((e) => {
+      if (pathInputRef && e.target === pathInputRef) return false;
+      onClose();
+    });
+  });
+
   function handleKeydown(e: KeyboardEvent) {
     if (!open) return;
     // The path input owns its own keyboard handling (Enter commit, Escape
     // cancel, plain text editing incl. Backspace) — never treat its keystrokes
     // as list navigation or modal close.
     if (pathInputRef && e.target === pathInputRef) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onClose();
-      return;
-    }
     const list = directoryEntries;
     if (e.key === 'ArrowDown') {
       e.preventDefault();

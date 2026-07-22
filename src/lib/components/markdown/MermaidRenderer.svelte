@@ -8,6 +8,7 @@
   import Fa from 'svelte-fa';
   import mermaid from 'mermaid';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   const logger = createLogger('MermaidRenderer');
 
@@ -187,19 +188,13 @@
 
   onMount(() => {
     mounted = true;
+  });
 
-    // Add keyboard listener for Escape key
-    const handleKeyboardEvent = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullscreen) {
-        closeFullscreen();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyboardEvent);
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyboardEvent);
-    };
+  // Escape layer: registered only while fullscreen so stacked overlays
+  // dismiss one at a time in LIFO order
+  $effect(() => {
+    if (!isFullscreen) return;
+    return pushEscapeLayer(() => closeFullscreen());
   });
 
   // Auto-focus the fullscreen dialog when it opens for accessibility
