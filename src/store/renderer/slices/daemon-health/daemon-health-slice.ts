@@ -25,6 +25,7 @@ export const initialState: DaemonHealthState = {
   lastUpdated: null,
   polling: false,
   transport: null,
+  hostLocality: null,
   sidecarGaveUp: false,
   sidecarGaveUpReason: null,
   sidecarSpawnPending: false,
@@ -167,6 +168,9 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
       ...state,
       polling: false,
       stats,
+      // Daemon-reported locality (§5.14) — authoritative for host-shell
+      // gating; falls back to the transport heuristic before the first poll.
+      hostLocality: wirePayload.host.locality ?? state.hostLocality,
       lastUpdated: new Date().toISOString(),
     };
   })

@@ -3,6 +3,7 @@
  */
 
 import { store } from '../../store';
+import type { BackendTransportInfo } from './daemon-health-types';
 
 export const selectDaemonHealth = store.createSelector(
   (state) => state.daemonHealth.health,
@@ -24,6 +25,35 @@ export const selectDaemonHealthPolling = store.createSelector(
 export const selectDaemonTransport = store.createSelector(
   (state) => state.daemonHealth.transport,
 );
+
+/**
+ * Whether a transport reaches a daemon on THIS machine (PROTOCOL §5.14
+ * locality: UDS ⇒ local, WebSocket ⇒ remote). A `null` transport — no
+ * backend:status/backend:get-status info yet — is treated as local: the only
+ * production paths are the Electron builds (sidecar or adopted UDS daemon,
+ * both local) and the remote-WS build, which reports `external-ws` on its
+ * very first status event, so the optimistic default never leaks a
+ * remote-host reveal.
+ */
+export function isLocalTransport(transport: BackendTransportInfo | null): boolean {
+  return transport === null || transport.mode !== 'external-ws';
+}
+
+/**
+ * True when the daemon host is the user's machine — gates host-shell
+ * affordances (reveal-in-file-manager, editor opens) that must act on the
+ * local desktop.
+ *
+ * Prefers the daemon-reported `host.locality` from the last system.status
+ * poll (BE = source of truth; it reflects a forced `server.locality`
+ * override, §5.12/§5.14, that the transport mode cannot see). Falls back to
+ * the FE transport heuristic before the first poll lands.
+ */
+export const selectIsDaemonLocal = store.createSelector((state): boolean => {
+  const reported = state.daemonHealth.hostLocality;
+  if (reported === 'local' || reported === 'remote') return reported === 'local';
+  return isLocalTransport(state.daemonHealth.transport);
+});
 
 /** True when the sidecar supervisor gave up restarting the daemon (#439). */
 export const selectSidecarGaveUp = store.createSelector(

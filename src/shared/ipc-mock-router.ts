@@ -217,13 +217,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     'remote-fs:exists',
     { success: false, error: 'Remote SSH file access is not available in this build' },
   ],
-  // Reveal-in-file-manager (OpenComboButton / WorkspaceActionsMenu /
-  // PanelTabBar / VirtualizedFileTree / CodeEditor / PullConflictDialog).
-  // A file-manager reveal targets the local desktop shell, which this build
-  // does not have; callers fire-and-forget inside try/catch, so the
-  // affordance is inert. (Editor opens are bridged to host.openInEditor in
-  // host-bridge-seeder; URL opens to window.open.)
-  ['shell:showItemInFolder', undefined],
   // Electron-main CDP plumbing: EmbeddedBrowser's webContents registration
   // (caller `.catch`es and logs) and PanelLayout's response arm for the
   // browser:list-tabs-request event — which never fires in this build (see
