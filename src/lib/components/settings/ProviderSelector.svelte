@@ -29,6 +29,7 @@
   import {
   ACP_PROVIDERS,
   getProviderConfig,
+  resolveProviderEnabled,
 } from '$shared/config/provider-config';
   import {
   AUGGIE_CHANNELS,
@@ -226,9 +227,7 @@
 
   // Reactive helper to check if a provider is enabled
   function isProviderEnabled(providerId: string): boolean {
-    const config = getProviderConfig(providerId);
-    if (config.canBeDisabled === false) return true;
-    return $enabledProviders$[providerId] ?? false;
+    return resolveProviderEnabled($enabledProviders$, providerId);
   }
 
   function canManageProviderEnablement(providerId: string): boolean {
