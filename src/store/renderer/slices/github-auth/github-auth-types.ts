@@ -1,16 +1,11 @@
-import type { GitHubUser } from "$features/github-auth/types";
+import type { GitHubDeviceFlow, GitHubUser } from "$features/github-auth/types";
 
-/** In-flight device-flow codes shown to the user (PROTOCOL §5.27). */
-export type GitHubDeviceFlowInfo = {
-  /** Code the user enters at `verificationUri`. */
-  userCode: string;
-  /** Where the user enters the code (usually https://github.com/login/device). */
-  verificationUri: string;
-  /** Seconds until the codes expire (snapshot at start). */
-  expiresIn: number;
-  /** Polling-cadence hint in seconds. */
-  interval: number;
-};
+/**
+ * In-flight device-flow codes shown to the user (PROTOCOL §5.27) — the shared
+ * wire shape minus `status`, which the slice models via `isAuthenticating` /
+ * `error` instead.
+ */
+export type GitHubDeviceFlowInfo = Omit<GitHubDeviceFlow, "status">;
 
 export type GitHubAuthState = {
   /** Whether user is authenticated with GitHub via the daemon */
