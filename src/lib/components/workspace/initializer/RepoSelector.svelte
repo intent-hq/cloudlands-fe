@@ -1,6 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
@@ -465,7 +466,7 @@
     // Debounce the check
     isCheckingNewRepoPath = true;
     const checkPath = async () => {
-      if (typeof window === 'undefined' || !window.electronAPI) {
+      if (!isElectronPlatform()) {
         isCheckingNewRepoPath = false;
         return;
       }
@@ -739,7 +740,7 @@
 
   // Check directory status for local paths
   async function checkDirectoryStatus(path: string): Promise<void> {
-    if (typeof window === 'undefined' || !window.electronAPI) return;
+    if (!isElectronPlatform()) return;
 
     try {
       const result = await invoke<any>('file:getDirectoryStatus', { path });

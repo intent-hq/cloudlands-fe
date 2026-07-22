@@ -97,6 +97,7 @@
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
@@ -333,7 +334,7 @@
     // Initialize release notes store to detect version changes and show release notes
     // We need to fetch the channel directly from main process since the auto-update
     // Redux state hasn't loaded the user's preference yet at this point
-    if (window.electronAPI) {
+    if (hasCapability('autoUpdate')) {
       (async () => {
         try {
           // Import dynamically to avoid the formatter removing unused imports

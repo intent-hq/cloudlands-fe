@@ -1,5 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
@@ -218,7 +218,27 @@ const excludeNodeModules = () => ({
   },
 });
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Web profile: `INTENT_BUILD_TARGET=web` (set by the dev:web / build:web
+  // scripts) builds the renderer for a plain browser — no Electron main or
+  // preload. svelte.config.js switches the adapter output to dist/web for the
+  // same flag. At runtime, VITE_INTENTD_WS_URL selects the live browser
+  // transport when window.electronAPI is absent; without it the app boots on
+  // the browser mock.
+  const isWebBuild = process.env.INTENT_BUILD_TARGET === 'web';
+  const env = loadEnv(mode, __dirname, '');
+
+  const webDefines = {};
+  if (isWebBuild && !env.VITE_INTENTD_WS_URL && env.VITE_ENABLE_BROWSER_MOCK === undefined) {
+    // Production web builds are gated out of the browser mock by default
+    // (hooks.client.ts only loads it in DEV or under an explicit opt-in).
+    // Default the opt-in ON for web builds with no daemon WS URL configured,
+    // so `build:web` output boots standalone on mock data. An explicit
+    // VITE_ENABLE_BROWSER_MOCK or VITE_INTENTD_WS_URL always wins.
+    webDefines['import.meta.env.VITE_ENABLE_BROWSER_MOCK'] = JSON.stringify('true');
+  }
+
+  return {
   // Plugin order:
   // 1. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
   // 2. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
@@ -384,7 +404,8 @@ export default defineConfig({
   },
 
   define: {
-    'process.env.IS_ELECTRON': JSON.stringify(true),
+    'process.env.IS_ELECTRON': JSON.stringify(!isWebBuild),
+    ...webDefines,
     '__APP_VERSION__': JSON.stringify(packageJson.version),
     '__DEV_GIT_BRANCH__': JSON.stringify(
       process.env.NODE_ENV === 'development'
@@ -434,4 +455,5 @@ export default defineConfig({
       '@tiptap/extension-code', 'svelte-tiptap',
     ],
   },
+  };
 });

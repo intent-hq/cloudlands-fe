@@ -120,12 +120,16 @@
     layoutManager?.reopenClosedTab();
   }
 
-  // Quick action buttons (agent handled separately when specialist picker is available)
-  const nonAgentQuickActions = [
+  // Quick action buttons (agent handled separately when specialist picker is available).
+  // The browser action is only shown when a handler is provided — PanelLayout
+  // omits it when the embedded browser panel capability is unavailable (web).
+  const nonAgentQuickActions = $derived([
     { id: 'note', label: 'Note', icon: faNote, action: () => onCreateNote?.() },
     { id: 'terminal', label: 'Terminal', icon: faTerminal, action: () => onCreateTerminal?.() },
-    { id: 'browser', label: 'Browser', icon: faGlobe, action: () => onOpenBrowser?.() },
-  ];
+    ...(onOpenBrowser
+      ? [{ id: 'browser', label: 'Browser', icon: faGlobe, action: () => onOpenBrowser?.() }]
+      : []),
+  ]);
   const agentQuickAction = { id: 'agent', label: 'Agent', icon: faRobot, action: () => onCreateAgent?.() };
 
   // Keyboard shortcuts to display with their actions

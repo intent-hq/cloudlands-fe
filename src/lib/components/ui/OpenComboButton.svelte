@@ -26,6 +26,7 @@
 } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import { toNativePath } from '$lib/utils/path-utils';
   import {
   faArrowUpRightFromSquare,
@@ -131,6 +132,10 @@
     };
   }
 
+  // Whether external editors can be opened at all (Electron-only capability).
+  // On web, only the copy actions are offered.
+  const canOpenExternalEditors = hasCapability('externalEditors');
+
   // Build actions from installed editors dynamically
   let actions: ActionConfig[] = $derived.by(() => {
     const installedEditors = $installedEditors$;
@@ -170,6 +175,10 @@
           ]
         : []),
     ];
+
+    if (!canOpenExternalEditors) {
+      return specialActions;
+    }
 
     return [...editorActions, otherAction, ...specialActions];
   });
