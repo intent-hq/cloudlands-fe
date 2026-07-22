@@ -1301,13 +1301,17 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
       }),
     );
 
-    // `dispatchStopChat` clears the interrupting flag once `agent.stop`
+    // The terminal events alone must flip the responding flag — asserted
+    // BEFORE `chatStopCompleted` (which also clears session runtime flags)
+    // so the local dispatch can't mask a regression in the event handling.
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    // `dispatchStopChat` dispatches `chatStopCompleted` once `agent.stop`
     // resolves — this local completion dispatch must not erase the partial
-    // either. In production the `agent.stop` response races the event pushes,
-    // so `chatStopCompleted` can also land BEFORE the terminal events; that
-    // interleaving is equivalent because both stop reducers only touch
-    // chat-state flags (`isInterrupting`, `streamingStartTime`,
-    // `idleReconcileSuppressed`) and never agent-session messages.
+    // either. It resets chat-state flags and session runtime flags
+    // (`isStreaming`/`isProcessing`/`isResponding`) but never touches
+    // session messages, so the response racing ahead of the event pushes
+    // is equally safe for the streamed blocks.
     appStore.dispatch(chatStopCompleted(AGENT));
 
     const assistantMessages = readAssistantMessages();
