@@ -18,7 +18,8 @@
  * `agent.delete` when the undo window elapses.
  *
  * Dependency-light per AGENTS.md utils conventions: no stores, services, or
- * side effects — a module-level Map and pure accessors only.
+ * wire calls — just a module-level Map with simple accessors and mutators
+ * over it (no side effects beyond that Map and its entries' timers).
  */
 import type { AgentSession } from "$shared/types";
 
