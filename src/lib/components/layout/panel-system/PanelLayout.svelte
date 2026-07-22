@@ -39,6 +39,7 @@
 } from 'svelte/store';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   import { fade } from 'svelte/transition';
@@ -271,7 +272,11 @@
     }
   }
 
-  // Handler to open a new browser tab
+  // Handler to open a new browser tab. The embedded browser panel needs the
+  // Electron <webview> + CDP bridge, so the handler is only offered when the
+  // capability exists — child components hide their "New Browser" entry points
+  // when onOpenBrowser is undefined.
+  const canOpenBrowserPanel = hasCapability('browserPanel');
   function handleOpenBrowser() {
     layoutManager.openBrowserPanel('about:blank');
   }
@@ -833,7 +838,7 @@
       logger.debug('Responding to browser:list-tabs-request', { count: browserTabs.length });
 
       // Send the list back to main process
-      if (typeof window !== 'undefined' && window.electronAPI) {
+      if (canOpenBrowserPanel) {
         void ipcInvoke('browser:list-tabs-response', { tabs: browserTabs });
       }
     });
@@ -888,7 +893,7 @@
         {onCreateAgentWithSpecialist}
         {onCreateNote}
         onCreateTerminal={handleCreateTerminal}
-        onOpenBrowser={handleOpenBrowser}
+        onOpenBrowser={canOpenBrowserPanel ? handleOpenBrowser : undefined}
       />
     {/if}
   </div>

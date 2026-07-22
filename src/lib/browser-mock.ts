@@ -68,12 +68,84 @@ const MOCK_WORKSPACES = [
 ];
 
 // ---------------------------------------------------------------------------
+// Backend transport channels (`backend:*`)
+// ---------------------------------------------------------------------------
+//
+// `electron-ipc-transport.ts` unwraps `backend:request` / `backend:subscribe`
+// responses as the `BackendResult` envelope `{ ok: true, result }` /
+// `{ ok: false, error: { code, message } }` produced by the main-process
+// bridge (`backend.ipc.ts`). These handlers mirror that envelope; the legacy
+// `{ success, data }` shape below is only for the non-backend IPC channels.
+
+let subscriptionIdCounter = 0;
+
+/** Mock results for the daemon JSON-RPC methods hit at boot. */
+function mockBackendMethodResult(method: string): unknown {
+  if (method === 'workspace.list') return { workspaces: MOCK_WORKSPACES };
+  if (method === 'repo.list') return { repos: [] };
+  if (method === 'settings.list') return { settings: [] };
+  if (method === 'agent.list') return { agents: [] };
+  if (method === 'models.list') return { models: [] };
+  if (method === 'skill.list') return { skills: [] };
+  if (method === 'task.list') return { tasks: [] };
+  if (method === 'note.list') return { notes: [] };
+  // `event.query` (§5.10) returns a bare newest→oldest array.
+  if (method === 'event.query') return [];
+  // The daemon-events-bridge firehose issues `events.subscribe` over
+  // `backend:request` (not the `backend:subscribe` channel).
+  if (method === 'events.subscribe') {
+    return { subscriptionId: `browser-mock-sub-${++subscriptionIdCounter}` };
+  }
+  if (method === 'events.unsubscribe') return {};
+  return undefined;
+}
+
+/** Handle the `backend:*` transport channels; `undefined` when not one of them. */
+function mockBackendInvoke(channel: string, data?: any): any {
+  if (channel === 'backend:request') {
+    const method = data?.method;
+    if (typeof method !== 'string' || method.length === 0) {
+      return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
+    }
+    const result = mockBackendMethodResult(method);
+    if (result !== undefined) {
+      return { ok: true, result };
+    }
+    return {
+      ok: false,
+      error: {
+        code: 'NOT_IMPLEMENTED',
+        message: `Browser mock: backend method "${method}" not implemented`,
+      },
+    };
+  }
+  if (channel === 'backend:subscribe') {
+    return { ok: true, result: { subscriptionId: `browser-mock-sub-${++subscriptionIdCounter}` } };
+  }
+  if (channel === 'backend:unsubscribe') {
+    return { ok: true, result: {} };
+  }
+  if (channel === 'backend:get-status') {
+    // Bare status shape (no envelope), mirroring backend.ipc.ts. `disconnected`
+    // keeps connection-gated boot flows (e.g. interrupted-agents) inert.
+    return { status: 'disconnected', transport: 'browser-mock' };
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Channel → response mapping
 // ---------------------------------------------------------------------------
 
 /** Return a mock response for a given IPC channel + data. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function mockInvoke(channel: string, data?: any): any {
+  // Backend transport channels use the BackendResult envelope, not the
+  // legacy { success, data } shape.
+  const backendResponse = mockBackendInvoke(channel, data);
+  if (backendResponse !== undefined) {
+    return backendResponse;
+  }
+
   // Workspace channels
   if (channel === 'workspace:list') {
     return { success: true, data: MOCK_WORKSPACES };

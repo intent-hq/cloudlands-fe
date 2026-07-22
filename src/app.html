@@ -62,9 +62,13 @@
       })();
     </script>
     <script type="module">
-      // Manually import Vite client in dev mode
+      // Manually import Vite client in dev mode. Production web builds
+      // (build:web) are served from localhost too but have no Vite client;
+      // swallow the failed import so it never trips the global
+      // unhandledrejection error boundary. (Electron production builds strip
+      // this script entirely via scripts/fix-production-html.js.)
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        import('/@vite/client');
+        import('/@vite/client').catch(() => {});
       }
     </script>
     %sveltekit.head%

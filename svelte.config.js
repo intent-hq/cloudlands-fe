@@ -1,6 +1,12 @@
 import adapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
+// Web profile: `INTENT_BUILD_TARGET=web` (set by dev:web / build:web) builds
+// the renderer for a plain browser. Output goes to dist/web so it never
+// clobbers the Electron renderer bundle in dist/renderer.
+const isWebBuild = process.env.INTENT_BUILD_TARGET === 'web';
+const outputDir = isWebBuild ? 'dist/web' : 'dist/renderer';
+
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
   // Consult https://kit.svelte.dev/docs/integrations#preprocessors
@@ -20,9 +26,9 @@ const config = {
   kit: {
     // adapter-static for SPA mode (no SSR)
     adapter: adapter({
-      // Build to dist/renderer for Electron
-      pages: 'dist/renderer',
-      assets: 'dist/renderer',
+      // dist/renderer for Electron, dist/web for the browser profile
+      pages: outputDir,
+      assets: outputDir,
       fallback: 'index.html',
       precompress: false,
       strict: true,

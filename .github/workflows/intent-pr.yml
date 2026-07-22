@@ -171,6 +171,41 @@ jobs:
       - name: workspace:* dispatcher gate
         run: node scripts/check-workspace-event-dispatchers.mjs
 
+  build-web:
+    name: Build (web)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      # The full production renderer build needs more heap than the other
+      # jobs; 4096 OOMs on ubuntu-latest.
+      NODE_OPTIONS: '--max-old-space-size=8192'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build web renderer
+        run: pnpm run build:web
+      - name: Verify web build output
+        run: |
+          test -f dist/web/index.html || {
+            echo "::error::dist/web/index.html missing — web build did not produce the SPA fallback."
+            exit 1
+          }
+          echo "✓ dist/web/index.html present."
+
   test:
     name: Unit Tests (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
@@ -211,6 +246,7 @@ jobs:
         typecheck-main,
         typecheck-preload,
         static-checks,
+        build-web,
         test,
       ]
     steps:
@@ -221,6 +257,7 @@ jobs:
              [ "${{ needs.typecheck-main.result }}" != "success" ] || \
              [ "${{ needs.typecheck-preload.result }}" != "success" ] || \
              [ "${{ needs.static-checks.result }}" != "success" ] || \
+             [ "${{ needs.build-web.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ]; then
             echo "One or more jobs failed"
             exit 1
