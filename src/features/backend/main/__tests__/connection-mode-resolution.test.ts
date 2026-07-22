@@ -57,6 +57,8 @@ import { Logger } from '$shared/logger';
 import {
   __resetIntentdSidecarForTesting,
   __setSidecarProcessForTesting,
+  onSidecarGaveUp,
+  spawnSidecarOnDemand,
   startIntentdSidecar,
 } from '../intentd-sidecar';
 import {
@@ -233,5 +235,133 @@ describe('startIntentdSidecar version-mismatch matrix (daemon-present × version
     expect(getConnectionMode()).toBe('sidecar');
     expect(mockSpawn).toHaveBeenCalled();
     expect(getDaemonVersionInfo()).toBeNull();
+  });
+});
+
+describe('spawnSidecarOnDemand', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetConnectionModeForTesting();
+    __resetIntentdSidecarForTesting();
+  });
+
+  afterEach(() => {
+    __setSidecarProcessForTesting(null);
+    __resetIntentdSidecarForTesting();
+    __resetConnectionModeForTesting();
+  });
+
+  it('returns without spawning when the sidecar is already running', async () => {
+    __setSidecarProcessForTesting({
+      killed: false,
+      exitCode: null,
+      kill: vi.fn(() => true),
+      on: vi.fn(),
+    } as never);
+    const result = await spawnSidecarOnDemand({}, false, '/resources', '/cwd');
+    expect(result).toEqual({ ok: true, spawned: false, reason: 'sidecar already running' });
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('never spawns a second daemon when a live daemon answers on the socket', async () => {
+    mockProbeSocket(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { running: true } }));
+    const result = await spawnSidecarOnDemand({}, false, '/resources', '/cwd');
+    expect(result.ok).toBe(true);
+    expect(result.spawned).toBe(false);
+    expect(getConnectionMode()).toBe('external');
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('spawns the sidecar when no daemon answers and the binary exists', async () => {
+    mockProbeSocket(null);
+    mockSpawnedProcess();
+    const result = await spawnSidecarOnDemand(
+      { INTENTD_BIN: '/fake/intentd' },
+      false,
+      '/resources',
+      '/cwd',
+    );
+    expect(result).toEqual({ ok: true, spawned: true, reason: 'sidecar spawned' });
+    expect(getConnectionMode()).toBe('sidecar');
+    expect(mockSpawn).toHaveBeenCalledWith(
+      '/fake/intentd',
+      ['serve', '--listen', 'uds'],
+      expect.objectContaining({ detached: false }),
+    );
+  });
+
+  it('fails without spawning when the intentd binary cannot be found', async () => {
+    mockProbeSocket(null);
+    const fs = await import('node:fs');
+    vi.mocked(fs.existsSync).mockImplementation(
+      // Socket "exists" (stale file) but no binary anywhere.
+      (p) => String(p).endsWith('.sock'),
+    );
+    const result = await spawnSidecarOnDemand({}, false, '/resources', '/cwd');
+    expect(result.ok).toBe(false);
+    expect(result.spawned).toBe(false);
+    expect(result.reason).toContain('binary not found');
+    expect(mockSpawn).not.toHaveBeenCalled();
+    vi.mocked(fs.existsSync).mockImplementation(() => true);
+  });
+});
+
+describe('sidecar gave-up notifier (crash-loop surfacing)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetConnectionModeForTesting();
+    __resetIntentdSidecarForTesting();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    __setSidecarProcessForTesting(null);
+    __resetIntentdSidecarForTesting();
+    __resetConnectionModeForTesting();
+  });
+
+  /** Mock spawn that captures each process's 'exit' handler for manual triggering. */
+  function mockSpawnCapturingExit(exitHandlers: Array<(code: number, signal: null) => void>) {
+    mockSpawn.mockImplementation(
+      () =>
+        ({
+          stdout: null,
+          stderr: null,
+          killed: false,
+          exitCode: null,
+          kill: vi.fn(() => true),
+          on: vi.fn((event: string, handler: (code: number, signal: null) => void) => {
+            if (event === 'exit') exitHandlers.push(handler);
+          }),
+        }) as never,
+    );
+  }
+
+  it('fires the listener when the restart policy exhausts, not on intentional stop', async () => {
+    mockProbeSocket(null);
+    const exitHandlers: Array<(code: number, signal: null) => void> = [];
+    mockSpawnCapturingExit(exitHandlers);
+
+    const gaveUp = vi.fn();
+    onSidecarGaveUp(gaveUp);
+
+    // Spawn under real timers (the socket probe needs them), then switch to
+    // fake timers to drain the restart backoff deterministically.
+    await spawnSidecarOnDemand({ INTENTD_BIN: '/fake/intentd' }, false, '/resources', '/cwd');
+    expect(exitHandlers).toHaveLength(1);
+    vi.useFakeTimers();
+
+    // Crash-loop: each exit schedules a restart; drain the backoff timer to
+    // respawn, then crash again. Attempts 1-5 restart; the 6th exit gives up.
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      exitHandlers[exitHandlers.length - 1](1, null);
+      expect(gaveUp).not.toHaveBeenCalled();
+      await vi.runOnlyPendingTimersAsync();
+      expect(exitHandlers).toHaveLength(attempt + 1);
+    }
+    exitHandlers[exitHandlers.length - 1](1, null);
+
+    expect(gaveUp).toHaveBeenCalledTimes(1);
+    expect(gaveUp).toHaveBeenCalledWith(expect.stringContaining('Max restart attempts'));
   });
 });

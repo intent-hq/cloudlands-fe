@@ -42,6 +42,33 @@ let killEscalationTimer: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
 let consecutiveFailures = 0;
 
+/** Listener invoked when the restart policy exhausts its attempts (crash loop). */
+type SidecarGaveUpListener = (reason: string) => void;
+const sidecarGaveUpListeners = new Set<SidecarGaveUpListener>();
+
+/**
+ * Register a listener fired when the sidecar crash-loops and the restart
+ * policy gives up (max attempts exhausted). Consumers (backend.ipc.ts)
+ * broadcast this to the renderer so the daemon-loss UI surfaces instead of
+ * the sidecar dying invisibly (#439). Returns a disposer.
+ */
+export function onSidecarGaveUp(listener: SidecarGaveUpListener): () => void {
+  sidecarGaveUpListeners.add(listener);
+  return () => {
+    sidecarGaveUpListeners.delete(listener);
+  };
+}
+
+function notifySidecarGaveUp(reason: string): void {
+  for (const listener of sidecarGaveUpListeners) {
+    try {
+      listener(reason);
+    } catch (error) {
+      logger.warn('sidecar gave-up listener threw', { error });
+    }
+  }
+}
+
 /**
  * Test seam: reset module state for testing.
  * @internal
@@ -63,6 +90,7 @@ export function __resetIntentdSidecarForTesting(): void {
   restartPolicy = null;
   isShuttingDown = false;
   consecutiveFailures = 0;
+  sidecarGaveUpListeners.clear();
 }
 
 /**
@@ -455,6 +483,9 @@ async function spawnSidecarProcess(
     const decision = restartPolicy.onExit(code, signal);
     if (!decision.shouldRestart) {
       logger.info('Not restarting sidecar', { reason: decision.reason });
+      // Crash loop (attempts exhausted): surface it to the renderer rather
+      // than dying invisibly. Intentional stops carry no `gaveUp` flag.
+      if (decision.gaveUp) notifySidecarGaveUp(decision.reason);
       return;
     }
 
@@ -639,4 +670,55 @@ export async function stopIntentdSidecar(gracePeriodMs = 3000): Promise<void> {
  */
 export function isSidecarRunning(): boolean {
   return sidecarProcess !== null && sidecarProcess.exitCode === null && !sidecarProcess.killed;
+}
+
+/** Result of an on-demand sidecar spawn (see [[spawnSidecarOnDemand]]). */
+export interface SpawnSidecarOnDemandResult {
+  ok: boolean;
+  /** True when a new sidecar process was actually spawned. */
+  spawned: boolean;
+  reason: string;
+}
+
+/**
+ * Spawn the app-managed sidecar on demand (user chose the fallback in the
+ * daemon-loss UI, #439). Unlike `startIntentdSidecar`, this bypasses the
+ * spawn policy — the user explicitly asked for a managed daemon — but keeps
+ * the same binary resolution and supervision (restart policy + watchdog) via
+ * `spawnSidecarProcess`.
+ *
+ * SAFETY: re-probes the socket first. If a daemon answers, it owns the socket
+ * (and the data dir behind it) — we must NEVER run a second daemon alongside,
+ * so we return ok without spawning and let the JSON-RPC client reconnect to
+ * the live daemon.
+ */
+export async function spawnSidecarOnDemand(
+  env: NodeJS.ProcessEnv,
+  isPackaged: boolean,
+  resourcesPath: string,
+  cwd: string,
+): Promise<SpawnSidecarOnDemandResult> {
+  if (isSidecarRunning()) {
+    return { ok: true, spawned: false, reason: 'sidecar already running' };
+  }
+  const socketPath = resolveSocketPath(env);
+  if (await healthCheckProbe(socketPath)) {
+    setConnectionMode('external');
+    logger.info('Spawn-on-demand skipped: a live daemon answers on the socket', { socketPath });
+    return { ok: true, spawned: false, reason: 'live daemon already serving the socket' };
+  }
+  const binaryPath = resolveIntentdBinaryPath(env, isPackaged, resourcesPath, cwd);
+  if (!binaryPath) {
+    logger.warn('Spawn-on-demand failed: intentd binary not found', {
+      isPackaged,
+      resourcesPath,
+      cwd,
+      intentdBinEnv: env.INTENTD_BIN ?? null,
+    });
+    return { ok: false, spawned: false, reason: 'intentd binary not found' };
+  }
+  isShuttingDown = false;
+  setConnectionMode('sidecar');
+  await spawnSidecarProcess(binaryPath, socketPath, env);
+  return { ok: true, spawned: true, reason: 'sidecar spawned' };
 }
