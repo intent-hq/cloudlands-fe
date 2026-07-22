@@ -115,6 +115,10 @@
 } from '$shared/types';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import type { ContextItem } from './input/context-api';
+  import {
+    deserializeDraftAttachments,
+    serializeDraftAttachments,
+  } from './chat-draft-attachments';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
@@ -945,7 +949,11 @@
 
     untrack(async () => {
       const draft = await appClient.drafts.get(workspace.id, agentId);
-      if (draft?.text && !inputValue) {
+      if (!draft) return;
+      if (draft.attachments?.length && contextItems.length === 0) {
+        contextItems = deserializeDraftAttachments(draft.attachments);
+      }
+      if (draft.text && !inputValue) {
         inputValue = draft.text;
         setTimeout(() => {
           inputComponent?.setContent?.(draft.text);
@@ -961,11 +969,21 @@
   $effect(() => {
     if (!workspace || !agentId) return;
     const currentValue = inputValue;
+    const currentAttachments = serializeDraftAttachments(contextItems);
 
     if (saveTimeoutId) clearTimeout(saveTimeoutId);
 
     saveTimeoutId = setTimeout(() => {
-      appClient.drafts.set(workspace.id, agentId, currentValue);
+      appClient.drafts
+        .set(
+          workspace.id,
+          agentId,
+          currentValue,
+          currentAttachments.length > 0 ? currentAttachments : undefined,
+        )
+        .catch((err) => {
+          logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
+        });
     }, 500); // 500ms debounce
   });
 
