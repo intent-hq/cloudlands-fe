@@ -298,7 +298,6 @@ import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
 import { registerDebugExportHandlers } from '../features/debug-export/main/debug-export.ipc';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
-import { registerSSHHandlers } from '../features/ssh/main/ssh.ipc';
 import { registerWorkspacePRHandlers } from '../features/workspace/main/workspace-pr.ipc';
 import { ipcCleanupManager } from './ipc-cleanup-manager';
 import { resolveAppTitle } from './utils/resolve-app-title.js';
@@ -1283,7 +1282,6 @@ app.whenReady().then(async () => {
 
   registerIDEHandlers(); // Needed for IDE integration
   registerExternalEditorsHandlers(); // Needed for external editor detection and opening
-  registerSSHHandlers(); // Needed for SSH operations
   registerWorkspacePRHandlers(); // Needed for PR operations
   registerMissingAgentHandlers(); // Needed for agent context operations
   registerDeepLinkHandlers(); // Needed for deep link and file operations

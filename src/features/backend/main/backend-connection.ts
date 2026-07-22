@@ -38,8 +38,7 @@ import type { RawData, WebSocket as WsWebSocket } from 'ws';
 import { shouldSpawnSidecar } from './intentd-spawn-policy';
 
 // The `ws` package is CJS and the vitest suite aliases the ESM import to a
-// browser-safe stub (see `vitest.config.ts`); `createRequire` sidesteps both,
-// mirroring `src/shared/main/ssh-manager.ts`.
+// browser-safe stub (see `vitest.config.ts`); `createRequire` sidesteps both.
 const nodeRequire = createRequire(import.meta.url);
 const { WebSocket: NodeWebSocket } = nodeRequire('ws') as {
   WebSocket: typeof import('ws').WebSocket;

@@ -127,34 +127,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // stay hidden until a daemon surface exists.
   ['git:get-auto-commit-status', undefined],
   // ── IPC batch 8: the remaining frozen audit debt, dispositioned ──
-  // AddRemoteSetupModal's SSH host/key/agent discovery probes (fired when the
-  // add-remote modal opens) and its Test Connection action. SSH config, keys
-  // and the agent live on the machine running the legacy Electron main
-  // process — no daemon surface (remotes are configured on the daemon host).
-  // The loaders check `.success` inside try/catch (fold to empty lists); the
-  // test-connection caller surfaces the first failed check's error string.
-  [
-    'ssh:get-config-hosts',
-    { success: false, error: 'SSH config discovery is not available in this build' },
-  ],
-  ['ssh:list-keys', { success: false, error: 'SSH key discovery is not available in this build' }],
-  [
-    'ssh:get-agent-status',
-    { success: false, error: 'SSH agent probing is not available in this build' },
-  ],
-  [
-    'ssh:test-connection',
-    {
-      success: false,
-      checks: {
-        connection: {
-          passed: false,
-          error:
-            'SSH connection testing is not available in this build — configure remotes on the daemon host',
-        },
-      },
-    },
-  ],
   // Native OS file dialogs (GitWorkspaceSettings / ProviderPathConfig pickers
   // and the electron-bridge showOpenDialog/showSaveDialog wrappers). There is
   // no native dialog in this build; every caller already has a
@@ -208,14 +180,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   [
     'reference:resolve',
     { ok: false, error: 'Code-reference resolution is not bridged to the daemon' },
-  ],
-  // FilesPanel's remote-file existence probe (only reached for
-  // environmentConfig.type === 'remote' workspaces). The legacy SSH
-  // connection pool is Electron-main-only; the caller folds `success:false`
-  // to "file not present remotely".
-  [
-    'remote-fs:exists',
-    { success: false, error: 'Remote SSH file access is not available in this build' },
   ],
   // Electron-main CDP plumbing: EmbeddedBrowser's webContents registration
   // (caller `.catch`es and logs) and PanelLayout's response arm for the

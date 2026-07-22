@@ -91,10 +91,6 @@ import {
   getBranchPrefix,
   getWorktreesLocation,
 } from './app-settings.service';
-import {
-  sshManager,
-  type SSHConnectionConfig,
-} from '../../../shared/main/ssh-manager';
 import { githubService } from '../../git-tracking/main/github.service';
 
 /**
@@ -3055,67 +3051,10 @@ export class WorkspaceService {
         }),
       );
 
-      // Remote-only worktree cleanup: the daemon `workspace.delete` sweeps
-      // local worktrees itself (PROTOCOL.md §5.1), but has no SSH capability
-      // for remote workspaces — the FE still opens a dedicated connection to
-      // remove the remote worktree, its parent folder, and the remote
-      // `.workspace/` metadata directory before the daemon persists the
-      // delete.
+      // Worktree removal is owned by the daemon: `workspace.delete` sweeps
+      // local worktrees itself (PROTOCOL.md §5.1).
       const worktreeWorkspaceResult = await this.getWorkspace(id as WorkspaceId);
-      const workspaceRow = worktreeWorkspaceResult.ok ? worktreeWorkspaceResult.data : null;
-      const ssh = workspaceRow?.environmentConfig?.ssh;
-      const remoteWorktreePath = workspaceRow?.worktreePath;
-      const remoteRepoPath = workspaceRow?.repositoryPath;
-      if (
-        workspaceRow &&
-        remoteWorktreePath &&
-        remoteRepoPath &&
-        !workspaceRow.skipWorktree &&
-        workspaceRow.isRemote &&
-        ssh
-      ) {
-        const sshConfig: SSHConnectionConfig = {
-          host: ssh.host,
-          port: ssh.port || 22,
-          username: ssh.user,
-          password: ssh.password,
-          privateKeyPath: ssh.key_path,
-          useAgent: ssh.use_agent,
-          transport: ssh.transport,
-          wsUrl: ssh.ws_url,
-        };
-        const deleteConnectionId = `delete-${id}`;
-        try {
-          await sshManager.connect(deleteConnectionId, sshConfig);
-
-          const worktreePathArg = escapeShellArg(remoteWorktreePath);
-          const repoPathArg = escapeShellArg(remoteRepoPath);
-          await sshManager.executeCommand(
-            deleteConnectionId,
-            `cd ${repoPathArg} && git worktree remove --force ${worktreePathArg} 2>/dev/null; cd ${repoPathArg} && git worktree prune 2>/dev/null; true`,
-            { timeout: 15000 },
-          );
-
-          const workspaceFolder = path.posix.dirname(remoteWorktreePath);
-          await sshManager.executeCommand(
-            deleteConnectionId,
-            `rmdir ${escapeShellArg(workspaceFolder)} 2>/dev/null || true`,
-            { timeout: 5000 },
-          );
-          await sshManager.executeCommand(
-            deleteConnectionId,
-            `rm -rf ~/intent/workspaces/${escapeShellArg(id)}/.workspace`,
-            { timeout: 5000 },
-          );
-        } catch (cleanupErr) {
-          logger.warn('Failed to clean up remote workspace', {
-            workspaceId: id,
-            error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-          });
-        } finally {
-          await sshManager.disconnect(deleteConnectionId).catch(() => {});
-        }
-      } else if (worktreeWorkspaceResult.ok && worktreeWorkspaceResult.data.skipWorktree) {
+      if (worktreeWorkspaceResult.ok && worktreeWorkspaceResult.data.skipWorktree) {
         logger.info('Skipping git worktree removal for direct-branch mode workspace', {
           workspaceId: id,
         });

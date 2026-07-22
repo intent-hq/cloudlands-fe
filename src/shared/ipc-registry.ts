@@ -698,29 +698,6 @@ export const IPC_CHANNELS = {
     CLEANUP: 'agent-testing:cleanup',
   },
 
-  // Remote File System
-  REMOTE_FS: {
-    INITIALIZE: 'remote-fs:initialize',
-    READ_FILE: 'remote-fs:readFile',
-    WRITE_FILE: 'remote-fs:writeFile',
-    APPEND_FILE: 'remote-fs:appendFile',
-    DELETE_FILE: 'remote-fs:deleteFile',
-    READDIR: 'remote-fs:readdir',
-    MKDIR: 'remote-fs:mkdir',
-    RMDIR: 'remote-fs:rmdir',
-    EXISTS: 'remote-fs:exists',
-    STAT: 'remote-fs:stat',
-    COPY: 'remote-fs:copy',
-    MOVE: 'remote-fs:move',
-    FIND: 'remote-fs:find',
-    GREP: 'remote-fs:grep',
-    DISCONNECT: 'remote-fs:disconnect',
-    STATUS: 'remote-fs:status',
-    CLEAR_CACHE: 'remote-fs:clearCache',
-  },
-
-
-
   // Debug (development only)
   DEBUG: {
     TRIGGER_BACKEND_RESUME: 'debug:trigger-backend-resume',
@@ -843,14 +820,6 @@ export const IPC_CHANNELS = {
     OPEN: 'pip:open',
     CLOSE: 'pip:close',
     CLOSE_ALL_FOR_WORKSPACE: 'pip:close-all-for-workspace',
-  },
-
-  // SSH Remote Workspace Management
-  SSH: {
-    GET_CONFIG_HOSTS: 'ssh:get-config-hosts',
-    LIST_KEYS: 'ssh:list-keys',
-    GET_AGENT_STATUS: 'ssh:get-agent-status',
-    TEST_CONNECTION: 'ssh:test-connection',
   },
 
   // WebSocket API
