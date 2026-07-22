@@ -53,6 +53,10 @@ export interface SystemStatusWirePayload {
 export interface BackendTransportInfo {
   mode: 'sidecar-uds' | 'external-uds' | 'external-ws';
   target?: string;
+  /** Version reported by an adopted external daemon (version handshake). */
+  daemonVersion?: string;
+  /** True when the adopted daemon's version differs from the bundled intentd.version pin (warn-only). */
+  versionMismatch?: boolean;
 }
 
 /**

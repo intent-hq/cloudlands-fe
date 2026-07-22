@@ -35,6 +35,8 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let statusListener: ((payload: { status: string }) => void) | null = null;
 let booted = false;
 let pollInFlight = false;
+// One-shot latch: the version-mismatch toast fires at most once per boot.
+let versionMismatchNotified = false;
 // Bumped on dispose so a poll that resolves after a dispose(+reboot) cycle
 // cannot clear the in-flight flag or dispatch stale results.
 let pollGeneration = 0;
@@ -103,6 +105,29 @@ function stopPolling(): void {
 }
 
 /**
+ * Surface a one-time, dismissible, non-blocking notice when the main process
+ * adopted an external daemon whose version differs from the bundled
+ * intentd.version pin (warn-only — never blocks). The toast lib is imported
+ * lazily to keep this middleware dependency-light.
+ */
+function maybeNotifyVersionMismatch(transport?: BackendTransportInfo): void {
+  if (!transport?.versionMismatch || versionMismatchNotified) return;
+  versionMismatchNotified = true;
+  void import('$lib/components/ui/toast')
+    .then(({ toast }) => {
+      const daemonVersion = transport.daemonVersion ? ` (v${transport.daemonVersion})` : '';
+      toast.warning(
+        `Connected to an external intentd daemon${daemonVersion} whose version differs from the bundled version. Some features may not work as expected.`,
+        { duration: 15_000 },
+      );
+    })
+    .catch(() => {
+      // Toast not available yet (e.g. during initial load) — the mismatch is
+      // still logged in the main process.
+    });
+}
+
+/**
  * Boot-time setup: listen to backend:status and start polling.
  */
 function boot(): void {
@@ -115,12 +140,14 @@ function boot(): void {
   // Listen for backend:status events (connection status changes).
   statusListener = (payload: { status: string; transport?: BackendTransportInfo }) => {
     appStore.dispatch(connectionStatusChanged(payload.status, payload.transport));
+    maybeNotifyVersionMismatch(payload.transport);
   };
   api.on(BACKEND.STATUS, statusListener);
 
   // Fetch initial connection status.
   void api.invoke(BACKEND.GET_STATUS).then((result: { status: string; transport?: BackendTransportInfo }) => {
     appStore.dispatch(connectionStatusChanged(result.status, result.transport));
+    maybeNotifyVersionMismatch(result.transport);
   });
 
   // Start polling.
@@ -154,6 +181,7 @@ export function disposeDaemonHealthService(): void {
     statusListener = null;
   }
   booted = false;
+  versionMismatchNotified = false;
   // Invalidate any in-flight poll so its late resolution can't dispatch stale
   // results or clear the flag for a rebooted service.
   pollGeneration++;

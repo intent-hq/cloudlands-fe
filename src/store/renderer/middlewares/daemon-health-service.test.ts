@@ -10,13 +10,23 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { store as appStore } from '$store/renderer/store';
 import { disposeDaemonHealthService } from './daemon-health-service';
 import { pollSystemStatus } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import type { SystemStatusWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import type {
+  BackendTransportInfo,
+  SystemStatusWirePayload,
+} from '$store/renderer/slices/daemon-health/daemon-health-types';
+
+// Mock the lazily-imported toast lib so the version-mismatch notice is observable.
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { warning: vi.fn() },
+}));
+import { toast } from '$lib/components/ui/toast';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
 describe('daemon-health-service', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.mocked(toast.warning).mockClear();
 
     // Wire window.electronAPI.invoke to the mock IPC router
     vi.stubGlobal('electronAPI', {
@@ -276,6 +286,69 @@ describe('daemon-health-service', () => {
 
     const state = appStore.state.daemonHealth;
     expect(state.health).toBe('down');
+  });
+
+  it('shows a one-time dismissible warning toast when the transport reports a version mismatch', async () => {
+    const mismatchTransport: BackendTransportInfo = {
+      mode: 'external-uds',
+      target: '/tmp/intentd.sock',
+      daemonVersion: '0.2.0',
+      versionMismatch: true,
+    };
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'connected',
+      transport: mismatchTransport,
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' },
+    }));
+
+    // Capture the backend:status listener so we can push follow-up events.
+    let statusHandler: ((payload: { status: string; transport?: BackendTransportInfo }) => void) | null =
+      null;
+    window.electronAPI!.on = vi.fn(
+      (channel: string, handler: (payload: { status: string }) => void) => {
+        if (channel === BACKEND.STATUS) statusHandler = handler;
+      },
+    );
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+    });
+    expect(toast.warning).toHaveBeenCalledWith(
+      expect.stringContaining('v0.2.0'),
+      expect.objectContaining({ duration: expect.any(Number) }),
+    );
+
+    // A later status event with the same mismatch must not re-toast.
+    statusHandler!({ status: 'connected', transport: mismatchTransport });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not toast when the transport reports matching versions', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'connected',
+      transport: {
+        mode: 'external-uds',
+        target: '/tmp/intentd.sock',
+        daemonVersion: '0.1.0',
+        versionMismatch: false,
+      } satisfies BackendTransportInfo,
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 
   it('transitions health to degraded on poll failure while connected', async () => {
