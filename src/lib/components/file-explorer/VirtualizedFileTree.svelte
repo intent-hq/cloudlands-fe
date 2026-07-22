@@ -40,6 +40,16 @@
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
 
+  // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
+  // machine, so the client platform matches; PanelTabBar idiom).
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    // @ts-expect-error - userAgentData is not in all browsers
+    (navigator.userAgentData?.platform === 'macOS' ||
+      /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
+  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
+
   interface Props {
     flattenedNodes: FlattenedFileNode[];
     selectedFile?: string;
@@ -843,13 +853,13 @@
       });
     }
 
-    // Add reveal in Finder option — daemon-host desktop action, only offered
-    // when the daemon runs on this machine (PROTOCOL §5.14 locality).
+    // Add reveal-in-file-manager option — daemon-host desktop action, only
+    // offered when the daemon runs on this machine (PROTOCOL §5.14 locality).
     if (selectIsDaemonLocal.select(appStore.state)) {
       items.push({ type: 'separator' });
       items.push({
         id: 'reveal',
-        label: 'Reveal in Finder',
+        label: `Reveal in ${fileManagerName}`,
         onClick: async () => {
           await invoke('shell:showItemInFolder', { path: node.path });
           closeContextMenu();

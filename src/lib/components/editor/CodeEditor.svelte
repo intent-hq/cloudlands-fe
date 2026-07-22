@@ -100,6 +100,15 @@
   // Reveal-in-file-manager targets the daemon host's desktop shell — only
   // offered when the daemon runs on this machine (PROTOCOL §5.14 locality).
   const isDaemonLocal$ = selectIsDaemonLocal();
+  // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
+  // machine, so the client platform matches; PanelTabBar idiom).
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    // @ts-expect-error - userAgentData is not in all browsers
+    (navigator.userAgentData?.platform === 'macOS' ||
+      /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
+  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
   const workspaceIdStore = writable(workspaceId ?? '');
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
@@ -961,7 +970,7 @@
               {#if $isDaemonLocal$}
                 <Button variant="ghost" size="sm" onclick={revealInFolder}>
                   <Fa icon={faFolderOpen} class="mr-2" />
-                  Reveal in Finder
+                  Reveal in {fileManagerName}
                 </Button>
               {/if}
             </div>
