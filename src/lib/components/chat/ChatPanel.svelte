@@ -118,7 +118,8 @@
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
-  import EventWakeupBanner, { parseAgentEvents } from './EventWakeupBanner.svelte';
+  import EventWakeupBanner from './EventWakeupBanner.svelte';
+  import { parseAgentEvents } from './event-wake-summary';
   import AgentCard from './AgentCard.svelte';
   import { toast } from 'svelte-sonner';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';

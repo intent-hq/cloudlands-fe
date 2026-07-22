@@ -25,7 +25,7 @@
   import Button from '../ui/button/button.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import { parseAgentEvents } from './EventWakeupBanner.svelte';
+  import { summarizeEventWake } from './event-wake-summary';
 
   interface Props {
     messages: QueuedMessage[];
@@ -189,45 +189,9 @@
     return message.content.startsWith('[WORKSPACE EVENTS]');
   }
 
-  /**
-   * Parse agent events resiliently: messageMetadata is opaque, so an
-   * unexpected shape (no events array, or malformed event items) falls back
-   * to parseAgentEvents' legacy text parsing instead of erroring.
-   */
-  function safeParseAgentEvents(message: QueuedMessage): ReturnType<typeof parseAgentEvents> {
-    const metadata = Array.isArray(message.messageMetadata?.events)
-      ? (message.messageMetadata as Parameters<typeof parseAgentEvents>[1])
-      : undefined;
-    try {
-      return parseAgentEvents(message.content, metadata);
-    } catch {
-      try {
-        return metadata ? parseAgentEvents(message.content) : [];
-      } catch {
-        return [];
-      }
-    }
-  }
-
   /** Short human label + muted report preview for an event-notification wake. */
   function eventWakeSummary(message: QueuedMessage): { label: string; preview?: string } {
-    const events = safeParseAgentEvents(message);
-    const idle = events.filter((e) => e.type === 'agent:idle');
-    const created = events.filter((e) => e.type === 'agent:created');
-    const parts: string[] = [];
-    if (idle.length === 1) {
-      parts.push(`Child agent ${idle[0].agentName ?? idle[0].agentId} completed`);
-    } else if (idle.length > 1) {
-      parts.push(`${idle.length} child agents completed`);
-    }
-    if (created.length === 1) {
-      parts.push(`Child agent ${created[0].agentName ?? created[0].agentId} created`);
-    } else if (created.length > 1) {
-      parts.push(`${created.length} child agents created`);
-    }
-    const label = parts.length > 0 ? parts.join(' · ') : 'Workspace events';
-    const withReport = idle.find((e) => e.completionReport || e.lastResponseSummary);
-    return { label, preview: withReport?.completionReport ?? withReport?.lastResponseSummary };
+    return summarizeEventWake(message.content, message.messageMetadata);
   }
 
   /**
