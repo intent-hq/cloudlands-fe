@@ -264,14 +264,10 @@ export const IPC_CHANNELS = {
 
   // Notes Primitives (ws-block rendering)
   PRIMITIVES: {
-    REFERENCE_RESOLVE: 'reference:resolve',
     CODEBASE_SEARCH: 'codebase:search',
     TERMINAL_RUN: 'terminal:runCommand',
     TERMINAL_KILL: 'terminal:killProcess',
     TERMINAL_SUBSCRIBE: 'terminal:subscribeOutput',
-    PATCH_APPLY: 'patch:apply',
-    PATCH_VALIDATE: 'patch:validate',
-    PATCH_REVERT: 'patch:revert',
     AGENT_RUN: 'agent:runAction',
   },
 
