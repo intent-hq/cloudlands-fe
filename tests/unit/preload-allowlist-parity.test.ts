@@ -191,10 +191,20 @@ describe('Preload IPC Allowlist Parity', () => {
         expect(isAllowed('agent:stream:123')).toBe(true);
         expect(isAllowed('agent:stream:ping:123')).toBe(true);
         expect(isAllowed('agent:stream:pong')).toBe(true);
-        expect(isAllowed('agent:stream-starting')).toBe(true);
         expect(isAllowed('auggie:stream:123')).toBe(true);
         expect(isAllowed('agent-stream-123')).toBe(false);
         expect(isAllowed('agent-stream-complete-123')).toBe(false);
+
+        // Retired with the daemon IPC migration — producer-less surface.
+        expect(isAllowed('agent:stream-starting')).toBe(false);
+        expect(isAllowed('agent:backend:create')).toBe(false);
+        expect(isAllowed('agent:backend:stop')).toBe(false);
+        expect(isAllowed('agent:backend:get-status')).toBe(false);
+        expect(isAllowed('agent:backend:cancel-stream')).toBe(false);
+
+        // Still-live backend channels stay allowed.
+        expect(isAllowed('agent:backend:stream-message')).toBe(true);
+        expect(isAllowed('agent:backend:list')).toBe(true);
       }
     });
   });

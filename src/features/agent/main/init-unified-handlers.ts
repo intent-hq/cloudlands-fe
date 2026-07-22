@@ -24,7 +24,6 @@ import {
   AgentListSessionsSchema,
   AgentDeleteSessionSchema,
   AgentBackendStreamMessageSchema,
-  AgentBackendStopSchema,
   EmptySchema,
 } from '../../../main/ipc-schemas';
 
@@ -47,9 +46,6 @@ function registerAgentValidationSchemas(): void {
 
   // Backend channels for streaming operations
   registerValidationSchema(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, AgentBackendStreamMessageSchema);
-  registerValidationSchema(AGENT_BACKEND_CHANNELS.STOP, AgentBackendStopSchema);
-  registerValidationSchema(AGENT_BACKEND_CHANNELS.GET_STATUS, EmptySchema);
-  registerValidationSchema(AGENT_BACKEND_CHANNELS.CANCEL_STREAM, EmptySchema);
 
   logger.info('Agent validation schemas registered successfully');
 }

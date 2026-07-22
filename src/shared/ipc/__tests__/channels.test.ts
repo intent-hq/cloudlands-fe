@@ -72,11 +72,32 @@ describe('IPC Channels', () => {
       expect(isValidChannel('agent:invalid')).toBe(false);
     });
 
+    it('should reject retired agent backend channels', () => {
+      expect(isValidChannel('agent:backend:create')).toBe(false);
+      expect(isValidChannel('agent:backend:get-status')).toBe(false);
+      expect(isValidChannel('agent:backend:cancel-stream')).toBe(false);
+      expect(isValidChannel('agent:backend:stop')).toBe(false);
+      expect(isValidChannel('agent:backend:get')).toBe(false);
+      expect(isValidChannel('agent:backend:delete')).toBe(false);
+      expect(isValidChannel('agent:backend:isActive')).toBe(false);
+      expect(isValidChannel('agent:backend:resume')).toBe(false);
+      expect(isValidChannel('agent:backend:check-process')).toBe(false);
+      expect(isValidChannel('agent:backend:reconnect')).toBe(false);
+      expect(isValidChannel('agent:backend:resume-stream')).toBe(false);
+      expect(isValidChannel('agent:backend:get-checkpoint')).toBe(false);
+      expect(isValidChannel('agent:stream-starting')).toBe(false);
+    });
+
+    it('should keep live agent backend channels valid', () => {
+      expect(isValidChannel('agent:backend:stream-message')).toBe(true);
+      expect(isValidChannel('agent:backend:list')).toBe(true);
+      expect(isValidChannel('agent:backend:queue-message')).toBe(true);
+    });
+
     it('should validate dynamic channels', () => {
       expect(isValidChannel('agent:stream:123')).toBe(true);
       expect(isValidChannel('agent:stream:ping:123')).toBe(true);
       expect(isValidChannel('agent:stream:pong')).toBe(true);
-      expect(isValidChannel('agent:stream-starting')).toBe(true);
       expect(isValidChannel('auggie:stream:123')).toBe(true);
       expect(isValidChannel('terminal:output:456')).toBe(true);
       expect(isValidChannel('agent-stream-123')).toBe(false);

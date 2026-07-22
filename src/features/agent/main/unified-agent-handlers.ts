@@ -540,21 +540,6 @@ function registerBackendChannelHandlers(backend: IAgentBackendService): void {
       AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
     ),
   );
-
-  // Backend stop handler
-  ipcMain.handle(
-    AGENT_BACKEND_CHANNELS.STOP,
-    createSafeValidatedHandler(
-      AgentBackendStopSchema,
-      async (_event, validated) => {
-        // Handle both string and object formats
-        const agentId = typeof validated === 'string' ? validated : validated.agentId;
-        const response = await backend.backendStop({ agentId });
-        return formatIpcSuccess(response);
-      },
-      AGENT_BACKEND_CHANNELS.STOP,
-    ),
-  );
 }
 
 /**

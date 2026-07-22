@@ -720,6 +720,23 @@ const RETIRED_IPC_CHANNELS: ReadonlySet<string> = new Set([
   'agent:reset-metrics',
   'agent:get-logs',
   'agent:clear-logs',
+  // Retired AGENT_BACKEND request channels (T6 removed them from the registry,
+  // preload allowlists, and schema/handler registrations; kept:
+  // `agent:backend:stream-message`, `agent:backend:list`, and the queue ops).
+  'agent:backend:create',
+  'agent:backend:get-status',
+  'agent:backend:cancel-stream',
+  'agent:backend:stop',
+  'agent:backend:get',
+  'agent:backend:delete',
+  'agent:backend:isActive',
+  'agent:backend:resume',
+  'agent:backend:check-process',
+  'agent:backend:reconnect',
+  'agent:backend:resume-stream',
+  'agent:backend:get-checkpoint',
+  // Retired agent event channel (no producer since the daemon IPC migration).
+  'agent:stream-starting',
 ]);
 
 describe('Retired file-tracking / line-attribution / file-attribution channels stay retired', () => {
