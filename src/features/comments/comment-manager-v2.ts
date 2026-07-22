@@ -898,12 +898,15 @@ export class CommentManagerV2 {
     // Persist through the write service: optimistic store dispatch +
     // `comment.add` + rollback are owned there. `searchContext` wraps the target
     // text with its surrounding context so the daemon can re-anchor it.
+    // `authorType: 'user'` marks the editor-driven add as user-authored (the
+    // daemon defaults to 'agent' when absent).
     await commentsWrite.addComment(this.noteId, addedComment, {
       searchContext: `${beforeText}${selectedText}${afterText}`,
       commentTarget: selectedText,
       comment: content,
       type,
       author: 'User',
+      authorType: 'user',
     });
 
     // Update decorations

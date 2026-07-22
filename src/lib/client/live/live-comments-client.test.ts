@@ -40,6 +40,7 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
       comment: "hi",
       type: "comment",
       author: "User",
+      authorType: "user",
     });
 
     expect(result).toEqual({ success: true });
@@ -53,9 +54,19 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
         comment: "hi",
         type: "comment",
         author: "User",
+        authorType: "user",
         idempotencyKey: expect.any(String),
       }),
     );
+  });
+
+  it("add omits authorType from the wire params when not provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ commentId: "c-1" });
+    const client = new LiveCommentsClient();
+
+    await client.add("note-1", { searchContext: "a b", commentTarget: "a", comment: "hi" });
+
+    expect(mockedRequest.mock.calls[0][1]).not.toHaveProperty("authorType");
   });
 
   it("add generates a distinct idempotencyKey per call", async () => {
@@ -119,6 +130,75 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
     const client = new LiveCommentsClient();
 
     expect(await client.delete("note-1", "c-1")).toEqual({ success: false, error: "boom" });
+  });
+
+  it("folds the BackendError.data detail into a generic 'Internal error'", async () => {
+    // The daemon maps Error::Internal to -32603 with the hardcoded message
+    // "Internal error" and the real cause as a string in `error.data`; the
+    // main-process bridge (json-rpc-errors.ts) normalizes that string onto
+    // `data.detail` before it crosses the IPC boundary, so this fixture mirrors
+    // the post-normalization shape the renderer actually receives.
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error("Internal error"), {
+        data: { code: "INTERNAL_ERROR", detail: "Could not find the search context in the document." },
+        rpcCode: -32603,
+      }),
+    );
+    const client = new LiveCommentsClient();
+
+    const result = await client.add("note-1", {
+      searchContext: "a b",
+      commentTarget: "a",
+      comment: "hi",
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "Internal error: Could not find the search context in the document.",
+    });
+  });
+
+  it("folds a raw string data detail for transports that skip main-process normalization", async () => {
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error("Internal error"), { data: "raw cause" }),
+    );
+    const client = new LiveCommentsClient();
+
+    const result = await client.add("note-1", {
+      searchContext: "a b",
+      commentTarget: "a",
+      comment: "hi",
+    });
+
+    expect(result).toEqual({ success: false, error: "Internal error: raw cause" });
+  });
+
+  it("leaves a generic 'Internal error' untouched when no data detail is present", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("Internal error"));
+    const client = new LiveCommentsClient();
+
+    const result = await client.add("note-1", {
+      searchContext: "a b",
+      commentTarget: "a",
+      comment: "hi",
+    });
+
+    expect(result).toEqual({ success: false, error: "Internal error" });
+  });
+
+  it("does NOT fold data into a specific (non-generic) error message", async () => {
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error("commentTarget must not be empty"), { data: "extra" }),
+    );
+    const client = new LiveCommentsClient();
+
+    const result = await client.add("note-1", {
+      searchContext: "a b",
+      commentTarget: "",
+      comment: "hi",
+    });
+
+    expect(result).toEqual({ success: false, error: "commentTarget must not be empty" });
   });
 });
 
