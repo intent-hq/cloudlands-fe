@@ -14,11 +14,7 @@
  * TypeScript compiler API and walk just the relevant function bodies.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
@@ -275,5 +271,77 @@ describe('gracefulShutdown call ordering (AST)', () => {
     visit(sf);
     expect(sigint).toBe(1);
     expect(sigterm).toBe(1);
+  });
+});
+
+function findConfirmQuit(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
+  let found: ts.FunctionLikeDeclaration | undefined;
+  const visit = (n: ts.Node) => {
+    if (found) return;
+    if (ts.isFunctionDeclaration(n) && n.name?.text === 'confirmQuitWithRunningAgents' && n.body) {
+      found = n;
+      return;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  if (!found) throw new Error('confirmQuitWithRunningAgents not found in src/main/index.ts');
+  return found;
+}
+
+describe('external-daemon-aware quit flow (AST)', () => {
+  it('gracefulShutdown never calls stopIntentdSidecar in external mode (no-kill guard)', () => {
+    // External daemons are not ours to stop: the shutdown path must branch on
+    // getConnectionMode() and only reach stopIntentdSidecar() (SIGTERM →
+    // SIGKILL escalation) on the non-external side of that branch.
+    const sf = parseIndex();
+    const gs = findGracefulShutdown(sf);
+
+    let branch: ts.IfStatement | undefined;
+    const findBranch = (n: ts.Node) => {
+      if (branch) return;
+      if (ts.isIfStatement(n)) {
+        const condText = n.expression.getText();
+        if (condText.includes('getConnectionMode()') && condText.includes("'external'")) {
+          branch = n;
+          return;
+        }
+      }
+      ts.forEachChild(n, findBranch);
+    };
+    findBranch(gs.body!);
+    expect(
+      branch,
+      "gracefulShutdown must branch on getConnectionMode() === 'external' around stopIntentdSidecar",
+    ).toBeDefined();
+
+    // The external (then) branch must not touch the sidecar stop path — only
+    // log that we are leaving the daemon alone.
+    const externalCalls = callsitesIn(branch!.thenStatement);
+    expect(externalCalls.some((c) => c.text === 'stopIntentdSidecar')).toBe(false);
+    expect(externalCalls.some((c) => c.text === 'logger.info')).toBe(true);
+
+    // The non-external (else) branch owns the single stopIntentdSidecar call.
+    expect(branch!.elseStatement).toBeDefined();
+    const sidecarCalls = callsitesIn(branch!.elseStatement!);
+    expect(sidecarCalls.some((c) => c.text === 'stopIntentdSidecar')).toBe(true);
+
+    // No stray stopIntentdSidecar call outside the guarded else branch.
+    const allStops = callsitesIn(gs.body!).filter((c) => c.text === 'stopIntentdSidecar');
+    expect(allStops).toHaveLength(1);
+  });
+
+  it('confirmQuitWithRunningAgents branches dialog copy on connection mode via buildQuitDialogOptions', () => {
+    // The dialog copy lives in the pure, unit-tested buildQuitDialogOptions
+    // helper (quit-dialog.test.ts asserts the per-mode copy). The prompt must
+    // feed it the live connection mode and keep the zero-agent fast path
+    // (listRespondingAgents) intact in every mode.
+    const sf = parseIndex();
+    const fn = findConfirmQuit(sf);
+    const calls = callsitesIn(fn.body!);
+    expect(calls.some((c) => c.text === 'listRespondingAgents')).toBe(true);
+    expect(calls.some((c) => c.text === 'getConnectionMode')).toBe(true);
+    expect(calls.some((c) => c.text === 'buildQuitDialogOptions')).toBe(true);
+    expect(calls.some((c) => c.text === 'dialog.showMessageBox')).toBe(true);
   });
 });

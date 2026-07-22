@@ -581,6 +581,7 @@ const ALLOWED_CHANNELS = [
   "backend:get-status",
   "backend:notification",
   "backend:status",
+  "backend:spawn-sidecar",
   "event:workspace:created",
   "event:workspace:updated",
   "event:workspace:deleted",

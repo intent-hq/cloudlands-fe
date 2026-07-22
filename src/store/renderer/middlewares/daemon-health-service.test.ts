@@ -9,14 +9,27 @@ import { registerMockIpcHandler, mockInvoke, resetMockIpcRouter } from '$shared/
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { store as appStore } from '$store/renderer/store';
 import { disposeDaemonHealthService } from './daemon-health-service';
-import { pollSystemStatus } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import type { SystemStatusWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import {
+  pollSystemStatus,
+  spawnSidecarRequested,
+} from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import type {
+  BackendTransportInfo,
+  SystemStatusWirePayload,
+} from '$store/renderer/slices/daemon-health/daemon-health-types';
+
+// Mock the lazily-imported toast lib so the version-mismatch notice is observable.
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { warning: vi.fn() },
+}));
+import { toast } from '$lib/components/ui/toast';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
 describe('daemon-health-service', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.mocked(toast.warning).mockClear();
 
     // Wire window.electronAPI.invoke to the mock IPC router
     vi.stubGlobal('electronAPI', {
@@ -276,6 +289,223 @@ describe('daemon-health-service', () => {
 
     const state = appStore.state.daemonHealth;
     expect(state.health).toBe('down');
+  });
+
+  it('stores sidecarGaveUp + reason from a give-up disconnect broadcast and clears on reconnect', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'connected',
+      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock' } satisfies BackendTransportInfo,
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async (payload: { method?: string }) => {
+      if (payload.method === 'system.status') {
+        return {
+          ok: true,
+          result: {
+            running: true,
+            listenMode: 'uds',
+            transports: ['uds'],
+            port: null,
+            clients: 0,
+            agents: 0,
+            protocolVersion: '2.0',
+            host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+          } as SystemStatusWirePayload,
+        };
+      }
+      return { ok: false, error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' } };
+    });
+
+    // Capture the backend:status listener so we can push follow-up events.
+    let statusHandler:
+      | ((payload: {
+          status: string;
+          transport?: BackendTransportInfo;
+          sidecarGaveUp?: boolean;
+          reason?: string;
+        }) => void)
+      | null = null;
+    window.electronAPI!.on = vi.fn(
+      (channel: string, handler: (payload: { status: string }) => void) => {
+        if (channel === BACKEND.STATUS) statusHandler = handler;
+      },
+    );
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => {
+      expect(appStore.state.daemonHealth.health).toBe('healthy');
+    });
+    expect(appStore.state.daemonHealth.transport?.mode).toBe('sidecar-uds');
+
+    // Give-up disconnect broadcast (#439 shape: status + sidecarGaveUp + reason).
+    statusHandler!({
+      status: 'disconnected',
+      sidecarGaveUp: true,
+      reason: 'restart limit reached',
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.health).toBe('down');
+    expect(appStore.state.daemonHealth.sidecarGaveUp).toBe(true);
+    expect(appStore.state.daemonHealth.sidecarGaveUpReason).toBe('restart limit reached');
+    // Transport survives the disconnect so the UI knows the connection mode.
+    expect(appStore.state.daemonHealth.transport?.mode).toBe('sidecar-uds');
+
+    // Reconnect clears the latched give-up state.
+    statusHandler!({
+      status: 'connected',
+      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock' },
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.health).toBe('healthy');
+    expect(appStore.state.daemonHealth.sidecarGaveUp).toBe(false);
+    expect(appStore.state.daemonHealth.sidecarGaveUpReason).toBeNull();
+  });
+
+  it('invokes backend:spawn-sidecar on spawnSidecarRequested and keeps pending on success', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    // The middleware invokes SPAWN_SIDECAR through window.electronAPI directly
+    // (main-process channel — no daemon wire request involved).
+    const invokeMock = vi.mocked(window.electronAPI!.invoke);
+    invokeMock.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.SPAWN_SIDECAR) {
+        return { ok: true, spawned: true, reason: 'sidecar spawned' };
+      }
+      return mockInvoke(channel);
+    });
+
+    appStore.dispatch(spawnSidecarRequested());
+    expect(appStore.state.daemonHealth.sidecarSpawnPending).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(invokeMock).toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
+    // Successful spawn leaves pending set — it clears on the reconnect
+    // 'connected' status event, not on the invoke result.
+    expect(appStore.state.daemonHealth.sidecarSpawnPending).toBe(true);
+    expect(appStore.state.daemonHealth.sidecarSpawnError).toBeNull();
+  });
+
+  it('dispatches spawnSidecarFailed when backend:spawn-sidecar reports failure', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    const invokeMock = vi.mocked(window.electronAPI!.invoke);
+    invokeMock.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.SPAWN_SIDECAR) {
+        return { ok: false, spawned: false, reason: 'intentd binary not found' };
+      }
+      return mockInvoke(channel);
+    });
+
+    appStore.dispatch(spawnSidecarRequested());
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      expect(appStore.state.daemonHealth.sidecarSpawnPending).toBe(false);
+      expect(appStore.state.daemonHealth.sidecarSpawnError).toBe('intentd binary not found');
+    });
+  });
+
+  it('shows a one-time dismissible warning toast when the transport reports a version mismatch', async () => {
+    const mismatchTransport: BackendTransportInfo = {
+      mode: 'external-uds',
+      target: '/tmp/intentd.sock',
+      daemonVersion: '0.2.0',
+      versionMismatch: true,
+    };
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'connected',
+      transport: mismatchTransport,
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' },
+    }));
+
+    // Capture the backend:status listener so we can push follow-up events.
+    let statusHandler: ((payload: { status: string; transport?: BackendTransportInfo }) => void) | null =
+      null;
+    window.electronAPI!.on = vi.fn(
+      (channel: string, handler: (payload: { status: string }) => void) => {
+        if (channel === BACKEND.STATUS) statusHandler = handler;
+      },
+    );
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+    });
+    expect(toast.warning).toHaveBeenCalledWith(
+      expect.stringContaining('v0.2.0'),
+      expect.objectContaining({ duration: expect.any(Number) }),
+    );
+
+    // A later status event with the same mismatch must not re-toast.
+    statusHandler!({ status: 'connected', transport: mismatchTransport });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes a v-prefixed daemon version in the mismatch toast (no "vv")', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'connected',
+      transport: {
+        mode: 'external-uds',
+        target: '/tmp/intentd.sock',
+        daemonVersion: 'v0.2.0',
+        versionMismatch: true,
+      } satisfies BackendTransportInfo,
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+    });
+    const message = vi.mocked(toast.warning).mock.calls[0][0] as string;
+    expect(message).toContain('(v0.2.0)');
+    expect(message).not.toContain('vv0.2.0');
+  });
+
+  it('does not toast when the transport reports matching versions', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'connected',
+      transport: {
+        mode: 'external-uds',
+        target: '/tmp/intentd.sock',
+        daemonVersion: '0.1.0',
+        versionMismatch: false,
+      } satisfies BackendTransportInfo,
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 
   it('transitions health to degraded on poll failure while connected', async () => {

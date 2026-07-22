@@ -254,10 +254,8 @@ import {
   disposeBackendClient,
   getBackendClient,
 } from '../features/backend/main/backend.ipc';
-import {
-  startIntentdSidecar,
-  stopIntentdSidecar,
-} from '../features/backend/main/intentd-sidecar';
+import { getConnectionMode } from '../features/backend/main/connection-mode';
+import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 
 import { setupSentryAuthIPC } from '../features/sentry-auth/main/sentry-auth.ipc';
@@ -285,6 +283,7 @@ import {
 import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-summary.ipc';
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
+import { buildQuitDialogOptions } from './quit-dialog';
 import { listRespondingAgents } from './running-agents';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
@@ -400,15 +399,21 @@ async function gracefulShutdown() {
 
     // Stop the intentd sidecar daemon (if we spawned it). SIGTERM with a grace
     // period, then SIGKILL. This runs AFTER disposeBackendClient() so the FE
-    // closes the socket before we kill the daemon.
-    try {
-      await stopIntentdSidecar();
-      logger.info('Sidecar daemon stopped');
-    } catch (error) {
-      logger.error(
-        'Error stopping sidecar daemon:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
+    // closes the socket before we kill the daemon. In external mode the daemon
+    // is not ours to stop — skip the stop path entirely so no code path ever
+    // signals an external daemon.
+    if (getConnectionMode() === 'external') {
+      logger.info('External daemon — not stopping');
+    } else {
+      try {
+        await stopIntentdSidecar();
+        logger.info('Sidecar daemon stopped');
+      } catch (error) {
+        logger.error(
+          'Error stopping sidecar daemon:',
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
     }
 
     // Shutdown unified backend - kills all active agent (auggie) processes
@@ -1700,21 +1705,14 @@ async function confirmQuitWithRunningAgents(): Promise<boolean> {
     agentIds: respondingAgents.map((s) => s.agentId),
   });
 
-  // The intentd daemon runs as a sidecar and shuts down with the app, so
-  // quitting stops running agents mid-turn. The daemon captures those agents
-  // as interrupted records on shutdown (PROTOCOL §6.6), and the app offers to
-  // resume them on next launch — so quitting pauses rather than loses work,
-  // and Quit remains the default.
-  const result = await dialog.showMessageBox({
-    type: 'info',
-    title: 'Agents Still Working',
-    message: `${respondingAgents.length} agent${respondingAgents.length > 1 ? 's are' : ' is'} still working.`,
-    detail:
-      'Quitting will shut down running agents. You can resume them when the app reopens. Quit now?',
-    buttons: ['Quit', 'Cancel'],
-    defaultId: 0,
-    cancelId: 1,
-  });
+  // The dialog copy branches on the connection mode (see quit-dialog.ts):
+  // in sidecar mode quitting shuts down the daemon and its running agents
+  // (destructive framing, resume on next launch); in external mode the daemon
+  // outlives the app, so closing is non-destructive and the copy lists the
+  // agents that keep running in the background.
+  const result = await dialog.showMessageBox(
+    buildQuitDialogOptions(getConnectionMode(), respondingAgents),
+  );
 
   if (result.response === 1) {
     logger.info('User cancelled quit due to running agents');

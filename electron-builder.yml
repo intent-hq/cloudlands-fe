@@ -27,6 +27,10 @@ extraResources:
       # Keep the fetch-sidecar stamp (build machinery with a timestamp) out of
       # packaged builds so identical pinned binaries produce identical artifacts.
       - "!.intentd-fetch-stamp.json"
+  # Version pin for the bundled sidecar, read at runtime from
+  # process.resourcesPath/intentd.version (see intentd-version-pin.ts).
+  - from: intentd.version
+    to: intentd.version
 
 # Unpack renderer files from asar to avoid MIME type issues
 # Also unpack MCP server files since Node.js can't execute scripts from within asar

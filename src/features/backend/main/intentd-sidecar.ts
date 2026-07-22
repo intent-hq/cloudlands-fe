@@ -24,6 +24,8 @@ import * as path from 'node:path';
 
 import { Logger } from '$shared/logger';
 import { RestartPolicy } from './restart-policy';
+import { setConnectionMode, setDaemonVersionInfo } from './connection-mode';
+import { compareToPinnedVersion, readPinnedVersion } from './intentd-version-pin';
 // Re-export from the policy module so existing importers keep working; consumers
 // that only need the decision (e.g. `backend-connection.ts`) import it from
 // `intentd-spawn-policy` directly to avoid pulling in the sidecar manager.
@@ -39,6 +41,33 @@ let restartTimer: NodeJS.Timeout | null = null;
 let killEscalationTimer: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
 let consecutiveFailures = 0;
+
+/** Listener invoked when the restart policy exhausts its attempts (crash loop). */
+type SidecarGaveUpListener = (reason: string) => void;
+const sidecarGaveUpListeners = new Set<SidecarGaveUpListener>();
+
+/**
+ * Register a listener fired when the sidecar crash-loops and the restart
+ * policy gives up (max attempts exhausted). Consumers (backend.ipc.ts)
+ * broadcast this to the renderer so the daemon-loss UI surfaces instead of
+ * the sidecar dying invisibly (#439). Returns a disposer.
+ */
+export function onSidecarGaveUp(listener: SidecarGaveUpListener): () => void {
+  sidecarGaveUpListeners.add(listener);
+  return () => {
+    sidecarGaveUpListeners.delete(listener);
+  };
+}
+
+function notifySidecarGaveUp(reason: string): void {
+  for (const listener of sidecarGaveUpListeners) {
+    try {
+      listener(reason);
+    } catch (error) {
+      logger.warn('sidecar gave-up listener threw', { error });
+    }
+  }
+}
 
 /**
  * Test seam: reset module state for testing.
@@ -61,6 +90,8 @@ export function __resetIntentdSidecarForTesting(): void {
   restartPolicy = null;
   isShuttingDown = false;
   consecutiveFailures = 0;
+  sidecarGaveUpListeners.clear();
+  spawnOnDemandInFlight = null;
 }
 
 /**
@@ -148,28 +179,82 @@ export function resolveSocketPath(env: NodeJS.ProcessEnv): string {
   return path.join(os.homedir(), 'Library', 'Application Support', 'intentd', 'intentd.sock');
 }
 
+/** Result of a version-aware daemon probe (see [[probeDaemonVersion]]). */
+export interface DaemonVersionProbeResult {
+  alive: boolean;
+  version?: string;
+  protocolVersion?: string;
+}
+
 /**
- * Probe the UDS socket to check if a daemon is already running.
- * Returns `true` if the socket exists and accepts a connection (adopt it).
+ * Version handshake probe: sends `system.status` over the UDS socket and
+ * parses the JSON-RPC response for the daemon's `version` and
+ * `protocolVersion` fields.
+ *
+ * `alive` is `true` whenever the daemon sent anything back (even if the
+ * payload could not be parsed or lacks version fields — older daemons), so
+ * callers can use it like the boolean probes.
  */
-async function probeDaemonSocket(socketPath: string): Promise<boolean> {
-  if (!fs.existsSync(socketPath)) return false;
-  return new Promise<boolean>((resolve) => {
+export async function probeDaemonVersion(
+  socketPath: string,
+  timeoutMs = 3000,
+): Promise<DaemonVersionProbeResult> {
+  if (!fs.existsSync(socketPath)) return { alive: false };
+
+  return new Promise<DaemonVersionProbeResult>((resolve) => {
     const client = net.connect({ path: socketPath });
-    const timeout = setTimeout(() => {
+    let buffer = '';
+    let resolved = false;
+
+    const finish = (result: DaemonVersionProbeResult): void => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
       client.destroy();
-      resolve(false);
-    }, 500);
+      resolve(result);
+    };
+
+    const timeout = setTimeout(() => finish({ alive: buffer.length > 0 }), timeoutMs);
+
+    // Send system.status request (control fast-path, no DB access).
+    // Omit params to match the established request shape in json-rpc-client.ts
+    const rpcRequest = {
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'system.status',
+    };
+
     client.on('connect', () => {
-      clearTimeout(timeout);
-      client.destroy();
-      resolve(true);
+      client.write(JSON.stringify(rpcRequest) + '\n');
     });
-    client.on('error', () => {
-      clearTimeout(timeout);
-      client.destroy();
-      resolve(false);
+
+    client.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      const newlineIndex = buffer.indexOf('\n');
+      if (newlineIndex === -1) return;
+      try {
+        const parsed = JSON.parse(buffer.slice(0, newlineIndex)) as {
+          result?: { version?: unknown; protocolVersion?: unknown };
+        };
+        finish({
+          alive: true,
+          version: typeof parsed.result?.version === 'string' ? parsed.result.version : undefined,
+          protocolVersion:
+            typeof parsed.result?.protocolVersion === 'string'
+              ? parsed.result.protocolVersion
+              : undefined,
+        });
+      } catch {
+        // A response arrived but wasn't parseable — the daemon is alive.
+        finish({ alive: true });
+      }
     });
+
+    // Per the contract above, anything received counts as alive — a socket
+    // error after partial data (reset mid-frame) is still a live daemon.
+    client.on('error', () => finish({ alive: buffer.length > 0 }));
+
+    client.on('end', () => finish({ alive: buffer.length > 0 }));
   });
 }
 
@@ -401,6 +486,9 @@ async function spawnSidecarProcess(
     const decision = restartPolicy.onExit(code, signal);
     if (!decision.shouldRestart) {
       logger.info('Not restarting sidecar', { reason: decision.reason });
+      // Crash loop (attempts exhausted): surface it to the renderer rather
+      // than dying invisibly. Intentional stops carry no `gaveUp` flag.
+      if (decision.gaveUp) notifySidecarGaveUp(decision.reason);
       return;
     }
 
@@ -434,8 +522,13 @@ async function spawnSidecarProcess(
 /**
  * Start the intentd sidecar if the spawn policy allows it.
  *
- * Before spawning, probes the target socket to adopt an already-running daemon.
- * If spawning, pipes stdout/stderr to the main-process logger and starts supervision.
+ * Before spawning, probes the target socket (version handshake) to adopt an
+ * already-running daemon. If spawning, pipes stdout/stderr to the main-process
+ * logger and starts supervision.
+ *
+ * Resolves the connection mode (see `connection-mode.ts`): `sidecar` when we
+ * spawn the daemon, `external` when we adopt an already-running daemon or the
+ * spawn policy is disabled (env transport override / two-terminal dev flow).
  */
 export async function startIntentdSidecar(
   env: NodeJS.ProcessEnv = process.env,
@@ -445,14 +538,44 @@ export async function startIntentdSidecar(
 ): Promise<void> {
   const decision = shouldSpawnSidecar(env, isPackaged);
   if (!decision.shouldSpawn) {
+    // Not spawning: whatever daemon the FE connects to (env override target,
+    // an already-running daemon on the default socket, or the two-terminal
+    // dev-daemon flow) is not managed by us.
+    setConnectionMode('external');
     logger.info('Sidecar spawn disabled', { reason: decision.reason });
     return;
   }
 
   const socketPath = resolveSocketPath(env);
-  const alreadyRunning = await probeDaemonSocket(socketPath);
-  if (alreadyRunning) {
-    logger.info('Adopting existing daemon', { socketPath });
+  const probe = await probeDaemonVersion(socketPath);
+  if (probe.alive) {
+    // A live daemon owns the socket (and the data dir behind it): ALWAYS
+    // adopt it — never spawn a second daemon alongside. Version mismatch is
+    // warn-only, surfaced to the renderer via the transport payload.
+    setConnectionMode('external');
+    const pinnedVersion = readPinnedVersion({ isPackaged, resourcesPath });
+    const comparison =
+      probe.version && pinnedVersion
+        ? compareToPinnedVersion(probe.version, pinnedVersion)
+        : 'unknown';
+    const versionMismatch = comparison === 'older' || comparison === 'newer';
+    setDaemonVersionInfo({
+      daemonVersion: probe.version ?? null,
+      pinnedVersion,
+      versionMismatch,
+    });
+    const details = {
+      socketPath,
+      daemonVersion: probe.version ?? null,
+      protocolVersion: probe.protocolVersion ?? null,
+      pinnedVersion,
+      comparison,
+    };
+    if (versionMismatch) {
+      logger.warn('Adopted external intentd whose version differs from the pinned version', details);
+    } else {
+      logger.info('Adopted external intentd (no sidecar spawned)', details);
+    }
     return;
   }
 
@@ -477,6 +600,7 @@ export async function startIntentdSidecar(
   });
 
   isShuttingDown = false;
+  setConnectionMode('sidecar');
   await spawnSidecarProcess(binaryPath, socketPath, env);
 }
 
@@ -549,4 +673,87 @@ export async function stopIntentdSidecar(gracePeriodMs = 3000): Promise<void> {
  */
 export function isSidecarRunning(): boolean {
   return sidecarProcess !== null && sidecarProcess.exitCode === null && !sidecarProcess.killed;
+}
+
+/** Result of an on-demand sidecar spawn (see [[spawnSidecarOnDemand]]). */
+export interface SpawnSidecarOnDemandResult {
+  ok: boolean;
+  /** True when a new sidecar process was actually spawned. */
+  spawned: boolean;
+  reason: string;
+}
+
+/** In-flight on-demand spawn; concurrent callers share it (spawn exactly once). */
+let spawnOnDemandInFlight: Promise<SpawnSidecarOnDemandResult> | null = null;
+
+/**
+ * Spawn the app-managed sidecar on demand (user chose the fallback in the
+ * daemon-loss UI, #439). Unlike `startIntentdSidecar`, this bypasses the
+ * spawn policy — the user explicitly asked for a managed daemon — but keeps
+ * the same binary resolution and supervision (restart policy + watchdog) via
+ * `spawnSidecarProcess`.
+ *
+ * SAFETY: re-probes the socket first. If a daemon answers, it owns the socket
+ * (and the data dir behind it) — we must NEVER run a second daemon alongside,
+ * so we return ok without spawning and let the JSON-RPC client reconnect to
+ * the live daemon.
+ *
+ * Concurrent calls coalesce onto one in-flight attempt so the sidecar is
+ * spawned at most once (e.g. double-click on the fallback button).
+ *
+ * Once mode flips to `sidecar` there is NO mid-session auto-switching back:
+ * the JsonRpcClient target (the socket path) is unchanged, so "keep the
+ * sidecar" simply means we stay connected to whatever serves that socket.
+ */
+export function spawnSidecarOnDemand(
+  env: NodeJS.ProcessEnv,
+  isPackaged: boolean,
+  resourcesPath: string,
+  cwd: string,
+): Promise<SpawnSidecarOnDemandResult> {
+  if (spawnOnDemandInFlight) return spawnOnDemandInFlight;
+  spawnOnDemandInFlight = doSpawnSidecarOnDemand(env, isPackaged, resourcesPath, cwd).finally(
+    () => {
+      spawnOnDemandInFlight = null;
+    },
+  );
+  return spawnOnDemandInFlight;
+}
+
+async function doSpawnSidecarOnDemand(
+  env: NodeJS.ProcessEnv,
+  isPackaged: boolean,
+  resourcesPath: string,
+  cwd: string,
+): Promise<SpawnSidecarOnDemandResult> {
+  if (isSidecarRunning()) {
+    return { ok: true, spawned: false, reason: 'sidecar already running' };
+  }
+  const socketPath = resolveSocketPath(env);
+  if (await healthCheckProbe(socketPath)) {
+    setConnectionMode('external');
+    logger.info('Spawn-on-demand skipped: a live daemon answers on the socket', { socketPath });
+    return { ok: true, spawned: false, reason: 'live daemon already serving the socket' };
+  }
+  const binaryPath = resolveIntentdBinaryPath(env, isPackaged, resourcesPath, cwd);
+  if (!binaryPath) {
+    logger.warn('Spawn-on-demand failed: intentd binary not found', {
+      isPackaged,
+      resourcesPath,
+      cwd,
+      intentdBinEnv: env.INTENTD_BIN ?? null,
+    });
+    return { ok: false, spawned: false, reason: 'intentd binary not found' };
+  }
+  isShuttingDown = false;
+  // The mode flips optimistically, before the child proves it owns the
+  // socket. If a daemon binds the socket in the probe→spawn window, our child
+  // fails to bind and exits while the JsonRpcClient reconnects to that
+  // external daemon — leaving a stale `sidecar` mode (transport-info and
+  // quit-dialog copy only). Daemon-safe regardless: the quit path's stop
+  // branch only signals `sidecarProcess`, which is already null after the
+  // child exit, so an external daemon is never signalled.
+  setConnectionMode('sidecar');
+  await spawnSidecarProcess(binaryPath, socketPath, env);
+  return { ok: true, spawned: true, reason: 'sidecar spawned' };
 }
