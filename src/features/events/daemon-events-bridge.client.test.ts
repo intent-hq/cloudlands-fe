@@ -287,6 +287,7 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
         'line-attribution:updated',
         'pr:*',
         'mcp.servers:status-changed',
+        'github:auth-changed',
         'app:ui-navigate',
         'app:ui-highlight',
         'app:workspace-open',
@@ -1439,6 +1440,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         'line-attribution:updated',
         'pr:*',
         'mcp.servers:status-changed',
+        'github:auth-changed',
         'app:ui-navigate',
         'app:ui-highlight',
         'app:workspace-open',
@@ -2189,6 +2191,71 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     handler(mcpNotification({ serverId: 'srv-x' }));
 
     expect(appStore.state.mcpSettings.statusMap).toEqual(before);
+  });
+});
+
+describe('daemonEventsBridge (wire contract — github:auth-changed §6.5)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function githubAuthNotification(data: Record<string, unknown>) {
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-gh-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'github:auth-changed',
+          // Global event — empty workspaceId per §6.5.
+          actor: { type: 'system', id: 'daemon' },
+          data,
+        },
+      },
+    };
+  }
+
+  it('terminal statuses dispatch githubAuthChanged into the auth state', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(githubAuthNotification({ status: 'expired' }));
+    await flush();
+
+    expect(appStore.state.githubAuth.error).toContain('expired');
+    expect(appStore.state.githubAuth.isAuthenticating).toBe(false);
+  });
+
+  it('revoked resets the auth state to signed-out', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(githubAuthNotification({ status: 'revoked' }));
+    await flush();
+
+    expect(appStore.state.githubAuth.isAuthenticated).toBe(false);
+    expect(appStore.state.githubAuth.user).toBeNull();
+  });
+
+  it('ignores payloads with an unknown or missing status', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.githubAuth;
+
+    handler(githubAuthNotification({ status: 'bogus' }));
+    handler(githubAuthNotification({}));
+    await flush();
+
+    expect(appStore.state.githubAuth).toEqual(before);
   });
 });
 

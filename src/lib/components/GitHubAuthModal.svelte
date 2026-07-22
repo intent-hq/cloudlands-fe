@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import {
   onDestroy,
@@ -10,11 +11,10 @@
   cancelGitHubAuth,
   clearGitHubAuthError,
 } from '$store/renderer/slices/github-auth/github-auth-slice';
-  import { invoke } from '$shared/generated/ipc-client';
   import {
   selectGitHubAuthIsAuthenticated,
   selectGitHubAuthIsAuthenticating,
-  selectGitHubAuthOauthUrl,
+  selectGitHubAuthDeviceFlow,
   selectGitHubAuthError,
   selectGitHubAuthRequiresDaemonAuth,
 } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -37,13 +37,12 @@
 
   const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
-  const oauthUrl$ = selectGitHubAuthOauthUrl();
+  const deviceFlow$ = selectGitHubAuthDeviceFlow();
   const error$ = selectGitHubAuthError();
   const requiresDaemonAuth$ = selectGitHubAuthRequiresDaemonAuth();
 
   let authStartedHere = false;
   let hasAutoStarted = false;
-  let hasOpenedBrowser = $state(false);
 
   // Auto-start auth flow if requested (e.g., when modal opens due to PR creation failure)
   onMount(() => {
@@ -64,33 +63,18 @@
 
   function handleConnect() {
     authStartedHere = true;
-    hasOpenedBrowser = false;
     appStore.dispatch(startGitHubAuth());
-  }
-
-  function handleOpenInBrowser() {
-    const url = $oauthUrl$;
-    if (!url) return;
-
-    hasOpenedBrowser = true;
-
-    // Open in external browser
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      void invoke('shell:openExternal', { url });
-    }
   }
 
   function handleCancel() {
     if (authStartedHere) {
       appStore.dispatch(cancelGitHubAuth());
     }
-    hasOpenedBrowser = false;
     onClose();
   }
 
   function handleRetry() {
     appStore.dispatch(clearGitHubAuthError());
-    hasOpenedBrowser = false;
     handleConnect();
   }
 
@@ -141,26 +125,22 @@
               Run <code class="bg-muted px-2 py-1 rounded">auggie login</code> in your terminal.
             </p>
           </div>
-        {:else if $oauthUrl$}
+        {:else if $deviceFlow$}
           <div class="oauth-redirect">
             <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
-            {#if hasOpenedBrowser}
+            <p class="text-foreground mb-4">
+              Enter this code on GitHub to connect your account.
+            </p>
+            <GitHubDeviceCodeCard
+              userCode={$deviceFlow$.userCode}
+              verificationUri={$deviceFlow$.verificationUri}
+            />
+            <div class="flex items-center justify-center gap-2 mt-4 text-subtle text-sm">
               <div
-                class="w-6 h-6 border-[3px] border-border border-t-blue-600 rounded-full animate-spin mx-auto mb-4"
+                class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
               ></div>
-              <p class="text-foreground">
-                Complete the authorization in your browser, then return here.
-              </p>
-              <p class="text-subtle text-sm mt-2">Waiting for authorization...</p>
-            {:else}
-              <p class="text-foreground">Click below to open GitHub authorization.</p>
-              <button
-                class="bg-[#238636] text-white border-none px-6 py-3 rounded text-base cursor-pointer mt-4 hover:bg-[#2ea043]"
-                onclick={handleOpenInBrowser}
-              >
-                Open GitHub Authorization
-              </button>
-            {/if}
+              <span>Waiting for authorization...</span>
+            </div>
           </div>
         {:else if $isAuthenticating$}
           <div class="loading">

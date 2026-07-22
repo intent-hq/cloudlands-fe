@@ -1,7 +1,7 @@
 import type { GitHubUser } from "$features/github-auth/types";
 import { createAction } from "$lib/store-shim/utils/store/create-action";
 import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
-import type { GitHubAuthState } from "./github-auth-types";
+import type { GitHubAuthState, GitHubDeviceFlowInfo } from "./github-auth-types";
 
 // ============================================================================
 // Initial State
@@ -13,6 +13,7 @@ export const initialState: GitHubAuthState = {
   user: null,
   isAuthenticating: false,
   oauthUrl: null,
+  deviceFlow: null,
   needsScopeUpdate: false,
   error: null,
 };
@@ -53,11 +54,28 @@ export const setAuthenticating = createAction<[isAuthenticating: boolean]>(
   "githubAuth/setAuthenticating",
 );
 
-/** Set OAuth URL and needsScopeUpdate after startAuth response */
+/**
+ * Set the device-flow verification URI (carried as `oauthUrl`, §5.27) and
+ * needsScopeUpdate after the startAuth response. Not a browser-redirect
+ * OAuth URL.
+ */
 export const setOAuthInfo = createAction(
   "githubAuth/setOAuthInfo",
   (oauthUrl: string | null, needsScopeUpdate: boolean) => ({ oauthUrl, needsScopeUpdate }),
 );
+
+/** Set the device-flow codes after `github.connect` (PROTOCOL §5.27) */
+export const setDeviceFlowInfo = createAction<[deviceFlow: GitHubDeviceFlowInfo | null]>(
+  "githubAuth/setDeviceFlowInfo",
+);
+
+/**
+ * A `github:auth-changed` event arrived from the daemon (PROTOCOL §6.5).
+ * Terminal device-flow transitions plus `revoked` from `github.revoke`.
+ */
+export const githubAuthChanged = createAction<
+  [status: "authorized" | "expired" | "denied" | "error" | "revoked"]
+>("githubAuth/authChanged");
 
 /** Auth completed successfully */
 export const authCompleted = createAction(
@@ -105,17 +123,24 @@ export const githubAuthReducer = createReducer<GitHubAuthState>(initialState)
     oauthUrl: payload.oauthUrl,
     needsScopeUpdate: payload.needsScopeUpdate,
   }))
+  .with(setDeviceFlowInfo, (state, { payload: [deviceFlow] }) => ({
+    ...state,
+    deviceFlow,
+  }))
   .with(authCompleted, (state, { payload }) => ({
     ...state,
     isAuthenticated: true,
     isAuthenticating: false,
     user: payload.user,
     oauthUrl: null,
+    deviceFlow: null,
   }))
   .with(setGitHubAuthError, (state, { payload: [error] }) => ({
     ...state,
     error,
     isAuthenticating: false,
+    oauthUrl: null,
+    deviceFlow: null,
   }))
   .with(clearGitHubAuthError, (state) => ({
     ...state,
@@ -125,11 +150,14 @@ export const githubAuthReducer = createReducer<GitHubAuthState>(initialState)
     ...state,
     isAuthenticating: false,
     oauthUrl: null,
+    deviceFlow: null,
   }))
   .with(logoutCompleted, (state) => ({
     ...state,
     isAuthenticated: false,
+    isAuthenticating: false,
     user: null,
     oauthUrl: null,
+    deviceFlow: null,
   }));
 
