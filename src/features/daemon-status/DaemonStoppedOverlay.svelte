@@ -74,8 +74,16 @@
   );
   // The on-demand sidecar binds the local UDS socket, which a WS-connected
   // client would never reconnect to — so the button is only offered when the
-  // connection target is the local socket (external-ws is excluded).
-  const showSpawnButton = $derived($transport$?.mode === 'external-uds' || $sidecarGaveUp$);
+  // connection target is the local socket (external-ws is excluded). Once a
+  // spawn is in flight (or failed), the section stays visible even if a
+  // status broadcast flips the transport to sidecar-uds mid-spawn — hiding it
+  // would drop the pending indicator / error and any way to retry.
+  const showSpawnButton = $derived(
+    $transport$?.mode === 'external-uds' ||
+      $sidecarGaveUp$ ||
+      $spawnPending$ ||
+      $spawnError$ !== null,
+  );
 
   function handleSpawnSidecar() {
     appStore.dispatch(spawnSidecarRequested());

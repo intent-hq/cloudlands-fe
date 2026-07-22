@@ -175,6 +175,24 @@ describe('DaemonStoppedOverlay', () => {
     });
   });
 
+  it('keeps the spawn section visible when the transport flips to sidecar-uds mid-spawn', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport);
+
+    await fireEvent.click(screen.getByTestId('daemon-stopped-spawn-sidecar'));
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
+    });
+
+    // Main process flips connection mode immediately on spawn; a status
+    // broadcast can carry a sidecar-uds transport while the daemon is still
+    // down. The pending indicator must survive that flip.
+    dispatchAndFlush(connectionStatusChanged('disconnected', sidecarTransport));
+    const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('Starting sidecar');
+  });
+
   it('shows the spawn error and re-enables the button when the spawn fails', async () => {
     invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
       if (channel === BACKEND.SPAWN_SIDECAR) {
