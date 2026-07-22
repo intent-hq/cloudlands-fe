@@ -116,9 +116,9 @@
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import type { ContextItem } from './input/context-api';
   import {
-  deserializeDraftAttachments,
-  serializeDraftAttachments,
-} from './chat-draft-attachments';
+    deserializeDraftAttachments,
+    serializeDraftAttachments,
+  } from './chat-draft-attachments';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
@@ -974,12 +974,16 @@
     if (saveTimeoutId) clearTimeout(saveTimeoutId);
 
     saveTimeoutId = setTimeout(() => {
-      appClient.drafts.set(
-        workspace.id,
-        agentId,
-        currentValue,
-        currentAttachments.length > 0 ? currentAttachments : undefined,
-      );
+      appClient.drafts
+        .set(
+          workspace.id,
+          agentId,
+          currentValue,
+          currentAttachments.length > 0 ? currentAttachments : undefined,
+        )
+        .catch((err) => {
+          logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
+        });
     }, 500); // 500ms debounce
   });
 

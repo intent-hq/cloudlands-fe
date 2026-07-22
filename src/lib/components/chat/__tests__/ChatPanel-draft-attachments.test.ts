@@ -1,10 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
-import {
-  serializeDraftAttachments,
-  deserializeDraftAttachments,
-} from '../chat-draft-attachments';
+import { serializeDraftAttachments, deserializeDraftAttachments } from '../chat-draft-attachments';
 import type { ContextItem } from '../input/context-api';
 
 /**
@@ -77,7 +74,8 @@ describe('ChatPanel draft attachment save', () => {
 
     saveDraft(drafts, 'ws-1', 'agent-1', 'hello', [imageItem, plainItem]);
 
-    expect(drafts.set).toHaveBeenCalledExactlyOnceWith('ws-1', 'agent-1', 'hello', [
+    expect(drafts.set).toHaveBeenCalledOnce();
+    expect(drafts.set).toHaveBeenCalledWith('ws-1', 'agent-1', 'hello', [
       {
         id: 'file-upload-1-cat.png',
         type: 'file',
@@ -93,7 +91,8 @@ describe('ChatPanel draft attachment save', () => {
 
     saveDraft(drafts, 'ws-1', 'agent-1', 'text only', [plainItem]);
 
-    expect(drafts.set).toHaveBeenCalledExactlyOnceWith('ws-1', 'agent-1', 'text only', undefined);
+    expect(drafts.set).toHaveBeenCalledOnce();
+    expect(drafts.set).toHaveBeenCalledWith('ws-1', 'agent-1', 'text only', undefined);
   });
 });
 
@@ -116,7 +115,8 @@ describe('ChatPanel draft attachment restore', () => {
 
     await restoreDraft(drafts, 'ws-1', 'agent-1', state);
 
-    expect(drafts.get).toHaveBeenCalledExactlyOnceWith('ws-1', 'agent-1');
+    expect(drafts.get).toHaveBeenCalledOnce();
+    expect(drafts.get).toHaveBeenCalledWith('ws-1', 'agent-1');
     expect(state.contextItems).toHaveLength(1);
     expect(state.contextItems[0]).toEqual({
       id: 'file-upload-1-cat.png',
