@@ -374,8 +374,8 @@ If the user asks you to commit, use \`agent_commit_changes\` with \`userRequeste
  *     Live-list validation closed the earlier gap where such overrides were
  *     accepted and silently substituted by the provider's CLI.
  *   - `unknown-provider`: the requested model was qualified with an explicit
- *     provider prefix (e.g. `coded:gpt-5-codex`) but that prefix is not a
- *     registered provider. The delegating agent is warned and the child
+ *     provider prefix (e.g. a `coded:gpt-5-codex` typo of `codex:`) but that
+ *     prefix is not a registered provider. The delegating agent is warned and the child
  *     falls back to the specialist's default model on the specialist's
  *     provider — we do NOT silently rewrite the prefix.
  */
@@ -537,9 +537,10 @@ export async function validateModelOverride(
 
   // Only a genuinely unavailable list (null — daemon unreachable, unknown
   // provider, or a zero-row catalog, per the model-pool contract) falls
-  // through to the tier table. An empty array means the provider answered
-  // successfully with zero usable models, which is authoritative: every
-  // candidate must be rejected with `unknown_model`.
+  // through to the tier table. Per that contract `liveModels` is never an
+  // empty array (zero-row catalogs fold to null), so the empty-array branch
+  // below is defensive: if it ever fires, treat the list as authoritative
+  // and reject every candidate with `unknown_model`.
   if (liveModels === null) {
     logger.info('Live model list unavailable, falling back to tier-table validation', {
       candidate,
