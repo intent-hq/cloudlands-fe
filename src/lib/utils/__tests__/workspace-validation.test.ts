@@ -10,6 +10,7 @@ import {
 import {
   validateBranchPrefix,
   sanitizeBranchPrefix,
+  getGitErrorMessage,
 } from '../workspace-validation';
 
 describe('workspace-validation', () => {
@@ -193,6 +194,36 @@ describe('workspace-validation', () => {
 
     it('should trim whitespace', () => {
       expect(sanitizeBranchPrefix('  feature/  ')).toBe('feature/');
+    });
+  });
+
+  describe('getGitErrorMessage', () => {
+    describe('timeouts', () => {
+      it('should return workspace-creation wording for workspace.create JSON-RPC timeout', () => {
+        const result = getGitErrorMessage('JSON-RPC request timed out: workspace.create');
+        expect(result).toBe(
+          'Creating this workspace is taking longer than expected. The daemon may still be finishing it in the background — check your workspace list, or try again.'
+        );
+      });
+
+      it('should return clone-timeout wording for a git clone timeout', () => {
+        const result = getGitErrorMessage('git clone timed out');
+        expect(result).toBe(
+          'Cloning this repository timed out. The repository may be very large or your network connection may be slow. Please try again — if the repository was partially downloaded, the next attempt will be faster.'
+        );
+      });
+
+      it('should return git-timeout wording for a git-shaped timeout', () => {
+        const result = getGitErrorMessage('git fetch timed out');
+        expect(result).toBe(
+          'A git operation timed out. This can happen with large repositories or slow network connections. Please try again.'
+        );
+      });
+
+      it('should return the original error for a non-git JSON-RPC timeout', () => {
+        const error = 'JSON-RPC request timed out: agent.create';
+        expect(getGitErrorMessage(error)).toBe(error);
+      });
     });
   });
 });

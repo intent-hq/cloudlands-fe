@@ -495,8 +495,22 @@ export function getGitErrorMessage(error: string): string {
     return 'Cloning this repository timed out. The repository may be very large or your network connection may be slow. Please try again — if the repository was partially downloaded, the next attempt will be faster.';
   }
 
-  // General git command timeout
-  if (errorLower.includes('timed out')) {
+  // Transport-level timeout on workspace.create: the daemon is often still
+  // finishing the creation (e.g. bootstrapping the initial agent) in the
+  // background, so avoid mislabelling this as a git failure.
+  if (errorLower.includes('json-rpc request timed out: workspace.create')) {
+    return 'Creating this workspace is taking longer than expected. The daemon may still be finishing it in the background — check your workspace list, or try again.';
+  }
+
+  // General git command timeout — only relabel when the error is actually
+  // git-shaped; other JSON-RPC method timeouts fall through to the catch-all
+  // below so the original error is surfaced instead of a misleading git message.
+  if (
+    errorLower.includes('timed out') &&
+    ['git', 'clone', 'fetch', 'worktree', 'pull', 'push', 'rebase', 'merge'].some((keyword) =>
+      errorLower.includes(keyword)
+    )
+  ) {
     return 'A git operation timed out. This can happen with large repositories or slow network connections. Please try again.';
   }
 
