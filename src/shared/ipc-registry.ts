@@ -1018,7 +1018,7 @@ export const EVENT_CHANNELS = [
   'agent:remote-error', // Agent remote environment error notification
   'agent:plan-required', // Agent plan upgrade required notification (enterprise users without Intent access)
   'notification:show', // Notification shown event for sound playback in renderer
-  'notification:navigate', // Notification click navigates to workspace
+  'notification:navigate', // Notification click navigates to workspace (chief payloads open the sidebar Assistant panel)
   'system:memory-pressure', // Memory pressure level transitioned (normal/warning/critical)
   'app:workspace-operation-requested', // App-level MCP workspace operation request (main → renderer saga)
   // Auto-update events

@@ -13,7 +13,9 @@
  *     settings (`soundEnabled` off = no sound; `soundOnlyWhenUnfocused` on +
  *     document focused = no sound; else play at `volume`).
  *   - `notification:navigate` → `goto(/workspace/{workspaceId})`, guarding
- *     null/missing payloads.
+ *     null/missing payloads. Chief-of-staff payloads (`chief: true` or the
+ *     chief virtual workspace id) open the sidebar Assistant panel and select
+ *     the chat thread instead — the chief workspace page is hidden.
  *   - `system:memory-pressure` → surface a toast on memory pressure level
  *     transitions so users see why background watchers and idle agents paused.
  *
@@ -27,6 +29,11 @@ import { store as appStore } from "$store/renderer/store";
 import type { StoreState } from "../types";
 import { isElectron } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
+import { CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
+import {
+  openPanel,
+  setChiefActiveAgentId,
+} from "$store/renderer/slices/sidebar-nav/sidebar-nav-slice";
 
 const logger = createLogger("NotificationIpcService");
 
@@ -40,6 +47,10 @@ interface NotificationShowEvent {
 /** Payload of `notification:navigate` (sent on notification click). */
 interface NotificationNavigateEvent {
   workspaceId?: string;
+  /** Set for chief-of-staff completions — route to the sidebar Assistant panel. */
+  chief?: boolean;
+  /** Chief chat thread (agent) to select in the Assistant panel. */
+  agentId?: string;
 }
 
 /** Payload of `system:memory-pressure` (sent on pressure level transitions). */
@@ -70,6 +81,20 @@ async function handleNotificationShow(_data?: NotificationShowEvent): Promise<vo
 
 async function handleNotificationNavigate(data?: NotificationNavigateEvent): Promise<void> {
   if (!data?.workspaceId) {
+    return;
+  }
+
+  // Chief-of-staff completions: never navigate to the hidden chief workspace
+  // page — open the sidebar Assistant panel and select the chat thread.
+  if (data.chief === true || data.workspaceId === CHIEF_WORKSPACE_ID) {
+    try {
+      if (data.agentId) {
+        appStore.dispatch(setChiefActiveAgentId(data.agentId));
+      }
+      appStore.dispatch(openPanel("chief"));
+    } catch (error) {
+      logger.warn("Failed to open Assistant panel from notification click", { error });
+    }
     return;
   }
 
