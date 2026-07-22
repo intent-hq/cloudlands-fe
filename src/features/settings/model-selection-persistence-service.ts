@@ -34,6 +34,7 @@ import {
   setSelectedModel,
   setWorkspaceModel,
 } from "$store/renderer/slices/model/model-slice";
+import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
 import { parseCompoundModelId } from "$shared/config/provider-config";
 
 const logger = createLogger("ModelSelectionPersistenceService");
@@ -62,10 +63,24 @@ export function createModelSelectionPersistenceMiddleware(): StoreMiddleware {
             const compoundProviderId = model.includes(":")
               ? parseCompoundModelId(model).providerId
               : "";
+            const activeProviderId =
+              appStore.state.providerSettings.activeProviderId;
             const providerId =
               compoundProviderId.length > 0
                 ? compoundProviderId
-                : appStore.state.providerSettings.activeProviderId;
+                : activeProviderId;
+            // A cross-provider compound pick is an explicit provider choice:
+            // switch the active provider too, so downstream resolution
+            // (resolveOnboardingModel, provider persistence) sees it. The
+            // re-dispatched setActiveProvider is persisted to
+            // `providers.active` (PROTOCOL §5.12) by the provider-settings
+            // persistence middleware.
+            if (
+              compoundProviderId.length > 0 &&
+              compoundProviderId !== activeProviderId
+            ) {
+              appStore.dispatch(setActiveProvider(compoundProviderId));
+            }
             appStore.dispatch(setSelectedModel({ providerId, model }));
           }
           break;

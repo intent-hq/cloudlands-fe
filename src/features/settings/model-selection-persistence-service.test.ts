@@ -84,6 +84,38 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     });
   });
 
+  it("switches the active provider on a cross-provider compound pick and persists providers.active", async () => {
+    const defaultProviderId = getDefaultProviderId();
+    appStore.dispatch(setActiveProvider(defaultProviderId));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    updateSpy.mockClear();
+
+    appStore.dispatch(selectModel("opencode:opencode-go/kimi-k3"));
+    await flush();
+
+    expect(appStore.state.providerSettings.activeProviderId).toBe("opencode");
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [{ path: "providers.active", value: "opencode" }],
+    });
+  });
+
+  it("does NOT dispatch a provider switch on a same-provider compound pick", async () => {
+    appStore.dispatch(setActiveProvider("opencode"));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    updateSpy.mockClear();
+
+    appStore.dispatch(selectModel("opencode:opencode-go/kimi-k3"));
+    await flush();
+
+    expect(appStore.state.providerSettings.activeProviderId).toBe("opencode");
+    const persistedPaths = updateSpy.mock.calls.flatMap(([params]) =>
+      (params as { changes: { path: string }[] }).changes.map((c) => c.path),
+    );
+    expect(persistedPaths).not.toContain("providers.active");
+  });
+
   it("attributes a compound selectModel pick matching the active provider to that provider", async () => {
     appStore.dispatch(setActiveProvider("opencode"));
     appStore.dispatch(loadProviderModelsFromStorage({}));
