@@ -40,6 +40,7 @@ describe('escapeLayers', () => {
     // Drain the stack so this module instance detaches its window listener
     releases.forEach((release) => release());
     releases = [];
+    vi.restoreAllMocks();
   });
 
   it('dispatches Escape only to the topmost layer', () => {
