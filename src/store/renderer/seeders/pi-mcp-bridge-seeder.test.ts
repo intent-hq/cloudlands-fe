@@ -78,6 +78,27 @@ describe('pi-mcp-bridge-seeder', () => {
       expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
     });
 
+    it('rejects an untrusted whitespace-only findBinary path — without running pi list', async () => {
+      routeDaemon({ 'host.findBinary': { available: true, path: '   ' } });
+
+      await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(false);
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
+    });
+
+    it('trims the resolved path before using it as the exec command', async () => {
+      routeDaemon({
+        'host.findBinary': { available: true, path: ' /usr/local/bin/pi \n' },
+        'host.exec': { stdout: 'pi-mcp-adapter 1.2.0\n', stderr: '', exitCode: 0 },
+      });
+
+      await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(true);
+      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
+        command: '/usr/local/bin/pi',
+        args: ['list'],
+        timeoutMs: 10_000,
+      });
+    });
+
     it('resolves false on non-zero exit', async () => {
       routeDaemon({
         'host.findBinary': PI_FOUND,

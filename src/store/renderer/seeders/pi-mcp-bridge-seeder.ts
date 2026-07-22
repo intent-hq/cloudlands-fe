@@ -49,11 +49,15 @@ const CHECK_TIMEOUT_MS = 10_000;
 /** `pi install` downloads from npm (matches pi-resolver's install timeout). */
 const INSTALL_TIMEOUT_MS = 120_000;
 
-/** Resolve the `pi` CLI on the daemon host. Null when absent or RPC fails. */
+/** Resolve the `pi` CLI on the daemon host. Null when absent or RPC fails.
+ * The RPC result is untrusted: only a non-empty string `path` (trimmed) is
+ * accepted as the exec command. */
 async function findPiPath(): Promise<string | null> {
   try {
     const found = await backendRequest<HostCheckResult>('host.findBinary', { name: 'pi' });
-    return found?.available === true && found.path ? found.path : null;
+    if (found?.available !== true || typeof found.path !== 'string') return null;
+    const path = found.path.trim();
+    return path.length > 0 ? path : null;
   } catch {
     return null;
   }
