@@ -1,7 +1,10 @@
 /**
  * Specialist Metadata Tests
  *
- * Verifies that specialist metadata is properly stored and accessible.
+ * Verifies that specialist metadata is properly stored and accessible, and
+ * that the factory lifts the specialist onto the `agent.create` wire request
+ * as top-level `specialistId` (PROTOCOL §5.5 — the daemon does NOT harvest
+ * `metadata.specialist`, so metadata-only would never persist).
  */
 
 import {
@@ -9,29 +12,23 @@ import {
   it,
   expect,
   beforeEach,
+  afterEach,
   vi,
 } from 'vitest';
 
-// AUDIT-P2-12b: agent creation now routes through `appClient.agents.create`
-// (→ daemon `agent.create`, PROTOCOL §5.5) instead of the legacy
-// `AGENT_CHANNELS.CREATE` IPC. Mock the widened seam so the FE-supplied
-// agentId is echoed back per contract.
-vi.mock('$lib/client', () => ({
-  appClient: {
-    agents: {
-      create: vi.fn(async (request: { agentId?: string; workspaceId: string; name?: string }) => ({
-        id: request.agentId ?? 'agent-mock',
-        backendSessionId: null,
-        workspaceId: request.workspaceId,
-        name: request.name ?? 'Mock Agent',
-        status: 'Idle',
-        messages: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })),
-    },
-  },
-}));
+// FAKE transport only: creation routes factory → appClient.agents.create →
+// LiveAgentsClient → backend-transport, so mocking the transport lets these
+// tests assert the exact `agent.create` JSON-RPC params on the wire.
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const mod = await import('../../../../test/mocks/backend-transport.mock');
+  return mod.mockBackendTransportModule;
+});
+
+import {
+  installMockBackend,
+  resetMockBackend,
+  type MockBackendHandle,
+} from '../../../../test/mocks/backend-transport.mock';
 
 vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn().mockResolvedValue({ success: true, data: '' }),
@@ -55,11 +52,38 @@ import type { Workspace } from '$shared/types';
 
 describe('Specialist Metadata', () => {
   let factory: UnifiedAgentFactory;
+  let backend: MockBackendHandle;
+  let created = 0;
 
   beforeEach(() => {
     // Use the singleton instance
     factory = agentFactory;
     vi.clearAllMocks();
+    backend = installMockBackend();
+    // PROTOCOL §5.5 widened response: `{ agent: AgentLite }` with the
+    // daemon-assigned id. The daemon persists top-level `specialistId` and
+    // serves it back on `metadata.specialist` — mirror that here.
+    backend.onRequest('agent.create', (params) => {
+      const p = params as Record<string, unknown>;
+      return {
+        agent: {
+          id: `agent-daemon-${++created}`,
+          workspaceId: p.workspaceId,
+          name: p.name ?? 'Mock Agent',
+          model: p.model,
+          provider: p.provider,
+          status: 'pending',
+          metadata:
+            typeof p.specialistId === 'string' ? { specialist: p.specialistId } : {},
+          createdAt: '2026-07-22T00:00:00.000Z',
+          updatedAt: '2026-07-22T00:00:00.000Z',
+        },
+      };
+    });
+  });
+
+  afterEach(() => {
+    resetMockBackend();
   });
 
   const createMockWorkspace = (id: string): Workspace => ({
@@ -69,6 +93,12 @@ describe('Specialist Metadata', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
   });
+
+  const lastCreateParams = (): Record<string, unknown> => {
+    const req = backend.requests.filter((r) => r.method === 'agent.create').at(-1);
+    expect(req).toBeDefined();
+    return req?.params as Record<string, unknown>;
+  };
 
   it('should store specialist in metadata when provided', async () => {
     const workspace = createMockWorkspace('specialist-1');
@@ -84,6 +114,36 @@ describe('Specialist Metadata', () => {
 
     expect(result.success).toBe(true);
     expect(result.agent?.metadata?.specialist).toBe('implementor');
+  });
+
+  it('sends the specialist as top-level specialistId on the agent.create wire request', async () => {
+    // Regression: the specialist-picker path only carried the specialist in
+    // `metadata`, which the daemon never harvests — the session persisted
+    // with no specialist and the UI fell back to "General" after refetch.
+    const workspace = createMockWorkspace('specialist-wire-1');
+    const result = await factory.createAgent(workspace, {
+      name: 'PR Shepherd 2',
+      workspaceId: workspace.id,
+      metadata: { specialist: 'pr-shepherd' },
+    });
+
+    expect(result.success).toBe(true);
+    const params = lastCreateParams();
+    expect(params.specialistId).toBe('pr-shepherd');
+    expect(params.metadata).toMatchObject({ specialist: 'pr-shepherd' });
+    // Daemon-assigned id is adopted from the PROTOCOL-shaped response.
+    expect(result.agent?.id).toMatch(/^agent-daemon-/);
+  });
+
+  it('omits specialistId from the agent.create wire request when no specialist is chosen', async () => {
+    const workspace = createMockWorkspace('specialist-wire-2');
+    const result = await factory.createAgent(workspace, {
+      name: 'Plain Agent',
+      workspaceId: workspace.id,
+    });
+
+    expect(result.success).toBe(true);
+    expect(lastCreateParams()).not.toHaveProperty('specialistId');
   });
 
   it('should handle verifier specialist', async () => {
