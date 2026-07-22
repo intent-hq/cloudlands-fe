@@ -1,5 +1,11 @@
+import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { resolveDevInstance, resolveDevUserDataDirName } from '../resolve-dev-instance';
+import {
+  resolveDevInstance,
+  resolveDevUserDataDirName,
+  resolveUserDataBasePath,
+  USER_DATA_DIR_NAME,
+} from '../resolve-dev-instance';
 
 const ENV_KEYS = ['NODE_ENV', 'DEV_INSTANCE', 'DEV_PORT'] as const;
 
@@ -77,5 +83,25 @@ describe('resolveDevUserDataDirName', () => {
     process.env.NODE_ENV = 'development';
     process.env.DEV_PORT = 'not-a-number';
     expect(resolveDevUserDataDirName()).toBe('cloudlands-dev');
+  });
+});
+
+describe('resolveUserDataBasePath', () => {
+  it('joins the appData path with the intent-cloudlands dir name', () => {
+    expect(resolveUserDataBasePath('/Users/me/Library/Application Support')).toBe(
+      path.join('/Users/me/Library/Application Support', 'intent-cloudlands')
+    );
+  });
+
+  it('uses the exported USER_DATA_DIR_NAME constant', () => {
+    expect(USER_DATA_DIR_NAME).toBe('intent-cloudlands');
+    expect(resolveUserDataBasePath('/base')).toBe(path.join('/base', USER_DATA_DIR_NAME));
+  });
+
+  it('composes with the dev segment to yield intent-cloudlands/cloudlands-dev-PORT', () => {
+    const base = resolveUserDataBasePath('/appdata');
+    expect(path.join(base, 'cloudlands-dev-5190')).toBe(
+      path.join('/appdata', 'intent-cloudlands', 'cloudlands-dev-5190')
+    );
   });
 });
