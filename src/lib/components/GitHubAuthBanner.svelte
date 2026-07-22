@@ -24,11 +24,12 @@
   import {
   selectGitHubAuthIsAuthenticated,
   selectGitHubAuthIsAuthenticating,
-  selectGitHubAuthOauthUrl,
+  selectGitHubAuthDeviceFlow,
   selectGitHubAuthError,
   selectGitHubAuthRequiresDaemonAuth,
 } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
 
   interface Props {
     /** Message shown before auth starts */
@@ -50,7 +51,7 @@
 
   const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
-  const oauthUrl$ = selectGitHubAuthOauthUrl();
+  const deviceFlow$ = selectGitHubAuthDeviceFlow();
   const error$ = selectGitHubAuthError();
   const requiresDaemonAuth$ = selectGitHubAuthRequiresDaemonAuth();
 
@@ -121,6 +122,15 @@
     }
   }
 
+  // A device flow resumed by the store after a reload (§5.27: the flow
+  // survives client refreshes) should render here too — adopt it so the code
+  // card, cancel, and check-now affordances come back.
+  $effect(() => {
+    if (!authStartedHere && $isAuthenticating$ && $deviceFlow$) {
+      authStartedHere = true;
+    }
+  });
+
   // Watch for auth state changes from the store (when polling succeeds)
   $effect(() => {
     if (authStartedHere && $isAuthenticated$) {
@@ -130,8 +140,8 @@
 
   // Check auth status on window focus when waiting for authorization
   $effect(() => {
-    // Only set up listener when we have an OAuth URL displayed (waiting for auth)
-    if (!authStartedHere || !$oauthUrl$) return;
+    // Only set up listener while device-flow codes are displayed (waiting for auth)
+    if (!authStartedHere || !$deviceFlow$) return;
 
     const handleFocus = () => {
       checkAuthStatus();
@@ -143,19 +153,6 @@
     };
   });
 
-  // Poll auth status every 1 second when waiting for authorization
-  $effect(() => {
-    if (!authStartedHere || !$oauthUrl$) return;
-
-    const interval = setInterval(() => {
-      checkAuthStatus();
-    }, 1000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  });
-
   onDestroy(() => {
     if (authStartedHere && $isAuthenticating$) {
       appStore.dispatch(cancelGitHubAuth());
@@ -164,7 +161,7 @@
 
   // Derived state for cleaner template
   const isAuthenticating = $derived(authStartedHere && $isAuthenticating$);
-  const hasOAuthUrl = $derived(authStartedHere && $oauthUrl$);
+  const hasDeviceFlow = $derived(authStartedHere && $deviceFlow$);
   const hasError = $derived(authStartedHere && $error$);
 </script>
 
@@ -195,15 +192,20 @@
         Run <code class="bg-muted px-1 rounded">auggie login</code> in your terminal.
       </p>
     </div>
-  {:else if hasOAuthUrl}
-    <!-- OAuth redirect state -->
-    <div class="py-1.5 px-3 space-y-1" transition:slide={{ axis: 'y', duration: 200 }}>
+  {:else if hasDeviceFlow && $deviceFlow$}
+    <!-- Device-flow state: show the user code + Open GitHub (§5.27) -->
+    <div class="py-1.5 px-3 space-y-2" transition:slide={{ axis: 'y', duration: 200 }}>
       <div class="flex items-center justify-between gap-2">
-        <p class="text-xs text-subtle">Complete authorization in your browser</p>
+        <p class="text-xs text-subtle">Enter this code on GitHub</p>
         <Button variant="ghost-light" size="icon-xs -mt-2 -mr-2" onclick={handleCancel}>
           <Fa icon={faXmark} size="xs" />
         </Button>
       </div>
+      <GitHubDeviceCodeCard
+        userCode={$deviceFlow$.userCode}
+        verificationUri={$deviceFlow$.verificationUri}
+        compact
+      />
       <div class="flex items-center gap-1.5 text-xs text-subtle">
         {#if isCheckingAuth}
           <Fa icon={faSpinner} size="xs" class="animate-spin" />

@@ -51,17 +51,19 @@ export const githubAuthClient = {
   },
 
   /**
-   * Cancel ongoing authentication
+   * Cancel ongoing authentication (daemon-side `github.cancelAuth`).
+   * Returns the seam envelope so callers only clear UI state on success.
    */
-  async cancelAuth(): Promise<void> {
-    await invoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH);
+  async cancelAuth(): Promise<{ success: boolean; error?: string }> {
+    return invoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH);
   },
 
   /**
-   * Clear cached authentication state
+   * Log out (daemon-side `github.revoke`).
+   * Returns the seam envelope so callers only clear UI state on success.
    */
-  async logout(): Promise<void> {
-    await invoke(GITHUB_AUTH_CHANNELS.LOGOUT);
+  async logout(): Promise<{ success: boolean; error?: string }> {
+    return invoke(GITHUB_AUTH_CHANNELS.LOGOUT);
   },
 
   /**

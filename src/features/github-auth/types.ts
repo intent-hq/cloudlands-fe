@@ -6,6 +6,26 @@ export interface GitHubUser {
 }
 
 /**
+ * Where the daemon-owned device flow stands (PROTOCOL §5.27 `deviceFlow.status`).
+ * `pending` = waiting for the user to enter the code; the rest are terminal.
+ */
+export type GitHubDeviceFlowStatus = 'pending' | 'expired' | 'denied' | 'error';
+
+/**
+ * The `deviceFlow` object embedded in `github.authStatus` (§5.27) — the
+ * user-facing codes only, never the `device_code` or a token.
+ */
+export interface GitHubDeviceFlow {
+  status: GitHubDeviceFlowStatus;
+  userCode: string;
+  verificationUri: string;
+  /** Seconds until the codes expire. */
+  expiresIn: number;
+  /** Polling-cadence hint in seconds. */
+  interval: number;
+}
+
+/**
  * GitHub OAuth/PAT configuration status as reported by the daemon.
  */
 export interface GitHubAuthStatus {
@@ -13,6 +33,8 @@ export interface GitHubAuthStatus {
   oauthUrl: string;
   configuredButNeedsUpdate: boolean;
   updatedScopes: string;
+  /** In-flight (or last-terminal) device flow; null when none (§5.27). */
+  deviceFlow?: GitHubDeviceFlow | null;
 }
 
 /**
@@ -36,12 +58,24 @@ export interface StartAuthResult {
   error?: string;
   /** True if user is already authenticated with GitHub */
   alreadyAuthenticated?: boolean;
-  /** OAuth URL to redirect user to for authentication */
+  /**
+   * Device-flow verification URI (§5.27) — where the user enters `userCode`
+   * (usually https://github.com/login/device). Not a browser-redirect OAuth
+   * URL; mirrors `verificationUri` for FE shape parity.
+   */
   oauthUrl?: string;
   /** True if GitHub is configured but needs scope update */
   needsScopeUpdate?: boolean;
   /** New scopes that need to be authorized */
   updatedScopes?: string;
+  /** Device-flow code the user enters at `verificationUri` (§5.27 `github.connect`). */
+  userCode?: string;
+  /** Where the user enters `userCode` (usually https://github.com/login/device). */
+  verificationUri?: string;
+  /** Seconds until the codes expire. */
+  expiresIn?: number;
+  /** Polling-cadence hint in seconds. */
+  interval?: number;
 }
 
 /**
@@ -58,8 +92,17 @@ export interface GitHubAuthState {
   needsScopeUpdate?: boolean;
   /** New scopes that need to be authorized */
   updatedScopes?: string;
-  /** OAuth URL for authentication */
+  /**
+   * While a device flow is pending this carries the verification URI where
+   * the user enters the code (§5.27 `authStatus.oauthUrl`); empty otherwise.
+   * Not a browser-redirect OAuth URL.
+   */
   oauthUrl?: string;
+  /**
+   * Still-pending device flow from `github.authStatus` (§5.27) so a
+   * reconnecting client resumes the in-flight flow after a refresh.
+   */
+  deviceFlow?: GitHubDeviceFlow | null;
 }
 
 /**

@@ -13,11 +13,12 @@
   import {
   selectGitHubAuthIsAuthenticated,
   selectGitHubAuthIsAuthenticating,
-  selectGitHubAuthOauthUrl,
+  selectGitHubAuthDeviceFlow,
   selectGitHubAuthUser,
   selectGitHubAuthError,
   selectGitHubAuthRequiresDaemonAuth,
 } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */
@@ -30,6 +31,7 @@
 
   const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
+  const deviceFlow$ = selectGitHubAuthDeviceFlow();
   const user$ = selectGitHubAuthUser();
   const error$ = selectGitHubAuthError();
   const requiresDaemonAuth$ = selectGitHubAuthRequiresDaemonAuth();
@@ -44,8 +46,8 @@
     const handleFocus = () => {
       const state = appStore.state;
       const isAuthenticating = selectGitHubAuthIsAuthenticating.select(state);
-      const oauthUrl = selectGitHubAuthOauthUrl.select(state);
-      if (isAuthenticating && oauthUrl) {
+      const deviceFlow = selectGitHubAuthDeviceFlow.select(state);
+      if (isAuthenticating && deviceFlow) {
         appStore.dispatch(checkGitHubAuthStatus());
       }
     };
@@ -73,6 +75,7 @@
   }
 </script>
 
+<div class="space-y-2">
 <div class="flex items-start justify-between gap-4">
   <div class="space-y-1">
     <div class="flex items-center gap-2">
@@ -129,4 +132,15 @@
       <span class="text-xs text-subtle">Requires daemon authentication</span>
     {/if}
   </div>
+</div>
+
+{#if $isAuthenticating$ && $deviceFlow$}
+  <div class="pl-6 max-w-xs">
+    <GitHubDeviceCodeCard
+      userCode={$deviceFlow$.userCode}
+      verificationUri={$deviceFlow$.verificationUri}
+      compact
+    />
+  </div>
+{/if}
 </div>
