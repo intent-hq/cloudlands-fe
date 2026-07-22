@@ -11,6 +11,7 @@
   import Fa from 'svelte-fa';
   import Portal from './Portal.svelte';
   import Button from './button/button.svelte';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   interface Props {
     open?: boolean;
@@ -80,20 +81,10 @@
     }
   }
 
-  // Global keydown listener for Escape key
+  // Escape layer: only the topmost overlay handles Escape
   $effect(() => {
     if (!open) return;
-
-    function handleGlobalKeydown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        close();
-      }
-    }
-
-    window.addEventListener('keydown', handleGlobalKeydown, { capture: true });
-    return () => window.removeEventListener('keydown', handleGlobalKeydown, { capture: true });
+    return pushEscapeLayer(close);
   });
 
   // Focus management: move focus into dialog on open
