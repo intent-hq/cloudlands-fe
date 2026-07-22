@@ -80,7 +80,7 @@ export interface WorkspaceInitializerOnboardingFormState {
   setupScript?: string;
   setupScriptName?: string;
   isCustomSetupScript?: boolean;
-  step?: "welcome" | "project" | "configuring" | "ready";
+  step?: "welcome" | "github" | "project" | "configuring" | "ready";
 }
 
 export interface WorkspaceInitializerHydrationState {

@@ -45,6 +45,7 @@
   import AgentGrid from '$features/onboarding/messages/AgentGrid.svelte';
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
+  import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
 
   import { Button } from '$lib/components/ui/button';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
@@ -353,18 +354,21 @@
   // Onboarding Derived State
   // ============================================================================
 
-  const ONBOARDING_STEP_ORDER = ['welcome', 'project', 'configuring', 'ready'] as const;
+  const ONBOARDING_STEP_ORDER = ['welcome', 'github', 'project', 'configuring', 'ready'] as const;
   const onboardingStepIndex = $derived(
     ONBOARDING_STEP_ORDER.indexOf($onboardingStep$ as (typeof ONBOARDING_STEP_ORDER)[number]),
   );
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
+  const isGitHubStep = $derived($onboardingStep$ === 'github');
   const isProjectStep = $derived($onboardingStep$ === 'project');
   const isConfiguringStep = $derived(
     $onboardingStep$ === 'configuring' || $onboardingStep$ === 'ready',
   );
-  const showStartWorking = $derived(onboardingStepIndex >= 2);
-  const onboardingVisibleStep = $derived(isConfiguringStep ? 3 : isProjectStep ? 2 : 1);
-  const ONBOARDING_TOTAL_STEPS = 3;
+  const showStartWorking = $derived(onboardingStepIndex >= 3);
+  const onboardingVisibleStep = $derived(
+    isConfiguringStep ? 4 : isProjectStep ? 3 : isGitHubStep ? 2 : 1,
+  );
+  const ONBOARDING_TOTAL_STEPS = 4;
 
   // ============================================================================
   // Mount: Reset onboarding state
@@ -601,6 +605,10 @@
     if (active?.closest('.xterm')) return;
 
     if (isWelcomeStep && hasConnectedProvider) {
+      e.preventDefault();
+      appStore.dispatch(goToStep('github'));
+    } else if (isGitHubStep) {
+      // Continue when connected, skip otherwise — both advance to project.
       e.preventDefault();
       appStore.dispatch(goToStep('project'));
     } else if (isProjectStep && projectSelection?.isValid) {
@@ -912,7 +920,7 @@
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                             onclick={() =>
                               appStore.dispatch(
-                                goToStep(onboardingVisibleStep === 3 ? 'project' : 'welcome'),
+                                goToStep(ONBOARDING_STEP_ORDER[onboardingVisibleStep - 2]),
                               )}
                             aria-label="Go back to previous step"
                           >
@@ -937,8 +945,21 @@
                             </p>
                           </div>
                         </div>
-                      {:else if isProjectStep}
+                      {:else if isGitHubStep}
                         <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 2">
+                          <div class="space-y-3">
+                            <h2 class="text-5xl font-semibold tracking-tight leading-tight">
+                              Connect GitHub
+                            </h2>
+                            <p class="text-lg text-muted-foreground">
+                              Push changes and create pull requests directly from workspaces.
+                              <br />
+                              This is optional — you can also connect later from Settings.
+                            </p>
+                          </div>
+                        </div>
+                      {:else if isProjectStep}
+                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 3">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
                               What project should we work on?
@@ -949,7 +970,7 @@
                           </div>
                         </div>
                       {:else}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 3">
+                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 4">
                           <div class="space-y-6">
                             <h2 class="text-5xl font-semibold tracking-tighter">
                               What should we build first?
@@ -981,7 +1002,7 @@
                             size="xl"
                             variant={!hasConnectedProvider ? 'outline' : 'default'}
                             disabled={!hasConnectedProvider}
-                            onclick={() => appStore.dispatch(goToStep('project'))}
+                            onclick={() => appStore.dispatch(goToStep('github'))}
                           >
                             Let's go
                             {#if hasConnectedProvider}
@@ -993,6 +1014,13 @@
                               Connect at least one agent to continue
                             </p>
                           {/if}
+                        </div>
+                      {:else if isGitHubStep}
+                        <div class="max-w-5xl mx-auto">
+                          <OnboardingGitHubStep
+                            onContinue={() => appStore.dispatch(goToStep('project'))}
+                            onSkip={() => appStore.dispatch(goToStep('project'))}
+                          />
                         </div>
                       {:else if isProjectStep}
                         <div class="max-w-5xl mx-auto">
