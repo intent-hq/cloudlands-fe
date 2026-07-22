@@ -8,10 +8,7 @@
 
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import {
-  onDestroy,
-  onMount,
-} from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
@@ -23,15 +20,16 @@
 
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import {
-  selectOnboardingStep,
-  selectOnboardingState,
-} from '$store/renderer/slices/onboarding/onboarding-selectors';
+    selectOnboardingStep,
+    selectOnboardingState,
+  } from '$store/renderer/slices/onboarding/onboarding-selectors';
   import {
-  goToStep,
-  setProjectConfig,
-  setOnboardingWorkspaceId,
-  resetOnboarding,
-} from '$store/renderer/slices/onboarding/onboarding-slice';
+    goToStep,
+    setProjectConfig,
+    setOnboardingWorkspaceId,
+    resetOnboarding,
+  } from '$store/renderer/slices/onboarding/onboarding-slice';
+  import { STEP_ORDER as ONBOARDING_STEP_ORDER } from '$store/renderer/slices/onboarding/onboarding-types';
   import { cancelGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticating } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
@@ -58,25 +56,22 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
   import {
-  parseContextMentions,
-  parseFileMentions,
-  parseRuntimeMentions,
-  parseInlineImages,
-  extractLinearIssue,
-  extractSentryIssue,
-} from '$features/onboarding/utils/parse-context-references';
+    parseContextMentions,
+    parseFileMentions,
+    parseRuntimeMentions,
+    parseInlineImages,
+    extractLinearIssue,
+    extractSentryIssue,
+  } from '$features/onboarding/utils/parse-context-references';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
-  import {
-  SETUP_SCRIPT_TEMPLATES,
-  getTemplateContent,
-} from '$features/setup-scripts';
+  import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
   import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
   import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
-  cancelWorkspaceInitializerOnboardingFormStateDebounce,
-  debounceWorkspaceInitializerOnboardingFormState,
-} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+    cancelWorkspaceInitializerOnboardingFormStateDebounce,
+    debounceWorkspaceInitializerOnboardingFormState,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { createLogger } from '$lib/utils/client-logger';
@@ -85,10 +80,10 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { getRandomSuggestions } from '$features/onboarding/utils/prompt-suggestions';
   import {
-  findEmbeddedPRBranch,
-  hasGitHubPRMention,
-  findPRNeedingBranchFetch,
-} from '$features/onboarding/utils/detect-pr-branch';
+    findEmbeddedPRBranch,
+    hasGitHubPRMention,
+    findPRNeedingBranchFetch,
+  } from '$features/onboarding/utils/detect-pr-branch';
   import { store as appStore } from '$store/renderer/store';
   const logger = createLogger('onboarding-page');
 
@@ -109,8 +104,7 @@
     onFadingOutChange: (fadingOut: boolean) => void;
   }
 
-  let { isOnboarding, fadingOut, onHoldActiveChange, onFadingOutChange }: Props =
-    $props();
+  let { isOnboarding, fadingOut, onHoldActiveChange, onFadingOutChange }: Props = $props();
 
   // ============================================================================
   // Onboarding State
@@ -155,8 +149,8 @@
         const response =
           typeof window !== 'undefined' && window.electronAPI
             ? await invoke<any>('git-tracking:get-remote-url', {
-              repoPath: path,
-            })
+                repoPath: path,
+              })
             : undefined;
         if (response?.success && response.data?.owner && response.data?.repo) {
           detectedGitHubOwner = response.data.owner;
@@ -278,9 +272,7 @@
   let isCustomSetupScript = $state(false);
 
   function restoreLastUsedSetupScript(repo: string) {
-    const lastUsed = repo
-      ? selectLastUsedScriptForRepo.select(appStore.state, repo)
-      : undefined;
+    const lastUsed = repo ? selectLastUsedScriptForRepo.select(appStore.state, repo) : undefined;
     if (lastUsed) {
       setupScript = lastUsed.content;
       setupScriptName = lastUsed.name;
@@ -356,10 +348,7 @@
   // Onboarding Derived State
   // ============================================================================
 
-  const ONBOARDING_STEP_ORDER = ['welcome', 'github', 'project', 'configuring', 'ready'] as const;
-  const onboardingStepIndex = $derived(
-    ONBOARDING_STEP_ORDER.indexOf($onboardingStep$ as (typeof ONBOARDING_STEP_ORDER)[number]),
-  );
+  const onboardingStepIndex = $derived(ONBOARDING_STEP_ORDER.indexOf($onboardingStep$));
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
   const isGitHubStep = $derived($onboardingStep$ === 'github');
   const isProjectStep = $derived($onboardingStep$ === 'project');
@@ -775,9 +764,7 @@
       }
 
       if (effectiveModel)
-        appStore.dispatch(
-          setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }),
-        );
+        appStore.dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
       appStore.dispatch(setWorkspaceEntity(workspace));
 
       if (setupScript.trim() && projectSelection.repoPath) {

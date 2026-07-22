@@ -7,7 +7,7 @@
  * Skip), and the onMount hydration dispatch.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/svelte';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
 
 import type { GitHubAuthState } from '$store/renderer/slices/github-auth/github-auth-types';
 
@@ -58,10 +58,12 @@ beforeEach(() => {
 });
 
 describe('OnboardingGitHubStep', () => {
-  it('hydrates auth state on mount (githubAuth/initialize)', () => {
+  it('hydrates auth state on mount (githubAuth/initialize)', async () => {
     render(OnboardingGitHubStep, { props: baseProps() });
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'githubAuth/initialize' }),
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'githubAuth/initialize' }),
+      ),
     );
   });
 
