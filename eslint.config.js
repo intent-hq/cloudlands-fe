@@ -1,3 +1,4 @@
+import { builtinModules } from 'node:module';
 import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
@@ -202,6 +203,44 @@ const componentAsyncDataFetchBaselineIgnorePatterns = componentAsyncDataFetchBas
   file.replaceAll('[', '\\[').replaceAll(']', '\\]'),
 );
 
+// Browser safety: renderer code (src/lib, src/routes, src/store, feature roots)
+// must never import Electron, Node builtins, or main-process (`**/main/**`)
+// subtrees — it has to stay runnable in a plain browser context. Type-only
+// imports are allowed because they are erased at compile time. See
+// docs/MODULE_BOUNDARY_GUIDE.md.
+//
+// Staged rollout: the files below are pre-existing violators — mostly
+// main-process code living at a feature root instead of a `main/` subtree,
+// plus Node-dependent agent-test harness code. They are baselined by omission.
+// TODO: migrate each file (relocate into a `main/` subtree or make it
+// browser-safe) and remove it from this list.
+const rendererBrowserSafetyBaselineFiles = [
+  'src/features/agent/agent-context.ipc.ts',
+  'src/features/agent/testing/agent-test-harness.ts',
+  'src/features/agent/testing/agent-test-runner.ts',
+  'src/features/agent/testing/agent-test-utils.ts',
+  'src/features/agent/testing/prompt-loader.ts',
+  'src/features/cdp/index.ts',
+  'src/features/cdp/tools/get-console-logs-tool.ts',
+  'src/features/cdp/tools/get-dom-tool.ts',
+  'src/features/cdp/tools/hello-cdp-tool.ts',
+  'src/features/cdp/tools/run-script-tool.ts',
+  'src/features/cortex/cortex-acp/cortex-acp.ts',
+  'src/features/deeplink/deep-link-handler.ts',
+  'src/features/diffs/diffs.service.ts',
+  'src/features/error-handling/recovery-manager.ts',
+  'src/features/git-tracking/git-state-manager-registry.ts',
+  'src/features/ipc/ipc-validation.ts',
+  'src/features/mcp/mcp-bridge.ts',
+  'src/features/mcp/servers/git/index.ts',
+  'src/features/mcp/servers/notes/index.ts',
+  'src/features/mcp/servers/workspace/index.ts',
+  'src/features/performance/memory-monitor.ts',
+  'src/features/tools/index.ts',
+];
+
+const nodeBuiltinModules = [...new Set(builtinModules.map((name) => name.replace(/^node:/, '')))];
+
 export default [
   {
     ignores: [
@@ -387,6 +426,53 @@ export default [
           importNames: ['execSync', 'spawnSync', 'execFileSync'],
           message: 'Synchronous child_process calls block the Electron main thread. Use exec/spawn with util.promisify or the execAsync helper instead.',
         }],
+      }],
+    },
+  },
+  // Browser safety for renderer code: no Electron, no Node builtins, no
+  // main-process subtrees. See docs/MODULE_BOUNDARY_GUIDE.md and the
+  // rendererBrowserSafetyBaselineFiles comment above.
+  {
+    files: [
+      'src/lib/**/*.{js,mjs,ts,tsx,svelte}',
+      'src/routes/**/*.{js,mjs,ts,tsx,svelte}',
+      'src/store/**/*.{js,mjs,ts,tsx,svelte}',
+      'src/features/**/*.{js,mjs,ts,tsx,svelte}',
+    ],
+    ignores: [
+      'src/**/main/**',
+      ...productionModuleIgnores,
+      ...rendererBrowserSafetyBaselineFiles,
+    ],
+    plugins: {
+      '@typescript-eslint': typescript,
+    },
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', {
+        paths: [
+          {
+            name: 'electron',
+            message: 'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+            allowTypeImports: true,
+          },
+        ],
+        patterns: [
+          {
+            regex: '^electron/',
+            message: 'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+            allowTypeImports: true,
+          },
+          {
+            regex: `^(node:)?(${nodeBuiltinModules.join('|')})(/|$)`,
+            message: 'Renderer code must stay browser-safe: Node builtins are not available in the browser. Move the logic to the main process or use a browser-safe alternative (docs/MODULE_BOUNDARY_GUIDE.md).',
+            allowTypeImports: true,
+          },
+          {
+            regex: '(^|/)main(/|$)',
+            message: 'Renderer code must never import from a main/ subtree. Extract a shared/browser-safe module or route through IPC instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+            allowTypeImports: true,
+          },
+        ],
       }],
     },
   },
