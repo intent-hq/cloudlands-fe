@@ -24,6 +24,9 @@ export const initialState: DaemonHealthState = {
   stats: null,
   lastUpdated: null,
   polling: false,
+  transport: null,
+  sidecarGaveUp: false,
+  sidecarGaveUpReason: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -31,13 +34,22 @@ export const initialState: DaemonHealthState = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Extra fields carried on backend:status disconnect broadcasts (#439):
+ * sidecar supervisor gave up restarting, plus a human-readable reason.
+ */
+export interface ConnectionStatusExtras {
+  sidecarGaveUp?: boolean;
+  reason?: string;
+}
+
+/**
  * Backend connection status changed (from backend:status IPC events).
  * Payload is ConnectionStatus from json-rpc-client.ts: 'connecting' | 'connected' | 'disconnected'.
- * Optional transport info is additively included when available.
+ * Optional transport info and disconnect extras are additively included when available.
  */
-export const connectionStatusChanged = createAction<[status: string, transport?: BackendTransportInfo]>(
-  'daemonHealth/connectionStatusChanged',
-);
+export const connectionStatusChanged = createAction<
+  [status: string, transport?: BackendTransportInfo, extras?: ConnectionStatusExtras]
+>('daemonHealth/connectionStatusChanged');
 
 /**
  * Heartbeat health check failed while connected (heartbeat timeout/error).
@@ -73,18 +85,31 @@ export const systemStatusFailure = createAction(
 // ---------------------------------------------------------------------------
 
 export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState)
-  .with(connectionStatusChanged, (state, { payload: [status, transport] }) => {
+  .with(connectionStatusChanged, (state, { payload: [status, transport, extras] }) => {
     if (status === 'connected') {
       // Connection established — health moves to 'healthy'.
-      // Update transport info if present (additive).
+      // Update transport info if present (additive) and clear any give-up state.
       return {
         ...state,
         health: 'healthy',
         stats: transport && state.stats ? { ...state.stats, transport } : state.stats,
+        transport: transport ?? state.transport,
+        sidecarGaveUp: false,
+        sidecarGaveUpReason: null,
       };
     } else if (status === 'disconnected' || status === 'connecting') {
       // Connection down or reconnecting — health moves to 'down'.
-      return { ...state, health: 'down' };
+      // Transport is preserved so the daemon-loss UI knows the connection mode.
+      // Once sidecarGaveUp latches it stays set until the next successful connect.
+      return {
+        ...state,
+        health: 'down',
+        transport: transport ?? state.transport,
+        sidecarGaveUp: extras?.sidecarGaveUp ? true : state.sidecarGaveUp,
+        sidecarGaveUpReason: extras?.sidecarGaveUp
+          ? (extras.reason ?? null)
+          : state.sidecarGaveUpReason,
+      };
     }
     return state;
   })

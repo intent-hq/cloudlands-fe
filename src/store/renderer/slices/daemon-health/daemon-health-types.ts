@@ -94,4 +94,17 @@ export interface DaemonHealthState {
   lastUpdated: string | null;
   /** Whether a poll is in flight. */
   polling: boolean;
+  /**
+   * Last-known transport info from backend:get-status / backend:status.
+   * Kept at the top level (unlike stats.transport) so the connection mode
+   * survives disconnects — the daemon-loss UI needs it while health is 'down'.
+   */
+  transport: BackendTransportInfo | null;
+  /**
+   * True when the sidecar supervisor exhausted its restart policy and stopped
+   * restarting the daemon (#439). Cleared on the next successful connect.
+   */
+  sidecarGaveUp: boolean;
+  /** Reason string from the sidecar give-up broadcast, if any. */
+  sidecarGaveUpReason: string | null;
 }

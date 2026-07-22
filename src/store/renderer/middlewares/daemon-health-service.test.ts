@@ -288,6 +288,76 @@ describe('daemon-health-service', () => {
     expect(state.health).toBe('down');
   });
 
+  it('stores sidecarGaveUp + reason from a give-up disconnect broadcast and clears on reconnect', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'connected',
+      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock' } satisfies BackendTransportInfo,
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async (payload: { method?: string }) => {
+      if (payload.method === 'system.status') {
+        return {
+          ok: true,
+          result: {
+            running: true,
+            listenMode: 'uds',
+            transports: ['uds'],
+            port: null,
+            clients: 0,
+            agents: 0,
+            protocolVersion: '2.0',
+            host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+          } as SystemStatusWirePayload,
+        };
+      }
+      return { ok: false, error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' } };
+    });
+
+    // Capture the backend:status listener so we can push follow-up events.
+    let statusHandler:
+      | ((payload: {
+          status: string;
+          transport?: BackendTransportInfo;
+          sidecarGaveUp?: boolean;
+          reason?: string;
+        }) => void)
+      | null = null;
+    window.electronAPI!.on = vi.fn(
+      (channel: string, handler: (payload: { status: string }) => void) => {
+        if (channel === BACKEND.STATUS) statusHandler = handler;
+      },
+    );
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => {
+      expect(appStore.state.daemonHealth.health).toBe('healthy');
+    });
+    expect(appStore.state.daemonHealth.transport?.mode).toBe('sidecar-uds');
+
+    // Give-up disconnect broadcast (#439 shape: status + sidecarGaveUp + reason).
+    statusHandler!({
+      status: 'disconnected',
+      sidecarGaveUp: true,
+      reason: 'restart limit reached',
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.health).toBe('down');
+    expect(appStore.state.daemonHealth.sidecarGaveUp).toBe(true);
+    expect(appStore.state.daemonHealth.sidecarGaveUpReason).toBe('restart limit reached');
+    // Transport survives the disconnect so the UI knows the connection mode.
+    expect(appStore.state.daemonHealth.transport?.mode).toBe('sidecar-uds');
+
+    // Reconnect clears the latched give-up state.
+    statusHandler!({
+      status: 'connected',
+      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock' },
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.health).toBe('healthy');
+    expect(appStore.state.daemonHealth.sidecarGaveUp).toBe(false);
+    expect(appStore.state.daemonHealth.sidecarGaveUpReason).toBeNull();
+  });
+
   it('shows a one-time dismissible warning toast when the transport reports a version mismatch', async () => {
     const mismatchTransport: BackendTransportInfo = {
       mode: 'external-uds',

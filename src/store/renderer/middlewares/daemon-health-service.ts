@@ -138,8 +138,19 @@ function boot(): void {
   if (!api) return;
 
   // Listen for backend:status events (connection status changes).
-  statusListener = (payload: { status: string; transport?: BackendTransportInfo }) => {
-    appStore.dispatch(connectionStatusChanged(payload.status, payload.transport));
+  // Disconnect broadcasts may additionally carry sidecarGaveUp/reason (#439).
+  statusListener = (payload: {
+    status: string;
+    transport?: BackendTransportInfo;
+    sidecarGaveUp?: boolean;
+    reason?: string;
+  }) => {
+    appStore.dispatch(
+      connectionStatusChanged(payload.status, payload.transport, {
+        sidecarGaveUp: payload.sidecarGaveUp,
+        reason: payload.reason,
+      }),
+    );
     maybeNotifyVersionMismatch(payload.transport);
   };
   api.on(BACKEND.STATUS, statusListener);
