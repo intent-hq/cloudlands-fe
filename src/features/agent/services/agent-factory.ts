@@ -757,6 +757,10 @@ export class UnifiedAgentFactory {
         provider, // Provider ID (e.g., 'auggie', 'claude-code', 'codex') from activeProviderStore
         agentType: agent.metadata?.agentType, // Daemon builds system prompt from this
         prompt: behaviorPrompt, // Maps to wire `behaviorPrompt` (AgentCreateRequest.prompt)
+        // Maps to wire `specialistId` (PROTOCOL §5.5) — the daemon persists the
+        // session specialist from the top-level param only; `metadata.specialist`
+        // is NOT harvested, so it must be lifted onto the request here.
+        specialist: agent.metadata?.specialist,
         metadata: agent.metadata,
         workspaceContext: workspaceContext as Record<string, unknown> | undefined,
       };
