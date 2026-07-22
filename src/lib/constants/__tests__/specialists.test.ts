@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { getSpecialistById } from '../specialists';
@@ -42,9 +45,7 @@ describe('SPECIALISTS', () => {
     const chief = getSpecialistById('chief-of-staff');
     expect(chief?.defaultBehaviorPrompt).toMatch(/### NavLink Format/);
     expect(chief?.defaultBehaviorPrompt).toMatch(/ws\.app\.ui\.targets\(\)/);
-    expect(chief?.defaultBehaviorPrompt).toMatch(
-      /\/settings\?tab=setup#utility-default-model/,
-    );
+    expect(chief?.defaultBehaviorPrompt).toMatch(/\/settings\?tab=setup#utility-default-model/);
     expect(chief?.defaultBehaviorPrompt).toMatch(/bare path/i);
     expect(chief?.roleReminder).toMatch(/canonical route/i);
     expect(chief?.roleReminder).toMatch(/hash fragment/i);
@@ -66,5 +67,41 @@ describe('SPECIALISTS', () => {
     expect(chief?.defaultBehaviorPrompt).toMatch(/includeToolCalls: true/);
     expect(chief?.defaultBehaviorPrompt).toMatch(/returned `markdownLink`/);
     expect(chief?.defaultBehaviorPrompt).toContain('intent://local/{workspaceId}/note/{noteId}');
+  });
+
+  it('teaches Chief to wait on cross-workspace agents instead of polling', () => {
+    const chief = getSpecialistById('chief-of-staff');
+    expect(chief?.defaultBehaviorPrompt).toMatch(/## Waiting on Agents Across Workspaces/);
+    expect(chief?.defaultBehaviorPrompt).toContain(
+      'ws.app.agents.waitFor({ agentIds, waitMode? })',
+    );
+    expect(chief?.defaultBehaviorPrompt).toContain(
+      'ws.app.agents.waitFor({ agentIds: ["agent-1111-…", "agent-2222-…"], waitMode: "after_all" })',
+    );
+    expect(chief?.defaultBehaviorPrompt).toMatch(
+      /do not poll[*\s]+`ws\.app\.agents\.list` in a loop/i,
+    );
+    expect(chief?.defaultBehaviorPrompt).toMatch(/one wake per agent as each finishes/i);
+    expect(chief?.defaultBehaviorPrompt).toMatch(
+      /single aggregated wake once all listed agents settle/i,
+    );
+  });
+
+  // The hardcoded SPECIALISTS entry is only the last-resort fallback; the
+  // runtime chief prompt is resolved from the bundled specialist file. Keep
+  // the waitFor guidance present in both so a normal install actually sees it.
+  it('keeps the bundled chief-of-staff file in sync on cross-workspace waiting', () => {
+    const bundled = readFileSync(
+      resolve(__dirname, '../../../../resources/specialists/chief-of-staff.md'),
+      'utf8',
+    );
+    expect(bundled).toMatch(/## Waiting on Agents Across Workspaces/);
+    expect(bundled).toContain('ws.app.agents.waitFor({ agentIds, waitMode? })');
+    expect(bundled).toContain(
+      'ws.app.agents.waitFor({ agentIds: ["agent-1111-…", "agent-2222-…"], waitMode: "after_all" })',
+    );
+    expect(bundled).toMatch(/do not poll[*\s]+`ws\.app\.agents\.list` in a loop/i);
+    expect(bundled).toMatch(/one wake per agent as each finishes/i);
+    expect(bundled).toMatch(/single aggregated wake once all listed agents settle/i);
   });
 });

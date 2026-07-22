@@ -21,6 +21,8 @@ import {
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
+import { workspaceService } from '../../workspace/main/workspace.service';
+import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
 
 vi.mock('../../../shared/logger', () => ({
@@ -120,7 +122,7 @@ vi.mock('../../backend/main/backend.ipc', () => ({
 
 const { mockNotificationIsSupported, mockNotificationInstances, mockShowShouldThrow } = vi.hoisted(() => ({
   mockNotificationIsSupported: { value: false },
-  mockNotificationInstances: [] as Array<{ handlers: Record<string, Function>; show: ReturnType<typeof vi.fn> }>,
+  mockNotificationInstances: [] as Array<{ opts?: unknown; handlers: Record<string, Function>; show: ReturnType<typeof vi.fn> }>,
   mockShowShouldThrow: { value: false },
 }));
 
@@ -147,6 +149,7 @@ vi.mock('electron', () => ({
     }
 
     handlers: Record<string, Function> = {};
+    opts?: unknown;
     show = vi.fn(() => {
       if (mockShowShouldThrow.value) {
         throw new Error('show failed');
@@ -154,7 +157,8 @@ vi.mock('electron', () => ({
     });
 
 
-    constructor(_opts?: unknown) {
+    constructor(opts?: unknown) {
+      this.opts = opts;
       mockNotificationInstances.push(this as any);
     }
 
@@ -1064,3 +1068,127 @@ describe('NotificationService fallbacks for workspaces with no open window', () 
   });
 });
 
+describe('NotificationService chief-of-staff special-case', () => {
+  function buildChiefIdleEvent(
+    overrides: Partial<AgentIdleEvent['data']> = {},
+  ): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId: CHIEF_WORKSPACE_ID,
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId: 'chief-agent-1',
+        agentName: 'Morning planning',
+        isBackground: false,
+        ...overrides,
+      } as AgentIdleEvent['data'],
+    } as AgentIdleEvent;
+  }
+
+  function createMockWindow(id: number) {
+    return {
+      id,
+      webContents: { send: vi.fn(), isDestroyed: () => false },
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => false,
+      isDestroyed: () => false,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+    // No window has the chief "workspace" open — the global service falls
+    // back to the focused (or any) window.
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([]);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(undefined);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([] as never);
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
+  });
+
+  it('titles chief notifications "Assistant — <chat name>" without fetching a workspace title', async () => {
+    const onlyWindow = createMockWindow(21);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildChiefIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(1);
+    expect(mockNotificationInstances[0].opts).toEqual({
+      title: 'Assistant — Morning planning',
+      body: 'Finished',
+    });
+    // The chief workspace is virtual — no workspace title lookup.
+    expect(workspaceService.getWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('truncates long chief chat names like existing titles', async () => {
+    const onlyWindow = createMockWindow(22);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
+    const longName = 'a'.repeat(50);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildChiefIdleEvent({ agentName: longName }));
+
+    expect(mockNotificationInstances.length).toBe(1);
+    expect(mockNotificationInstances[0].opts).toEqual({
+      title: `Assistant — ${'a'.repeat(37)}...`,
+      body: 'Finished',
+    });
+  });
+
+  it('click sends notification:navigate with chief flag and agentId (no bare workspace payload)', async () => {
+    const onlyWindow = createMockWindow(23);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildChiefIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(1);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(onlyWindow.show).toHaveBeenCalled();
+    expect(onlyWindow.focus).toHaveBeenCalled();
+    expect(onlyWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+      workspaceId: CHIEF_WORKSPACE_ID,
+      chief: true,
+      agentId: 'chief-agent-1',
+    });
+  });
+
+  it('non-chief clicks keep the bare { workspaceId } payload (regression)', async () => {
+    const onlyWindow = createMockWindow(24);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle({
+      type: 'agent:idle',
+      workspaceId: 'workspace-1',
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId: 'agent-self',
+        agentName: 'Self Agent',
+        isBackground: false,
+      },
+    } as AgentIdleEvent);
+
+    expect(mockNotificationInstances.length).toBe(1);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(onlyWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+      workspaceId: 'workspace-1',
+    });
+  });
+});

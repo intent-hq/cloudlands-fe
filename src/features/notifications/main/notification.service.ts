@@ -20,7 +20,7 @@ import {
   Notification,
 } from 'electron';
 import { Logger } from '../../../shared/logger';
-import { WorkspaceId } from '../../../shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
 import type {
   ConnectionStatus,
@@ -398,7 +398,7 @@ export class NotificationService {
         workspaceWindows[0] ??
         BrowserWindow.getFocusedWindow() ??
         BrowserWindow.getAllWindows()[0];
-      this.showNotification(content, focusWindow ?? undefined, workspaceId);
+      this.showNotification(content, focusWindow ?? undefined, workspaceId, event.data.agentId);
     } catch (error) {
       logger.error('Failed to handle agent:idle event', error as Error);
     }
@@ -410,6 +410,19 @@ export class NotificationService {
    */
   private async buildNotificationContent(event: AgentIdleEvent): Promise<NotificationContent> {
     const { specialist, taskTitle } = event.data;
+
+    // Chief-of-staff completions: the chief "workspace" is a hidden virtual
+    // workspace, so title with the chat thread name instead of
+    // "<workspaceTitle> - <specialist>".
+    if (event.workspaceId === CHIEF_WORKSPACE_ID) {
+      const chatName = event.data.agentName;
+      const truncatedChatName =
+        chatName && chatName.length > 40 ? `${chatName.slice(0, 37)}...` : chatName;
+      return {
+        title: truncatedChatName ? `Assistant — ${truncatedChatName}` : 'Assistant',
+        body: taskTitle ? 'Task completed' : 'Finished',
+      };
+    }
 
     // Get display name for the agent type
     const displayName = getSpecialistDisplayName(specialist);
@@ -480,7 +493,12 @@ export class NotificationService {
   /**
    * Show a desktop notification
    */
-  private showNotification(content: NotificationContent, mainWindow?: BrowserWindow, workspaceId?: string): void {
+  private showNotification(
+    content: NotificationContent,
+    mainWindow?: BrowserWindow,
+    workspaceId?: string,
+    agentId?: string,
+  ): void {
     try {
       // Check if notifications are supported
       if (!Notification.isSupported()) {
@@ -516,7 +534,14 @@ export class NotificationService {
           mainWindow.show();
           mainWindow.focus();
           if (workspaceId && !mainWindow.webContents.isDestroyed()) {
-            mainWindow.webContents.send('notification:navigate', { workspaceId });
+            // Chief completions route to the sidebar Assistant panel (the
+            // chief workspace page is hidden); everything else keeps the
+            // bare `{ workspaceId }` payload.
+            const payload =
+              workspaceId === CHIEF_WORKSPACE_ID
+                ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
+                : { workspaceId };
+            mainWindow.webContents.send('notification:navigate', payload);
           }
         }
       });

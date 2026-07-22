@@ -43,6 +43,11 @@ vi.mock('svelte-sonner', () => ({
 
 // Import after mocking
 import { createNotificationIpcMiddleware } from './notification-ipc-service';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import {
+  openPanel,
+  setChiefActiveAgentId,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
 describe('createNotificationIpcMiddleware', () => {
   let mockOn: ReturnType<typeof vi.fn>;
@@ -172,6 +177,62 @@ describe('createNotificationIpcMiddleware', () => {
       const { navigateHandler } = setupMiddleware();
 
       await expect(navigateHandler({ workspaceId: 'ws-123' })).resolves.toBeUndefined();
+    });
+
+    describe('chief-of-staff payloads', () => {
+      it('opens the Assistant panel and selects the thread instead of navigating', async () => {
+        const { navigateHandler } = setupMiddleware();
+
+        await navigateHandler({
+          workspaceId: CHIEF_WORKSPACE_ID,
+          chief: true,
+          agentId: 'chief-agent-1',
+        });
+
+        expect(mockAppStore.dispatch).toHaveBeenCalledWith(setChiefActiveAgentId('chief-agent-1'));
+        expect(mockAppStore.dispatch).toHaveBeenCalledWith(openPanel('chief'));
+        expect(goto).not.toHaveBeenCalled();
+      });
+
+      it('opens the Assistant panel without thread selection when agentId is missing', async () => {
+        const { navigateHandler } = setupMiddleware();
+
+        await navigateHandler({ workspaceId: CHIEF_WORKSPACE_ID, chief: true });
+
+        expect(mockAppStore.dispatch).toHaveBeenCalledTimes(1);
+        expect(mockAppStore.dispatch).toHaveBeenCalledWith(openPanel('chief'));
+        expect(goto).not.toHaveBeenCalled();
+      });
+
+      it('treats the chief virtual workspace id as chief even without the flag', async () => {
+        const { navigateHandler } = setupMiddleware();
+
+        await navigateHandler({ workspaceId: CHIEF_WORKSPACE_ID });
+
+        expect(mockAppStore.dispatch).toHaveBeenCalledWith(openPanel('chief'));
+        expect(goto).not.toHaveBeenCalled();
+      });
+
+      it('swallows dispatch failures', async () => {
+        mockAppStore.dispatch.mockImplementationOnce(() => {
+          throw new Error('dispatch boom');
+        });
+        const { navigateHandler } = setupMiddleware();
+
+        await expect(
+          navigateHandler({ workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'a-1' }),
+        ).resolves.toBeUndefined();
+        expect(goto).not.toHaveBeenCalled();
+      });
+
+      it('non-chief payloads still navigate to the workspace route (regression)', async () => {
+        const { navigateHandler } = setupMiddleware();
+
+        await navigateHandler({ workspaceId: 'ws-regular' });
+
+        expect(goto).toHaveBeenCalledWith('/workspace/ws-regular');
+        expect(mockAppStore.dispatch).not.toHaveBeenCalled();
+      });
     });
   });
 
