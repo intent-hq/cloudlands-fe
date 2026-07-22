@@ -30,6 +30,7 @@
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import {
   isAbsolutePath,
   toNativePath,
@@ -109,6 +110,10 @@
   }: Props = $props();
 
   const logger = createLogger('WorkspaceActionsMenu');
+
+  // External editors / "Choose app" are Electron-only; on web only copy
+  // actions are offered.
+  const canOpenExternalEditors = hasCapability('externalEditors');
 
   const installedEditors$ = selectInstalledEditorsFiltered();
 
@@ -586,49 +591,51 @@
 
 <div class="w-full overflow-hidden">
   {#if showFileActions}
-    <!-- Open Actions - dynamically rendered based on installed editors -->
-    <div class="space-y-0.5">
-      {#each $installedEditors$ as editor (editor.id)}
-        {@const IconComponent = EDITOR_ICONS[editor.id]}
+    {#if canOpenExternalEditors}
+      <!-- Open Actions - dynamically rendered based on installed editors -->
+      <div class="space-y-0.5">
+        {#each $installedEditors$ as editor (editor.id)}
+          {@const IconComponent = EDITOR_ICONS[editor.id]}
+          <Button
+            variant="ghost"
+            onclick={() => openInEditor(editor)}
+            class="w-full min-w-0 justify-start"
+            size="sm"
+          >
+            {#if editor.iconBase64}
+              <!-- Use dynamic icon extracted from app bundle -->
+              <img
+                src="data:image/png;base64,{editor.iconBase64}"
+                alt={editor.name}
+                class="w-4 h-4 mr-1.5"
+              />
+            {:else if IconComponent}
+              <IconComponent size={12} class="mr-1.5" />
+            {:else if editor.category === 'terminal'}
+              <Fa icon={faTerminal} size="12" class="mr-1.5 opacity-50" />
+            {:else if editor.category === 'finder'}
+              <Fa icon={faFolder} size="12" class="mr-1.5 opacity-50" />
+            {:else}
+              <Fa icon={faCode} size="12" class="mr-1.5 opacity-50" />
+            {/if}
+            <span class="truncate" title="Open in {editor.name}">Open in {editor.name}</span>
+          </Button>
+        {/each}
+
+        <!-- Other... option to pick any app -->
         <Button
           variant="ghost"
-          onclick={() => openInEditor(editor)}
-          class="w-full min-w-0 justify-start"
+          onclick={openWithOther}
+          class="w-full min-w-0 justify-start text-subtle"
           size="sm"
         >
-          {#if editor.iconBase64}
-            <!-- Use dynamic icon extracted from app bundle -->
-            <img
-              src="data:image/png;base64,{editor.iconBase64}"
-              alt={editor.name}
-              class="w-4 h-4 mr-1.5"
-            />
-          {:else if IconComponent}
-            <IconComponent size={12} class="mr-1.5" />
-          {:else if editor.category === 'terminal'}
-            <Fa icon={faTerminal} size="12" class="mr-1.5 opacity-50" />
-          {:else if editor.category === 'finder'}
-            <Fa icon={faFolder} size="12" class="mr-1.5 opacity-50" />
-          {:else}
-            <Fa icon={faCode} size="12" class="mr-1.5 opacity-50" />
-          {/if}
-          <span class="truncate" title="Open in {editor.name}">Open in {editor.name}</span>
+          <Fa icon={faUpRightFromSquare} size="12" class="ml-1.25 mr-2 opacity-50" />
+          <span>Choose app</span>
         </Button>
-      {/each}
+      </div>
 
-      <!-- Other... option to pick any app -->
-      <Button
-        variant="ghost"
-        onclick={openWithOther}
-        class="w-full min-w-0 justify-start text-subtle"
-        size="sm"
-      >
-        <Fa icon={faUpRightFromSquare} size="12" class="ml-1.25 mr-2 opacity-50" />
-        <span>Choose app</span>
-      </Button>
-    </div>
-
-    <div class="my-1 h-px bg-border"></div>
+      <div class="my-1 h-px bg-border"></div>
+    {/if}
 
     <!-- Copy Actions -->
     <div class="space-y-0.5">

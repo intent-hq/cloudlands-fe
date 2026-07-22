@@ -2,6 +2,7 @@
   import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
   import type { SentryIssueResult } from '$store/renderer/slices/sentry-auth/sentry-auth-types';
   import { createLogger } from '$lib/utils/client-logger';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { invoke } from '$shared/generated/ipc-client';
 
   const preloadLogger = createLogger('IssueSuggestions:preload');
@@ -648,7 +649,7 @@
         return;
       }
 
-      if (typeof window !== 'undefined' && window.electronAPI) {
+      if (isElectronPlatform()) {
         const cacheKey = `${repositoryOwner}/${repositoryName}`;
         const hasCachedData =
           isCacheValid(issueCache.github) &&
@@ -812,7 +813,7 @@
         return;
       }
 
-      if (typeof window !== 'undefined' && window.electronAPI) {
+      if (isElectronPlatform()) {
         // 1. Check cache first - show cached data immediately for snappy UI
         const cachedPRs = getCachedPRs(repositoryOwner, repositoryName, filter);
         if (cachedPRs) {
@@ -935,7 +936,7 @@
     let sourceBranch = pr.sourceBranch;
     let targetBranch = pr.targetBranch;
 
-    if (!sourceBranch && typeof window !== 'undefined' && window.electronAPI) {
+    if (!sourceBranch && isElectronPlatform()) {
       try {
         const response = await invoke<any>('git-tracking:get-pull-request', {
           owner: pr.owner,

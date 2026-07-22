@@ -32,6 +32,7 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { isMacPlatform } from '$lib/utils/shortcuts';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { store as appStore } from '$store/renderer/store';
   import {
   selectMcpServersWithStatus,
@@ -135,7 +136,7 @@
   }
 
   async function handleOpenDiagnosticTerminal() {
-    if (!window.electronAPI) {
+    if (!isElectronPlatform()) {
       toast.error('Terminal integration is unavailable in browser mode');
       return;
     }
@@ -243,13 +244,12 @@
       });
 
       try {
-        const result =
-          typeof window !== 'undefined' && window.electronAPI
-            ? await invoke<any>('user-mcp:initiate-oauth', {
-              name: server.name,
-              url: server.url,
-            })
-            : undefined;
+        const result = isElectronPlatform()
+          ? await invoke<any>('user-mcp:initiate-oauth', {
+            name: server.name,
+            url: server.url,
+          })
+          : undefined;
 
         if (result?.success) {
           toast.success('Authentication successful', {

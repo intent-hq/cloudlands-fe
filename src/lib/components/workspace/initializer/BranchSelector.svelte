@@ -1,5 +1,6 @@
 <script lang="ts">
   /* eslint-disable max-lines */
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
@@ -736,7 +737,7 @@
     logger.debug('Fetching branch status', { branchName });
 
     try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
+      if (isElectronPlatform()) {
         // Daemon-backed read (PROTOCOL §5.6): `appClient.git.branchStatus` is
         // the new path-based wire that replaces the legacy `git:getBranchStatus`
         // Electron IPC. The live seam folds transport/gate errors to `null`,

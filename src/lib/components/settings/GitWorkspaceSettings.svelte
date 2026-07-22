@@ -12,6 +12,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import {
   validateBranchPrefix,
   sanitizeBranchPrefix,
@@ -141,7 +142,7 @@
   }
 
   async function selectWorktreesDirectory() {
-    if (window.electronAPI) {
+    if (hasCapability('nativeDialogs')) {
       const result = await invoke<any>('dialog:open', {
         directory: true,
         title: 'Select Worktrees Directory',
@@ -154,7 +155,7 @@
   }
 
   async function selectSshKeyFile() {
-    if (window.electronAPI) {
+    if (hasCapability('nativeDialogs')) {
       const result = await invoke<any>('dialog:open', {
         directory: false,
         title: 'Select SSH Key File',

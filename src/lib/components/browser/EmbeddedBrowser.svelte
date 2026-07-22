@@ -13,6 +13,7 @@
   tick,
 } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { hasCapability } from '$lib/utils/platform-capabilities';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$shared/generated/ipc-client';
@@ -719,7 +720,7 @@
   }
 
   function openExternal() {
-    if (displayUrl && typeof window !== 'undefined' && window.electronAPI) {
+    if (displayUrl && hasCapability('shellIntegration')) {
       void invoke('shell:openExternal', { url: displayUrl });
     }
   }
