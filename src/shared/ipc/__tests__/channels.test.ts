@@ -78,6 +78,7 @@ describe('IPC Channels', () => {
       expect(isValidChannel('agent:backend:cancel-stream')).toBe(false);
       expect(isValidChannel('agent:backend:stop')).toBe(false);
       expect(isValidChannel('agent:backend:get')).toBe(false);
+      expect(isValidChannel('agent:backend:list')).toBe(false);
       expect(isValidChannel('agent:backend:delete')).toBe(false);
       expect(isValidChannel('agent:backend:isActive')).toBe(false);
       expect(isValidChannel('agent:backend:resume')).toBe(false);
@@ -90,7 +91,6 @@ describe('IPC Channels', () => {
 
     it('should keep live agent backend channels valid', () => {
       expect(isValidChannel('agent:backend:stream-message')).toBe(true);
-      expect(isValidChannel('agent:backend:list')).toBe(true);
       expect(isValidChannel('agent:backend:queue-message')).toBe(true);
     });
 

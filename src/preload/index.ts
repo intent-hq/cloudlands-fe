@@ -484,7 +484,6 @@ const ALLOWED_CHANNELS = [
   "recovery:recover-session",
   "recovery:get-stats",
   "agent:backend:stream-message",
-  "agent:backend:list",
   "agent:backend:queue-message",
   "agent:backend:edit-queued",
   "agent:backend:remove-queued",

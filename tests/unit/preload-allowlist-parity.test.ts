@@ -201,10 +201,10 @@ describe('Preload IPC Allowlist Parity', () => {
         expect(isAllowed('agent:backend:stop')).toBe(false);
         expect(isAllowed('agent:backend:get-status')).toBe(false);
         expect(isAllowed('agent:backend:cancel-stream')).toBe(false);
+        expect(isAllowed('agent:backend:list')).toBe(false);
 
         // Still-live backend channels stay allowed.
         expect(isAllowed('agent:backend:stream-message')).toBe(true);
-        expect(isAllowed('agent:backend:list')).toBe(true);
       }
     });
   });

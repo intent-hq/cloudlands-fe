@@ -1084,53 +1084,6 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
   }
 
   /**
-   * List persisted agents for a workspace
-   */
-  async listPersistedAgents(workspaceId: string): Promise<string[]> {
-    try {
-      if (!this.config.persistenceEnabled) {
-        return [];
-      }
-
-      // Check if we're in the main process
-      if (isMainProcess()) {
-        // Direct call to the daemon in main process (PROTOCOL.md §5.5 `agent.list`).
-        const { getBackendClient } = await getNodeModules();
-        if (getBackendClient) {
-          try {
-            const res = (await getBackendClient().request('agent.list', { workspaceId })) as {
-              agents?: Array<{ id: string }>;
-            };
-            return (res?.agents ?? []).map((a) => a.id);
-          } catch (err) {
-            logger.warn('agent.list failed', {
-              workspaceId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            return [];
-          }
-        } else {
-          return [];
-        }
-      } else {
-        // Use IPC from renderer process
-        const invoke = await getInvoke();
-        const result = (await invoke(AGENT_BACKEND_CHANNELS.LIST, { workspaceId })) as {
-          success: boolean;
-          data?: string[];
-        };
-        return result?.success && result?.data ? result.data : [];
-      }
-    } catch (error) {
-      logger.error('[listPersistedAgents] Error listing persisted agents', {
-        workspaceId,
-        error,
-      });
-      return [];
-    }
-  }
-
-  /**
    * Load persisted sessions from disk (backend mode)
    */
   async loadPersistedSessions(workspaceId: string): Promise<number> {

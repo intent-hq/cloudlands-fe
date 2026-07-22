@@ -411,7 +411,6 @@ const ALLOWED_CHANNELS = [
   'recovery:recover-session',
   'recovery:get-stats',
   'agent:backend:stream-message',
-  'agent:backend:list',
   'storage:save',
   'storage:delete',
   'debug:emit-event',

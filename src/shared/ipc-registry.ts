@@ -745,15 +745,12 @@ export const IPC_CHANNELS = {
 
   // Agent Backend
   // The retired request channels (create/get-status/cancel-stream/stop/get/
-  // delete/isActive/resume/check-process/reconnect/resume-stream/
+  // list/delete/isActive/resume/check-process/reconnect/resume-stream/
   // get-checkpoint) were removed with the daemon IPC migration — their flows
   // go through the BackendTransport seam (agent.* daemon RPCs) or were
   // retired without a port.
   AGENT_BACKEND: {
     STREAM_MESSAGE: 'agent:backend:stream-message',
-    // Still invoked by listPersistedAgents() in
-    // features/agent/main/consolidated-backend.service.ts (renderer branch).
-    LIST: 'agent:backend:list',
     // Message queue operations
     QUEUE_MESSAGE: 'agent:backend:queue-message',
     EDIT_QUEUED: 'agent:backend:edit-queued',

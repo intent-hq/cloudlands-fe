@@ -722,12 +722,13 @@ const RETIRED_IPC_CHANNELS: ReadonlySet<string> = new Set([
   'agent:clear-logs',
   // Retired AGENT_BACKEND request channels (T6 removed them from the registry,
   // preload allowlists, and schema/handler registrations; kept:
-  // `agent:backend:stream-message`, `agent:backend:list`, and the queue ops).
+  // `agent:backend:stream-message` and the queue ops).
   'agent:backend:create',
   'agent:backend:get-status',
   'agent:backend:cancel-stream',
   'agent:backend:stop',
   'agent:backend:get',
+  'agent:backend:list',
   'agent:backend:delete',
   'agent:backend:isActive',
   'agent:backend:resume',
