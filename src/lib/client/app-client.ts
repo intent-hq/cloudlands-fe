@@ -1209,13 +1209,36 @@ export interface EventsClient {
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe;
 }
 
+/**
+ * Serialized draft attachment (opaque to the daemon; stored verbatim per
+ * PROTOCOL §5.16 `drafts.*`). FE-authored projection of an image `ContextItem`
+ * — the non-serializable `File` handle is dropped.
+ */
+export interface DraftAttachment {
+  id: string;
+  type: string;
+  label: string;
+  description?: string;
+  path?: string;
+  imageData?: string;
+  imageMimeType?: string;
+}
+
 /** Drafts client for persistent chat input drafts (PROTOCOL §5.16). */
 export interface DraftsClient {
   /** Get the calling client's draft for (workspaceId, agentId), or null if none */
-  get(workspaceId: string, agentId: string): Promise<{ text: string; updatedAt: string } | null>;
+  get(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<{ text: string; attachments?: DraftAttachment[]; updatedAt: string } | null>;
 
-  /** Upsert the calling client's draft (empty text clears it) */
-  set(workspaceId: string, agentId: string, text: string): Promise<{ ok: true; updatedAt: string }>;
+  /** Upsert the calling client's draft (empty text with no attachments clears it) */
+  set(
+    workspaceId: string,
+    agentId: string,
+    text: string,
+    attachments?: DraftAttachment[],
+  ): Promise<{ ok: true; updatedAt: string }>;
 
   /** Delete the calling client's draft (idempotent) */
   clear(workspaceId: string, agentId: string): Promise<{ ok: true }>;
