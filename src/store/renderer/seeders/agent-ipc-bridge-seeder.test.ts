@@ -5,7 +5,10 @@
  * handler that (a) forwards to the canonical daemon JSON-RPC method with the
  * right params (PROTOCOL §5.5), and (b) wraps the daemon response in the
  * envelope the call site expects (IpcResponse for typedInvoke; raw success
- * for stream-message; `{success,data}` for the queue bridges).
+ * for stream-message; CommandResponse for set-model). The queue-quintet
+ * bridges were removed with their last renderer producer (T3/T4) — queue
+ * flows are covered by the `appClient.agents.*` wire-contract tests in
+ * `live-agents-client.test.ts`.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -39,7 +42,7 @@ vi.mock("$lib/client/live/live-support", async (importActual) => {
 });
 
 import { backendRequest } from "$lib/client/live/backend-transport";
-import { mockInvoke, resetMockIpcRouter } from "$shared/ipc-mock-router";
+import { hasMockIpcHandler, mockInvoke, resetMockIpcRouter } from "$shared/ipc-mock-router";
 import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from "$shared/ipc/channels";
 import { validateIpcRequest } from "$shared/ipc/request-validation";
 import { isSuccessResponse } from "$shared/ipc/typed-invoke";
@@ -418,242 +421,17 @@ describe("agent-ipc-bridge-seeder", () => {
     });
   });
 
-  describe("agent:backend:queue-message → daemon agent.queueMessage", () => {
-    it("forwards agentId / content and wraps the result in {success,data:{success,queuedMessage}} for the orchestrator proxy", async () => {
-      // PROTOCOL §5.5: `{ success, queuedMessage }` where QueuedMessage =
-      // `{ id, content, queuedAt, position, imageBlocks? }`. The bridge
-      // must preserve the QueuedMessage shape through the wrap so the
-      // orchestrator's `unwrapIpcResponse` recovers the same data.
-      const queued = { id: "q-1", content: "hi", position: 0, queuedAt: "2026-01-01T00:00:00Z" };
-      mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage: queued });
-
-      const response = await mockInvoke<{
-        success: boolean;
-        data?: { success: boolean; queuedMessage?: typeof queued };
-      }>(AGENT_BACKEND_CHANNELS.QUEUE_MESSAGE, { agentId: "agent-7", content: "hi" });
-
-      expect(mockedRequest).toHaveBeenCalledWith("agent.queueMessage", {
-        agentId: "agent-7",
-        content: "hi",
-      });
-      expect(response).toEqual({ success: true, data: { success: true, queuedMessage: queued } });
-      // The QueuedMessage round-trip is what the FE queued-message UI binds
-      // to; assert each field to catch any envelope-wrapping regression.
-      expect(response.data?.queuedMessage).toEqual(queued);
-    });
-
-    it("returns an error envelope on daemon failure (preserved through the proxy unwrap)", async () => {
-      mockedRequest.mockRejectedValueOnce(new Error("queue blew up"));
-      const response = await mockInvoke<{ success: boolean; error?: { message: string } }>(
-        AGENT_BACKEND_CHANNELS.QUEUE_MESSAGE,
-        { agentId: "agent-7", content: "hi" },
-      );
-      expect(response.success).toBe(false);
-      expect(response.error?.message).toBe("queue blew up");
-    });
-  });
-
-  describe("agent:backend:edit-queued → daemon agent.editQueuedMessage", () => {
-    // The renderer unifiedOrchestrator proxy is retired (T3) — ChatPanel now
-    // calls `appClient.agents.editQueued` directly (see
-    // live-agents-client.test.ts). These tests keep the legacy IPC channel's
-    // wire contract covered for any remaining main-process callers.
-    it("sends {agentId,messageId,content} and wraps the daemon QueuedMessage in {success,data}", async () => {
-      // PROTOCOL §5.5: `{ success, queuedMessage }`, wrapped by the bridge in
-      // the `{success:true, data:<daemonBody>}` envelope.
-      const queued = { id: "q-1", content: "edited", position: 0, queuedAt: "2026-01-01T00:00:00Z" };
-      mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage: queued });
-
-      const response = await mockInvoke<{
-        success: boolean;
-        data?: { success: boolean; queuedMessage?: typeof queued };
-      }>(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, { agentId: "agent-7", messageId: "q-1", content: "edited" });
-
-      expect(mockedRequest).toHaveBeenCalledWith("agent.editQueuedMessage", {
-        agentId: "agent-7",
-        messageId: "q-1",
-        content: "edited",
-      });
-      expect(response).toEqual({ success: true, data: { success: true, queuedMessage: queued } });
-    });
-
-    it("validates required messageId at the bridge boundary (no daemon call)", async () => {
-      const response = await mockInvoke<{ success: boolean; error?: { message: string } }>(
-        AGENT_BACKEND_CHANNELS.EDIT_QUEUED,
-        { agentId: "agent-7", content: "edited" },
-      );
-      expect(mockedRequest).not.toHaveBeenCalled();
-      expect(response.success).toBe(false);
-      expect(response.error?.message).toContain("messageId");
-    });
-
-    it("STAB-27: forwards editing:true (hold) and editing:false (release) to the daemon", async () => {
-      // PROTOCOL §5.5 + agent_ops.rs: `editing` flag holds the message in the
-      // queue (daemon skips it during drain); editing:false triggers self-drain.
-      mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage: { id: "q-1" } });
-      mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage: { id: "q-1" } });
-
-      await mockInvoke(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, {
-        agentId: "agent-7",
-        messageId: "q-1",
-        content: "original",
-        editing: true,
-      });
-      await mockInvoke(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, {
-        agentId: "agent-7",
-        messageId: "q-1",
-        content: "edited content",
-        editing: false,
-      });
-
-      expect(mockedRequest).toHaveBeenNthCalledWith(1, "agent.editQueuedMessage", {
-        agentId: "agent-7",
-        messageId: "q-1",
-        content: "original",
-        editing: true,
-      });
-      expect(mockedRequest).toHaveBeenNthCalledWith(2, "agent.editQueuedMessage", {
-        agentId: "agent-7",
-        messageId: "q-1",
-        content: "edited content",
-        editing: false,
-      });
-    });
-
-    it("STAB-27: omits editing flag when not provided (backward compat)", async () => {
-      mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage: { id: "q-1" } });
-
-      await mockInvoke(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, {
-        agentId: "agent-7",
-        messageId: "q-1",
-        content: "edited",
-      });
-
-      const call = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
-      expect(call).toEqual({ agentId: "agent-7", messageId: "q-1", content: "edited" });
-      expect(Object.keys(call)).not.toContain("editing");
-    });
-  });
-
-  describe("agent:backend:remove-queued → daemon agent.removeQueuedMessage", () => {
-    it("sends {agentId,messageId} and wraps a bare {success:true} daemon body as {success:true,data:{success:true}}", async () => {
-      // PROTOCOL §5.5: daemon returns just `{ success: true }` for remove.
-      // The bridge must always populate `data`, even for a bare success body,
-      // so legacy `{success,data}`-unwrapping callers never silently degrade
-      // to `{success:false}` (the bug iter#2b).
-      mockedRequest.mockResolvedValueOnce({ success: true });
-
-      const response = await mockInvoke<{ success: boolean; data?: { success: boolean } }>(
-        AGENT_BACKEND_CHANNELS.REMOVE_QUEUED,
-        { agentId: "agent-7", messageId: "q-1" },
-      );
-
-      expect(mockedRequest).toHaveBeenCalledWith("agent.removeQueuedMessage", {
-        agentId: "agent-7",
-        messageId: "q-1",
-      });
-      expect(response).toEqual({ success: true, data: { success: true } });
-    });
-
-    it("daemon error becomes the {success:false,error:{message}} envelope", async () => {
-      mockedRequest.mockRejectedValueOnce(new Error("not found"));
-      const response = await mockInvoke<{ success: boolean; error?: { message: string } }>(
-        AGENT_BACKEND_CHANNELS.REMOVE_QUEUED,
-        { agentId: "agent-7", messageId: "q-1" },
-      );
-      expect(response).toEqual({ success: false, error: { message: "not found" } });
-    });
-  });
-
-  describe("agent:backend:force-message → daemon agent.forceMessage", () => {
-    it("forwards workspaceId + optional imageBlocks/noteIds and wraps the daemon body in {success,data}", async () => {
-      // PROTOCOL §5.5: service result; daemon today returns
-      // `{ success, queued:false, messageId }`, wrapped by the bridge.
-      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-9" });
-      const blocks = [{ type: "image", data: "abc", mimeType: "image/png" }];
-      const noteIds = ["note-1", "note-2"];
-
-      const response = await mockInvoke<{
-        success: boolean;
-        data?: { success: boolean; queued: boolean; messageId: string };
-      }>(AGENT_BACKEND_CHANNELS.FORCE_MESSAGE, {
-        agentId: "agent-7",
-        messageId: "msg-9",
-        content: "stop and run this",
-        workspaceId: WORKSPACE_ID,
-        imageBlocks: blocks,
-        noteIds,
-      });
-
-      expect(mockedRequest).toHaveBeenCalledWith("agent.forceMessage", {
-        agentId: "agent-7",
-        messageId: "msg-9",
-        content: "stop and run this",
-        workspaceId: WORKSPACE_ID,
-        imageBlocks: blocks,
-        noteIds,
-      });
-      expect(response).toEqual({
-        success: true,
-        data: { success: true, queued: false, messageId: "msg-9" },
-      });
-    });
-
-    it("validates required workspaceId at the bridge boundary (no daemon call)", async () => {
-      const response = await mockInvoke<{ success: boolean; error?: { message: string } }>(
-        AGENT_BACKEND_CHANNELS.FORCE_MESSAGE,
-        { agentId: "agent-7", messageId: "msg-9", content: "x" },
-      );
-      expect(mockedRequest).not.toHaveBeenCalled();
-      expect(response.success).toBe(false);
-      expect(response.error?.message).toContain("workspaceId");
-    });
-  });
-
-  describe("agent:backend:get-queue → daemon agent.getQueue", () => {
-    it("sends {agentId} and wraps the daemon {success,queue:[QueuedMessage]} body in {success,data}", async () => {
-      // PROTOCOL §5.5: `{ success, queue: QueuedMessage[] }`. Entries may
-      // additionally carry optional opaque `messageMetadata` (e.g. event
-      // wakes tagged `{ type: "event_notification", ... }`) — passed through
-      // untouched. Note: `messageMetadata` on queue entries is pending
-      // contract documentation (the intentd half will add it to PROTOCOL
-      // §5.5); until then this asserts the FE bridge is forward-compatible.
-      const queue = [
-        { id: "q-1", content: "a", position: 0, queuedAt: "2026-01-01T00:00:00Z" },
-        { id: "q-2", content: "b", position: 1, queuedAt: "2026-01-01T00:00:01Z" },
-        {
-          id: "q-3",
-          content: "[WORKSPACE EVENTS] You have been woken up by 1 subscribed event(s)",
-          position: 2,
-          queuedAt: "2026-01-01T00:00:02Z",
-          messageMetadata: {
-            type: "event_notification",
-            eventCount: 1,
-            eventTypes: ["agent:idle"],
-          },
-        },
-      ];
-      mockedRequest.mockResolvedValueOnce({ success: true, queue });
-
-      const response = await mockInvoke<{
-        success: boolean;
-        data?: { success: boolean; queue?: typeof queue };
-      }>(AGENT_BACKEND_CHANNELS.GET_QUEUE, { agentId: "agent-7" });
-
-      expect(mockedRequest).toHaveBeenCalledWith("agent.getQueue", { agentId: "agent-7" });
-      expect(response).toEqual({ success: true, data: { success: true, queue } });
-      // QueuedMessage round-trip — the queued-message UI binds per-field.
-      expect(response.data?.queue).toHaveLength(3);
-      expect(response.data?.queue?.[0]?.id).toBe("q-1");
-      expect(response.data?.queue?.[1]?.position).toBe(1);
-      // messageMetadata survives the bridge unmodified (and stays absent
-      // on entries the daemon sent without it).
-      expect(response.data?.queue?.[2]?.messageMetadata).toEqual({
-        type: "event_notification",
-        eventCount: 1,
-        eventTypes: ["agent:idle"],
-      });
-      expect(response.data?.queue?.[0]?.messageMetadata).toBeUndefined();
+  describe("retired queue-quintet bridges stay removed", () => {
+    it("registers no handler for the queue channels (last renderer producer retired with T3)", () => {
+      // The unifiedOrchestrator proxy was the only renderer producer of these
+      // channels; queue flows now call appClient.agents.* over the live
+      // transport. A re-registered bridge would shadow that seam — any new
+      // invoke call site instead fails the ipc-channel-reconciliation audit.
+      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.QUEUE_MESSAGE)).toBe(false);
+      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.EDIT_QUEUED)).toBe(false);
+      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.REMOVE_QUEUED)).toBe(false);
+      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.FORCE_MESSAGE)).toBe(false);
+      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.GET_QUEUE)).toBe(false);
     });
   });
 

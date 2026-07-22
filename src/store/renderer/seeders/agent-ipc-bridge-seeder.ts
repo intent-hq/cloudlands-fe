@@ -9,19 +9,17 @@
  *    non-`IpcResponse` envelope (spec iter#10).
  *  - `agent:backend:stream-message` (via the chat-send lifecycle) silently
  *    returned undefined → every Send became a no-op.
- *  - `agent:backend:queue-message` / `…edit-queued` / `…remove-queued` /
- *    `…force-message` / `…get-queue` (via the since-retired renderer
- *    `unifiedOrchestrator` proxy) silently returned `{success:false}` from
- *    `unwrapIpcResponse` (spec iter#2 + #2b). ChatPanel now calls
- *    `appClient.agents.*` directly (T3); these bridges remain for any legacy
- *    channel consumers.
+ *
+ * The `agent:backend:queue-message` / `…edit-queued` / `…remove-queued` /
+ * `…force-message` / `…get-queue` bridges were removed once their last
+ * renderer producer (the `unifiedOrchestrator` proxy) was retired in favor
+ * of direct `appClient.agents.*` calls (T3/T4) — the queue flows now hit
+ * the daemon RPCs without a legacy channel hop.
  *
  * Per the integration principle BE = source of truth: each handler forwards
  * to the canonical daemon RPC (`agent.create` / `agent.sendMessage` /
- * `agent.queueMessage` / `agent.editQueuedMessage` /
- * `agent.removeQueuedMessage` / `agent.forceMessage` / `agent.getQueue`,
- * PROTOCOL.md §5.5) and only wraps the raw daemon response in the envelope
- * the call site expects, never synthesizing data.
+ * `agent.setModel`, PROTOCOL.md §5.5) and only wraps the raw daemon
+ * response in the envelope the call site expects, never synthesizing data.
  *
  * Handlers are registered at import time (mirroring the workspaces-seeder
  * `workspace:open` idiom) so the first click → `+` → Coordinator → create
@@ -56,32 +54,6 @@ function readRecord(
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
-}
-
-/**
- * Forward a request to the daemon and wrap the response in the
- * `{success:true, data: <daemonBody>}` envelope legacy `{success,data}`
- * unwrappers expect (they return `result.data` only when both
- * `result.success` AND `result.data` are truthy — so we must always populate
- * `data` even when the daemon body itself is just `{success:true}`).
- *
- * Errors surface as `{success:false, error:{message}}` so the caller's
- * unwrap falls through to its error branch and returns
- * `{success:false, error:<message>}`.
- */
-async function forwardToOrchestrator(
-  method: string,
-  params: Record<string, unknown>,
-): Promise<unknown> {
-  try {
-    const result = await backendRequest<Record<string, unknown>>(method, params);
-    return { success: true, data: result };
-  } catch (error) {
-    return {
-      success: false,
-      error: { message: error instanceof Error ? error.message : String(error) },
-    };
-  }
 }
 
 /**
@@ -237,111 +209,6 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, async (arg) => {
       error: error instanceof Error ? error.message : String(error),
     };
   }
-});
-
-/**
- * `agent:backend:queue-message` → daemon `agent.queueMessage` (PROTOCOL §5.5).
- *
- * Daemon returns `{ success: true, queuedMessage }` where QueuedMessage =
- * `{ id, content, queuedAt, position, imageBlocks? }`. Wrapped in
- * `{success:true, data:<daemonBody>}` so legacy `{success,data}` unwrappers
- * fold back to the original queue-operation shape.
- */
-registerMockIpcHandler(AGENT_BACKEND_CHANNELS.QUEUE_MESSAGE, async (arg) => {
-  const request = asRecord(arg);
-  const agentId = readString(request, "agentId");
-  const content = typeof request.content === "string" ? (request.content as string) : "";
-  if (!agentId) {
-    return { success: false, error: { message: "agentId is required" } };
-  }
-  const params: Record<string, unknown> = { agentId, content };
-  if (Array.isArray(request.imageBlocks)) params.imageBlocks = request.imageBlocks;
-  return forwardToOrchestrator("agent.queueMessage", params);
-});
-
-/**
- * `agent:backend:edit-queued` → daemon `agent.editQueuedMessage`
- * (PROTOCOL §5.5: `{ agentId, messageId, content, editing? }` →
- * `{ success, queuedMessage }`). Wrapped in `{success,data}` for legacy
- * channel consumers (ChatPanel now uses `appClient.agents.editQueued`).
- * STAB-27: editing flag holds the message during edit (daemon skips it in drain).
- */
-registerMockIpcHandler(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, async (arg) => {
-  const request = asRecord(arg);
-  const agentId = readString(request, "agentId");
-  const messageId = readString(request, "messageId");
-  const content = typeof request.content === "string" ? (request.content as string) : "";
-  const editing = typeof request.editing === "boolean" ? request.editing : undefined;
-  if (!agentId || !messageId) {
-    return {
-      success: false,
-      error: { message: "agentId and messageId are required" },
-    };
-  }
-  const payload: Record<string, unknown> = { agentId, messageId, content };
-  if (editing !== undefined) {
-    payload.editing = editing;
-  }
-  return forwardToOrchestrator("agent.editQueuedMessage", payload);
-});
-
-/**
- * `agent:backend:remove-queued` → daemon `agent.removeQueuedMessage`
- * (PROTOCOL §5.5: `{ agentId, messageId }` → service result `{ success }`).
- * Wrapped in `{success,data}` so a bare `{success:true}` daemon body
- * still passes legacy `result.success && result.data` unwraps and yields
- * `{success:true}` to the caller.
- */
-registerMockIpcHandler(AGENT_BACKEND_CHANNELS.REMOVE_QUEUED, async (arg) => {
-  const request = asRecord(arg);
-  const agentId = readString(request, "agentId");
-  const messageId = readString(request, "messageId");
-  if (!agentId || !messageId) {
-    return {
-      success: false,
-      error: { message: "agentId and messageId are required" },
-    };
-  }
-  return forwardToOrchestrator("agent.removeQueuedMessage", { agentId, messageId });
-});
-
-/**
- * `agent:backend:force-message` → daemon `agent.forceMessage` (PROTOCOL §5.5:
- * `{ agentId, messageId, content, workspaceId, imageBlocks?, noteIds? }` →
- * service result; stops the current stream first). Forwards optional
- * `imageBlocks` / `noteIds` only when arrays are supplied.
- */
-registerMockIpcHandler(AGENT_BACKEND_CHANNELS.FORCE_MESSAGE, async (arg) => {
-  const request = asRecord(arg);
-  const agentId = readString(request, "agentId");
-  const messageId = readString(request, "messageId");
-  const workspaceId = readString(request, "workspaceId");
-  const content = typeof request.content === "string" ? (request.content as string) : "";
-  if (!agentId || !messageId || !workspaceId) {
-    return {
-      success: false,
-      error: { message: "agentId, messageId and workspaceId are required" },
-    };
-  }
-  const params: Record<string, unknown> = { agentId, messageId, content, workspaceId };
-  if (Array.isArray(request.imageBlocks)) params.imageBlocks = request.imageBlocks;
-  if (Array.isArray(request.noteIds)) params.noteIds = request.noteIds;
-  return forwardToOrchestrator("agent.forceMessage", params);
-});
-
-/**
- * `agent:backend:get-queue` → daemon `agent.getQueue` (PROTOCOL §5.5:
- * `{ agentId }` → `{ success, queue: QueuedMessage[] }`). Uses the wrapped
- * `{success,data}` form for consistency with the other queue bridges
- * (renderer reads now go through `appClient.agents.getQueue`).
- */
-registerMockIpcHandler(AGENT_BACKEND_CHANNELS.GET_QUEUE, async (arg) => {
-  const request = asRecord(arg);
-  const agentId = readString(request, "agentId");
-  if (!agentId) {
-    return { success: false, error: { message: "agentId is required" } };
-  }
-  return forwardToOrchestrator("agent.getQueue", { agentId });
 });
 
 /**
