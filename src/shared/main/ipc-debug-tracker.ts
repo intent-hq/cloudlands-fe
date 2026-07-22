@@ -248,8 +248,6 @@ class IPCDebugTracker {
       } else if (channel.startsWith('terminal:')) {
         suggestions[channel] =
           'Check src/features/terminal/main/terminal.ipc.ts or terminal-professional.ipc.ts';
-      } else if (channel.startsWith('ssh:')) {
-        suggestions[channel] = 'Check src/features/ssh/main/ssh.ipc.ts';
       } else if (channel.includes('vscode') || channel.includes('jetbrains')) {
         suggestions[channel] = 'Check src/features/ide/main/ide.ipc.ts';
       } else {

@@ -1,18 +1,14 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
-  import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
   import Fa from 'svelte-fa';
   import {
-  faFolder,
-  faKey,
   faInfoCircle,
 } from '@fortawesome/free-solid-svg-icons';
   import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
-  import { hasCapability } from '$lib/utils/platform-capabilities';
   import {
   validateBranchPrefix,
   sanitizeBranchPrefix,
@@ -141,37 +137,6 @@
     }
   }
 
-  async function selectWorktreesDirectory() {
-    if (hasCapability('nativeDialogs')) {
-      const result = await invoke<any>('dialog:open', {
-        directory: true,
-        title: 'Select Worktrees Directory',
-      });
-      if (result?.data && !result.data.canceled && result.data.filePaths?.length > 0) {
-        worktreesLocation = result.data.filePaths[0];
-        await handleSave();
-      }
-    }
-  }
-
-  async function selectSshKeyFile() {
-    if (hasCapability('nativeDialogs')) {
-      const result = await invoke<any>('dialog:open', {
-        directory: false,
-        title: 'Select SSH Key File',
-      });
-      if (result?.data && !result.data.canceled && result.data.filePaths?.length > 0) {
-        let selectedPath = result.data.filePaths[0];
-        // If user selected a .pub file, use the private key (strip .pub extension)
-        if (selectedPath.endsWith('.pub')) {
-          selectedPath = selectedPath.slice(0, -4);
-        }
-        sshKeyPath = selectedPath;
-        await handleSave();
-      }
-    }
-  }
-
   /**
    * Reset Git & Workspace settings to defaults
    */
@@ -211,12 +176,6 @@
           class="flex-1 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
           placeholder="~/intent/workspaces"
         />
-        <button
-          onclick={selectWorktreesDirectory}
-          class="px-2.5 py-1.5 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors text-sm"
-        >
-          <Fa icon={faFolder} />
-        </button>
       </div>
     </div>
   </section>
@@ -241,12 +200,6 @@
           class="flex-1 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
           placeholder="~/.ssh/id_ed25519"
         />
-        <button
-          onclick={selectSshKeyFile}
-          class="px-2.5 py-1.5 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors text-sm"
-        >
-          <Fa icon={faKey} />
-        </button>
       </div>
     </div>
   </section>

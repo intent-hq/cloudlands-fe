@@ -285,63 +285,6 @@ export function off(event: string, _handler: (...args: any[]) => void): void {
 
 // File dialog replacements
 export const dialog = {
-  async open(options?: {
-    directory?: boolean;
-    multiple?: boolean;
-    filters?: Array<{ name: string; extensions: string[] }>;
-    defaultPath?: string;
-    title?: string;
-  }): Promise<string | string[] | null> {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      logger.debug('Invoking dialog:open with options', { hasOptions: !!options });
-      const response = await invoke<any>('dialog:open', options || {});
-      logger.debug('Response received from dialog:open');
-      // Handle both wrapped response format and raw file paths
-      if (response && typeof response === 'object' && 'data' in response) {
-        // Response is wrapped: { success: true, data: { canceled, filePaths } }
-        if (response.data?.canceled) {
-          logger.debug('Dialog was canceled');
-          return null;
-        }
-        const filePaths = response.data?.filePaths;
-        if (!filePaths || filePaths.length === 0) {
-          logger.debug('No file paths returned');
-          return null;
-        }
-        // Return single path if not multiple, array if multiple
-        const result = options?.multiple ? filePaths : filePaths[0];
-        logger.debug('Returning result from dialog:open', { isArray: Array.isArray(result) });
-        return result;
-      }
-      // Response is raw file paths (backward compatibility)
-      logger.debug('Returning raw response from dialog:open');
-      return response;
-    }
-    logger.warn('electronAPI not available for dialog:open');
-    return null;
-  },
-
-  async save(options?: {
-    filters?: Array<{ name: string; extensions: string[] }>;
-    defaultPath?: string;
-    title?: string;
-  }): Promise<string | null> {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      const response = await invoke<any>('dialog:save', options || {});
-      // Handle both wrapped response format and raw file path
-      if (response && typeof response === 'object' && 'data' in response) {
-        // Response is wrapped: { success: true, data: { canceled, filePath } }
-        if (response.data?.canceled) {
-          return null;
-        }
-        return response.data?.filePath || null;
-      }
-      // Response is raw file path (backward compatibility)
-      return response;
-    }
-    return null;
-  },
-
   async message(
     message: string,
     options?: {
@@ -368,9 +311,6 @@ export const shell = {
     await invoke('shell:openExternal', { url });
   },
 };
-
-// File dialog open function for compatibility
-export const open = dialog.open;
 
 // Export as Tauri-compatible modules for easier migration
 export const core = { invoke };

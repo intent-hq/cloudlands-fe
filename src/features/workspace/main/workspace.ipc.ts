@@ -50,10 +50,6 @@ import {
 } from './repo-registry';
 import { initChangeHistory } from './change-history-persistence';
 import { initWorkspaceSettings } from './workspace-settings.service';
-import {
-  sshManager,
-  type SSHConnectionConfig,
-} from '../../../shared/main/ssh-manager';
 
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
 import { deleteEventStoreForWorkspace } from '../../../store/main/slices/workspace-events/sagas/persistence-saga';
@@ -670,35 +666,6 @@ export function setupWorkspaceIPC(): void {
           // but the workspace should be usable immediately
           const monitoringAndGitPromise = (async () => {
             try {
-              // For remote workspaces, keep the SSH connection warmed so later
-              // remote operations reuse it. The legacy deploy+serve step has
-              // retired; the daemon's WSS transport will attach here later.
-              // TODO(P3-5): attach daemon WSS transport via `rpc-${workspace.id}`.
-              if (workspace.environmentConfig?.ssh) {
-                try {
-                  const ssh = workspace.environmentConfig.ssh;
-                  const sshConfig: SSHConnectionConfig = {
-                    host: ssh.host,
-                    port: ssh.port || 22,
-                    username: ssh.user,
-                    privateKeyPath: ssh.key_path,
-                    password: ssh.password,
-                    useAgent: ssh.use_agent,
-                    transport: ssh.transport as 'ssh' | 'websocket' | undefined,
-                    wsUrl: ssh.ws_url,
-                  };
-
-                  const rpcConnectionId = `rpc-${workspace.id}`;
-                  await sshManager.connect(rpcConnectionId, sshConfig);
-                } catch (err) {
-                  // Non-fatal — monitoring will still start; git integration will retry via auto-sync timer
-                  logger.warn('Failed to establish SSH connection during workspace open', {
-                    workspaceId: workspace.id,
-                    error: err instanceof Error ? err.message : String(err),
-                  });
-                }
-              }
-
               const monitoringStart = Date.now();
               logger.info('[WorkspaceIPC] Starting background monitoring for workspace', {
                 workspaceId: id,
@@ -1653,18 +1620,6 @@ export function setupWorkspaceIPC(): void {
       WORKSPACE_CHANNELS.FIND_REPOSITORIES,
     ),
   );
-
-  // Discover repos from editors, CLI agents, and filesystem
-  ipcMain.handle('workspace:discover-repos', async () => {
-    try {
-      const { discoverRepos } = await import('./repo-discovery.service');
-      const repos = await discoverRepos();
-      return { success: true, data: repos };
-    } catch (error) {
-      logger.error('Failed to discover repos', error as Error);
-      return { success: false, data: [] };
-    }
-  });
 
   // Get editor selection
   ipcMain.handle(

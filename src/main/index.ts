@@ -273,7 +273,6 @@ import {
   autoRepairCliSymlink,
 } from '../features/system/main/system.ipc';
 import { cleanupTerminals, setupTerminalIPC } from '../features/terminal/main/terminal.ipc';
-import { setupThirdPartySourcesIPC } from '../features/third-party-sources/main/third-party-sources.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
 import { setupFirstVisitStateIPC } from '../features/workspace/main/first-visit-state.ipc';
 import {
@@ -298,7 +297,6 @@ import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
 import { registerDebugExportHandlers } from '../features/debug-export/main/debug-export.ipc';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
-import { registerSSHHandlers } from '../features/ssh/main/ssh.ipc';
 import { registerWorkspacePRHandlers } from '../features/workspace/main/workspace-pr.ipc';
 import { ipcCleanupManager } from './ipc-cleanup-manager';
 import { resolveAppTitle } from './utils/resolve-app-title.js';
@@ -1283,7 +1281,6 @@ app.whenReady().then(async () => {
 
   registerIDEHandlers(); // Needed for IDE integration
   registerExternalEditorsHandlers(); // Needed for external editor detection and opening
-  registerSSHHandlers(); // Needed for SSH operations
   registerWorkspacePRHandlers(); // Needed for PR operations
   registerMissingAgentHandlers(); // Needed for agent context operations
   registerDeepLinkHandlers(); // Needed for deep link and file operations
@@ -1298,7 +1295,6 @@ app.whenReady().then(async () => {
   setupDroidIPC(); // Needed for droid:get-models
   setupFeatureCodesIPC(); // Feature codes for gating features like Cortex
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
-  setupThirdPartySourcesIPC(); // Needed for sources:list
   setupEventsIPC(); // Needed for events:query
   registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
   registerScriptsHandlers(); // Needed for workspace script management (CRUD, lifecycle, output)
@@ -1352,7 +1348,6 @@ app.whenReady().then(async () => {
     // the renderer reads it directly over the JSON-RPC bridge.
     // setupWorkspaceRulesIPC(); // Already called in critical IPC setup
     // registerSetupScriptsHandlers(); // Already called in critical IPC setup
-    // setupThirdPartySourcesIPC(); // Already called in critical IPC setup
 
     // Setup notification IPC handlers
     setupNotificationIPC();
