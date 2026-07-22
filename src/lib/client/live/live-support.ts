@@ -28,15 +28,21 @@ export function newIdempotencyKey(): string {
 /**
  * Human-readable message for a failed mutation. The daemon maps
  * `Error::Internal` to JSON-RPC -32603 with the hardcoded message
- * "Internal error" and carries the real cause in `error.data`
- * (`BackendError.data`), so when that generic message is all we have, fold the
- * string detail in to keep toasts actionable.
+ * "Internal error" and carries the real cause as a string in `error.data`; the
+ * main-process bridge (`json-rpc-errors.ts`) normalizes that string onto
+ * `data.detail` before it crosses the IPC boundary. When the generic message
+ * is all we have, fold the detail in to keep toasts actionable. A raw string
+ * `data` is handled too for transports that skip the normalization.
  */
 function mutationErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message === "Internal error" && error && typeof error === "object") {
     const data = (error as { data?: unknown }).data;
     if (typeof data === "string" && data.length > 0) return `${message}: ${data}`;
+    if (data && typeof data === "object") {
+      const detail = (data as { detail?: unknown }).detail;
+      if (typeof detail === "string" && detail.length > 0) return `${message}: ${detail}`;
+    }
   }
   return message;
 }
