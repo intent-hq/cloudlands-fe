@@ -12,6 +12,7 @@
 } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   interface Props {
     open?: boolean;
@@ -28,20 +29,11 @@
     onClose?.();
   }
 
-  // Global keydown listener so Escape works even when inputs are focused
+  // Escape layer: works even when inputs are focused, and only the topmost
+  // overlay (e.g. a lightbox opened above this modal) handles Escape
   $effect(() => {
     if (!open) return;
-
-    function handleKeydown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        close();
-      }
-    }
-
-    window.addEventListener('keydown', handleKeydown, { capture: true });
-    return () => window.removeEventListener('keydown', handleKeydown, { capture: true });
+    return pushEscapeLayer(close);
   });
 
   // Focus the form when the modal opens
