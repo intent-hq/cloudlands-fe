@@ -185,10 +185,15 @@ function boot(): void {
   api.on(BACKEND.STATUS, statusListener);
 
   // Fetch initial connection status.
-  void api.invoke(BACKEND.GET_STATUS).then((result: { status: string; transport?: BackendTransportInfo }) => {
-    appStore.dispatch(connectionStatusChanged(result.status, result.transport));
-    maybeNotifyVersionMismatch(result.transport);
-  });
+  void api
+    .invoke(BACKEND.GET_STATUS)
+    .then((result: { status: string; transport?: BackendTransportInfo }) => {
+      appStore.dispatch(connectionStatusChanged(result.status, result.transport));
+      maybeNotifyVersionMismatch(result.transport);
+    })
+    .catch(() => {
+      // Bridge not ready yet — status events + polling converge the state.
+    });
 
   // Start polling.
   startPolling();

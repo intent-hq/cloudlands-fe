@@ -250,7 +250,9 @@ export async function probeDaemonVersion(
       }
     });
 
-    client.on('error', () => finish({ alive: false }));
+    // Per the contract above, anything received counts as alive — a socket
+    // error after partial data (reset mid-frame) is still a live daemon.
+    client.on('error', () => finish({ alive: buffer.length > 0 }));
 
     client.on('end', () => finish({ alive: buffer.length > 0 }));
   });
