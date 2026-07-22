@@ -12,7 +12,13 @@
  * `Omit<AppClient, ...migrated>` and is delegated to by `LiveAppClient` for the
  * remaining domains.
  */
-import type { AppClient, MutationResult, SubscriptionHandler, Unsubscribe } from "../app-client";
+import type {
+  AppClient,
+  DraftAttachment,
+  MutationResult,
+  SubscriptionHandler,
+  Unsubscribe,
+} from "../app-client";
 import * as fx from "./fixtures";
 
 const OK: MutationResult = { success: true };
@@ -34,7 +40,10 @@ function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe 
 }
 
 /** In-memory draft store for mock client. */
-const mockDrafts = new Map<string, { text: string; updatedAt: string }>();
+const mockDrafts = new Map<
+  string,
+  { text: string; attachments?: DraftAttachment[]; updatedAt: string }
+>();
 
 export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly chat: AppClient["chat"] = {
@@ -178,11 +187,16 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
       return mockDrafts.get(`${workspaceId}:${agentId}`) ?? null;
     },
 
-    async set(workspaceId, agentId, text) {
+    async set(workspaceId, agentId, text, attachments) {
       const key = `${workspaceId}:${agentId}`;
       const updatedAt = new Date().toISOString();
-      if (text) {
-        mockDrafts.set(key, { text, updatedAt });
+      const hasAttachments = !!attachments && attachments.length > 0;
+      if (text || hasAttachments) {
+        mockDrafts.set(key, {
+          text,
+          ...(hasAttachments ? { attachments } : {}),
+          updatedAt,
+        });
       } else {
         mockDrafts.delete(key);
       }
