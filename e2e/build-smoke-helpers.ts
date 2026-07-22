@@ -451,10 +451,12 @@ export async function createWorkspaceWithPrompt(
   }
 
   if (onboardingStep === 'github') {
-    // The GitHub connect step is optional — skip it to reach project selection.
-    const skipGitHub = page.getByRole('button', { name: 'Skip for now' }).first();
-    await skipGitHub.waitFor({ state: 'visible', timeout: 10_000 });
-    await skipGitHub.click();
+    // The GitHub connect step is optional — advance to project selection.
+    // Already-authenticated environments render "Continue" instead of
+    // "Skip for now", so accept either button.
+    const advanceGitHub = page.getByRole('button', { name: /Skip for now|Continue/ }).first();
+    await advanceGitHub.waitFor({ state: 'visible', timeout: 10_000 });
+    await advanceGitHub.click();
     await page.locator('[data-onboarding-step="project"]').waitFor({ timeout: 10_000 });
     onboardingStep = 'project';
   }
