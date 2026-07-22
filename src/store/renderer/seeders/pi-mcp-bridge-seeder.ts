@@ -50,8 +50,9 @@ const CHECK_TIMEOUT_MS = 10_000;
 const INSTALL_TIMEOUT_MS = 120_000;
 
 /** Resolve the `pi` CLI on the daemon host. Null when absent; rejects when
- * the RPC itself fails (daemon unreachable), so callers can distinguish
- * "pi is missing" from "the probe never ran". The RPC result is untrusted:
+ * the RPC itself fails (daemon unreachable). The install handler surfaces
+ * that rejection as the real error message, while the bare-boolean check
+ * handler deliberately collapses it to `false`. The RPC result is untrusted:
  * only a non-empty string `path` (trimmed) is accepted as the exec command. */
 async function findPiPath(): Promise<string | null> {
   const found = await backendRequest<HostCheckResult>('host.findBinary', { name: 'pi' });
