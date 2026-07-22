@@ -17,6 +17,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   reduxDispatch: vi.fn(),
+  backendRequest: vi.fn(),
   ipcHandlers: [] as Array<{ channel: string; handler: (data: any) => void }>,
   rafCallbacks: new Map<number, (timestamp: number) => void>(),
   nextRafId: 1,
@@ -26,6 +27,9 @@ vi.mock(
   '$lib/electron-bridge',
   async () => await import('$store/renderer/utils/test-helpers/electron-bridge-mock'),
 );
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
+}));
 vi.mock(
   '$lib/utils/client-logger',
   async () => await import('$store/renderer/utils/test-helpers/client-logger-mock'),
@@ -124,7 +128,6 @@ vi.mock('../utils/streaming-invariants', () => ({
   assertStreamingInvariant: vi.fn(),
 }));
 
-import { invoke } from '$lib/electron-bridge';
 import { buildOrderedContentBlocks } from '$shared/utils/content-block-utils';
 import { errorBoundary } from '../browser';
 import { errorRecovery } from '../browser/services/error-recovery.service';
@@ -301,7 +304,10 @@ describe('Agent Stream Lifecycle Integration', () => {
     ]);
   });
 
-  it('sendMessage chunk handling coalesces fast chunks until animation frame', async () => {
+  it('sendMessage calls agent.sendMessage on the transport without registering a stream listener', async () => {
+    // Streaming for sendMessage turns arrives via the daemon events bridge
+    // (events.subscribe → agent:stream:*), NOT a per-agent `agent:stream:${id}`
+    // Electron listener — sendMessage must not register one.
     const session = {
       id: 'agent-send',
       name: 'Agent Send',
@@ -316,26 +322,22 @@ describe('Agent Stream Lifecycle Integration', () => {
       payload,
       promise: Promise.resolve(session),
     }));
-    vi.mocked(invoke).mockResolvedValue({ success: true });
+    mocks.backendRequest.mockResolvedValue({ success: true, queued: false, messageId: 'm-1' });
 
     await sendMessage('agent-send', 'Hello', { id: 'ws-1', path: '/tmp/ws' } as any);
-    const streamHandler = mocks.ipcHandlers.find(
-      (entry) => entry.channel === 'agent:stream:agent-send',
-    )?.handler;
-    mocks.reduxDispatch.mockClear();
 
-    streamHandler?.({ type: 'chunk', data: 'A', streamId: 'stream-send' });
-    streamHandler?.({ type: 'chunk', data: 'B', streamId: 'stream-send' });
-
-    expect(mocks.reduxDispatch).not.toHaveBeenCalled();
-    flushAnimationFrames();
-    expect(mocks.reduxDispatch).toHaveBeenCalledTimes(1);
-    expect(mocks.reduxDispatch.mock.calls[0][0].payload[0]).toMatchObject({
-      source: 'sendMessage',
-      eventType: 'chunk',
-      chunk: 'AB',
-      streamId: 'stream-send',
-    });
+    expect(mocks.backendRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.backendRequest).toHaveBeenCalledWith(
+      'agent.sendMessage',
+      expect.objectContaining({
+        agentId: 'agent-send',
+        workspaceId: 'ws-1',
+        content: 'Hello',
+      }),
+    );
+    expect(
+      mocks.ipcHandlers.filter((entry) => entry.channel.startsWith('agent:stream:')),
+    ).toHaveLength(0);
   });
 
   it('restored status handling dispatches status updates with timeout context', () => {
@@ -470,18 +472,15 @@ describe('Agent Stream Lifecycle Integration', () => {
       payload,
       promise: Promise.resolve(session),
     }));
-    vi.mocked(invoke).mockResolvedValue({
-      success: true,
-      data: {
-        success: false,
-        error: 'Agent already has an in-flight prompt. Message was not delivered.',
-      },
+    mocks.backendRequest.mockResolvedValue({
+      success: false,
+      error: 'Agent already has an in-flight prompt. Message was not delivered.',
     });
 
     await expect(
       sendMessage('agent-dedup', 'Hello', { id: 'ws-1', path: '/tmp/ws' } as any),
     ).resolves.toBeUndefined();
-    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.backendRequest).toHaveBeenCalledTimes(1);
     expect(errorRecovery.executeWithRecovery).toHaveBeenCalledTimes(1);
     expect(
       mocks.reduxDispatch.mock.calls.some(
