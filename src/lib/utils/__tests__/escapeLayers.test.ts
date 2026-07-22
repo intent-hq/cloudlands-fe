@@ -102,7 +102,7 @@ describe('escapeLayers', () => {
     expect(removeCalls[0]?.[2]).toEqual({ capture: true });
   });
 
-  it('calls preventDefault and stopPropagation on a handled Escape', () => {
+  it('calls preventDefault and stopImmediatePropagation on a handled Escape', () => {
     pushEscapeLayer(vi.fn());
 
     const event = new KeyboardEvent('keydown', {
@@ -110,11 +110,11 @@ describe('escapeLayers', () => {
       bubbles: true,
       cancelable: true,
     });
-    const stopPropagationSpy = vi.spyOn(event, 'stopPropagation');
+    const stopImmediatePropagationSpy = vi.spyOn(event, 'stopImmediatePropagation');
     window.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
-    expect(stopPropagationSpy).toHaveBeenCalledTimes(1);
+    expect(stopImmediatePropagationSpy).toHaveBeenCalledTimes(1);
   });
 
   it('ignores non-Escape keys', () => {

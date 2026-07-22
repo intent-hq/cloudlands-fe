@@ -25,7 +25,7 @@ function handleWindowKeydown(e: KeyboardEvent): void {
   const top = stack[stack.length - 1];
   if (!top) return;
   e.preventDefault();
-  e.stopPropagation();
+  e.stopImmediatePropagation();
   top.onEscape();
 }
 
