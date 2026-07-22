@@ -28,7 +28,6 @@
   faGlobe,
   faPlay,
 } from '@fortawesome/free-solid-svg-icons';
-  import { invoke } from '$lib/electron-bridge';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { createLogger } from '$lib/utils/client-logger';
 

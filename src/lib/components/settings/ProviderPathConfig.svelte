@@ -13,7 +13,6 @@
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import Button from '$lib/components/ui/button/button.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
   const logger = createLogger('ProviderPathConfig');
