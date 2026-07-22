@@ -266,6 +266,63 @@ describe('ModelPicker trigger label regressions', () => {
     expect(text).not.toContain('Auggie Butler');
   });
 
+  it('treats provider-prefixed *:default ids as explicit selections', () => {
+    availableModels$.set([
+      { value: 'auggie:butler', label: 'Auggie Butler' },
+      { value: 'claude-code:default', label: 'Default (recommended)' },
+    ]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'claude-code:default',
+        defaultModelId: 'auggie:butler',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Default (recommended)');
+    expect(text).not.toContain('Auggie Butler');
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+      'claude-code',
+    );
+  });
+
+  it('still renders the default-model fallback label for the bare "default" sentinel', () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'default',
+        defaultModelId: 'auggie:butler',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Auggie Butler');
+    expect(text).not.toContain('Default (recommended)');
+  });
+
+  it('renders the default-model fallback label for undefined and __use_default__ selections', async () => {
+    const { rerender } = render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:butler',
+        isLocked: true,
+      },
+    });
+
+    expect(screen.getByRole('button').textContent ?? '').toContain('Auggie Butler');
+
+    await rerender({
+      selectedModel: '__use_default__',
+      defaultModelId: 'auggie:butler',
+      isLocked: true,
+    });
+    await tick();
+
+    expect(screen.getByRole('button').textContent ?? '').toContain('Auggie Butler');
+  });
+
   it('reacts when the Redux session provider changes without remounting', async () => {
     sessions.set('agent-1', { id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
     sessionVersion$.update((value) => value + 1);
