@@ -30,7 +30,6 @@ import {
 } from "$shared/ipc/channels";
 import {
   wireModelsToProviderModels,
-  withProviderAliasRows,
   type ProviderModelInfo,
   type WireModelsListResult,
 } from "$shared/models/wire-model-info";
@@ -68,7 +67,7 @@ for (const [providerId, channel] of PROVIDER_MODEL_CHANNELS) {
       });
       const envelope: GetModelsEnvelope = {
         success: true,
-        data: withProviderAliasRows(providerId, wireModelsToProviderModels(result)),
+        data: wireModelsToProviderModels(result),
       };
       if (typeof result?.warning === "string" && result.warning) {
         envelope.warning = result.warning;
