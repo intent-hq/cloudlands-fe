@@ -19,10 +19,24 @@ import {
 } from '../agent-factory';
 import type { Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
-import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 
-const { mockStoreDispatch } = vi.hoisted(() => ({
+const { mockStoreDispatch, backendRequestMock } = vi.hoisted(() => ({
   mockStoreDispatch: vi.fn(),
+  backendRequestMock: vi.fn(),
+}));
+
+// Mock the BackendTransport seam: sendInitialMessage() calls
+// backendRequest("agent.sendMessage") directly (PROTOCOL.md §5.5) — no
+// mock-IPC STREAM_MESSAGE hop.
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: backendRequestMock,
+  backendSubscribe: vi.fn(async () => ({})),
+  backendUnsubscribe: vi.fn(async () => {}),
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
+  detectLiveStateCapability: vi.fn(async () => false),
+  isBackendAvailable: () => true,
+  BackendError: class BackendError extends Error {},
 }));
 
 // Mock configured app Store
@@ -74,6 +88,8 @@ describe('UnifiedAgentFactory', () => {
 
   beforeEach(() => {
     factory = UnifiedAgentFactory.getInstance();
+    backendRequestMock.mockReset();
+    backendRequestMock.mockResolvedValue({ success: true, queued: false, messageId: 'm-1' });
     mockWorkspace = {
       id: 'workspace-123' as any,
       title: 'Test Workspace',
@@ -276,12 +292,37 @@ describe('UnifiedAgentFactory', () => {
       expect(result.agent).toBeUndefined();
     });
 
-    it('forwards the optimistic initial user message appMessageId on the backend send (dup-first-message guard)', async () => {
-      const { invoke } = await import('$lib/electron-bridge');
-      const invokeMock = vi.mocked(invoke);
-      invokeMock.mockClear();
-      invokeMock.mockResolvedValue({ success: true } as never);
+    const findSendMessageCall = () =>
+      backendRequestMock.mock.calls.find(([method]) => method === 'agent.sendMessage');
 
+    it('emits agent.sendMessage on the wire with the PROTOCOL.md §5.5 initial-message envelope', async () => {
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Initial Agent',
+        workspaceId: mockWorkspace.id as any,
+        initialMessage: 'Initial prompt',
+      });
+      expect(result.success).toBe(true);
+
+      // The initial-message send is fired after createAgent resolves the
+      // daemon id (fire-and-forget); flush it before asserting.
+      await vi.waitFor(() => {
+        expect(findSendMessageCall()).toBeDefined();
+      });
+
+      const [, params] = findSendMessageCall()! as [string, Record<string, unknown>];
+      expect(params).toMatchObject({
+        agentId: 'agent-daemon-assigned-123',
+        workspaceId: String(mockWorkspace.id),
+        content: 'Initial prompt',
+      });
+      expect(typeof params.userAppMessageId).toBe('string');
+      // Legacy-only fields the daemon ignores must no longer be sent.
+      expect(params).not.toHaveProperty('sessionId');
+      expect(params).not.toHaveProperty('agentName');
+      expect(params).not.toHaveProperty('systemPrompt');
+    });
+
+    it('forwards the optimistic initial user message appMessageId on the backend send (dup-first-message guard)', async () => {
       const result = await factory.createAgent(mockWorkspace, {
         name: 'Initial Agent',
         workspaceId: mockWorkspace.id as any,
@@ -290,36 +331,26 @@ describe('UnifiedAgentFactory', () => {
       expect(result.success).toBe(true);
 
       await vi.waitFor(() => {
-        expect(invokeMock).toHaveBeenCalledWith(
-          AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
-          expect.any(Object),
-        );
+        expect(findSendMessageCall()).toBeDefined();
       });
 
       const addMessageCall = mockStoreDispatch.mock.calls.find(
         ([action]) => action?.type === 'agentSessions/addMessage',
       );
-      const streamMessageCall = invokeMock.mock.calls.find(
-        ([channel]) => channel === AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
-      );
+      const sendMessageCall = findSendMessageCall();
 
       expect(addMessageCall).toBeDefined();
-      expect(streamMessageCall).toBeDefined();
+      expect(sendMessageCall).toBeDefined();
       // The optimistic user message staged in the store and the wire send
       // must share one logical id so the daemon-echoed canonical message
       // merges with the optimistic one instead of rendering twice.
-      const [, streamPayload] = streamMessageCall! as [string, Record<string, unknown>];
+      const [, sendParams] = sendMessageCall! as [string, Record<string, unknown>];
       const [addMessageAction] = addMessageCall! as [{ payload: [string, { appMessageId?: string }] }];
-      expect(streamPayload.userAppMessageId).toBe(addMessageAction.payload[1].appMessageId);
-      expect(streamPayload.userAppMessageId).toBeTruthy();
+      expect(sendParams.userAppMessageId).toBe(addMessageAction.payload[1].appMessageId);
+      expect(sendParams.userAppMessageId).toBeTruthy();
     });
 
     it('honors a caller-owned appMessageId for the initial user message', async () => {
-      const { invoke } = await import('$lib/electron-bridge');
-      const invokeMock = vi.mocked(invoke);
-      invokeMock.mockClear();
-      invokeMock.mockResolvedValue({ success: true } as never);
-
       const appMessageId = 'app_msg_initializer-owned';
       const result = await factory.createAgent(mockWorkspace, {
         name: 'Initial Agent',
@@ -330,31 +361,19 @@ describe('UnifiedAgentFactory', () => {
       expect(result.success).toBe(true);
 
       await vi.waitFor(() => {
-        expect(invokeMock).toHaveBeenCalledWith(
-          AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
-          expect.any(Object),
-        );
+        expect(findSendMessageCall()).toBeDefined();
       });
 
       const addMessageCall = mockStoreDispatch.mock.calls.find(
         ([action]) => action?.type === 'agentSessions/addMessage',
       );
-      const streamMessageCall = invokeMock.mock.calls.find(
-        ([channel]) => channel === AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
-      );
-
-      const [, streamPayload] = streamMessageCall! as [string, Record<string, unknown>];
+      const [, sendParams] = findSendMessageCall()! as [string, Record<string, unknown>];
       const [addMessageAction] = addMessageCall! as [{ payload: [string, { appMessageId?: string }] }];
-      expect(streamPayload.userAppMessageId).toBe(appMessageId);
+      expect(sendParams.userAppMessageId).toBe(appMessageId);
       expect(addMessageAction.payload[1].appMessageId).toBe(appMessageId);
     });
 
     it('ignores an empty caller appMessageId and mints one instead', async () => {
-      const { invoke } = await import('$lib/electron-bridge');
-      const invokeMock = vi.mocked(invoke);
-      invokeMock.mockClear();
-      invokeMock.mockResolvedValue({ success: true } as never);
-
       const result = await factory.createAgent(mockWorkspace, {
         name: 'Initial Agent',
         workspaceId: mockWorkspace.id as any,
@@ -364,26 +383,16 @@ describe('UnifiedAgentFactory', () => {
       expect(result.success).toBe(true);
 
       await vi.waitFor(() => {
-        expect(invokeMock).toHaveBeenCalledWith(
-          AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
-          expect.any(Object),
-        );
+        expect(findSendMessageCall()).toBeDefined();
       });
 
-      const streamMessageCall = invokeMock.mock.calls.find(
-        ([channel]) => channel === AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
-      );
-      const [, streamPayload] = streamMessageCall! as [string, Record<string, unknown>];
-      expect(typeof streamPayload.userAppMessageId).toBe('string');
-      expect((streamPayload.userAppMessageId as string).trim().length).toBeGreaterThan(0);
+      const [, sendParams] = findSendMessageCall()! as [string, Record<string, unknown>];
+      expect(typeof sendParams.userAppMessageId).toBe('string');
+      expect((sendParams.userAppMessageId as string).trim().length).toBeGreaterThan(0);
     });
 
     it('sends the initial message to the daemon-assigned id, only after create resolves', async () => {
       agentsApi.create.mockClear();
-      const { invoke } = await import('$lib/electron-bridge');
-      const invokeMock = vi.mocked(invoke);
-      invokeMock.mockClear();
-      invokeMock.mockResolvedValue({ success: true } as never);
 
       const config: UnifiedAgentConfig = {
         id: 'agent-client-optimistic',
@@ -395,18 +404,58 @@ describe('UnifiedAgentFactory', () => {
       const result = await factory.createAgent(mockWorkspace, config);
       expect(result.success).toBe(true);
 
-      // The initial-message send is fired after createAgent resolves the
-      // daemon id (fire-and-forget); flush it before asserting.
       await vi.waitFor(() => {
-        const streamCall = invokeMock.mock.calls.find(
-          ([channel]) => channel === 'agent:backend:stream-message',
-        );
-        expect(streamCall).toBeDefined();
-        const [, payload] = streamCall! as [string, Record<string, unknown>];
+        const sendCall = findSendMessageCall();
+        expect(sendCall).toBeDefined();
+        const [, params] = sendCall! as [string, Record<string, unknown>];
         // The send targets the DAEMON-assigned id — never the optimistic one —
         // so it can no longer race to `-32602 not found: agent session`.
-        expect(payload.agentId).toBe('agent-daemon-assigned-123');
-        expect(payload.sessionId).toBe('agent-daemon-assigned-123');
+        expect(params.agentId).toBe('agent-daemon-assigned-123');
+      });
+    });
+
+    it('resets the streaming flag on a raw daemon error envelope ({success:false, error:string}) without failing creation', async () => {
+      backendRequestMock.mockResolvedValue({ success: false, error: 'Agent not found' });
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Initial Agent',
+        workspaceId: mockWorkspace.id as any,
+        initialMessage: 'Initial prompt',
+      });
+      // Initial-message failure must not fail agent creation.
+      expect(result.success).toBe(true);
+
+      await vi.waitFor(() => {
+        const streamingReset = mockStoreDispatch.mock.calls.find(
+          ([action]) =>
+            action?.type === 'agentSessions/setAgentStreaming' &&
+            action?.payload?.[0] === 'agent-daemon-assigned-123' &&
+            action?.payload?.[1] === false,
+        );
+        expect(streamingReset).toBeDefined();
+      });
+    });
+
+    it('resets the streaming flag when the transport rejects (BackendError-style JSON-RPC failure)', async () => {
+      backendRequestMock.mockRejectedValue(
+        new Error('Invalid params: content is required (-32602)'),
+      );
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Initial Agent',
+        workspaceId: mockWorkspace.id as any,
+        initialMessage: 'Initial prompt',
+      });
+      expect(result.success).toBe(true);
+
+      await vi.waitFor(() => {
+        const streamingReset = mockStoreDispatch.mock.calls.find(
+          ([action]) =>
+            action?.type === 'agentSessions/setAgentStreaming' &&
+            action?.payload?.[0] === 'agent-daemon-assigned-123' &&
+            action?.payload?.[1] === false,
+        );
+        expect(streamingReset).toBeDefined();
       });
     });
   });

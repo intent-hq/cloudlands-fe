@@ -15,13 +15,12 @@ import type { Workspace, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { Logger } from '$shared/logger';
 import type { WorkspaceId as BrandedWorkspaceId } from '$shared/types/branded-ids';
-import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import { appClient } from '$lib/client';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { generateAgentNameFromText } from '$lib/utils/agent-name-generator';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import {
   addMessage,
-  replaceMessages,
   setAgentStreaming,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -41,17 +40,6 @@ const logger = new Logger('UnifiedAgentFactory');
 
 // Detect if we're running in the backend (Node.js) or frontend (browser)
 const isBackend = typeof window === 'undefined';
-
-// Lazy-loaded frontend modules
-let invokeFunction: any = null;
-
-async function getInvoke() {
-  if (!invokeFunction && !isBackend) {
-    const module = await import('$lib/electron-bridge');
-    invokeFunction = module.invoke;
-  }
-  return invokeFunction;
-}
 
 async function getActiveProviderId(): Promise<string | null> {
   if (isBackend) return null;
@@ -89,7 +77,6 @@ async function getActiveProviderId(): Promise<string | null> {
 // Re-export from shared for backward compatibility
 export type { UnifiedAgentConfig, CreateAgentResult } from '$shared/types/agent.types';
 import type { UnifiedAgentConfig, CreateAgentResult } from '$shared/types/agent.types';
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
 /**
  * Normalized agent configuration with guaranteed name
@@ -576,8 +563,8 @@ export class UnifiedAgentFactory {
           });
 
           // Persistence of the initial user message is owned by the daemon;
-          // the follow-up sendInitialMessage(...) call (STREAM_MESSAGE →
-          // agent.sendMessage / chat.request) drives the daemon-side record.
+          // the follow-up sendInitialMessage(...) call (`agent.sendMessage`,
+          // PROTOCOL.md §5.5) drives the daemon-side record.
         }
       }
 
@@ -819,101 +806,46 @@ export class UnifiedAgentFactory {
       return;
     }
 
-    // CRITICAL: Use the agentId for the stream channel
-    // The backend sends to agent:stream:${agentId}, not agent:stream:${sessionId}
-    // We must listen on the same channel the backend sends to
-    const streamChannel = `agent:stream:${agent.id}`;
-
     try {
       // Note: User message is already added in createAgent() before sendInitialMessage() is called
       // This ensures the UI shows the user message immediately when the agent is created
 
-      // NOTE: Stream handler is NOT registered here anymore.
-      // The agent stream lifecycle path ensures the handler for created/restored agents.
-      // Previously, this factory also registered a handler, causing duplicate chunk processing
-      // and doubled text output like "I'll helpI'll help you fix you fix".
-
-      if (!window.electronAPI) {
-        logger.error('ElectronAPI not available, cannot send message', {
-          agentId: agent.id,
-          streamChannel,
-        });
-
-        // Clean up the user message we added since we can't proceed
-        if (!isBackend) {
-          const store = appStore;
-          if (store) {
-            const session = selectAgentSession.select(store.state, agent.id);
-            if (session && session.messages) {
-              // Remove the last message (the user message we just added)
-              const trimmedMessages = session.messages.slice(0, -1);
-              store.dispatch(replaceMessages(agent.id, trimmedMessages));
-            }
-          }
-        }
-
-        throw new Error('Cannot send message: ElectronAPI not available');
-      }
-
-      logger.debug('Stream handler will be registered by AgentService via agent:created event', {
-        agentId: agent.id,
-        streamChannel,
-      });
-
-      // Send to backend for processing using the new stream message channel
-      const streamMessageRequest = {
-        agentId: agent.id,
-        sessionId: agent.id,
-        content: message.trim(),
-        workspaceId: agent.workspaceId,
-        agentName: agent.name,
-        systemPrompt: agent.systemPrompt || '',
-        contextReferences: contextReferences || [],
-        imageBlocks,
-        userAppMessageId,
-      };
-
       logger.info('Sending initial message to backend', {
         agentId: agent.id,
-        channel: AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
         messageLength: message.trim().length,
       });
 
       // Note: Streaming state is already set in createAgent before this method is called
       // This ensures ChatPanel sees the streaming state immediately when it mounts
 
-      // Send message via invoke (only in frontend)
+      // Send message via the BackendTransport seam (only in frontend)
       if (!isBackend) {
-        const invoke = await getInvoke();
-        if (invoke) {
-          logger.info('About to invoke backend with stream message', {
-            agentId: agent.id,
-            channel: AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
-            streamChannel,
-          });
+        // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
+        // the BackendTransport seam. Streaming/terminal state arrives via the
+        // daemon events bridge (events.subscribe → Redux); legacy-only fields
+        // the daemon ignores (sessionId, agentName, systemPrompt) are no
+        // longer sent.
+        const response = await backendRequest<Record<string, unknown>>('agent.sendMessage', {
+          agentId: agent.id,
+          workspaceId: agent.workspaceId,
+          content: message.trim(),
+          contextReferences: contextReferences || [],
+          imageBlocks,
+          userAppMessageId,
+        });
 
-          const response = await invoke(
-            AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,
-            streamMessageRequest,
-          );
-
-          logger.info('Backend invoke response received', {
-            agentId: agent.id,
-            hasResponse: !!response,
-            responseType: typeof response,
-            responseKeys: response ? Object.keys(response) : [],
-            success: response?.success,
-          });
-
-          // Check if the response is in IpcResponse format
-          if (response && typeof response === 'object' && 'success' in response) {
-            if (!response.success) {
-              throw new Error(response.error?.message || 'Failed to send message to backend');
-            }
+        // Raw daemon envelope (PROTOCOL.md §5.5): { success, queued, messageId? }
+        if (response && typeof response === 'object' && 'success' in response) {
+          if (!response.success) {
+            // The daemon surfaces errors as a plain string; legacy
+            // IpcResponse envelopes use { message }.
+            const rawError = (response as { error?: unknown }).error;
+            const errorMessage =
+              typeof rawError === 'string'
+                ? rawError
+                : (rawError as { message?: string } | undefined)?.message;
+            throw new Error(errorMessage || 'Failed to send message to backend');
           }
-          // If no IpcResponse format, assume success (backward compatibility)
-        } else {
-          logger.error('Failed to get invoke function', { agentId: agent.id });
         }
       }
     } catch (error) {
@@ -923,7 +855,6 @@ export class UnifiedAgentFactory {
         messageLength: message?.length,
       });
       // Mark streaming as failed (only in frontend)
-      // Note: stream handler cleanup is handled by agent stream lifecycle, not here
       if (!isBackend) {
         const store = appStore;
         if (store) {
