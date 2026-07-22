@@ -21,7 +21,10 @@ import {
   systemStatusFailure,
   heartbeatFailed,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import type { SystemStatusWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import type {
+  BackendTransportInfo,
+  SystemStatusWirePayload,
+} from '$store/renderer/slices/daemon-health/daemon-health-types';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
@@ -110,13 +113,13 @@ function boot(): void {
   if (!api) return;
 
   // Listen for backend:status events (connection status changes).
-  statusListener = (payload: { status: string; transport?: { mode: 'sidecar-uds' | 'external-ws'; target?: string } }) => {
+  statusListener = (payload: { status: string; transport?: BackendTransportInfo }) => {
     appStore.dispatch(connectionStatusChanged(payload.status, payload.transport));
   };
   api.on(BACKEND.STATUS, statusListener);
 
   // Fetch initial connection status.
-  void api.invoke(BACKEND.GET_STATUS).then((result: { status: string; transport?: { mode: 'sidecar-uds' | 'external-ws'; target?: string } }) => {
+  void api.invoke(BACKEND.GET_STATUS).then((result: { status: string; transport?: BackendTransportInfo }) => {
     appStore.dispatch(connectionStatusChanged(result.status, result.transport));
   });
 

@@ -45,9 +45,13 @@ export interface SystemStatusWirePayload {
 /**
  * FE connection mode to the intentd daemon.
  * Additive transport info from backend:get-status and backend:status.
+ *   - `sidecar-uds`  → local UDS to the daemon Electron spawned.
+ *   - `external-uds` → local UDS to a daemon Electron did not spawn (adopted
+ *     an already-running daemon, or an env socket override).
+ *   - `external-ws`  → remote WebSocket (or TCP stub).
  */
 export interface BackendTransportInfo {
-  mode: 'sidecar-uds' | 'external-ws';
+  mode: 'sidecar-uds' | 'external-uds' | 'external-ws';
   target?: string;
 }
 

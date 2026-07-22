@@ -24,6 +24,8 @@ import * as path from 'node:path';
 
 import { Logger } from '$shared/logger';
 import { RestartPolicy } from './restart-policy';
+import { setConnectionMode } from './connection-mode';
+import { compareToPinnedVersion, readPinnedVersion } from './intentd-version-pin';
 // Re-export from the policy module so existing importers keep working; consumers
 // that only need the decision (e.g. `backend-connection.ts`) import it from
 // `intentd-spawn-policy` directly to avoid pulling in the sidecar manager.
@@ -148,28 +150,80 @@ export function resolveSocketPath(env: NodeJS.ProcessEnv): string {
   return path.join(os.homedir(), 'Library', 'Application Support', 'intentd', 'intentd.sock');
 }
 
+/** Result of a version-aware daemon probe (see [[probeDaemonVersion]]). */
+export interface DaemonVersionProbeResult {
+  alive: boolean;
+  version?: string;
+  protocolVersion?: string;
+}
+
 /**
- * Probe the UDS socket to check if a daemon is already running.
- * Returns `true` if the socket exists and accepts a connection (adopt it).
+ * Version handshake probe: sends `system.status` over the UDS socket and
+ * parses the JSON-RPC response for the daemon's `version` and
+ * `protocolVersion` fields.
+ *
+ * `alive` is `true` whenever the daemon sent anything back (even if the
+ * payload could not be parsed or lacks version fields — older daemons), so
+ * callers can use it like the boolean probes.
  */
-async function probeDaemonSocket(socketPath: string): Promise<boolean> {
-  if (!fs.existsSync(socketPath)) return false;
-  return new Promise<boolean>((resolve) => {
+export async function probeDaemonVersion(
+  socketPath: string,
+  timeoutMs = 3000,
+): Promise<DaemonVersionProbeResult> {
+  if (!fs.existsSync(socketPath)) return { alive: false };
+
+  return new Promise<DaemonVersionProbeResult>((resolve) => {
     const client = net.connect({ path: socketPath });
-    const timeout = setTimeout(() => {
+    let buffer = '';
+    let resolved = false;
+
+    const finish = (result: DaemonVersionProbeResult): void => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
       client.destroy();
-      resolve(false);
-    }, 500);
+      resolve(result);
+    };
+
+    const timeout = setTimeout(() => finish({ alive: buffer.length > 0 }), timeoutMs);
+
+    // Send system.status request (control fast-path, no DB access).
+    // Omit params to match the established request shape in json-rpc-client.ts
+    const rpcRequest = {
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'system.status',
+    };
+
     client.on('connect', () => {
-      clearTimeout(timeout);
-      client.destroy();
-      resolve(true);
+      client.write(JSON.stringify(rpcRequest) + '\n');
     });
-    client.on('error', () => {
-      clearTimeout(timeout);
-      client.destroy();
-      resolve(false);
+
+    client.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      const newlineIndex = buffer.indexOf('\n');
+      if (newlineIndex === -1) return;
+      try {
+        const parsed = JSON.parse(buffer.slice(0, newlineIndex)) as {
+          result?: { version?: unknown; protocolVersion?: unknown };
+        };
+        finish({
+          alive: true,
+          version: typeof parsed.result?.version === 'string' ? parsed.result.version : undefined,
+          protocolVersion:
+            typeof parsed.result?.protocolVersion === 'string'
+              ? parsed.result.protocolVersion
+              : undefined,
+        });
+      } catch {
+        // A response arrived but wasn't parseable — the daemon is alive.
+        finish({ alive: true });
+      }
     });
+
+    client.on('error', () => finish({ alive: false }));
+
+    client.on('end', () => finish({ alive: buffer.length > 0 }));
   });
 }
 
@@ -434,8 +488,13 @@ async function spawnSidecarProcess(
 /**
  * Start the intentd sidecar if the spawn policy allows it.
  *
- * Before spawning, probes the target socket to adopt an already-running daemon.
- * If spawning, pipes stdout/stderr to the main-process logger and starts supervision.
+ * Before spawning, probes the target socket (version handshake) to adopt an
+ * already-running daemon. If spawning, pipes stdout/stderr to the main-process
+ * logger and starts supervision.
+ *
+ * Resolves the connection mode (see `connection-mode.ts`): `sidecar` when we
+ * spawn the daemon, `external` when we adopt an already-running daemon or the
+ * spawn policy is disabled (env transport override / two-terminal dev flow).
  */
 export async function startIntentdSidecar(
   env: NodeJS.ProcessEnv = process.env,
@@ -445,14 +504,35 @@ export async function startIntentdSidecar(
 ): Promise<void> {
   const decision = shouldSpawnSidecar(env, isPackaged);
   if (!decision.shouldSpawn) {
+    // Not spawning: whatever daemon the FE connects to (env override target,
+    // an already-running daemon on the default socket, or the two-terminal
+    // dev-daemon flow) is not managed by us.
+    setConnectionMode('external');
     logger.info('Sidecar spawn disabled', { reason: decision.reason });
     return;
   }
 
   const socketPath = resolveSocketPath(env);
-  const alreadyRunning = await probeDaemonSocket(socketPath);
-  if (alreadyRunning) {
-    logger.info('Adopting existing daemon', { socketPath });
+  const probe = await probeDaemonVersion(socketPath);
+  if (probe.alive) {
+    setConnectionMode('external');
+    const pinnedVersion = readPinnedVersion({ isPackaged, resourcesPath });
+    const comparison =
+      probe.version && pinnedVersion
+        ? compareToPinnedVersion(probe.version, pinnedVersion)
+        : 'unknown';
+    const details = {
+      socketPath,
+      daemonVersion: probe.version ?? null,
+      protocolVersion: probe.protocolVersion ?? null,
+      pinnedVersion,
+      comparison,
+    };
+    if (comparison === 'older' || comparison === 'newer') {
+      logger.warn('Adopting existing daemon whose version differs from the pinned version', details);
+    } else {
+      logger.info('Adopting existing daemon', details);
+    }
     return;
   }
 
@@ -477,6 +557,7 @@ export async function startIntentdSidecar(
   });
 
   isShuttingDown = false;
+  setConnectionMode('sidecar');
   await spawnSidecarProcess(binaryPath, socketPath, env);
 }
 

@@ -124,14 +124,14 @@ describe('BACKEND.GET_STATUS IPC contract', () => {
   it('response shape includes { status, transport? } per spec', () => {
     // The IPC contract requires the response to include:
     // - status: ConnectionStatus ('connecting' | 'connected' | 'disconnected')
-    // - transport?: { mode: 'sidecar-uds' | 'external-ws', target?: string }
+    // - transport?: { mode: 'sidecar-uds' | 'external-uds' | 'external-ws', target?: string }
     // This is a type/shape assertion - the actual implementation is tested functionally
-    // in daemon-health-service.test.ts
+    // in daemon-health-service.test.ts and transport-info.test.ts
 
     type ExpectedResponse = {
       status: string;
       transport?: {
-        mode: 'sidecar-uds' | 'external-ws';
+        mode: 'sidecar-uds' | 'external-uds' | 'external-ws';
         target?: string;
       };
     };
@@ -140,6 +140,11 @@ describe('BACKEND.GET_STATUS IPC contract', () => {
     const udsResponse: ExpectedResponse = {
       status: 'connected',
       transport: { mode: 'sidecar-uds' },
+    };
+
+    const externalUdsResponse: ExpectedResponse = {
+      status: 'connected',
+      transport: { mode: 'external-uds', target: '/tmp/intentd.sock' },
     };
 
     const wsResponse: ExpectedResponse = {
@@ -154,6 +159,8 @@ describe('BACKEND.GET_STATUS IPC contract', () => {
 
     expect(udsResponse.status).toBe('connected');
     expect(udsResponse.transport?.mode).toBe('sidecar-uds');
+    expect(externalUdsResponse.transport?.mode).toBe('external-uds');
+    expect(externalUdsResponse.transport?.target).toBe('/tmp/intentd.sock');
     expect(wsResponse.transport?.mode).toBe('external-ws');
     expect(wsResponse.transport?.target).toBe('ws://host:1234/ws');
     expect(legacyResponse.transport).toBeUndefined();

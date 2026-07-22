@@ -27,6 +27,7 @@ import {
   type JsonRpcNotification,
 } from './json-rpc-client';
 import { JsonRpcError } from './json-rpc-errors';
+import { formatTransportInfo } from './transport-info';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 
 const logger = new Logger('Backend-IPC');
@@ -37,50 +38,6 @@ let handlersRegistered = false;
 
 /** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
-
-/**
- * Sanitize a URL by removing userinfo (user:pass@) and query parameters.
- * Returns scheme://host:port/path, or undefined if parsing fails.
- * Never exposes secrets, tokens, or credentials.
- */
-function sanitizeUrl(rawUrl: string): string | undefined {
-  try {
-    const url = new URL(rawUrl);
-    // Strip userinfo (username:password@)
-    url.username = '';
-    url.password = '';
-    // Strip query parameters and hash
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Shape transport config into a renderer-safe payload for backend:status and
- * backend:get-status. The mode discriminates 'sidecar-uds' (local UDS) from
- * 'external-ws' (remote WebSocket); target is the WS URL when remote, undefined
- * for sidecar. Sanitizes URLs to strip userinfo and query parameters (secrets/tokens).
- */
-function formatTransportInfo(config: {
-  transport: 'uds' | 'tcp' | 'ws';
-  socketPath?: string;
-  wsUrl?: string;
-  host?: string;
-  port?: number;
-}): { mode: 'sidecar-uds' | 'external-ws'; target?: string } {
-  if (config.transport === 'uds') {
-    return { mode: 'sidecar-uds' };
-  }
-  if (config.transport === 'ws') {
-    const sanitized = config.wsUrl ? sanitizeUrl(config.wsUrl) : undefined;
-    return { mode: 'external-ws', target: sanitized };
-  }
-  // TCP transport is a remote stub; treat it like external WebSocket for UI purposes.
-  return { mode: 'external-ws', target: `tcp:${config.host}:${config.port}` };
-}
 
 /** Lazily create, wire, and start the shared main-process JSON-RPC client. */
 export function getBackendClient(): JsonRpcClient {

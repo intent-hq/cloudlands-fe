@@ -1,19 +1,25 @@
 /**
  * Unit tests for the intentd sidecar manager.
  *
- * Tests the spawn-policy decision function and binary path resolution across
- * all env combinations and dev/packaged modes.
+ * Tests the spawn-policy decision function, binary path resolution, and the
+ * version-handshake probe (against a mock UDS server). Connection-mode
+ * resolution in startIntentdSidecar is tested separately in
+ * `__tests__/connection-mode-resolution.test.ts` (with mocked net/child_process).
  */
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  probeDaemonVersion,
   resolveIntentdBinaryPath,
   resolveSocketPath,
   shouldSpawnSidecar,
 } from './intentd-sidecar';
+
+const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs');
 
 // Mock fs for binary path resolution tests
 vi.mock('node:fs', async () => {
@@ -221,5 +227,94 @@ describe('resolveSocketPath', () => {
     expect(socketPath).toBe(expected);
   });
 });
+
+/** Start a mock UDS daemon that answers system.status with the given result. */
+function startMockDaemon(
+  socketPath: string,
+  behavior:
+    | { kind: 'result'; result: Record<string, unknown> }
+    | { kind: 'garbage' }
+    | { kind: 'silent' },
+): Promise<net.Server> {
+  const server = net.createServer((conn) => {
+    conn.on('data', () => {
+      if (behavior.kind === 'silent') return;
+      if (behavior.kind === 'garbage') {
+        conn.write('not json\n');
+        return;
+      }
+      conn.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: behavior.result }) + '\n');
+    });
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, () => resolve(server));
+  });
+}
+
+describe('probeDaemonVersion', () => {
+  const mockExistsSync = vi.mocked(fs.existsSync);
+  let tmpDir: string;
+  let server: net.Server | null = null;
+
+  beforeEach(() => {
+    mockExistsSync.mockImplementation(actualFs.existsSync);
+    tmpDir = actualFs.mkdtempSync(path.join(os.tmpdir(), 'intentd-probe-'));
+  });
+
+  afterEach(async () => {
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+      server = null;
+    }
+    actualFs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.clearAllMocks();
+  });
+
+  it('returns alive with version and protocolVersion from system.status', async () => {
+    const socketPath = path.join(tmpDir, 'i.sock');
+    server = await startMockDaemon(socketPath, {
+      kind: 'result',
+      result: { running: true, version: '0.1.0', protocolVersion: '1' },
+    });
+    const probe = await probeDaemonVersion(socketPath);
+    expect(probe).toEqual({ alive: true, version: '0.1.0', protocolVersion: '1' });
+  });
+
+  it('returns alive without versions when the response lacks them', async () => {
+    const socketPath = path.join(tmpDir, 'i.sock');
+    server = await startMockDaemon(socketPath, { kind: 'result', result: { running: true } });
+    const probe = await probeDaemonVersion(socketPath);
+    expect(probe).toEqual({ alive: true, version: undefined, protocolVersion: undefined });
+  });
+
+  it('returns alive when the daemon responds with unparsable data', async () => {
+    const socketPath = path.join(tmpDir, 'i.sock');
+    server = await startMockDaemon(socketPath, { kind: 'garbage' });
+    const probe = await probeDaemonVersion(socketPath);
+    expect(probe).toEqual({ alive: true });
+  });
+
+  it('returns not alive when the socket file does not exist', async () => {
+    const probe = await probeDaemonVersion(path.join(tmpDir, 'missing.sock'));
+    expect(probe).toEqual({ alive: false });
+  });
+
+  it('returns not alive when the socket exists but nothing accepts connections', async () => {
+    const socketPath = path.join(tmpDir, 'stale.sock');
+    actualFs.writeFileSync(socketPath, '');
+    const probe = await probeDaemonVersion(socketPath, 500);
+    expect(probe.alive).toBe(false);
+  });
+
+  it('resolves alive on timeout only if data arrived without a newline', async () => {
+    const socketPath = path.join(tmpDir, 'i.sock');
+    server = await startMockDaemon(socketPath, { kind: 'silent' });
+    const probe = await probeDaemonVersion(socketPath, 300);
+    expect(probe).toEqual({ alive: false });
+  });
+});
+
+
 
 
