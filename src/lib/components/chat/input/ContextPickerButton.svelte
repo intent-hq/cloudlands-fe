@@ -27,6 +27,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { cn } from '$lib/utils';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import Button from '$lib/components/ui/button/button.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
@@ -215,14 +216,16 @@
     searchResults = [];
   }
 
-  function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && isOpen) {
-      e.preventDefault();
+  // Escape layer: while the popover is open it is the topmost overlay, so
+  // Escape closes only the popover
+  $effect(() => {
+    if (!isOpen) return;
+    return pushEscapeLayer(() => {
       isOpen = false;
       searchQuery = '';
       searchResults = [];
-    }
-  }
+    });
+  });
 
   function handleToggleItem(id: string) {
     onToggle?.(id);
@@ -317,8 +320,6 @@
     };
   });
 </script>
-
-<svelte:window onkeydown={handleKeyDown} />
 
 <TooltipShortcut label="Context from open panels" shortcut={['@']} side="top">
   <Button
