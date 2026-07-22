@@ -1621,18 +1621,6 @@ export function setupWorkspaceIPC(): void {
     ),
   );
 
-  // Discover repos from editors, CLI agents, and filesystem
-  ipcMain.handle('workspace:discover-repos', async () => {
-    try {
-      const { discoverRepos } = await import('./repo-discovery.service');
-      const repos = await discoverRepos();
-      return { success: true, data: repos };
-    } catch (error) {
-      logger.error('Failed to discover repos', error as Error);
-      return { success: false, data: [] };
-    }
-  });
-
   // Get editor selection
   ipcMain.handle(
     EDITOR_CHANNELS.GET_SELECTION,

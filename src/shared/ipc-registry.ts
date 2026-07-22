@@ -43,7 +43,6 @@ export const IPC_CHANNELS = {
     GET_SETTINGS: 'workspace:get-settings',
     UPDATE_SETTINGS: 'workspace:update-settings',
     TRIGGER_CHECK: 'workspace:trigger-check',
-    DISCOVER_REPOS: 'workspace:discover-repos',
     LIST_FILES: 'workspace:list-files',
     TEST_WATCHER: 'workspace:test-watcher',
     FIND_REPOSITORIES: 'workspace:find-repositories',
@@ -392,11 +391,10 @@ export const IPC_CHANNELS = {
     RESTART_APP: 'feature-codes:restart-app',
   },
 
-  // User MCP Settings — HTTP/SSE server auth checks and OAuth flow.
+  // User MCP Settings — HTTP/SSE server auth checks.
   USER_MCP: {
     CHECK_AUTH: 'user-mcp:check-auth', // Check if URL requires auth and if we have credentials
     TEST_CONNECTION: 'user-mcp:test-connection', // Test connection to HTTP/SSE server, returns status
-    INITIATE_OAUTH: 'user-mcp:initiate-oauth', // Start OAuth flow for MCP server
   },
 
   // Notifications
@@ -408,13 +406,6 @@ export const IPC_CHANNELS = {
 
   // Dialog
   DIALOG: {
-    OPEN: 'dialog:open',
-    SAVE: 'dialog:save',
-    OPEN_FILE: 'dialog:openFile',
-    OPEN_DIRECTORY: 'dialog:openDirectory',
-    SAVE_FILE: 'dialog:saveFile',
-    SHOW_MESSAGE: 'dialog:showMessage',
-    SHOW_ERROR: 'dialog:showError',
     MESSAGE: 'dialog:message',
   },
 
@@ -425,7 +416,6 @@ export const IPC_CHANNELS = {
     OPEN_EXTERNAL: 'shell:openExternal',
     TRASH_ITEM: 'shell:trashItem',
     SHOW_ITEM_IN_FOLDER: 'shell:showItemInFolder',
-    INSTALL_CLI: 'shell:install-cli',
   },
 
   // Editor (browser text selection only)

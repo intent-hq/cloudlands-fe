@@ -25,19 +25,15 @@ import {
   AppSetBadgeSchema,
   DeepLinkHandleSchema,
   DialogMessageSchema,
-  DialogOpenSchema,
-  DialogSaveSchema,
   EmptySchema,
   JetbrainsOpenSchema,
   ShellOpenExternalSchema,
   ShellShowItemInFolderSchema,
-  ShellInstallCliSchema,
   SystemExecuteCommandSchema,
   SystemExecuteCommandStreamingSchema,
   SystemWriteClipboardSchema,
   UserMcpCheckAuthSchema,
   UserMcpTestConnectionSchema,
-  UserMcpInitiateOAuthSchema,
   VscodeOpenDiffSchema,
   VscodeOpenFileSchema,
   VscodeOpenGitDiffSchema,
@@ -911,73 +907,6 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Dialog
-  ipcMain.handle(
-    DIALOG_CHANNELS.OPEN,
-    createSafeValidatedHandler(
-      DialogOpenSchema,
-      async (event, validated) => {
-        logger.debug('dialog:open called with options:', { options: validated });
-        const window = BrowserWindow.getFocusedWindow();
-        // If no window is focused, use the event's sender window
-        const targetWindow = window || BrowserWindow.fromWebContents(event.sender);
-        logger.debug('Using window:', { found: targetWindow ? 'found' : 'not found' });
-
-        // Convert options from Tauri-like format to Electron format
-        const electronOptions: any = {
-          title: validated?.title,
-          defaultPath: validated?.defaultPath,
-          filters: validated?.filters,
-          properties: validated?.properties || [],
-        };
-
-        if (validated?.directory) {
-          electronOptions.properties.push('openDirectory');
-        }
-        if (validated?.multiple) {
-          electronOptions.properties.push('multiSelections');
-        }
-        if (validated?.createDirectory) {
-          // macOS: Allow creating new folders in the open dialog
-          electronOptions.properties.push('createDirectory');
-        }
-
-        logger.debug('Converted options:', { electronOptions });
-        const result = await dialog.showOpenDialog(targetWindow as any, electronOptions);
-        logger.debug('dialog.showOpenDialog result:', { result });
-        return {
-          success: true,
-          data: {
-            canceled: result.canceled,
-            filePaths: result.filePaths,
-          },
-        };
-      },
-      DIALOG_CHANNELS.OPEN,
-    ),
-  );
-
-  ipcMain.handle(
-    DIALOG_CHANNELS.SAVE,
-    createSafeValidatedHandler(
-      DialogSaveSchema,
-      async (event, validated) => {
-        const window = BrowserWindow.getFocusedWindow();
-        // If no window is focused, use the event's sender window
-        const targetWindow = window || BrowserWindow.fromWebContents(event.sender);
-        const result = await dialog.showSaveDialog(targetWindow as any, validated || {});
-        return {
-          success: true,
-          data: {
-            canceled: result.canceled,
-            filePath: result.filePath,
-          },
-        };
-      },
-      DIALOG_CHANNELS.SAVE,
-    ),
-  );
-
   // Dialog message box
   ipcMain.handle(
     DIALOG_CHANNELS.MESSAGE,
@@ -1080,18 +1009,6 @@ export function setupSystemIPC() {
         }
       },
       SHELL_CHANNELS.OPEN_PATH,
-    ),
-  );
-
-  // Install CLI handler - creates symlink from /usr/local/bin/intent to bundled CLI
-  ipcMain.handle(
-    SHELL_CHANNELS.INSTALL_CLI,
-    createSafeValidatedHandler(
-      ShellInstallCliSchema,
-      async () => {
-        return await installIntentCli();
-      },
-      SHELL_CHANNELS.INSTALL_CLI,
     ),
   );
 
@@ -2158,25 +2075,6 @@ export function setupSystemIPC() {
         }
       },
       USER_MCP_CHANNELS.TEST_CONNECTION,
-    ),
-  );
-
-  // Initiate OAuth for MCP server
-  ipcMain.handle(
-    USER_MCP_CHANNELS.INITIATE_OAUTH,
-    createSafeValidatedHandler(
-      UserMcpInitiateOAuthSchema,
-      async (_event, validated) => {
-        try {
-          const { initiateMcpOAuth } = await import('../../mcp/main/mcp-oauth');
-          const result = await initiateMcpOAuth(validated.name, validated.url);
-          return { success: result.success, error: result.error };
-        } catch (error) {
-          logger.error('Error initiating MCP OAuth:', error);
-          return { success: false, error: String(error) };
-        }
-      },
-      USER_MCP_CHANNELS.INITIATE_OAUTH,
     ),
   );
 

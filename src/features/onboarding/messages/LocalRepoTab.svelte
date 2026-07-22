@@ -6,7 +6,6 @@
    * plus a folder picker button. Adapts patterns from RepoSelector.svelte
    * and CommandPalette for the onboarding flow.
    */
-  import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -45,23 +44,6 @@
   let listContainerRef = $state<HTMLDivElement | null>(null);
   /** Manually picked folders (via the folder picker) that aren't in known repos. */
   let manuallyAddedPaths = $state<string[]>([]);
-  /** Repos discovered from editors, CLI agents, filesystem */
-  let discoveredRepos = $state<{ path: string; name: string; owner?: string }[]>([]);
-
-  // Discover repos from editors/filesystem on mount
-  onMount(() => {
-    invoke<{ success: boolean; data?: { path: string; name: string; owner?: string }[] }>(
-      'workspace:discover-repos',
-      {},
-    )
-      .then((result) => {
-        if (result?.success && Array.isArray(result.data)) {
-          discoveredRepos = result.data;
-          logger.info('Discovered repos', { count: result.data.length });
-        }
-      })
-      .catch((err) => logger.warn('Repo discovery failed', { error: String(err) }));
-  });
 
   // Build recent repos list
   const recentRepos = $derived.by(() => {
@@ -91,17 +73,6 @@
       const isLegacyClone = repo.path.includes('/.clones/');
       if (isLocal && !isLegacyClone) {
         repoMap.set(repo.path, { path: repo.path, name: repo.name, owner: repo.owner });
-      }
-    }
-
-    // Merge discovered repos (lower priority — don't overwrite existing entries)
-    for (const repo of discoveredRepos) {
-      if (repo.path && !repo.path.includes('/.clones/') && !repoMap.has(repo.path)) {
-        repoMap.set(repo.path, {
-          path: repo.path,
-          name: repo.name || repo.path.split('/').pop() || 'Unknown',
-          owner: repo.owner,
-        });
       }
     }
 

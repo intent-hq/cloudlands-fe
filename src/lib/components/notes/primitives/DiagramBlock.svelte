@@ -8,7 +8,6 @@
   faImage,
   faCode,
   faCopy,
-  faFloppyDisk,
   faCheck,
 } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
@@ -17,12 +16,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
-  import {
-  dialog,
-  invoke,
-} from '$lib/electron-bridge';
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import {
@@ -399,7 +393,6 @@
   // State for copy feedback
   let copiedSvg = $state(false);
   let copiedPng = $state(false);
-  let saved = $state(false);
 
   async function handleCopyAsSvg() {
     await copyAsSvg();
@@ -415,132 +408,6 @@
     setTimeout(() => (copiedPng = false), 2000);
   }
 
-  // Save diagram to workspace
-  async function saveDiagram(format: 'svg' | 'png') {
-    if (!diagramContainer) return;
-    const svg = diagramContainer.querySelector('svg');
-    if (!svg) return;
-
-    const workspace = $activeWorkspace;
-    const defaultDir = workspace?.worktreePath || workspace?.repositoryPath || '';
-    const safeName = (displayName || 'diagram').replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
-    const defaultPath = defaultDir
-      ? `${defaultDir}/${safeName}.${format}`
-      : `${safeName}.${format}`;
-
-    const filePath = await dialog.save({
-      title: `Save diagram as ${format.toUpperCase()}`,
-      defaultPath,
-      filters: [
-        format === 'svg'
-          ? { name: 'SVG Files', extensions: ['svg'] }
-          : { name: 'PNG Files', extensions: ['png'] },
-      ],
-    });
-
-    if (!filePath) return;
-
-    const wsId = workspace?.id;
-
-    try {
-      if (format === 'svg') {
-        const clone = prepareSvgForExport(svg);
-        const serializer = new XMLSerializer();
-        const svgString = serializer.serializeToString(clone);
-        await invoke('file:write', {
-          path: filePath,
-          content: svgString,
-          workspaceId: wsId,
-        });
-      } else {
-        // For PNG, we need to create the image data and save it
-        const clone = prepareSvgForExport(svg);
-        const rect = svg.getBoundingClientRect();
-        const scale = 2;
-        const pixelWidth = Math.round(rect.width * scale);
-        const pixelHeight = Math.round(rect.height * scale);
-        const svgWidth = parseFloat(svg.getAttribute('width') || String(rect.width));
-        const svgHeight = parseFloat(svg.getAttribute('height') || String(rect.height));
-
-        clone.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
-        clone.setAttribute('width', String(pixelWidth));
-        clone.setAttribute('height', String(pixelHeight));
-
-        const serializer = new XMLSerializer();
-        const svgString = serializer.serializeToString(clone);
-        const encoder = new TextEncoder();
-        const bytes = encoder.encode(svgString);
-        const base64 = btoa(String.fromCharCode(...bytes));
-        const dataUrl = `data:image/svg+xml;base64,${base64}`;
-
-        // Create image and canvas to convert to PNG
-        await new Promise<void>((resolve, reject) => {
-          const img = new Image();
-          img.onload = async () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = pixelWidth;
-            canvas.height = pixelHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-              reject(new Error('Could not get canvas context'));
-              return;
-            }
-            ctx.imageSmoothingEnabled = false;
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, pixelWidth, pixelHeight);
-            ctx.drawImage(img, 0, 0, pixelWidth, pixelHeight);
-
-            canvas.toBlob(
-              async (blob) => {
-                if (!blob) {
-                  reject(new Error('Could not create PNG blob'));
-                  return;
-                }
-                // Convert blob to base64 for file writing
-                const reader = new FileReader();
-                reader.onload = async () => {
-                  const base64Data = (reader.result as string).split(',')[1];
-                  await invoke('file:write', {
-                    path: filePath,
-                    content: base64Data,
-                    encoding: 'base64',
-                    workspaceId: wsId,
-                  });
-                  resolve();
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              },
-              'image/png',
-              1.0,
-            );
-          };
-          img.onerror = reject;
-          img.src = dataUrl;
-        });
-      }
-
-      // Emit file:changed event to trigger file tree refresh
-      if (wsId) {
-        dispatchWindowEvent('file:changed', {
-          workspaceId: wsId,
-          files: [filePath],
-          type: 'create',
-        });
-      }
-
-      // Open the saved file in a new tab
-      if (wsId) {
-        appStore.dispatch(openWorkspaceFile(wsId, filePath));
-      }
-
-      saved = true;
-      toast.success(`Saved ${format.toUpperCase()} to ${filePath.split('/').pop()}`);
-      setTimeout(() => (saved = false), 2000);
-    } catch (error) {
-      toast.error(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
 </script>
 
 <NodeViewWrapper>
@@ -630,54 +497,6 @@
               >
                 <Fa icon={faImage} size="xs" class="text-ghost" />
                 Copy as PNG
-              </button>
-            </div>
-          {/snippet}
-        </DropdownMenu>
-
-        <!-- Save dropdown -->
-        <DropdownMenu align="end">
-          {#snippet trigger({ toggle }: { toggle: () => void })}
-            <Tooltip content="Save to codebase" side="top" delayDuration={300}>
-              <button
-                type="button"
-                class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  toggle();
-                }}
-              >
-                {#if saved}
-                  <Fa icon={faCheck} size="sm" class="text-green-500" />
-                {:else}
-                  <Fa icon={faFloppyDisk} size="sm" />
-                {/if}
-              </button>
-            </Tooltip>
-          {/snippet}
-          {#snippet content({ close }: { close: () => void })}
-            <div class="min-w-36">
-              <button
-                type="button"
-                class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
-                onclick={() => {
-                  saveDiagram('svg');
-                  close();
-                }}
-              >
-                <Fa icon={faCode} size="xs" class="text-ghost" />
-                Save as SVG
-              </button>
-              <button
-                type="button"
-                class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
-                onclick={() => {
-                  saveDiagram('png');
-                  close();
-                }}
-              >
-                <Fa icon={faImage} size="xs" class="text-ghost" />
-                Save as PNG
               </button>
             </div>
           {/snippet}

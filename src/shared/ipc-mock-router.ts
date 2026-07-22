@@ -111,36 +111,20 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // stay hidden until a daemon surface exists.
   ['git:get-auto-commit-status', undefined],
   // ── IPC batch 8: the remaining frozen audit debt, dispositioned ──
-  // Native OS file dialogs (GitWorkspaceSettings / ProviderPathConfig pickers
-  // and the electron-bridge showOpenDialog/showSaveDialog wrappers). There is
-  // no native dialog in this build; every caller already has a
-  // "user cancelled" branch, so the canceled envelope folds each picker into
-  // a clean no-op instead of a rejection. dialog:message's only invoke site
-  // is the electron-bridge showMessageBox wrapper, which has no production
-  // consumers — undefined is never observed.
-  ['dialog:open', { success: true, data: { canceled: true, filePaths: [] } }],
-  ['dialog:save', { success: true, data: { canceled: true } }],
+  // Native OS message box. Sole invoke site: FilesPanel's drop-conflict
+  // prompt via the electron-bridge dialog.message wrapper. There is no
+  // native dialog in this build; the resolved undefined folds the conflict
+  // prompt to its default ('skip') branch.
   ['dialog:message', undefined],
-  // Interaction-gated host-side actions with no daemon arm: the
-  // McpServersSettings osascript probe, its MCP OAuth trigger, the
-  // CommandPalette CLI-symlink install, and the DebugPanel resume trigger.
-  // Every caller requires `.success` and folds the shaped failure into its
-  // toast/status feedback.
+  // Host command execution (CommitsTimeline's amend-commit / force-push
+  // flow; bridged to daemon host.exec in the Electron build). The caller
+  // requires `.success` and folds the shaped failure into its toast.
   [
     'system:execute-command',
     { success: false, error: 'Host command execution is not available in this build' },
   ],
-  [
-    'user-mcp:initiate-oauth',
-    {
-      success: false,
-      error: 'MCP OAuth is not available in this build — configure the server on the daemon host',
-    },
-  ],
-  [
-    'shell:install-cli',
-    { success: false, error: 'CLI install is not available in this build' },
-  ],
+  // DebugPanel resume trigger. The caller requires `.success` and folds the
+  // shaped failure into its status feedback.
   [
     'debug:trigger-backend-resume',
     { success: false, error: 'The backend-resume debug trigger is not bridged in this build' },
@@ -165,26 +149,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // Chat-input context enrichment (context-api getWorkspaceInfo). The caller
   // folds an absent info payload to the Workspace object it already holds.
   ['workspace:get-info', undefined],
-  // Onboarding repo discovery (LocalRepoTab mount): the legacy handler
-  // scanned local editors/CLI state on the Electron host — no daemon
-  // surface. The caller requires `success && data` and keeps its known-repos
-  // list (daemon repo.list) as the source.
-  [
-    'workspace:discover-repos',
-    { success: false, error: 'Host repo discovery is not available in this build' },
-  ],
-  // Diagram-edge binding intents (DiagramEdge handleClick): legacy
-  // main-process panel-router intents with no daemon surface. The caller
-  // wraps the whole switch in try/catch and logs at debug level; resolving
-  // undefined keeps the click a quiet no-op.
-  ['workspace:openFile', undefined],
-  ['workspace:openSymbol', undefined],
-  ['workspace:openSpec', undefined],
-  ['workspace:openNote', undefined],
-  ['workspace:openTimelineEvent', undefined],
-  ['workspace:openMetric', undefined],
-  ['workspace:openLog', undefined],
-  ['workspace:openTest', undefined],
   // Sentry credential writes. PROTOCOL §5.29: the daemon reads
   // SENTRY_AUTH_TOKEN/SENTRY_ORG from its environment — there is deliberately
   // no sentry.connect/revoke wire method, so in-app config/logout cannot be

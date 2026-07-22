@@ -1354,40 +1354,6 @@ export const WindowSetBrowserFocusedSchema = z.object({
 });
 
 // DIALOG_CHANNELS schemas
-export const DialogOpenSchema = z.object({
-  title: z.string().optional(),
-  defaultPath: z.string().optional(),
-  filters: z
-    .array(
-      z.object({
-        name: z.string(),
-        extensions: z.array(z.string()),
-      }),
-    )
-    .optional(),
-  directory: z.boolean().optional(),
-  multiple: z.boolean().optional(),
-  createDirectory: z.boolean().optional(), // Allow creating new folders in the dialog (macOS)
-  properties: z.array(z.string()).optional(),
-});
-
-export const DialogSaveSchema = z.object({
-  title: z.string().optional(),
-  defaultPath: z.string().optional(),
-  filters: z
-    .array(
-      z.object({
-        name: z.string(),
-        extensions: z.array(z.string()),
-      }),
-    )
-    .optional(),
-  buttonLabel: z.string().optional(),
-  message: z.string().optional(),
-  nameFieldLabel: z.string().optional(),
-  showsTagField: z.boolean().optional(),
-});
-
 export const DialogMessageSchema = z.object({
   message: z.string(),
   title: z.string().optional(),
@@ -1409,8 +1375,6 @@ export const ShellOpenExternalSchema = z.object({
 export const ShellShowItemInFolderSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
-
-export const ShellInstallCliSchema = z.object({}).strict();
 
 // VSCODE_CHANNELS schemas
 export const VscodeOpenSchema = z.union([
@@ -1489,11 +1453,6 @@ export const UserMcpTestConnectionSchema = z.object({
   name: z.string().optional(), // Server name for OAuth token lookup
 });
 
-export const UserMcpInitiateOAuthSchema = z.object({
-  name: z.string().min(1, 'Server name is required'),
-  url: z.string().min(1, 'URL is required'),
-});
-
 // SYSTEM_CHANNELS schemas
 export const SystemExecuteCommandSchema = z.object({
   command: z.string().min(1, 'Command is required'),
@@ -1505,7 +1464,6 @@ export const SystemExecuteCommandStreamingSchema = z.object({
   command: z.string().min(1, 'Command is required'),
   cwd: z.string().optional(),
   stdin: z.string().optional(),
-  sshConfig: z.any().optional(),
 });
 
 // DEEP_LINK_CHANNELS schemas

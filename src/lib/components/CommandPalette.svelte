@@ -238,7 +238,6 @@
   const commands = [
     { id: 'new-workspace', label: 'New Workspace', icon: faFolderOpen, shortcut: '⌘T' },
     { id: 'settings', label: 'Settings', icon: faCog, shortcut: '⌘,' },
-    { id: 'install-cli', label: "Install 'intent' command in PATH", icon: faTerminal },
     { id: 'new-agent', label: 'New Agent Chat', icon: faCommentDots },
     { id: 'new-terminal', label: 'New Terminal', icon: faTerminal },
     { id: 'new-note', label: 'New Note', icon: faFileAlt },
@@ -695,28 +694,6 @@
         return true;
       case 'settings':
         navigateToSettings();
-        return true;
-      case 'install-cli':
-        invoke('shell:install-cli')
-          .then((result: any) => {
-            if (result?.success) {
-              dispatchWindowEvent('app:show-toast', {
-                message: result.message || 'CLI installed successfully',
-                type: 'success',
-              });
-            } else {
-              dispatchWindowEvent('app:show-toast', {
-                message: result?.message || 'Failed to install CLI',
-                type: 'error',
-              });
-            }
-          })
-          .catch((err: any) => {
-            dispatchWindowEvent('app:show-toast', {
-              message: 'Failed to install CLI: ' + err.message,
-              type: 'error',
-            });
-          });
         return true;
       case 'new-agent':
         if (workspaceId) {

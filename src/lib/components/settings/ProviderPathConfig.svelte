@@ -5,7 +5,6 @@
    * A compact folder icon button that opens a dropdown portal for configuring
    * a provider's CLI executable path. Designed for the Integrations > Providers section.
    */
-  import { invoke } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
   import {
   faFolder,
@@ -53,21 +52,6 @@
   $effect(() => {
     inputValue = configuredPath;
   });
-
-  async function handleBrowse() {
-    const result = await invoke<{
-      data?: { canceled: boolean; filePaths?: string[] };
-    }>('dialog:open', {
-      directory: false,
-      title: `Select ${providerName} Executable`,
-      filters: [{ name: 'Executables', extensions: ['*'] }],
-    });
-
-    if (result?.data && !result.data.canceled && result.data.filePaths?.length) {
-      inputValue = result.data.filePaths[0];
-      await savePath();
-    }
-  }
 
   async function savePath() {
     try {
@@ -138,7 +122,7 @@
         </p>
       </div>
 
-      <!-- Path input with browse button -->
+      <!-- Path input -->
       <div class="flex gap-2">
         <input
           type="text"
@@ -150,9 +134,6 @@
             placeholder:text-muted-foreground/60 transition-all
             focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
         />
-        <Button variant="secondary" size="sm" onclick={handleBrowse} class="shrink-0 px-2.5">
-          <Fa icon={faFolder} size="sm" />
-        </Button>
       </div>
 
       <!-- Status indicator -->
