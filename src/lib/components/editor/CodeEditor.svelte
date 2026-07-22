@@ -32,6 +32,7 @@
   selectWorkspaceById,
 } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsFollowing } from '$store/renderer/slices/agent-follow/agent-follow-selectors';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -96,6 +97,9 @@
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const isDarkTheme = selectIsDarkTheme();
   const activeWorkspace = selectActiveWorkspace();
+  // Reveal-in-file-manager targets the daemon host's desktop shell — only
+  // offered when the daemon runs on this machine (PROTOCOL §5.14 locality).
+  const isDaemonLocal$ = selectIsDaemonLocal();
   const workspaceIdStore = writable(workspaceId ?? '');
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
@@ -954,10 +958,12 @@
                 <Fa icon={faExternalLinkAlt} class="mr-2" />
                 Open in VS Code
               </Button>
-              <Button variant="ghost" size="sm" onclick={revealInFolder}>
-                <Fa icon={faFolderOpen} class="mr-2" />
-                Reveal in Finder
-              </Button>
+              {#if $isDaemonLocal$}
+                <Button variant="ghost" size="sm" onclick={revealInFolder}>
+                  <Fa icon={faFolderOpen} class="mr-2" />
+                  Reveal in Finder
+                </Button>
+              {/if}
             </div>
           {/if}
         </div>

@@ -39,6 +39,7 @@
 } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
   startDrag,
   endDrag,
@@ -161,6 +162,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   const isDragging = selectIsDragging();
   const allPermissionRequests = selectPermissionRequests();
+  // Reveal-in-file-manager targets the daemon host's desktop shell — only
+  // offered when the daemon runs on this machine (PROTOCOL §5.14 locality).
+  const isDaemonLocal$ = selectIsDaemonLocal();
 
   // Access layout manager from context for expand-on-double-click
   const getLayoutManager = getContext<(() => PanelLayoutManager) | undefined>('panelLayoutManager');
@@ -1643,16 +1647,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Filename
         </button>
-        <button
-          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
-          onclick={() => {
-            revealInFinder(contextTab);
-            closeContextMenu();
-          }}
-        >
-          <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
-          Reveal in {fileManagerName}
-        </button>
+        {#if $isDaemonLocal$}
+          <button
+            class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
+            onclick={() => {
+              revealInFinder(contextTab);
+              closeContextMenu();
+            }}
+          >
+            <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
+            Reveal in {fileManagerName}
+          </button>
+        {/if}
       {/if}
       <!-- Type-specific actions for browser tabs -->
       {#if contextTab && contextTab.type === 'browser' && contextTab.browserUrl}
@@ -1712,16 +1718,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Filename
         </button>
-        <button
-          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
-          onclick={() => {
-            revealAgentInFinder(contextTab);
-            closeContextMenu();
-          }}
-        >
-          <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
-          Reveal in {fileManagerName}
-        </button>
+        {#if $isDaemonLocal$}
+          <button
+            class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
+            onclick={() => {
+              revealAgentInFinder(contextTab);
+              closeContextMenu();
+            }}
+          >
+            <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
+            Reveal in {fileManagerName}
+          </button>
+        {/if}
       {/if}
       <!-- Type-specific actions for note tabs -->
       {#if contextTab && contextTab.type === 'note'}
@@ -1755,16 +1763,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           <Fa icon={faCopy} size="xs" class="text-ghost" />
           Copy Filename
         </button>
-        <button
-          class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
-          onclick={() => {
-            revealNoteInFinder(contextTab);
-            closeContextMenu();
-          }}
-        >
-          <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
-          Reveal in {fileManagerName}
-        </button>
+        {#if $isDaemonLocal$}
+          <button
+            class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
+            onclick={() => {
+              revealNoteInFinder(contextTab);
+              closeContextMenu();
+            }}
+          >
+            <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
+            Reveal in {fileManagerName}
+          </button>
+        {/if}
       {/if}
       <!-- Type-specific actions for terminal tabs -->
       {#if contextTab && contextTab.type === 'terminal'}

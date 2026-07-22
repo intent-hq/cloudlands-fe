@@ -5,6 +5,7 @@ import {
 } from "vitest";
 import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
 import type { StoreState } from "../../types";
+import type { BackendTransportInfo } from "../daemon-health/daemon-health-types";
 import type { InstalledEditor } from "./external-editors-slice";
 import {
   selectInstalledEditors,
@@ -47,7 +48,10 @@ const mockEditors: InstalledEditor[] = [
   },
 ];
 
-function mockState(editors: InstalledEditor[] = mockEditors): StoreState {
+function mockState(
+  editors: InstalledEditor[] = mockEditors,
+  transport: BackendTransportInfo | null = { mode: "sidecar-uds" },
+): StoreState {
   return {
     externalEditors: {
       selectedAction: "cursor",
@@ -57,6 +61,7 @@ function mockState(editors: InstalledEditor[] = mockEditors): StoreState {
       error: null,
       lastFetched: 123,
     },
+    daemonHealth: { transport },
   } as unknown as StoreState;
 }
 
@@ -76,6 +81,24 @@ describe("external-editors selectors", () => {
     const state = mockState();
 
     expect(selectInstalledEditorsFiltered.select(state)).toEqual([mockEditors[0]]);
+  });
+
+  it("keeps editors offered on an adopted local UDS daemon (external-uds)", () => {
+    const state = mockState(mockEditors, { mode: "external-uds" });
+
+    expect(selectInstalledEditorsFiltered.select(state)).toEqual([mockEditors[0]]);
+  });
+
+  it("keeps editors offered before transport info arrives (null transport)", () => {
+    const state = mockState(mockEditors, null);
+
+    expect(selectInstalledEditorsFiltered.select(state)).toEqual([mockEditors[0]]);
+  });
+
+  it("hides all editor/reveal affordances when the daemon is remote (external-ws)", () => {
+    const state = mockState(mockEditors, { mode: "external-ws" });
+
+    expect(selectInstalledEditorsFiltered.select(state)).toEqual([]);
   });
 
   it("returns hidden editor ids", () => {

@@ -34,6 +34,8 @@
 } from '$features/layout/panel-layout-adapter';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
+  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
@@ -841,16 +843,19 @@
       });
     }
 
-    // Add reveal in Finder option
-    items.push({ type: 'separator' });
-    items.push({
-      id: 'reveal',
-      label: 'Reveal in Finder',
-      onClick: async () => {
-        await invoke('shell:showItemInFolder', { path: node.path });
-        closeContextMenu();
-      },
-    });
+    // Add reveal in Finder option — daemon-host desktop action, only offered
+    // when the daemon runs on this machine (PROTOCOL §5.14 locality).
+    if (selectIsDaemonLocal.select(appStore.state)) {
+      items.push({ type: 'separator' });
+      items.push({
+        id: 'reveal',
+        label: 'Reveal in Finder',
+        onClick: async () => {
+          await invoke('shell:showItemInFolder', { path: node.path });
+          closeContextMenu();
+        },
+      });
+    }
 
     return items;
   }
