@@ -125,6 +125,90 @@ describe('QueuedMessageList', () => {
     expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
   });
 
+  it('labels a non-agent event wake with categories derived from eventTypes', () => {
+    const { container } = render(QueuedMessageList, {
+      props: {
+        messages: [
+          queued({
+            content: '[WORKSPACE EVENTS] You have been woken up by 3 subscribed event(s):',
+            messageMetadata: {
+              type: 'event_notification',
+              eventCount: 3,
+              eventTypes: ['file:modified', 'task:updated', 'note:updated'],
+            },
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText('file changes · task updates · note changes')).toBeTruthy();
+    expect(buttonTooltips(container)).not.toContain('Edit');
+  });
+
+  it('combines agent labels with non-agent categories for mixed event wakes', () => {
+    render(QueuedMessageList, {
+      props: {
+        messages: [
+          queued({
+            content: WAKE_TEXT,
+            messageMetadata: {
+              type: 'event_notification',
+              eventCount: 2,
+              eventTypes: ['agent:idle', 'file:modified'],
+              events: [
+                {
+                  type: 'agent:idle',
+                  timestamp: '2026-01-01T00:00:00.000Z',
+                  data: { agentId: 'agent-foo-1', agentName: 'Foo' },
+                },
+              ],
+            },
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText('Child agent Foo completed · file changes')).toBeTruthy();
+  });
+
+  it('falls back to an event count when no categories can be derived', () => {
+    render(QueuedMessageList, {
+      props: {
+        messages: [
+          queued({
+            content: '[WORKSPACE EVENTS] You have been woken up by 4 subscribed event(s):',
+            messageMetadata: {
+              type: 'event_notification',
+              eventCount: 4,
+              eventTypes: ['mystery:thing', 'other:thing'],
+            },
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText('4 workspace events')).toBeTruthy();
+    expect(screen.queryByText('Workspace events')).toBeNull();
+  });
+
+  it('shows a content-derived preview for legacy no-metadata wakes', () => {
+    render(QueuedMessageList, {
+      props: {
+        messages: [
+          queued({
+            content:
+              '[WORKSPACE EVENTS] You have been woken up by 2 subscribed event(s):\n\n' +
+              '1. [file:modified] src/lib/foo.ts changed\n' +
+              '2. [file:created] src/lib/bar.ts created',
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText('2 workspace events')).toBeTruthy();
+    expect(screen.getByText(/\[file:modified\] src\/lib\/foo\.ts changed/)).toBeTruthy();
+  });
+
   it('keeps the requeued-after-failure indicator on event wake rows', () => {
     const { container } = render(QueuedMessageList, {
       props: { messages: [queued({ content: WAKE_TEXT, requeuedAfterFailure: true })] },
