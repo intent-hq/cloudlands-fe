@@ -60,6 +60,8 @@
     showSetupScript: boolean;
     setupScriptName: string;
     isCustomSetupScript: boolean;
+    /** Repo-committed `.intent/config.json` script, forwarded to SetupScriptModal. */
+    repoConfigScript: string | null;
 
     // Suggestions
     visibleSuggestions: string[];
@@ -96,6 +98,7 @@
     showSetupScript = $bindable(),
     setupScriptName = $bindable(),
     isCustomSetupScript = $bindable(),
+    repoConfigScript,
     visibleSuggestions,
     focusedSuggestionIndex = $bindable(),
     onSubmit,
@@ -507,6 +510,7 @@
         <SetupScriptModal
           bind:open={showSetupScript}
           repoPath={projectSelection.repoPath}
+          {repoConfigScript}
           bind:value={setupScript}
           bind:scriptName={setupScriptName}
           bind:isCustomScript={isCustomSetupScript}
