@@ -61,7 +61,7 @@ import type { ReleaseNotes } from "$store/renderer/slices/release-notes/release-
 import type { SystemStatusState } from "$store/renderer/slices/system-status/system-status-slice";
 import type { AutoUpdateState } from "$store/renderer/slices/auto-update/auto-update-types";
 import type { CommentV2 } from "$store/renderer/slices/comments/comments-types";
-import type { CommentType } from "$features/comments/comment-types-v2";
+import type { AuthorType, CommentType } from "$features/comments/comment-types-v2";
 import type { FileContentEntry } from "$store/renderer/slices/files/files-types";
 
 /** Disposer returned by every `subscribe()` call. */
@@ -977,6 +977,12 @@ export interface CommentAddParams {
   comment: string;
   type?: CommentType;
   author?: string;
+  /**
+   * Optional wire `authorType` (`"user" | "agent"`). The daemon defaults to
+   * `"agent"` when absent, so user-initiated adds MUST pass `"user"` for the
+   * comment to persist with the right attribution.
+   */
+  authorType?: AuthorType;
 }
 
 /** Parameters for replying to a thread or comment (`comment.respond`). */

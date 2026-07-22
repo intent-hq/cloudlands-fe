@@ -165,6 +165,7 @@ export class LiveCommentsClient implements CommentsClient {
       comment: params.comment,
       ...(params.type !== undefined ? { type: params.type } : {}),
       ...(params.author !== undefined ? { author: params.author } : {}),
+      ...(params.authorType !== undefined ? { authorType: params.authorType } : {}),
       idempotencyKey: newIdempotencyKey(),
     });
   }
