@@ -9,7 +9,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   __resetConnectionModeForTesting,
   getConnectionMode,
+  getDaemonVersionInfo,
   setConnectionMode,
+  setDaemonVersionInfo,
 } from '../connection-mode';
 import { formatTransportInfo } from '../transport-info';
 
@@ -27,6 +29,18 @@ describe('connection-mode', () => {
     expect(getConnectionMode()).toBe('sidecar');
     setConnectionMode('external');
     expect(getConnectionMode()).toBe('external');
+  });
+
+  it('round-trips daemon version info and clears it on reset', () => {
+    expect(getDaemonVersionInfo()).toBeNull();
+    setDaemonVersionInfo({ daemonVersion: '0.2.0', pinnedVersion: '0.1.0', versionMismatch: true });
+    expect(getDaemonVersionInfo()).toEqual({
+      daemonVersion: '0.2.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    __resetConnectionModeForTesting();
+    expect(getDaemonVersionInfo()).toBeNull();
   });
 });
 
@@ -49,6 +63,36 @@ describe('formatTransportInfo', () => {
     expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
       mode: 'external-uds',
       target: '/tmp/i.sock',
+    });
+  });
+
+  it('includes daemonVersion and versionMismatch for external UDS when version info is set', () => {
+    setConnectionMode('external');
+    setDaemonVersionInfo({ daemonVersion: '0.2.0', pinnedVersion: '0.1.0', versionMismatch: true });
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
+      mode: 'external-uds',
+      target: '/tmp/i.sock',
+      daemonVersion: '0.2.0',
+      versionMismatch: true,
+    });
+  });
+
+  it('reports versionMismatch false for external UDS when versions match', () => {
+    setConnectionMode('external');
+    setDaemonVersionInfo({ daemonVersion: '0.1.0', pinnedVersion: '0.1.0', versionMismatch: false });
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
+      mode: 'external-uds',
+      target: '/tmp/i.sock',
+      daemonVersion: '0.1.0',
+      versionMismatch: false,
+    });
+  });
+
+  it('omits version fields for sidecar UDS even when version info is set', () => {
+    setConnectionMode('sidecar');
+    setDaemonVersionInfo({ daemonVersion: '0.2.0', pinnedVersion: '0.1.0', versionMismatch: true });
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
+      mode: 'sidecar-uds',
     });
   });
 

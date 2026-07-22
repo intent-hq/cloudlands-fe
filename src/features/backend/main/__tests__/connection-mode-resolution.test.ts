@@ -41,16 +41,29 @@ vi.mock('child_process', async () => {
   return { ...actual, spawn: spawnMock, default: { ...actual, spawn: spawnMock } };
 });
 
+// Pin the version file to a fixed value so the version-mismatch matrix is
+// deterministic regardless of the repo's actual intentd.version content.
+vi.mock('../intentd-version-pin', async () => {
+  const actual =
+    await vi.importActual<typeof import('../intentd-version-pin')>('../intentd-version-pin');
+  return { ...actual, readPinnedVersion: vi.fn(() => '0.1.0') };
+});
+
 import { spawn } from 'node:child_process';
 import * as net from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Logger } from '$shared/logger';
 import {
   __resetIntentdSidecarForTesting,
   __setSidecarProcessForTesting,
   startIntentdSidecar,
 } from '../intentd-sidecar';
-import { __resetConnectionModeForTesting, getConnectionMode } from '../connection-mode';
+import {
+  __resetConnectionModeForTesting,
+  getConnectionMode,
+  getDaemonVersionInfo,
+} from '../connection-mode';
 
 const mockConnect = vi.mocked(net.connect);
 const mockSpawn = vi.mocked(spawn);
@@ -134,5 +147,91 @@ describe('startIntentdSidecar connection-mode resolution', () => {
       ['serve', '--listen', 'uds'],
       expect.objectContaining({ detached: false }),
     );
+  });
+});
+
+describe('startIntentdSidecar version-mismatch matrix (daemon-present × version-match)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetConnectionModeForTesting();
+    __resetIntentdSidecarForTesting();
+  });
+
+  afterEach(() => {
+    __setSidecarProcessForTesting(null);
+    __resetIntentdSidecarForTesting();
+    __resetConnectionModeForTesting();
+    vi.restoreAllMocks();
+  });
+
+  it('daemon present + version match → adopted, versionMismatch false, no warn', async () => {
+    const warnSpy = vi.spyOn(Logger.prototype, 'warn');
+    mockProbeSocket(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        result: { running: true, version: '0.1.0', protocolVersion: '1' },
+      }),
+    );
+    await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');
+    expect(getConnectionMode()).toBe('external');
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(getDaemonVersionInfo()).toEqual({
+      daemonVersion: '0.1.0',
+      pinnedVersion: '0.1.0',
+      versionMismatch: false,
+    });
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('daemon present + version mismatch → adopted anyway (never spawn), versionMismatch true, logger.warn', async () => {
+    const warnSpy = vi.spyOn(Logger.prototype, 'warn');
+    mockProbeSocket(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        result: { running: true, version: '9.9.9', protocolVersion: '1' },
+      }),
+    );
+    await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');
+    expect(getConnectionMode()).toBe('external');
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(getDaemonVersionInfo()).toEqual({
+      daemonVersion: '9.9.9',
+      pinnedVersion: '0.1.0',
+      versionMismatch: true,
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('version differs from the pinned version'),
+      expect.objectContaining({ daemonVersion: '9.9.9', pinnedVersion: '0.1.0' }),
+    );
+  });
+
+  it('daemon present but version unreported → adopted, versionMismatch false (unknown comparison)', async () => {
+    const warnSpy = vi.spyOn(Logger.prototype, 'warn');
+    mockProbeSocket(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { running: true } }));
+    await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');
+    expect(getConnectionMode()).toBe('external');
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(getDaemonVersionInfo()).toEqual({
+      daemonVersion: null,
+      pinnedVersion: '0.1.0',
+      versionMismatch: false,
+    });
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('no daemon → spawns sidecar and records no daemon version info', async () => {
+    mockProbeSocket(null);
+    mockSpawnedProcess();
+    await startIntentdSidecar(
+      { INTENTD_SIDECAR: '1', INTENTD_BIN: '/fake/intentd' },
+      false,
+      '/resources',
+      '/cwd',
+    );
+    expect(getConnectionMode()).toBe('sidecar');
+    expect(mockSpawn).toHaveBeenCalled();
+    expect(getDaemonVersionInfo()).toBeNull();
   });
 });

@@ -24,7 +24,7 @@ import * as path from 'node:path';
 
 import { Logger } from '$shared/logger';
 import { RestartPolicy } from './restart-policy';
-import { setConnectionMode } from './connection-mode';
+import { setConnectionMode, setDaemonVersionInfo } from './connection-mode';
 import { compareToPinnedVersion, readPinnedVersion } from './intentd-version-pin';
 // Re-export from the policy module so existing importers keep working; consumers
 // that only need the decision (e.g. `backend-connection.ts`) import it from
@@ -515,12 +515,21 @@ export async function startIntentdSidecar(
   const socketPath = resolveSocketPath(env);
   const probe = await probeDaemonVersion(socketPath);
   if (probe.alive) {
+    // A live daemon owns the socket (and the data dir behind it): ALWAYS
+    // adopt it — never spawn a second daemon alongside. Version mismatch is
+    // warn-only, surfaced to the renderer via the transport payload.
     setConnectionMode('external');
     const pinnedVersion = readPinnedVersion({ isPackaged, resourcesPath });
     const comparison =
       probe.version && pinnedVersion
         ? compareToPinnedVersion(probe.version, pinnedVersion)
         : 'unknown';
+    const versionMismatch = comparison === 'older' || comparison === 'newer';
+    setDaemonVersionInfo({
+      daemonVersion: probe.version ?? null,
+      pinnedVersion,
+      versionMismatch,
+    });
     const details = {
       socketPath,
       daemonVersion: probe.version ?? null,
@@ -528,10 +537,10 @@ export async function startIntentdSidecar(
       pinnedVersion,
       comparison,
     };
-    if (comparison === 'older' || comparison === 'newer') {
-      logger.warn('Adopting existing daemon whose version differs from the pinned version', details);
+    if (versionMismatch) {
+      logger.warn('Adopted external intentd whose version differs from the pinned version', details);
     } else {
-      logger.info('Adopting existing daemon', details);
+      logger.info('Adopted external intentd (no sidecar spawned)', details);
     }
     return;
   }

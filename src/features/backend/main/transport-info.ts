@@ -12,7 +12,7 @@
  * external UDS, undefined for sidecar. URLs are sanitized to strip userinfo
  * and query parameters (secrets/tokens).
  */
-import { getConnectionMode } from './connection-mode';
+import { getConnectionMode, getDaemonVersionInfo } from './connection-mode';
 
 /** Renderer-facing transport mode union. */
 export type TransportMode = 'sidecar-uds' | 'external-uds' | 'external-ws';
@@ -21,6 +21,10 @@ export type TransportMode = 'sidecar-uds' | 'external-uds' | 'external-ws';
 export interface TransportInfo {
   mode: TransportMode;
   target?: string;
+  /** Version reported by an adopted external daemon (version handshake). */
+  daemonVersion?: string;
+  /** True when the adopted daemon's version differs from the intentd.version pin (warn-only). */
+  versionMismatch?: boolean;
 }
 
 /**
@@ -56,7 +60,17 @@ export function formatTransportInfo(config: {
     // before the backend handlers register). Only an explicit `external`
     // resolution reports external-uds; `unknown` keeps the legacy default.
     if (getConnectionMode() === 'external') {
-      return { mode: 'external-uds', target: config.socketPath };
+      const versionInfo = getDaemonVersionInfo();
+      return {
+        mode: 'external-uds',
+        target: config.socketPath,
+        ...(versionInfo
+          ? {
+              daemonVersion: versionInfo.daemonVersion ?? undefined,
+              versionMismatch: versionInfo.versionMismatch,
+            }
+          : {}),
+      };
     }
     return { mode: 'sidecar-uds' };
   }
