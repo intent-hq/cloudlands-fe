@@ -10,8 +10,11 @@
  *  - `agent:backend:stream-message` (via the chat-send lifecycle) silently
  *    returned undefined → every Send became a no-op.
  *  - `agent:backend:queue-message` / `…edit-queued` / `…remove-queued` /
- *    `…force-message` / `…get-queue` (via `unifiedOrchestrator.*`) silently
- *    returned `{success:false}` from `unwrapIpcResponse` (spec iter#2 + #2b).
+ *    `…force-message` / `…get-queue` (via the since-retired renderer
+ *    `unifiedOrchestrator` proxy) silently returned `{success:false}` from
+ *    `unwrapIpcResponse` (spec iter#2 + #2b). ChatPanel now calls
+ *    `appClient.agents.*` directly (T3); these bridges remain for any legacy
+ *    channel consumers.
  *
  * Per the integration principle BE = source of truth: each handler forwards
  * to the canonical daemon RPC (`agent.create` / `agent.sendMessage` /
@@ -57,14 +60,14 @@ function readRecord(
 
 /**
  * Forward a request to the daemon and wrap the response in the
- * `{success:true, data: <daemonBody>}` envelope `unifiedOrchestrator`'s
- * `unwrapIpcResponse` expects (returns `result.data` only when both
+ * `{success:true, data: <daemonBody>}` envelope legacy `{success,data}`
+ * unwrappers expect (they return `result.data` only when both
  * `result.success` AND `result.data` are truthy — so we must always populate
  * `data` even when the daemon body itself is just `{success:true}`).
  *
- * Errors surface as `{success:false, error:{message}}` so the orchestrator's
+ * Errors surface as `{success:false, error:{message}}` so the caller's
  * unwrap falls through to its error branch and returns
- * `{success:false, error:<message>}` to the caller.
+ * `{success:false, error:<message>}`.
  */
 async function forwardToOrchestrator(
   method: string,
@@ -241,8 +244,8 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, async (arg) => {
  *
  * Daemon returns `{ success: true, queuedMessage }` where QueuedMessage =
  * `{ id, content, queuedAt, position, imageBlocks? }`. Wrapped in
- * `{success:true, data:<daemonBody>}` so the orchestrator's
- * `unwrapIpcResponse` folds back to the original `QueueOperationResult`.
+ * `{success:true, data:<daemonBody>}` so legacy `{success,data}` unwrappers
+ * fold back to the original queue-operation shape.
  */
 registerMockIpcHandler(AGENT_BACKEND_CHANNELS.QUEUE_MESSAGE, async (arg) => {
   const request = asRecord(arg);
@@ -259,8 +262,8 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.QUEUE_MESSAGE, async (arg) => {
 /**
  * `agent:backend:edit-queued` → daemon `agent.editQueuedMessage`
  * (PROTOCOL §5.5: `{ agentId, messageId, content, editing? }` →
- * `{ success, queuedMessage }`). Wrapped for orchestrator unwrap; the
- * QueuedMessage round-trip is what the ChatPanel queued-message UI binds to.
+ * `{ success, queuedMessage }`). Wrapped in `{success,data}` for legacy
+ * channel consumers (ChatPanel now uses `appClient.agents.editQueued`).
  * STAB-27: editing flag holds the message during edit (daemon skips it in drain).
  */
 registerMockIpcHandler(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, async (arg) => {
@@ -285,9 +288,9 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, async (arg) => {
 /**
  * `agent:backend:remove-queued` → daemon `agent.removeQueuedMessage`
  * (PROTOCOL §5.5: `{ agentId, messageId }` → service result `{ success }`).
- * Wrapped for orchestrator unwrap so a bare `{success:true}` daemon body
- * still passes `result.success && result.data` and yields `{success:true}`
- * back to the saga.
+ * Wrapped in `{success,data}` so a bare `{success:true}` daemon body
+ * still passes legacy `result.success && result.data` unwraps and yields
+ * `{success:true}` to the caller.
  */
 registerMockIpcHandler(AGENT_BACKEND_CHANNELS.REMOVE_QUEUED, async (arg) => {
   const request = asRecord(arg);
@@ -328,10 +331,9 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.FORCE_MESSAGE, async (arg) => {
 
 /**
  * `agent:backend:get-queue` → daemon `agent.getQueue` (PROTOCOL §5.5:
- * `{ agentId }` → `{ success, queue: QueuedMessage[] }`). The orchestrator
- * proxy's `getQueue` accepts both wrapped (`{success,data}`) and unwrapped
- * (`{success,queue}`) shapes; we use the wrapped form for consistency with
- * the other queue bridges.
+ * `{ agentId }` → `{ success, queue: QueuedMessage[] }`). Uses the wrapped
+ * `{success,data}` form for consistency with the other queue bridges
+ * (renderer reads now go through `appClient.agents.getQueue`).
  */
 registerMockIpcHandler(AGENT_BACKEND_CHANNELS.GET_QUEUE, async (arg) => {
   const request = asRecord(arg);

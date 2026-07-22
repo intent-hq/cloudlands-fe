@@ -12,6 +12,8 @@ vi.mock('./backend-transport', async () => {
 });
 
 import {
+  BackendError,
+  buildErrorPayload,
   installMockBackend,
   resetMockBackend,
   type MockBackendHandle,
@@ -230,6 +232,198 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     const result = await client.removeQueued('agent-1', 'qm-1');
     expect(result.success).toBe(false);
     expect(result.error).toContain('ipc boom');
+  });
+
+  it('editQueued forwards agent.editQueuedMessage with §5.5 params (editing omitted when absent) and surfaces the queuedMessage', async () => {
+    // PROTOCOL §5.5: `{ agentId, messageId, content, editing? }` →
+    // `{ success, queuedMessage }` (same QueuedMessage shape as queueMessage).
+    const queuedMessage = {
+      id: 'qm-1',
+      content: 'edited',
+      queuedAt: '2026-06-29T00:00:00.000Z',
+      position: 0,
+    };
+    backend.onRequest('agent.editQueuedMessage', () => ({ success: true, queuedMessage }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.editQueued('agent-1', 'qm-1', 'edited');
+    expect(result).toEqual({ success: true, queuedMessage });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.editQueuedMessage',
+      params: { agentId: 'agent-1', messageId: 'qm-1', content: 'edited' },
+    });
+    // No explicit `editing: undefined` on the wire — the daemon router's
+    // opt_value lookup must see the param as absent.
+    expect(backend.requests[0]?.params).not.toHaveProperty('editing');
+  });
+
+  it('editQueued forwards editing:true (STAB-27 hold) and editing:false (release) explicitly', async () => {
+    const queuedMessage = {
+      id: 'qm-1',
+      content: 'held',
+      queuedAt: '2026-06-29T00:00:00.000Z',
+      position: 0,
+      editing: true,
+    };
+    backend.onRequest('agent.editQueuedMessage', () => ({ success: true, queuedMessage }));
+    const client = new LiveAgentsClient();
+
+    await client.editQueued('agent-1', 'qm-1', 'held', true);
+    await client.editQueued('agent-1', 'qm-1', 'released', false);
+
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.editQueuedMessage',
+      params: { agentId: 'agent-1', messageId: 'qm-1', content: 'held', editing: true },
+    });
+    expect(backend.requests[1]).toEqual({
+      method: 'agent.editQueuedMessage',
+      params: { agentId: 'agent-1', messageId: 'qm-1', content: 'released', editing: false },
+    });
+  });
+
+  it('editQueued still succeeds when the daemon omits queuedMessage', async () => {
+    backend.onRequest('agent.editQueuedMessage', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    expect(await client.editQueued('agent-1', 'qm-1', 'edited')).toEqual({ success: true });
+  });
+
+  it('editQueued folds a raw BackendError into {success:false,error} (design §5 risk 2: no {success,data} unwrap anymore)', async () => {
+    // The retired renderer proxy unwrapped `{success,data}` envelopes; the
+    // seam now sees the raw BackendError a daemon rejection throws (§9). The
+    // ChatPanel error branch reads `result.error`, so the daemon message must
+    // land there verbatim and the call must NOT throw.
+    backend.onRequest('agent.editQueuedMessage', () => {
+      throw new BackendError(
+        buildErrorPayload('INVALID_PARAMS', 'not found: queued message', { rpcCode: -32602 }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.editQueued('agent-1', 'qm-gone', 'edited');
+    expect(result).toEqual({ success: false, error: 'not found: queued message' });
+  });
+
+  it('force forwards agent.forceMessage with §5.5 params and folds the daemon body into success', async () => {
+    // PROTOCOL §5.5: `{ agentId, messageId, content, workspaceId,
+    // imageBlocks?, noteIds? }` → service result (stops the stream first).
+    backend.onRequest('agent.forceMessage', () => ({
+      success: true,
+      queued: false,
+      messageId: 'msg-9',
+    }));
+    const client = new LiveAgentsClient();
+
+    const blocks = [{ type: 'image' as const, data: 'abc', mimeType: 'image/png' }];
+    const noteIds = ['note-1', 'note-2'];
+    const result = await client.force({
+      agentId: 'agent-1',
+      messageId: 'msg-9',
+      content: 'stop and run this',
+      workspaceId: 'ws-1',
+      imageBlocks: blocks,
+      noteIds,
+    });
+
+    expect(result.success).toBe(true);
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.forceMessage',
+      params: {
+        agentId: 'agent-1',
+        messageId: 'msg-9',
+        content: 'stop and run this',
+        workspaceId: 'ws-1',
+        imageBlocks: blocks,
+        noteIds,
+      },
+    });
+  });
+
+  it('force omits imageBlocks / noteIds when the caller does not supply them', async () => {
+    backend.onRequest('agent.forceMessage', () => ({ success: true, queued: false }));
+    const client = new LiveAgentsClient();
+
+    await client.force({
+      agentId: 'agent-1',
+      messageId: 'msg-9',
+      content: 'go',
+      workspaceId: 'ws-1',
+    });
+
+    const params = backend.requests[0]?.params as Record<string, unknown>;
+    expect(params).toEqual({
+      agentId: 'agent-1',
+      messageId: 'msg-9',
+      content: 'go',
+      workspaceId: 'ws-1',
+    });
+    expect(params).not.toHaveProperty('imageBlocks');
+    expect(params).not.toHaveProperty('noteIds');
+  });
+
+  it('force folds a raw BackendError into {success:false,error} (no throw)', async () => {
+    backend.onRequest('agent.forceMessage', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session', { rpcCode: -32004 }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.force({
+      agentId: 'agent-ghost',
+      messageId: 'msg-9',
+      content: 'go',
+      workspaceId: 'ws-1',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
+  });
+
+  it('getQueue forwards agent.getQueue and returns the daemon queue array verbatim (incl. messageMetadata)', async () => {
+    // PROTOCOL §5.5/§6.6: `{ agentId }` → `{ success, queue: QueuedMessage[] }`.
+    // Entries may carry optional opaque `messageMetadata` — passed through
+    // untouched (thin-presenter rule: no healing/normalizing).
+    const queue = [
+      { id: 'q-1', content: 'a', position: 0, queuedAt: '2026-01-01T00:00:00.000Z' },
+      {
+        id: 'q-2',
+        content: '[WORKSPACE EVENTS] woken by 1 event(s)',
+        position: 1,
+        queuedAt: '2026-01-01T00:00:01.000Z',
+        messageMetadata: { type: 'event_notification', eventCount: 1 },
+      },
+    ];
+    backend.onRequest('agent.getQueue', () => ({ success: true, queue }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.getQueue('agent-1');
+    expect(result).toEqual(queue);
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getQueue',
+      params: { agentId: 'agent-1' },
+    });
+  });
+
+  it('getQueue returns [] when the daemon body omits queue', async () => {
+    backend.onRequest('agent.getQueue', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    expect(await client.getQueue('agent-1')).toEqual([]);
+  });
+
+  it('getQueue propagates a BackendError rejection (read seam — callers handle it)', async () => {
+    backend.onRequest('agent.getQueue', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session', { rpcCode: -32004 }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    await expect(client.getQueue('agent-ghost')).rejects.toMatchObject({
+      name: 'BackendError',
+      message: 'not found: agent session',
+      rpcCode: -32004,
+    });
   });
 
   it('editAndRegenerate forwards agent.editAndRegenerate with §5.5 params (model omitted when absent)', async () => {
