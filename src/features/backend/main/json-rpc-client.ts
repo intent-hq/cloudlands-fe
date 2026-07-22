@@ -73,7 +73,11 @@ export interface JsonRpcClientOptions {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RECONNECT_MS = 1_000;
-const DEFAULT_MAX_RECONNECT_MS = 30_000;
+// Reconnect backoff is capped at 5s so a stopped daemon is re-probed at least
+// every 5s while disconnected — the renderer's daemon-loss UX (#439) relies on
+// a prompt automatic reconnect once the daemon comes back. Retries continue
+// indefinitely (there is no give-up).
+const DEFAULT_MAX_RECONNECT_MS = 5_000;
 
 /**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),

@@ -418,6 +418,47 @@ describe("JsonRpcClient reconnect + heartbeat", () => {
     client.dispose();
   });
 
+  // #439: a stopped daemon must be re-probed at least every 5s while
+  // disconnected, indefinitely — the daemon-loss modal relies on the main
+  // process noticing a returning daemon promptly and never giving up.
+  it("caps the default reconnect backoff at 5s and retries indefinitely", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeSocket[] = [];
+    const client = new JsonRpcClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as Duplex;
+      },
+      heartbeatIntervalMs: 0,
+      // reconnectDelayMs / maxReconnectDelayMs intentionally omitted: this
+      // asserts the DEFAULTS (1s base, 5s cap).
+    });
+    client.on("error", () => {});
+    client.start();
+    expect(sockets).toHaveLength(1);
+
+    // Backoff doubles 1s → 2s → 4s, then clamps to 5s.
+    for (const delay of [1000, 2000, 4000, 5000]) {
+      sockets[sockets.length - 1].emit("close");
+      const before = sockets.length;
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(sockets).toHaveLength(before);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sockets).toHaveLength(before + 1);
+    }
+
+    // Many further drops: every retry stays at the 5s cap — no give-up.
+    for (let i = 0; i < 10; i++) {
+      sockets[sockets.length - 1].emit("close");
+      const before = sockets.length;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(sockets).toHaveLength(before + 1);
+    }
+
+    client.dispose();
+  });
+
   it("resets the backoff after a successful reconnect", async () => {
     vi.useFakeTimers();
     const { client, sockets } = makeReconnectingClient();
