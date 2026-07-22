@@ -11,7 +11,7 @@
  *   GITHUB_TOKEN=... node scripts/generate-release-notes.mjs \
  *     --version 2.0.6 \
  *     --fe-base v2.0.5 --fe-head v2.0.6 \
- *     --intentd-version 0.9.0 \
+ *     --intentd-version 0.1.0 \
  *     --out release-notes.md \
  *     --manifest-out release-manifest.json
  *
