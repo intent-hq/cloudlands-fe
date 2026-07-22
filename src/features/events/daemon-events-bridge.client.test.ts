@@ -155,6 +155,7 @@ import {
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptOutputLine } from '$store/renderer/slices/scripts/scripts-types';
+import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -1192,6 +1193,223 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(events[3].timestamp - events[2].timestamp).toBe(150);
 
     vi.useRealTimers();
+  });
+});
+
+// Regression (intentd#336): a user interrupt (agent.stop, or agent.sendMessage
+// with priority:interrupt) mid-stream must NOT erase the streamed-so-far
+// deltas. The daemon persists the partial turn as an interrupted assistant row
+// (`metadata.interrupted: true` + `metadata.stopReason: "interrupted"`) and
+// emits the terminal `agent:stream:end` + `agent:idle { reason: "interrupted" }`
+// pair from `interrupt_inner`. The FE must keep the partial content visible
+// through that terminal choreography and, once the persisted row reconciles in,
+// render the Stopped indicator (`shouldShowStoppedIndicator`).
+describe('daemonEventsBridge (interrupt regression — interrupted deltas stay visible + Stopped indicator)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  /** Stream two text chunks + a completed tool call into the bridge. */
+  function streamPartialTurn(handler: (n: { method: string; params?: unknown }) => void): void {
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Partial ',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+    handler(
+      notification('agent:tool:call', {
+        agentId: AGENT,
+        toolName: 'Read',
+        toolKind: 'file',
+        toolCallId: 't-int',
+        input: { path: 'src/lib.rs' },
+        status: 'completed',
+        output: 'ok',
+        messageId: MESSAGE_ID,
+        blockIndex: 1,
+        blockId: `${MESSAGE_ID}:1`,
+      }),
+    );
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'answer',
+        messageId: MESSAGE_ID,
+        blockIndex: 2,
+        blockId: `${MESSAGE_ID}:2`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+  }
+
+  const expectPartialBlocksIntact = (message: AgentMessage | undefined): void => {
+    expect(message).toBeDefined();
+    const blocks = message!.contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(['text', 'tool_use', 'tool_result', 'text']);
+    expect(blocks[0]).toMatchObject({ type: 'text', text: 'Partial ' });
+    expect(blocks[3]).toMatchObject({ type: 'text', text: 'answer' });
+  };
+
+  it('user stop mid-stream: terminal stream:end + idle(reason=interrupted) finalize in place — streamed deltas stay visible', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamPartialTurn(handler);
+    expectPartialBlocksIntact(readAssistantMessages()[0]);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+
+    // `interrupt_inner` emits the single terminal `agent:stream:end` (the
+    // aborted worker no longer reaches its own emit) followed by the STAB-28
+    // `agent:idle { reason: "interrupted" }`.
+    handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
+    handler(
+      notification('agent:idle', {
+        agentId: AGENT,
+        status: 'idle',
+        isActive: false,
+        reason: 'interrupted',
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expectPartialBlocksIntact(assistantMessages[0]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it('persisted interrupted row reconciles in: blocks stay intact and the Stopped indicator shows', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamPartialTurn(handler);
+    handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
+    handler(
+      notification('agent:idle', {
+        agentId: AGENT,
+        status: 'idle',
+        isActive: false,
+        reason: 'interrupted',
+      }),
+    );
+
+    // Simulate the chat-read-service hydration reconcile: the daemon's
+    // `flush_partial_turn_on_interruption` persisted the partial under the
+    // turn's minted message id with `metadata.interrupted = true` +
+    // `stopReason = "interrupted"` (intentd#336 wire contract), so
+    // agent.getConversation now returns it and bulkUpsertSessions upserts it
+    // by the SAME id the live stream used.
+    const session = readSession();
+    expect(session).toBeDefined();
+    const persistedInterrupted = {
+      id: MESSAGE_ID,
+      role: 'assistant',
+      timestamp: '2026-01-02T00:00:01.000Z',
+      contentBlocks: [
+        { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Partial ' },
+        {
+          type: 'tool_use',
+          id: `${MESSAGE_ID}:1`,
+          name: 'Read',
+          toolCallId: 't-int',
+          input: { path: 'src/lib.rs' },
+        },
+        { type: 'tool_result', tool_use_id: 't-int', output: 'ok' },
+        { type: 'text', id: `${MESSAGE_ID}:2`, text: 'answer' },
+      ],
+      metadata: { interrupted: true, stopReason: 'interrupted' },
+    } as unknown as AgentMessage;
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...session!,
+          isStreaming: false,
+          status: AgentStatus.Idle,
+          messages: [
+            ...(session!.messages ?? []).filter((m) => m.role !== 'assistant'),
+            persistedInterrupted,
+          ],
+        },
+      ]),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual([
+      'text',
+      'tool_use',
+      'tool_result',
+      'text',
+    ]);
+    expect(assistantMessages[0].metadata).toMatchObject({
+      interrupted: true,
+      stopReason: 'interrupted',
+    });
+    // The persisted row carries `metadata.interrupted: true`, so a `false`
+    // here can only come from the isStreaming gate — pins that the indicator
+    // stays hidden while a stream is (still) considered in-flight.
+    expect(
+      shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: true }),
+    ).toBe(false);
+    expect(
+      shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false }),
+    ).toBe(true);
+  });
+
+  it('interrupt-send (priority:interrupt): the next turn streams under a NEW message id without erasing the interrupted partial', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Turn 1 streams, then the daemon preempts it (agent.sendMessage with
+    // priority:interrupt): terminal stream:end arrives; agent:idle is
+    // SUPPRESSED on the interrupt-with-message path (suppress_idle_emit).
+    streamPartialTurn(handler);
+    handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
+
+    // Turn 2 streams under the daemon's next minted message id.
+    const nextMessageId = 'msg_assistant_2';
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'New turn',
+        messageId: nextMessageId,
+        blockIndex: 0,
+        blockId: `${nextMessageId}:0`,
+        blockType: 'text',
+        streamId: 'stream_2',
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages.map((m) => m.id)).toEqual([MESSAGE_ID, nextMessageId]);
+    expectPartialBlocksIntact(assistantMessages[0]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[1].isStreaming).toBe(true);
+    expect(assistantMessages[1].contentBlocks?.[0]).toMatchObject({
+      type: 'text',
+      text: 'New turn',
+    });
   });
 });
 

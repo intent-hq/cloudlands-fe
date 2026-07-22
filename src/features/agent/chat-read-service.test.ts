@@ -51,6 +51,7 @@ import {
 import { selectTranscriptHydration } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { loadChatTranscript } from "./chat-read-service";
 import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
+import { shouldShowStoppedIndicator } from "$lib/components/chat/message-display-utils";
 
 const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const chatApi = appClient.chat as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -521,6 +522,76 @@ describe("chatReadService (fake seam, real store)", () => {
 
     // seedStreamFromSnapshot should not be called when no in-flight message.
     expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
+  });
+
+  // Regression (intentd#336): after a user interrupts mid-stream, the daemon
+  // persists the streamed-so-far partial as an interrupted assistant row
+  // (`metadata.interrupted: true` + `metadata.stopReason: "interrupted"`, the
+  // turn's minted message id). Hydration must render that row as-is — blocks
+  // AND metadata intact — so the transcript keeps the partial output and the
+  // Stopped indicator shows.
+  it("hydrates a persisted interrupted partial row verbatim (blocks + interrupted metadata → Stopped indicator)", async () => {
+    const agentId = "agent-interrupted-partial";
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isStreaming: false,
+      }) as never,
+    );
+    const userTurn: AgentMessage = {
+      id: "0190c1d2-user",
+      role: "user",
+      timestamp: "2026-07-22T10:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "Summarize the repo" }],
+    };
+    // Wire shape per intentd#336 (flush_partial_turn_on_interruption): the
+    // partial turn persisted under the turn's minted message id with the
+    // interrupted metadata pair.
+    const interruptedPartial = {
+      id: "0190c1d2-asst",
+      role: "assistant",
+      timestamp: "2026-07-22T10:00:01.000Z",
+      contentBlocks: [
+        { type: "text", id: "0190c1d2-asst:0", text: "The repo contains" },
+        {
+          type: "tool_use",
+          id: "0190c1d2-asst:1",
+          name: "Read",
+          toolCallId: "call-int",
+          input: { path: "README.md" },
+        },
+      ],
+      metadata: { interrupted: true, stopReason: "interrupted" },
+    } as unknown as AgentMessage;
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation([userTurn, interruptedPartial]) as never,
+    );
+    // The turn ended: the snapshot carries no in-flight assistant message.
+    chatApi.subscribeSnapshot.mockResolvedValueOnce({
+      messages: [userTurn, interruptedPartial],
+    } as never);
+
+    await loadChatTranscript(agentId);
+
+    const rendered = selectAgentMessages.select(appStore.state, agentId);
+    expect(rendered.map((m) => m.id)).toEqual(["0190c1d2-user", "0190c1d2-asst"]);
+    const stored = rendered[1] as AgentMessage & { isStreaming?: boolean };
+    // The streamed-so-far deltas are NOT erased.
+    expect(stored.contentBlocks?.map((b) => b.type)).toEqual(["text", "tool_use"]);
+    expect(stored.contentBlocks?.[0]).toMatchObject({
+      type: "text",
+      text: "The repo contains",
+    });
+    // Metadata rendered verbatim → the Stopped indicator condition holds.
+    expect(stored.metadata).toMatchObject({
+      interrupted: true,
+      stopReason: "interrupted",
+    });
+    expect(stored.isStreaming).toBeUndefined();
+    expect(shouldShowStoppedIndicator({ message: stored, isStreaming: false })).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
   });
 
   // Transcript hydration status tracking tests
