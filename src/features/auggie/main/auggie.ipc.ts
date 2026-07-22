@@ -317,11 +317,12 @@ export function setupAuggieIPC() {
       // (intent-hq/intentd#339): the daemon owns the probe and its caching.
       // `force: true` so a login that just completed is picked up. RPC
       // failure / unknown folds to unauthenticated (honest degradation, no
-      // local probe).
+      // local probe). `authDetails` is user-visible ("Connected as ...") and
+      // the daemon has no user-info surface, so it stays undefined when
+      // authenticated — consumers render their generic authenticated state.
       const verdict = await getProviderAuthVerdict('auggie', { force: true });
       if (verdict === true) {
         status.authenticated = true;
-        status.authDetails = 'daemon host.providerAuthStatus reports authenticated';
       } else if (verdict === false) {
         status.authDetails = 'auggie reports not logged in';
       }

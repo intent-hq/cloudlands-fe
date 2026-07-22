@@ -308,6 +308,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     piResult,
     droidResult,
     grokResult,
+    authVerdicts,
   ] = await Promise.all([
     makeProviderStatus('auggie', checkAuggieAvailability),
     makeProviderStatus('claude-code', checkClaudeCodeAvailability),
@@ -324,6 +325,11 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     // Grok availability comes from the daemon's provider discovery; the
     // host.findBinary fallback covers the RPC-degraded path.
     makeProviderStatus('grok', checkGrokAvailability),
+    // Auth verdicts from the daemon's `host.providerAuthStatus` sweep
+    // (intent-hq/intentd#339): the daemon owns the CLI/ACP probes, marker
+    // parsing, and caching. Independent of discovery, so it rides in the
+    // same Promise.all.
+    getProviderAuthVerdicts(),
   ]);
 
   // claude-code runs its ACP adapter exclusively via npx (pinned version).
@@ -340,12 +346,8 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     }
   }
 
-  // Auth verdicts come from the daemon's `host.providerAuthStatus` sweep
-  // (intent-hq/intentd#339): the daemon owns the CLI/ACP probes, marker
-  // parsing, and caching. The wire's `null` (unknown/uninstalled) folds to
-  // `undefined` so no indicator renders; verdicts attach only to providers
-  // that are available.
-  const authVerdicts = await getProviderAuthVerdicts();
+  // The wire's `null` (unknown/uninstalled) folds to `undefined` so no
+  // indicator renders; verdicts attach only to providers that are available.
   if (auggieResult.available) auggieResult.authenticated = authVerdicts['auggie'];
   if (claudeCodeResult.available) claudeCodeResult.authenticated = authVerdicts['claude-code'];
   if (codexResult.available) codexResult.authenticated = authVerdicts['codex'];
