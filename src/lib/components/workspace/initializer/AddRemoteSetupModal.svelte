@@ -177,6 +177,7 @@ interface Props {
                   keyPath = '';
                   password = '';
                   workspacePath = '';
+                  error = '';
                   transport = 'ssh';
                 }
               }}
@@ -199,6 +200,7 @@ interface Props {
                   authMode = 'agent';
                   keyPath = '';
                   password = '';
+                  error = '';
                   transport = 'websocket';
                 }
               }}
