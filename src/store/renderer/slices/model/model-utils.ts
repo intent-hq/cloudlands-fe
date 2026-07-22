@@ -17,7 +17,7 @@ import {
 } from '$shared/config/provider-config';
 /**
  * Provider model row shape — the provider-agnostic daemon catalog shape
- * shared by all seven providers (`models.list`, PROTOCOL §6.7).
+ * shared by all eight providers (`models.list`, PROTOCOL §6.7).
  */
 export type ProviderModel = ProviderModelEntry;
 
@@ -39,12 +39,6 @@ async function fetchProviderModelsWithWarning(
   const normalizedId = getProviderConfig(providerId).id;
   if (normalizedId === 'mock') {
     return { models: [] };
-  }
-  if (normalizedId === 'grok') {
-    // Grok has no daemon-side model source yet (`models.list` reports
-    // "no dynamic model source"); surface an honest empty list instead of
-    // throwing on the missing `grok:get-models` channel.
-    return { models: [], warning: 'Grok model list unavailable in this build' };
   }
   return await getProviderModels(normalizedId, options);
 }

@@ -69,12 +69,30 @@ describe('model-utils', () => {
     expect(vi.mocked(getProviderModels)).not.toHaveBeenCalled();
   });
 
-  it('returns an empty grok model list with an honest warning instead of throwing', async () => {
+  it('routes grok through the daemon-backed provider models client with prefixing', async () => {
+    vi.mocked(getProviderModels).mockResolvedValue({
+      models: [{ value: 'grok-4-1-fast', label: 'Grok 4.1 Fast' }],
+    });
+
     await expect(getModelsForProviderForLoadingState('grok')).resolves.toEqual({
-      models: [],
-      warning: 'Grok model list unavailable in this build',
+      models: [{ value: 'grok:grok-4-1-fast', label: 'Grok 4.1 Fast' }],
+      warning: undefined,
       stale: undefined,
     });
-    expect(vi.mocked(getProviderModels)).not.toHaveBeenCalled();
+    expect(vi.mocked(getProviderModels)).toHaveBeenCalledWith('grok', {});
+  });
+
+  it('surfaces the daemon warning on grok degradation instead of a hard-coded stub', async () => {
+    vi.mocked(getProviderModels).mockResolvedValue({
+      models: [],
+      warning: 'Grok not installed; no model source available',
+    });
+
+    await expect(getModelsForProviderForLoadingState('grok')).resolves.toEqual({
+      models: [],
+      warning: 'Grok not installed; no model source available',
+      stale: undefined,
+    });
+    expect(vi.mocked(getProviderModels)).toHaveBeenCalledWith('grok', {});
   });
 });
