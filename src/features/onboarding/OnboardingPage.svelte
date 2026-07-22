@@ -32,6 +32,8 @@
   setOnboardingWorkspaceId,
   resetOnboarding,
 } from '$store/renderer/slices/onboarding/onboarding-slice';
+  import { cancelGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { selectGitHubAuthIsAuthenticating } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
   import ProjectPickerMessage from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -368,7 +370,9 @@
   const onboardingVisibleStep = $derived(
     isConfiguringStep ? 4 : isProjectStep ? 3 : isGitHubStep ? 2 : 1,
   );
-  const ONBOARDING_TOTAL_STEPS = 4;
+  // 'configuring' and 'ready' share one visible step, so the count is the
+  // step order minus the terminal 'ready' entry.
+  const ONBOARDING_TOTAL_STEPS = ONBOARDING_STEP_ORDER.length - 1;
 
   // ============================================================================
   // Mount: Reset onboarding state
@@ -609,7 +613,13 @@
       appStore.dispatch(goToStep('github'));
     } else if (isGitHubStep) {
       // Continue when connected, skip otherwise — both advance to project.
+      // Skipping abandons a still-pending device flow, so cancel it rather
+      // than leaving it polling in the background (and resurfacing in
+      // Settings).
       e.preventDefault();
+      if (selectGitHubAuthIsAuthenticating.select(appStore.state)) {
+        appStore.dispatch(cancelGitHubAuth());
+      }
       appStore.dispatch(goToStep('project'));
     } else if (isProjectStep && projectSelection?.isValid) {
       e.preventDefault();

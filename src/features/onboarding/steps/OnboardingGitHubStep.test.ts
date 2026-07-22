@@ -129,6 +129,29 @@ describe('OnboardingGitHubStep', () => {
     expect(props.onContinue).toHaveBeenCalledOnce();
   });
 
+  it('skipping while starting auth cancels the flow before advancing', async () => {
+    mocks.githubAuth.value = { ...idleState(), isAuthenticating: true };
+    const props = baseProps();
+    const { container } = render(OnboardingGitHubStep, { props });
+
+    await fireEvent.click(findButton(container, 'Skip for now')!);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'githubAuth/cancelAuth' }),
+    );
+    expect(props.onSkip).toHaveBeenCalledOnce();
+  });
+
+  it('skipping when idle does not dispatch cancelAuth', async () => {
+    const props = baseProps();
+    const { container } = render(OnboardingGitHubStep, { props });
+
+    await fireEvent.click(findButton(container, 'Skip for now')!);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'githubAuth/cancelAuth' }),
+    );
+    expect(props.onSkip).toHaveBeenCalledOnce();
+  });
+
   it('renders the auth error when present', () => {
     mocks.githubAuth.value = { ...idleState(), error: 'Device flow expired' };
     const { container } = render(OnboardingGitHubStep, { props: baseProps() });

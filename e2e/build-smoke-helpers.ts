@@ -445,9 +445,18 @@ export async function createWorkspaceWithPrompt(
 
     if (onboardingStep === 'welcome') {
       await letsGo.click();
-      await page.locator('[data-onboarding-step="project"]').waitFor({ timeout: 10_000 });
-      onboardingStep = 'project';
+      await page.locator('[data-onboarding-step="github"]').waitFor({ timeout: 10_000 });
+      onboardingStep = 'github';
     }
+  }
+
+  if (onboardingStep === 'github') {
+    // The GitHub connect step is optional — skip it to reach project selection.
+    const skipGitHub = page.getByRole('button', { name: 'Skip for now' }).first();
+    await skipGitHub.waitFor({ state: 'visible', timeout: 10_000 });
+    await skipGitHub.click();
+    await page.locator('[data-onboarding-step="project"]').waitFor({ timeout: 10_000 });
+    onboardingStep = 'project';
   }
 
   if (onboardingStep === 'project') {

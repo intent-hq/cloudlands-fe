@@ -74,6 +74,15 @@
   function handleCancel() {
     appStore.dispatch(cancelGitHubAuth());
   }
+
+  function handleSkip() {
+    // Skipping abandons a still-pending device flow — cancel it so it doesn't
+    // keep polling in the background and resurface in Settings.
+    if (selectGitHubAuthIsAuthenticating.select(appStore.state)) {
+      appStore.dispatch(cancelGitHubAuth());
+    }
+    onSkip();
+  }
 </script>
 
 <div class="space-y-6">
@@ -136,7 +145,7 @@
         <span class="ml-1 opacity-50">⌘↵</span>
       </Button>
     {:else}
-      <Button class="group/button" size="xl" variant="outline" onclick={onSkip}>
+      <Button class="group/button" size="xl" variant="outline" onclick={handleSkip}>
         Skip for now
         <span class="ml-1 opacity-50">⌘↵</span>
       </Button>
