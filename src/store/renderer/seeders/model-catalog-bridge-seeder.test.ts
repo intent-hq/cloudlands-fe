@@ -1,7 +1,7 @@
 /**
  * Wire-contract tests for the model catalog bridge seeder.
  *
- * Asserts the 7 `*:get-models` channels forward uniformly to the daemon's
+ * Asserts the 8 `*:get-models` channels forward uniformly to the daemon's
  * per-provider model catalog (`models.list { providerId, forceRefresh }`,
  * PROTOCOL §6.7) and return honest envelopes: mapped rows on success,
  * daemon-provided `warning`/`stale` labeling on fallback, and
@@ -33,6 +33,7 @@ const ALL_CHANNELS: Array<[string, string]> = [
   ["codex", "codex:get-models"],
   ["cortex", "cortex:get-models"],
   ["droid", "droid:get-models"],
+  ["grok", "grok:get-models"],
   ["opencode", "opencode:get-models"],
   ["pi", "pi:get-models"],
 ];

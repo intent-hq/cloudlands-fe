@@ -236,6 +236,11 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'droid:get-models',
   },
 
+  // Grok Build Integration
+  GROK: {
+    GET_MODELS: 'grok:get-models',
+  },
+
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',

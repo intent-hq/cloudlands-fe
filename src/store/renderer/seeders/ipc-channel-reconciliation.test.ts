@@ -61,7 +61,7 @@ const WRAPPER_DECL_RE =
  * prefer `window.electronAPI.invoke(channel)`). The wrapper body's own invoke
  * is dynamic (a bare parameter), so the concrete channels only exist at the
  * wrapper's call sites — treating the wrapper name as an invoke head is what
- * lets the audit see them (the 7 `*:get-models` channels escaped this way).
+ * lets the audit see them (the 8 `*:get-models` channels escaped this way).
  */
 function collectPassthroughWrapperNames(source: string): string[] {
   const names: string[] = [];
@@ -236,7 +236,7 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     // drops such call sites entirely — settings:getAll escaped to a runtime
     // UnbridgedMockIpcChannelError that way. Guards the depth-aware parser.
     expect(invoked.has('auto-update:get-state')).toBe(true);
-    // The 7 `*:get-models` channels are dispatched through a runtime
+    // The 8 `*:get-models` channels are dispatched through a runtime
     // provider → channel map (provider-models.client.ts), so they are
     // dynamic call sites — recorded in DYNAMIC_INVOKE_CALL_SITES below.
     expect(DYNAMIC_INVOKE_CALL_SITES.has('droid:get-models')).toBe(true);
@@ -352,7 +352,7 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
  * retired or rewritten as a statically-resolvable invoke.
  */
 const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
-  // provider-models.client.ts dispatches the 7 uniform `<provider>:get-models`
+  // provider-models.client.ts dispatches the 8 uniform `<provider>:get-models`
   // channels through its PROVIDER_MODEL_CHANNELS map; the concrete channel is
   // selected at runtime by providerId, so the scanner cannot see them.
   ['auggie:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
@@ -363,6 +363,7 @@ const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
   ['codex:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   ['cortex:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   ['droid:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
+  ['grok:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   ['opencode:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
   ['pi:get-models', 'features/providers/provider-models.client.ts (PROVIDER_MODEL_CHANNELS)'],
 ]);
