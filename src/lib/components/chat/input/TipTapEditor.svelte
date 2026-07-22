@@ -23,6 +23,7 @@
   import { PasteChip } from '$lib/components/tiptap/PasteChip';
   import { createLogger } from '$lib/utils/client-logger';
   import type { ContextItem } from './context-api';
+  import { isFileDragEvent } from './drop-guard';
   import MentionHoverPreview from './MentionHoverPreview.svelte';
   import { createMentionSuggestionRenderer } from './mention-suggestion-renderer';
   import {
@@ -633,6 +634,10 @@
             italic: false, // asterisks * and underscores _ remain literal
             strike: false, // tildes ~~ remain literal
             blockquote: false, // > remains literal
+            // Disable the drop cursor - dropped files become attachments (via
+            // SimpleRichInput's container-level drop handler), not inline
+            // content, so the horizontal insertion line is misleading
+            dropcursor: false,
           }),
           // Re-add Link extension with custom autolink filtering.
           // StarterKit v3's default Link autolinks aggressively — bare words like
@@ -783,6 +788,14 @@
               }
             }
             return false;
+          },
+          handleDrop: (_view, event) => {
+            // Block ProseMirror's default handling for file drops so dropped
+            // images are never inserted inline. Returning true (without
+            // stopPropagation) lets the event bubble to SimpleRichInput's
+            // container-level drop handler, which attaches the files as
+            // context items. Text/content drags still use the default path.
+            return isFileDragEvent(event);
           },
           handleKeyDown: (view, event) => {
             // Handle Escape for cancel (in edit mode)
