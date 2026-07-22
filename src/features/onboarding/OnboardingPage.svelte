@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   /**
    * OnboardingPage - Extracted from +page.svelte
    *
@@ -8,7 +9,7 @@
 
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
@@ -65,7 +66,13 @@
   } from '$features/onboarding/utils/parse-context-references';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
-  import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
+  import {
+    SETUP_SCRIPT_TEMPLATES,
+    getTemplateContent,
+    chooseDefaultSetupScript,
+    fetchRepoConfigSetupScript,
+    REPO_CONFIG_SCRIPT_NAME,
+  } from '$features/setup-scripts';
   import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
   import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
@@ -180,20 +187,55 @@
   // Auto-restore last used setup script when repo changes
   let previousSetupScriptRepo = $state<string | null>(null);
   $effect(() => {
-    const path = projectSelection?.repoPath;
+    const path = projectSelection?.repoPath ?? null;
+    const type = projectSelection?.type;
+    // Only run when repo actually changes
     if (path === previousSetupScriptRepo) return;
     const isInitialMount = previousSetupScriptRepo === null;
-    previousSetupScriptRepo = path ?? null;
+    previousSetupScriptRepo = path;
 
-    if (isInitialMount && setupScript.trim()) return;
+    // Repo changed — invalidate any cached repo-config script
+    repoConfigScript = null;
+    repoConfigScriptRepo = null;
 
-    if (path) {
-      restoreLastUsedSetupScript(path);
-    } else {
-      setupScript = '';
-      setupScriptName = 'Custom';
-      isCustomSetupScript = false;
+    // On initial mount, don't override if there's already a setup script set
+    // (e.g., from restored form state). On repo switches, always restore.
+    const preservedRestoredState = isInitialMount && !!setupScript.trim();
+    if (!preservedRestoredState) {
+      // Restore last used script for this repo (or clear if no saved script exists)
+      if (path) {
+        restoreLastUsedSetupScript(path);
+      } else {
+        setupScript = '';
+        setupScriptName = 'Custom';
+        isCustomSetupScript = false;
+      }
     }
+
+    // Probe the repo's committed `.intent/config.json` for a setup script.
+    // Only absolute local paths — GitHub/remote repos have no local checkout,
+    // and `~` never expands in host.exec argv (no shell).
+    if (!path || type !== 'local' || !path.startsWith('/')) return;
+    const scriptAtFetchStart = untrack(() => setupScript);
+    (async () => {
+      const script = await fetchRepoConfigSetupScript(path);
+      // Staleness guard: user switched repos while the read was in flight
+      if (untrack(() => projectSelection?.repoPath ?? null) !== path) return;
+      repoConfigScript = script;
+      repoConfigScriptRepo = path;
+      if (!script) return;
+      // Repo config has top priority, but never clobber restored form state,
+      // user edits, an open setup-script modal (it snapshots parent values on
+      // open and would commit stale ones on Done), or anything changed while
+      // the read was in flight
+      if (preservedRestoredState) return;
+      if (untrack(() => showSetupScript)) return;
+      if (untrack(() => isCustomSetupScript)) return;
+      if (untrack(() => setupScript) !== scriptAtFetchStart) return;
+      setupScript = script;
+      setupScriptName = REPO_CONFIG_SCRIPT_NAME;
+      isCustomSetupScript = false;
+    })();
   });
 
   function getInitialOnboardingPrompt(): string {
@@ -271,23 +313,27 @@
   let setupScriptName = $state('Custom');
   let isCustomSetupScript = $state(false);
 
+  // Repo-committed setup script from <repo>/.intent/config.json (local repos only).
+  // Cached alongside the repo it was fetched for so stale results are never applied.
+  let repoConfigScript = $state<string | null>(null);
+  let repoConfigScriptRepo = $state<string | null>(null);
+
+  // Helper to restore the default setup script for a repo.
+  // Priority: repo-committed `.intent/config.json` setupScript > last used for
+  // this repo > generic "Copy config files only" template.
   function restoreLastUsedSetupScript(repo: string) {
     const lastUsed = repo ? selectLastUsedScriptForRepo.select(appStore.state, repo) : undefined;
-    if (lastUsed) {
-      setupScript = lastUsed.content;
-      setupScriptName = lastUsed.name;
-      isCustomSetupScript = false;
-    } else {
-      const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
-      if (genericTemplate) {
-        setupScript = getTemplateContent(genericTemplate);
-        setupScriptName = genericTemplate.name;
-      } else {
-        setupScript = '';
-        setupScriptName = 'Custom';
-      }
-      isCustomSetupScript = false;
-    }
+    const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
+    const choice = chooseDefaultSetupScript({
+      repoConfigScript: repo && repo === repoConfigScriptRepo ? repoConfigScript : null,
+      lastUsed,
+      genericTemplate: genericTemplate
+        ? { name: genericTemplate.name, content: getTemplateContent(genericTemplate) }
+        : undefined,
+    });
+    setupScript = choice.content;
+    setupScriptName = choice.name;
+    isCustomSetupScript = false;
   }
 
   $effect(() => {
@@ -767,7 +813,15 @@
         appStore.dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
       appStore.dispatch(setWorkspaceEntity(workspace));
 
-      if (setupScript.trim() && projectSelection.repoPath) {
+      // Save the setup script to the store for future reuse.
+      // Skip the unedited repo-config script — the committed .intent/config.json
+      // is its source of truth, and saving a copy would both duplicate it in the
+      // saved list and shadow future repo-config changes as the last-used default.
+      const isUneditedRepoConfigScript =
+        setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
+        repoConfigScriptRepo === projectSelection.repoPath &&
+        setupScript.trim() === (repoConfigScript ?? '').trim();
+      if (setupScript.trim() && projectSelection.repoPath && !isUneditedRepoConfigScript) {
         const now = new Date().toISOString();
         const scriptToSave = {
           id: uuidv4(),
@@ -1076,6 +1130,9 @@
                           bind:showSetupScript
                           bind:setupScriptName
                           bind:isCustomSetupScript
+                          repoConfigScript={repoConfigScriptRepo === projectSelection?.repoPath
+                            ? repoConfigScript
+                            : null}
                           {visibleSuggestions}
                           bind:focusedSuggestionIndex
                           onSubmit={handleOnboardingSubmit}
