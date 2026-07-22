@@ -27,7 +27,6 @@
     showCodeDiff?: (change: any) => void;
     onOpenNote?: (noteId: string) => void;
     onOpenFile?: (file: string) => void;
-    onOpenSource?: (sourceId: string) => void;
     onSelectAgent?: (agentId: string) => void;
     handleFileSelect?: (file: string) => void;
     fileTreeView?: any;
@@ -43,7 +42,6 @@
     onOpenNote = () => {},
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenFile = () => {},
-    onOpenSource = () => {},
     onSelectAgent,
     handleFileSelect = () => {},
     fileTreeView = $bindable(),
@@ -408,7 +406,6 @@
             {workspaceId}
             selectedNoteId={selectedNoteId ?? undefined}
             {onOpenNote}
-            {onOpenSource}
             collapsed={collapsedStates['notes']}
             onCollapse={() => togglePanel('notes')}
           />

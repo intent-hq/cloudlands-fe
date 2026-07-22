@@ -87,22 +87,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     },
   ],
 
-  // Third-party sources (NotesPanel embeds / drag-drop). Not ported to the
-  // daemon; every client method folds failure into { success: false, error }
-  // and the UI surfaces the message on the triggering interaction.
-  ['sources:create', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  ['sources:delete', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  [
-    'sources:extract-metadata',
-    { success: false, error: 'Third-party sources are not ported to the daemon' },
-  ],
-  ['sources:get', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  ['sources:list', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  [
-    'sources:refresh',
-    { success: false, error: 'Third-party sources are not ported to the daemon' },
-  ],
-  ['sources:update', { success: false, error: 'Third-party sources are not ported to the daemon' }],
   // Electron app version read for analytics common properties
   // (buildStaticCommonProperties, fired on startup via hooks.client.ts). The
   // browser build has no packaged app version and no daemon surface for one;

@@ -243,19 +243,6 @@ export const IPC_CHANNELS = {
     CHECK_SINGLE: 'providers:check-single',
   },
 
-  // Third Party Sources
-  SOURCES: {
-    CREATE: 'sources:create',
-    LIST: 'sources:list',
-    GET: 'sources:get',
-    ADD: 'sources:add',
-    REMOVE: 'sources:remove',
-    UPDATE: 'sources:update',
-    DELETE: 'sources:delete',
-    REFRESH: 'sources:refresh',
-    EXTRACT_METADATA: 'sources:extract-metadata',
-  },
-
   // File Management
   FILE: {
     READ: 'file:read',
@@ -751,9 +738,6 @@ export const IPC_CHANNELS = {
   AGENT_CONTEXT: {
     GET: 'agent-context:get',
   },
-
-  // Sources Extended
-  SOURCES_EXT: {},
 
   RECOVERY: {
     NEEDS_RECOVERY: 'recovery:needs-recovery',

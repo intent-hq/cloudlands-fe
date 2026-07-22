@@ -92,7 +92,6 @@ export const LOGGING_CONFIG: LoggingConfig = {
     AcceptChangesIPC: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     SetupScriptsIPC: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     'Terminal-IPC': isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
-    'third-party-sources-ipc': isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     // Additional IPC handlers
     'Diffs-IPC': isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     'editor-ipc': isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
