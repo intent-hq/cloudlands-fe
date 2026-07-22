@@ -203,6 +203,7 @@ const ALLOWED_CHANNELS = [
   "pi:install-mcp-adapter",
   "droid:check-availability",
   "droid:get-models",
+  "grok:get-models",
   "providers:get-availability",
   "providers:get-paths",
   "providers:check-single",
