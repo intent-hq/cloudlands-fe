@@ -1303,7 +1303,11 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
 
     // `dispatchStopChat` clears the interrupting flag once `agent.stop`
     // resolves — this local completion dispatch must not erase the partial
-    // either.
+    // either. In production the `agent.stop` response races the event pushes,
+    // so `chatStopCompleted` can also land BEFORE the terminal events; that
+    // interleaving is equivalent because both stop reducers only touch
+    // chat-state flags (`isInterrupting`, `streamingStartTime`,
+    // `idleReconcileSuppressed`) and never agent-session messages.
     appStore.dispatch(chatStopCompleted(AGENT));
 
     const assistantMessages = readAssistantMessages();
