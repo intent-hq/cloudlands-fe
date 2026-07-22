@@ -2133,17 +2133,13 @@ describe('Agent Interaction Tools', () => {
     });
   });
 
-  describe('validateModelOverride synthetic default alias', () => {
-    // Guards the `getCachedClaudeCodeModels` merge: the claude-code ACP probe
-    // does not report the curated `default` alias, so the dispatcher must
-    // merge it into the live list before the validator sees it. The mock
-    // below mirrors what the post-fix dispatcher returns for a raw live
-    // list of `['claude-sonnet-4-5-20250929', 'claude-haiku-4-5']` — the
-    // two real model IDs plus the synthetic `default` alias appended by
-    // `getCachedClaudeCodeModels`. Without the merge, this path rejects
-    // `claude-code:default` with `unknown_model` whenever ACP listing
-    // succeeds with a non-empty live list.
-    it('accepts claude-code:default when the dispatcher surfaces the merged alias', async () => {
+  describe('validateModelOverride claude-code default alias', () => {
+    // The daemon's claude-code ACP probe returns the adapter's real `default`
+    // row (and the static tier fallback also includes `default`), so the live
+    // list the dispatcher surfaces already contains the alias. The mock below
+    // mirrors that daemon-served list; `claude-code:default` must validate
+    // against it without any FE-side alias fabrication.
+    it('accepts claude-code:default when the daemon-served live list includes it', async () => {
       mockGetCachedModelsForProvider.mockImplementation(async (provider) =>
         provider === 'claude-code'
           ? ['claude-sonnet-4-5-20250929', 'claude-haiku-4-5', 'default']
