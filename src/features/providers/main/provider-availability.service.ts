@@ -10,7 +10,10 @@ import * as fs from 'fs/promises';
 import { PROVIDERS_CHANNELS } from '../../../shared/ipc/channels';
 import { ACP_PROVIDERS } from '../../../shared/config/provider-config';
 import { Logger } from '../../../shared/logger';
-import { hostExec } from '../../../shared/main/host-exec';
+import {
+  getProviderAuthVerdict,
+  getProviderAuthVerdicts,
+} from '../../../shared/main/provider-auth-status';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { findBinary } from '../../../shared/main/find-binary';
@@ -47,7 +50,6 @@ import {
   getDroidPath,
   isDroidInstalled,
 } from '../../droid/main/droid-resolver';
-import { probeDroidAcp } from '../../droid/main/droid-acp-probe';
 import type {
   NpxStatus,
   ProviderAvailabilityResult,
@@ -160,8 +162,8 @@ async function checkDroidAvailability(): Promise<ProviderStatus> {
  * Check if grok is available by resolving its binary on the daemon host.
  * Grok has no FE-side resolver/probe module: availability comes from the
  * daemon's provider discovery (aggregate path) and from `host.findBinary`
- * (single-recheck path). Readiness is owned by the daemon, so auth stays
- * undefined here.
+ * (single-recheck path). Auth comes from `host.providerAuthStatus`, attached
+ * by the callers.
  */
 async function checkGrokAvailability(): Promise<ProviderStatus> {
   // findBinary never throws (it folds RPC errors to null), so no try/catch;
@@ -188,125 +190,6 @@ async function checkMockAvailability(): Promise<ProviderStatus> {
     return { available: true, authenticated: true };
   } catch (error) {
     return { available: false, error: (error as Error).message };
-  }
-}
-
-/** Auth check timeout in ms */
-const AUTH_CHECK_TIMEOUT_MS = 5000;
-
-async function checkAuggieAuth(cliPath: string | null): Promise<boolean | undefined> {
-  if (!cliPath) return undefined;
-
-  try {
-    const result = await hostExec(cliPath, {
-      args: ['model', 'list'],
-      timeoutMs: AUTH_CHECK_TIMEOUT_MS,
-    });
-    if (result.timedOut) return undefined;
-    const output = `${result.stdout}\n${result.stderr}`;
-    const isUnauthenticated =
-      /not currently logged in|not logged in|not authenticated|login required|please log in/i.test(
-        output,
-      );
-    if (isUnauthenticated) return false;
-    if (result.exitCode === 0) return true;
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * OpenCode has no single "am I logged in" signal: credentials may come from
- * `opencode auth login`, env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY, AWS_PROFILE, etc.),
- * or a project .env file. `opencode models` is the readiness gate — it returns
- * a non-empty list of `provider/model` lines only when at least one provider
- * is credentialed from any of those sources.
- *
- * Timeout matches the existing OPENCODE_CHANNELS.GET_MODELS IPC (10s), since
- * `opencode models` can be slower than a simple auth file read.
- */
-const OPENCODE_READY_TIMEOUT_MS = 10000;
-
-async function checkOpenCodeReady(cliPath: string | null): Promise<boolean | undefined> {
-  if (!cliPath) return undefined;
-
-  try {
-    const result = await hostExec(cliPath, {
-      args: ['models'],
-      timeoutMs: OPENCODE_READY_TIMEOUT_MS,
-    });
-    if (result.timedOut) return undefined;
-    if (result.exitCode !== 0) return false;
-    // Ready iff at least one line matches the `provider/model` format
-    const hasModel = result.stdout.split('\n').some((line) => {
-      const trimmed = line.trim();
-      return trimmed.length > 0 && trimmed.includes('/') && !trimmed.startsWith('#');
-    });
-    return hasModel;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Droid has no `models`/`auth status` CLI subcommand, so readiness is gauged
- * via an ACP probe (initialize + session/new over stdio JSON-RPC):
- * - session/new succeeding with a non-empty model list → authenticated
- * - an explicit auth-required error from the agent → not authenticated
- * - timeout/spawn error → undefined (unknown, no indicator)
- */
-async function checkDroidReady(cliPath: string | null): Promise<boolean | undefined> {
-  if (!cliPath) return undefined;
-
-  try {
-    const result = await probeDroidAcp(cliPath);
-    if (result.ok && result.models.length > 0) {
-      return true;
-    }
-    if (result.authRequired) {
-      return false;
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Check if a provider's CLI is authenticated by running its auth check command.
- * Returns true if authenticated, false if not, undefined if check failed/timed out.
- *
- * @param requireNonEmptyOutput - If true, also requires non-empty stdout.
- * @param validateOutput - Optional custom validator for stdout. Overrides requireNonEmptyOutput.
- */
-async function checkProviderAuth(
-  cliPath: string | null,
-  authCheckArgs: string[],
-  requireNonEmptyOutput = false,
-  validateOutput?: (stdout: string) => boolean,
-): Promise<boolean | undefined> {
-  if (!cliPath || authCheckArgs.length === 0) {
-    return undefined;
-  }
-
-  try {
-    const result = await hostExec(cliPath, {
-      args: authCheckArgs,
-      timeoutMs: AUTH_CHECK_TIMEOUT_MS,
-    });
-    if (result.timedOut) return undefined;
-    if (result.exitCode !== 0) return false;
-
-    if (validateOutput) {
-      return validateOutput(result.stdout);
-    }
-    if (requireNonEmptyOutput) {
-      return result.stdout.trim().length > 0;
-    }
-    return true;
-  } catch {
-    return undefined;
   }
 }
 
@@ -425,6 +308,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     piResult,
     droidResult,
     grokResult,
+    authVerdicts,
   ] = await Promise.all([
     makeProviderStatus('auggie', checkAuggieAvailability),
     makeProviderStatus('claude-code', checkClaudeCodeAvailability),
@@ -439,9 +323,13 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     makeProviderStatus('pi', checkPiAvailability),
     makeProviderStatus('droid', checkDroidAvailability),
     // Grok availability comes from the daemon's provider discovery; the
-    // host.findBinary fallback covers the RPC-degraded path. Readiness is
-    // not probed FE-side (no grok-acp-probe here), so auth stays undefined.
+    // host.findBinary fallback covers the RPC-degraded path.
     makeProviderStatus('grok', checkGrokAvailability),
+    // Auth verdicts from the daemon's `host.providerAuthStatus` sweep
+    // (intent-hq/intentd#339): the daemon owns the CLI/ACP probes, marker
+    // parsing, and caching. Independent of discovery, so it rides in the
+    // same Promise.all.
+    getProviderAuthVerdicts(),
   ]);
 
   // claude-code runs its ACP adapter exclusively via npx (pinned version).
@@ -458,46 +346,15 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     }
   }
 
-  // Run auth checks in parallel for available providers.
-  // Auggie uses `model list`; model listing is the stable auth gate.
-  if (
-    auggieResult.available ||
-    claudeCodeResult.available ||
-    codexResult.available ||
-    opencodeResult.available ||
-    droidResult.available
-  ) {
-    const [auggiePath, claudeCodePath, codexPath, opencodePath, droidPath] = await Promise.all([
-      auggieResult.available ? findAuggiePathAsync() : Promise.resolve(null),
-      claudeCodeResult.available ? getClaudeCodePath() : Promise.resolve(null),
-      codexResult.available ? getCodexPath() : Promise.resolve(null),
-      opencodeResult.available ? getOpenCodePath() : Promise.resolve(null),
-      droidResult.available ? getDroidPath() : Promise.resolve(null),
-    ]);
-
-    const [auggieAuth, claudeAuth, codexAuth, opencodeAuth, droidAuth] = await Promise.all([
-      auggieResult.available ? checkAuggieAuth(auggiePath) : Promise.resolve(undefined),
-      claudeCodeResult.available
-        ? checkProviderAuth(claudeCodePath, ACP_PROVIDERS['claude-code'].authCheckArgs ?? [])
-        : Promise.resolve(undefined),
-      codexResult.available
-        ? checkProviderAuth(codexPath, ACP_PROVIDERS.codex.authCheckArgs ?? [])
-        : Promise.resolve(undefined),
-      // OpenCode has no stable `am I logged in?` signal — credentials can come
-      // from auth.json, env vars, or a project .env. `opencode models` is the
-      // readiness gate: it returns at least one `provider/model` line only when
-      // some provider is usable. On failure we return undefined (no indicator).
-      opencodeResult.available ? checkOpenCodeReady(opencodePath) : Promise.resolve(undefined),
-      // Droid has no auth CLI subcommand — the ACP probe is the readiness gate.
-      droidResult.available ? checkDroidReady(droidPath) : Promise.resolve(undefined),
-    ]);
-
-    auggieResult.authenticated = auggieAuth;
-    claudeCodeResult.authenticated = claudeAuth;
-    codexResult.authenticated = codexAuth;
-    opencodeResult.authenticated = opencodeAuth;
-    droidResult.authenticated = droidAuth;
-  }
+  // The wire's `null` (unknown/uninstalled) folds to `undefined` so no
+  // indicator renders; verdicts attach only to providers that are available.
+  if (auggieResult.available) auggieResult.authenticated = authVerdicts['auggie'];
+  if (claudeCodeResult.available) claudeCodeResult.authenticated = authVerdicts['claude-code'];
+  if (codexResult.available) codexResult.authenticated = authVerdicts['codex'];
+  if (opencodeResult.available) opencodeResult.authenticated = authVerdicts['opencode'];
+  if (piResult.available) piResult.authenticated = authVerdicts['pi'];
+  if (droidResult.available) droidResult.authenticated = authVerdicts['droid'];
+  if (grokResult.available) grokResult.authenticated = authVerdicts['grok'];
 
   const result: ProviderAvailabilityResult = {
     hasAnyProvider:
@@ -540,7 +397,9 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     claudeCodeAuth: claudeCodeResult.authenticated,
     codexAuth: codexResult.authenticated,
     opencodeAuth: opencodeResult.authenticated,
+    piAuth: piResult.authenticated,
     droidAuth: droidResult.authenticated,
+    grokAuth: grokResult.authenticated,
     hiddenProviders,
   });
 
@@ -612,34 +471,32 @@ export function setupProviderAvailabilityIPC(): void {
         let status: ProviderStatus;
         let authenticated: boolean | undefined;
 
+        // Auth verdicts come from the daemon (`host.providerAuthStatus`,
+        // intent-hq/intentd#339). `force: true` bypasses the daemon's cache —
+        // single rechecks follow "Login" / "Check again" clicks, so a login
+        // that just completed must be picked up.
+        const checkAuth = (): Promise<boolean | undefined> =>
+          getProviderAuthVerdict(providerId, { force: true });
+
         switch (providerId) {
           case 'auggie':
             status = await checkAuggieAvailability();
             if (status.available) {
-              const auggiePath = await findAuggiePathAsync();
-              authenticated = await checkAuggieAuth(auggiePath);
+              authenticated = await checkAuth();
             }
             break;
           case 'claude-code':
             clearClaudeCodeCache();
             status = await checkClaudeCodeAvailability();
             if (status.available) {
-              const claudePath = await getClaudeCodePath();
-              authenticated = await checkProviderAuth(
-                claudePath,
-                ACP_PROVIDERS['claude-code'].authCheckArgs ?? [],
-              );
+              authenticated = await checkAuth();
             }
             break;
           case 'codex':
             clearCodexCache();
             status = await checkCodexAvailability();
             if (status.available) {
-              const codexPath = await getCodexPath();
-              authenticated = await checkProviderAuth(
-                codexPath,
-                ACP_PROVIDERS.codex.authCheckArgs ?? [],
-              );
+              authenticated = await checkAuth();
             }
             break;
           case 'cortex': {
@@ -658,28 +515,28 @@ export function setupProviderAvailabilityIPC(): void {
             clearOpenCodeCache();
             status = await checkOpenCodeAvailability();
             if (status.available) {
-              const opencodePath = await getOpenCodePath();
-              authenticated = await checkOpenCodeReady(opencodePath);
+              authenticated = await checkAuth();
             }
             break;
           case 'pi':
-            // pi has no stable "am I logged in" signal — availability is based
-            // solely on whether the binary is installed; authenticated stays undefined.
             clearPiCache();
             status = await checkPiAvailability();
+            if (status.available) {
+              authenticated = await checkAuth();
+            }
             break;
           case 'droid':
             clearDroidCache();
             status = await checkDroidAvailability();
             if (status.available) {
-              const droidPath = await getDroidPath();
-              authenticated = await checkDroidReady(droidPath);
+              authenticated = await checkAuth();
             }
             break;
           case 'grok':
-            // Grok readiness is owned by the daemon; the FE only surfaces
-            // installed/not-installed here (auth stays undefined).
             status = await checkGrokAvailability();
+            if (status.available) {
+              authenticated = await checkAuth();
+            }
             break;
           case 'mock':
             status = await checkMockAvailability();
