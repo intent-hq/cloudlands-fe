@@ -1,73 +1,3 @@
-<script lang="ts" module>
-  interface EventMetadataForParsing {
-    events?: Array<{
-      type: string;
-      data: Record<string, unknown>;
-      timestamp: string;
-    }>;
-  }
-
-  export interface ParsedAgentEvent {
-    type: string;
-    agentId: string;
-    agentName?: string;
-    completionReport?: string;
-    lastResponseSummary?: string;
-  }
-
-  /** Parse agent events from message text and/or metadata - exported for use in ChatPanel */
-  export function parseAgentEvents(
-    text: string,
-    metadata?: EventMetadataForParsing,
-  ): ParsedAgentEvent[] {
-    // Use a Map to deduplicate by agentId (later events override earlier ones)
-    const agentMap = new Map<string, ParsedAgentEvent>();
-
-    // First, try to use events from metadata (preferred - has completionReport and lastResponseSummary)
-    if (metadata?.events && metadata.events.length > 0) {
-      for (const event of metadata.events) {
-        const data = event.data as Record<string, unknown>;
-        const agentId = data.agentId as string | undefined;
-        if (agentId && (event.type === 'agent:idle' || event.type === 'agent:created')) {
-          agentMap.set(agentId, {
-            type: event.type,
-            agentId,
-            agentName: data.agentName as string | undefined,
-            completionReport: data.completionReport as string | undefined,
-            lastResponseSummary: data.lastResponseSummary as string | undefined,
-          });
-        }
-      }
-      return Array.from(agentMap.values());
-    }
-
-    // Fallback: parse from message text (legacy support)
-    if (!text) return [];
-
-    const lines = text.split('\n');
-
-    for (const line of lines) {
-      const eventMatch = line.match(/^\d+\.\s*\[([^\]]+)\]\s*(.+)$/);
-      if (eventMatch) {
-        const rawSummary = eventMatch[2];
-        let agentIdMatch = rawSummary.match(/\{\{agentId:([^}]+)\}\}/);
-        let agentId = agentIdMatch?.[1];
-        if (!agentId) {
-          const oldFormatMatch = rawSummary.match(/\((agent-[a-f0-9-]+)\)/i);
-          agentId = oldFormatMatch?.[1];
-        }
-        const agentNameMatch = rawSummary.match(/"([^"]+)"/);
-        const agentName = agentNameMatch?.[1];
-        if (agentId && (eventMatch[1] === 'agent:idle' || eventMatch[1] === 'agent:created')) {
-          agentMap.set(agentId, { type: eventMatch[1], agentId, agentName });
-        }
-      }
-    }
-
-    return Array.from(agentMap.values());
-  }
-</script>
-
 <script lang="ts">
   /**
    * EventWakeupBanner Component
@@ -86,6 +16,7 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
   import AgentCard from './AgentCard.svelte';
+  import { categorizeEventTypes } from './event-wake-summary';
   import type { Workspace } from '$shared/types';
 
   interface EventData {
@@ -149,9 +80,6 @@
     // Count agent events from metadata types (fallback when parsing fails)
     const agentIdleCount = types.filter((t) => t === 'agent:idle').length;
     const agentCreatedCount = types.filter((t) => t === 'agent:created').length;
-    const hasFileChanges = types.some((t) => t.startsWith('file:'));
-    const hasTaskUpdates = types.some((t) => t.startsWith('task:'));
-    const hasNoteUpdates = types.some((t) => t.startsWith('note:'));
 
     // Build summary with agent names when available
     const parts: string[] = [];
@@ -181,9 +109,7 @@
       parts.push(agentCreatedCount === 1 ? 'New agent' : `${agentCreatedCount} new agents`);
     }
 
-    if (hasFileChanges) parts.push('file changes');
-    if (hasTaskUpdates) parts.push('task updates');
-    if (hasNoteUpdates) parts.push('note changes');
+    parts.push(...categorizeEventTypes(types));
 
     if (parts.length === 0) return `${types.length} events`;
     if (parts.length === 1) return parts[0];
