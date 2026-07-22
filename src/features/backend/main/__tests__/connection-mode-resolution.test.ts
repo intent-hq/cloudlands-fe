@@ -290,6 +290,21 @@ describe('spawnSidecarOnDemand', () => {
     );
   });
 
+  it('spawns exactly once under concurrent calls (in-flight coalescing)', async () => {
+    mockProbeSocket(null);
+    mockSpawnedProcess();
+    const [a, b, c] = await Promise.all([
+      spawnSidecarOnDemand({ INTENTD_BIN: '/fake/intentd' }, false, '/resources', '/cwd'),
+      spawnSidecarOnDemand({ INTENTD_BIN: '/fake/intentd' }, false, '/resources', '/cwd'),
+      spawnSidecarOnDemand({ INTENTD_BIN: '/fake/intentd' }, false, '/resources', '/cwd'),
+    ]);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(a).toEqual({ ok: true, spawned: true, reason: 'sidecar spawned' });
+    expect(b).toEqual(a);
+    expect(c).toEqual(a);
+    expect(getConnectionMode()).toBe('sidecar');
+  });
+
   it('fails without spawning when the intentd binary cannot be found', async () => {
     mockProbeSocket(null);
     const fs = await import('node:fs');

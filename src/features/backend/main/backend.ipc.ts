@@ -9,6 +9,12 @@
  *   - `backend:subscribe` → forward `events.subscribe`, return its result.
  *   - `backend:unsubscribe` → forward `events.unsubscribe`.
  *   - `backend:get-status` → current connection status.
+ *   - `backend:spawn-sidecar` → spawn the app-managed sidecar on demand (the
+ *     user chose the fallback in the daemon-loss UI, #439). Probes the socket
+ *     first and never spawns alongside a live daemon; concurrent calls spawn
+ *     at most once. Once mode flips to `sidecar` there is no mid-session
+ *     auto-switching back — the JsonRpcClient target (socket path) is
+ *     unchanged, so we simply stay connected to whatever serves the socket.
  * Daemon JSON-RPC notifications are broadcast to every window on
  * `backend:notification`; connection-status changes on `backend:status`. The
  * status payload carries a `reconnected: true` marker on the successful
@@ -28,6 +34,7 @@ import {
 } from './json-rpc-client';
 import { JsonRpcError } from './json-rpc-errors';
 import { formatTransportInfo } from './transport-info';
+import { onSidecarGaveUp, spawnSidecarOnDemand } from './intentd-sidecar';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 
 const logger = new Logger('Backend-IPC');
@@ -179,6 +186,44 @@ export function registerBackendHandlers(): void {
     const client = getBackendClient();
     const transport = formatTransportInfo(client.getConfig());
     return { status: client.getStatus(), transport };
+  });
+
+  ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => {
+    try {
+      const result = await spawnSidecarOnDemand(
+        process.env,
+        app.isPackaged,
+        process.resourcesPath,
+        process.cwd(),
+      );
+      if (result.ok) {
+        // The daemon-loss modal resolves as soon as the spawn kicked off; the
+        // JsonRpcClient's ≤5s reconnect loop picks up the socket once the
+        // daemon is serving and broadcasts `backend:status` as usual.
+        const client = getBackendClient();
+        broadcast(BACKEND.STATUS, {
+          status: client.getStatus(),
+          transport: formatTransportInfo(client.getConfig()),
+        });
+      }
+      return result;
+    } catch (error) {
+      return { ok: false, spawned: false, error: toErrorPayload(error) };
+    }
+  });
+
+  // Crash-looping sidecar: the restart policy exhausted its attempts. Reuse
+  // the `backend:status` channel with a `sidecarGaveUp` marker (same pattern
+  // as `reconnected`) so the renderer surfaces the daemon-loss modal instead
+  // of the sidecar dying invisibly (#439).
+  onSidecarGaveUp((reason) => {
+    const instance = getBackendClient();
+    broadcast(BACKEND.STATUS, {
+      status: 'disconnected',
+      sidecarGaveUp: true,
+      reason,
+      transport: formatTransportInfo(instance.getConfig()),
+    });
   });
 
   logger.info('Backend bridge IPC handlers registered');

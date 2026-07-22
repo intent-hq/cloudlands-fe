@@ -91,6 +91,7 @@ export function __resetIntentdSidecarForTesting(): void {
   isShuttingDown = false;
   consecutiveFailures = 0;
   sidecarGaveUpListeners.clear();
+  spawnOnDemandInFlight = null;
 }
 
 /**
@@ -680,6 +681,9 @@ export interface SpawnSidecarOnDemandResult {
   reason: string;
 }
 
+/** In-flight on-demand spawn; concurrent callers share it (spawn exactly once). */
+let spawnOnDemandInFlight: Promise<SpawnSidecarOnDemandResult> | null = null;
+
 /**
  * Spawn the app-managed sidecar on demand (user chose the fallback in the
  * daemon-loss UI, #439). Unlike `startIntentdSidecar`, this bypasses the
@@ -691,8 +695,30 @@ export interface SpawnSidecarOnDemandResult {
  * (and the data dir behind it) — we must NEVER run a second daemon alongside,
  * so we return ok without spawning and let the JSON-RPC client reconnect to
  * the live daemon.
+ *
+ * Concurrent calls coalesce onto one in-flight attempt so the sidecar is
+ * spawned at most once (e.g. double-click on the fallback button).
+ *
+ * Once mode flips to `sidecar` there is NO mid-session auto-switching back:
+ * the JsonRpcClient target (the socket path) is unchanged, so "keep the
+ * sidecar" simply means we stay connected to whatever serves that socket.
  */
-export async function spawnSidecarOnDemand(
+export function spawnSidecarOnDemand(
+  env: NodeJS.ProcessEnv,
+  isPackaged: boolean,
+  resourcesPath: string,
+  cwd: string,
+): Promise<SpawnSidecarOnDemandResult> {
+  if (spawnOnDemandInFlight) return spawnOnDemandInFlight;
+  spawnOnDemandInFlight = doSpawnSidecarOnDemand(env, isPackaged, resourcesPath, cwd).finally(
+    () => {
+      spawnOnDemandInFlight = null;
+    },
+  );
+  return spawnOnDemandInFlight;
+}
+
+async function doSpawnSidecarOnDemand(
   env: NodeJS.ProcessEnv,
   isPackaged: boolean,
   resourcesPath: string,
