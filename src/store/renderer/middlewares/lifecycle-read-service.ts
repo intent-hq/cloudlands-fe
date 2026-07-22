@@ -97,6 +97,7 @@ import {
   updateAgentStats,
 } from "../slices/changes/changes-slice";
 import { getAgentLineStats } from "$features/line-changes/line-changes.client";
+import { isAgentDeletionPending } from "$features/agent/utils/pending-agent-deletions";
 import {
   bulkUpsertSessions,
   upsertSession,
@@ -410,12 +411,17 @@ function refreshAgentLineStats(agentId: string, forceRefresh: boolean): void {
  * - The hydration generation captured before the fetch is re-checked after it
  *   resolves; a `workspaceDeleted` purge in between discards the response so a
  *   pre-purge fetch can never merge stale agents back after the purge.
+ * - Agents with a pending soft-hidden deletion (undo window still open, so the
+ *   daemon still lists them) are dropped from the response — re-adding them
+ *   would resurrect a deleted agent whenever another agent's lifecycle event
+ *   triggers a rehydrate.
  */
 function hydrateWorkspaceAgents(wsId: string): void {
   const generation = agentsHydrationGeneration.get(wsId) ?? 0;
   coalesce(`agents:${wsId}`, async () => {
-    const fetched = await appClient.agents.list(wsId);
+    const listed = await appClient.agents.list(wsId);
     if ((agentsHydrationGeneration.get(wsId) ?? 0) !== generation) return;
+    const fetched = listed.filter((agent) => !isAgentDeletionPending(String(agent.id)));
     appStore.dispatch(setAgentsLoaded(wsId, true));
     if (fetched.length === 0) return;
     const agents = fetched.map((agent) => {

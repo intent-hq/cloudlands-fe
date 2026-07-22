@@ -8,9 +8,9 @@ import type { AgentSession } from "$shared/types/agent-session";
 // restore/activate/save + deletion async actions resolve through the real
 // action.success/failure path and their promises settle exactly as
 // agent-stream-lifecycle (and the deletion triggers) expect.
-const { get, del } = vi.hoisted(() => ({ get: vi.fn(), del: vi.fn() }));
+const { get, del, list } = vi.hoisted(() => ({ get: vi.fn(), del: vi.fn(), list: vi.fn() }));
 vi.mock("$lib/client", () => ({
-  appClient: { agents: { get, delete: del } },
+  appClient: { agents: { get, delete: del, list } },
 }));
 
 // The deletion handlers lazily `import("svelte-sonner")` for the undo/error
@@ -37,6 +37,7 @@ import {
   deleteAgentSessionRequested,
   deleteAgentWithUndoRequested,
   flushPendingAgentDeletionsRequested,
+  hydrateAgentsRequested,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
   undoAgentDeletionRequested,
@@ -315,6 +316,7 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
       vi.useRealTimers();
     }
     del.mockReset();
+    list.mockReset();
     toastMock.warning.mockClear();
     toastMock.error.mockClear();
   });
@@ -336,6 +338,46 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
 
     // Clean up the armed commit timer so it does not leak across tests.
     appStore.dispatch(undoAgentDeletionRequested(WS, AGENT));
+  });
+
+  // Regression: with a deletion pending, an `agent:status-changed`-driven
+  // `hydrateAgentsRequested` whose `agent.list` response still contains the
+  // soft-hidden agent (the daemon has not been told about the deletion yet)
+  // must NOT re-add it — previously this resurrected the agent whenever any
+  // other agent in the workspace was active/streaming during the undo window.
+  it("hydrateAgentsRequested during the undo window does not resurrect the soft-hidden agent", async () => {
+    const WS = "ws-del-hydrate";
+    const AGENT = "agent-del-hydrate";
+    const OTHER = "agent-del-hydrate-other";
+    seedSession(makeSession(AGENT, WS));
+    seedSession(makeSession(OTHER, WS));
+
+    const action = deleteAgentWithUndoRequested(WS, AGENT, "Doomed");
+    appStore.dispatch(action);
+    await action.promise;
+    expect(readSession(AGENT)).toBeUndefined();
+
+    list.mockResolvedValueOnce([makeSession(AGENT, WS), makeSession(OTHER, WS)]);
+    appStore.dispatch(hydrateAgentsRequested(WS));
+    await flush();
+
+    expect(list).toHaveBeenCalledWith(WS);
+    // Neither the session store nor the workspace index re-added the agent.
+    expect(readSession(AGENT)).toBeUndefined();
+    const wsAgents = (
+      appStore.state as {
+        workspaceAgents: { byWorkspaceId: Record<string, { agentIds?: string[] }> };
+      }
+    ).workspaceAgents.byWorkspaceId[WS];
+    expect(wsAgents?.agentIds ?? []).not.toContain(AGENT);
+    expect(readSession(OTHER)).toBeDefined();
+
+    // Undo still fully restores the agent after the hydrate attempt.
+    const undo = undoAgentDeletionRequested(WS, AGENT);
+    appStore.dispatch(undo);
+    await expect(undo.promise).resolves.toBe(true);
+    expect(readSession(AGENT)).toBeDefined();
+    expect(del).not.toHaveBeenCalled();
   });
 
   it("commits the real agent.delete after the undo window elapses", async () => {

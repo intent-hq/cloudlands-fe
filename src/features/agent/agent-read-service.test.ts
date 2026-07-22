@@ -24,6 +24,11 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import type { AgentMessage } from "$shared/types";
 import { ensureAgentSession } from "./agent-read-service";
+import {
+  clearPendingAgentDeletions,
+  removePendingAgentDeletion,
+  setPendingAgentDeletion,
+} from "./utils/pending-agent-deletions";
 
 const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const WS = "ws-agent-read-1";
@@ -48,6 +53,7 @@ describe("agentReadService (fake seam, real store)", () => {
   beforeAll(() => appStore.init());
   afterEach(() => {
     vi.clearAllMocks();
+    clearPendingAgentDeletions();
     agentsApi.get.mockResolvedValue(null as never);
   });
 
@@ -70,6 +76,59 @@ describe("agentReadService (fake seam, real store)", () => {
     await ensureAgentSession(agentId);
 
     expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe("prior");
+  });
+
+  // Regression: with a soft-hidden deletion pending, the daemon still returns
+  // the agent from `agent.get`, so an `agent:created`/`agent:updated`-driven
+  // ensureAgentSession refetch used to resurrect the deleted session.
+  it("is a no-op while a soft-hidden deletion is pending for the agent", async () => {
+    const agentId = "agent-read-pending-del";
+    setPendingAgentDeletion({
+      wsId: WS,
+      agentId,
+      snapshot: makeSession({ id: agentId }),
+      timer: null,
+    });
+    try {
+      await ensureAgentSession(agentId);
+      expect(agentsApi.get).not.toHaveBeenCalled();
+      expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+    } finally {
+      removePendingAgentDeletion(agentId);
+    }
+
+    // Once the pending entry is gone (undo or commit), loads work again.
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId, name: "revived" }) as never);
+    await ensureAgentSession(agentId);
+    expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+  });
+
+  // Regression (PR review): if the deletion becomes pending WHILE the
+  // `agent.get` fetch is in flight, the resolved response must not be
+  // upserted — otherwise the soft-hidden agent is resurrected anyway.
+  it("discards an in-flight fetch result when a deletion becomes pending mid-request", async () => {
+    const agentId = "agent-read-midflight-del";
+    let resolveGet!: (value: unknown) => void;
+    agentsApi.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGet = resolve;
+      }) as never,
+    );
+
+    const load = ensureAgentSession(agentId);
+    setPendingAgentDeletion({
+      wsId: WS,
+      agentId,
+      snapshot: makeSession({ id: agentId }),
+      timer: null,
+    });
+    try {
+      resolveGet(makeSession({ id: agentId, name: "stale" }));
+      await load;
+      expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+    } finally {
+      removePendingAgentDeletion(agentId);
+    }
   });
 
   it("coalesces concurrent loads for the same agent into one fetch", async () => {

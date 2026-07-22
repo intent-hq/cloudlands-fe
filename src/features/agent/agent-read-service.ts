@@ -40,6 +40,7 @@ import {
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { createLogger } from "$lib/utils/client-logger";
+import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
 
 const logger = createLogger("AgentReadService");
 
@@ -53,13 +54,20 @@ const inFlight = new Map<string, Promise<void>>();
  * fetch.
  */
 export async function ensureAgentSession(agentId: string): Promise<void> {
+  // A soft-hidden deletion is pending (undo window still open): the daemon
+  // still returns the agent from `agent.get`, so refetching would resurrect
+  // the deleted session. Skip entirely.
+  if (isAgentDeletionPending(agentId)) return;
   const pending = inFlight.get(agentId);
   if (pending) return pending;
 
   const run = (async () => {
     try {
       const session = await appClient.agents.get(agentId);
-      if (session) {
+      // Re-check after the fetch: a deletion may have become pending while
+      // `agent.get` was in flight; upserting now would resurrect the
+      // soft-hidden session.
+      if (session && !isAgentDeletionPending(agentId)) {
         // `agent.get` returns AgentLite (PROTOCOL §5.5) — session metadata and
         // message COUNTS only, not the retained transcript. `normalizeAgent`
         // fills the missing `messages` field with `[]`, so dispatching this

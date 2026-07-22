@@ -50,6 +50,11 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import { selectTranscriptHydration } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { loadChatTranscript } from "./chat-read-service";
+import {
+  clearPendingAgentDeletions,
+  removePendingAgentDeletion,
+  setPendingAgentDeletion,
+} from "./utils/pending-agent-deletions";
 import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
 import { shouldShowStoppedIndicator } from "$lib/components/chat/message-display-utils";
 
@@ -96,6 +101,7 @@ describe("chatReadService (fake seam, real store)", () => {
   beforeAll(() => appStore.init());
   afterEach(() => {
     vi.clearAllMocks();
+    clearPendingAgentDeletions();
     agentsApi.get.mockResolvedValue(null as never);
     agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
     chatApi.subscribeSnapshot.mockResolvedValue({ messages: [] } as never);
@@ -153,6 +159,66 @@ describe("chatReadService (fake seam, real store)", () => {
     await loadChatTranscript(agentId);
 
     expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
+  });
+
+  // Regression: with a soft-hidden deletion pending, the daemon still returns
+  // the agent from `agent.get`, so a transcript load (e.g. via
+  // initializeChatRequested from a lingering mount) used to re-upsert the
+  // deleted session into the store.
+  it("is a no-op while a soft-hidden deletion is pending for the agent", async () => {
+    const agentId = "agent-chat-pending-del";
+    setPendingAgentDeletion({
+      wsId: WS,
+      agentId,
+      snapshot: makeSession({ id: agentId }),
+      timer: null,
+    });
+    try {
+      await loadChatTranscript(agentId);
+      expect(agentsApi.get).not.toHaveBeenCalled();
+      expect(agentsApi.getConversation).not.toHaveBeenCalled();
+      expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+    } finally {
+      removePendingAgentDeletion(agentId);
+    }
+
+    // Once the pending entry is gone (undo or commit), loads work again.
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValueOnce(conversation([makeMessage("after", "a")]) as never);
+    await loadChatTranscript(agentId);
+    expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(["after"]);
+  });
+
+  // Regression (PR review): if the deletion becomes pending WHILE the load is
+  // in flight (session already fetched, transcript paging underway), the
+  // hydrated result must be discarded rather than upserted.
+  it("discards an in-flight transcript load when a deletion becomes pending mid-request", async () => {
+    const agentId = "agent-chat-midflight-del";
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+    let resolveConversation!: (value: unknown) => void;
+    agentsApi.getConversation.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveConversation = resolve;
+      }) as never,
+    );
+
+    const load = loadChatTranscript(agentId);
+    await flush(); // let agent.get resolve; paging now blocked on getConversation
+    setPendingAgentDeletion({
+      wsId: WS,
+      agentId,
+      snapshot: makeSession({ id: agentId }),
+      timer: null,
+    });
+    try {
+      resolveConversation(conversation([makeMessage("stale", "s")]));
+      await load;
+      expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+      expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
+    } finally {
+      removePendingAgentDeletion(agentId);
+    }
   });
 
   it("leaves any prior transcript intact when the conversation read fails", async () => {
