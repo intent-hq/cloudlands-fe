@@ -203,8 +203,17 @@ describe('Preload IPC Allowlist Parity', () => {
         expect(isAllowed('agent:backend:cancel-stream')).toBe(false);
         expect(isAllowed('agent:backend:list')).toBe(false);
 
-        // Still-live backend channels stay allowed.
-        expect(isAllowed('agent:backend:stream-message')).toBe(true);
+        // Final agent:backend:* retirement plus the wake-handshake /
+        // backend-health event channels (main-process handlers deleted).
+        expect(isAllowed('agent:backend:stream-message')).toBe(false);
+        expect(isAllowed('agent:backend:queue-message')).toBe(false);
+        expect(isAllowed('agent:backend:edit-queued')).toBe(false);
+        expect(isAllowed('agent:backend:remove-queued')).toBe(false);
+        expect(isAllowed('agent:backend:get-queue')).toBe(false);
+        expect(isAllowed('agent:backend:force-message')).toBe(false);
+        expect(isAllowed('agent:prepare-handler')).toBe(false);
+        expect(isAllowed('agent:handler-ready')).toBe(false);
+        expect(isAllowed('health:check')).toBe(false);
       }
     });
   });

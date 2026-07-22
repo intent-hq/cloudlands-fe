@@ -46,7 +46,7 @@ vi.mock("$lib/client/live/live-support", async (importActual) => {
 
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { hasMockIpcHandler, mockInvoke, resetMockIpcRouter } from "$shared/ipc-mock-router";
-import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from "$shared/ipc/channels";
+import { AGENT_CHANNELS } from "$shared/ipc/channels";
 import { validateIpcRequest } from "$shared/ipc/request-validation";
 import { isSuccessResponse } from "$shared/ipc/typed-invoke";
 // End-to-end consumer for the set-model bridge: ModelPicker calls
@@ -172,11 +172,13 @@ describe("agent-ipc-bridge-seeder", () => {
       // channels; queue flows now call appClient.agents.* over the live
       // transport. A re-registered bridge would shadow that seam — any new
       // invoke call site instead fails the ipc-channel-reconciliation audit.
-      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.QUEUE_MESSAGE)).toBe(false);
-      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.EDIT_QUEUED)).toBe(false);
-      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.REMOVE_QUEUED)).toBe(false);
-      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.FORCE_MESSAGE)).toBe(false);
-      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.GET_QUEUE)).toBe(false);
+      // The AGENT_BACKEND channel constants were deleted with the T7
+      // main-process handler removal, so the raw strings are asserted here.
+      expect(hasMockIpcHandler("agent:backend:queue-message")).toBe(false);
+      expect(hasMockIpcHandler("agent:backend:edit-queued")).toBe(false);
+      expect(hasMockIpcHandler("agent:backend:remove-queued")).toBe(false);
+      expect(hasMockIpcHandler("agent:backend:force-message")).toBe(false);
+      expect(hasMockIpcHandler("agent:backend:get-queue")).toBe(false);
     });
 
     it("registers no handler for agent:backend:stream-message (send paths use the BackendTransport seam, T1/T2)", () => {
@@ -184,7 +186,7 @@ describe("agent-ipc-bridge-seeder", () => {
       // agent-factory.sendInitialMessage) now call
       // backendRequest("agent.sendMessage") directly; a resurrected bridge
       // would silently reintroduce the legacy channel hop.
-      expect(hasMockIpcHandler(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE)).toBe(false);
+      expect(hasMockIpcHandler("agent:backend:stream-message")).toBe(false);
     });
   });
 

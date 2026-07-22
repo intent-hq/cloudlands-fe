@@ -86,13 +86,6 @@ export const AgentListRequestSchema = z.object({
   includeDeleted: z.boolean().optional(),
 });
 
-// Stream message schema for agent streaming
-export const AgentStreamMessageRequestSchema = z.object({
-  agentId: AgentIdSchema,
-  content: z.string(),
-  metadata: z.record(z.any()).optional(),
-});
-
 // Delete agent schema
 export const AgentDeleteRequestSchema = z.object({
   agentId: AgentIdSchema,
@@ -155,7 +148,6 @@ const schemas: Record<string, z.ZodSchema<any>> = {
   'agent:send-message': AgentSendMessageRequestSchema,
   'agent:list': AgentListRequestSchema,
   'agent:delete': AgentDeleteRequestSchema,
-  'agent:backend:stream-message': AgentStreamMessageRequestSchema,
   'workspace:create': WorkspaceCreateRequestSchema,
   'workspace:get': WorkspaceGetRequestSchema,
   'file:read': FileReadRequestSchema,

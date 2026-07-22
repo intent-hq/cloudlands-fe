@@ -314,15 +314,6 @@ class IntegrationTestRunner {
         validate: () => true, // Errors expected in chaos testing
         timeout: 30000,
       },
-      {
-        name: 'backend-health-check',
-        description: 'Verify backend health monitoring',
-        execute: async (harness) => {
-          const result = await harness.testBackendHealth();
-          if (!result.success) throw new Error('Backend unhealthy');
-        },
-        validate: (metrics) => metrics.errors.length === 0,
-      },
     ];
   }
 

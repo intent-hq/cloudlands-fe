@@ -217,10 +217,6 @@ setupIPCInterceptor();
 // Import new IPC setup functions
 import { registerAcceptChangesHandlers } from '../features/accept-changes/main/accept-changes.ipc';
 import { registerAgentContextHandlers } from '../features/agent/agent-context.ipc';
-import {
-  initializeUnifiedBackend,
-  shutdownUnifiedBackend,
-} from '../features/agent/main/init-unified-backend';
 import { setupAuggieIPC } from '../features/auggie/main/auggie.ipc';
 import { setupOpencodeIPC } from '../features/opencode/main/opencode.ipc';
 import { setupClaudeCodeIPC } from '../features/claude-code/main/claude-code.ipc';
@@ -288,7 +284,6 @@ import { listRespondingAgents } from './running-agents';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { cleanupStaleTempFiles } from '../shared/main/temp-files';
-import { initializeUnifiedAgentHandlers } from '../features/agent/main/init-unified-handlers';
 import { initSpecialistsService } from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
 import { workspaceService } from '../features/workspace/main/workspace.service';
@@ -415,17 +410,8 @@ async function gracefulShutdown() {
       }
     }
 
-    // Shutdown unified backend - kills all active agent (auggie) processes
-    // This also disposes the agent pool (warm/pre-warmed agent processes)
-    try {
-      await shutdownUnifiedBackend();
-      logger.info('Unified backend shutdown complete');
-    } catch (error) {
-      logger.error(
-        'Error during unified backend shutdown:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
+    // Agent lifecycle is owned by the intentd daemon (PROTOCOL.md §5.5);
+    // the legacy main-process unified backend shutdown was retired with it.
 
     // Stop CDP MCP Server
     if (cdpMcpServer) {
@@ -1277,9 +1263,6 @@ app.whenReady().then(async () => {
   setupLinearAuthIPC(); // Needed for Linear auth via the daemon
   setupSentryAuthIPC(); // Needed for Sentry auth via API token
 
-  // Initialize unified agent handlers with the backend adapter
-  initializeUnifiedAgentHandlers(); // Migrated to unified handler architecture
-
   registerIDEHandlers(); // Needed for IDE integration
   registerExternalEditorsHandlers(); // Needed for external editor detection and opening
   registerWorkspacePRHandlers(); // Needed for PR operations
@@ -1641,7 +1624,6 @@ app.whenReady().then(async () => {
       logger.error('Main window unavailable during post-window setup; skipping');
       return;
     }
-    await initializeUnifiedBackend(mainWindow);
 
     try {
       startupMetrics.end('postWindowIPC');
@@ -1826,13 +1808,8 @@ app.on('window-all-closed', async () => {
   // Cleanup all IPC handlers
   ipcCleanupManager.cleanupAll();
 
-  // Cleanup agent backend
-  try {
-    await shutdownUnifiedBackend();
-    logger.info('Unified backend shutdown complete');
-  } catch (error) {
-    logger.error('Failed to shutdown unified backend', error as Error);
-  }
+  // Agent lifecycle is owned by the intentd daemon; no main-process agent
+  // backend remains to shut down here.
 
   // Stop CDP MCP Server
   if (cdpMcpServer) {

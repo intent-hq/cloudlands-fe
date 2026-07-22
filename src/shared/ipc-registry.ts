@@ -743,21 +743,9 @@ export const IPC_CHANNELS = {
     GET_STATS: 'recovery:get-stats',
   },
 
-  // Agent Backend
-  // The retired request channels (create/get-status/cancel-stream/stop/get/
-  // list/delete/isActive/resume/check-process/reconnect/resume-stream/
-  // get-checkpoint) were removed with the daemon IPC migration — their flows
-  // go through the BackendTransport seam (agent.* daemon RPCs) or were
-  // retired without a port.
-  AGENT_BACKEND: {
-    STREAM_MESSAGE: 'agent:backend:stream-message',
-    // Message queue operations
-    QUEUE_MESSAGE: 'agent:backend:queue-message',
-    EDIT_QUEUED: 'agent:backend:edit-queued',
-    REMOVE_QUEUED: 'agent:backend:remove-queued',
-    GET_QUEUE: 'agent:backend:get-queue',
-    FORCE_MESSAGE: 'agent:backend:force-message',
-  },
+  // The entire agent:backend:* namespace was retired with the daemon IPC
+  // migration — send/queue flows go through the BackendTransport seam
+  // (agent.* daemon RPCs) and the main-process handlers were deleted.
 
   // Storage
   STORAGE: {
@@ -901,9 +889,9 @@ export const EVENT_CHANNELS = [
   'agent:message:received',
   'agent:user-message:sent',
   'agent:message:content-blocks',
-  'agent:prepare-handler', // Backend requests frontend to prepare stream handler
-  'agent:handler-ready', // Frontend signals stream handler is ready
-  'health:check', // Health check metrics from backend
+  // Retired: 'agent:prepare-handler' / 'agent:handler-ready' / 'health:check'
+  // (main-process stream-handler wake handshake and backend health fan-out
+  // were removed with ConsolidatedBackendService).
   'deep-link',
   'workspace-changes',
   'terminal:created',

@@ -1473,61 +1473,6 @@ export class AgentTestHarness extends EventEmitter {
   }
 
   /**
-   * Test backend health monitoring
-   */
-  async testBackendHealth(): Promise<{
-    success: boolean;
-    health: {
-      healthy: boolean;
-      uptime: number;
-      memoryUsage: NodeJS.MemoryUsage;
-      activeSessions: number;
-      errorRate: number;
-      issues: string[];
-    };
-  }> {
-    const operation = this.startOperation('testBackendHealth');
-
-    try {
-      // Import the unified backend (main process version with full API)
-      const { unifiedAgentBackend } = await import('../main/consolidated-backend.service');
-
-      // Perform health check
-      const healthCheck = await unifiedAgentBackend.performHealthCheck();
-
-      // Get metrics
-      const metrics = unifiedAgentBackend.getHealthMetrics();
-
-      this.endOperation(operation, healthCheck.healthy);
-
-      return {
-        success: healthCheck.healthy,
-        health: {
-          healthy: healthCheck.healthy,
-          uptime: metrics.uptime,
-          memoryUsage: metrics.memoryUsage,
-          activeSessions: metrics.activeSessions,
-          errorRate: metrics.errorRate,
-          issues: healthCheck.issues,
-        },
-      };
-    } catch (error) {
-      this.endOperation(operation, false, error as Error);
-      return {
-        success: false,
-        health: {
-          healthy: false,
-          uptime: 0,
-          memoryUsage: process.memoryUsage(),
-          activeSessions: 0,
-          errorRate: 1,
-          issues: [error instanceof Error ? error.message : 'Unknown error'],
-        },
-      };
-    }
-  }
-
-  /**
    * Cleanup resources
    */
   async cleanup(): Promise<void> {

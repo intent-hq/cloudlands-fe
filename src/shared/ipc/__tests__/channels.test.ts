@@ -87,11 +87,18 @@ describe('IPC Channels', () => {
       expect(isValidChannel('agent:backend:resume-stream')).toBe(false);
       expect(isValidChannel('agent:backend:get-checkpoint')).toBe(false);
       expect(isValidChannel('agent:stream-starting')).toBe(false);
-    });
-
-    it('should keep live agent backend channels valid', () => {
-      expect(isValidChannel('agent:backend:stream-message')).toBe(true);
-      expect(isValidChannel('agent:backend:queue-message')).toBe(true);
+      // Final agent:backend:* retirement (main-process handlers deleted)
+      expect(isValidChannel('agent:backend:stream-message')).toBe(false);
+      expect(isValidChannel('agent:backend:queue-message')).toBe(false);
+      expect(isValidChannel('agent:backend:edit-queued')).toBe(false);
+      expect(isValidChannel('agent:backend:remove-queued')).toBe(false);
+      expect(isValidChannel('agent:backend:get-queue')).toBe(false);
+      expect(isValidChannel('agent:backend:force-message')).toBe(false);
+      // Wake-handshake / backend-health event channels retired with
+      // ConsolidatedBackendService
+      expect(isValidChannel('agent:prepare-handler')).toBe(false);
+      expect(isValidChannel('agent:handler-ready')).toBe(false);
+      expect(isValidChannel('health:check')).toBe(false);
     });
 
     it('should validate dynamic channels', () => {
