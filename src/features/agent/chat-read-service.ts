@@ -47,6 +47,7 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { createLogger } from "$lib/utils/client-logger";
 import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
+import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
 
 const logger = createLogger("ChatReadService");
 
@@ -62,6 +63,10 @@ const inFlight = new Map<string, Promise<void>>();
  * same agent share one fetch.
  */
 export async function loadChatTranscript(agentId: string): Promise<void> {
+  // A soft-hidden deletion is pending (undo window still open): the daemon
+  // still returns the agent, so hydrating would re-upsert the deleted
+  // session. Skip entirely.
+  if (isAgentDeletionPending(agentId)) return;
   const pending = inFlight.get(agentId);
   if (pending) return pending;
 
@@ -90,6 +95,10 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
     try {
       const session = await appClient.agents.get(agentId);
       if (!session) return;
+      // Re-check after the fetch: a deletion may have become pending while
+      // `agent.get` was in flight; hydrating now would resurrect the
+      // soft-hidden session (and paging the transcript would be wasted work).
+      if (isAgentDeletionPending(agentId)) return;
 
       // Fetch the FULL transcript by paging through agent.getConversation.
       // Request 200 messages per page (daemon max) and loop on nextToken.
@@ -118,6 +127,13 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // transcript so reopening a mid-turn chat shows the partial response
       // immediately instead of waiting for the next chunk/tool-call.
       const snapshot = await appClient.chat.subscribeSnapshot(agentId);
+
+      // Final re-check before any side effects: the deletion may have become
+      // pending during transcript paging / snapshot fetch above. This guards
+      // both the store upserts below and seedStreamFromSnapshot (the bridge
+      // accumulator must not be seeded for a deleted agent).
+      if (isAgentDeletionPending(agentId)) return;
+
       const inFlightMessage = snapshot.messages.find(
         (m) =>
           m.role === "assistant" &&
