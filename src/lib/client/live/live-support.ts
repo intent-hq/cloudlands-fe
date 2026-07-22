@@ -31,8 +31,9 @@ export function newIdempotencyKey(): string {
  * "Internal error" and carries the real cause as a string in `error.data`; the
  * main-process bridge (`json-rpc-errors.ts`) normalizes that string onto
  * `data.detail` before it crosses the IPC boundary. When the generic message
- * is all we have, fold the detail in to keep toasts actionable. A raw string
- * `data` is handled too for transports that skip the normalization.
+ * is all we have, fold the detail into the message so toasts stay actionable.
+ * A raw string `data` is handled too for transports that skip the
+ * normalization.
  */
 function mutationErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
