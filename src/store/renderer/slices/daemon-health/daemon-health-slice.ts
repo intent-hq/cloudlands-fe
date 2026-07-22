@@ -27,6 +27,8 @@ export const initialState: DaemonHealthState = {
   transport: null,
   sidecarGaveUp: false,
   sidecarGaveUpReason: null,
+  sidecarSpawnPending: false,
+  sidecarSpawnError: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -80,6 +82,23 @@ export const systemStatusFailure = createAction(
   'daemonHealth/systemStatusFailure',
 );
 
+/**
+ * User asked for the app-managed sidecar fallback from the daemon-loss UI
+ * (#439). The daemon-health middleware invokes backend:spawn-sidecar.
+ */
+export const spawnSidecarRequested = createAction(
+  'daemonHealth/spawnSidecarRequested',
+);
+
+/**
+ * backend:spawn-sidecar failed (binary not found, spawn error). A successful
+ * spawn has no dedicated action — the pending flag clears when the reconnect
+ * lands as a 'connected' backend:status event.
+ */
+export const spawnSidecarFailed = createAction<[error: string]>(
+  'daemonHealth/spawnSidecarFailed',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -88,7 +107,8 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
   .with(connectionStatusChanged, (state, { payload: [status, transport, extras] }) => {
     if (status === 'connected') {
       // Connection established — health moves to 'healthy'.
-      // Update transport info if present (additive) and clear any give-up state.
+      // Update transport info if present (additive) and clear any give-up /
+      // pending-spawn state.
       return {
         ...state,
         health: 'healthy',
@@ -96,6 +116,8 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         transport: transport ?? state.transport,
         sidecarGaveUp: false,
         sidecarGaveUpReason: null,
+        sidecarSpawnPending: false,
+        sidecarSpawnError: null,
       };
     } else if (status === 'disconnected' || status === 'connecting') {
       // Connection down or reconnecting — health moves to 'down'.
@@ -147,4 +169,10 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
   .with(systemStatusFailure, (state) => {
     // Health may already be 'down' from connection loss; leave it as-is.
     return { ...state, polling: false };
+  })
+  .with(spawnSidecarRequested, (state) => {
+    return { ...state, sidecarSpawnPending: true, sidecarSpawnError: null };
+  })
+  .with(spawnSidecarFailed, (state, { payload: [error] }) => {
+    return { ...state, sidecarSpawnPending: false, sidecarSpawnError: error };
   });

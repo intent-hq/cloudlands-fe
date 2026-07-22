@@ -20,6 +20,8 @@ import {
   systemStatusSuccess,
   systemStatusFailure,
   heartbeatFailed,
+  spawnSidecarRequested,
+  spawnSidecarFailed,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type {
   BackendTransportInfo,
@@ -128,6 +130,31 @@ function maybeNotifyVersionMismatch(transport?: BackendTransportInfo): void {
 }
 
 /**
+ * Invoke backend:spawn-sidecar (#439 fallback). On failure, dispatch
+ * spawnSidecarFailed so the daemon-loss UI surfaces the error; on success the
+ * pending flag clears when the reconnect lands as a 'connected' status event.
+ */
+async function spawnSidecar(): Promise<void> {
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (!api) {
+    appStore.dispatch(spawnSidecarFailed('electronAPI is not available'));
+    return;
+  }
+  try {
+    const result = (await api.invoke(BACKEND.SPAWN_SIDECAR)) as
+      | { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } }
+      | undefined;
+    if (!result?.ok) {
+      appStore.dispatch(
+        spawnSidecarFailed(result?.error?.message ?? result?.reason ?? 'Failed to spawn sidecar'),
+      );
+    }
+  } catch (error) {
+    appStore.dispatch(spawnSidecarFailed(error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/**
  * Boot-time setup: listen to backend:status and start polling.
  */
 function boot(): void {
@@ -176,6 +203,10 @@ export function createDaemonHealthMiddleware(): StoreMiddleware {
     // with an immediate poll; pollStatus() guards against overlapping polls.
     if (action.type === pollSystemStatus.type) {
       void pollStatus();
+    }
+    // User asked for the sidecar fallback from the daemon-loss UI (#439).
+    if (action.type === spawnSidecarRequested.type) {
+      void spawnSidecar();
     }
     return result;
   };

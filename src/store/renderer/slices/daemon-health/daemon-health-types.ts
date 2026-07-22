@@ -107,4 +107,11 @@ export interface DaemonHealthState {
   sidecarGaveUp: boolean;
   /** Reason string from the sidecar give-up broadcast, if any. */
   sidecarGaveUpReason: string | null;
+  /**
+   * True while an on-demand sidecar spawn (backend:spawn-sidecar) is pending —
+   * from the user's request until the daemon reconnects or the spawn fails.
+   */
+  sidecarSpawnPending: boolean;
+  /** Error string when the last on-demand sidecar spawn failed. */
+  sidecarSpawnError: string | null;
 }

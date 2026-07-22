@@ -9,7 +9,10 @@ import { registerMockIpcHandler, mockInvoke, resetMockIpcRouter } from '$shared/
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { store as appStore } from '$store/renderer/store';
 import { disposeDaemonHealthService } from './daemon-health-service';
-import { pollSystemStatus } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import {
+  pollSystemStatus,
+  spawnSidecarRequested,
+} from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type {
   BackendTransportInfo,
   SystemStatusWirePayload,
@@ -356,6 +359,64 @@ describe('daemon-health-service', () => {
     expect(appStore.state.daemonHealth.health).toBe('healthy');
     expect(appStore.state.daemonHealth.sidecarGaveUp).toBe(false);
     expect(appStore.state.daemonHealth.sidecarGaveUpReason).toBeNull();
+  });
+
+  it('invokes backend:spawn-sidecar on spawnSidecarRequested and keeps pending on success', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    // The middleware invokes SPAWN_SIDECAR through window.electronAPI directly
+    // (main-process channel — no daemon wire request involved).
+    const invokeMock = vi.mocked(window.electronAPI!.invoke);
+    invokeMock.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.SPAWN_SIDECAR) {
+        return { ok: true, spawned: true, reason: 'sidecar spawned' };
+      }
+      return mockInvoke(channel);
+    });
+
+    appStore.dispatch(spawnSidecarRequested());
+    expect(appStore.state.daemonHealth.sidecarSpawnPending).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(invokeMock).toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
+    // Successful spawn leaves pending set — it clears on the reconnect
+    // 'connected' status event, not on the invoke result.
+    expect(appStore.state.daemonHealth.sidecarSpawnPending).toBe(true);
+    expect(appStore.state.daemonHealth.sidecarSpawnError).toBeNull();
+  });
+
+  it('dispatches spawnSidecarFailed when backend:spawn-sidecar reports failure', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    const invokeMock = vi.mocked(window.electronAPI!.invoke);
+    invokeMock.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.SPAWN_SIDECAR) {
+        return { ok: false, spawned: false, reason: 'intentd binary not found' };
+      }
+      return mockInvoke(channel);
+    });
+
+    appStore.dispatch(spawnSidecarRequested());
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      expect(appStore.state.daemonHealth.sidecarSpawnPending).toBe(false);
+      expect(appStore.state.daemonHealth.sidecarSpawnError).toBe('intentd binary not found');
+    });
   });
 
   it('shows a one-time dismissible warning toast when the transport reports a version mismatch', async () => {

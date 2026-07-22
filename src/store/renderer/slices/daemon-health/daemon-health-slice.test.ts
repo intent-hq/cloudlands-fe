@@ -13,6 +13,8 @@ import {
   pollSystemStatus,
   systemStatusSuccess,
   systemStatusFailure,
+  spawnSidecarRequested,
+  spawnSidecarFailed,
 } from './daemon-health-slice';
 import type { BackendTransportInfo, SystemStatusWirePayload } from './daemon-health-types';
 
@@ -26,6 +28,8 @@ describe('daemonHealthReducer', () => {
       transport: null,
       sidecarGaveUp: false,
       sidecarGaveUpReason: null,
+      sidecarSpawnPending: false,
+      sidecarSpawnError: null,
     });
   });
 
@@ -114,6 +118,33 @@ describe('daemonHealthReducer', () => {
       const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
       expect(next.sidecarGaveUp).toBe(false);
       expect(next.sidecarGaveUpReason).toBeNull();
+    });
+
+    it('clears pending spawn state on connect (spawn succeeded → reconnected)', () => {
+      const state = {
+        ...initialState,
+        sidecarSpawnPending: true,
+        sidecarSpawnError: 'earlier failure',
+      };
+      const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
+      expect(next.sidecarSpawnPending).toBe(false);
+      expect(next.sidecarSpawnError).toBeNull();
+    });
+  });
+
+  describe('spawnSidecarRequested / spawnSidecarFailed', () => {
+    it('marks the spawn pending and clears a previous error on request', () => {
+      const state = { ...initialState, sidecarSpawnError: 'intentd binary not found' };
+      const next = daemonHealthReducer(state, spawnSidecarRequested());
+      expect(next.sidecarSpawnPending).toBe(true);
+      expect(next.sidecarSpawnError).toBeNull();
+    });
+
+    it('clears pending and stores the error on failure', () => {
+      const state = { ...initialState, sidecarSpawnPending: true };
+      const next = daemonHealthReducer(state, spawnSidecarFailed('intentd binary not found'));
+      expect(next.sidecarSpawnPending).toBe(false);
+      expect(next.sidecarSpawnError).toBe('intentd binary not found');
     });
   });
 

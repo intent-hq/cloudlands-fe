@@ -34,3 +34,13 @@ export const selectSidecarGaveUp = store.createSelector(
 export const selectSidecarGaveUpReason = store.createSelector(
   (state) => state.daemonHealth.sidecarGaveUpReason,
 );
+
+/** True while an on-demand sidecar spawn is pending (#439). */
+export const selectSidecarSpawnPending = store.createSelector(
+  (state) => state.daemonHealth.sidecarSpawnPending,
+);
+
+/** Error string from the last failed on-demand sidecar spawn, if any. */
+export const selectSidecarSpawnError = store.createSelector(
+  (state) => state.daemonHealth.sidecarSpawnError,
+);
