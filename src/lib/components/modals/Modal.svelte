@@ -11,6 +11,7 @@
 } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import type { Snippet } from 'svelte';
 
   interface Props {
@@ -28,23 +29,16 @@
     onClose?.();
   }
 
-  // Global keydown listener so Escape works even when inputs are focused
+  // Escape layer: only the topmost overlay handles Escape (stacked overlays
+  // dismiss one at a time in LIFO order)
   $effect(() => {
     if (!open) return;
-
-    function handleKeydown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        // Don't close modal if user is editing an input — let the input handle Escape first
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-        e.preventDefault();
-        e.stopPropagation();
-        close();
-      }
-    }
-
-    window.addEventListener('keydown', handleKeydown, { capture: true });
-    return () => window.removeEventListener('keydown', handleKeydown, { capture: true });
+    return pushEscapeLayer((e) => {
+      // Don't close modal if user is editing an input — let the input handle Escape first
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return false;
+      close();
+    });
   });
 </script>
 
