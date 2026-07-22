@@ -146,7 +146,7 @@ describe('startIntentdSidecar connection-mode resolution', () => {
     expect(getConnectionMode()).toBe('sidecar');
     expect(mockSpawn).toHaveBeenCalledWith(
       '/fake/intentd',
-      ['serve', '--listen', 'uds'],
+      ['serve'],
       expect.objectContaining({ detached: false }),
     );
   });
@@ -285,7 +285,7 @@ describe('spawnSidecarOnDemand', () => {
     expect(getConnectionMode()).toBe('sidecar');
     expect(mockSpawn).toHaveBeenCalledWith(
       '/fake/intentd',
-      ['serve', '--listen', 'uds'],
+      ['serve'],
       expect.objectContaining({ detached: false }),
     );
   });
