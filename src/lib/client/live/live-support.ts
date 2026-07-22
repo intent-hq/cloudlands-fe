@@ -25,9 +25,27 @@ export function newIdempotencyKey(): string {
   return `idk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** Human-readable message for a failed mutation. */
+/**
+ * Human-readable message for a failed mutation. The daemon maps
+ * `Error::Internal` to JSON-RPC -32603 with the hardcoded message
+ * "Internal error" and carries the real cause as a string in `error.data`; the
+ * main-process bridge (`json-rpc-errors.ts`) normalizes that string onto
+ * `data.detail` before it crosses the IPC boundary. When the generic message
+ * is all we have, fold the detail into the message so toasts stay actionable.
+ * A raw string `data` is handled too for transports that skip the
+ * normalization.
+ */
 function mutationErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  if (message === "Internal error" && error && typeof error === "object") {
+    const data = (error as { data?: unknown }).data;
+    if (typeof data === "string" && data.length > 0) return `${message}: ${data}`;
+    if (data && typeof data === "object") {
+      const detail = (data as { detail?: unknown }).detail;
+      if (typeof detail === "string" && detail.length > 0) return `${message}: ${detail}`;
+    }
+  }
+  return message;
 }
 
 /** Numeric JSON-RPC code the daemon returns for an optimistic-concurrency conflict (§11.4-D). */

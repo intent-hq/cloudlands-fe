@@ -64,12 +64,14 @@ describe("commentsWriteService (fake seam, real store)", () => {
       searchContext: "the quick fox",
       commentTarget: "quick",
       comment: "body",
+      authorType: "user",
     });
 
     expect(commentsApi.add).toHaveBeenCalledWith("note-1", {
       searchContext: "the quick fox",
       commentTarget: "quick",
       comment: "body",
+      authorType: "user",
     });
     expect(selectCommentById.select(appStore.state, "c-1")?.content).toBe("body");
   });
@@ -88,6 +90,27 @@ describe("commentsWriteService (fake seam, real store)", () => {
     expect(toast.error).toHaveBeenCalledWith(
       "Failed to add comment",
       expect.objectContaining({ description: "nope" }),
+    );
+  });
+
+  it("add toast description carries the folded daemon detail from MutationResult.error", async () => {
+    commentsApi.add.mockResolvedValueOnce({
+      success: false,
+      error: "Internal error: Could not find the search context in the document.",
+    } as never);
+
+    const ok = await addComment("note-1", makeComment("c-detail"), {
+      searchContext: "a b",
+      commentTarget: "a",
+      comment: "body",
+    });
+
+    expect(ok).toBe(false);
+    expect(toast.error).toHaveBeenCalledWith(
+      "Failed to add comment",
+      expect.objectContaining({
+        description: "Internal error: Could not find the search context in the document.",
+      }),
     );
   });
 

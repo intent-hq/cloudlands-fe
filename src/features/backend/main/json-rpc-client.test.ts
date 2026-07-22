@@ -523,4 +523,28 @@ describe("mapErrorCode", () => {
     expect(error.code).toBe("INVALID_PARAMS");
     expect(error.data).toEqual({ code: "INVALID_PARAMS" });
   });
+
+  it("JsonRpcError preserves a string daemon data as data.detail", () => {
+    // The daemon router sends the -32603 Internal error cause as a plain
+    // string in error.data; it must survive normalization for the renderer.
+    const error = new JsonRpcError({
+      code: -32603,
+      message: "Internal error",
+      data: "Could not find the search context in the document.",
+    });
+    expect(error.code).toBe("INTERNAL_ERROR");
+    expect(error.data).toEqual({
+      code: "INTERNAL_ERROR",
+      detail: "Could not find the search context in the document.",
+    });
+    expect(error.toErrorPayload()).toEqual({
+      code: "INTERNAL_ERROR",
+      message: "Internal error",
+      data: {
+        code: "INTERNAL_ERROR",
+        detail: "Could not find the search context in the document.",
+      },
+      rpcCode: -32603,
+    });
+  });
 });

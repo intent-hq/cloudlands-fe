@@ -57,11 +57,16 @@ export class JsonRpcError extends Error {
     this.name = 'JsonRpcError';
     this.rpcCode = error.code;
     this.code = explicitDataCode(error.data) ?? mapErrorCode(error.code);
-    // Ensure the resolved string code is always available on data.code.
+    // Ensure the resolved string code is always available on data.code. A
+    // non-object daemon `data` (e.g. the -32603 Internal error cause, which the
+    // daemon router sends as a plain string) is preserved as `data.detail` so
+    // the renderer can surface the real cause instead of the generic message.
     this.data =
       error.data && typeof error.data === 'object'
         ? { ...(error.data as Record<string, unknown>), code: this.code }
-        : { code: this.code };
+        : typeof error.data === 'string' && error.data.length > 0
+          ? { code: this.code, detail: error.data }
+          : { code: this.code };
   }
 
   /** Serializable shape for crossing the IPC bridge to the renderer. */
