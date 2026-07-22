@@ -31,6 +31,13 @@ function routeDaemon(responses: MethodResponses): void {
   });
 }
 
+/** Arity-proof negative assertion: no call routed to `host.exec` at all
+ * (a positional `toHaveBeenCalledWith` matcher would miss 3-arg calls). */
+function expectNoHostExec(): void {
+  const execCalls = mockedRequest.mock.calls.filter(([method]) => method === 'host.exec');
+  expect(execCalls).toEqual([]);
+}
+
 const PI_FOUND = { available: true, path: '/usr/local/bin/pi' };
 
 type InstallResult = { success: boolean; error?: string };
@@ -82,14 +89,14 @@ describe('pi-mcp-bridge-seeder', () => {
       routeDaemon({ 'host.findBinary': { available: false } });
 
       await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(false);
-      expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
+      expectNoHostExec();
     });
 
-    it('rejects an untrusted whitespace-only findBinary path — without running pi list', async () => {
+    it('resolves false for an untrusted whitespace-only findBinary path — without running pi list', async () => {
       routeDaemon({ 'host.findBinary': { available: true, path: '   ' } });
 
       await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(false);
-      expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
+      expectNoHostExec();
     });
 
     it('trims the resolved path before using it as the exec command', async () => {
@@ -147,11 +154,7 @@ describe('pi-mcp-bridge-seeder', () => {
       });
 
       await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(false);
-      expect(mockedRequest).not.toHaveBeenCalledWith(
-        'host.exec',
-        expect.anything(),
-        expect.anything(),
-      );
+      expectNoHostExec();
     });
   });
 
@@ -187,7 +190,7 @@ describe('pi-mcp-bridge-seeder', () => {
         success: false,
         error: 'Pi CLI not found. Please install Pi first.',
       });
-      expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
+      expectNoHostExec();
     });
 
     it('surfaces stderr on non-zero exit', async () => {
@@ -249,11 +252,7 @@ describe('pi-mcp-bridge-seeder', () => {
         success: false,
         error: 'JSON-RPC request timed out: host.findBinary',
       });
-      expect(mockedRequest).not.toHaveBeenCalledWith(
-        'host.exec',
-        expect.anything(),
-        expect.anything(),
-      );
+      expectNoHostExec();
     });
 
     it('falls back to a generic message when the rejection has no usable message', async () => {
