@@ -8,10 +8,7 @@
 
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import {
-  onDestroy,
-  onMount,
-} from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
@@ -23,15 +20,18 @@
 
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import {
-  selectOnboardingStep,
-  selectOnboardingState,
-} from '$store/renderer/slices/onboarding/onboarding-selectors';
+    selectOnboardingStep,
+    selectOnboardingState,
+  } from '$store/renderer/slices/onboarding/onboarding-selectors';
   import {
-  goToStep,
-  setProjectConfig,
-  setOnboardingWorkspaceId,
-  resetOnboarding,
-} from '$store/renderer/slices/onboarding/onboarding-slice';
+    goToStep,
+    setProjectConfig,
+    setOnboardingWorkspaceId,
+    resetOnboarding,
+  } from '$store/renderer/slices/onboarding/onboarding-slice';
+  import { STEP_ORDER as ONBOARDING_STEP_ORDER } from '$store/renderer/slices/onboarding/onboarding-types';
+  import { cancelGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { selectGitHubAuthIsAuthenticating } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
   import ProjectPickerMessage from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -45,6 +45,7 @@
   import AgentGrid from '$features/onboarding/messages/AgentGrid.svelte';
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
+  import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
 
   import { Button } from '$lib/components/ui/button';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
@@ -55,25 +56,22 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
   import {
-  parseContextMentions,
-  parseFileMentions,
-  parseRuntimeMentions,
-  parseInlineImages,
-  extractLinearIssue,
-  extractSentryIssue,
-} from '$features/onboarding/utils/parse-context-references';
+    parseContextMentions,
+    parseFileMentions,
+    parseRuntimeMentions,
+    parseInlineImages,
+    extractLinearIssue,
+    extractSentryIssue,
+  } from '$features/onboarding/utils/parse-context-references';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
-  import {
-  SETUP_SCRIPT_TEMPLATES,
-  getTemplateContent,
-} from '$features/setup-scripts';
+  import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '$features/setup-scripts';
   import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
   import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
-  cancelWorkspaceInitializerOnboardingFormStateDebounce,
-  debounceWorkspaceInitializerOnboardingFormState,
-} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+    cancelWorkspaceInitializerOnboardingFormStateDebounce,
+    debounceWorkspaceInitializerOnboardingFormState,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { createLogger } from '$lib/utils/client-logger';
@@ -82,10 +80,10 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { getRandomSuggestions } from '$features/onboarding/utils/prompt-suggestions';
   import {
-  findEmbeddedPRBranch,
-  hasGitHubPRMention,
-  findPRNeedingBranchFetch,
-} from '$features/onboarding/utils/detect-pr-branch';
+    findEmbeddedPRBranch,
+    hasGitHubPRMention,
+    findPRNeedingBranchFetch,
+  } from '$features/onboarding/utils/detect-pr-branch';
   import { store as appStore } from '$store/renderer/store';
   const logger = createLogger('onboarding-page');
 
@@ -106,8 +104,7 @@
     onFadingOutChange: (fadingOut: boolean) => void;
   }
 
-  let { isOnboarding, fadingOut, onHoldActiveChange, onFadingOutChange }: Props =
-    $props();
+  let { isOnboarding, fadingOut, onHoldActiveChange, onFadingOutChange }: Props = $props();
 
   // ============================================================================
   // Onboarding State
@@ -152,8 +149,8 @@
         const response =
           typeof window !== 'undefined' && window.electronAPI
             ? await invoke<any>('git-tracking:get-remote-url', {
-              repoPath: path,
-            })
+                repoPath: path,
+              })
             : undefined;
         if (response?.success && response.data?.owner && response.data?.repo) {
           detectedGitHubOwner = response.data.owner;
@@ -275,9 +272,7 @@
   let isCustomSetupScript = $state(false);
 
   function restoreLastUsedSetupScript(repo: string) {
-    const lastUsed = repo
-      ? selectLastUsedScriptForRepo.select(appStore.state, repo)
-      : undefined;
+    const lastUsed = repo ? selectLastUsedScriptForRepo.select(appStore.state, repo) : undefined;
     if (lastUsed) {
       setupScript = lastUsed.content;
       setupScriptName = lastUsed.name;
@@ -353,18 +348,20 @@
   // Onboarding Derived State
   // ============================================================================
 
-  const ONBOARDING_STEP_ORDER = ['welcome', 'project', 'configuring', 'ready'] as const;
-  const onboardingStepIndex = $derived(
-    ONBOARDING_STEP_ORDER.indexOf($onboardingStep$ as (typeof ONBOARDING_STEP_ORDER)[number]),
-  );
+  const onboardingStepIndex = $derived(ONBOARDING_STEP_ORDER.indexOf($onboardingStep$));
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
+  const isGitHubStep = $derived($onboardingStep$ === 'github');
   const isProjectStep = $derived($onboardingStep$ === 'project');
   const isConfiguringStep = $derived(
     $onboardingStep$ === 'configuring' || $onboardingStep$ === 'ready',
   );
-  const showStartWorking = $derived(onboardingStepIndex >= 2);
-  const onboardingVisibleStep = $derived(isConfiguringStep ? 3 : isProjectStep ? 2 : 1);
-  const ONBOARDING_TOTAL_STEPS = 3;
+  const showStartWorking = $derived(onboardingStepIndex >= 3);
+  const onboardingVisibleStep = $derived(
+    isConfiguringStep ? 4 : isProjectStep ? 3 : isGitHubStep ? 2 : 1,
+  );
+  // 'configuring' and 'ready' share one visible step, so the count is the
+  // step order minus the terminal 'ready' entry.
+  const ONBOARDING_TOTAL_STEPS = ONBOARDING_STEP_ORDER.length - 1;
 
   // ============================================================================
   // Mount: Reset onboarding state
@@ -602,6 +599,16 @@
 
     if (isWelcomeStep && hasConnectedProvider) {
       e.preventDefault();
+      appStore.dispatch(goToStep('github'));
+    } else if (isGitHubStep) {
+      // Continue when connected, skip otherwise — both advance to project.
+      // Skipping abandons a still-pending device flow, so cancel it rather
+      // than leaving it polling in the background (and resurfacing in
+      // Settings).
+      e.preventDefault();
+      if (selectGitHubAuthIsAuthenticating.select(appStore.state)) {
+        appStore.dispatch(cancelGitHubAuth());
+      }
       appStore.dispatch(goToStep('project'));
     } else if (isProjectStep && projectSelection?.isValid) {
       e.preventDefault();
@@ -757,9 +764,7 @@
       }
 
       if (effectiveModel)
-        appStore.dispatch(
-          setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }),
-        );
+        appStore.dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
       appStore.dispatch(setWorkspaceEntity(workspace));
 
       if (setupScript.trim() && projectSelection.repoPath) {
@@ -912,7 +917,7 @@
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                             onclick={() =>
                               appStore.dispatch(
-                                goToStep(onboardingVisibleStep === 3 ? 'project' : 'welcome'),
+                                goToStep(ONBOARDING_STEP_ORDER[onboardingVisibleStep - 2]),
                               )}
                             aria-label="Go back to previous step"
                           >
@@ -937,8 +942,21 @@
                             </p>
                           </div>
                         </div>
-                      {:else if isProjectStep}
+                      {:else if isGitHubStep}
                         <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 2">
+                          <div class="space-y-3">
+                            <h2 class="text-5xl font-semibold tracking-tight leading-tight">
+                              Connect GitHub
+                            </h2>
+                            <p class="text-lg text-muted-foreground">
+                              Push changes and create pull requests directly from workspaces.
+                              <br />
+                              This is optional — you can also connect later from Settings.
+                            </p>
+                          </div>
+                        </div>
+                      {:else if isProjectStep}
+                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 3">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
                               What project should we work on?
@@ -949,7 +967,7 @@
                           </div>
                         </div>
                       {:else}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 3">
+                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 4">
                           <div class="space-y-6">
                             <h2 class="text-5xl font-semibold tracking-tighter">
                               What should we build first?
@@ -981,7 +999,7 @@
                             size="xl"
                             variant={!hasConnectedProvider ? 'outline' : 'default'}
                             disabled={!hasConnectedProvider}
-                            onclick={() => appStore.dispatch(goToStep('project'))}
+                            onclick={() => appStore.dispatch(goToStep('github'))}
                           >
                             Let's go
                             {#if hasConnectedProvider}
@@ -993,6 +1011,13 @@
                               Connect at least one agent to continue
                             </p>
                           {/if}
+                        </div>
+                      {:else if isGitHubStep}
+                        <div class="max-w-5xl mx-auto">
+                          <OnboardingGitHubStep
+                            onContinue={() => appStore.dispatch(goToStep('project'))}
+                            onSkip={() => appStore.dispatch(goToStep('project'))}
+                          />
                         </div>
                       {:else if isProjectStep}
                         <div class="max-w-5xl mx-auto">
