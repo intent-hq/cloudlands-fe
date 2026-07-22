@@ -124,8 +124,10 @@ function maybeNotifyVersionMismatch(transport?: BackendTransportInfo): void {
       );
     })
     .catch(() => {
-      // Toast not available yet (e.g. during initial load) — the mismatch is
-      // still logged in the main process.
+      // Toast not available yet (e.g. during initial load) — un-latch so a
+      // later status event retries instead of losing the warning for the
+      // whole session. The mismatch is still logged in the main process.
+      versionMismatchNotified = false;
     });
 }
 

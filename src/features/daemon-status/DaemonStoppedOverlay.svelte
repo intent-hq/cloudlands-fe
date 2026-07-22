@@ -72,7 +72,10 @@
   const isExternalMode = $derived(
     $transport$?.mode === 'external-uds' || $transport$?.mode === 'external-ws',
   );
-  const showSpawnButton = $derived(isExternalMode || $sidecarGaveUp$);
+  // The on-demand sidecar binds the local UDS socket, which a WS-connected
+  // client would never reconnect to — so the button is only offered when the
+  // connection target is the local socket (external-ws is excluded).
+  const showSpawnButton = $derived($transport$?.mode === 'external-uds' || $sidecarGaveUp$);
 
   function handleSpawnSidecar() {
     appStore.dispatch(spawnSidecarRequested());
@@ -85,6 +88,8 @@
     role="alertdialog"
     aria-modal="true"
     aria-labelledby="daemon-stopped-title"
+    aria-describedby="daemon-stopped-description"
+    tabindex="-1"
     data-testid="daemon-stopped-overlay"
   >
     <div class="mx-4 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl">
@@ -92,7 +97,7 @@
         intentd is stopped
       </h2>
 
-      <p class="mt-2 text-sm text-muted-foreground">
+      <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
         {#if $sidecarGaveUp$}
           The app-managed intentd daemon stopped and could not be restarted after repeated
           attempts{$sidecarGaveUpReason$ ? ` (${$sidecarGaveUpReason$})` : ''}.

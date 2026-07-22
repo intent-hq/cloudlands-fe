@@ -68,7 +68,9 @@ describe('buildQuitDialogOptions — external mode (non-destructive close)', () 
   it('uses singular phrasing and the agent name for one agent', () => {
     const opts = buildQuitDialogOptions('external', agents('Refactor bot'));
     expect(opts.message).toBe('1 agent is still working.');
-    expect(opts.detail).toContain('your 1 running agent (Refactor bot) continue in the background');
+    expect(opts.detail).toContain(
+      'your 1 running agent (Refactor bot) continues in the background',
+    );
   });
 
   it('caps the listed names at 5 and summarizes the remainder', () => {

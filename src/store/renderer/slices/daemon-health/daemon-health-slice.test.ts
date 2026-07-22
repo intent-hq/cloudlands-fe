@@ -130,6 +130,25 @@ describe('daemonHealthReducer', () => {
       expect(next.sidecarSpawnPending).toBe(false);
       expect(next.sidecarSpawnError).toBeNull();
     });
+
+    it('clears pending spawn when the spawned sidecar crash-loops to give-up', () => {
+      const state = { ...initialState, sidecarSpawnPending: true };
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('disconnected', undefined, {
+          sidecarGaveUp: true,
+          reason: 'restart limit reached',
+        }),
+      );
+      expect(next.sidecarSpawnPending).toBe(false);
+      expect(next.sidecarGaveUp).toBe(true);
+    });
+
+    it('preserves pending spawn on an ordinary disconnect without a give-up', () => {
+      const state = { ...initialState, sidecarSpawnPending: true };
+      const next = daemonHealthReducer(state, connectionStatusChanged('disconnected'));
+      expect(next.sidecarSpawnPending).toBe(true);
+    });
   });
 
   describe('spawnSidecarRequested / spawnSidecarFailed', () => {

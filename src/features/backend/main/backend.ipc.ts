@@ -190,6 +190,18 @@ export function registerBackendHandlers(): void {
 
   ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => {
     try {
+      // The on-demand sidecar always binds the local UDS socket. A WS/TCP
+      // client keeps reconnecting to its original target and would never
+      // reach the daemon we spawned, stranding the renderer on a pending
+      // spawn — refuse instead.
+      const transport = getBackendClient().getConfig().transport;
+      if (transport !== 'uds') {
+        return {
+          ok: false,
+          spawned: false,
+          reason: `connection target is not a local socket (transport: ${transport})`,
+        };
+      }
       const result = await spawnSidecarOnDemand(
         process.env,
         app.isPackaged,
@@ -218,8 +230,12 @@ export function registerBackendHandlers(): void {
   // of the sidecar dying invisibly (#439).
   onSidecarGaveUp((reason) => {
     const instance = getBackendClient();
+    // Report the client's ACTUAL status: in the probe→spawn TOCTOU race the
+    // crash-looping child lost the socket to an external daemon the client
+    // has meanwhile connected to — hardcoding 'disconnected' would flip a
+    // healthy renderer to 'down' until the next poll corrected it.
     broadcast(BACKEND.STATUS, {
-      status: 'disconnected',
+      status: instance.getStatus(),
       sidecarGaveUp: true,
       reason,
       transport: formatTransportInfo(instance.getConfig()),

@@ -744,6 +744,13 @@ async function doSpawnSidecarOnDemand(
     return { ok: false, spawned: false, reason: 'intentd binary not found' };
   }
   isShuttingDown = false;
+  // The mode flips optimistically, before the child proves it owns the
+  // socket. If a daemon binds the socket in the probe→spawn window, our child
+  // fails to bind and exits while the JsonRpcClient reconnects to that
+  // external daemon — leaving a stale `sidecar` mode (transport-info and
+  // quit-dialog copy only). Daemon-safe regardless: the quit path's stop
+  // branch only signals `sidecarProcess`, which is already null after the
+  // child exit, so an external daemon is never signalled.
   setConnectionMode('sidecar');
   await spawnSidecarProcess(binaryPath, socketPath, env);
   return { ok: true, spawned: true, reason: 'sidecar spawned' };

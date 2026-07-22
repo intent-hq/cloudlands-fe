@@ -131,6 +131,10 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         sidecarGaveUpReason: extras?.sidecarGaveUp
           ? (extras.reason ?? null)
           : state.sidecarGaveUpReason,
+        // An on-demand spawn that crash-loops to give-up never reaches
+        // 'connected' — clear the pending flag so the fallback button
+        // re-enables for a retry instead of sticking on "Starting sidecar…".
+        sidecarSpawnPending: extras?.sidecarGaveUp ? false : state.sidecarSpawnPending,
       };
     }
     return state;

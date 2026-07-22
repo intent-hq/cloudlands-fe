@@ -54,7 +54,7 @@ export function buildQuitDialogOptions(
       type: 'info',
       title: 'Agents Keep Running',
       message: `${count} agent${plural ? 's are' : ' is'} still working.`,
-      detail: `Intent will close, but intentd and your ${count} running agent${plural ? 's' : ''} (${formatAgentNameList(agents)}) continue in the background. Reconnect anytime by reopening the app.`,
+      detail: `Intent will close, but intentd and your ${count} running agent${plural ? 's' : ''} (${formatAgentNameList(agents)}) continue${plural ? '' : 's'} in the background. Reconnect anytime by reopening the app.`,
       buttons: ['Close', 'Cancel'],
       defaultId: 0,
       cancelId: 1,

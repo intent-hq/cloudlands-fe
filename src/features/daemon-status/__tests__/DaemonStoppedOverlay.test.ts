@@ -133,6 +133,13 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).toContain('may use a different data directory');
   });
 
+  it('hides the spawn button in external-ws mode (the UDS sidecar would never be reached)', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' });
+    expect(screen.queryByTestId('daemon-stopped-spawn-sidecar')).toBeNull();
+    expect(overlay()!.textContent).toContain('external intentd daemon was lost');
+  });
+
   it('offers the sidecar fallback after the supervisor gave up, with the reason', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(sidecarTransport, { sidecarGaveUp: true, reason: 'restart limit reached' });
