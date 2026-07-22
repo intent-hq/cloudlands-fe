@@ -11,6 +11,7 @@
   import { handleError } from '$lib/utils/error-handling';
   import { performanceMonitor } from '$lib/utils/performance';
   import { invoke } from '$lib/electron-bridge';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
@@ -421,6 +422,15 @@
     // Use capture phase to intercept before other handlers
     window.addEventListener('keydown', handleGlobalKeydown, true);
     return () => window.removeEventListener('keydown', handleGlobalKeydown, true);
+  });
+
+  // Escape layer: while the dropdown is open it is the topmost overlay, so
+  // Escape closes only the dropdown (not e.g. a modal hosting this selector)
+  $effect(() => {
+    if (!isOpen) return;
+    return pushEscapeLayer(() => {
+      isOpen = false;
+    });
   });
 
   // Initialize parent path when switching to new repo tab

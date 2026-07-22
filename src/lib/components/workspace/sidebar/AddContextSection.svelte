@@ -23,6 +23,7 @@
     type IssueSelectionData,
   } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   interface Props {
     onAddNote?: () => void;
@@ -76,16 +77,19 @@
     showIntegrations = false;
   }
 
-  function handleEscape(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
+  // Escape layer: registered only while expanded so stacked overlays dismiss
+  // one at a time in LIFO order. Two-step dismiss preserved: the integrations
+  // picker closes first, then the dropdown on the next Escape.
+  $effect(() => {
+    if (!isExpanded) return;
+    return pushEscapeLayer(() => {
       if (showIntegrations) {
-        event.stopPropagation();
         showIntegrations = false;
-      } else if (isExpanded) {
+      } else {
         isExpanded = false;
       }
-    }
-  }
+    });
+  });
 
   function updatePortalPosition() {
     if (!isExpanded || !triggerRef) return;
@@ -113,14 +117,12 @@
 
   onMount(() => {
     document.addEventListener('click', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
     window.addEventListener('resize', updatePortalPosition);
     window.addEventListener('scroll', updatePortalPosition, true);
   });
 
   onDestroy(() => {
     document.removeEventListener('click', handleClickOutside);
-    document.removeEventListener('keydown', handleEscape);
     window.removeEventListener('resize', updatePortalPosition);
     window.removeEventListener('scroll', updatePortalPosition, true);
   });
