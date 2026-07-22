@@ -49,6 +49,38 @@ describe("resolveBackendTransport", () => {
     expect(transport.isAvailable()).toBe(true);
   });
 
+  it("prefers the WS transport over the dev browser mock's electronAPI (dev:web + VITE_INTENTD_WS_URL)", async () => {
+    // The dev browser mock installs an electronAPI with the 0.0.0-browser
+    // sentinel version; it must not shadow a configured WS URL.
+    vi.stubGlobal("window", {
+      ...window,
+      electronAPI: {
+        ...window.electronAPI,
+        versions: { node: "20.0.0", chrome: "120.0.0", electron: "0.0.0-browser" },
+      },
+    });
+    vi.stubEnv("VITE_INTENTD_WS_URL", "ws://localhost:9100/rpc?token=abc");
+    const { transport, BrowserWebSocketTransport } = await resolveFreshTransport();
+    expect(transport).toBeInstanceOf(BrowserWebSocketTransport);
+    expect(transport.isAvailable()).toBe(true);
+  });
+
+  it("falls back to the IPC transport (mock-backed) when the mock is installed and no WS URL is set", async () => {
+    vi.stubGlobal("window", {
+      ...window,
+      electronAPI: {
+        ...window.electronAPI,
+        versions: { node: "20.0.0", chrome: "120.0.0", electron: "0.0.0-browser" },
+      },
+    });
+    vi.stubEnv("VITE_INTENTD_WS_URL", "");
+    const { transport, BrowserWebSocketTransport } = await resolveFreshTransport();
+    expect(transport).not.toBeInstanceOf(BrowserWebSocketTransport);
+    // The IPC fallback re-checks window.electronAPI per call, so the mock
+    // bridge keeps it available.
+    expect(transport.isAvailable()).toBe(true);
+  });
+
   it("falls back to the degraded Electron IPC transport when no WS URL is configured", async () => {
     vi.stubGlobal("window", { ...window, electronAPI: undefined });
     vi.stubEnv("VITE_INTENTD_WS_URL", "");
