@@ -262,7 +262,6 @@ export interface Workspace {
   environmentConfig?: EnvironmentConfig;
   archived?: boolean;
   archivedAt?: string;
-  thirdPartySources?: ThirdPartySource[]; // Linked external sources
   defaultModel?: string; // Default model for new agents in this workspace
   /** IDs-only agent membership summary; derive counts from `agentIds.length` and fetch agent details from agent/session sources. */
   agentSummary?: WorkspaceAgentIdSummary;
@@ -820,65 +819,6 @@ export enum ReferenceType {
   Commit = 'commit',
   Issue = 'issue',
   PullRequest = 'pull_request',
-}
-
-// ============================================================================
-// Third-Party Source Types
-// ============================================================================
-
-export interface ThirdPartySource {
-  id: string;
-  workspaceId: WorkspaceId;
-  type: ThirdPartySourceType;
-  url: string;
-  title: string;
-  description?: string;
-  favicon?: string;
-  metadata?: {
-    ogImage?: string;
-    author?: string;
-    publishedAt?: string;
-    lastFetched?: string;
-    extractedContent?: string; // Cached text content for agent context
-    extractedHtml?: string; // Cached HTML for offline viewing
-    sourceSpecific?: Record<string, any>; // Type-specific metadata (e.g., Linear issue status)
-  };
-  createdAt: string;
-  updatedAt: string;
-  isPinned?: boolean;
-  isArchived?: boolean;
-}
-
-export enum ThirdPartySourceType {
-  LinearIssue = 'LinearIssue',
-  GitHubIssue = 'github_issue',
-  GitHubPR = 'GithubPR',
-  JiraTicket = 'jira_ticket',
-  SentryIssue = 'sentry_issue',
-  WebPage = 'webpage',
-  GoogleDoc = 'google_doc',
-  Notion = 'notion_page',
-  Confluence = 'confluence_page',
-  Slack = 'slack_thread',
-  Figma = 'figma_design',
-}
-
-export interface CreateThirdPartySourceRequest {
-  workspaceId: WorkspaceId;
-  url: string;
-  type?: ThirdPartySourceType;
-  title?: string;
-  description?: string;
-  metadata?: ThirdPartySource['metadata'];
-}
-
-export interface UpdateThirdPartySourceRequest {
-  id: string;
-  title?: string;
-  description?: string;
-  isPinned?: boolean;
-  isArchived?: boolean;
-  metadata?: ThirdPartySource['metadata'];
 }
 
 // ============================================================================

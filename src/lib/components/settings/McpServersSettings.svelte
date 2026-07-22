@@ -1,6 +1,5 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
-  import { invoke } from '$shared/generated/ipc-client';
   import { onMount } from 'svelte';
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
   import { serverToFormState } from './mcp/types';
@@ -24,15 +23,12 @@
   faCopy,
   faPlus,
   faRotateRight,
-  faTerminal,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { toast } from '$lib/components/ui/toast';
   import Header from '../ui/Header.svelte';
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { isMacPlatform } from '$lib/utils/shortcuts';
-  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { store as appStore } from '$store/renderer/store';
   import {
   selectMcpServersWithStatus,
@@ -52,7 +48,6 @@
   removeServer,
   updateServer,
   importFromJson,
-  testServerConnection,
   restartServer,
   saveAdvancedJson,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
@@ -86,10 +81,7 @@
   let userMcpSettingsContent = $state('');
   let showAdvanced = $state(false);
 
-  let isOpeningDiagnosticTerminal = $state(false);
-
   const diagnosticCommand = 'auggie mcp list';
-  const canOpenDiagnosticTerminal = isMacPlatform();
 
   onMount(() => {
     appStore.dispatch(loadServers());
@@ -132,42 +124,6 @@
     } catch (copyError) {
       logger.error('Failed to copy MCP diagnostic command:', copyError);
       toast.error('Failed to copy diagnostic command');
-    }
-  }
-
-  async function handleOpenDiagnosticTerminal() {
-    if (!isElectronPlatform()) {
-      toast.error('Terminal integration is unavailable in browser mode');
-      return;
-    }
-
-    if (!canOpenDiagnosticTerminal) {
-      await handleCopyDiagnosticCommand();
-      toast.info('Paste the diagnostic command into your terminal');
-      return;
-    }
-
-    isOpeningDiagnosticTerminal = true;
-
-    try {
-      const result = await invoke<any>('system:execute-command', {
-        command:
-          'osascript -e \'tell application "Terminal" to activate\' -e \'tell application "Terminal" to do script "auggie mcp list"\'',
-      });
-
-      if (result?.success) {
-        toast.success('Opened Terminal and started MCP diagnostic');
-      } else {
-        logger.error('Failed to open MCP diagnostic terminal:', result?.error);
-        await handleCopyDiagnosticCommand();
-        toast.error('Could not open Terminal automatically. Command copied instead.');
-      }
-    } catch (terminalError) {
-      logger.error('Failed to launch MCP diagnostic terminal:', terminalError);
-      await handleCopyDiagnosticCommand();
-      toast.error('Could not open Terminal automatically. Command copied instead.');
-    } finally {
-      isOpeningDiagnosticTerminal = false;
     }
   }
 
@@ -236,41 +192,7 @@
       return;
     }
 
-    // For HTTP/SSE servers, try OAuth flow first
-    if ((server.type === 'http' || server.type === 'sse') && server.url) {
-      toast.info('Starting authentication...', {
-        description: 'Opening browser for authentication.',
-        duration: 3000,
-      });
-
-      try {
-        const result = isElectronPlatform()
-          ? await invoke<any>('user-mcp:initiate-oauth', {
-            name: server.name,
-            url: server.url,
-          })
-          : undefined;
-
-        if (result?.success) {
-          toast.success('Authentication successful', {
-            description: 'You can now use this MCP server.',
-            duration: 5000,
-          });
-          // Re-test the connection to update status
-          appStore.dispatch(testServerConnection(server.name, server.url, server.headers));
-          return;
-        }
-
-        // If OAuth not supported or failed, fall back to edit mode
-        if (result?.error) {
-          logger.info('OAuth not available, falling back to manual auth:', result.error);
-        }
-      } catch (error) {
-        logger.error('OAuth initiation failed:', error);
-      }
-    }
-
-    // Fall back to edit mode for manual auth configuration
+    // Edit mode for manual auth configuration
     editingServer = server;
     toast.info('Configure authentication', {
       description:
@@ -592,19 +514,6 @@
                   <Fa icon={faCopy} size="xs" />
                   <span class="ml-2">Copy command</span>
                 </Button>
-
-                {#if canOpenDiagnosticTerminal}
-                  <Button
-                    size="sm"
-                    onclick={handleOpenDiagnosticTerminal}
-                    disabled={isOpeningDiagnosticTerminal}
-                  >
-                    <Fa icon={faTerminal} size="xs" />
-                    <span class="ml-2">
-                      {isOpeningDiagnosticTerminal ? 'Opening Terminal…' : 'Open Terminal & Run'}
-                    </span>
-                  </Button>
-                {/if}
               </div>
 
               <p class="mt-3 text-xs text-muted-foreground">

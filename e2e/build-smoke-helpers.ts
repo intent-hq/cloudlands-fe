@@ -347,10 +347,9 @@ export interface CreateWorkspaceOptions {
  * Strategy:
  *  1. Pre-seed sessionStorage/localStorage with the repo path so onboarding
  *     restores it on mount (no dropdown interaction needed)
- *  2. Mock electronAPI.invoke('dialog:open') as fallback (correct format)
- *  3. Focus the prompt textarea and type the prompt
- *  4. Click "Create workspace"
- *  5. Wait for navigation to /workspace/ and return the workspace ID
+ *  2. Focus the prompt textarea and type the prompt
+ *  3. Click "Create workspace"
+ *  4. Wait for navigation to /workspace/ and return the workspace ID
  */
 export async function createWorkspaceWithPrompt(
   page: Page,
@@ -470,21 +469,6 @@ export async function createWorkspaceWithPrompt(
   } else if (onboardingStep !== 'configuring') {
     throw new Error(`Unexpected onboarding step before prompt entry: ${onboardingStep}`);
   }
-
-  // Mock the native folder picker dialog as a fallback in case the user
-  // clicks the folder picker button. RepoSelector.svelte expects
-  // { success: true, data: { canceled, filePaths } }.
-  await page.evaluate((path) => {
-    const originalInvoke = (window as any).electronAPI?.invoke;
-    if (originalInvoke) {
-      (window as any).electronAPI.invoke = async (channel: string, ...args: any[]) => {
-        if (channel === 'dialog:open') {
-          return { success: true, data: { canceled: false, filePaths: [path] } };
-        }
-        return originalInvoke(channel, ...args);
-      };
-    }
-  }, repoPath);
 
   // Focus the TipTap rich-text editor and type the prompt.
   // RichTextarea uses TipTap (contenteditable div), not a native <textarea>.

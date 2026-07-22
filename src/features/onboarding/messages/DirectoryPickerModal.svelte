@@ -2,7 +2,7 @@
   /**
    * DirectoryPickerModal — BE-driven folder picker.
    *
-   * Replaces `invoke('dialog:open', { directory: true })` for onboarding
+   * Replaces the retired native-dialog directory picker for onboarding
    * folder pickers so directory browsing happens on the daemon host (via
    * `host.listDirectory`) rather than via Electron's native dialog on the
    * machine running the FE. This keeps folder browsing consistent across

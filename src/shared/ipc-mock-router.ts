@@ -87,22 +87,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     },
   ],
 
-  // Third-party sources (NotesPanel embeds / drag-drop). Not ported to the
-  // daemon; every client method folds failure into { success: false, error }
-  // and the UI surfaces the message on the triggering interaction.
-  ['sources:create', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  ['sources:delete', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  [
-    'sources:extract-metadata',
-    { success: false, error: 'Third-party sources are not ported to the daemon' },
-  ],
-  ['sources:get', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  ['sources:list', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  [
-    'sources:refresh',
-    { success: false, error: 'Third-party sources are not ported to the daemon' },
-  ],
-  ['sources:update', { success: false, error: 'Third-party sources are not ported to the daemon' }],
   // Electron app version read for analytics common properties
   // (buildStaticCommonProperties, fired on startup via hooks.client.ts). The
   // browser build has no packaged app version and no daemon surface for one;
@@ -127,64 +111,21 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // stay hidden until a daemon surface exists.
   ['git:get-auto-commit-status', undefined],
   // ── IPC batch 8: the remaining frozen audit debt, dispositioned ──
-  // AddRemoteSetupModal's SSH host/key/agent discovery probes (fired when the
-  // add-remote modal opens) and its Test Connection action. SSH config, keys
-  // and the agent live on the machine running the legacy Electron main
-  // process — no daemon surface (remotes are configured on the daemon host).
-  // The loaders check `.success` inside try/catch (fold to empty lists); the
-  // test-connection caller surfaces the first failed check's error string.
-  [
-    'ssh:get-config-hosts',
-    { success: false, error: 'SSH config discovery is not available in this build' },
-  ],
-  ['ssh:list-keys', { success: false, error: 'SSH key discovery is not available in this build' }],
-  [
-    'ssh:get-agent-status',
-    { success: false, error: 'SSH agent probing is not available in this build' },
-  ],
-  [
-    'ssh:test-connection',
-    {
-      success: false,
-      checks: {
-        connection: {
-          passed: false,
-          error:
-            'SSH connection testing is not available in this build — configure remotes on the daemon host',
-        },
-      },
-    },
-  ],
-  // Native OS file dialogs (GitWorkspaceSettings / ProviderPathConfig pickers
-  // and the electron-bridge showOpenDialog/showSaveDialog wrappers). There is
-  // no native dialog in this build; every caller already has a
-  // "user cancelled" branch, so the canceled envelope folds each picker into
-  // a clean no-op instead of a rejection. dialog:message's only invoke site
-  // is the electron-bridge showMessageBox wrapper, which has no production
-  // consumers — undefined is never observed.
-  ['dialog:open', { success: true, data: { canceled: true, filePaths: [] } }],
-  ['dialog:save', { success: true, data: { canceled: true } }],
-  ['dialog:message', undefined],
-  // Interaction-gated host-side actions with no daemon arm: the
-  // McpServersSettings osascript probe, its MCP OAuth trigger, the
-  // CommandPalette CLI-symlink install, and the DebugPanel resume trigger.
-  // Every caller requires `.success` and folds the shaped failure into its
-  // toast/status feedback.
+  // Native OS message box. Sole invoke site: FilesPanel's drop-conflict
+  // prompt via the electron-bridge dialog.message wrapper, which is typed
+  // Promise<number> (button index). There is no native dialog in this build;
+  // index 0 matches the wrapper's own no-electronAPI fallback and folds the
+  // conflict prompt to its first-button ('skip') branch.
+  ['dialog:message', 0],
+  // Host command execution (CommitsTimeline's amend-commit / force-push
+  // flow; bridged to daemon host.exec in the Electron build). The caller
+  // requires `.success` and folds the shaped failure into its toast.
   [
     'system:execute-command',
     { success: false, error: 'Host command execution is not available in this build' },
   ],
-  [
-    'user-mcp:initiate-oauth',
-    {
-      success: false,
-      error: 'MCP OAuth is not available in this build — configure the server on the daemon host',
-    },
-  ],
-  [
-    'shell:install-cli',
-    { success: false, error: 'CLI install is not available in this build' },
-  ],
+  // DebugPanel resume trigger. The caller requires `.success` and folds the
+  // shaped failure into its status feedback.
   [
     'debug:trigger-backend-resume',
     { success: false, error: 'The backend-resume debug trigger is not bridged in this build' },
@@ -199,24 +140,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     'system:write-clipboard',
     { success: false, error: 'Clipboard IPC is not available in this build' },
   ],
-  // Note-primitive actions against the legacy main process: patch blocks
-  // (PatchBlock apply/revert) and code-reference resolution (ReferenceBlock).
-  // No daemon patch/reference surface; the callers check `.ok` and surface
-  // the error in the block UI / a toast on the triggering interaction.
-  ['patch:apply', { ok: false, error: 'Applying patches is not available in this build' }],
-  ['patch:revert', { ok: false, error: 'Reverting patches is not available in this build' }],
-  [
-    'reference:resolve',
-    { ok: false, error: 'Code-reference resolution is not bridged to the daemon' },
-  ],
-  // FilesPanel's remote-file existence probe (only reached for
-  // environmentConfig.type === 'remote' workspaces). The legacy SSH
-  // connection pool is Electron-main-only; the caller folds `success:false`
-  // to "file not present remotely".
-  [
-    'remote-fs:exists',
-    { success: false, error: 'Remote SSH file access is not available in this build' },
-  ],
   // Electron-main CDP plumbing: EmbeddedBrowser's webContents registration
   // (caller `.catch`es and logs) and PanelLayout's response arm for the
   // browser:list-tabs-request event — which never fires in this build (see
@@ -227,26 +150,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // Chat-input context enrichment (context-api getWorkspaceInfo). The caller
   // folds an absent info payload to the Workspace object it already holds.
   ['workspace:get-info', undefined],
-  // Onboarding repo discovery (LocalRepoTab mount): the legacy handler
-  // scanned local editors/CLI state on the Electron host — no daemon
-  // surface. The caller requires `success && data` and keeps its known-repos
-  // list (daemon repo.list) as the source.
-  [
-    'workspace:discover-repos',
-    { success: false, error: 'Host repo discovery is not available in this build' },
-  ],
-  // Diagram-edge binding intents (DiagramEdge handleClick): legacy
-  // main-process panel-router intents with no daemon surface. The caller
-  // wraps the whole switch in try/catch and logs at debug level; resolving
-  // undefined keeps the click a quiet no-op.
-  ['workspace:openFile', undefined],
-  ['workspace:openSymbol', undefined],
-  ['workspace:openSpec', undefined],
-  ['workspace:openNote', undefined],
-  ['workspace:openTimelineEvent', undefined],
-  ['workspace:openMetric', undefined],
-  ['workspace:openLog', undefined],
-  ['workspace:openTest', undefined],
   // Sentry credential writes. PROTOCOL §5.29: the daemon reads
   // SENTRY_AUTH_TOKEN/SENTRY_ORG from its environment — there is deliberately
   // no sentry.connect/revoke wire method, so in-app config/logout cannot be

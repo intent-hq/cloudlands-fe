@@ -7,7 +7,6 @@
  * than the retired on-disk `workspace.json` file.
  */
 
-import type { SSHConnectionConfig } from '../../../shared/main/ssh-manager';
 import { Logger } from '../../../shared/logger';
 import type { WorkspaceId } from '../../../shared/types';
 import { workspaceService } from '../../workspace/main/workspace.service';
@@ -66,7 +65,6 @@ export interface WorkspaceGitInfo {
   isRemote: boolean;
   worktreePath: string;
   repositoryPath?: string;
-  sshConfig?: SSHConnectionConfig;
   /** The target branch name for this workspace (e.g., 'add-dark-mode') */
   branch?: string;
   scope?: string; // Optional relative path within worktreePath for scoped workspaces
@@ -92,29 +90,10 @@ export async function getWorkspaceGitInfo(workspaceId: string): Promise<Workspac
     return null;
   }
 
-  // Remote-workspace routing was retired in P3-5 and the daemon no longer emits
-  // an `environmentConfig` block; the SSH resolver stays here for parity but
-  // becomes a no-op once `isRemote` is never set true (defensive).
-  let sshConfig: SSHConnectionConfig | undefined;
-  const ssh = workspace.environmentConfig?.ssh;
-  if (isRemote && ssh) {
-    sshConfig = {
-      host: ssh.host,
-      port: ssh.port || 22,
-      username: ssh.user,
-      password: ssh.password,
-      privateKeyPath: ssh.key_path,
-      useAgent: ssh.use_agent,
-      transport: ssh.transport,
-      wsUrl: ssh.ws_url,
-    };
-  }
-
   return {
     isRemote,
     worktreePath,
     repositoryPath: workspace.repositoryPath,
-    sshConfig,
     branch: workspace.branch,
     scope: workspace.scope,
   };

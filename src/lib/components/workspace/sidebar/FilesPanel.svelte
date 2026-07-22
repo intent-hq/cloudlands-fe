@@ -8,7 +8,6 @@
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
   import { refreshFileExplorer } from '$store/renderer/slices/file-explorer/file-explorer-slice';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { store as appStore } from '$store/renderer/store';
 
@@ -17,19 +16,6 @@
   // Helper to check if a file exists at the given path
   async function checkFileExists(filePath: string): Promise<boolean> {
     try {
-      const environmentConfig = selectWorkspaceById.select(
-        appStore.state,
-        workspaceId,
-      )?.environmentConfig;
-      if (environmentConfig?.type === 'remote') {
-        const connectionId = `file-explorer-${workspaceId}`;
-        const response = (await invoke('remote-fs:exists', { connectionId, path: filePath })) as {
-          success: boolean;
-          data?: boolean;
-        };
-        return response.success && (response.data ?? false);
-      }
-      // Local workspace - use file:exists
       const response = (await invoke('file:exists', { path: filePath })) as {
         success: boolean;
         exists?: boolean;

@@ -28,25 +28,8 @@
 
   const logger = createLogger('ReferenceBlock');
 
-  // Type for reference resolution result
-  interface ResolvedReference {
-    code: string;
-    filePath: string;
-    languageId?: string;
-    range?: {
-      startLine: number;
-      endLine: number;
-      startColumn?: number;
-      endColumn?: number;
-    };
-  }
-
-  type ReferenceResolveResult =
-    | { ok: true; data: ResolvedReference }
-    | { ok: false; error: string };
-
   // TipTap NodeViewProps
-  let { node, updateAttributes, extension }: NodeViewProps = $props();
+  let { node, extension }: NodeViewProps = $props();
 
   // Get primitive data from node
   let primitive = $derived(node?.attrs?.data as ReferencePrimitive);
@@ -104,79 +87,28 @@
     return `L${lineRange.startLine}-${lineRange.endLine}`;
   });
 
-  // Resolve reference to actual code
-  async function resolveReference() {
+  // Populate code content from the stored snapshot. Live resolution against
+  // the working tree was retired with the legacy reference:resolve channel.
+  function resolveReference() {
     if (!primitive || resolvedCode) return;
     if (!semanticId) {
       error = 'No reference target available';
       loading = false;
       return;
     }
-    if (!workspaceId) {
-      error = 'No space context available';
-      // Fall back to snapshot if available
-      if (primitive.snapshot) {
-        resolvedCode = primitive.snapshot.code;
-        editorContent = primitive.snapshot.code;
-        resolvedLanguage = primitive.snapshot.languageId || 'text';
-        resolvedRange = primitive.target?.range || null;
-      }
-      loading = false;
-      return;
+    if (primitive.snapshot) {
+      resolvedCode = primitive.snapshot.code;
+      editorContent = primitive.snapshot.code;
+      // Some producers emit the legacy `language` field instead of `languageId`.
+      resolvedLanguage =
+        primitive.snapshot.languageId ||
+        (primitive.snapshot as { language?: string }).language ||
+        'text';
+      resolvedRange = primitive.target?.range || null;
+    } else {
+      error = 'No code snapshot stored for this reference';
     }
-
-    loading = true;
-    error = null;
-
-    try {
-      const result = await invoke<ReferenceResolveResult>('reference:resolve', {
-        workspaceId,
-        semanticId,
-      });
-
-      if (result.ok) {
-        resolvedCode = result.data.code;
-        editorContent = result.data.code;
-        resolvedLanguage = result.data.languageId || 'text';
-        resolvedFilePath = result.data.filePath;
-        resolvedRange = result.data.range || null;
-
-        // Update primitive with resolved data
-        if (updateAttributes) {
-          updateAttributes({
-            data: {
-              ...primitive,
-              target: {
-                ...primitive.target,
-                filePath: result.data.filePath,
-                languageId: result.data.languageId,
-                range: result.data.range,
-              },
-            },
-          });
-        }
-      } else {
-        error = result.error;
-        // Fall back to snapshot if available
-        if (primitive.snapshot) {
-          resolvedCode = primitive.snapshot.code;
-          editorContent = primitive.snapshot.code;
-          resolvedLanguage = primitive.snapshot.languageId || 'text';
-          resolvedRange = primitive.target?.range || null;
-        }
-      }
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to resolve reference';
-      // Fall back to snapshot
-      if (primitive.snapshot) {
-        resolvedCode = primitive.snapshot.code;
-        editorContent = primitive.snapshot.code;
-        resolvedLanguage = primitive.snapshot.languageId || 'text';
-        resolvedRange = primitive.target?.range || null;
-      }
-    } finally {
-      loading = false;
-    }
+    loading = false;
   }
 
   // Auto-resolve on mount

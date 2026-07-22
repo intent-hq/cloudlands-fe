@@ -1354,40 +1354,6 @@ export const WindowSetBrowserFocusedSchema = z.object({
 });
 
 // DIALOG_CHANNELS schemas
-export const DialogOpenSchema = z.object({
-  title: z.string().optional(),
-  defaultPath: z.string().optional(),
-  filters: z
-    .array(
-      z.object({
-        name: z.string(),
-        extensions: z.array(z.string()),
-      }),
-    )
-    .optional(),
-  directory: z.boolean().optional(),
-  multiple: z.boolean().optional(),
-  createDirectory: z.boolean().optional(), // Allow creating new folders in the dialog (macOS)
-  properties: z.array(z.string()).optional(),
-});
-
-export const DialogSaveSchema = z.object({
-  title: z.string().optional(),
-  defaultPath: z.string().optional(),
-  filters: z
-    .array(
-      z.object({
-        name: z.string(),
-        extensions: z.array(z.string()),
-      }),
-    )
-    .optional(),
-  buttonLabel: z.string().optional(),
-  message: z.string().optional(),
-  nameFieldLabel: z.string().optional(),
-  showsTagField: z.boolean().optional(),
-});
-
 export const DialogMessageSchema = z.object({
   message: z.string(),
   title: z.string().optional(),
@@ -1409,8 +1375,6 @@ export const ShellOpenExternalSchema = z.object({
 export const ShellShowItemInFolderSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
-
-export const ShellInstallCliSchema = z.object({}).strict();
 
 // VSCODE_CHANNELS schemas
 export const VscodeOpenSchema = z.union([
@@ -1489,11 +1453,6 @@ export const UserMcpTestConnectionSchema = z.object({
   name: z.string().optional(), // Server name for OAuth token lookup
 });
 
-export const UserMcpInitiateOAuthSchema = z.object({
-  name: z.string().min(1, 'Server name is required'),
-  url: z.string().min(1, 'URL is required'),
-});
-
 // SYSTEM_CHANNELS schemas
 export const SystemExecuteCommandSchema = z.object({
   command: z.string().min(1, 'Command is required'),
@@ -1505,7 +1464,6 @@ export const SystemExecuteCommandStreamingSchema = z.object({
   command: z.string().min(1, 'Command is required'),
   cwd: z.string().optional(),
   stdin: z.string().optional(),
-  sshConfig: z.any().optional(),
 });
 
 // DEEP_LINK_CHANNELS schemas
@@ -1516,152 +1474,6 @@ export const DeepLinkHandleSchema = z.object({
 // Empty schemas for handlers with no parameters
 // Accepts undefined, null, void, or an empty object (frontend often sends {})
 export const EmptySchema = z.undefined().or(z.null()).or(z.void()).or(z.object({}).strict());
-
-// ============================================================================
-// Remote File System Schemas
-// ============================================================================
-
-// SSH Connection Config Schema
-// Note: host can be empty for WebSocket transport (connection goes through wsUrl instead)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const SSHConnectionConfigSchema = z
-  .object({
-    host: z.string(),
-    port: z.number().int().min(1).max(65535).default(22),
-    username: z.string().min(1, 'Username is required'),
-    password: z.string().optional(),
-    privateKey: z.string().optional(),
-    privateKeyPath: z.string().optional(),
-    passphrase: z.string().optional(),
-    useAgent: z.boolean().optional(),
-    transport: z.enum(['ssh', 'websocket']).optional(),
-    wsUrl: z.string().optional(),
-  })
-  .refine(
-    (data) => {
-      if (data.transport === 'websocket') return !!data.wsUrl;
-      if (data.transport === 'ssh' || !data.transport) return data.host.length > 0;
-      return true;
-    },
-    { message: 'WebSocket transport requires wsUrl; SSH transport requires non-empty host' },
-  );
-
-// Remote File System Config Schema
-export const RemoteFSInitializeSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  basePath: z.string().min(1, 'Base path is required'),
-});
-
-// Read File Schema
-export const RemoteFSReadFileSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  path: z.string().min(1, 'Path is required'),
-  encoding: z.string().default('utf-8').optional(),
-});
-
-// Write File Schema
-export const RemoteFSWriteFileSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  path: z.string().min(1, 'Path is required'),
-  content: z.string(),
-  encoding: z.string().default('utf-8').optional(),
-});
-
-// Append File Schema
-export const RemoteFSAppendFileSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  path: z.string().min(1, 'Path is required'),
-  content: z.string(),
-});
-
-// Delete File Schema
-export const RemoteFSDeleteFileSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  path: z.string().min(1, 'Path is required'),
-});
-
-// Read Directory Schema
-export const RemoteFSReaddirSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  path: z.string().min(1, 'Path is required'),
-});
-
-// Make Directory Schema
-export const RemoteFSMkdirSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  path: z.string().min(1, 'Path is required'),
-  recursive: z.boolean().default(true).optional(),
-});
-
-// Remove Directory Schema
-export const RemoteFSRmdirSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  path: z.string().min(1, 'Path is required'),
-  recursive: z.boolean().default(false).optional(),
-});
-
-// Exists Schema
-export const RemoteFSExistsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  path: z.string().min(1, 'Path is required'),
-});
-
-// Stat Schema
-export const RemoteFSStatSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  path: z.string().min(1, 'Path is required'),
-});
-
-// Copy Schema
-export const RemoteFSCopySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  source: z.string().min(1, 'Source path is required'),
-  destination: z.string().min(1, 'Destination path is required'),
-  recursive: z.boolean().default(false).optional(),
-});
-
-// Move Schema
-export const RemoteFSMoveSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  source: z.string().min(1, 'Source path is required'),
-  destination: z.string().min(1, 'Destination path is required'),
-});
-
-// Find Schema
-export const RemoteFSFindSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  pattern: z.string().min(1, 'Pattern is required'),
-  dirPath: z.string().optional(),
-});
-
-// Grep Schema
-export const RemoteFSGrepSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  pattern: z.string().min(1, 'Pattern is required'),
-  filePath: z.string().min(1, 'File path is required'),
-  options: z
-    .object({
-      ignoreCase: z.boolean().optional(),
-      recursive: z.boolean().optional(),
-      maxResults: z.number().optional(),
-    })
-    .optional(),
-});
-
-// Disconnect Schema
-export const RemoteFSDisconnectSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-// Status Schema
-export const RemoteFSStatusSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-// Clear Cache Schema
-export const RemoteFSClearCacheSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
 
 // ============================================================================
 // Additional Workspace Schemas (continued)

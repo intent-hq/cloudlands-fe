@@ -43,7 +43,6 @@ export const IPC_CHANNELS = {
     GET_SETTINGS: 'workspace:get-settings',
     UPDATE_SETTINGS: 'workspace:update-settings',
     TRIGGER_CHECK: 'workspace:trigger-check',
-    DISCOVER_REPOS: 'workspace:discover-repos',
     LIST_FILES: 'workspace:list-files',
     TEST_WATCHER: 'workspace:test-watcher',
     FIND_REPOSITORIES: 'workspace:find-repositories',
@@ -243,19 +242,6 @@ export const IPC_CHANNELS = {
     CHECK_SINGLE: 'providers:check-single',
   },
 
-  // Third Party Sources
-  SOURCES: {
-    CREATE: 'sources:create',
-    LIST: 'sources:list',
-    GET: 'sources:get',
-    ADD: 'sources:add',
-    REMOVE: 'sources:remove',
-    UPDATE: 'sources:update',
-    DELETE: 'sources:delete',
-    REFRESH: 'sources:refresh',
-    EXTRACT_METADATA: 'sources:extract-metadata',
-  },
-
   // File Management
   FILE: {
     READ: 'file:read',
@@ -277,14 +263,10 @@ export const IPC_CHANNELS = {
 
   // Notes Primitives (ws-block rendering)
   PRIMITIVES: {
-    REFERENCE_RESOLVE: 'reference:resolve',
     CODEBASE_SEARCH: 'codebase:search',
     TERMINAL_RUN: 'terminal:runCommand',
     TERMINAL_KILL: 'terminal:killProcess',
     TERMINAL_SUBSCRIBE: 'terminal:subscribeOutput',
-    PATCH_APPLY: 'patch:apply',
-    PATCH_VALIDATE: 'patch:validate',
-    PATCH_REVERT: 'patch:revert',
     AGENT_RUN: 'agent:runAction',
   },
 
@@ -409,11 +391,10 @@ export const IPC_CHANNELS = {
     RESTART_APP: 'feature-codes:restart-app',
   },
 
-  // User MCP Settings — HTTP/SSE server auth checks and OAuth flow.
+  // User MCP Settings — HTTP/SSE server auth checks.
   USER_MCP: {
     CHECK_AUTH: 'user-mcp:check-auth', // Check if URL requires auth and if we have credentials
     TEST_CONNECTION: 'user-mcp:test-connection', // Test connection to HTTP/SSE server, returns status
-    INITIATE_OAUTH: 'user-mcp:initiate-oauth', // Start OAuth flow for MCP server
   },
 
   // Notifications
@@ -425,13 +406,6 @@ export const IPC_CHANNELS = {
 
   // Dialog
   DIALOG: {
-    OPEN: 'dialog:open',
-    SAVE: 'dialog:save',
-    OPEN_FILE: 'dialog:openFile',
-    OPEN_DIRECTORY: 'dialog:openDirectory',
-    SAVE_FILE: 'dialog:saveFile',
-    SHOW_MESSAGE: 'dialog:showMessage',
-    SHOW_ERROR: 'dialog:showError',
     MESSAGE: 'dialog:message',
   },
 
@@ -442,7 +416,6 @@ export const IPC_CHANNELS = {
     OPEN_EXTERNAL: 'shell:openExternal',
     TRASH_ITEM: 'shell:trashItem',
     SHOW_ITEM_IN_FOLDER: 'shell:showItemInFolder',
-    INSTALL_CLI: 'shell:install-cli',
   },
 
   // Editor (browser text selection only)
@@ -698,29 +671,6 @@ export const IPC_CHANNELS = {
     CLEANUP: 'agent-testing:cleanup',
   },
 
-  // Remote File System
-  REMOTE_FS: {
-    INITIALIZE: 'remote-fs:initialize',
-    READ_FILE: 'remote-fs:readFile',
-    WRITE_FILE: 'remote-fs:writeFile',
-    APPEND_FILE: 'remote-fs:appendFile',
-    DELETE_FILE: 'remote-fs:deleteFile',
-    READDIR: 'remote-fs:readdir',
-    MKDIR: 'remote-fs:mkdir',
-    RMDIR: 'remote-fs:rmdir',
-    EXISTS: 'remote-fs:exists',
-    STAT: 'remote-fs:stat',
-    COPY: 'remote-fs:copy',
-    MOVE: 'remote-fs:move',
-    FIND: 'remote-fs:find',
-    GREP: 'remote-fs:grep',
-    DISCONNECT: 'remote-fs:disconnect',
-    STATUS: 'remote-fs:status',
-    CLEAR_CACHE: 'remote-fs:clearCache',
-  },
-
-
-
   // Debug (development only)
   DEBUG: {
     TRIGGER_BACKEND_RESUME: 'debug:trigger-backend-resume',
@@ -774,9 +724,6 @@ export const IPC_CHANNELS = {
   AGENT_CONTEXT: {
     GET: 'agent-context:get',
   },
-
-  // Sources Extended
-  SOURCES_EXT: {},
 
   RECOVERY: {
     NEEDS_RECOVERY: 'recovery:needs-recovery',
@@ -843,14 +790,6 @@ export const IPC_CHANNELS = {
     OPEN: 'pip:open',
     CLOSE: 'pip:close',
     CLOSE_ALL_FOR_WORKSPACE: 'pip:close-all-for-workspace',
-  },
-
-  // SSH Remote Workspace Management
-  SSH: {
-    GET_CONFIG_HOSTS: 'ssh:get-config-hosts',
-    LIST_KEYS: 'ssh:list-keys',
-    GET_AGENT_STATUS: 'ssh:get-agent-status',
-    TEST_CONNECTION: 'ssh:test-connection',
   },
 
   // WebSocket API

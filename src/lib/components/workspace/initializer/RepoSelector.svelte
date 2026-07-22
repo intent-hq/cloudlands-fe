@@ -180,7 +180,7 @@
   // FOLDER-PICKER MODAL STATE
   // ═══════════════════════════════════════════════════════════════════════════
   // BE-driven folder browsing via `host.listDirectory` (DirectoryPickerModal),
-  // replacing the broken `invoke('dialog:open', ...)` round-trip. One modal is
+  // replacing the retired native-dialog round-trip. One modal is
   // open at a time; `folderPickerPurpose` routes the picked path back to the
   // right destination (folder pick / new-repo parent / github-clone parent).
   type FolderPickerPurpose = 'select-repo' | 'new-repo-parent' | 'github-clone-parent';
