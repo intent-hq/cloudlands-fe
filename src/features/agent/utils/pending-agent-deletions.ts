@@ -56,3 +56,11 @@ export function removePendingAgentDeletion(agentId: string): void {
 export function listPendingAgentDeletions(): PendingAgentDeletion[] {
   return [...pendingAgentDeletions.values()];
 }
+
+/** Test-only reset: drop all entries (clearing any armed timers first). */
+export function clearPendingAgentDeletions(): void {
+  for (const entry of pendingAgentDeletions.values()) {
+    if (entry.timer) clearTimeout(entry.timer);
+  }
+  pendingAgentDeletions.clear();
+}

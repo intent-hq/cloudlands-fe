@@ -25,6 +25,7 @@ import {
 import type { AgentMessage } from "$shared/types";
 import { ensureAgentSession } from "./agent-read-service";
 import {
+  clearPendingAgentDeletions,
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from "./utils/pending-agent-deletions";
@@ -52,6 +53,7 @@ describe("agentReadService (fake seam, real store)", () => {
   beforeAll(() => appStore.init());
   afterEach(() => {
     vi.clearAllMocks();
+    clearPendingAgentDeletions();
     agentsApi.get.mockResolvedValue(null as never);
   });
 

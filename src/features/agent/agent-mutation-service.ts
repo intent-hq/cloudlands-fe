@@ -252,6 +252,11 @@ async function commitAgentDeletion(agentId: string): Promise<void> {
   const pending = getPendingAgentDeletion(agentId);
   if (!pending) return;
   if (pending.timer) clearTimeout(pending.timer);
+  // Removing the registry entry BEFORE awaiting the wire call keeps
+  // commit/undo idempotent, at the cost of a brief unguarded window where the
+  // daemon still lists the agent. Accepted intentionally: on success the
+  // daemon emits `agent:deleted` and the reactive refetch reconciles any
+  // rehydration that raced in; on failure the session is restored anyway.
   removePendingAgentDeletion(agentId);
   try {
     const result = await appClient.agents.delete(pending.agentId, pending.wsId);

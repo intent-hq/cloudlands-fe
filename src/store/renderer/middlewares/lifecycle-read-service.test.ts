@@ -66,6 +66,7 @@ import {
 import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
 import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
+  clearPendingAgentDeletions,
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from "$features/agent/utils/pending-agent-deletions";
@@ -473,7 +474,10 @@ describe("lifecycleReadService (fake seam, real store)", () => {
 
 describe("lifecycleReadService (hydrateAgentsRequested → agents.list convergence)", () => {
   beforeAll(() => appStore.init());
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    clearPendingAgentDeletions();
+  });
 
   function makeAgent(id: string, ws: string, overrides: Partial<AgentSession> = {}): AgentSession {
     return {

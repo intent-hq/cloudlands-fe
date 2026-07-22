@@ -127,6 +127,13 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // transcript so reopening a mid-turn chat shows the partial response
       // immediately instead of waiting for the next chunk/tool-call.
       const snapshot = await appClient.chat.subscribeSnapshot(agentId);
+
+      // Final re-check before any side effects: the deletion may have become
+      // pending during transcript paging / snapshot fetch above. This guards
+      // both the store upserts below and seedStreamFromSnapshot (the bridge
+      // accumulator must not be seeded for a deleted agent).
+      if (isAgentDeletionPending(agentId)) return;
+
       const inFlightMessage = snapshot.messages.find(
         (m) =>
           m.role === "assistant" &&
@@ -157,10 +164,6 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
           seedStreamFromSnapshot(agentId, inFlightMessage, session.workspaceId);
         }
       }
-
-      // Final re-check before dispatching: the deletion may have become
-      // pending during transcript paging / snapshot fetch above.
-      if (isAgentDeletionPending(agentId)) return;
 
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is

@@ -25,6 +25,7 @@ vi.mock("$lib/client", () => ({
 
 import { appClient } from "$lib/client";
 import {
+  clearPendingAgentDeletions,
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from "$features/agent/utils/pending-agent-deletions";
@@ -51,6 +52,7 @@ describe("agents-seeder", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    clearPendingAgentDeletions();
   });
 
   describe("preserve-messages merge", () => {
