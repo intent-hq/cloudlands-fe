@@ -50,11 +50,14 @@ const REVEAL_TIMEOUT_MS = 10_000;
  * `JSON-RPC request timed out` rejection (pi-mcp-bridge-seeder idiom). */
 const TRANSPORT_HEADROOM_MS = 5_000;
 
-/** Containing directory of `path` (handles `/` and `\` separators; a
- * trailing-separator input folds to the entry itself sans separator). */
+/** Containing directory of a POSIX `path` (this helper is only reached from
+ * the Linux/default branch, where `\` is a legal filename character — NOT a
+ * separator). A trailing-separator input folds to the entry itself sans
+ * separator; a separator-less input (unreachable — callers pass absolute
+ * paths) falls through unchanged. */
 function parentDirectory(path: string): string {
-  const trimmed = path.replace(/[/\\]+$/, '');
-  const separatorIndex = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  const trimmed = path.replace(/\/+$/, '');
+  const separatorIndex = trimmed.lastIndexOf('/');
   if (separatorIndex > 0) return trimmed.slice(0, separatorIndex);
   if (separatorIndex === 0) return '/';
   return trimmed || path;
@@ -69,7 +72,11 @@ function revealCommand(
     case 'macos':
       return { command: 'open', args: ['-R', path], successExitCodes: [0] };
     case 'windows':
-      // Explorer exits 1 even when the window opens — tolerate it.
+      // Explorer exits 1 even when the window opens — tolerate it. Lossy:
+      // exit 1 also covers a nonexistent path (Explorer opens a default
+      // folder instead), and `/select,` mis-parses comma-containing paths.
+      // Both are inherent to argv-exec'd explorer (Electron sidesteps them
+      // via SHOpenFolderAndSelectItems, unavailable to a daemon-side exec).
       return { command: 'explorer', args: [`/select,${path}`], successExitCodes: [0, 1] };
     default:
       // No portable select flag on Linux/BSD — open the containing directory.
@@ -89,7 +96,13 @@ registerMockIpcHandler('shell:showItemInFolder', async (arg) => {
 
   const status = await backendRequest<SystemStatusResult>('system.status');
   const host = status?.host;
-  if (host?.locality !== 'local') {
+  if (!host) {
+    // Older daemon without the §5.7 host block — don't mis-diagnose as remote.
+    throw new Error(
+      'The daemon does not report host info (older intentd?) — cannot verify it runs on this machine',
+    );
+  }
+  if (host.locality !== 'local') {
     throw new Error(
       'Reveal in file manager is only available when the daemon runs on this machine',
     );

@@ -99,6 +99,26 @@ describe('shell-reveal-bridge-seeder', () => {
     );
   });
 
+  it('parentDirectory edges on Linux: trailing separator, root-level file, backslash filename', async () => {
+    const cases: Array<[input: string, parent: string]> = [
+      ['/repo/src/', '/repo'],
+      ['/file', '/'],
+      // `\` is a legal Linux filename character, NOT a separator.
+      ['/repo/weird\\name.rs', '/repo'],
+    ];
+    for (const [input, parent] of cases) {
+      vi.clearAllMocks();
+      routeDaemon({ 'system.status': systemStatus('linux', 'local'), 'host.exec': EXEC_OK });
+
+      await expect(mockInvoke(CHANNEL, { path: input })).resolves.toEqual({ success: true });
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'host.exec',
+        { command: 'xdg-open', args: [parent], timeoutMs: 10_000 },
+        { timeoutMs: 15_000 },
+      );
+    }
+  });
+
   it('rejects on a remote daemon — without running any host.exec', async () => {
     routeDaemon({ 'system.status': systemStatus('macos', 'remote'), 'host.exec': EXEC_OK });
 
@@ -122,6 +142,39 @@ describe('shell-reveal-bridge-seeder', () => {
     });
 
     await expect(mockInvoke(CHANNEL, { path: '/gone' })).rejects.toThrow('no such file');
+  });
+
+  it('rejects a Windows exit code outside the [0, 1] tolerance', async () => {
+    routeDaemon({
+      'system.status': systemStatus('windows', 'local'),
+      'host.exec': { stdout: '', stderr: '', exitCode: 2 },
+    });
+
+    await expect(mockInvoke(CHANNEL, { path: 'C:\\gone' })).rejects.toThrow(
+      'explorer exited with code 2',
+    );
+  });
+
+  it('rejects with an upgrade hint when system.status lacks a host block (older daemon)', async () => {
+    routeDaemon({ 'system.status': { running: true }, 'host.exec': EXEC_OK });
+
+    await expect(mockInvoke(CHANNEL, { path: '/repo/file' })).rejects.toThrow(
+      /does not report host info/,
+    );
+    expectNoHostExec();
+  });
+
+  it('propagates a host.exec RPC rejection after a successful status', async () => {
+    routeDaemon({
+      'system.status': systemStatus('macos', 'local'),
+      'host.exec': () => {
+        throw new Error('daemon unreachable');
+      },
+    });
+
+    await expect(mockInvoke(CHANNEL, { path: '/repo/file' })).rejects.toThrow(
+      'daemon unreachable',
+    );
   });
 
   it('rejects on a daemon-side exec timeout', async () => {

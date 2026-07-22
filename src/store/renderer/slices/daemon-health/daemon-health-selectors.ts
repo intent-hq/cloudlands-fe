@@ -42,12 +42,18 @@ export function isLocalTransport(transport: BackendTransportInfo | null): boolea
 /**
  * True when the daemon host is the user's machine — gates host-shell
  * affordances (reveal-in-file-manager, editor opens) that must act on the
- * local desktop, per the same UDS-vs-WS discrimination the daemon itself
- * uses for `host.locality` (§5.14).
+ * local desktop.
+ *
+ * Prefers the daemon-reported `host.locality` from the last system.status
+ * poll (BE = source of truth; it reflects a forced `server.locality`
+ * override, §5.12/§5.14, that the transport mode cannot see). Falls back to
+ * the FE transport heuristic before the first poll lands.
  */
-export const selectIsDaemonLocal = store.createSelector((state): boolean =>
-  isLocalTransport(state.daemonHealth.transport),
-);
+export const selectIsDaemonLocal = store.createSelector((state): boolean => {
+  const reported = state.daemonHealth.hostLocality;
+  if (reported === 'local' || reported === 'remote') return reported === 'local';
+  return isLocalTransport(state.daemonHealth.transport);
+});
 
 /** True when the sidecar supervisor gave up restarting the daemon (#439). */
 export const selectSidecarGaveUp = store.createSelector(

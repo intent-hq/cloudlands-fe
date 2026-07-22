@@ -101,6 +101,13 @@ export interface DaemonHealthState {
    */
   transport: BackendTransportInfo | null;
   /**
+   * Daemon-reported connection locality from the last system.status poll
+   * (`host.locality`, PROTOCOL §5.7/§5.14), or null before the first poll.
+   * Authoritative over the FE transport heuristic: it reflects a forced
+   * `server.locality` override (§5.12) the transport mode cannot see.
+   */
+  hostLocality: 'local' | 'remote' | null;
+  /**
    * True when the sidecar supervisor exhausted its restart policy and stopped
    * restarting the daemon (#439). Cleared on the next successful connect.
    */

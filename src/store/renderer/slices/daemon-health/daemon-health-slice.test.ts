@@ -26,6 +26,7 @@ describe('daemonHealthReducer', () => {
       lastUpdated: null,
       polling: false,
       transport: null,
+      hostLocality: null,
       sidecarGaveUp: false,
       sidecarGaveUpReason: null,
       sidecarSpawnPending: false,
@@ -227,6 +228,7 @@ describe('daemonHealthReducer', () => {
       });
       expect(next.lastUpdated).toBeTruthy();
       expect(typeof next.lastUpdated).toBe('string');
+      expect(next.hostLocality).toBe('local');
     });
 
     it('treats new fields as optional (graceful degradation)', () => {
@@ -266,6 +268,23 @@ describe('daemonHealthReducer', () => {
         arch: 'x86_64',
         transport: undefined,
       });
+      expect(next.hostLocality).toBe('remote');
+    });
+
+    it('preserves the last-known hostLocality when the payload omits it (older daemon)', () => {
+      const payload = {
+        running: true,
+        listenMode: 'uds',
+        transports: ['uds'],
+        clients: 1,
+        agents: 0,
+        protocolVersion: '2.0',
+        host: { os: 'macos', arch: 'aarch64', hasDisplay: true },
+      } as unknown as SystemStatusWirePayload;
+      const state = { ...initialState, hostLocality: 'local' as const };
+      const next = daemonHealthReducer(state, systemStatusSuccess(payload));
+
+      expect(next.hostLocality).toBe('local');
     });
   });
 
