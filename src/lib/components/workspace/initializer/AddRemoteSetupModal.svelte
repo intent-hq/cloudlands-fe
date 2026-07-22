@@ -63,7 +63,10 @@ interface Props {
         ? host.trim() !== '' && port > 0 && port <= 65535
         : wsUrl.trim() !== '') &&
       username.trim() !== '' &&
-      workspacePath.trim() !== '',
+      workspacePath.trim() !== '' &&
+      (authMode === 'agent' ||
+        (authMode === 'keyfile' && keyPath.trim() !== '') ||
+        (authMode === 'password' && password.trim() !== '')),
   );
 
   function handleSave() {
