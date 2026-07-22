@@ -32,6 +32,17 @@ import { extractConflict, newIdempotencyKey, runMutation } from "./live-support"
  */
 const DELETE_TIMEOUT_MS = 120_000;
 
+/**
+ * Transport timeout for `workspace.create` (PROTOCOL §5.1). Cold Claude Code
+ * ACP session opens run under the daemon's own NPX budgets (45s initialize +
+ * 20s session/new, 70s overall — see intent-services provider_models/probe.rs)
+ * plus first-turn overhead, which exceeds the flat 30s transport default.
+ * Mirrors the `git.pull` rationale in the shared `backendRequest` JSDoc: the
+ * daemon's structured `{ok:false}` / success result must win over a
+ * client-side transport timeout.
+ */
+const CREATE_TIMEOUT_MS = 120_000;
+
 /** Daemon status strings → renderer WorkspaceStatus enum. */
 function toWorkspaceStatus(value: unknown): WorkspaceStatus {
   switch (String(value).toLowerCase()) {
@@ -143,6 +154,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
           ...request,
           idempotencyKey: newIdempotencyKey(),
         },
+        { timeoutMs: CREATE_TIMEOUT_MS },
       );
       const raw = result?.workspace;
       const rawAgent = result?.initialAgent;
