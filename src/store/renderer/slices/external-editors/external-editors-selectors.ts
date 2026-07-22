@@ -3,6 +3,7 @@ import {
   getItems,
   type Collection,
 } from "$lib/store-shim/utils/collections/collection-utils";
+import { selectIsDaemonLocal } from "../daemon-health/daemon-health-selectors";
 import type { InstalledEditor, OpenAction } from "./external-editors-slice";
 
 /** Select the selected open action */
@@ -41,9 +42,20 @@ export const selectHiddenEditorIds = store.createSelector((state): string[] => {
   return state.externalEditors.hiddenEditorIds;
 });
 
-/** Select editors where installed === true and not hidden */
+/**
+ * Select editors where installed === true and not hidden.
+ *
+ * Locality-gated: `host.listInstalledEditors` detects editors on the DAEMON
+ * host, and every open action (host.openInEditor / shell:showItemInFolder →
+ * host.exec) launches a GUI there — meaningless when the daemon is remote.
+ * Remote connections get an empty list, so the "Open in…" / "Reveal in…"
+ * affordances disappear instead of no-oping on another machine. Consumes
+ * `selectIsDaemonLocal` so this gate and the per-component reveal gates
+ * cannot drift apart.
+ */
 export const selectInstalledEditorsFiltered = store.createSelector(
   (state): InstalledEditor[] => {
+    if (!selectIsDaemonLocal.select(state)) return [];
     const hiddenEditorIds = selectHiddenEditorIds.select(state);
     return selectInstalledEditors
       .select(state)

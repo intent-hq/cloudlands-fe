@@ -16,6 +16,7 @@ import './file-bridge-seeder';
 import './repo-config-bridge-seeder';
 import './provider-status-bridge-seeder';
 import './pi-mcp-bridge-seeder';
+import './shell-reveal-bridge-seeder';
 import './model-catalog-bridge-seeder';
 import './integrations-bridge-seeder';
 import './notes-seeder';
