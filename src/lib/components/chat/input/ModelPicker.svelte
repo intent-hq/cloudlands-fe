@@ -510,12 +510,14 @@
 
   // Whether a model is explicitly selected (vs using default)
   // Also treat the literal string "undefined" as no selection (can happen from bad String(undefined) conversion)
+  // Only the bare "default" string is the "use default" sentinel (delegation-chain guard);
+  // provider-prefixed ids like "claude-code:default" are explicit catalog selections.
   const hasExplicitModel = $derived(
     localModel !== undefined &&
       localModel !== null &&
       localModel !== USE_DEFAULT_VALUE &&
       localModel !== 'undefined' &&
-      parseCompoundModelId(localModel).modelId !== 'default',
+      localModel !== 'default',
   );
 
   // Get the label for a model ID from available models list
