@@ -128,14 +128,44 @@ describe('ProviderCard selected-state indicator', () => {
     const { container, rerender } = render(ProviderCard, {
       props: { ...baseProps(), provider: readyProvider(), selected: true },
     });
-    // Ready cards expose aria-pressed on the outer card element regardless of
-    // whether role="button" is set (cardClickable is scoped to non-ready cards
-    // / auggie-needs-action; ready cards click via the always-bound onclick).
+    // Ready cards expose aria-pressed on the outer card element to signal
+    // selection state (they are also clickable: role="button" + tabindex=0).
     const card = container.querySelector('[aria-pressed]');
     expect(card?.getAttribute('aria-pressed')).toBe('true');
 
     rerender({ ...baseProps(), provider: readyProvider(), selected: false });
     const card2 = container.querySelector('[aria-pressed]');
     expect(card2?.getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('ProviderCard click affordance', () => {
+  const card = (root: HTMLElement) => root.querySelector('.group\\/card') as HTMLElement;
+
+  it('marks ready cards as clickable: pointer cursor, role=button, tabindex=0', () => {
+    const { container } = render(ProviderCard, {
+      props: { ...baseProps(), provider: readyProvider() },
+    });
+
+    const el = card(container);
+    expect(el.className).toContain('cursor-pointer');
+    expect(el.getAttribute('role')).toBe('button');
+    expect(el.getAttribute('tabindex')).toBe('0');
+    // Border must stay border-border for ready cards (no visual regression).
+    expect(el.className).toContain('border-border');
+  });
+
+  it('keeps loading cards non-interactive with the default cursor', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), statusLoading: true, available: false },
+      },
+    });
+
+    const el = card(container);
+    expect(el.className).toContain('cursor-default');
+    expect(el.getAttribute('role')).toBeNull();
+    expect(el.getAttribute('tabindex')).toBeNull();
   });
 });

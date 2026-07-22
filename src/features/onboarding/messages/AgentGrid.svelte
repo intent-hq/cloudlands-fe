@@ -19,6 +19,7 @@
   import ProviderCard from './ProviderCard.svelte';
   import type { ProviderBrandColors } from './ProviderCard.svelte';
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
+  import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -198,13 +199,14 @@
     const loadingMap = $providerLoadingMap$;
     const hasCheckedOnce = $hasCheckedOnce$;
     return randomizedProviderOrder
-      .filter((p) => {
-        // Client-side feature code gate — never show if the feature code isn't activated
-        if (p.requiresFeatureCode && !selectIsFeatureEnabled.select(state, p.requiresFeatureCode)) {
-          return false;
-        }
-        return true;
-      })
+      .filter((p) =>
+        // Feature-code gate + env-var gate (via availability status, default-deny)
+        isOnboardingProviderVisible({
+          provider: p,
+          isFeatureEnabled: (code) => selectIsFeatureEnabled.select(state, code),
+          status: statusMap[p.id],
+        }),
+      )
       .map((p) => {
         const meta = PROVIDER_METADATA[p.id];
         const status = statusMap[p.id];
