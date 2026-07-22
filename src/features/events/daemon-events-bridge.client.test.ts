@@ -137,7 +137,12 @@ import {
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { __resetDaemonEventsBridgeForTests } from '$features/events/daemon-events-bridge.client';
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
-import { chatReset, chatSendStarted } from '$store/renderer/slices/chat-state/chat-state-slice';
+import {
+  chatReset,
+  chatSendStarted,
+  chatStopCompleted,
+  chatStopInitiated,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
 import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
 import {
   clearAgentQueue,
@@ -1277,6 +1282,12 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     expectPartialBlocksIntact(readAssistantMessages()[0]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
+    // The Stop button path (`dispatchStopChat` in chat-send-service.ts)
+    // dispatches `chatStopInitiated` before calling `agent.stop` — the local
+    // stop dispatch must NOT remove the in-flight partial message.
+    appStore.dispatch(chatStopInitiated(AGENT));
+    expectPartialBlocksIntact(readAssistantMessages()[0]);
+
     // `interrupt_inner` emits the single terminal `agent:stream:end` (the
     // aborted worker no longer reaches its own emit) followed by the STAB-28
     // `agent:idle { reason: "interrupted" }`.
@@ -1289,6 +1300,19 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
         reason: 'interrupted',
       }),
     );
+
+    // The terminal events alone must flip the responding flag — asserted
+    // BEFORE `chatStopCompleted` (which also clears session runtime flags)
+    // so the local dispatch can't mask a regression in the event handling.
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    // `dispatchStopChat` dispatches `chatStopCompleted` once `agent.stop`
+    // resolves — this local completion dispatch must not erase the partial
+    // either. It resets chat-state flags and session runtime flags
+    // (`isStreaming`/`isProcessing`/`isResponding`) but never touches
+    // session messages, so the response racing ahead of the event pushes
+    // is equally safe for the streamed blocks.
+    appStore.dispatch(chatStopCompleted(AGENT));
 
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
