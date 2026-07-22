@@ -1313,12 +1313,6 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
       }),
     );
 
-    // While the (now-finalized) partial was still streaming the indicator must
-    // stay hidden — `shouldShowStoppedIndicator` keys off isStreaming.
-    expect(
-      shouldShowStoppedIndicator({ message: readAssistantMessages()[0], isStreaming: true }),
-    ).toBe(false);
-
     // Simulate the chat-read-service hydration reconcile: the daemon's
     // `flush_partial_turn_on_interruption` persisted the partial under the
     // turn's minted message id with `metadata.interrupted = true` +
@@ -1372,6 +1366,12 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
       interrupted: true,
       stopReason: 'interrupted',
     });
+    // The persisted row carries `metadata.interrupted: true`, so a `false`
+    // here can only come from the isStreaming gate — pins that the indicator
+    // stays hidden while a stream is (still) considered in-flight.
+    expect(
+      shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: true }),
+    ).toBe(false);
     expect(
       shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false }),
     ).toBe(true);
