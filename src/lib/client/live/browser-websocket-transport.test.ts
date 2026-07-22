@@ -63,6 +63,7 @@ function createHarness(options?: {
   requestTimeoutMs?: number;
   reconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
+  connectTimeoutMs?: number;
 }) {
   const sockets: FakeWebSocket[] = [];
   const transport = new BrowserWebSocketTransport({
@@ -361,7 +362,9 @@ describe("BrowserWebSocketTransport", () => {
 
   it("times out a request stuck waiting for the initial connect", async () => {
     vi.useFakeTimers();
-    const { transport, socket } = createHarness();
+    // Watchdog pinned above the request timeout so the request TIMEOUT path
+    // is what fires here (the watchdog has its own test below).
+    const { transport, socket } = createHarness({ connectTimeoutMs: 60_000 });
     const promise = transport.request("slow.connect");
     // The socket never opens (stalled handshake, no close event fired).
     expect(socket().sent).toHaveLength(0);
@@ -377,6 +380,35 @@ describe("BrowserWebSocketTransport", () => {
     socket().open();
     await flush();
     expect(socket().sent).toHaveLength(0);
+    transport.dispose();
+  });
+
+  it("tears down a stalled connect attempt via the watchdog and reconnects", async () => {
+    vi.useFakeTimers();
+    const { transport, sockets, socket } = createHarness({
+      connectTimeoutMs: 10_000,
+      reconnectDelayMs: 1_000,
+    });
+    const promise = transport.request("stalled.connect");
+    expect(sockets).toHaveLength(1);
+
+    // Neither open nor close fires; the watchdog must fail the attempt so the
+    // transport does not stay stuck in `connecting` forever.
+    const rejection = expect(promise).rejects.toMatchObject({ code: "TRANSPORT_ERROR" });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await rejection;
+    expect(sockets[0].closed).toBe(true);
+
+    // The reconnect path is armed: a fresh socket is opened after the backoff
+    // delay and subsequent requests go through.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sockets).toHaveLength(2);
+    const after = transport.request("workspace.list");
+    socket().open();
+    await flush();
+    expect(socket().lastFrame()).toMatchObject({ method: "workspace.list" });
+    socket().receive({ jsonrpc: "2.0", id: 2, result: [] });
+    await expect(after).resolves.toEqual([]);
     transport.dispose();
   });
 

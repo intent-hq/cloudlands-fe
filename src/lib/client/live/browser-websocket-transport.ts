@@ -136,6 +136,8 @@ export interface BrowserWebSocketTransportOptions {
   requestTimeoutMs?: number;
   reconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
+  /** Watchdog for a single connect attempt (handshake stalls with neither open nor close). */
+  connectTimeoutMs?: number;
 }
 
 interface PendingRequest {
@@ -148,6 +150,7 @@ interface PendingRequest {
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RECONNECT_MS = 1_000;
 const DEFAULT_MAX_RECONNECT_MS = 30_000;
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 
 /**
  * `BackendTransport` speaking JSON-RPC 2.0 over a browser WebSocket. One JSON
@@ -162,6 +165,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private readonly requestTimeoutMs: number;
   private readonly reconnectDelayMs: number;
   private readonly maxReconnectDelayMs: number;
+  private readonly connectTimeoutMs: number;
 
   private socket: BrowserWebSocketLike | null = null;
   private connected = false;
@@ -170,6 +174,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private requestId = 0;
   private currentReconnectDelay: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private connectWaiters: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
   private readonly pending = new Map<number, PendingRequest>();
   /** Sticky flag so `reconnected` only fires on the 2nd (or later) successful connect. */
@@ -185,6 +190,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.reconnectDelayMs = options.reconnectDelayMs ?? DEFAULT_RECONNECT_MS;
     this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? DEFAULT_MAX_RECONNECT_MS;
+    this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.currentReconnectDelay = this.reconnectDelayMs;
   }
 
@@ -281,6 +287,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     if (this.disposed) return;
     this.disposed = true;
     this.clearReconnect();
+    this.clearConnectTimer();
     const error = new BackendError({ code: "UNAVAILABLE", message: "Backend transport disposed" });
     this.failPending(error);
     this.failWaiters(error);
@@ -318,6 +325,20 @@ export class BrowserWebSocketTransport implements BackendTransport {
       return;
     }
     this.socket = socket;
+    // Watchdog: if the handshake stalls with neither `open` nor `close`
+    // firing, tear the attempt down and arm the reconnect path so the
+    // transport recovers instead of staying stuck in `connecting`.
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = null;
+      if (this.socket !== socket || this.connected) return;
+      this.connecting = false;
+      this.onConnectionFailure(
+        new BackendError({
+          code: "TRANSPORT_ERROR",
+          message: `WebSocket connect attempt timed out after ${this.connectTimeoutMs}ms`,
+        }),
+      );
+    }, this.connectTimeoutMs);
     // Guard each callback so events from a torn-down socket cannot disturb a
     // newer connection attempt.
     socket.onopen = () => {
@@ -341,6 +362,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   private onConnected(): void {
+    this.clearConnectTimer();
     this.connecting = false;
     this.connected = true;
     this.currentReconnectDelay = this.reconnectDelayMs;
@@ -355,6 +377,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   private onConnectionFailure(error: Error): void {
+    this.clearConnectTimer();
     if (this.disposed) return;
     this.connected = false;
     this.teardownSocket();
@@ -440,6 +463,13 @@ export class BrowserWebSocketTransport implements BackendTransport {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+  }
+
+  private clearConnectTimer(): void {
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
     }
   }
 
