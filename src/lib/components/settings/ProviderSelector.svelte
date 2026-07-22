@@ -28,7 +28,6 @@
 
   import {
   ACP_PROVIDERS,
-  getProviderConfig,
   resolveProviderEnabled,
 } from '$shared/config/provider-config';
   import {
