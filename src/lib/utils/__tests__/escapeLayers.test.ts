@@ -226,5 +226,30 @@ describe('escapeLayers', () => {
 
       expect(event.defaultPrevented).toBe(true);
     });
+
+    it('still consumes the event when the callback throws', () => {
+      pushEscapeLayer(() => {
+        throw new Error('boom');
+      });
+
+      // The exception escapes the listener; keep jsdom from reporting it as
+      // an unhandled error while still asserting the event was consumed.
+      const suppress = (errorEvent: ErrorEvent) => errorEvent.preventDefault();
+      window.addEventListener('error', suppress);
+      try {
+        const event = new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        });
+        const stopImmediatePropagationSpy = vi.spyOn(event, 'stopImmediatePropagation');
+        window.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(stopImmediatePropagationSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        window.removeEventListener('error', suppress);
+      }
+    });
   });
 });

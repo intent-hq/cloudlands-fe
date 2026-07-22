@@ -30,9 +30,18 @@ function handleWindowKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return;
   const top = stack[stack.length - 1];
   if (!top) return;
-  if (top.onEscape(e) === false) return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
+  // Consume the event unless the callback explicitly declines — even if the
+  // callback throws, so a single Escape never reaches bubble-phase handlers
+  // in addition to the (failed) layer.
+  let declined = false;
+  try {
+    declined = top.onEscape(e) === false;
+  } finally {
+    if (!declined) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }
 }
 
 function attachListenerIfNeeded(): void {
