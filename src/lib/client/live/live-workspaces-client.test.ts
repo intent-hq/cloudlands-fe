@@ -19,13 +19,16 @@ const mockedRequest = vi.mocked(backendRequest);
 describe("LiveWorkspacesClient mutations (fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("create forwards workspace.create with the request + an idempotencyKey", async () => {
+  it("create forwards workspace.create with the request + an idempotencyKey and 120s timeout override", async () => {
     mockedRequest.mockResolvedValueOnce({ id: "ws-1" });
     const client = new LiveWorkspacesClient();
 
     const result = await client.create({ title: "New WS", scope: "apps/web" } as CreateWorkspaceRequest);
 
     expect(result).toEqual({ success: true });
+    // The 120s override keeps cold Claude Code ACP session opens (daemon's
+    // 70s NPX budget + first-turn overhead) from tripping the flat 30s
+    // transport default.
     expect(mockedRequest).toHaveBeenCalledWith(
       "workspace.create",
       expect.objectContaining({
@@ -33,6 +36,7 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
         scope: "apps/web",
         idempotencyKey: expect.any(String),
       }),
+      { timeoutMs: 120_000 },
     );
   });
 
