@@ -6,6 +6,7 @@
   import type { Editor } from '@tiptap/core';
   import { createLogger } from '$lib/utils/client-logger';
   import { findCommentAnchors } from '$lib/components/tiptap/CommentAnchor';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   const logger = createLogger('CommentsSidebar');
 
@@ -391,12 +392,8 @@
     // Add click outside listener
     document.addEventListener('click', handleClickOutside);
 
-    // Add escape key listener
-    document.addEventListener('keydown', handleEscapeKey);
-
     return () => {
       document.removeEventListener('click', handleClickOutside);
-      document.removeEventListener('keydown', handleEscapeKey);
     };
   });
 
@@ -532,13 +529,12 @@
     }
   }
 
-  // Handle escape key to unfocus
-  function handleEscapeKey(event: KeyboardEvent) {
-    if (event.key === 'Escape' && focusedCommentId) {
-      event.preventDefault();
-      unfocusComment();
-    }
-  }
+  // Escape layer: registered only while a comment is focused so stacked
+  // overlays dismiss one at a time in LIFO order
+  $effect(() => {
+    if (!focusedCommentId) return;
+    return pushEscapeLayer(() => unfocusComment());
+  });
 
   $effect(() => {
     // Focus reply input when its thread is focused

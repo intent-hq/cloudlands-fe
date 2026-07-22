@@ -7,6 +7,7 @@
   type SidebarMenuItem,
 } from './types';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   interface Props {
     x: number;
@@ -58,14 +59,6 @@
     }
   }
 
-  function handleKeyDown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      event.preventDefault();
-      onClickOutside?.();
-    }
-  }
-
   function handleItemClick(item: SidebarMenuItem) {
     if (item.disabled) return;
     item.onClick();
@@ -79,12 +72,15 @@
     // Use mousedown instead of click to close before the new contextmenu event fires
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('contextmenu', handleContextMenuOutside);
-    document.addEventListener('keydown', handleKeyDown);
+    // Escape layer: the menu only exists while open, and is the topmost overlay
+    const releaseEscapeLayer = pushEscapeLayer(() => {
+      onClickOutside?.();
+    });
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('contextmenu', handleContextMenuOutside);
-      document.removeEventListener('keydown', handleKeyDown);
+      releaseEscapeLayer();
     };
   });
 </script>

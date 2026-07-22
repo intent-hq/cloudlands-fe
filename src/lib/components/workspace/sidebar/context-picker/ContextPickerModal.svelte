@@ -17,6 +17,7 @@
   import LinearPicker from './LinearPicker.svelte';
   import SentryPicker from './SentryPicker.svelte';
   import BrowserUrlPicker from './BrowserUrlPicker.svelte';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   interface Props {
     provider: ContextProvider;
@@ -42,14 +43,13 @@
     }
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  }
+  // Escape layer: registered only while open so stacked overlays dismiss
+  // one at a time in LIFO order
+  $effect(() => {
+    if (!isOpen) return;
+    return pushEscapeLayer(() => onClose());
+  });
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 {#if isOpen}
   <div class="fixed inset-0 z-50" transition:fade={{ duration: 150 }}>

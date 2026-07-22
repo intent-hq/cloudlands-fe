@@ -6,6 +6,7 @@
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import type { Snippet } from 'svelte';
 
   interface Props {
@@ -45,14 +46,13 @@
     close();
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && isOpen) {
-      close();
-    }
-  }
+  // Escape layer: registered only while open so stacked overlays dismiss
+  // one at a time in LIFO order
+  $effect(() => {
+    if (!isOpen) return;
+    return pushEscapeLayer(() => close());
+  });
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 {#if isOpen}
   <!-- Modal Backdrop (always visible when drawer is open) -->

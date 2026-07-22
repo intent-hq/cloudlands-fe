@@ -17,6 +17,7 @@
 } from 'svelte';
   import { scale } from 'svelte/transition';
   import Portal from './Portal.svelte';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   // Props (runes mode)
   let {
@@ -57,12 +58,6 @@
       if (!triggerEl.contains(target) && !contentEl.contains(target)) {
         close();
       }
-    }
-  }
-
-  function handleEscape(event: KeyboardEvent) {
-    if (open && event.key === 'Escape') {
-      close();
     }
   }
 
@@ -113,16 +108,20 @@
 
   onMount(() => {
     document.addEventListener('click', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
     window.addEventListener('resize', updatePortalPosition);
     window.addEventListener('scroll', updatePortalPosition, true);
   });
 
   onDestroy(() => {
     document.removeEventListener('click', handleClickOutside);
-    document.removeEventListener('keydown', handleEscape);
     window.removeEventListener('resize', updatePortalPosition);
     window.removeEventListener('scroll', updatePortalPosition, true);
+  });
+
+  // Escape layer: only the topmost overlay handles Escape
+  $effect(() => {
+    if (!open) return;
+    return pushEscapeLayer(close);
   });
 
   $effect(() => {

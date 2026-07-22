@@ -18,6 +18,7 @@
   import { scale } from 'svelte/transition';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   interface Props {
     onCreate?: () => void;
@@ -67,11 +68,14 @@
     }
   }
 
-  function handleEscape(event: KeyboardEvent) {
-    if (isExpanded && event.key === 'Escape') {
+  // Escape layer: registered only while expanded so stacked overlays dismiss
+  // one at a time in LIFO order
+  $effect(() => {
+    if (!isExpanded) return;
+    return pushEscapeLayer(() => {
       isExpanded = false;
-    }
-  }
+    });
+  });
 
   function updatePortalPosition() {
     if (!isExpanded || !triggerRef) return;
@@ -99,14 +103,12 @@
 
   onMount(() => {
     document.addEventListener('click', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
     window.addEventListener('resize', updatePortalPosition);
     window.addEventListener('scroll', updatePortalPosition, true);
   });
 
   onDestroy(() => {
     document.removeEventListener('click', handleClickOutside);
-    document.removeEventListener('keydown', handleEscape);
     window.removeEventListener('resize', updatePortalPosition);
     window.removeEventListener('scroll', updatePortalPosition, true);
   });
