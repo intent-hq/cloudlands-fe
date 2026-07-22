@@ -177,7 +177,9 @@ jobs:
     timeout-minutes: 30
     env:
       GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
+      # The full production renderer build needs more heap than the other
+      # jobs; 4096 OOMs on ubuntu-latest.
+      NODE_OPTIONS: '--max-old-space-size=8192'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
