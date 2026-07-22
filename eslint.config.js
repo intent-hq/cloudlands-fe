@@ -241,6 +241,36 @@ const rendererBrowserSafetyBaselineFiles = [
 
 const nodeBuiltinModules = [...new Set(builtinModules.map((name) => name.replace(/^node:/, '')))];
 
+// Shared options for the renderer browser-safety no-restricted-imports rule;
+// applied at `error` to clean files and `warn` to the baselined files below so
+// new violations in baselined files stay visible while migration proceeds.
+const rendererBrowserSafetyRestrictedImportsOptions = {
+  paths: [
+    {
+      name: 'electron',
+      message: 'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+      allowTypeImports: true,
+    },
+  ],
+  patterns: [
+    {
+      regex: '^electron/',
+      message: 'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+      allowTypeImports: true,
+    },
+    {
+      regex: `^(node:)?(${nodeBuiltinModules.join('|')})(/|$)`,
+      message: 'Renderer code must stay browser-safe: Node builtins are not available in the browser. Move the logic to the main process or use a browser-safe alternative (docs/MODULE_BOUNDARY_GUIDE.md).',
+      allowTypeImports: true,
+    },
+    {
+      regex: '(^|/)main(/|$)',
+      message: 'Renderer code must never import from a main/ subtree. Extract a shared/browser-safe module or route through IPC instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+      allowTypeImports: true,
+    },
+  ],
+};
+
 export default [
   {
     ignores: [
@@ -448,32 +478,26 @@ export default [
       '@typescript-eslint': typescript,
     },
     rules: {
-      '@typescript-eslint/no-restricted-imports': ['error', {
-        paths: [
-          {
-            name: 'electron',
-            message: 'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
-            allowTypeImports: true,
-          },
-        ],
-        patterns: [
-          {
-            regex: '^electron/',
-            message: 'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
-            allowTypeImports: true,
-          },
-          {
-            regex: `^(node:)?(${nodeBuiltinModules.join('|')})(/|$)`,
-            message: 'Renderer code must stay browser-safe: Node builtins are not available in the browser. Move the logic to the main process or use a browser-safe alternative (docs/MODULE_BOUNDARY_GUIDE.md).',
-            allowTypeImports: true,
-          },
-          {
-            regex: '(^|/)main(/|$)',
-            message: 'Renderer code must never import from a main/ subtree. Extract a shared/browser-safe module or route through IPC instead (docs/MODULE_BOUNDARY_GUIDE.md).',
-            allowTypeImports: true,
-          },
-        ],
-      }],
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        rendererBrowserSafetyRestrictedImportsOptions,
+      ],
+    },
+  },
+  // Baselined pre-existing violators get the same rule at `warn` severity so
+  // new browser-unsafe imports remain visible (instead of zero enforcement by
+  // omission) while each file is migrated off the baseline list.
+  {
+    files: rendererBrowserSafetyBaselineFiles,
+    ignores: productionModuleIgnores,
+    plugins: {
+      '@typescript-eslint': typescript,
+    },
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'warn',
+        rendererBrowserSafetyRestrictedImportsOptions,
+      ],
     },
   },
   {
