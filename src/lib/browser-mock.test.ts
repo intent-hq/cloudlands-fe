@@ -106,3 +106,105 @@ describe('browser-mock DEV gate', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/\[BrowserMock\].*'skills:list'/));
   });
 });
+
+/**
+ * Regression tests for the `backend:*` transport envelope (STAB entry: mock
+ * boots hit an unhandled BackendError).
+ *
+ * `electron-ipc-transport.ts` unwraps every `backend:request` /
+ * `backend:subscribe` response as a `BackendResult` envelope
+ * `{ ok: true, result }` / `{ ok: false, error: { code, message } }` (the
+ * shape `backend.ipc.ts` produces). The mock used to fall through to the
+ * legacy `{ success: false, error: string }` fallback, which unwrap() rejects
+ * as a malformed envelope — every mock boot threw BackendError.
+ */
+describe('browser-mock backend:* transport envelope', () => {
+  const originalElectronAPI = (window as any).electronAPI;
+  let api: any;
+
+  beforeEach(async () => {
+    delete (window as any).electronAPI;
+    vi.stubEnv('DEV', true);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await importBrowserMock();
+    api = (window as any).electronAPI;
+    expect(api).toBeDefined();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    (window as any).electronAPI = originalElectronAPI;
+  });
+
+  it('backend:request workspace.list returns { ok: true, result: { workspaces } }', async () => {
+    const res = await api.invoke('backend:request', { method: 'workspace.list' });
+    expect(res.ok).toBe(true);
+    expect(Array.isArray(res.result?.workspaces)).toBe(true);
+    expect(res.result.workspaces.length).toBeGreaterThan(0);
+    // Must NOT be the legacy CommandResponse shape
+    expect(res).not.toHaveProperty('success');
+  });
+
+  it('backend:request serves boot-time reads (settings.list, repo.list) as ok envelopes', async () => {
+    const settings = await api.invoke('backend:request', { method: 'settings.list' });
+    expect(settings.ok).toBe(true);
+    expect(Array.isArray(settings.result?.settings)).toBe(true);
+
+    const repos = await api.invoke('backend:request', { method: 'repo.list' });
+    expect(repos.ok).toBe(true);
+    expect(Array.isArray(repos.result?.repos)).toBe(true);
+
+    // Bare array per §5.10 — the MainLayout activity timeline reads this at boot.
+    const events = await api.invoke('backend:request', { method: 'event.query' });
+    expect(events.ok).toBe(true);
+    expect(Array.isArray(events.result)).toBe(true);
+
+    // The daemon-events-bridge firehose subscribes via backend:request.
+    const sub = await api.invoke('backend:request', { method: 'events.subscribe' });
+    expect(sub.ok).toBe(true);
+    expect(typeof sub.result?.subscriptionId).toBe('string');
+  });
+
+  it('backend:request for an unimplemented method returns a structured error envelope', async () => {
+    const res = await api.invoke('backend:request', { method: 'no.suchMethod' });
+    expect(res.ok).toBe(false);
+    expect(typeof res.error?.code).toBe('string');
+    expect(typeof res.error?.message).toBe('string');
+    expect(res.error.message).toContain('no.suchMethod');
+  });
+
+  it('backend:request without a method returns INVALID_PARAMS (mirrors backend.ipc.ts)', async () => {
+    const res = await api.invoke('backend:request', {});
+    expect(res.ok).toBe(false);
+    expect(res.error?.code).toBe('INVALID_PARAMS');
+  });
+
+  it('backend:subscribe returns { ok: true, result: { subscriptionId } }', async () => {
+    const res = await api.invoke('backend:subscribe', { eventTypes: ['workspace:created'] });
+    expect(res.ok).toBe(true);
+    expect(typeof res.result?.subscriptionId).toBe('string');
+  });
+
+  it('backend:unsubscribe returns an ok envelope', async () => {
+    const res = await api.invoke('backend:unsubscribe', { subscriptionId: 'sub-1' });
+    expect(res.ok).toBe(true);
+  });
+
+  it('backend:get-status returns the bare { status } shape (no envelope)', async () => {
+    const res = await api.invoke('backend:get-status');
+    expect(typeof res?.status).toBe('string');
+    expect(res).not.toHaveProperty('ok');
+  });
+
+  it('unwraps cleanly through the real electron-ipc transport (no BackendError on boot reads)', async () => {
+    const { createElectronIpcBackendTransport } = await import(
+      './client/live/electron-ipc-transport'
+    );
+    const transport = createElectronIpcBackendTransport();
+    const result = await transport.request<{ workspaces?: unknown[] }>('workspace.list');
+    expect(Array.isArray(result.workspaces)).toBe(true);
+    const sub = await transport.subscribe<{ subscriptionId?: string }>({ eventTypes: ['*'] });
+    expect(typeof sub.subscriptionId).toBe('string');
+  });
+});
