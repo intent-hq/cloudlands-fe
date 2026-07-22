@@ -1,6 +1,7 @@
-import type { Collection } from "$lib/store-shim/utils/collections/collection-utils";
+import type { Collection } from '$lib/store-shim/utils/collections/collection-utils';
+import type { OnboardingStep } from '../onboarding/onboarding-types';
 
-export type WorkspaceInitializerRepoType = "local" | "github" | "remote";
+export type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
 
 export interface WorkspaceInitializerRemoteSetup {
   id: string;
@@ -14,7 +15,7 @@ export interface WorkspaceInitializerRemoteSetup {
   workspacePath: string;
   lastUsedRepo?: string;
   lastUsed?: string;
-  transport?: "ssh" | "websocket";
+  transport?: 'ssh' | 'websocket';
   wsUrl?: string;
   branch?: string;
 }
@@ -32,7 +33,7 @@ export interface WorkspaceInitializerRepoSelection {
 
 export interface WorkspaceInitializerRecentRepo {
   path: string;
-  type: "local" | "github";
+  type: 'local' | 'github';
   githubUrl?: string;
   name: string;
   owner?: string;
@@ -67,7 +68,7 @@ export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializ
 
 export interface WorkspaceInitializerOnboardingFormState {
   projectSelection: {
-    type?: WorkspaceInitializerRepoType | "new";
+    type?: WorkspaceInitializerRepoType | 'new';
     repoPath?: string;
     branch?: string;
     scope?: string;
@@ -80,7 +81,7 @@ export interface WorkspaceInitializerOnboardingFormState {
   setupScript?: string;
   setupScriptName?: string;
   isCustomSetupScript?: boolean;
-  step?: "welcome" | "project" | "configuring" | "ready";
+  step?: OnboardingStep;
 }
 
 export interface WorkspaceInitializerHydrationState {
@@ -101,7 +102,7 @@ export interface WorkspaceInitializerState {
   lastSelectedRepo: WorkspaceInitializerRepoSelection | null;
   branchByRepo: Record<string, string>;
   defaultParentPath: string;
-  recentRepos: Collection<WorkspaceInitializerRecentRepo, "path">;
-  remoteSetups: Collection<WorkspaceInitializerRemoteSetup, "id">;
+  recentRepos: Collection<WorkspaceInitializerRecentRepo, 'path'>;
+  remoteSetups: Collection<WorkspaceInitializerRemoteSetup, 'id'>;
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;
 }

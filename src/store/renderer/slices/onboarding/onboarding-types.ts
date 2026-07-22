@@ -4,7 +4,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-export type OnboardingStep = 'welcome' | 'project' | 'configuring' | 'ready';
+export type OnboardingStep = 'welcome' | 'github' | 'project' | 'configuring' | 'ready';
 
 export type ProjectConfig = {
   repoUrl: string | null;
@@ -25,4 +25,4 @@ export type OnboardingState = {
   workspaceId: string | null;
 };
 
-export const STEP_ORDER: OnboardingStep[] = ['welcome', 'project', 'configuring', 'ready'];
+export const STEP_ORDER: OnboardingStep[] = ['welcome', 'github', 'project', 'configuring', 'ready'];
