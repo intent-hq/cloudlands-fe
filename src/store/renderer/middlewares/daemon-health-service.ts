@@ -117,7 +117,11 @@ function maybeNotifyVersionMismatch(transport?: BackendTransportInfo): void {
   versionMismatchNotified = true;
   void import('$lib/components/ui/toast')
     .then(({ toast }) => {
-      const daemonVersion = transport.daemonVersion ? ` (v${transport.daemonVersion})` : '';
+      // The daemon may report its version with or without a leading "v"
+      // (compareToPinnedVersion tolerates both) — normalize to avoid "vv".
+      const daemonVersion = transport.daemonVersion
+        ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
+        : '';
       toast.warning(
         `Connected to an external intentd daemon${daemonVersion} whose version differs from the bundled version. Some features may not work as expected.`,
         { duration: 15_000 },

@@ -461,6 +461,32 @@ describe('daemon-health-service', () => {
     expect(toast.warning).toHaveBeenCalledTimes(1);
   });
 
+  it('normalizes a v-prefixed daemon version in the mismatch toast (no "vv")', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'connected',
+      transport: {
+        mode: 'external-uds',
+        target: '/tmp/intentd.sock',
+        daemonVersion: 'v0.2.0',
+        versionMismatch: true,
+      } satisfies BackendTransportInfo,
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+    });
+    const message = vi.mocked(toast.warning).mock.calls[0][0] as string;
+    expect(message).toContain('(v0.2.0)');
+    expect(message).not.toContain('vv0.2.0');
+  });
+
   it('does not toast when the transport reports matching versions', async () => {
     registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
       status: 'connected',
