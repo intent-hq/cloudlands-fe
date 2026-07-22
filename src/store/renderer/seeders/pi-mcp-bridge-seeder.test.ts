@@ -55,11 +55,18 @@ describe('pi-mcp-bridge-seeder', () => {
       await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(true);
 
       expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'pi' });
-      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
-        command: '/usr/local/bin/pi',
-        args: ['list'],
-        timeoutMs: 10_000,
-      });
+      // Third arg: transport-timeout override with headroom over the daemon
+      // exec bound, so the daemon's structured `timedOut` result wins over
+      // the JsonRpcClient's flat 30s default.
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'host.exec',
+        {
+          command: '/usr/local/bin/pi',
+          args: ['list'],
+          timeoutMs: 10_000,
+        },
+        { timeoutMs: 15_000 },
+      );
     });
 
     it('resolves false when `pi list` output lacks the adapter', async () => {
@@ -92,11 +99,15 @@ describe('pi-mcp-bridge-seeder', () => {
       });
 
       await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(true);
-      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
-        command: '/usr/local/bin/pi',
-        args: ['list'],
-        timeoutMs: 10_000,
-      });
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'host.exec',
+        {
+          command: '/usr/local/bin/pi',
+          args: ['list'],
+          timeoutMs: 10_000,
+        },
+        { timeoutMs: 15_000 },
+      );
     });
 
     it('resolves false on non-zero exit', async () => {
@@ -127,6 +138,21 @@ describe('pi-mcp-bridge-seeder', () => {
 
       await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(false);
     });
+
+    it('resolves false when the findBinary RPC itself rejects — without running pi list', async () => {
+      routeDaemon({
+        'host.findBinary': () => {
+          throw new Error('daemon unreachable');
+        },
+      });
+
+      await expect(mockInvoke<boolean>(PI_CHANNELS.CHECK_MCP_ADAPTER)).resolves.toBe(false);
+      expect(mockedRequest).not.toHaveBeenCalledWith(
+        'host.exec',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
   });
 
   describe('pi:install-mcp-adapter → host.exec `pi install npm:pi-mcp-adapter`', () => {
@@ -138,11 +164,17 @@ describe('pi-mcp-bridge-seeder', () => {
 
       const result = await mockInvoke<InstallResult>(PI_CHANNELS.INSTALL_MCP_ADAPTER);
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
-        command: '/usr/local/bin/pi',
-        args: ['install', 'npm:pi-mcp-adapter'],
-        timeoutMs: 120_000,
-      });
+      // Third arg: transport override so a >30s npm download is bounded by
+      // the daemon's 120s exec limit, not the flat client default.
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'host.exec',
+        {
+          command: '/usr/local/bin/pi',
+          args: ['install', 'npm:pi-mcp-adapter'],
+          timeoutMs: 120_000,
+        },
+        { timeoutMs: 125_000 },
+      );
       expect(result).toEqual({ success: true });
     });
 
@@ -202,6 +234,39 @@ describe('pi-mcp-bridge-seeder', () => {
       const result = await mockInvoke<InstallResult>(PI_CHANNELS.INSTALL_MCP_ADAPTER);
 
       expect(result).toEqual({ success: false, error: 'daemon unreachable' });
+    });
+
+    it('surfaces a findBinary RPC rejection instead of mis-reporting "Pi CLI not found"', async () => {
+      routeDaemon({
+        'host.findBinary': () => {
+          throw new Error('JSON-RPC request timed out: host.findBinary');
+        },
+      });
+
+      const result = await mockInvoke<InstallResult>(PI_CHANNELS.INSTALL_MCP_ADAPTER);
+
+      expect(result).toEqual({
+        success: false,
+        error: 'JSON-RPC request timed out: host.findBinary',
+      });
+      expect(mockedRequest).not.toHaveBeenCalledWith(
+        'host.exec',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('falls back to a generic message when the rejection has no usable message', async () => {
+      routeDaemon({
+        'host.findBinary': PI_FOUND,
+        'host.exec': () => {
+          throw new Error('');
+        },
+      });
+
+      const result = await mockInvoke<InstallResult>(PI_CHANNELS.INSTALL_MCP_ADAPTER);
+
+      expect(result).toEqual({ success: false, error: 'Failed to install pi-mcp-adapter' });
     });
   });
 });

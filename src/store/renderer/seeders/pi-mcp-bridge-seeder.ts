@@ -49,19 +49,22 @@ const CHECK_TIMEOUT_MS = 10_000;
 /** `pi install` downloads from npm (matches pi-resolver's install timeout). */
 const INSTALL_TIMEOUT_MS = 120_000;
 
-/** Resolve the `pi` CLI on the daemon host. Null when absent or RPC fails.
- * The RPC result is untrusted: only a non-empty string `path` (trimmed) is
- * accepted as the exec command. */
+/** Resolve the `pi` CLI on the daemon host. Null when absent; rejects when
+ * the RPC itself fails (daemon unreachable), so callers can distinguish
+ * "pi is missing" from "the probe never ran". The RPC result is untrusted:
+ * only a non-empty string `path` (trimmed) is accepted as the exec command. */
 async function findPiPath(): Promise<string | null> {
-  try {
-    const found = await backendRequest<HostCheckResult>('host.findBinary', { name: 'pi' });
-    if (found?.available !== true || typeof found.path !== 'string') return null;
-    const path = found.path.trim();
-    return path.length > 0 ? path : null;
-  } catch {
-    return null;
-  }
+  const found = await backendRequest<HostCheckResult>('host.findBinary', { name: 'pi' });
+  if (found?.available !== true || typeof found.path !== 'string') return null;
+  const path = found.path.trim();
+  return path.length > 0 ? path : null;
 }
+
+/** Transport-timeout headroom over the daemon-side exec bound, so the
+ * daemon's structured `timedOut` result wins over a client-side
+ * `JSON-RPC request timed out` rejection (JsonRpcClient's flat 30s default
+ * would otherwise cut off the 120s install — git-bridge-seeder idiom). */
+const TRANSPORT_HEADROOM_MS = 5_000;
 
 /** One-shot exec on the daemon host (argv-based, no shell — PROTOCOL §5.14). */
 async function hostExec(
@@ -69,7 +72,11 @@ async function hostExec(
   args: string[],
   timeoutMs: number,
 ): Promise<HostExecResult> {
-  return await backendRequest<HostExecResult>('host.exec', { command, args, timeoutMs });
+  return await backendRequest<HostExecResult>(
+    'host.exec',
+    { command, args, timeoutMs },
+    { timeoutMs: timeoutMs + TRANSPORT_HEADROOM_MS },
+  );
 }
 
 /**
@@ -79,9 +86,9 @@ async function hostExec(
  * act, rather than a fake positive hiding a missing adapter.
  */
 registerMockIpcHandler(PI_CHANNELS.CHECK_MCP_ADAPTER, async () => {
-  const piPath = await findPiPath();
-  if (!piPath) return false;
   try {
+    const piPath = await findPiPath();
+    if (!piPath) return false;
     const result = await hostExec(piPath, ['list'], CHECK_TIMEOUT_MS);
     if (result.timedOut || result.exitCode !== 0) return false;
     return result.stdout.split(/\r?\n/).some((line) => line.includes(PI_MCP_ADAPTER_PACKAGE));
@@ -97,11 +104,14 @@ registerMockIpcHandler(PI_CHANNELS.CHECK_MCP_ADAPTER, async () => {
  * install affordance).
  */
 registerMockIpcHandler(PI_CHANNELS.INSTALL_MCP_ADAPTER, async () => {
-  const piPath = await findPiPath();
-  if (!piPath) {
-    return { success: false, error: 'Pi CLI not found. Please install Pi first.' };
-  }
   try {
+    // findPiPath RPC rejections fall through to the catch-all so a daemon
+    // transport failure surfaces its real message instead of being
+    // mis-diagnosed as "Pi CLI not found".
+    const piPath = await findPiPath();
+    if (!piPath) {
+      return { success: false, error: 'Pi CLI not found. Please install Pi first.' };
+    }
     const result = await hostExec(
       piPath,
       ['install', PI_MCP_ADAPTER_INSTALL_SOURCE],
@@ -120,7 +130,7 @@ registerMockIpcHandler(PI_CHANNELS.INSTALL_MCP_ADAPTER, async () => {
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to install pi-mcp-adapter',
+      error: (error instanceof Error && error.message) || 'Failed to install pi-mcp-adapter',
     };
   }
 });
