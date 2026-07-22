@@ -64,7 +64,10 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
   const run = (async () => {
     try {
       const session = await appClient.agents.get(agentId);
-      if (session) {
+      // Re-check after the fetch: a deletion may have become pending while
+      // `agent.get` was in flight; upserting now would resurrect the
+      // soft-hidden session.
+      if (session && !isAgentDeletionPending(agentId)) {
         // `agent.get` returns AgentLite (PROTOCOL §5.5) — session metadata and
         // message COUNTS only, not the retained transcript. `normalizeAgent`
         // fills the missing `messages` field with `[]`, so dispatching this

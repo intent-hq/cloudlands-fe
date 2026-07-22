@@ -101,6 +101,34 @@ describe("agentReadService (fake seam, real store)", () => {
     expect(agentsApi.get).toHaveBeenCalledWith(agentId);
   });
 
+  // Regression (PR review): if the deletion becomes pending WHILE the
+  // `agent.get` fetch is in flight, the resolved response must not be
+  // upserted — otherwise the soft-hidden agent is resurrected anyway.
+  it("discards an in-flight fetch result when a deletion becomes pending mid-request", async () => {
+    const agentId = "agent-read-midflight-del";
+    let resolveGet!: (value: unknown) => void;
+    agentsApi.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGet = resolve;
+      }) as never,
+    );
+
+    const load = ensureAgentSession(agentId);
+    setPendingAgentDeletion({
+      wsId: WS,
+      agentId,
+      snapshot: makeSession({ id: agentId }),
+      timer: null,
+    });
+    try {
+      resolveGet(makeSession({ id: agentId, name: "stale" }));
+      await load;
+      expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+    } finally {
+      removePendingAgentDeletion(agentId);
+    }
+  });
+
   it("coalesces concurrent loads for the same agent into one fetch", async () => {
     agentsApi.get.mockResolvedValue(makeSession({ name: "shared" }) as never);
 

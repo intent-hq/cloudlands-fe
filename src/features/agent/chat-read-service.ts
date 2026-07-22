@@ -95,6 +95,10 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
     try {
       const session = await appClient.agents.get(agentId);
       if (!session) return;
+      // Re-check after the fetch: a deletion may have become pending while
+      // `agent.get` was in flight; hydrating now would resurrect the
+      // soft-hidden session (and paging the transcript would be wasted work).
+      if (isAgentDeletionPending(agentId)) return;
 
       // Fetch the FULL transcript by paging through agent.getConversation.
       // Request 200 messages per page (daemon max) and loop on nextToken.
@@ -153,6 +157,10 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
           seedStreamFromSnapshot(agentId, inFlightMessage, session.workspaceId);
         }
       }
+
+      // Final re-check before dispatching: the deletion may have become
+      // pending during transcript paging / snapshot fetch above.
+      if (isAgentDeletionPending(agentId)) return;
 
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is

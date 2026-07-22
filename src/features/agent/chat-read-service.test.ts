@@ -188,6 +188,37 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(["after"]);
   });
 
+  // Regression (PR review): if the deletion becomes pending WHILE the load is
+  // in flight (session already fetched, transcript paging underway), the
+  // hydrated result must be discarded rather than upserted.
+  it("discards an in-flight transcript load when a deletion becomes pending mid-request", async () => {
+    const agentId = "agent-chat-midflight-del";
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+    let resolveConversation!: (value: unknown) => void;
+    agentsApi.getConversation.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveConversation = resolve;
+      }) as never,
+    );
+
+    const load = loadChatTranscript(agentId);
+    await flush(); // let agent.get resolve; paging now blocked on getConversation
+    setPendingAgentDeletion({
+      wsId: WS,
+      agentId,
+      snapshot: makeSession({ id: agentId }),
+      timer: null,
+    });
+    try {
+      resolveConversation(conversation([makeMessage("stale", "s")]));
+      await load;
+      expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+      expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
+    } finally {
+      removePendingAgentDeletion(agentId);
+    }
+  });
+
   it("leaves any prior transcript intact when the conversation read fails", async () => {
     const agentId = "agent-chat-prior";
     agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
