@@ -209,20 +209,26 @@ export class BrowserWebSocketTransport implements BackendTransport {
         ? override
         : this.requestTimeoutMs;
     return new Promise<T>((resolve, reject) => {
+      // The timeout clock starts at request() entry — not at send — so the
+      // bound also covers time spent waiting for the WebSocket handshake
+      // (e.g. a stalled connect attempt that never fires `close`).
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        this.pending.delete(id);
+        reject(
+          new BackendError({
+            code: "TIMEOUT",
+            message: `JSON-RPC request timed out: ${method}`,
+            data: { code: "TIMEOUT" },
+          }),
+        );
+      }, timeoutMs);
       // Register the pending entry and send synchronously once connected, so a
       // response arriving immediately after the frame is correlated correctly.
       const send = () => {
+        if (timedOut) return;
         const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params });
-        const timeout = setTimeout(() => {
-          this.pending.delete(id);
-          reject(
-            new BackendError({
-              code: "TIMEOUT",
-              message: `JSON-RPC request timed out: ${method}`,
-              data: { code: "TIMEOUT" },
-            }),
-          );
-        }, timeoutMs);
         this.pending.set(id, {
           method,
           timeout,
@@ -240,7 +246,10 @@ export class BrowserWebSocketTransport implements BackendTransport {
       if (this.connected) {
         send();
       } else {
-        this.ensureConnected().then(send, (error: unknown) => reject(toTransportError(error)));
+        this.ensureConnected().then(send, (error: unknown) => {
+          clearTimeout(timeout);
+          reject(toTransportError(error));
+        });
       }
     });
   }
@@ -291,6 +300,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
   /** Begin connecting (idempotent). */
   private start(): void {
     if (this.disposed || this.socket || this.connecting) return;
+    // A scheduled reconnect owns the next attempt: new requests queue as
+    // connect waiters instead of bypassing the exponential backoff.
+    if (this.reconnectTimer) return;
     this.connect();
   }
 

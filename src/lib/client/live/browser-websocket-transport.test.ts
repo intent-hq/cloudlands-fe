@@ -331,6 +331,55 @@ describe("BrowserWebSocketTransport", () => {
     transport.dispose();
   });
 
+  it("queues requests behind an armed backoff timer instead of connecting immediately", async () => {
+    vi.useFakeTimers();
+    const { transport, sockets, socket } = createHarness({
+      reconnectDelayMs: 1_000,
+      maxReconnectDelayMs: 30_000,
+    });
+    transport.request("a").catch(() => {});
+    socket().open();
+    await flush();
+    socket().drop();
+    expect(sockets).toHaveLength(1);
+
+    // New requests while the reconnect timer is armed must not bypass the
+    // backoff by opening a socket immediately.
+    const queued = transport.request("b");
+    await flush();
+    expect(sockets).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sockets).toHaveLength(2);
+    socket().open();
+    await flush();
+    expect(socket().lastFrame()).toMatchObject({ method: "b" });
+    socket().receive({ jsonrpc: "2.0", id: 2, result: "ok" });
+    await expect(queued).resolves.toBe("ok");
+    transport.dispose();
+  });
+
+  it("times out a request stuck waiting for the initial connect", async () => {
+    vi.useFakeTimers();
+    const { transport, socket } = createHarness();
+    const promise = transport.request("slow.connect");
+    // The socket never opens (stalled handshake, no close event fired).
+    expect(socket().sent).toHaveLength(0);
+
+    const rejection = expect(promise).rejects.toMatchObject({
+      code: "TIMEOUT",
+      message: "JSON-RPC request timed out: slow.connect",
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejection;
+
+    // A late connect must not send the already-timed-out request.
+    socket().open();
+    await flush();
+    expect(socket().sent).toHaveLength(0);
+    transport.dispose();
+  });
+
   it("does not fire reconnected on the first successful connect", async () => {
     const { transport, socket } = createHarness();
     const reconnected = vi.fn();
