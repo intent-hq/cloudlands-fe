@@ -222,13 +222,16 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     // (Threshold rebased from 200 after IPC batch 8 retired the caller-less
     // legacy clients — lib/api/{client,mcp-client,ssh-client}.ts and
     // panel-layout-history.client.ts — and their ~25 channels; rebased again
-    // from 150 after telemetry removal shrank the scan to ~150 channels.)
-    expect(invoked.size).toBeGreaterThan(140);
+    // from 150 after telemetry removal shrank the scan to ~150 channels, and
+    // from 140 after the legacy-surface removal — SSH/remote-fs,
+    // third-party sources, patch/reference actions, native dialog pickers —
+    // shrank the scan to ~115 channels.)
+    expect(invoked.size).toBeGreaterThan(105);
     // git:status moved to the daemon (backendRequest('git.status'), 4C-3) and
     // git:show-file followed with D2 (backendRequest('git.showFile'));
     // git:numstat remains a local-IPC invoke (bridged via git-bridge-seeder).
     expect(invoked.has('git:numstat')).toBe(true);
-    expect(invoked.has('dialog:open')).toBe(true);
+    expect(invoked.has('dialog:message')).toBe(true);
     // Aliased import call site (`import { invoke as invokeIpc }`, link-handler.ts).
     expect(invoked.has('shell:openExternal')).toBe(true);
     // Nested-generic call site (`invokeIpc<AutoUpdateResponse<UpdateState>>`,

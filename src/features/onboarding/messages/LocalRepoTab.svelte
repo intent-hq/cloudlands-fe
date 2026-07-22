@@ -6,6 +6,7 @@
    * plus a folder picker button. Adapts patterns from RepoSelector.svelte
    * and CommandPalette for the onboarding flow.
    */
+  import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
