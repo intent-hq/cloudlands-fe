@@ -89,7 +89,7 @@ pnpm tsc -p tsconfig.preload.json --noEmit  # preload
 The renderer is a **thin presenter** over the daemon. Correctness, business rules, and
 persistence live in `intentd`; the FE renders what the daemon sends and dispatches user
 intent back. The wire contract is
-[`../../docs/00_initial_porting/PROTOCOL.md`](../../docs/00_initial_porting/PROTOCOL.md);
+[`../../docs/PROTOCOL.md`](../../docs/PROTOCOL.md);
 treat it as the single source of truth.
 
 ### Less logic on the client
@@ -107,7 +107,7 @@ treat it as the single source of truth.
   BE-owned payloads on the way in — no defensive defaults to mask missing fields, no
   client-side "fixups" of shapes, no quiet renames.
 - Any wire mismatch is resolved at the **diverging side** versus
-  `docs/00_initial_porting/PROTOCOL.md`: the BE is the preferred fix-site (it owns the
+  `docs/PROTOCOL.md`: the BE is the preferred fix-site (it owns the
   contract), or PROTOCOL.md is updated when the documented shape itself is wrong. The FE
   is never bent to silently absorb a divergence.
 - Recent example: `tool_use` and `tool_result` blocks must pair by
