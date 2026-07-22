@@ -169,15 +169,7 @@ interface Props {
                 : 'bg-background text-muted-foreground border-border hover:bg-muted'}"
               onclick={() => {
                 if (transport !== 'ssh') {
-                  // Reset all fields when switching to SSH
-                  name = '';
-                  host = '';
-                  port = 22;
-                  authMode = 'agent';
-                  keyPath = '';
-                  password = '';
-                  workspacePath = '';
-                  error = '';
+                  resetForm();
                   transport = 'ssh';
                 }
               }}
@@ -191,16 +183,7 @@ interface Props {
                 : 'bg-background text-muted-foreground border-border hover:bg-muted'}"
               onclick={() => {
                 if (transport !== 'websocket') {
-                  // Reset all fields when switching to WebSocket
-                  name = '';
-                  wsUrl = '';
-                  username = '';
-                  workspacePath = '';
-                  // Clear SSH auth fields since WebSocket doesn't use them
-                  authMode = 'agent';
-                  keyPath = '';
-                  password = '';
-                  error = '';
+                  resetForm();
                   transport = 'websocket';
                 }
               }}
