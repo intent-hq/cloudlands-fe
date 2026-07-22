@@ -30,12 +30,16 @@ import { createLogger } from "$lib/utils/client-logger";
 import {
   clearAllWorkspaceModels,
   clearWorkspaceModel,
+  reloadModelsForProvider,
   selectModel,
   setSelectedModel,
   setWorkspaceModel,
 } from "$store/renderer/slices/model/model-slice";
 import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
-import { parseCompoundModelId } from "$shared/config/provider-config";
+import {
+  getAllProviderIds,
+  parseCompoundModelId,
+} from "$shared/config/provider-config";
 
 const logger = createLogger("ModelSelectionPersistenceService");
 
@@ -74,12 +78,19 @@ export function createModelSelectionPersistenceMiddleware(): StoreMiddleware {
             // (resolveOnboardingModel, provider persistence) sees it. The
             // re-dispatched setActiveProvider is persisted to
             // `providers.active` (PROTOCOL §5.12) by the provider-settings
-            // persistence middleware.
+            // persistence middleware, and reloadModelsForProvider refetches
+            // the daemon catalog for the new provider (clearing the previous
+            // provider's `availableModels` up front) — matching every other
+            // setActiveProvider call site. The switch is gated on a known
+            // provider id so a malformed compound prefix cannot flip
+            // `activeProviderId` globally.
             if (
               compoundProviderId.length > 0 &&
-              compoundProviderId !== activeProviderId
+              compoundProviderId !== activeProviderId &&
+              getAllProviderIds().includes(compoundProviderId)
             ) {
               appStore.dispatch(setActiveProvider(compoundProviderId));
+              appStore.dispatch(reloadModelsForProvider());
             }
             appStore.dispatch(setSelectedModel({ providerId, model }));
           }

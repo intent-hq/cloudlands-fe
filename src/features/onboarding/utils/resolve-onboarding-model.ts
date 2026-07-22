@@ -36,6 +36,7 @@ import {
   PROVIDER_MODEL_TIERS,
   getDefaultModelForProvider,
   getDefaultProviderId,
+  isModelValidForProvider,
   parseCompoundModelId,
 } from '$shared/config/provider-config';
 import { resolvePreferredDefaultModel } from '$lib/utils/effective-model-resolution';
@@ -167,7 +168,14 @@ async function resolveDynamicProviderModel(
   const storeModel = selectSelectedModel.select(state, provider);
 
   if (provider === activeProvider) {
-    const fromStore = selectAvailableModels.select(state).map((m) => m.value);
+    // Only trust entries that actually belong to this provider — right after
+    // a provider switch the flat `availableModels` list can still hold the
+    // previous provider's catalog until reloadModelsForProvider resolves, and
+    // resolving against it would return another provider's model id.
+    const fromStore = selectAvailableModels
+      .select(state)
+      .map((m) => m.value)
+      .filter((value) => isModelValidForProvider(value, provider));
     const picked = resolvePreferredDefaultModel(fromStore, storeModel);
     if (picked) return picked;
   }

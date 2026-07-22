@@ -342,6 +342,32 @@ describe('resolveOnboardingModel', () => {
       expect(result.model).toBe(PI_MODEL);
     });
 
+    it('resolves the stored pi model even when availableModels still holds the previous provider catalog', async () => {
+      // Realistic renderer state right after the persistence middleware flips
+      // the provider: the flat `availableModels` list was loaded at boot for
+      // the then-active provider (auggie) and the reload has not resolved
+      // yet. The resolver must not match UI_MODEL_PREFERENCE against the
+      // stale auggie catalog and return 'opus4.7' for provider 'pi'.
+      pinnedCoordinator();
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: true },
+      });
+      mockState.activeProviderId = 'pi';
+      mockState.selectedModelByProvider = { pi: PI_MODEL };
+      mockState.availableModels = [
+        { value: 'opus4.7', label: 'Opus 4.7' },
+        { value: 'sonnet4.5', label: 'Sonnet 4.5' },
+      ];
+      mockState.modelsByProvider = { pi: [{ value: PI_MODEL, label: 'Claude Opus 4.7' }] };
+
+      const result = await resolveOnboardingModel(fakeState);
+
+      expect(result.provider).toBe('pi');
+      expect(result.model).toBe(PI_MODEL);
+      expect(result.model).not.toBe('opus4.7');
+    });
+
     it('falls back to the stored pi model when the models.list fetch returns empty', async () => {
       pinnedCoordinator();
       setAvailability({ pi: { available: true, authenticated: true } });
