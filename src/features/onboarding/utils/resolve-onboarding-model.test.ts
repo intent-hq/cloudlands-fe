@@ -8,6 +8,16 @@ import {
 import type { StoreState } from '$store/renderer/types';
 import type { ProviderAvailabilityResult } from '$features/providers/provider-availability.client';
 
+interface MockSpecialist {
+  id: string;
+  name: string;
+  description: string;
+  codingAgent?: string;
+  defaultModel?: string;
+  defaultModelTier?: 'fast' | 'balanced' | 'smart';
+  defaultBehaviorPrompt?: string;
+}
+
 const mockState = vi.hoisted(() => ({
   availability: {
     hasAnyProvider: true,
@@ -26,6 +36,7 @@ const mockState = vi.hoisted(() => ({
   } as ProviderAvailabilityResult,
   activeProviderId: 'auggie',
   selectedModel: '',
+  selectedModelByProvider: {} as Record<string, string>,
   availableModels: [] as Array<{ value: string; label: string; description?: string }>,
   modelsByProvider: {} as Record<string, Array<{ value: string; label: string; description?: string }>>,
   userOverrides: { modelOverrides: {} as Record<string, string> },
@@ -37,7 +48,7 @@ const mockState = vi.hoisted(() => ({
       defaultModelTier: 'smart' as const,
       defaultBehaviorPrompt: 'coordinator-prompt',
     },
-  ],
+  ] as MockSpecialist[],
 }));
 
 vi.mock('$features/providers/provider-availability.client', () => ({
@@ -70,7 +81,11 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectSelectedModel: makeSelector((_providerId?: string) => mockState.selectedModel),
+  selectSelectedModel: makeSelector(
+    (providerId?: string) =>
+      (providerId ? mockState.selectedModelByProvider[providerId] : undefined) ??
+      mockState.selectedModel,
+  ),
   selectAvailableModels: makeSelector(() => mockState.availableModels),
 }));
 
@@ -136,9 +151,19 @@ describe('resolveOnboardingModel', () => {
     setAvailability({ auggie: { available: true, authenticated: true } });
     mockState.activeProviderId = 'auggie';
     mockState.selectedModel = '';
+    mockState.selectedModelByProvider = {};
     mockState.availableModels = [];
     mockState.modelsByProvider = {};
     mockState.userOverrides = { modelOverrides: {} };
+    mockState.specialists = [
+      {
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: 'Plans work',
+        defaultModelTier: 'smart',
+        defaultBehaviorPrompt: 'coordinator-prompt',
+      },
+    ];
   });
 
   it('returns auggie opus4.7 when only auggie is installed and authenticated', async () => {
@@ -259,6 +284,140 @@ describe('resolveOnboardingModel', () => {
     mockState.activeProviderId = 'opencode';
 
     await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/opencode/);
+  });
+
+  describe('user-selected Pi model (provider propagation regression)', () => {
+    const PI_MODEL = 'pi:anthropic/claude-opus-4.7';
+
+    // Mirrors the real Coordinator file specialist that pins auggie/fable-5.
+    const pinnedCoordinator = (): void => {
+      mockState.specialists = [
+        {
+          id: 'spec-writer',
+          name: 'Coordinator',
+          description: 'Plans work',
+          codingAgent: 'auggie',
+          defaultModel: 'fable-5',
+          defaultBehaviorPrompt: 'coordinator-prompt',
+        },
+      ];
+    };
+
+    it('routes to pi with the stored pi model when the user explicitly picked pi', async () => {
+      pinnedCoordinator();
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: true },
+      });
+      mockState.activeProviderId = 'pi';
+      mockState.selectedModelByProvider = { pi: PI_MODEL };
+      mockState.modelsByProvider = {
+        pi: [
+          { value: PI_MODEL, label: 'Claude Opus 4.7' },
+          { value: 'pi:anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
+        ],
+      };
+
+      const result = await resolveOnboardingModel(fakeState);
+
+      expect(result.provider).toBe('pi');
+      expect(result.model).toBe(PI_MODEL);
+      expect(result.model).not.toBe('fable-5');
+      expect(result.model.startsWith('auggie:')).toBe(false);
+    });
+
+    it('honors user-explicit pi under the relaxed auth gate (authenticated=undefined)', async () => {
+      pinnedCoordinator();
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: undefined },
+      });
+      mockState.activeProviderId = 'pi';
+      mockState.selectedModelByProvider = { pi: PI_MODEL };
+      mockState.availableModels = [{ value: PI_MODEL, label: 'Claude Opus 4.7' }];
+
+      const result = await resolveOnboardingModel(fakeState);
+
+      expect(result.provider).toBe('pi');
+      expect(result.model).toBe(PI_MODEL);
+    });
+
+    it('resolves the stored pi model even when availableModels still holds the previous provider catalog', async () => {
+      // Realistic renderer state right after the persistence middleware flips
+      // the provider: the flat `availableModels` list was loaded at boot for
+      // the then-active provider (auggie) and the reload has not resolved
+      // yet. The resolver must not match UI_MODEL_PREFERENCE against the
+      // stale auggie catalog and return 'opus4.7' for provider 'pi'.
+      pinnedCoordinator();
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: true },
+      });
+      mockState.activeProviderId = 'pi';
+      mockState.selectedModelByProvider = { pi: PI_MODEL };
+      mockState.availableModels = [
+        { value: 'opus4.7', label: 'Opus 4.7' },
+        { value: 'sonnet4.5', label: 'Sonnet 4.5' },
+      ];
+      mockState.modelsByProvider = { pi: [{ value: PI_MODEL, label: 'Claude Opus 4.7' }] };
+
+      const result = await resolveOnboardingModel(fakeState);
+
+      expect(result.provider).toBe('pi');
+      expect(result.model).toBe(PI_MODEL);
+      expect(result.model).not.toBe('opus4.7');
+    });
+
+    it('falls back to the stored pi model when the models.list fetch returns empty', async () => {
+      pinnedCoordinator();
+      setAvailability({ pi: { available: true, authenticated: true } });
+      mockState.activeProviderId = 'pi';
+      mockState.selectedModelByProvider = { pi: PI_MODEL };
+      mockState.modelsByProvider = { pi: [] };
+
+      const result = await resolveOnboardingModel(fakeState);
+
+      expect(result.provider).toBe('pi');
+      expect(result.model).toBe(PI_MODEL);
+    });
+
+    it('keeps the specialist pin (auggie/fable-5) when the user made no explicit provider change', async () => {
+      pinnedCoordinator();
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: true },
+      });
+      // activeProviderId stays at the default — the user never picked pi
+      // explicitly, even though a pi model is stored in the model slice.
+      mockState.activeProviderId = 'auggie';
+      mockState.selectedModelByProvider = { pi: PI_MODEL };
+
+      const result = await resolveOnboardingModel(fakeState);
+
+      expect(result.provider).toBe('auggie');
+      expect(result.model).toBe('fable-5');
+    });
+
+    it('throws when user-explicit pi is not installed (no silent auggie fallback)', async () => {
+      pinnedCoordinator();
+      setAvailability({ auggie: { available: true, authenticated: true } });
+      mockState.activeProviderId = 'pi';
+      mockState.selectedModelByProvider = { pi: PI_MODEL };
+
+      await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/'pi'/);
+    });
+
+    it('throws when user-explicit pi is installed but explicitly not authenticated', async () => {
+      pinnedCoordinator();
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: false },
+      });
+      mockState.activeProviderId = 'pi';
+      mockState.selectedModelByProvider = { pi: PI_MODEL };
+
+      await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/'pi'/);
+    });
   });
 });
 
