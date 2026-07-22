@@ -1,7 +1,8 @@
 /**
  * Live browser domain backed by FE-local localStorage persistence.
  *
- * Recent URLs are **explicitly FE-only state** (IMPLEMENTATION_SPEC §9 Group C)
+ * Recent URLs are **explicitly FE-only state** (a deliberate carve-out from
+ * the daemon-owned persistence model)
  * — do NOT add a daemon RPC. The domain owns `recentUrls(workspaceId)`, which
  * reads the per-workspace list from localStorage (keyed per workspace; capped
  * at `MAX_RECENT_URLS`), and `subscribe()`, which emits once, consistent with

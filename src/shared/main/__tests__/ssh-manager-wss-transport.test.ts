@@ -1,6 +1,9 @@
 /**
- * Feasibility proof for the WSS-over-SSH remote transport model
- * described in `docs/00_initial_porting/WSS_OVER_SSH.md`.
+ * Feasibility proof for the WSS-over-SSH remote transport model from the
+ * retired `WSS_OVER_SSH.md` design doc, preserved in monorepo git history:
+ * https://github.com/intent-hq/monorepo/blob/c411e18a/docs/00_initial_porting/WSS_OVER_SSH.md
+ * Remote-backend work is tracked in
+ * https://github.com/intent-hq/monorepo/issues/444.
  *
  * `SSHManager.connect` accepts `transport: 'websocket'` + `wsUrl`, opens a
  * WebSocket to that URL, wraps it in `createWebSocketStream`, and hands the
