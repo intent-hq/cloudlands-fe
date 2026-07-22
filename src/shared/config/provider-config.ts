@@ -57,7 +57,11 @@ export interface ACPProviderConfig {
   requiresEnvVar?: string;
   /** If set, this provider is only visible when this feature code is activated */
   requiresFeatureCode?: string;
-  /** CLI args to check auth status (e.g., ['auth', 'status']). Exit 0 = authenticated. */
+  /**
+   * CLI args to check auth status (e.g., ['auth', 'status']). Exit 0 =
+   * authenticated. Unused in this build — auth verdicts come from the
+   * daemon's `host.providerAuthStatus` — kept for upstream parity.
+   */
   authCheckArgs?: string[];
   /** URL to login/auth docs for this provider */
   loginDocsUrl?: string;
@@ -190,8 +194,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     canBeDisabled: true,
     ipcChannelPrefix: 'droid',
     // Droid has no `models`/`auth status` CLI subcommand. Readiness is
-    // verified via an ACP probe (initialize + session/new returning a
-    // non-empty model list) — see droid-acp-probe.ts.
+    // verified by the daemon via an ACP probe (initialize + session/new
+    // returning a non-empty model list) — see `host.providerAuthStatus`.
     loginDocsUrl: 'https://docs.factory.ai/cli/getting-started/overview',
   },
 
