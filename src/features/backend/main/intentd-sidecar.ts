@@ -442,7 +442,7 @@ async function spawnSidecarProcess(
     spawnEnv.INTENTD_DATA_DIR = env.INTENTD_DATA_DIR.trim();
   }
 
-  sidecarProcess = spawn(binaryPath, ['serve', '--listen', 'uds'], {
+  sidecarProcess = spawn(binaryPath, ['serve'], {
     env: spawnEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
