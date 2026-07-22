@@ -11,7 +11,13 @@
  * shared window listener, which is detached whenever the stack empties.
  */
 
-type EscapeCallback = () => void;
+/**
+ * Layer callback. Receives the Escape keydown event and may return `false` to
+ * decline handling: the utility then neither calls preventDefault /
+ * stopImmediatePropagation nor consults lower layers — the Escape falls
+ * through to non-stack handlers (e.g. a focused input's own keydown).
+ */
+type EscapeCallback = (event: KeyboardEvent) => boolean | void;
 
 interface EscapeLayer {
   onEscape: EscapeCallback;
@@ -24,9 +30,9 @@ function handleWindowKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return;
   const top = stack[stack.length - 1];
   if (!top) return;
+  if (top.onEscape(e) === false) return;
   e.preventDefault();
   e.stopImmediatePropagation();
-  top.onEscape();
 }
 
 function attachListenerIfNeeded(): void {
@@ -45,6 +51,7 @@ function detachListenerIfEmpty(): void {
  * Register an escape layer on top of the stack.
  *
  * @param onEscape Called when Escape is pressed while this layer is topmost.
+ *   Return `false` to decline handling (see {@link EscapeCallback}).
  * @returns A release function that unregisters the layer (from anywhere in the
  *   stack, not just the top). Safe to call more than once.
  */

@@ -13,7 +13,7 @@ let push: EscapeLayersModule['pushEscapeLayer'];
 let releases: Array<() => void> = [];
 
 /** Push a layer and record its release so afterEach can drain the stack. */
-function pushEscapeLayer(onEscape: () => void): () => void {
+function pushEscapeLayer(onEscape: (event: KeyboardEvent) => boolean | void): () => void {
   const release = push(onEscape);
   releases.push(release);
   return release;
@@ -167,5 +167,64 @@ describe('escapeLayers', () => {
     pressEscape();
 
     expect(onEscape).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the keydown event to the topmost layer callback', () => {
+    const onEscape = vi.fn();
+    pushEscapeLayer(onEscape);
+
+    const event = pressEscape();
+
+    expect(onEscape).toHaveBeenCalledWith(event);
+  });
+
+  describe('decline handling (callback returns false)', () => {
+    it('leaves the event untouched so it falls through to non-stack handlers', () => {
+      pushEscapeLayer(() => false);
+
+      const event = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      });
+      const stopImmediatePropagationSpy = vi.spyOn(event, 'stopImmediatePropagation');
+      window.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(stopImmediatePropagationSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not consult lower layers when the top layer declines', () => {
+      const bottom = vi.fn();
+      const decliner = vi.fn(() => false);
+      pushEscapeLayer(bottom);
+      pushEscapeLayer(decliner);
+
+      pressEscape();
+
+      expect(decliner).toHaveBeenCalledTimes(1);
+      expect(bottom).not.toHaveBeenCalled();
+    });
+
+    it('keeps a declining layer on the stack so it can handle a later Escape', () => {
+      let decline = true;
+      const onEscape = vi.fn(() => (decline ? false : undefined));
+      pushEscapeLayer(onEscape);
+
+      pressEscape();
+      decline = false;
+      const event = pressEscape();
+
+      expect(onEscape).toHaveBeenCalledTimes(2);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('treats a void return as handled', () => {
+      pushEscapeLayer(() => undefined);
+
+      const event = pressEscape();
+
+      expect(event.defaultPrevented).toBe(true);
+    });
   });
 });
