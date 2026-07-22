@@ -65,6 +65,10 @@ import {
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
 import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
+import {
+  removePendingAgentDeletion,
+  setPendingAgentDeletion,
+} from "$features/agent/utils/pending-agent-deletions";
 import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentMessage, AgentSession } from "$shared/types";
 
@@ -575,6 +579,35 @@ describe("lifecycleReadService (hydrateAgentsRequested → agents.list convergen
 
     expect(agentsApi.list).toHaveBeenCalledTimes(2);
     expect(appStore.state.agentSessions.byAgentId[agentId]?.messages).toEqual(transcript);
+  });
+
+  // Regression: an agent with a pending soft-hidden deletion (undo window
+  // still open, so the daemon still lists it) must be dropped from the
+  // hydrated list — re-adding it would resurrect a deleted agent whenever
+  // another agent's lifecycle event triggers a rehydrate.
+  it("drops agents with a pending soft-hidden deletion from the hydrated list", async () => {
+    const ws = "ws-agents-pending-del";
+    const doomed = makeAgent("agent-pending-del", ws);
+    const kept = makeAgent("agent-pending-kept", ws);
+    setPendingAgentDeletion({
+      wsId: ws,
+      agentId: "agent-pending-del",
+      snapshot: doomed,
+      timer: null,
+    });
+    try {
+      agentsApi.list.mockResolvedValueOnce([doomed, kept] as never);
+      appStore.dispatch(hydrateAgentsRequested(ws));
+      await flush();
+
+      const wsAgents = appStore.state.workspaceAgents.byWorkspaceId[ws];
+      expect(wsAgents?.agentIds).toEqual(["agent-pending-kept"]);
+      expect(wsAgents?.activeAgentId).toBe("agent-pending-kept");
+      expect(appStore.state.agentSessions.byAgentId["agent-pending-del"]).toBeUndefined();
+      expect(appStore.state.agentSessions.byAgentId["agent-pending-kept"]).toBeDefined();
+    } finally {
+      removePendingAgentDeletion("agent-pending-del");
+    }
   });
 
   // Regression (LEAK-1 review #2): a purge landing while an `agents:{wsId}`

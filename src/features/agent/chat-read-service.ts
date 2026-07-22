@@ -47,6 +47,7 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { createLogger } from "$lib/utils/client-logger";
 import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
+import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
 
 const logger = createLogger("ChatReadService");
 
@@ -62,6 +63,10 @@ const inFlight = new Map<string, Promise<void>>();
  * same agent share one fetch.
  */
 export async function loadChatTranscript(agentId: string): Promise<void> {
+  // A soft-hidden deletion is pending (undo window still open): the daemon
+  // still returns the agent, so hydrating would re-upsert the deleted
+  // session. Skip entirely.
+  if (isAgentDeletionPending(agentId)) return;
   const pending = inFlight.get(agentId);
   if (pending) return pending;
 

@@ -65,6 +65,12 @@ import {
   undoAgentDeletionRequested,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import { createLogger } from "$lib/utils/client-logger";
+import {
+  getPendingAgentDeletion,
+  listPendingAgentDeletions,
+  removePendingAgentDeletion,
+  setPendingAgentDeletion,
+} from "./utils/pending-agent-deletions";
 
 const logger = createLogger("AgentMutationService");
 
@@ -76,21 +82,6 @@ async function getToast() {
   const { toast } = await import("svelte-sonner");
   return toast;
 }
-
-/**
- * Soft-hidden agent deletions awaiting commit, keyed by agentId. Transient,
- * UI-only state (per src/store AGENTS.md) — it never enters Redux. Each entry
- * snapshots the removed session so `undo` can restore it without a wire call,
- * and holds the timer that commits the real `agent.delete` when the undo window
- * elapses.
- */
-interface PendingAgentDeletion {
-  wsId: string;
-  agentId: string;
-  snapshot: AgentSession;
-  timer: ReturnType<typeof setTimeout> | null;
-}
-const pendingAgentDeletions = new Map<string, PendingAgentDeletion>();
 
 /** Direct one-time session read, dependency-light (no selector import). */
 function readSession(agentId: string): AgentSession | undefined {
@@ -258,10 +249,10 @@ async function showDeletionError(message: string): Promise<void> {
  * un-hidden and the error surfaced. Idempotent: a no-op if nothing is pending.
  */
 async function commitAgentDeletion(agentId: string): Promise<void> {
-  const pending = pendingAgentDeletions.get(agentId);
+  const pending = getPendingAgentDeletion(agentId);
   if (!pending) return;
   if (pending.timer) clearTimeout(pending.timer);
-  pendingAgentDeletions.delete(agentId);
+  removePendingAgentDeletion(agentId);
   try {
     const result = await appClient.agents.delete(pending.agentId, pending.wsId);
     if (!result.success) {
@@ -313,11 +304,11 @@ function handleDeleteWithUndo(
       appStore.dispatch(action.success(null));
       return;
     }
-    const existing = pendingAgentDeletions.get(agentId);
+    const existing = getPendingAgentDeletion(agentId);
     if (existing?.timer) clearTimeout(existing.timer);
     softHideSession(wsId, agentId);
     const timer = setTimeout(() => void commitAgentDeletion(agentId), UNDO_DURATION_MS);
-    pendingAgentDeletions.set(agentId, { wsId, agentId, snapshot, timer });
+    setPendingAgentDeletion({ wsId, agentId, snapshot, timer });
     void showUndoToast(wsId, agentId, agentName);
     appStore.dispatch(action.success(snapshot));
   } catch (error) {
@@ -362,13 +353,13 @@ function handleUndoDeletion(
 ): void {
   const [, agentId] = action.payload;
   try {
-    const pending = pendingAgentDeletions.get(agentId);
+    const pending = getPendingAgentDeletion(agentId);
     if (!pending) {
       appStore.dispatch(action.success(false));
       return;
     }
     if (pending.timer) clearTimeout(pending.timer);
-    pendingAgentDeletions.delete(agentId);
+    removePendingAgentDeletion(agentId);
     restoreHiddenSession(pending.snapshot);
     appStore.dispatch(action.success(true));
   } catch (error) {
@@ -386,7 +377,7 @@ async function handleFlushPendingDeletions(
 ): Promise<void> {
   const [wsId] = action.payload;
   try {
-    const pending = [...pendingAgentDeletions.values()].filter((entry) => entry.wsId === wsId);
+    const pending = listPendingAgentDeletions().filter((entry) => entry.wsId === wsId);
     await Promise.all(pending.map((entry) => commitAgentDeletion(entry.agentId)));
     appStore.dispatch(action.success(undefined as never));
   } catch (error) {

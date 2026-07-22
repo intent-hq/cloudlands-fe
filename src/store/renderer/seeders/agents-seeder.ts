@@ -17,6 +17,7 @@
  * barrel before agents-seeder runs.
  */
 import { registerMockSeeder } from "../mock-bootstrap";
+import { isAgentDeletionPending } from "$features/agent/utils/pending-agent-deletions";
 import { bulkUpsertSessions, upsertSession } from "../slices/agent-session/agent-session-slice";
 import {
   setActiveAgentId,
@@ -28,7 +29,12 @@ registerMockSeeder("agents", async ({ store, client }) => {
 
   for (const workspace of workspaces) {
     const wsId = String(workspace.id);
-    const fetched = await client.agents.list(wsId);
+    // Drop agents with a pending soft-hidden deletion (undo window still
+    // open) so the boot/seed path cannot resurrect a deleted agent — same
+    // guard `hydrateWorkspaceAgents` applies in lifecycle-read-service.ts.
+    const fetched = (await client.agents.list(wsId)).filter(
+      (agent) => !isAgentDeletionPending(String(agent.id)),
+    );
 
     store.dispatch(setAgentsLoaded(wsId, true));
     if (fetched.length === 0) continue;

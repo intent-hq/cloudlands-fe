@@ -24,6 +24,10 @@ vi.mock("$lib/client", () => ({
 }));
 
 import { appClient } from "$lib/client";
+import {
+  removePendingAgentDeletion,
+  setPendingAgentDeletion,
+} from "$features/agent/utils/pending-agent-deletions";
 import { selectAgentSession } from "../slices/agent-session/agent-session-selectors";
 import { bulkUpsertSessions } from "../slices/agent-session/agent-session-slice";
 import { selectActiveAgentId } from "../slices/workspace-agents/workspace-agents-selectors";
@@ -174,6 +178,33 @@ describe("agents-seeder", () => {
       // THEN: activeAgentId is preserved (still AGENT_ID_1, not auto-switched to AGENT_ID_2)
       const activeAgentId = selectActiveAgentId.select(store.state, WORKSPACE_ID);
       expect(activeAgentId).toBe(AGENT_ID_1);
+    });
+  });
+
+  describe("pending-deletion guard", () => {
+    // Regression: an agent with a pending soft-hidden deletion (undo window
+    // still open, so the daemon still lists it) must not be re-added by the
+    // boot/seed path — same guard hydrateWorkspaceAgents applies.
+    it("filters agents with a pending soft-hidden deletion from the seeded list", async () => {
+      const WORKSPACE_ID = "ws-pending-del-seed";
+      const DOOMED = "agent-doomed-seed";
+      const KEPT = "agent-kept-seed";
+      const doomed: AgentSession = { id: DOOMED, workspaceId: WORKSPACE_ID, name: "Doomed", isBackground: false, messages: [], status: "idle" };
+      const kept: AgentSession = { id: KEPT, workspaceId: WORKSPACE_ID, name: "Kept", isBackground: false, messages: [], status: "idle" };
+      setPendingAgentDeletion({ wsId: WORKSPACE_ID, agentId: DOOMED, snapshot: doomed, timer: null });
+      try {
+        mockedClient.workspaces.list.mockResolvedValueOnce([{ id: WORKSPACE_ID }]);
+        mockedClient.agents.list.mockResolvedValueOnce([doomed, kept]);
+
+        const { seedMockStore } = await import("../mock-bootstrap");
+        await seedMockStore(store, appClient);
+
+        expect(selectAgentSession.select(store.state, DOOMED)).toBeUndefined();
+        expect(selectAgentSession.select(store.state, KEPT)).toBeDefined();
+        expect(selectActiveAgentId.select(store.state, WORKSPACE_ID)).toBe(KEPT);
+      } finally {
+        removePendingAgentDeletion(DOOMED);
+      }
     });
   });
 
