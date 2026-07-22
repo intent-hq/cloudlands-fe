@@ -114,7 +114,8 @@
     !provider.statusLoading && (needsInstall || needsLogin || needsUpdate),
   );
   const cardClickable = $derived(
-    (provider.id === 'auggie' && needsAction) ||
+    ready ||
+      (provider.id === 'auggie' && needsAction) ||
       (!ready && !provider.statusLoading && provider.id !== 'auggie' && !!provider.docsUrl),
   );
 
@@ -160,7 +161,7 @@
     class={cn(
       'group/card relative w-full aspect-[3/4] flex flex-col justify-between p-7 text-left rounded-xl overflow-hidden transition-colors duration-500 border',
       cardClickable ? 'cursor-pointer border-transparent' : 'cursor-default border-border',
-      !ready && needsAction && 'border-border',
+      (ready || needsAction) && 'border-border',
       installed && brand.isLight && 'text-slate-800',
       installed && !brand.isLight && 'text-white',
     )}
