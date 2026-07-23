@@ -108,6 +108,12 @@
   import { store as appStore } from '$store/renderer/store';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
+  import {
+  buildNewWorkspaceDraftPayload,
+  clearNewWorkspaceDraft,
+  persistNewWorkspaceDraft,
+  restoreNewWorkspaceDraft,
+} from './initializer/new-workspace-draft';
 
   const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
@@ -115,7 +121,6 @@
   const logger = createLogger('CompactWorkspaceInitializer');
 
   // Constants
-  const FORM_STATE_KEY = 'compact-workspace-initializer-state';
   const PREFILL_KEY = 'workspace-prefill';
 
   function hasWorkspacePrefillData(): boolean {
@@ -401,8 +406,9 @@
     savedState?.scope && savedState?.repoPath === savedState?.scopeRepoPath ? savedState.scope : '',
   ); // Scope for subdirectories of git repos
   let remoteSetup: any = $state(savedState?.remoteSetup ?? null);
-  // Restore prompt from sessionStorage so users don't lose drafts on navigation
-  let initialPrompt = $state(sessionStorage.getItem(`${FORM_STATE_KEY}-prompt`) ?? '');
+  // Prompt text drafts live in the daemon (drafts.*, PROTOCOL §5.16) and are
+  // restored asynchronously below so they survive full app restarts
+  let initialPrompt = $state('');
   // Context items for image attachments (images become attachment items, not inline nodes)
   let contextItems = $state<ContextItem[]>([]);
   // Use saved state first, then fall back to last submitted values, then defaults
@@ -583,19 +589,49 @@
     }
   });
 
-  // Save prompt to sessionStorage so it survives navigation (but not browser close)
-  // Debounced to avoid blocking the main thread on every keystroke
+  // Restore the modal draft (prompt text + image attachments) from the daemon
+  // (drafts.get under the reserved sentinel keys, PROTOCOL §5.16) so it
+  // survives app restarts. Gates the save effect below until it settles so an
+  // initial empty save cannot clear a not-yet-restored draft. Non-fatal.
+  let draftRestored = $state(false);
+  let draftRestoreFailed = false;
+  (async () => {
+    try {
+      const restore = await restoreNewWorkspaceDraft(appClient.drafts);
+      draftRestoreFailed = restore.status === 'error';
+      if (restore.status === 'restored') {
+        if (restore.contextItems.length > 0 && contextItems.length === 0) {
+          contextItems = restore.contextItems;
+        }
+        if (restore.text && !initialPrompt) {
+          initialPrompt = restore.text;
+          setTimeout(() => {
+            richTextarea?.setContent(restore.text);
+          }, 50);
+        }
+      }
+    } finally {
+      draftRestored = true;
+    }
+  })();
+
+  // Save the draft to the daemon (debounced) so it survives app restarts.
+  // Empty text with no attachments is the documented clear (PROTOCOL §5.16).
+  // Only the cheap dependency reads run per keystroke; payload serialization
+  // (incl. the size-guard stringify) is deferred into the debounce timeout.
+  // `contextItems` is only ever reassigned wholesale, so the reference read
+  // is sufficient for reactivity.
   let promptSaveTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
-    const prompt = initialPrompt; // read dependency
+    if (!draftRestored) return;
+    const text = initialPrompt;
+    const items = contextItems;
     if (promptSaveTimer) clearTimeout(promptSaveTimer);
     promptSaveTimer = setTimeout(() => {
-      const promptKey = `${FORM_STATE_KEY}-prompt`;
-      if (prompt) {
-        sessionStorage.setItem(promptKey, prompt);
-      } else {
-        sessionStorage.removeItem(promptKey);
-      }
+      // If the restore failed, an empty save could clear a daemon draft we
+      // never got to read — skip it. Non-empty saves still persist.
+      if (draftRestoreFailed && !text && items.length === 0) return;
+      persistNewWorkspaceDraft(appClient.drafts, buildNewWorkspaceDraftPayload(text, items));
     }, 300);
   });
 
@@ -1994,9 +2030,9 @@
     initialPrompt = '';
     contextItems = []; // Clear attachment items
     richTextarea?.clear(); // Clear the TipTap editor content
-    // Immediately clear sessionStorage to prevent prompt from persisting across navigation
-    // (the $effect may not run before navigation completes)
-    sessionStorage.removeItem(`${FORM_STATE_KEY}-prompt`);
+    // Immediately clear the persisted daemon draft (drafts.clear under the
+    // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage key
+    clearNewWorkspaceDraft(appClient.drafts);
     // Note: NOT resetting selectedSpecialist, selectedModel, modelWasOverridden, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
