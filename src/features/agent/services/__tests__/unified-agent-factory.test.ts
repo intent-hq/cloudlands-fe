@@ -414,28 +414,6 @@ describe('UnifiedAgentFactory', () => {
       });
     });
 
-    it('resets the streaming flag on a raw daemon error envelope ({success:false, error:string}) without failing creation', async () => {
-      backendRequestMock.mockResolvedValue({ success: false, error: 'Agent not found' });
-
-      const result = await factory.createAgent(mockWorkspace, {
-        name: 'Initial Agent',
-        workspaceId: mockWorkspace.id as any,
-        initialMessage: 'Initial prompt',
-      });
-      // Initial-message failure must not fail agent creation.
-      expect(result.success).toBe(true);
-
-      await vi.waitFor(() => {
-        const streamingReset = mockStoreDispatch.mock.calls.find(
-          ([action]) =>
-            action?.type === 'agentSessions/setAgentStreaming' &&
-            action?.payload?.[0] === 'agent-daemon-assigned-123' &&
-            action?.payload?.[1] === false,
-        );
-        expect(streamingReset).toBeDefined();
-      });
-    });
-
     it('resets the streaming flag when the transport rejects (BackendError-style JSON-RPC failure)', async () => {
       backendRequestMock.mockRejectedValue(
         new Error('Invalid params: content is required (-32602)'),

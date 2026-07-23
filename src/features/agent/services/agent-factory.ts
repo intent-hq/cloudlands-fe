@@ -824,8 +824,10 @@ export class UnifiedAgentFactory {
         // the BackendTransport seam. Streaming/terminal state arrives via the
         // daemon events bridge (events.subscribe → Redux); legacy-only fields
         // the daemon ignores (sessionId, agentName, systemPrompt) are no
-        // longer sent.
-        const response = await backendRequest<Record<string, unknown>>('agent.sendMessage', {
+        // longer sent. The daemon only resolves `{ success: true, queued,
+        // messageId? }` bodies — failures surface as JSON-RPC errors that
+        // backendRequest throws (handled by the catch below).
+        await backendRequest('agent.sendMessage', {
           agentId: agent.id,
           workspaceId: agent.workspaceId,
           content: message.trim(),
@@ -833,20 +835,6 @@ export class UnifiedAgentFactory {
           imageBlocks,
           userAppMessageId,
         });
-
-        // Raw daemon envelope (PROTOCOL.md §5.5): { success, queued, messageId? }
-        if (response && typeof response === 'object' && 'success' in response) {
-          if (!response.success) {
-            // The daemon surfaces errors as a plain string; legacy
-            // IpcResponse envelopes use { message }.
-            const rawError = (response as { error?: unknown }).error;
-            const errorMessage =
-              typeof rawError === 'string'
-                ? rawError
-                : (rawError as { message?: string } | undefined)?.message;
-            throw new Error(errorMessage || 'Failed to send message to backend');
-          }
-        }
       }
     } catch (error) {
       logger.error('Failed to send initial message', {
