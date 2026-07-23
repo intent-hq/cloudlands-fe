@@ -44,7 +44,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -74,7 +74,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -149,7 +149,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -179,7 +179,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -213,7 +213,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=8192'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -252,7 +252,7 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:

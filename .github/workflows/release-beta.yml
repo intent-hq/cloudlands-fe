@@ -73,7 +73,7 @@ jobs:
           fi
 
       - name: Checkout release tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ steps.release.outputs.tag }}
           token: ${{ steps.token.outputs.token }}
