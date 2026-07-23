@@ -11,6 +11,7 @@ vi.mock("$store/renderer/slices/workspace/utils/workspace.client", () => ({
     archive: vi.fn(() => Promise.resolve({ ok: true })),
     unarchive: vi.fn(() => Promise.resolve({ ok: true })),
     delete: vi.fn(() => Promise.resolve({ ok: true })),
+    create: vi.fn(() => Promise.resolve({ ok: true, data: { workspace: { id: "ws-created" } } })),
   },
 }));
 
@@ -60,6 +61,7 @@ import {
 } from "$store/renderer/slices/workspace/workspace-slice";
 import { setRepos } from "$store/renderer/slices/known-repos/known-repos-slice";
 import {
+  applyWorkspaceProposal,
   confirmBulkArchive,
   confirmBulkDeleteArchived,
   confirmRemoveRepo,
@@ -70,6 +72,8 @@ import {
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
 } from "$store/renderer/slices/workspace-operations/workspace-operations-slice";
+import { hydrateProposalLifecycle } from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice";
+import type { WorkspaceCreateProposal } from "$shared/types/proposal";
 
 const ws = workspaceClient as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const agents = vi.mocked(hasRunningAgents);
@@ -117,7 +121,12 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     ws.archive.mockResolvedValue({ ok: true } as never);
     ws.unarchive.mockResolvedValue({ ok: true } as never);
     ws.delete.mockResolvedValue({ ok: true } as never);
+    ws.create.mockResolvedValue({
+      ok: true,
+      data: { workspace: makeWorkspace({ id: "ws-created" }) },
+    } as never);
     appStore.dispatch(resetWorkspaceState());
+    appStore.dispatch(hydrateProposalLifecycle({}));
   });
 
   it("archives via the client seam and converges the store to Archived", async () => {
@@ -367,6 +376,113 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
 
       expect(bridgeInvoke).not.toHaveBeenCalled();
       expect(appStore.state.workspaceOperations.showRemoveRepoConfirm).toBe(false);
+    });
+  });
+
+  describe("apply workspace-create proposal (ProposalCard Apply)", () => {
+    function makeProposal(
+      overrides?: Partial<WorkspaceCreateProposal>,
+    ): WorkspaceCreateProposal {
+      return {
+        kind: "workspace-create",
+        payload: {
+          operation: "workspace.create",
+          params: {
+            title: "New space",
+            repositoryPath: "/repo",
+            baseRef: "main",
+            initialAgent: { name: "Coordinator", prompt: "Do the thing" },
+          },
+        },
+        preview: { title: "Create workspace" },
+        applyToolCallId: "tc-apply-1",
+        ...overrides,
+      };
+    }
+
+    function lifecycleEntry(proposalId: string) {
+      const state = appStore.state as {
+        proposalLifecycle?: Record<string, { status: string; result?: { workspaceId?: string } }>;
+      };
+      return state.proposalLifecycle?.[proposalId];
+    }
+
+    it("runs workspace.create with the proposal params and drives the lifecycle to applied", async () => {
+      appStore.dispatch(applyWorkspaceProposal({ proposal: makeProposal() }));
+      await flush();
+
+      expect(ws.create).toHaveBeenCalledTimes(1);
+      const request = ws.create.mock.calls[0][0];
+      expect(request).toMatchObject({
+        title: "New space",
+        repositoryPath: "/repo",
+        baseRef: "main",
+        initialAgent: {
+          name: "Coordinator",
+          prompt: "Do the thing",
+          metadata: { isInitialAgent: true },
+        },
+      });
+      // No client-supplied agentId: the daemon assigns the initial agent's id.
+      expect(request.initialAgent).not.toHaveProperty("agentId");
+
+      expect(lifecycleEntry("tc-apply-1")).toMatchObject({
+        status: "applied",
+        result: { workspaceId: "ws-created" },
+      });
+      expect(stored("ws-created")).toBeDefined();
+    });
+
+    it("merges editedFields overrides into the create request", async () => {
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeProposal(),
+          editedFields: { branch: "feature/x", initialPrompt: "Edited prompt" },
+        }),
+      );
+      await flush();
+
+      expect(ws.create.mock.calls[0][0]).toMatchObject({
+        baseRef: "feature/x",
+        initialAgent: { prompt: "Edited prompt" },
+      });
+    });
+
+    it("dedupes rapid double-applies via the lifecycle slice", async () => {
+      appStore.dispatch(applyWorkspaceProposal({ proposal: makeProposal() }));
+      appStore.dispatch(applyWorkspaceProposal({ proposal: makeProposal() }));
+      await flush();
+
+      expect(ws.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("marks the lifecycle failed and toasts loud when create fails", async () => {
+      ws.create.mockResolvedValueOnce({ ok: false, error: "clone failed" } as never);
+
+      appStore.dispatch(applyWorkspaceProposal({ proposal: makeProposal() }));
+      await flush();
+
+      expect(lifecycleEntry("tc-apply-1")).toMatchObject({
+        status: "failed",
+        error: "clone failed",
+      });
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("clone failed");
+    });
+
+    it("ignores non-workspace-create proposals", async () => {
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: {
+            kind: "bulk-op",
+            payload: { operation: "workspace.bulkArchive", ids: ["ws-1"] },
+            preview: { title: "Archive" },
+          },
+        }),
+      );
+      await flush();
+
+      expect(ws.create).not.toHaveBeenCalled();
     });
   });
 });

@@ -41,6 +41,7 @@ import {
   updateWorkspaceEntity,
 } from "$store/renderer/slices/workspace/workspace-slice";
 import {
+  applyWorkspaceProposal,
   closeBulkArchiveConfirm,
   closeBulkDeleteArchivedConfirm,
   closeBulkDeleteWarningConfirm,
@@ -57,6 +58,16 @@ import {
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
 } from "$store/renderer/slices/workspace-operations/workspace-operations-slice";
+import {
+  proposalApplyStarted,
+  proposalApplySucceeded,
+  proposalFailed,
+} from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice";
+import type { ProposalLifecycleState } from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-types";
+import { buildCreateWorkspaceRequestFromProposal } from "$store/renderer/slices/workspace-operations/utils/workspace-create-proposal";
+import { getProposalId } from "$lib/components/chat/proposals/proposal-id";
+import { isWorkspaceCreateProposal } from "$shared/types/proposal";
+import type { WorkspaceProposalApplyPayload } from "$shared/app-workspace-operations";
 import { removeRepo } from "$store/renderer/slices/known-repos/known-repos-slice";
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
 import { invoke } from "$lib/electron-bridge";
@@ -520,6 +531,65 @@ export async function removeRepoFromRegistry(): Promise<void> {
 }
 
 /**
+ * Apply a `workspace-create` proposal (the ProposalCard "Create workspace"
+ * button dispatches `applyWorkspaceProposal`). Restores the handling the
+ * deleted saga (`handleApplyWorkspaceProposal`, PR #695) provided, adapted to
+ * the daemon-owned create flow: the daemon runs the full orchestration inside
+ * one `workspace.create` (PROTOCOL §5.1) — worktree, spec seed, initial agent,
+ * prompt — so no client-side agent activation follows. Other proposal kinds
+ * are no-ops here (settings/specialist proposals have their own appliers).
+ *
+ * Lifecycle: dedupes rapid double-clicks via the proposal-lifecycle slice
+ * (`applying`/`applied` short-circuit), then drives applyStarted →
+ * applySucceeded (with `result.workspaceId`, which ProposalCard renders as the
+ * "Open space" link) or proposalFailed + a loud toast.
+ */
+export async function applyWorkspaceCreateProposal(
+  payload: WorkspaceProposalApplyPayload,
+): Promise<void> {
+  const { proposal, editedFields } = payload;
+  if (!isWorkspaceCreateProposal(proposal)) return;
+
+  const proposalId = getProposalId(proposal);
+  const lifecycle = (
+    appStore.state as { proposalLifecycle?: ProposalLifecycleState }
+  ).proposalLifecycle?.[proposalId];
+  if (lifecycle?.status === "applying" || lifecycle?.status === "applied") return;
+
+  appStore.dispatch(proposalApplyStarted({ proposalId, startedAt: Date.now() }));
+
+  try {
+    const request = buildCreateWorkspaceRequestFromProposal(proposal, editedFields);
+    const result = await workspaceClient.create(request);
+    if (!result.ok) {
+      throw new Error(result.error || "Failed to create space");
+    }
+
+    appStore.dispatch(setWorkspaceEntity(result.data.workspace));
+    appStore.dispatch(
+      proposalApplySucceeded({
+        proposalId,
+        completedAt: Date.now(),
+        result: { workspaceId: result.data.workspace.id },
+      }),
+    );
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("Failed to apply workspace-create proposal", error);
+    appStore.dispatch(
+      proposalFailed({
+        proposalId,
+        error: errorMessage,
+        completedAt: Date.now(),
+        lastAction: "apply",
+      }),
+    );
+    const toast = await getToast();
+    toast.error(errorMessage || "Failed to create space");
+  }
+}
+
+/**
  * Middleware that gives the workspace-operation triggers a real handler: after
  * each action passes through the (no-op) reducer, it routes the trigger to the
  * matching seam-backed handler. Fire-and-forget — dispatch stays synchronous and
@@ -531,6 +601,11 @@ export function createWorkspaceOperationsMiddleware(): StoreMiddleware {
     if (action && typeof action.type === "string") {
       const payload = Array.isArray(action.payload) ? action.payload : [];
       switch (action.type) {
+        case applyWorkspaceProposal.type:
+          if (payload[0] && typeof payload[0] === "object") {
+            void applyWorkspaceCreateProposal(payload[0] as WorkspaceProposalApplyPayload);
+          }
+          break;
         case requestArchiveWorkspace.type:
           if (typeof payload[0] === "string") void archiveWorkspace(payload[0]);
           break;
