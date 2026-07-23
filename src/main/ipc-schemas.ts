@@ -760,6 +760,8 @@ export const GitTrackingSearchPullRequestsSchema = z.object({
     .object({
       filter: z.enum(['all', 'assigned', 'created', 'review-requested', 'involves']).optional(),
       state: z.enum(['open', 'closed']).optional(),
+      query: z.string().optional(),
+      nextToken: z.string().optional(),
       per_page: z.number().optional(),
     })
     .optional(),
@@ -804,6 +806,8 @@ export const GitTrackingSearchGithubIssuesSchema = z.object({
     .object({
       filter: z.enum(['all', 'assigned', 'created', 'review-requested', 'involves']).optional(),
       state: z.enum(['open', 'closed']).optional(),
+      query: z.string().optional(),
+      nextToken: z.string().optional(),
       per_page: z.number().optional(),
     })
     .optional(),

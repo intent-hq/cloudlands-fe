@@ -280,7 +280,9 @@ export class GitHubService {
 
   /**
    * Search pull requests for a repository — `github.pulls.search` (PROTOCOL §5.27).
-   * Supports filter on author/assignee/review-requested/involves.
+   * Supports filter on author/assignee/review-requested/involves, free-text
+   * `query`, and cursor pagination (`nextToken`). Returns the
+   * `{ pulls, nextToken }` page envelope.
    */
   async searchPullRequests(
     owner: string,
@@ -288,22 +290,32 @@ export class GitHubService {
     options?: {
       filter?: 'all' | 'assigned' | 'created' | 'review-requested' | 'involves';
       state?: 'open' | 'closed';
+      query?: string;
+      nextToken?: string;
       per_page?: number;
       force?: boolean;
     },
-  ): Promise<PullRequest[]> {
+  ): Promise<{ pulls: PullRequest[]; nextToken: string | null }> {
     const isAuth = await this.isAuthenticated();
     if (!isAuth) {
       logger.debug('Not authenticated, returning empty PR search results');
-      return [];
+      return { pulls: [], nextToken: null };
     }
 
+    // `rest` (incl. query/nextToken) participates in the cache key so distinct
+    // searches and pages are never served each other's results.
     const { force, per_page, ...rest } = options || {};
     const cacheKey = `prs-search:${owner}/${repo}:${JSON.stringify({ ...rest, per_page })}`;
     if (!force) {
-      const cached = this.getFromCache<PullRequest[]>(cacheKey);
+      const cached = this.getFromCache<{ pulls: PullRequest[]; nextToken: string | null }>(
+        cacheKey,
+      );
       if (cached) {
-        logger.debug('Returning cached PR search results', { owner, repo, count: cached.length });
+        logger.debug('Returning cached PR search results', {
+          owner,
+          repo,
+          count: cached.pulls.length,
+        });
         return cached;
       }
     }
@@ -317,13 +329,16 @@ export class GitHubService {
         nextToken?: string;
       }>('github.pulls.search', params);
 
-      const pullRequests: PullRequest[] = (response?.pulls ?? []).map(toPullRequest);
-      this.setCache(cacheKey, pullRequests);
-      logger.info('Searched PRs successfully', { owner, repo, count: pullRequests.length });
-      return pullRequests;
+      const result = {
+        pulls: (response?.pulls ?? []).map(toPullRequest),
+        nextToken: typeof response?.nextToken === 'string' ? response.nextToken : null,
+      };
+      this.setCache(cacheKey, result);
+      logger.info('Searched PRs successfully', { owner, repo, count: result.pulls.length });
+      return result;
     } catch (error) {
       logger.error('Failed to search pull requests', error as Error, { owner, repo });
-      return [];
+      return { pulls: [], nextToken: null };
     }
   }
 
@@ -513,7 +528,9 @@ export class GitHubService {
 
   /**
    * Search issues for a repository — `github.issues.search` (PROTOCOL §5.27).
-   * Uses `is:issue` filter server-side to exclude PRs.
+   * Uses `is:issue` filter server-side to exclude PRs. Supports free-text
+   * `query` and cursor pagination (`nextToken`). Returns the
+   * `{ issues, nextToken }` page envelope.
    */
   async searchIssues(
     owner: string,
@@ -521,19 +538,29 @@ export class GitHubService {
     options?: {
       filter?: 'all' | 'assigned' | 'created' | 'review-requested' | 'involves';
       state?: 'open' | 'closed';
+      query?: string;
+      nextToken?: string;
       per_page?: number;
     },
-  ): Promise<GitHubIssue[]> {
+  ): Promise<{ issues: GitHubIssue[]; nextToken: string | null }> {
     const isAuth = await this.isAuthenticated();
     if (!isAuth) {
       logger.debug('Not authenticated, returning empty issue search results');
-      return [];
+      return { issues: [], nextToken: null };
     }
 
+    // Options (incl. query/nextToken) participate in the cache key so distinct
+    // searches and pages are never served each other's results.
     const cacheKey = `issues-search:${owner}/${repo}:${JSON.stringify(options || {})}`;
-    const cached = this.getFromCache<GitHubIssue[]>(cacheKey);
+    const cached = this.getFromCache<{ issues: GitHubIssue[]; nextToken: string | null }>(
+      cacheKey,
+    );
     if (cached) {
-      logger.debug('Returning cached issue search results', { owner, repo, count: cached.length });
+      logger.debug('Returning cached issue search results', {
+        owner,
+        repo,
+        count: cached.issues.length,
+      });
       return cached;
     }
 
@@ -547,18 +574,19 @@ export class GitHubService {
         nextToken?: string;
       }>('github.issues.search', params);
 
-      const issues: GitHubIssue[] = (response?.issues ?? []).map((issue) =>
-        toIssue(issue, owner, repo),
-      );
+      const result = {
+        issues: (response?.issues ?? []).map((issue) => toIssue(issue, owner, repo)),
+        nextToken: typeof response?.nextToken === 'string' ? response.nextToken : null,
+      };
 
-      if (issues.length > 0) {
-        this.setCache(cacheKey, issues);
+      if (result.issues.length > 0) {
+        this.setCache(cacheKey, result);
       }
-      logger.info('Searched issues successfully', { owner, repo, count: issues.length });
-      return issues;
+      logger.info('Searched issues successfully', { owner, repo, count: result.issues.length });
+      return result;
     } catch (error) {
       logger.error('Failed to search issues', error as Error, { owner, repo });
-      return [];
+      return { issues: [], nextToken: null };
     }
   }
 

@@ -294,6 +294,8 @@ function searchParams(arg: unknown): {
   repo: string;
   filter?: string;
   state?: string;
+  query?: string;
+  nextToken?: string;
   limit?: number;
 } | null {
   const params = asRecord(arg);
@@ -306,18 +308,22 @@ function searchParams(arg: unknown): {
     repo,
     filter: typeof options.filter === 'string' ? options.filter : undefined,
     state: typeof options.state === 'string' ? options.state : undefined,
+    query: typeof options.query === 'string' && options.query ? options.query : undefined,
+    nextToken:
+      typeof options.nextToken === 'string' && options.nextToken ? options.nextToken : undefined,
     limit: typeof options.per_page === 'number' ? options.per_page : undefined,
   };
 }
 
 // `git-tracking:search-github-issues` → daemon `github.issues.search`. The
 // pane maps `{ id, htmlUrl, author.login, labels[] }`; the wire keys issues by
-// `number` (no separate id), so `id` echoes the number.
+// `number` (no separate id), so `id` echoes the number. `query`/`nextToken`
+// forward to the daemon and the response `nextToken` rides alongside `data`.
 registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, async (arg) => {
   const params = searchParams(arg);
   if (!params) return { success: false, error: 'owner and repo are required' };
   try {
-    const result = await backendRequest<{ issues?: GithubIssueWire[] }>(
+    const result = await backendRequest<{ issues?: GithubIssueWire[]; nextToken?: string | null }>(
       'github.issues.search',
       params,
     );
@@ -335,7 +341,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, async (ar
       createdAt: issue.createdAt,
       updatedAt: issue.updatedAt,
     }));
-    return { success: true, data };
+    return { success: true, data, nextToken: result?.nextToken ?? null };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
@@ -343,12 +349,13 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, async (ar
 
 // `git-tracking:search-pull-requests` → daemon `github.pulls.search`. The pane
 // renders a single `state: open|closed|merged|draft`, which the wire carries
-// as `state` + `merged` + `draft` booleans.
+// as `state` + `merged` + `draft` booleans. `query`/`nextToken` forward to the
+// daemon and the response `nextToken` rides alongside `data`.
 registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS, async (arg) => {
   const params = searchParams(arg);
   if (!params) return { success: false, error: 'owner and repo are required' };
   try {
-    const result = await backendRequest<{ pulls?: GithubPullWire[] }>(
+    const result = await backendRequest<{ pulls?: GithubPullWire[]; nextToken?: string | null }>(
       'github.pulls.search',
       params,
     );
@@ -366,7 +373,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS, async (ar
       createdAt: pull.createdAt,
       updatedAt: pull.updatedAt,
     }));
-    return { success: true, data };
+    return { success: true, data, nextToken: result?.nextToken ?? null };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
@@ -408,7 +415,29 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.GET_PULL_REQUEST, async (arg) =
   }
 });
 
-// ── Linear (PROTOCOL §5.28 — bare results, no envelope) ──
+// ── Linear (PROTOCOL §5.28 — cursor-paginated { issues, nextToken } envelope) ──
+
+/** Guard a daemon `{ issues, nextToken }` envelope into a well-formed page. */
+function toIssuePage<T>(result: { issues?: T[]; nextToken?: string | null } | undefined): {
+  issues: T[];
+  nextToken: string | null;
+} {
+  return {
+    issues: Array.isArray(result?.issues) ? result.issues : [],
+    nextToken: typeof result?.nextToken === 'string' ? result.nextToken : null,
+  };
+}
+
+/** Optional `{ limit, nextToken }` pagination forwarded from the clients. */
+function pageParams(arg: unknown): { limit?: number; nextToken?: string } {
+  const options = asRecord(arg);
+  return {
+    ...(typeof options.limit === 'number' ? { limit: options.limit } : {}),
+    ...(typeof options.nextToken === 'string' && options.nextToken
+      ? { nextToken: options.nextToken }
+      : {}),
+  };
+}
 
 /** `linear.authStatus` probe → boolean; a failed probe is "not connected". */
 async function linearAuthenticated(): Promise<boolean> {
@@ -435,29 +464,39 @@ registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_STATUS, async () => ({
   oauthUrl: '',
 }));
 
-// `fetchMyIssues(filter)` passes the filter positionally; the daemon takes it
-// as `{ filter }` and returns the flattened LinearIssueResult[] verbatim.
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, async (filter) => {
+// `fetchMyIssues(filter, options?)` passes the filter positionally; the daemon
+// takes it as `{ filter, limit?, nextToken? }` and returns the cursor-paginated
+// `{ issues, nextToken }` envelope with the flattened LinearIssueResult[].
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, async (filter, options) => {
   try {
-    const params = typeof filter === 'string' && filter ? { filter } : {};
-    const issues = await backendRequest<LinearIssueResult[]>('linear.listIssues', params);
-    return Array.isArray(issues) ? issues : [];
+    const params = {
+      ...(typeof filter === 'string' && filter ? { filter } : {}),
+      ...pageParams(options),
+    };
+    const result = await backendRequest<{ issues?: LinearIssueResult[]; nextToken?: string | null }>(
+      'linear.listIssues',
+      params,
+    );
+    return toIssuePage(result);
   } catch {
-    return [];
+    return { issues: [], nextToken: null };
   }
 });
 
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, async (query) => {
-  if (typeof query !== 'string' || query.length === 0) return [];
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, async (query, options) => {
+  if (typeof query !== 'string' || query.length === 0) return { issues: [], nextToken: null };
   try {
-    const issues = await backendRequest<LinearIssueResult[]>('linear.searchIssues', { query });
-    return Array.isArray(issues) ? issues : [];
+    const result = await backendRequest<{ issues?: LinearIssueResult[]; nextToken?: string | null }>(
+      'linear.searchIssues',
+      { query, ...pageParams(options) },
+    );
+    return toIssuePage(result);
   } catch {
-    return [];
+    return { issues: [], nextToken: null };
   }
 });
 
-// ── Sentry (PROTOCOL §5.29 — bare results, no envelope) ──
+// ── Sentry (PROTOCOL §5.29 — cursor-paginated { issues, nextToken } envelope) ──
 
 /** Daemon `sentry.authStatus` result — derived identity only, never the token. */
 interface SentryAuthStatusWire {
@@ -499,33 +538,42 @@ registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_PROJECTS, async () => {
 });
 
 // `fetchIssues(request?)` forwards the FE `FetchIssuesRequest` fields, which
-// map 1:1 onto the daemon's `{ project?, status?, query?, limit? }` params.
+// map 1:1 onto the daemon's `{ project?, status?, query?, limit?, nextToken? }`
+// params; the daemon returns the cursor-paginated `{ issues, nextToken }`
+// envelope.
 registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, async (request) => {
-  const { project, status, query, limit } = asRecord(request);
+  const { project, status, query } = asRecord(request);
   try {
-    const issues = await backendRequest<SentryIssueResult[]>('sentry.listIssues', {
-      ...(typeof project === 'string' && project ? { project } : {}),
-      ...(typeof status === 'string' && status ? { status } : {}),
-      ...(typeof query === 'string' && query ? { query } : {}),
-      ...(typeof limit === 'number' ? { limit } : {}),
-    });
-    return Array.isArray(issues) ? issues : [];
+    const result = await backendRequest<{ issues?: SentryIssueResult[]; nextToken?: string | null }>(
+      'sentry.listIssues',
+      {
+        ...(typeof project === 'string' && project ? { project } : {}),
+        ...(typeof status === 'string' && status ? { status } : {}),
+        ...(typeof query === 'string' && query ? { query } : {}),
+        ...pageParams(request),
+      },
+    );
+    return toIssuePage(result);
   } catch {
-    return [];
+    return { issues: [], nextToken: null };
   }
 });
 
 registerMockIpcHandler(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, async (arg) => {
   const { query, project } = asRecord(arg);
-  if (typeof query !== 'string' || query.length === 0) return [];
+  if (typeof query !== 'string' || query.length === 0) return { issues: [], nextToken: null };
   try {
-    const issues = await backendRequest<SentryIssueResult[]>('sentry.searchIssues', {
-      query,
-      ...(typeof project === 'string' && project ? { project } : {}),
-    });
-    return Array.isArray(issues) ? issues : [];
+    const result = await backendRequest<{ issues?: SentryIssueResult[]; nextToken?: string | null }>(
+      'sentry.searchIssues',
+      {
+        query,
+        ...(typeof project === 'string' && project ? { project } : {}),
+        ...pageParams(arg),
+      },
+    );
+    return toIssuePage(result);
   } catch {
-    return [];
+    return { issues: [], nextToken: null };
   }
 });
 

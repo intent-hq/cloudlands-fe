@@ -33,6 +33,8 @@ interface LinearAuthStatusResponse {
  * reads (`linear.authStatus` / `linear.listIssues` / `linear.searchIssues`)
  * round-trip to the daemon; a not-configured key or an un-wired method
  * (`-32601`) degrades to a not-connected / empty result instead of throwing.
+ * The issue reads are cursor-paginated (§5.28): they accept `limit`/`nextToken`
+ * and return the `{ issues, nextToken }` envelope.
  */
 export class LinearAuthService {
   private cachedStatus: LinearAuthStatus | null = null;
@@ -164,48 +166,80 @@ export class LinearAuthService {
 
   /**
    * Fetch Linear issues for a filter via the daemon (`linear.listIssues`).
-   * The daemon returns the flattened `LinearIssueResult[]` verbatim; a
-   * not-configured key or an un-wired method degrades to an empty list.
+   * The daemon returns the `{ issues, nextToken }` envelope (§5.28) with the
+   * flattened `LinearIssueResult[]`; a not-configured key or an un-wired
+   * method degrades to an empty page.
    * @param filter - The type of issues to fetch (defaults to 'assigned')
+   * @param options - Optional cursor pagination (`limit`, opaque `nextToken`)
    */
   async fetchMyIssues(
     filter: 'assigned' | 'created' | 'subscribed' | 'team' | 'all' = 'assigned',
-  ): Promise<LinearIssueResult[]> {
+    options?: LinearIssuePageOptions,
+  ): Promise<LinearIssuePage> {
     try {
-      const issues = await getBackendClient().request<LinearIssueResult[]>('linear.listIssues', {
+      const response = await getBackendClient().request<LinearIssuePage>('linear.listIssues', {
         filter,
+        ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options?.nextToken ? { nextToken: options.nextToken } : {}),
       });
-      return Array.isArray(issues) ? issues : [];
+      return toIssuePage(response);
     } catch (error) {
       if (!isMethodNotFound(error)) {
         logger.error('Failed to fetch Linear issues from daemon', error as Error);
       }
-      return [];
+      return { issues: [], nextToken: null };
     }
   }
 
   /**
    * Search Linear issues via the daemon (`linear.searchIssues`). The daemon
-   * returns the flattened `LinearIssueResult[]` verbatim; an empty query, a
-   * not-configured key, or an un-wired method degrades to an empty list.
+   * returns the `{ issues, nextToken }` envelope (§5.28); an empty query, a
+   * not-configured key, or an un-wired method degrades to an empty page.
    */
-  async searchIssues(searchQuery: string): Promise<LinearIssueResult[]> {
+  async searchIssues(
+    searchQuery: string,
+    options?: LinearIssuePageOptions,
+  ): Promise<LinearIssuePage> {
     if (!searchQuery) {
-      return [];
+      return { issues: [], nextToken: null };
     }
 
     try {
-      const issues = await getBackendClient().request<LinearIssueResult[]>('linear.searchIssues', {
+      const response = await getBackendClient().request<LinearIssuePage>('linear.searchIssues', {
         query: searchQuery,
+        ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options?.nextToken ? { nextToken: options.nextToken } : {}),
       });
-      return Array.isArray(issues) ? issues : [];
+      return toIssuePage(response);
     } catch (error) {
       if (!isMethodNotFound(error)) {
         logger.error('Failed to search Linear issues from daemon', error as Error);
       }
-      return [];
+      return { issues: [], nextToken: null };
     }
   }
+}
+
+/** Guard the daemon envelope into a well-formed page. */
+function toIssuePage(response: LinearIssuePage | undefined): LinearIssuePage {
+  return {
+    issues: Array.isArray(response?.issues) ? response.issues : [],
+    nextToken: typeof response?.nextToken === 'string' ? response.nextToken : null,
+  };
+}
+
+/** Cursor-pagination options shared by the two issue reads (§5.28). */
+export interface LinearIssuePageOptions {
+  limit?: number;
+  /** Opaque cursor from a previous page's `nextToken`. */
+  nextToken?: string;
+}
+
+/** One page of the daemon's cursor-paginated issue reads (§5.28). */
+export interface LinearIssuePage {
+  issues: LinearIssueResult[];
+  /** Opaque cursor for the next page, or `null` when this is the last page. */
+  nextToken: string | null;
 }
 
 /**
