@@ -80,10 +80,98 @@ function makeIdleEvent(overrides: Partial<AgentIdleEvent['data']> = {}, workspac
   } as unknown as AgentIdleEvent;
 }
 
-/** agent.list result where only the idle agent exists (no suppression). */
+/** agent.list result (PROTOCOL §5.5 AgentLite subset) where only the idle agent exists (no suppression). */
 const SOLO_AGENT_LIST = {
-  agents: [{ id: 'agent-1', isStreaming: false, isResponding: false, metadata: {} }],
+  agents: [
+    {
+      id: 'agent-1',
+      name: 'My Agent',
+      status: 'idle',
+      isStreaming: false,
+      isResponding: false,
+      metadata: { isBackground: false },
+    },
+  ],
 };
+
+/** Daemon settings paths the service reads per idle event (PROTOCOL §5.12). */
+const SETTINGS_PATHS = ['notifications.enabled', 'notifications.soundOnlyWhenUnfocused'];
+
+/** PROTOCOL §5.12 `settings.get` result envelope for a notifications.* boolean. */
+function settingsGetResult(path: string, value: unknown) {
+  return {
+    path,
+    value,
+    origin: 'default',
+    definition: {
+      path,
+      label: path,
+      description: 'Notification preference',
+      category: 'notifications',
+      type: 'boolean',
+      defaultValue: true,
+    },
+  };
+}
+
+/**
+ * Exact-wire backendRequest stub (AGENTS.md wire-testing rule): each served
+ * method asserts the precise request it receives — `settings.get` must carry
+ * exactly `{ path }` with a known notifications.* path, `agent.list` /
+ * `workspace.get` exactly `{ workspaceId }` with an expected id — and answers
+ * with PROTOCOL-shaped payloads. Unexpected methods/params throw, which the
+ * service folds to its failure paths; tests where that fold is
+ * indistinguishable from legitimate suppression ALSO assert the exact
+ * `mockBackendRequest.mock.calls` transcript after acting.
+ */
+function stubBackendWire({
+  workspaceIds = ['ws-1'],
+  settingsValues,
+  settingsError = false,
+  agentListResult = SOLO_AGENT_LIST,
+  workspaceGetResult = { workspace: { id: 'ws-1', title: 'My Workspace' } },
+}: {
+  workspaceIds?: string[];
+  settingsValues?: Record<string, boolean>;
+  settingsError?: boolean;
+  agentListResult?: { agents: unknown[] };
+  workspaceGetResult?: { workspace: { id: string; title: string } };
+} = {}): void {
+  mockBackendRequest.mockImplementation(async (method: string, params?: unknown) => {
+    if (method === 'settings.get') {
+      const path = (params as { path?: string } | undefined)?.path ?? '';
+      expect(SETTINGS_PATHS).toContain(path);
+      expect(params).toEqual({ path });
+      if (settingsError) throw new Error('daemon unavailable');
+      const values = settingsValues ?? {
+        'notifications.enabled': mockState.userPreferences.enabled,
+        'notifications.soundOnlyWhenUnfocused': mockState.userPreferences.soundOnlyWhenUnfocused,
+      };
+      return settingsGetResult(path, values[path]);
+    }
+    if (method === 'agent.list' || method === 'workspace.get') {
+      const workspaceId = (params as { workspaceId?: string } | undefined)?.workspaceId ?? '';
+      expect(workspaceIds).toContain(workspaceId);
+      expect(params).toEqual({ workspaceId });
+      return method === 'agent.list' ? agentListResult : workspaceGetResult;
+    }
+    throw new Error(`Unexpected backendRequest method: ${method}`);
+  });
+}
+
+/** The exact wire transcript one handleWebAgentIdle run produces. */
+function idleWireCalls(
+  workspaceId = 'ws-1',
+  { agentList = true, workspaceGet = true }: { agentList?: boolean; workspaceGet?: boolean } = {},
+): unknown[][] {
+  const calls: unknown[][] = [
+    ['settings.get', { path: 'notifications.enabled' }],
+    ['settings.get', { path: 'notifications.soundOnlyWhenUnfocused' }],
+  ];
+  if (agentList) calls.push(['agent.list', { workspaceId }]);
+  if (workspaceGet) calls.push(['workspace.get', { workspaceId }]);
+  return calls;
+}
 
 async function flushAsync(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -106,11 +194,7 @@ describe('web-notification-service', () => {
     MockNotification.instances = [];
     MockNotification.requestPermission = vi.fn(async () => MockNotification.permission);
     vi.stubGlobal('Notification', MockNotification);
-    mockBackendRequest.mockImplementation(async (method: string) => {
-      if (method === 'agent.list') return SOLO_AGENT_LIST;
-      if (method === 'workspace.get') return { workspace: { title: 'My Workspace' } };
-      return undefined;
-    });
+    stubBackendWire();
     hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
   });
 
@@ -130,6 +214,7 @@ describe('web-notification-service', () => {
       await flushAsync();
 
       expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
     it('registers nothing on electron (native pipeline unchanged)', async () => {
@@ -142,6 +227,7 @@ describe('web-notification-service', () => {
       await flushAsync();
 
       expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest).not.toHaveBeenCalled();
     });
 
     it('does not request permission at boot (lazy request only)', () => {
@@ -169,100 +255,129 @@ describe('web-notification-service', () => {
       expect(MockNotification.instances).toHaveLength(1);
       expect(MockNotification.instances[0].title).toBe('My Workspace - Implementor: Fix bug');
       expect(MockNotification.instances[0].options?.body).toBe('Task completed');
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
     it('falls back to "Agent"/"Finished" without specialist/taskTitle/workspace title', async () => {
-      mockBackendRequest.mockImplementation(async (method: string) => {
-        if (method === 'agent.list') return SOLO_AGENT_LIST;
-        if (method === 'workspace.get') return { workspace: {} };
-        return undefined;
-      });
+      stubBackendWire({ workspaceGetResult: { workspace: { id: 'ws-1', title: '' } } });
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances[0].title).toBe('Agent');
       expect(MockNotification.instances[0].options?.body).toBe('Finished');
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
-    it('skips when notifications are disabled (store fallback)', async () => {
+    it('skips when notifications are disabled (store fallback on daemon read failure)', async () => {
       mockState.userPreferences.enabled = false;
+      stubBackendWire({ settingsError: true });
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances).toHaveLength(0);
-      expect(mockBackendRequest).not.toHaveBeenCalledWith('agent.list', expect.anything());
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+      );
     });
 
     it('prefers fresh daemon notifications.enabled over the store (refreshPrefs parity)', async () => {
       mockState.userPreferences.enabled = true;
-      mockBackendRequest.mockImplementation(async (method: string, params?: unknown) => {
-        if (method === 'settings.get') {
-          const path = (params as { path?: string })?.path;
-          if (path === 'notifications.enabled') return { value: false };
-          return {};
-        }
-        if (method === 'agent.list') return SOLO_AGENT_LIST;
-        return undefined;
+      stubBackendWire({
+        settingsValues: {
+          'notifications.enabled': false,
+          'notifications.soundOnlyWhenUnfocused': false,
+        },
       });
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+      );
     });
 
     it('skips background agents (event fast path)', async () => {
       await handleWebAgentIdle(makeIdleEvent({ isBackground: true }));
 
       expect(MockNotification.instances).toHaveLength(0);
-      expect(mockBackendRequest).not.toHaveBeenCalledWith('agent.list', expect.anything());
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+      );
     });
 
     it('skips background agents (agent.list metadata)', async () => {
-      mockBackendRequest.mockImplementation(async (method: string) => {
-        if (method === 'agent.list') {
-          return { agents: [{ id: 'agent-1', metadata: { isBackground: true } }] };
-        }
-        return undefined;
+      stubBackendWire({
+        agentListResult: {
+          agents: [
+            {
+              id: 'agent-1',
+              name: 'My Agent',
+              status: 'idle',
+              isStreaming: false,
+              isResponding: false,
+              metadata: { isBackground: true },
+            },
+          ],
+        },
       });
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls('ws-1', { workspaceGet: false }));
     });
 
     it('skips when other agents are still active in the workspace', async () => {
-      mockBackendRequest.mockImplementation(async (method: string) => {
-        if (method === 'agent.list') {
-          return {
-            agents: [
-              { id: 'agent-1', metadata: {} },
-              { id: 'agent-2', isStreaming: true },
-            ],
-          };
-        }
-        return undefined;
+      stubBackendWire({
+        agentListResult: {
+          agents: [
+            ...SOLO_AGENT_LIST.agents,
+            {
+              id: 'agent-2',
+              name: 'Busy Agent',
+              status: 'active',
+              isStreaming: true,
+              isResponding: false,
+              metadata: { isBackground: false },
+            },
+          ],
+        },
       });
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls('ws-1', { workspaceGet: false }));
     });
 
     it('enriches specialist from agent.list metadata when the payload lacks it', async () => {
-      mockBackendRequest.mockImplementation(async (method: string) => {
-        if (method === 'agent.list') {
-          return { agents: [{ id: 'agent-1', metadata: { specialist: 'verifier' } }] };
-        }
-        if (method === 'workspace.get') return { workspace: { title: 'WS' } };
-        return undefined;
+      stubBackendWire({
+        agentListResult: {
+          agents: [
+            {
+              id: 'agent-1',
+              name: 'My Agent',
+              status: 'idle',
+              isStreaming: false,
+              isResponding: false,
+              metadata: { isBackground: false, specialist: 'verifier' },
+            },
+          ],
+        },
+        workspaceGetResult: { workspace: { id: 'ws-1', title: 'WS' } },
       });
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances[0].title).toBe('WS - Verifier');
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
     it('titles chief completions with the chat thread name and skips workspace.get', async () => {
+      stubBackendWire({ workspaceIds: [CHIEF_WORKSPACE_ID] });
       await handleWebAgentIdle(
         makeIdleEvent({ agentName: 'Morning check-in' }, CHIEF_WORKSPACE_ID),
       );
 
       expect(MockNotification.instances[0].title).toBe('Assistant — Morning check-in');
-      expect(mockBackendRequest).not.toHaveBeenCalledWith('workspace.get', expect.anything());
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls(CHIEF_WORKSPACE_ID, { workspaceGet: false }),
+      );
     });
 
     it('suppresses the banner when focused viewing the workspace with soundOnlyWhenUnfocused (sound gate still runs and declines while focused)', async () => {
@@ -277,6 +392,8 @@ describe('web-notification-service', () => {
       // Electron parity: notification:show is still sent, but the renderer
       // sound gate itself skips playback while focused with this setting on.
       expect(mockPlayNotificationSound).not.toHaveBeenCalled();
+      // Suppression happens AFTER content is built, so the full wire sequence runs.
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
     it('shows the banner when focused on a DIFFERENT workspace with soundOnlyWhenUnfocused', async () => {
@@ -327,9 +444,12 @@ describe('web-notification-service', () => {
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances).toHaveLength(0);
+      // Permission gating happens after the full wire sequence has run.
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
     it('coalesces concurrent permission prompts into one requestPermission call', async () => {
+      stubBackendWire({ workspaceIds: ['ws-1', 'ws-2'] });
       MockNotification.permission = 'default';
       let resolvePrompt!: (value: NotificationPermission) => void;
       MockNotification.requestPermission = vi.fn(
@@ -362,6 +482,7 @@ describe('web-notification-service', () => {
     });
 
     it('opens the Assistant panel and selects the thread for chief clicks', async () => {
+      stubBackendWire({ workspaceIds: [CHIEF_WORKSPACE_ID] });
       vi.spyOn(window, 'focus').mockImplementation(() => {});
       await handleWebAgentIdle(makeIdleEvent({ agentName: 'Chat' }, CHIEF_WORKSPACE_ID));
 
