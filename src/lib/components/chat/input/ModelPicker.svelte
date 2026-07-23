@@ -161,7 +161,11 @@
     return $activeProviderId$;
   });
 
-  const isAgentProviderOverride = $derived(effectiveProviderId !== $activeProviderId$);
+  // Single-provider restriction — applies only when the provider is explicitly
+  // locked via the providerId prop (e.g. provider change locked in SimpleRichInput).
+  // An unlocked agent whose session provider differs from the global active
+  // provider still gets the full multi-provider list.
+  const isAgentProviderOverride = $derived(Boolean(providerId));
 
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
@@ -259,9 +263,12 @@
     );
   }
 
+  // Separate generation counter from fetchAllProviderModels: in unlocked mode
+  // both fetches can run concurrently and must not cancel each other.
+  let agentFetchGeneration = 0;
   $effect(() => {
     const epid = effectiveProviderId;
-    const currentGen = ++fetchGeneration;
+    const currentGen = ++agentFetchGeneration;
     if (epid === $activeProviderId$) {
       agentProviderModels = null;
       agentProviderLoading = false;
@@ -273,13 +280,13 @@
     agentProviderError = null;
     getModelsForProviderForLoadingState(epid)
       .then((result) => {
-        if (fetchGeneration !== currentGen) return;
+        if (agentFetchGeneration !== currentGen) return;
         agentProviderModels = result.models;
         setProviderWarningState(epid, result.warning);
         agentProviderLoading = false;
       })
       .catch((err) => {
-        if (fetchGeneration !== currentGen) return;
+        if (agentFetchGeneration !== currentGen) return;
         const providerError = formatProviderLoadError(epid, err);
         agentProviderError = providerError.displayText;
         setProviderErrorState(epid, providerError.displayText);
@@ -295,18 +302,19 @@
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
   });
 
+  // Models for the effective provider: the per-agent fetch result when the
+  // agent's provider differs from the active one, the global store otherwise.
   const availableModels = $derived(
-    isAgentProviderOverride
-      ? agentProviderLoading
-        ? []
-        : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$))
-      : (agentProviderModels ?? $availableModels$),
+    agentProviderLoading
+      ? []
+      : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
   );
   const isLoadingModels = $derived(
     isAgentProviderOverride
       ? agentProviderLoading
-      : !hasProviderResult(effectiveProviderId) &&
-          ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded),
+      : agentProviderLoading ||
+          (!hasProviderResult(effectiveProviderId) &&
+            ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded)),
   );
   const loadError = $derived(isAgentProviderOverride ? agentProviderError : $loadError$);
 
@@ -332,9 +340,10 @@
       const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
       if (fetchGeneration !== gen) return;
       setProviderWarningState(providerId, result.warning);
-      if (isAgentProviderOverride && providerId === effectiveProviderId) {
+      if (providerId === effectiveProviderId) {
         agentProviderModels = result.models;
-      } else {
+      }
+      if (!isAgentProviderOverride) {
         const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
         allProviderErrors = remainingErrors;
         allProviderModels = {
@@ -584,11 +593,22 @@
     description: 'Let the specialist choose the best model',
   };
 
+  const isEffectiveProviderEnabled = $derived(
+    $enabledProviderIds$.some(
+      (pid) => getProviderConfig(pid).id === getProviderConfig(effectiveProviderId).id,
+    ),
+  );
+
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
     ...(isAgentProviderOverride
       ? toDropdownOptions(availableModels)
-      : $enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? [])),
+      : [
+          ...$enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? []),
+          // Keep the agent's current provider selectable even if it was since
+          // disabled, so the selected model isn't treated as unavailable.
+          ...(isEffectiveProviderEnabled ? [] : toDropdownOptions(availableModels)),
+        ]),
   ]);
 
   const hasLoadedModelOptions = $derived(

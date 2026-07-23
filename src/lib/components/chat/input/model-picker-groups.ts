@@ -59,10 +59,17 @@ export function buildGroupedModelOptions({
   const normalizedEnabledProviderIds = new Set(
     enabledProviderIds.map((pid) => getProviderConfig(pid).id),
   );
+  // Keep the agent's current provider group visible even if that provider was
+  // since disabled in settings, so the selected model isn't orphaned.
+  const normalizedEffectiveProviderId = getProviderConfig(effectiveProviderId).id;
 
   for (const pid of Object.keys(ACP_PROVIDERS)) {
-    if (!normalizedEnabledProviderIds.has(pid)) continue;
-    const models = allProviderModels[pid];
+    const isDisabledEffectiveProvider =
+      pid === normalizedEffectiveProviderId && !normalizedEnabledProviderIds.has(pid);
+    if (!normalizedEnabledProviderIds.has(pid) && !isDisabledEffectiveProvider) continue;
+    const models =
+      allProviderModels[pid] ??
+      (isDisabledEffectiveProvider ? toDropdownOptions(availableModels) : undefined);
     if (models && models.length > 0) {
       const providerConfig = getProviderConfig(pid);
       groups.push({
