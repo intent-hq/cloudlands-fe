@@ -92,7 +92,7 @@ beforeEach(() => {
 });
 
 describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md §5.14)', () => {
-  it('wraps the shell-form command via `sh -c` / `cmd /c` and forwards cwd to host.exec', async () => {
+  it('wraps the shell-form command via `sh -c` / `cmd /c` and forwards cwd + workspaceId to host.exec', async () => {
     hostExecMock.mockResolvedValue({
       stdout: 'main\n',
       stderr: '',
@@ -102,12 +102,17 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
     const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND);
     const result = (await handler(
       {},
-      { command: 'git rev-parse --abbrev-ref HEAD', cwd: '/ws/repo' },
+      {
+        command: 'git rev-parse --abbrev-ref HEAD',
+        cwd: '/ws/repo',
+        workspaceId: 'amber-forest',
+      },
     )) as { success: boolean; data?: { stdout?: string; code?: number } };
 
     expect(hostExecMock).toHaveBeenCalledWith(SHELL_CMD, {
       args: [SHELL_FLAG, 'git rev-parse --abbrev-ref HEAD'],
       cwd: '/ws/repo',
+      workspaceId: 'amber-forest',
       timeoutMs: 30_000,
     });
     expect(result.success).toBe(true);
@@ -145,17 +150,34 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
     expect(result.success).toBe(true);
   });
 
-  it('keeps cwd-without-workspaceId behavior: a host.exec rejection folds to the generic failure envelope', async () => {
-    hostExecMock.mockRejectedValue(
-      new Error(
-        'Invalid parameter: cwd requires workspaceId for the containment guard',
-      ),
-    );
+  it('rejects a cwd-only payload at the schema level before the handler runs (monorepo#578)', async () => {
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND);
+    const result = await handler({}, { command: 'git status', cwd: '/ws/repo' });
+
+    expect(hostExecMock).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid request parameters',
+        details: [
+          {
+            code: 'custom',
+            message: 'cwd requires workspaceId (PROTOCOL §5.14 containment guard)',
+            path: ['workspaceId'],
+          },
+        ],
+      },
+    });
+  });
+
+  it('folds a host.exec rejection to the generic failure envelope', async () => {
+    hostExecMock.mockRejectedValue(new Error('boom: transport failure'));
 
     const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND);
     const result = await handler(
       {},
-      { command: 'git status', cwd: '/ws/repo' },
+      { command: 'git status', cwd: '/ws/repo', workspaceId: 'amber-forest' },
     );
 
     expect(result).toEqual({

@@ -1224,11 +1224,19 @@ export const UserMcpTestConnectionSchema = z.object({
 });
 
 // SYSTEM_CHANNELS schemas
-export const SystemExecuteCommandSchema = z.object({
-  command: z.string().min(1, 'Command is required'),
-  cwd: z.string().optional(),
-  workspaceId: WorkspaceIdSchema.optional(),
-});
+// `cwd` requires `workspaceId` so the daemon's within-workspace containment
+// guard (PROTOCOL §5.14) always runs — mirrors `host.exec`'s own -32602 parse
+// guard (monorepo#578).
+export const SystemExecuteCommandSchema = z
+  .object({
+    command: z.string().min(1, 'Command is required'),
+    cwd: z.string().optional(),
+    workspaceId: WorkspaceIdSchema.optional(),
+  })
+  .refine((params) => !params.cwd || Boolean(params.workspaceId), {
+    message: 'cwd requires workspaceId (PROTOCOL §5.14 containment guard)',
+    path: ['workspaceId'],
+  });
 
 export const SystemExecuteCommandStreamingSchema = z.object({
   sessionId: z.string().min(1, 'Session ID is required'),
