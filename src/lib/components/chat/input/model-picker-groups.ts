@@ -103,7 +103,7 @@ export function buildGroupedModelOptions({
       });
     } else if (allProviderWarnings[pid]) {
       // Enabled provider that legitimately returned zero models with a
-      // daemon warning (PROTOCOL §6.7 degraded response) — surface the
+      // daemon warning (PROTOCOL §5.30 degraded response) — surface the
       // warning as a disabled row instead of silently dropping the group.
       const warning = formatProviderLoadError(pid, allProviderWarnings[pid]);
       groups.push({

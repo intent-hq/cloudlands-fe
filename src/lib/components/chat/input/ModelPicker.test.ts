@@ -531,7 +531,7 @@ describe('ModelPicker multi-provider mode', () => {
   });
 
   it('surfaces an empty-with-warning provider as a visible disabled row instead of hiding the group', async () => {
-    // Client-mapped form of the PROTOCOL §6.7 degraded response
+    // Client-mapped form of the PROTOCOL §5.30 degraded response
     // `{ models: [], source: 'static', warning }` — the wire request/envelope
     // for that shape is asserted in model-catalog-bridge-seeder.test.ts.
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
