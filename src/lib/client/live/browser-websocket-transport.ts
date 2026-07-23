@@ -46,6 +46,32 @@ export function resolveBrowserWsUrl(
   return url;
 }
 
+/**
+ * Sanitize a WS URL for display by removing userinfo (user:pass@), query
+ * parameters, and hash — never exposes secrets/tokens. Mirrors the
+ * main-process `transport-info.ts` sanitizer (a `main/` module the renderer
+ * must not import). The parse-failure fallback strips the same three
+ * components textually so secret material never leaks even for URLs that
+ * `new URL()` rejects.
+ */
+export function sanitizeWsUrlForDisplay(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return rawUrl
+      .replace(/[?#].*$/, "")
+      .replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, "$1");
+  }
+}
+
+/** Connection status union mirroring the main-process ConnectionStatus. */
+export type BrowserWsConnectionStatus = "connecting" | "connected" | "disconnected";
+
 // --- JSON-RPC error mapping -------------------------------------------------
 // Browser-safe port of `src/features/backend/main/json-rpc-errors.ts` (that
 // module lives in a `main/` subtree the renderer must not import at runtime).
@@ -181,6 +207,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private hasBeenConnected = false;
   private readonly notificationHandlers = new Set<(n: BackendNotification) => void>();
   private readonly reconnectedHandlers = new Set<() => void>();
+  private readonly statusHandlers = new Set<(status: BrowserWsConnectionStatus) => void>();
+  /** Last status delivered to statusHandlers, to fire only on transitions. */
+  private lastNotifiedStatus: BrowserWsConnectionStatus = "disconnected";
 
   constructor(options: BrowserWebSocketTransportOptions) {
     this.url = options.url;
@@ -282,6 +311,21 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return () => this.reconnectedHandlers.delete(handler);
   }
 
+  /** Current connection status (mirrors the main-process ConnectionStatus). */
+  getConnectionStatus(): BrowserWsConnectionStatus {
+    if (this.connected) return "connected";
+    if (this.connecting) return "connecting";
+    return "disconnected";
+  }
+
+  /** Subscribe to connection-status transitions; returns an unsubscriber. */
+  onConnectionStatusChange(
+    handler: (status: BrowserWsConnectionStatus) => void,
+  ): () => void {
+    this.statusHandlers.add(handler);
+    return () => this.statusHandlers.delete(handler);
+  }
+
   /** Tear down the transport: close the socket, clear timers, reject pending. */
   dispose(): void {
     if (this.disposed) return;
@@ -292,8 +336,12 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.failPending(error);
     this.failWaiters(error);
     this.teardownSocket();
+    this.connected = false;
+    this.connecting = false;
+    this.notifyStatusChange();
     this.notificationHandlers.clear();
     this.reconnectedHandlers.clear();
+    this.statusHandlers.clear();
   }
 
   private ensureConnected(): Promise<void> {
@@ -316,6 +364,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private connect(): void {
     this.clearReconnect();
     this.connecting = true;
+    this.notifyStatusChange();
     let socket: BrowserWebSocketLike;
     try {
       socket = this.webSocketFactory(this.url);
@@ -368,6 +417,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.currentReconnectDelay = this.reconnectDelayMs;
     const wasReconnect = this.hasBeenConnected;
     this.hasBeenConnected = true;
+    this.notifyStatusChange();
     this.flushWaiters();
     // Fire AFTER waiters so queued sends and the resubscribe replay observe a
     // connected transport; see RESUB-1.
@@ -380,12 +430,21 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.clearConnectTimer();
     if (this.disposed) return;
     this.connected = false;
+    this.notifyStatusChange();
     this.teardownSocket();
     this.failPending(error);
     // Reject in-flight connection waiters so pending request() calls fail fast
     // instead of hanging across reconnect attempts.
     this.failWaiters(error);
     this.scheduleReconnect();
+  }
+
+  /** Deliver the derived status to statusHandlers when it transitions. */
+  private notifyStatusChange(): void {
+    const status = this.getConnectionStatus();
+    if (status === this.lastNotifiedStatus) return;
+    this.lastNotifiedStatus = status;
+    for (const handler of [...this.statusHandlers]) handler(status);
   }
 
   private onMessage(data: unknown): void {
