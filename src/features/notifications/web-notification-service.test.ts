@@ -129,7 +129,7 @@ function stubBackendWire({
   settingsValues,
   settingsError = false,
   agentListResult = SOLO_AGENT_LIST,
-  workspaceGetResult = { workspace: { id: 'ws-1', title: 'My Workspace' } },
+  workspaceGetResult,
 }: {
   workspaceIds?: string[];
   settingsValues?: Record<string, boolean>;
@@ -153,7 +153,11 @@ function stubBackendWire({
       const workspaceId = (params as { workspaceId?: string } | undefined)?.workspaceId ?? '';
       expect(workspaceIds).toContain(workspaceId);
       expect(params).toEqual({ workspaceId });
-      return method === 'agent.list' ? agentListResult : workspaceGetResult;
+      // Default workspace.get fixture is keyed to the REQUESTED id so
+      // multi-workspace tests get a per-id-consistent Workspace envelope.
+      return method === 'agent.list'
+        ? agentListResult
+        : (workspaceGetResult ?? { workspace: { id: workspaceId, title: 'My Workspace' } });
     }
     throw new Error(`Unexpected backendRequest method: ${method}`);
   });
