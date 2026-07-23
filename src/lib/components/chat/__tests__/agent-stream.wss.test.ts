@@ -216,6 +216,102 @@ describe("agent-stream.wss — chunk accumulation → transcript growth", () => 
     expect(readStatusEvents()).toEqual([]);
   });
 
+  it("lifts a completed tool's proposal-MIME resource item into a standalone block (§7.1)", async () => {
+    // PROTOCOL §7.1 proposal-resource item exactly as the daemon carries it in
+    // tool_result.output (tool_block.rs::find_proposal_resource contract).
+    const proposalJson = JSON.stringify({
+      kind: "workspace-create",
+      payload: { operation: "workspace.create", params: { repositoryPath: "/repo" } },
+      preview: { title: "Create workspace" },
+      applyToolCallId: "tc-prop-1",
+    });
+    const resourceItem = {
+      type: "resource",
+      resource: {
+        uri: "intent-proposal://workspace-create/tc-prop-1",
+        name: "Create workspace",
+        mimeType: "application/vnd.intent.proposal+json",
+        text: proposalJson,
+      },
+    };
+
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        toolCallId: "tc-prop-1",
+        toolName: "propose_workspace",
+        toolKind: "other",
+        status: "completed",
+        input: {},
+        output: [resourceItem],
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const messages = readAssistantMessages();
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].contentBlocks ?? [];
+    // tool_use, tool_result, then the standalone proposal-resource block with
+    // the §7.1 predicted stable id (tool_use index + 2).
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result", "resource"]);
+    expect(blocks[2]).toMatchObject({
+      type: "resource",
+      id: `${MESSAGE_ID}:2`,
+      resource: {
+        mimeType: "application/vnd.intent.proposal+json",
+        text: proposalJson,
+      },
+    });
+    // The tool_result keeps the resource item untouched in its output.
+    expect(blocks[1]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "tc-prop-1",
+      output: [resourceItem],
+    });
+  });
+
+  it("never lifts a proposal block from a tool that ends in error (§7.1)", async () => {
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        toolCallId: "tc-err-1",
+        toolName: "propose_workspace",
+        toolKind: "other",
+        status: "error",
+        input: {},
+        output: [
+          {
+            type: "resource",
+            resource: {
+              mimeType: "application/vnd.intent.proposal+json",
+              text: "{}",
+            },
+          },
+        ],
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const messages = readAssistantMessages();
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result"]);
+  });
+
   it("does not echo when the same chunk arrives on a foreign fan-out subscription", async () => {
     // Chunk-echo regression: with an overlapping `agent:*` subscription on the
     // same socket the daemon delivers ONE notification per matching sub. The

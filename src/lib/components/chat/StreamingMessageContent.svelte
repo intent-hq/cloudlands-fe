@@ -7,6 +7,7 @@
     ProposalActionDetail,
   } from '$shared/types';
   import { isProposal } from '$shared/types';
+  import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
@@ -364,7 +365,11 @@
       preview: block.preview,
       applyToolCallId: block.applyToolCallId,
     };
-    return isProposal(candidate) ? candidate : null;
+    if (isProposal(candidate)) return candidate;
+    // Standalone proposal-resource block (PROTOCOL §7.1): the daemon lifts a
+    // proposal-MIME resource item out of a completed tool's output into a
+    // top-level `{ type: "resource", resource: {…} }` block.
+    return getProposalFromResourceBlock(block);
   }
 
   function addBulkProposalWorkspaceIds(block: ContentBlock, ids: Set<string>) {
