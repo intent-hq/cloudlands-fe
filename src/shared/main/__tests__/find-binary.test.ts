@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Wire-contract tests for find-binary.ts.
@@ -193,6 +186,24 @@ describe('initializeHostEnv / getEnhancedPath (host.env wire contract)', () => {
     expect(mockRequest).toHaveBeenCalledWith('host.env');
     expect(result).toEqual(mockEnv);
     expect(getCachedHostEnv()).toEqual(mockEnv);
+    expect(getEnhancedPath()).toBe(mockEnv.enhancedPath);
+  });
+
+  it('retries while the sidecar is starting', async () => {
+    const mockEnv = {
+      path: '/usr/bin:/bin',
+      pathEntries: ['/usr/bin', '/bin'],
+      enhancedPath: '/usr/bin:/bin:/Users/test/.local/bin',
+      shell: '/bin/zsh',
+      home: '/Users/test',
+      varNames: ['HOME', 'PATH'],
+    };
+    mockRequest.mockRejectedValueOnce(new Error('socket not ready')).mockResolvedValue(mockEnv);
+
+    const result = await initializeHostEnv({ retryForMs: 100, retryDelayMs: 0 });
+
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+    expect(result).toEqual(mockEnv);
     expect(getEnhancedPath()).toBe(mockEnv.enhancedPath);
   });
 

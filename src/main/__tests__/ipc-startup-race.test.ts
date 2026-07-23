@@ -23,11 +23,7 @@
  *    group. If this assertion fails, a race condition has been reintroduced.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -54,6 +50,16 @@ const RENDERER_STARTUP_CHANNELS = [
 ];
 
 describe('IPC Startup Race Condition', () => {
+  it('starts the sidecar before requesting its host environment', () => {
+    const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
+    const source = fs.readFileSync(indexPath, 'utf-8');
+    const sidecarStart = source.indexOf('await startIntentdSidecar(');
+    const hostEnvSeed = source.indexOf('await seedPathFromHostEnv();');
+
+    expect(sidecarStart).toBeGreaterThan(-1);
+    expect(hostEnvSeed).toBeGreaterThan(sidecarStart);
+  });
+
   it('should identify setup functions in critical vs secondary sections', () => {
     const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
     const source = fs.readFileSync(indexPath, 'utf-8');
@@ -138,7 +144,10 @@ describe('IPC Startup Race Condition', () => {
     expect(criticalEnd, 'Could not find criticalIPC end marker in index.ts').toBeGreaterThan(-1);
     const afterCritical = source.slice(criticalEnd);
     const setImmediateIdx = afterCritical.indexOf('setImmediate(async');
-    expect(setImmediateIdx, 'Could not find setImmediate block after critical section in index.ts').toBeGreaterThan(-1);
+    expect(
+      setImmediateIdx,
+      'Could not find setImmediate block after critical section in index.ts',
+    ).toBeGreaterThan(-1);
     const secondarySection = afterCritical.slice(setImmediateIdx);
 
     // Get all active (non-commented) setup function names in secondary
@@ -324,4 +333,3 @@ function resolveFromRegistry(registryContent: string, parts: string[]): string |
   const keyMatch = keyPattern.exec(sectionMatch[1]);
   return keyMatch ? keyMatch[1] : null;
 }
-
