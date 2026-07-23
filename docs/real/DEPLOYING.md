@@ -64,16 +64,15 @@ changelog for that version. It does not conflict with the publishing model:
 public `intent-hq/cloudlands-releases` repo, while the `cloudlands-fe` release
 is the internal changelog anchor for the tag.
 
-**Bootstrap note (remove after the first release-please release):** the
-pre-release-please tag `v2.0.13` points at a commit that is not on `main` (the
-old workflow tagged its own bump commit and merged a squashed copy of it), so
-release-please cannot bound the commit range from the tag alone.
-`release-please-config.json` pins `last-release-sha` to `562af4d2` (the
-`chore: bump version to 2.0.13` commit on `main`) so the first Release PR only
-considers commits since v2.0.13. Once the first release-please release has
-been merged and tagged (tags now land on `main`), **delete the
-`last-release-sha` line** — leaving it in place would make every later Release
-PR re-include already-released commits.
+**Bootstrap note (historical):** the pre-release-please tag `v2.0.13` points
+at a commit that is not on `main` (the old workflow tagged its own bump commit
+and merged a squashed copy of it), so release-please could not bound the
+commit range from that tag alone. `release-please-config.json` temporarily
+pinned `last-release-sha` to `562af4d2` (the `chore: bump version to 2.0.13`
+commit on `main`) so the first Release PR only considered commits since
+v2.0.13. Once the first release-please release (v2.1.0) was merged and tagged
+on `main`, the pin was removed (#314) — release-please now bounds the range
+from the release tags normally.
 
 ## Required GitHub Secrets
 
