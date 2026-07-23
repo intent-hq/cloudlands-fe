@@ -232,7 +232,10 @@ function getPlatformPackage(): ManagedCodexAcpPackage {
 function packageInstallPath(versionDir: string, packageName: string): string {
   const segments = packageName.split('/');
   const expectedSegments = packageName.startsWith('@') ? 2 : 1;
-  if (segments.length !== expectedSegments || segments.some((segment) => !segment)) {
+  if (
+    segments.length !== expectedSegments ||
+    segments.some((segment) => !segment || segment === '.' || segment === '..')
+  ) {
     throw new Error(`Unexpected package name: ${packageName}`);
   }
   return path.join(versionDir, 'node_modules', ...segments);
@@ -317,6 +320,7 @@ async function installManagedCodexAcp(): Promise<ManagedCodexAcpResult> {
       await chmodInstalledBins(installDir, platformPackage.packageName);
 
       const installPaths = getPathsForVersion(installDir, platformPackage.packageName);
+      await fs.access(installPaths.nativeBinaryPath);
       if (getPlatform() === 'darwin') {
         await verifyMacCodeSignature(installPaths.nativeBinaryPath);
       }

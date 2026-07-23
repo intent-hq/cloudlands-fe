@@ -94,7 +94,10 @@ describe('codex-acp-manager', () => {
       'vscode-jsonrpc',
       'zod',
     ]));
-    for (const pkg of manager.MANAGED_CODEX_ACP_INTEGRITY.packages) {
+    for (const pkg of [
+      ...manager.MANAGED_CODEX_ACP_INTEGRITY.packages,
+      ...Object.values(manager.MANAGED_CODEX_ACP_INTEGRITY.platforms),
+    ]) {
       expect(pkg.integrity).toMatch(/^sha512-/);
       expect(pkg.tarballUrl).toMatch(/^https:\/\/registry\.npmjs\.org\//);
     }
