@@ -544,8 +544,10 @@ describe("host-bridge-seeder", () => {
         cwd: "/tmp/it's a repo",
       });
 
-      expect(hostExecCalls()[0][1]).toMatchObject({
+      expect(hostExecCalls()[0][1]).toEqual({
+        command: "/bin/sh",
         args: ["-c", `cd -- '/tmp/it'\\''s a repo' && git status`],
+        timeoutMs: 30_000,
       });
     });
 
@@ -557,9 +559,10 @@ describe("host-bridge-seeder", () => {
 
       await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, { command: "git --version" });
 
-      expect(hostExecCalls()[0][1]).toMatchObject({
+      expect(hostExecCalls()[0][1]).toEqual({
         command: "/bin/sh",
         args: ["-c", "git --version"],
+        timeoutMs: 30_000,
       });
     });
 
@@ -574,9 +577,10 @@ describe("host-bridge-seeder", () => {
         cwd: "C:\\code\\project",
       });
 
-      expect(hostExecCalls()[0][1]).toMatchObject({
+      expect(hostExecCalls()[0][1]).toEqual({
         command: "cmd.exe",
         args: ["/c", `cd /d "C:\\code\\project" && git push --force-with-lease`],
+        timeoutMs: 30_000,
       });
     });
 
@@ -628,6 +632,25 @@ describe("host-bridge-seeder", () => {
         data: { stdout: "", stderr: "", code: 1 },
       });
       expect(JSON.stringify(response)).not.toContain("secret-token");
+    });
+
+    it("folds a system.status response without the §5.7 host block (older intentd) to the catch envelope without guessing a shell", async () => {
+      routeDaemon({
+        "system.status": { running: true },
+        "host.exec": { stdout: "", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git status",
+        cwd: "/repo",
+      });
+
+      expect(response).toEqual({
+        success: false,
+        error: "Command execution failed",
+        data: { stdout: "", stderr: "", code: 1 },
+      });
+      expect(hostExecCalls()).toEqual([]);
     });
 
     it("folds a system.status failure to the catch envelope without reaching host.exec", async () => {

@@ -337,7 +337,10 @@ function posixSingleQuote(value: string): string {
 function shellScriptWithCwd(os: string, command: string, cwd: string): string {
   if (os === "windows") {
     // cmd.exe: `"` is not a legal filename character, so plain quoting is
-    // sufficient; `/d` switches drives when needed.
+    // sufficient; `/d` switches drives when needed. Caveat: cmd.exe expands
+    // `%VAR%` even inside double quotes, so a cwd containing `%` would be
+    // env-expanded — accepted, as `%` is vanishingly rare in real paths and
+    // the Electron main-process handler has the same exposure.
     return `cd /d "${cwd}" && ${command}`;
   }
   return `cd -- ${posixSingleQuote(cwd)} && ${command}`;
@@ -373,7 +376,12 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
   }
   try {
     const status = await backendRequest<SystemStatusResult>("system.status");
-    const os = status?.host?.os ?? "";
+    const os = status?.host?.os;
+    if (!os) {
+      // Older intentd without the §5.7 `host` block — don't guess a shell
+      // (shell-reveal-bridge-seeder idiom); folds to the catch envelope.
+      throw new Error("The daemon does not report host info (older intentd?)");
+    }
     const [shellCmd, shellFlag] = os === "windows" ? ["cmd.exe", "/c"] : ["/bin/sh", "-c"];
     const script = cwd ? shellScriptWithCwd(os, command, cwd) : command;
     const result = await backendRequest<HostExecResult>(
