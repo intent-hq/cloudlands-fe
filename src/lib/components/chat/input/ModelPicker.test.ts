@@ -887,6 +887,65 @@ describe('ModelPicker unlocked agent provider handling', () => {
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
   });
 
+  it('fetches an enabled agent provider only once in unlocked mode (no duplicate wire fetch)', async () => {
+    enabledProviderIds$.set(['auggie', 'codex']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+
+    // The agent's provider is enabled, so its models are already covered by the
+    // all-providers fetch — the per-agent fetch must not fire a duplicate call.
+    const codexCalls = vi
+      .mocked(getModelsForProviderForLoadingState)
+      .mock.calls.filter(([pid]) => pid === 'codex');
+    expect(codexCalls).toHaveLength(1);
+  });
+
+  it('group refresh in unlocked mode updates the group list via allProviderModels', async () => {
+    enabledProviderIds$.set(['auggie', 'codex']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Smarter' }],
+        };
+      }
+      return { models: [] };
+    });
+
+    await fireEvent.click(screen.getByTitle('Refresh OpenAI Codex models'));
+
+    // The refreshed list replaces the group (allProviderModels path); the
+    // per-agent snapshot is not used for an enabled provider in unlocked mode.
+    expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /GPT-5 Codex/ })).toBeNull();
+  });
+
   it('keeps the agent provider group visible when that provider was since disabled', async () => {
     enabledProviderIds$.set(['auggie']);
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });

@@ -264,13 +264,26 @@
     );
   }
 
+  const isEffectiveProviderEnabled = $derived(
+    isProviderEnabled($enabledProviderIds$, effectiveProviderId),
+  );
+
+  // The per-agent fetch is only needed when the effective provider's models
+  // aren't already covered elsewhere: the locked case, or an unlocked agent
+  // whose provider was since disabled (fetchAllProviderModels only fetches
+  // enabled providers). Skipping it otherwise avoids a duplicate wire fetch.
+  const usesAgentProviderFetch = $derived(
+    effectiveProviderId !== $activeProviderId$ &&
+      (isAgentProviderOverride || !isEffectiveProviderEnabled),
+  );
+
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
   // both fetches can run concurrently and must not cancel each other.
   let agentFetchGeneration = 0;
   $effect(() => {
     const epid = effectiveProviderId;
     const currentGen = ++agentFetchGeneration;
-    if (epid === $activeProviderId$) {
+    if (!usesAgentProviderFetch) {
       agentProviderModels = null;
       agentProviderLoading = false;
       agentProviderError = null;
@@ -341,7 +354,7 @@
       const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
       if (fetchGeneration !== gen) return;
       setProviderWarningState(providerId, result.warning);
-      if (providerId === effectiveProviderId) {
+      if (providerId === effectiveProviderId && usesAgentProviderFetch) {
         agentProviderModels = result.models;
       }
       if (!isAgentProviderOverride) {
@@ -593,10 +606,6 @@
     label: 'Default model',
     description: 'Let the specialist choose the best model',
   };
-
-  const isEffectiveProviderEnabled = $derived(
-    isProviderEnabled($enabledProviderIds$, effectiveProviderId),
-  );
 
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
