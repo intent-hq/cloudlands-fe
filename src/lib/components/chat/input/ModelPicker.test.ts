@@ -530,6 +530,38 @@ describe('ModelPicker multi-provider mode', () => {
     expect(onModelChange).toHaveBeenCalledWith('sonnet4.6');
   });
 
+  it('surfaces an empty-with-warning provider as a visible disabled row instead of hiding the group', async () => {
+    // Client-mapped form of the PROTOCOL §6.7 degraded response
+    // `{ models: [], source: 'static', warning }` — the wire request/envelope
+    // for that shape is asserted in model-catalog-bridge-seeder.test.ts.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'opencode') {
+        return { models: [], warning: 'opencode: opencode binary not found' };
+      }
+      return { models: [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }] };
+    });
+    enabledProviderIds$.set(['auggie', 'opencode']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('opencode');
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    // Providers with models are unaffected…
+    expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
+    // …and the empty-with-warning provider renders a visible warning row
+    // instead of the group vanishing.
+    expect(screen.getAllByText(/OpenCode: opencode binary not found/).length).toBeGreaterThan(0);
+  });
+
   it('shows an actionable Codex stale-list notice when the provider returns a fallback warning', async () => {
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
       if (providerId === 'codex') {

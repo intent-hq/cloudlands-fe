@@ -672,6 +672,7 @@
       allProviderModels,
       allProviderLoading,
       allProviderErrors,
+      allProviderWarnings: $allProviderWarnings$,
     }),
   );
 
