@@ -53,7 +53,7 @@
 
   // Open a queued image attachment in the lightbox
   function openImageLightbox(
-    block: { data: string; mimeType: string },
+    block: NonNullable<QueuedMessage['imageBlocks']>[number],
     openerElement: HTMLButtonElement,
     index: number,
   ) {
