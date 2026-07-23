@@ -1758,6 +1758,10 @@ export class WorkspaceService {
             workspaceId: id,
             workspacePath: specialistPath,
             name: agentSession.name,
+            // The initial-agent name is FE-supplied boilerplate ('Coordinator'
+            // or an onboarding default), never typed by the user — flag it so
+            // the session stays self-renameable (PROTOCOL §5.5).
+            nameExplicitlySet: false,
             model: effectiveModel,
             provider,
             agentType: (request.initialAgent as any).agentType || 'workspace',

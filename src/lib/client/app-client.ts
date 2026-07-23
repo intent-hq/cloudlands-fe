@@ -119,6 +119,11 @@ export interface MutationResult {
  * - `provider` / `agentType` / `metadata` / `workspacePath` / `workspaceContext`
  *   are the widened FE-facing spawn hints — the daemon persists `provider` on
  *   the session; the rest are accepted but not yet stored (deferred).
+ * - `nameExplicitlySet` marks whether the supplied `name` was chosen by the
+ *   user (strict boolean on the wire). Pass `false` for generated placeholder
+ *   names so the daemon leaves the session self-renameable
+ *   (`ws.workspace.setAgentName`); omitted, the daemon defaults to
+ *   `name`-present ⇒ explicitly set.
  */
 export interface AgentCreateRequest {
   workspaceId: string;
@@ -126,6 +131,7 @@ export interface AgentCreateRequest {
   model?: string;
   specialist?: string | null;
   name?: string;
+  nameExplicitlySet?: boolean;
   agentId?: string;
   provider?: string;
   agentType?: string;
@@ -405,6 +411,15 @@ export interface AgentsClient {
    * converges the FE streaming state.
    */
   stop(agentId: string): Promise<MutationResult>;
+  /**
+   * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
+   * new name and an applied rename emits `agent:renamed` (in
+   * `AGENT_LIFECYCLE_EVENTS`), so the reactive `subscribe` refetch reconciles
+   * other windows. `workspaceId` is accepted for caller parity with `delete`
+   * but is not part of the wire contract — the daemon resolves the workspace
+   * itself.
+   */
+  rename(agentId: string, name: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Permanently delete an agent session (`agent.delete`, §5.5). The daemon is
    * **idempotent** — it returns `{ success: true }` even when the agent is
