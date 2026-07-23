@@ -1,11 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import {
-  faCommentDots,
-  faCodePullRequest,
-  faSquarePen,
-  faCircleQuestion,
-} from '@fortawesome/free-solid-svg-icons';
+    faCommentDots,
+    faCodePullRequest,
+    faSquarePen,
+    faCircleQuestion,
+  } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
 
   interface Props {
@@ -19,7 +18,6 @@
 
   let content = $state('');
   let commentType: 'comment' | 'suggestion' | 'change-request' | 'question' = $state('comment');
-  let containerRef: HTMLDivElement | null = $state(null);
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const typeOptions = [
@@ -55,20 +53,35 @@
     }
   }
 
-  onMount(() => {
-    // Focus the textarea when dialog opens
-    const textarea = containerRef?.querySelector('textarea');
-    if (textarea) {
-      textarea.focus();
-    }
-  });
+  // Focus the textarea when the dialog opens. An action is used (instead of
+  // onMount) because the dialog renders through Portal, which mounts its
+  // children asynchronously — the textarea is not in the DOM yet when this
+  // component's onMount fires. The retries also re-assert focus in case the
+  // editor or the triggering button steals it back right after mount.
+  function focusOnMount(node: HTMLTextAreaElement) {
+    const tryFocus = () => {
+      if (node.isConnected && document.activeElement !== node) {
+        node.focus();
+      }
+    };
+    tryFocus();
+    queueMicrotask(tryFocus);
+    const rafId =
+      typeof requestAnimationFrame === 'function' ? requestAnimationFrame(tryFocus) : null;
+    const timeoutId = setTimeout(tryFocus, 100);
+    return {
+      destroy() {
+        if (rafId !== null) cancelAnimationFrame(rafId);
+        clearTimeout(timeoutId);
+      },
+    };
+  }
 </script>
 
 <!-- Render through portal to avoid clipping -->
 <Portal>
   <!-- Comment Dialog -->
   <div
-    bind:this={containerRef}
     class="fixed z-[15] bg-card rounded-lg shadow-lg border border-border p-3 w-80 animate-in fade-in slide-in-from-top-2 duration-200"
     style="left: {x}px; top: {y}px; transform: translateX(20px);"
   >
@@ -76,6 +89,7 @@
     <div class="mb-3">
       <textarea
         bind:value={content}
+        use:focusOnMount
         placeholder="Add a comment..."
         onkeydown={handleKeyDown}
         class="w-full p-2 text-xs rounded bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600 resize-none border-0"
