@@ -12,6 +12,22 @@ import { pipeline } from 'stream/promises';
 import { hostExec } from '../../../shared/main/host-exec';
 
 export const MANAGED_CODEX_ACP_VERSION = '1.1.7';
+
+/**
+ * Env overrides for every managed codex-acp spawn (#544). The published
+ * adapter honors `CODEX_PATH` (binary to spawn) and `CODEX_CONFIG` (config
+ * JSON); inheriting them from the user's environment would silently redirect
+ * the managed runtime away from the sha512- and codesign-verified vendored
+ * binary. The daemon's `host.exec` merges env on top of its own process env,
+ * so the keys cannot be removed — they are pinned to empty strings, which the
+ * adapter treats as unset. Unmanaged (PATH / npx) spawns deliberately keep the
+ * variables as a user escape hatch.
+ */
+export const MANAGED_CODEX_ACP_ENV_OVERRIDES: Record<string, string> = {
+  CODEX_PATH: '',
+  CODEX_CONFIG: '',
+};
+
 // The vendored native codex CLI is signed by OpenAI OpCo, LLC.
 const CODEX_APPLE_TEAM_ID = '2DC432GLL2';
 const DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -464,7 +480,7 @@ async function verifyMacCodeSignature(nativeBinaryPath: string): Promise<void> {
 async function validateWrapper(wrapperPath: string): Promise<void> {
   await runProcess(process.execPath, [wrapperPath, '--version'], {
     timeoutMs: SPAWN_TIMEOUT_MS,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...MANAGED_CODEX_ACP_ENV_OVERRIDES },
   });
 }
 

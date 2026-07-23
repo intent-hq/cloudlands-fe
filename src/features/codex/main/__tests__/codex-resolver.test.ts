@@ -59,9 +59,20 @@ describe('codex-resolver', () => {
       command: process.execPath,
       argsPrefix: ['/managed/codex-acp.js'],
       usesNpx: false,
-      env: { ELECTRON_RUN_AS_NODE: '1' },
+      env: { ELECTRON_RUN_AS_NODE: '1', CODEX_PATH: '', CODEX_CONFIG: '' },
     });
     expect(findBinary).not.toHaveBeenCalled();
+  });
+
+  it('neutralizes CODEX_PATH/CODEX_CONFIG in the managed spawn env (#544)', async () => {
+    vi.mocked(ensureManagedCodexAcp).mockResolvedValue({
+      wrapperPath: '/managed/codex-acp.js',
+      version: '0.16.0',
+    });
+
+    const result = await resolveCodexCommand();
+
+    expect(result?.env).toMatchObject({ CODEX_PATH: '', CODEX_CONFIG: '' });
   });
 
   it('falls back to the user-installed codex-acp command path when managed is unavailable', async () => {
@@ -71,7 +82,10 @@ describe('codex-resolver', () => {
     });
 
     const result = await resolveCodexCommand();
+    // No env overrides: user-installed binaries keep the CODEX_PATH /
+    // CODEX_CONFIG escape hatch (#544).
     expect(result).toEqual({ command: '/usr/local/bin/codex-acp', argsPrefix: [], usesNpx: false });
+    expect(result?.env).toBeUndefined();
   });
 
   it('pins the npx codex-acp fallback to the managed runtime version', async () => {
@@ -210,7 +224,7 @@ describe('codex-resolver', () => {
         command: process.execPath,
         argsPrefix: ['/managed/codex-acp.js'],
         usesNpx: false,
-        env: { ELECTRON_RUN_AS_NODE: '1' },
+        env: { ELECTRON_RUN_AS_NODE: '1', CODEX_PATH: '', CODEX_CONFIG: '' },
         source: 'managed-codex-acp',
       },
       { command: '/usr/local/bin/codex-acp', argsPrefix: [], usesNpx: false, source: 'codex-acp' },

@@ -12,7 +12,11 @@ import {
   getCommonNpmPaths,
 } from '../../../shared/main/find-binary';
 import { execFileAsync } from '../../../shared/main/async-utils';
-import { ensureManagedCodexAcp, MANAGED_CODEX_ACP_VERSION } from './codex-acp-manager';
+import {
+  ensureManagedCodexAcp,
+  MANAGED_CODEX_ACP_ENV_OVERRIDES,
+  MANAGED_CODEX_ACP_VERSION,
+} from './codex-acp-manager';
 
 /**
  * Pinned npx fallback for the Codex ACP adapter. Reuses the managed runtime
@@ -336,7 +340,7 @@ async function resolveManagedCodexAcpCommand(): Promise<CodexResolvedCommand | n
       command: process.execPath,
       argsPrefix: [wrapperPath],
       usesNpx: false,
-      env: { ELECTRON_RUN_AS_NODE: '1' },
+      env: { ELECTRON_RUN_AS_NODE: '1', ...MANAGED_CODEX_ACP_ENV_OVERRIDES },
     };
   } catch {
     return null;
