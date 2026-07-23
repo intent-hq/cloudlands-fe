@@ -102,10 +102,10 @@ describe("LiveIntegrationsClient (fake transport)", () => {
     expect(await client.githubUser()).toBeNull();
   });
 
-  it("linearIssues gates on linear.authStatus and returns linear.listIssues verbatim", async () => {
+  it("linearIssues gates on linear.authStatus and unwraps the linear.listIssues { issues, nextToken } envelope (§5.28)", async () => {
     mockedRequest
       .mockResolvedValueOnce({ authenticated: true, login: "Ada Lovelace", scopes: [] })
-      .mockResolvedValueOnce([LINEAR_ISSUE]);
+      .mockResolvedValueOnce({ issues: [LINEAR_ISSUE], nextToken: null });
     const client = new LiveIntegrationsClient();
 
     const issues = await client.linearIssues();
@@ -124,10 +124,10 @@ describe("LiveIntegrationsClient (fake transport)", () => {
     expect(mockedRequest).toHaveBeenCalledWith("linear.authStatus");
   });
 
-  it("sentryIssues gates on sentry.authStatus and returns sentry.listIssues verbatim", async () => {
+  it("sentryIssues gates on sentry.authStatus and unwraps the sentry.listIssues { issues, nextToken } envelope (§5.29)", async () => {
     mockedRequest
       .mockResolvedValueOnce({ authenticated: true, organization: "acme" })
-      .mockResolvedValueOnce([SENTRY_ISSUE]);
+      .mockResolvedValueOnce({ issues: [SENTRY_ISSUE], nextToken: null });
     const client = new LiveIntegrationsClient();
 
     const issues = await client.sentryIssues();
@@ -219,11 +219,11 @@ describe("settings-integrations seeder hydrates the connections slices from the 
         case "linear.authStatus":
           return { authenticated: true, login: "Ada Lovelace", scopes: [] };
         case "linear.listIssues":
-          return [LINEAR_ISSUE];
+          return { issues: [LINEAR_ISSUE], nextToken: null };
         case "sentry.authStatus":
           return { authenticated: true, organization: "real-org" };
         case "sentry.listIssues":
-          return [SENTRY_ISSUE];
+          return { issues: [SENTRY_ISSUE], nextToken: null };
         default:
           throw new Error(`unexpected daemon method: ${method}`);
       }

@@ -11,6 +11,7 @@ import type {
   FetchIssuesRequest,
   SaveConfigResult,
   SentryAuthState,
+  SentryIssuePage,
   SentryIssueResult,
   SentryProject,
 } from '../types';
@@ -67,27 +68,48 @@ export const sentryAuthClient = {
   },
 
   /**
-   * Fetch issues for a project or organization
+   * Fetch issues for a project or organization (first page only)
    */
   async fetchIssues(request?: FetchIssuesRequest): Promise<SentryIssueResult[]> {
+    return (await this.fetchIssuesPage(request)).issues;
+  },
+
+  /**
+   * Fetch one cursor-paginated page of issues (PROTOCOL §5.29).
+   * Pass `request.nextToken` from a previous page to continue.
+   */
+  async fetchIssuesPage(request?: FetchIssuesRequest): Promise<SentryIssuePage> {
     try {
-      return await invoke<SentryIssueResult[]>(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, request);
+      return await invoke<SentryIssuePage>(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, request);
     } catch {
-      return [];
+      return { issues: [], nextToken: null };
     }
   },
 
   /**
-   * Search issues by query
+   * Search issues by query (first page only)
    */
   async searchIssues(query: string, project?: string): Promise<SentryIssueResult[]> {
+    return (await this.searchIssuesPage(query, project)).issues;
+  },
+
+  /**
+   * Search one cursor-paginated page of issues (PROTOCOL §5.29).
+   * @param options - Optional `limit` and opaque `nextToken` cursor
+   */
+  async searchIssuesPage(
+    query: string,
+    project?: string,
+    options?: { limit?: number; nextToken?: string },
+  ): Promise<SentryIssuePage> {
     try {
-      return await invoke<SentryIssueResult[]>(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, {
+      return await invoke<SentryIssuePage>(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, {
         query,
         project,
+        ...options,
       });
     } catch {
-      return [];
+      return { issues: [], nextToken: null };
     }
   },
 
@@ -104,4 +126,4 @@ export const sentryAuthClient = {
 };
 
 // Re-export types for convenience
-export type { SentryIssueResult, SentryProject } from '../types';
+export type { SentryIssuePage, SentryIssueResult, SentryProject } from '../types';

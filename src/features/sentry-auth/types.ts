@@ -143,6 +143,8 @@ export interface FetchIssuesRequest {
   query?: string;
   /** Maximum number of results */
   limit?: number;
+  /** Opaque cursor from a previous page's `nextToken` */
+  nextToken?: string;
 }
 
 /**
@@ -153,4 +155,15 @@ export interface SearchIssuesRequest {
   /** Project slug to filter by (optional) */
   project?: string;
   limit?: number;
+  /** Opaque cursor from a previous page's `nextToken` */
+  nextToken?: string;
+}
+
+/**
+ * One page of cursor-paginated Sentry issue reads (PROTOCOL §5.29)
+ */
+export interface SentryIssuePage {
+  issues: SentryIssueResult[];
+  /** Opaque cursor for the next page, or `null` when this is the last page */
+  nextToken: string | null;
 }

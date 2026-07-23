@@ -40,7 +40,7 @@ describe('integrations-bridge-seeder', () => {
 
   afterEach(() => vi.clearAllMocks());
 
-  describe('linear-auth:* → daemon linear.* (PROTOCOL §5.28 — bare results)', () => {
+  describe('linear-auth:* → daemon linear.* (PROTOCOL §5.28 — { issues, nextToken } envelope)', () => {
     it('get-auth-state reports the linear.authStatus probe (env-key model: no oauth, no daemon auth)', async () => {
       mockedRequest.mockResolvedValueOnce({ authenticated: true, login: 'Ada', scopes: [] });
 
@@ -59,27 +59,56 @@ describe('integrations-bridge-seeder', () => {
       });
     });
 
-    it('fetch-my-issues forwards the positional filter as { filter } and returns the flattened issues verbatim', async () => {
+    it('fetch-my-issues forwards the positional filter as { filter } and returns the { issues, nextToken } envelope', async () => {
       const issue = { id: 'u1', identifier: 'ENG-123', title: 'Fix flux', teamKey: 'ENG' };
-      mockedRequest.mockResolvedValueOnce([issue]);
+      mockedRequest.mockResolvedValueOnce({ issues: [issue], nextToken: 'cursor-2' });
 
-      const issues = await mockInvoke(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, 'assigned');
+      const page = await mockInvoke(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, 'assigned');
 
       expect(mockedRequest).toHaveBeenCalledWith('linear.listIssues', { filter: 'assigned' });
-      expect(issues).toEqual([issue]);
+      expect(page).toEqual({ issues: [issue], nextToken: 'cursor-2' });
     });
 
-    it('search-issues forwards { query } and folds a daemon failure to []', async () => {
-      mockedRequest.mockResolvedValueOnce([]);
+    it('fetch-my-issues forwards { limit, nextToken } cursor params (§5.28)', async () => {
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
+
+      await mockInvoke(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, 'assigned', {
+        limit: 50,
+        nextToken: 'cursor-1',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('linear.listIssues', {
+        filter: 'assigned',
+        limit: 50,
+        nextToken: 'cursor-1',
+      });
+    });
+
+    it('search-issues forwards { query, limit?, nextToken? } and folds a daemon failure to an empty page', async () => {
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
       await mockInvoke(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, 'flux');
       expect(mockedRequest).toHaveBeenCalledWith('linear.searchIssues', { query: 'flux' });
 
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
+      await mockInvoke(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, 'flux', {
+        limit: 20,
+        nextToken: 'cursor-1',
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('linear.searchIssues', {
+        query: 'flux',
+        limit: 20,
+        nextToken: 'cursor-1',
+      });
+
       mockedRequest.mockRejectedValueOnce(new Error('boom'));
-      expect(await mockInvoke(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, 'flux')).toEqual([]);
+      expect(await mockInvoke(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, 'flux')).toEqual({
+        issues: [],
+        nextToken: null,
+      });
     });
   });
 
-  describe('sentry-auth:* → daemon sentry.* (PROTOCOL §5.29 — bare results)', () => {
+  describe('sentry-auth:* → daemon sentry.* (PROTOCOL §5.29 — { issues, nextToken } envelope)', () => {
     it('get-auth-state maps the probe to { isAuthenticated, organization } (derived identity only)', async () => {
       mockedRequest.mockResolvedValueOnce({ authenticated: true, organization: 'acme' });
 
@@ -93,11 +122,11 @@ describe('integrations-bridge-seeder', () => {
       });
     });
 
-    it('fetch-issues forwards the FetchIssuesRequest fields onto sentry.listIssues', async () => {
+    it('fetch-issues forwards the FetchIssuesRequest fields onto sentry.listIssues and returns the envelope', async () => {
       const issue = { id: '1', shortId: 'WEB-1', title: 'TypeError', status: 'unresolved' };
-      mockedRequest.mockResolvedValueOnce([issue]);
+      mockedRequest.mockResolvedValueOnce({ issues: [issue], nextToken: 'cursor-2' });
 
-      const issues = await mockInvoke(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, {
+      const page = await mockInvoke(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, {
         status: 'unresolved',
         limit: 50,
       });
@@ -106,26 +135,50 @@ describe('integrations-bridge-seeder', () => {
         status: 'unresolved',
         limit: 50,
       });
-      expect(issues).toEqual([issue]);
+      expect(page).toEqual({ issues: [issue], nextToken: 'cursor-2' });
     });
 
-    it('fetch-issues with no request forwards empty params and folds failures to []', async () => {
-      mockedRequest.mockResolvedValueOnce([]);
+    it('fetch-issues forwards the nextToken cursor (§5.29)', async () => {
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
+
+      await mockInvoke(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, {
+        status: 'unresolved',
+        nextToken: 'cursor-1',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('sentry.listIssues', {
+        status: 'unresolved',
+        nextToken: 'cursor-1',
+      });
+    });
+
+    it('fetch-issues with no request forwards empty params and folds failures to an empty page', async () => {
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
       await mockInvoke(SENTRY_AUTH_CHANNELS.FETCH_ISSUES);
       expect(mockedRequest).toHaveBeenCalledWith('sentry.listIssues', {});
 
       mockedRequest.mockRejectedValueOnce(new Error('Sentry is not configured.'));
-      expect(await mockInvoke(SENTRY_AUTH_CHANNELS.FETCH_ISSUES)).toEqual([]);
+      expect(await mockInvoke(SENTRY_AUTH_CHANNELS.FETCH_ISSUES)).toEqual({
+        issues: [],
+        nextToken: null,
+      });
     });
 
-    it('search-issues forwards { query, project? } onto sentry.searchIssues', async () => {
-      mockedRequest.mockResolvedValueOnce([]);
+    it('search-issues forwards { query, project?, limit?, nextToken? } onto sentry.searchIssues', async () => {
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
 
-      await mockInvoke(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, { query: 'TypeError', project: 'web' });
+      await mockInvoke(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, {
+        query: 'TypeError',
+        project: 'web',
+        limit: 20,
+        nextToken: 'cursor-1',
+      });
 
       expect(mockedRequest).toHaveBeenCalledWith('sentry.searchIssues', {
         query: 'TypeError',
         project: 'web',
+        limit: 20,
+        nextToken: 'cursor-1',
       });
     });
   });
@@ -491,6 +544,7 @@ describe('integrations-bridge-seeder', () => {
             labels: ['bug'],
           },
         ],
+        nextToken: 'cursor-2',
       });
 
       const response = await mockInvoke(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
@@ -524,7 +578,28 @@ describe('integrations-bridge-seeder', () => {
             updatedAt: '2026-01-02T00:00:00Z',
           },
         ],
+        nextToken: 'cursor-2',
       });
+    });
+
+    it('search-github-issues forwards query + nextToken onto github.issues.search (§5.27)', async () => {
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
+
+      const response = await mockInvoke(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
+        owner: 'octocat',
+        repo: 'hello',
+        options: { state: 'open', filter: 'all', query: 'flux', nextToken: 'cursor-1' },
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.issues.search', {
+        owner: 'octocat',
+        repo: 'hello',
+        filter: 'all',
+        state: 'open',
+        query: 'flux',
+        nextToken: 'cursor-1',
+      });
+      expect(response).toEqual({ success: true, data: [], nextToken: null });
     });
 
     it("search-pull-requests maps merged/draft booleans into the pane's single state field", async () => {
@@ -574,6 +649,28 @@ describe('integrations-bridge-seeder', () => {
         targetBranch: 'main',
         description: '…',
       });
+    });
+
+    it('search-pull-requests forwards query + nextToken and returns the response nextToken (§5.27)', async () => {
+      mockedRequest.mockResolvedValueOnce({ pulls: [], nextToken: 'cursor-2' });
+
+      const response = await mockInvoke<{ success: boolean; nextToken: string | null }>(
+        IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS,
+        {
+          owner: 'octocat',
+          repo: 'hello',
+          options: { filter: 'all', query: 'feature', nextToken: 'cursor-1' },
+        },
+      );
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.pulls.search', {
+        owner: 'octocat',
+        repo: 'hello',
+        filter: 'all',
+        query: 'feature',
+        nextToken: 'cursor-1',
+      });
+      expect(response.nextToken).toBe('cursor-2');
     });
 
     it('folds a daemon failure to the { success:false, error } envelope the pane tolerates', async () => {

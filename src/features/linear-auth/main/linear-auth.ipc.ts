@@ -40,28 +40,36 @@ export function setupLinearAuthIPC(): void {
   // Get Linear status from daemon API
   ipcMain.handle(LINEAR_AUTH_CHANNELS.GET_STATUS, async () => linearAuthService.getLinearStatus(true));
 
-  // Fetch issues based on filter type
+  // Fetch issues based on filter type; returns the { issues, nextToken }
+  // envelope (PROTOCOL §5.28 cursor pagination)
   ipcMain.handle(
     LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES,
-    async (_event, filter: 'assigned' | 'created' | 'subscribed' | 'team' | 'all' = 'assigned') => {
+    async (
+      _event,
+      filter: 'assigned' | 'created' | 'subscribed' | 'team' | 'all' = 'assigned',
+      options?: { limit?: number; nextToken?: string },
+    ) => {
       try {
-        return await linearAuthService.fetchMyIssues(filter);
+        return await linearAuthService.fetchMyIssues(filter, options);
       } catch (error) {
         logger.error('Failed to fetch Linear issues', error as Error);
-        return [];
+        return { issues: [], nextToken: null };
       }
     },
   );
 
-  // Search issues by query
-  ipcMain.handle(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, async (_event, query: string) => {
-    try {
-      return await linearAuthService.searchIssues(query);
-    } catch (error) {
-      logger.error('Failed to search Linear issues', error as Error);
-      return [];
-    }
-  });
+  // Search issues by query; returns the { issues, nextToken } envelope
+  ipcMain.handle(
+    LINEAR_AUTH_CHANNELS.SEARCH_ISSUES,
+    async (_event, query: string, options?: { limit?: number; nextToken?: string }) => {
+      try {
+        return await linearAuthService.searchIssues(query, options);
+      } catch (error) {
+        logger.error('Failed to search Linear issues', error as Error);
+        return { issues: [], nextToken: null };
+      }
+    },
+  );
 
   logger.info('Linear Auth IPC handlers registered');
 }

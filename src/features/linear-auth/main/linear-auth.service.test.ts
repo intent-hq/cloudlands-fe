@@ -119,39 +119,67 @@ describe('LinearAuthService (live daemon linear.*)', () => {
     expect((await service.getLinearStatus()).isConfigured).toBe(false);
   });
 
-  it('fetchMyIssues returns the daemon-flattened issues for the given filter', async () => {
+  it('fetchMyIssues returns the daemon { issues, nextToken } envelope for the given filter', async () => {
     const issues = [{ id: 'a1', identifier: 'ENG-123', title: 'Fix the widget', state: 'Todo' }];
-    request.mockResolvedValueOnce(issues);
+    request.mockResolvedValueOnce({ issues, nextToken: 'eyJjIjoiY3Vyc29yLTIifQ' });
 
-    expect(await service.fetchMyIssues('created')).toEqual(issues);
+    expect(await service.fetchMyIssues('created')).toEqual({
+      issues,
+      nextToken: 'eyJjIjoiY3Vyc29yLTIifQ',
+    });
     expect(request).toHaveBeenCalledWith('linear.listIssues', { filter: 'created' });
   });
 
-  it('fetchMyIssues defaults to the assigned filter and degrades to [] on error', async () => {
-    request.mockResolvedValueOnce([]);
-    expect(await service.fetchMyIssues()).toEqual([]);
+  it('fetchMyIssues forwards limit/nextToken cursor params (§5.28)', async () => {
+    request.mockResolvedValueOnce({ issues: [], nextToken: null });
+
+    await service.fetchMyIssues('assigned', { limit: 50, nextToken: 'cursor-1' });
+
+    expect(request).toHaveBeenCalledWith('linear.listIssues', {
+      filter: 'assigned',
+      limit: 50,
+      nextToken: 'cursor-1',
+    });
+  });
+
+  it('fetchMyIssues defaults to the assigned filter and degrades to an empty page on error', async () => {
+    request.mockResolvedValueOnce({ issues: [], nextToken: null });
+    expect(await service.fetchMyIssues()).toEqual({ issues: [], nextToken: null });
     expect(request).toHaveBeenCalledWith('linear.listIssues', { filter: 'assigned' });
 
     request.mockRejectedValueOnce(methodNotFound());
-    expect(await service.fetchMyIssues('all')).toEqual([]);
+    expect(await service.fetchMyIssues('all')).toEqual({ issues: [], nextToken: null });
 
     request.mockRejectedValueOnce(new Error('boom'));
-    expect(await service.fetchMyIssues('team')).toEqual([]);
+    expect(await service.fetchMyIssues('team')).toEqual({ issues: [], nextToken: null });
   });
 
-  it('searchIssues forwards the query and degrades to [] for empty/errored searches', async () => {
+  it('searchIssues forwards the query and degrades to an empty page for empty/errored searches', async () => {
     const issues = [{ id: 'b2', identifier: 'ENG-9', title: 'Search hit' }];
-    request.mockResolvedValueOnce(issues);
-    expect(await service.searchIssues('widget')).toEqual(issues);
+    request.mockResolvedValueOnce({ issues, nextToken: null });
+    expect(await service.searchIssues('widget')).toEqual({ issues, nextToken: null });
     expect(request).toHaveBeenCalledWith('linear.searchIssues', { query: 'widget' });
 
     // empty query short-circuits without a daemon call
     request.mockReset();
-    expect(await service.searchIssues('')).toEqual([]);
+    expect(await service.searchIssues('')).toEqual({ issues: [], nextToken: null });
     expect(request).not.toHaveBeenCalled();
 
     request.mockRejectedValueOnce(new Error('boom'));
-    expect(await service.searchIssues('anything')).toEqual([]);
+    expect(await service.searchIssues('anything')).toEqual({ issues: [], nextToken: null });
+  });
+
+  it('searchIssues forwards limit/nextToken cursor params and returns the next cursor (§5.28)', async () => {
+    request.mockResolvedValueOnce({ issues: [], nextToken: 'cursor-2' });
+
+    const page = await service.searchIssues('widget', { limit: 20, nextToken: 'cursor-1' });
+
+    expect(request).toHaveBeenCalledWith('linear.searchIssues', {
+      query: 'widget',
+      limit: 20,
+      nextToken: 'cursor-1',
+    });
+    expect(page.nextToken).toBe('cursor-2');
   });
 
   it('exposes a shared singleton instance', async () => {

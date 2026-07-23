@@ -119,8 +119,8 @@ export function electronAPI() {
  * Routed through the mock IPC router (via the generated client) rather than the
  * real Electron bridge, so callers receive mock responses by channel.
  */
-export async function invoke<T>(channel: string, data?: any): Promise<T> {
-  return await ipcInvoke<T>(channel, data);
+export async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  return await ipcInvoke<T>(channel, ...args);
 }
 
 /**

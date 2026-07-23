@@ -232,18 +232,20 @@ export function setupGitTrackingIPC(): void {
     ),
   );
 
-  // Search pull requests with filter (uses GitHub search API with @me)
+  // Search pull requests with filter (uses GitHub search API with @me).
+  // Supports free-text `query` and cursor pagination; `nextToken` rides
+  // alongside `data` so legacy `response.data` consumers keep working.
   ipcMain.handle(
     GIT_TRACKING_CHANNELS.SEARCH_PULL_REQUESTS,
     createSafeValidatedHandler(
       GitTrackingSearchPullRequestsSchema,
       async (_, { owner, repo, options, force }) => {
         try {
-          const pullRequests = await githubService.searchPullRequests(owner, repo, {
+          const result = await githubService.searchPullRequests(owner, repo, {
             ...(options && typeof options === 'object' ? options : {}),
             force,
           });
-          return { success: true, data: pullRequests };
+          return { success: true, data: result.pulls, nextToken: result.nextToken };
         } catch (error) {
           logger.error('Failed to search pull requests', error as Error);
           return {
@@ -319,15 +321,17 @@ export function setupGitTrackingIPC(): void {
     ),
   );
 
-  // Search GitHub issues with filter (uses GitHub search API with @me and is:issue)
+  // Search GitHub issues with filter (uses GitHub search API with @me and
+  // is:issue). Supports free-text `query` and cursor pagination; `nextToken`
+  // rides alongside `data` so legacy `response.data` consumers keep working.
   ipcMain.handle(
     GIT_TRACKING_CHANNELS.SEARCH_GITHUB_ISSUES,
     createSafeValidatedHandler(
       GitTrackingSearchGithubIssuesSchema,
       async (_, { owner, repo, options }) => {
         try {
-          const issues = await githubService.searchIssues(owner, repo, options);
-          return { success: true, data: issues };
+          const result = await githubService.searchIssues(owner, repo, options);
+          return { success: true, data: result.issues, nextToken: result.nextToken };
         } catch (error) {
           logger.error('Failed to search GitHub issues', error as Error);
           return {
