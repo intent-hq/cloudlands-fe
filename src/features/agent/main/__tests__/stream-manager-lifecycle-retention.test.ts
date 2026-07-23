@@ -148,10 +148,14 @@ describe('StreamManager lifecycle retention cleanup', () => {
   });
 
   it('clears its cleanup and health-check intervals on dispose', () => {
-    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    // Unrelated timers may exist in the fake-timer scope (e.g. from other
+    // module imports), so assert the delta rather than an absolute count:
+    // dispose() must clear exactly the two manager intervals.
+    const before = vi.getTimerCount();
+    expect(before).toBeGreaterThanOrEqual(2);
 
     manager.dispose();
 
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(before - 2);
   });
 });
