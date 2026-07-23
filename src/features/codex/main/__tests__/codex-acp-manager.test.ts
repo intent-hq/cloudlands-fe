@@ -156,7 +156,11 @@ describe('codex-acp-manager', () => {
           expect.stringContaining(path.join('codex-acp', 'dist', 'index.js')),
           '--version',
         ],
-        env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }),
+        env: expect.objectContaining({
+          ELECTRON_RUN_AS_NODE: '1',
+          CODEX_PATH: '',
+          CODEX_CONFIG: '',
+        }),
       }),
     );
     expect(manager.getManagedCodexAcpStatus()).toMatchObject({
