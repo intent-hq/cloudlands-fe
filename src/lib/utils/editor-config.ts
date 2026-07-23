@@ -1,5 +1,6 @@
 import type { EditorOptions } from '@tiptap/core';
 import { Extension } from '@tiptap/core';
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Mention from '@tiptap/extension-mention';
@@ -76,7 +77,7 @@ import { store as appStore } from '$store/renderer/store';
 const lowlight = safeLowlight;
 
 // Extend Mention to parse our span[data-mention] chips back into nodes
-const MentionFromSpan = Mention.extend({
+export const MentionFromSpan = Mention.extend({
   parseHTML() {
     return [{ tag: 'span[data-mention]' }];
   },
@@ -129,6 +130,25 @@ const MentionFromSpan = Mention.extend({
     } as any;
   },
 });
+
+/**
+ * Text serialization for mention chips: render the canonical @-token so text
+ * extraction (TipTap `getTextBetween`, markdown round-trips) reproduces the
+ * note's source text instead of dropping the atom node.
+ */
+export const mentionRenderText = ({ node }: { node: ProseMirrorNode }): string => {
+  const data = node.attrs || {};
+  try {
+    return toPromptToken({
+      type: data.type,
+      id: data.id,
+      label: data.label,
+      meta: data.meta,
+    });
+  } catch {
+    return `@${data?.meta?.fullPath || data?.meta?.path || data?.label || data?.id || 'item'}`;
+  }
+};
 
 export const PLACEHOLDER_TEXT =
   'Start drafting a specification for what you want to build. Or brainstorm with an agent ←';
@@ -489,19 +509,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                     label, // Display without @ prefix for cleaner appearance
                   ];
                 },
-                renderText: ({ node }) => {
-                  const data = node.attrs || {};
-                  try {
-                    return toPromptToken({
-                      type: data.type,
-                      id: data.id,
-                      label: data.label,
-                      meta: data.meta,
-                    });
-                  } catch {
-                    return `@${data?.meta?.fullPath || data?.meta?.path || data?.label || data?.id || 'item'}`;
-                  }
-                },
+                renderText: mentionRenderText,
                 suggestion: {
                   char: '@',
                   allowSpaces: false,
@@ -917,6 +925,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                     label, // Display without @ prefix for cleaner appearance
                   ];
                 },
+                renderText: mentionRenderText,
               }),
             ])
           : []),

@@ -171,11 +171,15 @@ export const CommentAnchor = Node.create({
           ({ state, tr, dispatch }) => {
             let found = false;
 
-            // Find and remove all anchors for this comment
+            // Find and remove all anchors for this comment. Positions come
+            // from the pre-transaction doc, so map them through the
+            // transaction — otherwise the second anchor of a range pair is
+            // deleted at a stale offset and survives.
             state.doc.descendants((node, pos) => {
               if (node.type.name === this.name && node.attrs.commentId === commentId) {
                 found = true;
-                tr.delete(pos, pos + node.nodeSize);
+                const mapped = tr.mapping.map(pos);
+                tr.delete(mapped, mapped + node.nodeSize);
               }
             });
 

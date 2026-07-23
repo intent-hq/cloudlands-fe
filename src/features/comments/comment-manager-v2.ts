@@ -6,6 +6,10 @@
  */
 
 import type { Editor } from '@tiptap/core';
+import {
+  getTextBetween,
+  getTextSerializersFromSchema,
+} from '@tiptap/core';
 import type { CommentV2, CommentAnchor } from './comment-types-v2';
 import { createLogger } from '$lib/utils/client-logger';
 import {
@@ -808,6 +812,24 @@ export class CommentManagerV2 {
   }
 
   /**
+   * Extract document text between two positions, honoring the extensions'
+   * text serializers (e.g. mention chips' `renderText`) so atom nodes
+   * contribute their canonical text instead of an empty string. No block
+   * separator: the daemon's plaintext projection joins blocks with none.
+   */
+  private extractText(from: number, to: number): string {
+    if (!this.editor) return '';
+    return getTextBetween(
+      this.editor.state.doc,
+      { from, to },
+      {
+        blockSeparator: '',
+        textSerializers: getTextSerializersFromSchema(this.editor.schema),
+      },
+    );
+  }
+
+  /**
    * Add a new comment at the current selection or specified position
    */
   async addComment(
@@ -835,13 +857,14 @@ export class CommentManagerV2 {
       return null;
     }
 
-    // Get selected text and context
-    const selectedText = this.editor.state.doc.textBetween(from, to);
-    const beforeText = this.editor.state.doc.textBetween(Math.max(0, from - 50), from);
-    const afterText = this.editor.state.doc.textBetween(
-      to,
-      Math.min(this.editor.state.doc.content.size, to + 50),
-    );
+    // Get selected text and context. Serializer-aware extraction: raw
+    // `doc.textBetween` yields an EMPTY string for atom leaf nodes (mention
+    // chips define TipTap `renderText`, which maps to `schema.toText`, never
+    // to ProseMirror's `spec.leafText`), punching holes in the needle the
+    // daemon then cannot match against the markdown source.
+    const selectedText = this.extractText(from, to);
+    const beforeText = this.extractText(Math.max(0, from - 50), from);
+    const afterText = this.extractText(to, Math.min(this.editor.state.doc.content.size, to + 50));
 
     // Build the full comment with generated id, timestamps, and deterministic
     // anchor ids (`${id}:point` / `${id}:start|end`) so it is store-ready before
@@ -900,14 +923,43 @@ export class CommentManagerV2 {
     // text with its surrounding context so the daemon can re-anchor it.
     // `authorType: 'user'` marks the editor-driven add as user-authored (the
     // daemon defaults to 'agent' when absent).
-    await commentsWrite.addComment(this.noteId, addedComment, {
-      searchContext: `${beforeText}${selectedText}${afterText}`,
+    const searchContext = `${beforeText}${selectedText}${afterText}`;
+    const persisted = await commentsWrite.addComment(this.noteId, addedComment, {
+      searchContext,
       commentTarget: selectedText,
       comment: content,
       type,
       author: 'User',
       authorType: 'user',
     });
+    if (!persisted) {
+      // Reconstruction evidence for a failed comment.add: param lengths plus
+      // bounded head/tail snippets (never the full note text). Emitted as a
+      // single JSON string because the main process forwards renderer console
+      // errors by message text only (console-message carries no structured
+      // args), landing this in console-output.log without a debugger.
+      console.error(
+        `[CommentDiag] comment.add failed ${JSON.stringify({
+          noteId: this.noteId,
+          selection: { from, to },
+          searchContextLength: searchContext.length,
+          searchContextHead: searchContext.slice(0, 24),
+          searchContextTail: searchContext.slice(-24),
+          commentTargetLength: selectedText.length,
+          commentTargetHead: selectedText.slice(0, 24),
+          commentTargetTail: selectedText.slice(-24),
+          editorDocSize: this.editor.state.doc.content.size,
+          editorTextLength: this.editor.state.doc.textContent.length,
+        })}`,
+      );
+      // The write service rolled the optimistic comment back out of the store;
+      // mirror that in the editor so the just-inserted invisible anchors are
+      // not serialized into the note as debris for a comment that never
+      // persisted.
+      this.editor.chain().removeCommentAnchors(addedComment.id).run();
+      this.updateDecorations();
+      return null;
+    }
 
     // Update decorations
     this.updateDecorations();
