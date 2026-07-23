@@ -91,7 +91,7 @@ export const selectProviderModels = store.createSelector((state): Record<string,
  * Select the default model for a specific workspace.
  * Falls back to the global selected model if no workspace-specific model is set,
  * or if the workspace override's provider is no longer enabled (#584).
- * Bare (non-compound) overrides resolve to the active provider and are returned as-is.
+ * Bare (non-compound) overrides resolve to the default provider downstream and are returned as-is.
  */
 export const selectWorkspaceDefaultModel = store.createSelector((state, workspaceId: string): string => {
   const workspaceModel = state.model.workspaceModels[workspaceId];
