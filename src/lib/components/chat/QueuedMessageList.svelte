@@ -23,6 +23,7 @@
 } from 'svelte/transition';
   import type { QueuedMessage } from '$shared/types';
   import Button from '../ui/button/button.svelte';
+  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import { summarizeEventWake } from './event-wake-summary';
@@ -43,6 +44,24 @@
   let editContent = $state('');
   let editOriginalContent = $state('');
   let editStartedProgrammatically = $state(false);
+
+  // Lightbox state for queued image attachments
+  let lightboxOpen = $state(false);
+  let lightboxImageUrl = $state('');
+  let lightboxImageName = $state('');
+  let lightboxOpenerElement: HTMLButtonElement | null = $state(null);
+
+  // Open a queued image attachment in the lightbox
+  function openImageLightbox(
+    block: { data: string; mimeType: string },
+    openerElement: HTMLButtonElement,
+    index: number,
+  ) {
+    lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
+    lightboxImageName = `Attached Image ${index + 1}`;
+    lightboxOpenerElement = openerElement;
+    lightboxOpen = true;
+  }
 
   // Auto-resize textarea to fit content
   function autoResize(node: HTMLTextAreaElement) {
@@ -222,6 +241,31 @@
   }
 </script>
 
+{#snippet imageThumbnails(message: QueuedMessage)}
+  {#if message.imageBlocks && message.imageBlocks.length > 0}
+    <div class="inline-flex items-center gap-1 shrink-0">
+      {#each message.imageBlocks as block, i (i)}
+        <button
+          type="button"
+          class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-sm focus:outline-none focus:ring-1 focus:ring-primary"
+          data-testid="queued-image-thumbnail"
+          onclick={(e) => {
+            e.stopPropagation();
+            openImageLightbox(block, e.currentTarget, i);
+          }}
+          aria-label="View attached image {i + 1} full size"
+        >
+          <img
+            src="data:{block.mimeType};base64,{block.data}"
+            alt="Attached image {i + 1}"
+            class="h-[1.1em] w-[1.1em] rounded-sm border border-border object-cover hover:opacity-90 transition-opacity"
+          />
+        </button>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
 {#if messages.length > 0}
   <div class="relative border-t border-border/50 pt-3 pb-2 px-2 z-20" transition:slide={{ duration: 200 }}>
     <div class="flex items-center gap-1.5 text-xs text-subtle mb-2 px-2.5">
@@ -344,6 +388,7 @@
                 <div class="shrink-0" data-testid="queued-agent-message-avatar">
                   <AuggieAvatar agentId={agentAttr.fromAgentId} size={14} />
                 </div>
+                {@render imageThumbnails(message)}
                 <div
                   class="flex-1 min-w-0 truncate"
                   transition:slide={{ axis: 'y', duration: 200 }}
@@ -391,6 +436,7 @@
                     <span class="sr-only">Failed — will retry</span>
                   </div>
                 {/if}
+                {@render imageThumbnails(message)}
                 <button
                   class="flex-1 text-left truncate cursor-pointer"
                   transition:slide={{ axis: 'y', duration: 200 }}
@@ -438,3 +484,11 @@
       </div>
   </div>
 {/if}
+
+<!-- Image Lightbox for queued message attachments -->
+<ImageLightbox
+  bind:open={lightboxOpen}
+  imageUrl={lightboxImageUrl}
+  imageName={lightboxImageName}
+  openerElement={lightboxOpenerElement}
+/>
