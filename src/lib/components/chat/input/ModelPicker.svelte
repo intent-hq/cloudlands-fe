@@ -147,7 +147,10 @@
 
   let pendingModelUpdate = $state<string | null>(null);
 
-  const effectiveProviderId = $derived.by(() => {
+  // Provider explicitly resolved from the prop or the agent session, or null
+  // when neither determines one (in which case fetching falls back to the
+  // active provider, but the trigger icon prefers the displayed model's provider).
+  const explicitProviderId = $derived.by(() => {
     if (providerId) {
       return getProviderConfig(providerId).id;
     }
@@ -159,8 +162,10 @@
         if (provider) return getProviderConfig(provider).id;
       }
     }
-    return $activeProviderId$;
+    return null;
   });
+
+  const effectiveProviderId = $derived(explicitProviderId ?? $activeProviderId$);
 
   // Single-provider restriction — applies only when the provider is explicitly
   // locked via the providerId prop (e.g. provider change locked in SimpleRichInput).
@@ -570,9 +575,14 @@
   });
 
   const triggerProviderId = $derived.by(() => {
-    if (!localModel || !hasExplicitModel) return effectiveProviderId;
-    const { providerId: modelProvider } = parseCompoundModelId(localModel);
-    return modelProvider;
+    if (localModel && hasExplicitModel) {
+      return parseCompoundModelId(localModel).providerId;
+    }
+    if (explicitProviderId) return explicitProviderId;
+    // No explicit provider or model — the trigger displays the default model,
+    // so show that model's provider rather than the global active provider.
+    if (defaultModelId) return parseCompoundModelId(defaultModelId).providerId;
+    return $activeProviderId$;
   });
 
   const isTriggerLabelResolved = $derived.by(() => {
