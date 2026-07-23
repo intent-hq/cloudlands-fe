@@ -856,6 +856,37 @@ describe('ModelPicker unlocked agent provider handling', () => {
     expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
   });
 
+  it('fetches and shows a newly enabled provider group live (unlocked, agent present)', async () => {
+    enabledProviderIds$.set(['auggie']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /GPT-5 Codex/ })).toBeNull();
+
+    // Toggling a provider ON in Settings reaches the picker as an update to
+    // the enabled-provider-ids selector (settings:changed →
+    // applySettingsChanges → loadEnabledProvidersFromStorage → selector; that
+    // leg is asserted in daemon-events-bridge.client.test.ts). The picker must
+    // refetch and show the new provider's group without a restart.
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+  });
+
   it('keeps the agent provider group visible when that provider was since disabled', async () => {
     enabledProviderIds$.set(['auggie']);
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
