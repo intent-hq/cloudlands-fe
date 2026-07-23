@@ -61,6 +61,7 @@ import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-pers
 import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
 import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
 import { createNotificationIpcMiddleware } from "./middlewares/notification-ipc-service";
+import { createWebNotificationMiddleware } from "$features/notifications/web-notification-service";
 import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
 import { createUserPreferencesBetaPersistenceMiddleware } from "./middlewares/user-preferences-beta-persistence-service";
 import { createUserPreferencesNotificationPersistenceMiddleware } from "./middlewares/user-preferences-notification-persistence-service";
@@ -356,6 +357,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // sound per the sound settings and `notification:navigate` (notification
     // click) navigates to the emitting workspace again.
     createNotificationIpcMiddleware(),
+    // Web-platform substitute for the main-process NotificationService:
+    // when `getPlatform() === 'web'` (no Electron main process), listen on
+    // the relayed legacy `agent:idle` channel and show browser Notifications
+    // with Electron-parity trigger/suppression rules, click-to-navigate, and
+    // the shared sound gate. Registers nothing on Electron.
+    createWebNotificationMiddleware(),
     // Give the (post-saga) workspace-settings persistence triggers real handlers
     // so the auto-commit toggle in CodeChangesPanel.svelte persists via IPC to
     // main (WORKSPACE_CHANNELS.UPDATE_SETTINGS) + electron-store (SETTINGS_CHANNELS.SET
