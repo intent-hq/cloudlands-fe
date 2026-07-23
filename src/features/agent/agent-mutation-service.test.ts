@@ -3,14 +3,20 @@ import { AgentStatus } from "$shared/types/agent.types";
 import { AgentActivationState } from "$shared/types/agent-session";
 import type { AgentSession } from "$shared/types/agent-session";
 
-// FAKE seam: `appClient.agents.get` + `appClient.agents.delete` are stubbed. The
-// mutation middleware runs against the REAL configured store so the
-// restore/activate/save + deletion async actions resolve through the real
-// action.success/failure path and their promises settle exactly as
-// agent-stream-lifecycle (and the deletion triggers) expect.
-const { get, del, list } = vi.hoisted(() => ({ get: vi.fn(), del: vi.fn(), list: vi.fn() }));
+// FAKE seam: `appClient.agents.get` + `appClient.agents.delete` +
+// `appClient.agents.rename` are stubbed. The mutation middleware runs against
+// the REAL configured store so the restore/activate/save + deletion + rename
+// async actions resolve through the real action.success/failure path and
+// their promises settle exactly as agent-stream-lifecycle (and the deletion/
+// rename triggers) expect.
+const { get, del, list, rename } = vi.hoisted(() => ({
+  get: vi.fn(),
+  del: vi.fn(),
+  list: vi.fn(),
+  rename: vi.fn(),
+}));
 vi.mock("$lib/client", () => ({
-  appClient: { agents: { get, delete: del, list } },
+  appClient: { agents: { get, delete: del, list, rename } },
 }));
 
 // The deletion handlers lazily `import("svelte-sonner")` for the undo/error
@@ -29,6 +35,7 @@ import { store as appStore } from "$store/renderer/store";
 import { toast } from "svelte-sonner";
 import {
   bulkUpsertSessions,
+  updateSession,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
@@ -38,6 +45,7 @@ import {
   deleteAgentWithUndoRequested,
   flushPendingAgentDeletionsRequested,
   hydrateAgentsRequested,
+  renameAgentSessionRequested,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
   undoAgentDeletionRequested,
@@ -594,5 +602,74 @@ describe("agentMutationService — deletion (soft-hide-then-commit)", () => {
         .select(appStore.state, WS)
         .some((e) => e.tab.type === "agent" && e.tab.agentId === AGENT),
     ).toBe(false);
+  });
+});
+
+
+describe("agentMutationService — rename (Bug 1: renameAgentSessionRequested reaches the daemon)", () => {
+  const toastMock = toast as unknown as { error: ReturnType<typeof vi.fn> };
+
+  beforeAll(() => {
+    appStore.init();
+  });
+  afterEach(() => {
+    rename.mockReset();
+    toastMock.error.mockClear();
+  });
+
+  it("forwards agent.rename via the seam and resolves the action promise", async () => {
+    const WS = "ws-rename-ok";
+    const AGENT = "agent-rename-ok";
+    seedSession(makeSession(AGENT, WS));
+    rename.mockResolvedValueOnce({ success: true });
+
+    const action = renameAgentSessionRequested(WS, AGENT, "New Name");
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(rename).toHaveBeenCalledWith(AGENT, "New Name", WS);
+  });
+
+  it("rejects when the daemon reports failure", async () => {
+    rename.mockResolvedValueOnce({ success: false, error: "rename boom" });
+
+    const action = renameAgentSessionRequested("ws-rename-fail", "agent-rename-fail", "X");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("rename boom");
+  });
+
+  it("rejects when the seam throws (transport failure)", async () => {
+    rename.mockRejectedValueOnce(new Error("wire down"));
+
+    const action = renameAgentSessionRequested("ws-rename-throw", "agent-rename-throw", "X");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("wire down");
+  });
+
+  // Regression for the AgentCard.saveEdit contract: the optimistic Redux
+  // update happens BEFORE the dispatch, and the failure-revert + error-toast
+  // path hangs off `action.promise.catch`. Before the middleware serviced
+  // this trigger the promise never settled, so a failed (or never-sent)
+  // rename silently reverted on the next agent.list refetch instead.
+  it("settles the promise so AgentCard's optimistic revert + error toast path fires on failure", async () => {
+    const WS = "ws-rename-revert";
+    const AGENT = "agent-rename-revert";
+    seedSession(makeSession(AGENT, WS, { name: "Old Name", nameExplicitlySet: false }));
+    rename.mockResolvedValueOnce({ success: false, error: "daemon says no" });
+
+    // Mirror AgentCard.saveEdit: optimistic update, dispatch, revert on catch.
+    appStore.dispatch(updateSession(AGENT, { name: "New Name", nameExplicitlySet: true }));
+    const action = renameAgentSessionRequested(WS, AGENT, "New Name");
+    appStore.dispatch(action);
+    const reverted = action.promise.catch(() => {
+      appStore.dispatch(updateSession(AGENT, { name: "Old Name", nameExplicitlySet: false }));
+      toast.error("Failed to rename agent");
+    });
+    await reverted;
+
+    expect(rename).toHaveBeenCalledWith(AGENT, "New Name", WS);
+    expect(readSession(AGENT)?.name).toBe("Old Name");
+    expect(readSession(AGENT)?.nameExplicitlySet).toBe(false);
+    expect(toastMock.error).toHaveBeenCalledWith("Failed to rename agent");
   });
 });

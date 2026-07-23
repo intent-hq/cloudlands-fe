@@ -357,6 +357,14 @@ export interface UnifiedAgentConfig {
   // Optional - name is derived from initialMessage if not provided
   name?: string;
 
+  /**
+   * Whether `name` was explicitly chosen by the user. Pass `false` when the
+   * caller supplies a generated placeholder name so the daemon keeps the
+   * session self-renameable (wire `nameExplicitlySet`, PROTOCOL §5.5).
+   * Omitted, the daemon treats any supplied name as explicitly set.
+   */
+  nameExplicitlySet?: boolean;
+
   // Optional
   id?: string; // Allow passing in a pre-generated agent ID
   model?: string;

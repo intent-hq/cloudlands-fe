@@ -108,6 +108,9 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(createAgent).toHaveBeenCalledTimes(1);
     const [, config] = createAgent.mock.calls[0];
     expect(config).toMatchObject({ source: "keyboard-shortcut", agentType: "chat" });
+    // Generated placeholder name ("Agent N") — flagged so the daemon keeps
+    // the session self-renameable (wire `nameExplicitlySet`, PROTOCOL §5.5).
+    expect(config.nameExplicitlySet).toBe(false);
     expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 
@@ -124,6 +127,9 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     const [, config] = createAgent.mock.calls[0];
     expect(config).toMatchObject({ source: "specialist-picker", agentType: "chat" });
     expect(config.metadata).toMatchObject({ specialist: "implementor" });
+    // Generated placeholder name ("<Specialist> N") — flagged as not
+    // user-chosen so the agent can rename itself.
+    expect(config.nameExplicitlySet).toBe(false);
     expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 
@@ -148,6 +154,9 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(config).toMatchObject({ source: "task-metadata-bar-run", agentType: "task-loop" });
     expect(config.metadata).toMatchObject({ taskNoteId: NOTE, specialist: "implementor" });
     expect(typeof config.initialMessage).toBe("string");
+    // Name derived from the note title, not typed for the agent — flagged as
+    // not user-chosen so the agent can rename itself.
+    expect(config.nameExplicitlySet).toBe(false);
     expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 

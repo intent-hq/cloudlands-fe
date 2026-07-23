@@ -435,6 +435,7 @@ export class UnifiedAgentFactory {
           normalized.workspaceContext,
           provider,
           normalized.skipInitialPrompt,
+          normalized.nameExplicitlySet,
         );
         metrics.backendCreationTime = Date.now() - backendStart;
 
@@ -673,6 +674,7 @@ export class UnifiedAgentFactory {
 
     return {
       name: normalizedName,
+      nameExplicitlySet: config.nameExplicitlySet, // Wire `nameExplicitlySet` — false marks a generated placeholder name
       workspaceId: config.workspaceId || (workspace.id as BrandedWorkspaceId),
       model: config.model, // Don't set default here - createAgent handles provider-aware defaults
       provider: config.provider, // Preserve provider for propagation to session
@@ -734,12 +736,18 @@ export class UnifiedAgentFactory {
     },
     provider?: string,
     _skipInitialPrompt?: boolean,
+    nameExplicitlySet?: boolean,
   ): Promise<{ success: boolean; agentId?: string; error?: string }> {
     try {
       const request = {
         workspaceId: String(agent.workspaceId),
         workspacePath,
         name: agent.name,
+        // Wire `nameExplicitlySet` (PROTOCOL §5.5): false marks a generated
+        // placeholder name so the created agent stays self-renameable. Only
+        // include the key when the caller supplied it so the daemon default
+        // (name-present ⇒ explicitly set) is preserved for legacy callers.
+        ...(nameExplicitlySet !== undefined ? { nameExplicitlySet } : {}),
         model: agent.model ?? undefined, // Coerce null to undefined for wire format
         provider, // Provider ID (e.g., 'auggie', 'claude-code', 'codex') from activeProviderStore
         agentType: agent.metadata?.agentType, // Daemon builds system prompt from this

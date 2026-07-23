@@ -185,6 +185,8 @@ async function handleCreateAgentRequested(wsId: string, agentType?: string): Pro
   try {
     const result = await deps.agentFactory.createAgent(workspace, {
       name: agentName,
+      // Generated placeholder ("Agent N") — keep the session self-renameable.
+      nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
       model,
       provider,
@@ -235,6 +237,8 @@ async function handleCreateAgentWithSpecialist(
   try {
     const result = await deps.agentFactory.createAgent(workspace, {
       name: agentName,
+      // Generated placeholder ("<Specialist> N") — keep the session self-renameable.
+      nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
       model,
       provider,
@@ -304,6 +308,9 @@ async function handleRunAgentForNote(
   try {
     const result = await deps.agentFactory.createAgent(workspace, {
       name: noteTitle || "Task Agent",
+      // Derived from the note title, not user-typed for the agent — leave it
+      // self-renameable.
+      nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
       model: implementorModel || fallbackModel,
       provider,

@@ -251,6 +251,12 @@ async function daemonCreateAgent(params: {
   workspaceId: string;
   workspacePath: string;
   name: string;
+  /**
+   * Wire `nameExplicitlySet` (PROTOCOL §5.5): pass `false` when `name` is a
+   * generated/derived placeholder so the session stays self-renameable.
+   * Omitted, the daemon treats a supplied name as explicitly set.
+   */
+  nameExplicitlySet?: boolean;
   model?: string;
   provider?: string;
   agentType?: string;
@@ -274,6 +280,11 @@ async function daemonCreateAgent(params: {
     const result = (await getBackendClient().request('agent.create', {
       workspaceId: params.workspaceId,
       name: params.name,
+      // Strict boolean on the wire — only sent when the caller supplied it so
+      // the daemon-side default (name-present ⇒ explicitly set) is preserved.
+      ...(params.nameExplicitlySet !== undefined && {
+        nameExplicitlySet: params.nameExplicitlySet,
+      }),
       workspacePath: params.workspacePath,
       model: params.model,
       provider: params.provider,
@@ -1602,6 +1613,9 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
         workspaceId: this.workspaceId,
         workspacePath: this.workspacePath,
         name: agentName,
+        // Derived from the task text, not chosen for the agent — leave it
+        // self-renameable.
+        nameExplicitlySet: false,
         model: config.model,
         provider: config.provider,
         agentType: config.defaultAgentType || 'task-loop',
@@ -1774,6 +1788,9 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
       workspaceId: this.workspaceId,
       workspacePath: this.workspacePath,
       name: agentName,
+      // Derived from the task title, not chosen for the agent — leave it
+      // self-renameable.
+      nameExplicitlySet: false,
       model,
       provider: provider || ctx.provider,
       agentType: defaultAgentType || 'task-loop',

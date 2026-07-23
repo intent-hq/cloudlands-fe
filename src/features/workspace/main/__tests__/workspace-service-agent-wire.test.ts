@@ -124,6 +124,9 @@ describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
     expect(body.workspaceId).toBe(result.data.id);
     expect('agentId' in body).toBe(false);
     expect(body.name).toBe('Initial');
+    // The initial-agent name is FE-supplied boilerplate, never typed by the
+    // user — flagged so the daemon keeps the session self-renameable (§5.5).
+    expect(body.nameExplicitlySet).toBe(false);
     expect(body.model).toBe('sonnet');
     expect(body.provider).toBe('auggie');
     expect(body.agentType).toBe('workspace');

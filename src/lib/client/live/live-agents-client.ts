@@ -148,6 +148,12 @@ export class LiveAgentsClient implements AgentsClient {
     }
     if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
     if (request.name !== undefined) params.name = request.name;
+    // Strict boolean on the wire (§5.5): only sent when the caller supplied it,
+    // so older daemons and name-less creates keep the daemon-side default
+    // (name-present ⇒ explicitly set).
+    if (request.nameExplicitlySet !== undefined) {
+      params.nameExplicitlySet = request.nameExplicitlySet;
+    }
     if (request.provider !== undefined) params.provider = request.provider;
     if (request.agentType !== undefined) params.agentType = request.agentType;
     if (request.metadata !== undefined) params.metadata = request.metadata;
@@ -296,6 +302,16 @@ export class LiveAgentsClient implements AgentsClient {
     // The daemon cancels the in-flight stream and emits the terminal
     // `agent:stream:end` (§7), which converges the FE streaming state.
     return runMutation("agent.stop", { agentId });
+  }
+  async rename(agentId: string, name: string, _workspaceId?: string): Promise<MutationResult> {
+    // `agent.rename` (§5.5) takes `{ agentId, name }` (name non-empty) and
+    // returns `{ success: true, name }`; an applied rename emits
+    // `agent:renamed` (in AGENT_LIFECYCLE_EVENTS), which reconciles the list.
+    // The optional `skipIfExplicitlySet` guard is never sent from this seam —
+    // a user-initiated rename always wins — and workspaceId is not part of
+    // the wire contract, so the seam's optional third argument (kept for
+    // AgentsClient contract parity) stays off the wire.
+    return runMutation("agent.rename", { agentId, name });
   }
   async delete(agentId: string): Promise<MutationResult> {
     // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;

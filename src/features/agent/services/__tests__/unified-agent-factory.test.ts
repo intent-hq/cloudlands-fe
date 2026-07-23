@@ -221,6 +221,7 @@ describe('UnifiedAgentFactory', () => {
       const config: UnifiedAgentConfig = {
         id: 'agent-fixed-1',
         name: 'Wire Agent',
+        nameExplicitlySet: false,
         workspaceId: mockWorkspace.id as any,
         model: 'sonnet4.5',
         provider: 'auggie',
@@ -243,11 +244,29 @@ describe('UnifiedAgentFactory', () => {
       expect(request.agentId).toBeUndefined();
       expect('agentId' in request).toBe(false);
       expect(request.name).toBe('Wire Agent');
+      // Generated-name flag survives normalization and reaches the request
+      // (the live client forwards it as wire `nameExplicitlySet`, §5.5).
+      expect(request.nameExplicitlySet).toBe(false);
       expect(request.model).toBe('sonnet4.5');
       expect(request.provider).toBe('auggie');
       expect(request.agentType).toBe('chat');
       expect(request.prompt).toBe('be nice');
       expect(request.metadata).toMatchObject({ source: 'wire-test' });
+    });
+
+    it('leaves nameExplicitlySet undefined on the request when the caller omits it', async () => {
+      agentsApi.create.mockClear();
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Legacy Caller',
+        workspaceId: mockWorkspace.id as any,
+      });
+      expect(result.success).toBe(true);
+
+      const [request] = agentsApi.create.mock.calls[0] as [Record<string, unknown>];
+      // Absent flag stays absent — the daemon default (name-present ⇒
+      // explicitly set) must not be overridden by the FE. The key itself must
+      // be omitted so presence-based transports don't forward `undefined`.
+      expect('nameExplicitlySet' in request).toBe(false);
     });
 
     it('adopts the daemon-assigned agent id from the create response', async () => {
