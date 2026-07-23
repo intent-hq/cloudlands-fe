@@ -386,7 +386,7 @@ describe('QueuedMessageList', () => {
       const imgs = buttons.map((b) => b.querySelector('img'));
       expect(imgs[0]?.getAttribute('src')).toBe('data:image/png;base64,AAAA');
       expect(imgs[1]?.getAttribute('src')).toBe('data:image/jpeg;base64,BBBB');
-      expect(buttons[0].getAttribute('aria-label')).toBe('View attached image 1 full size');
+      expect(buttons[0].getAttribute('aria-label')).toBe('View attached image 1 of 2 full size');
       expect(screen.getByText('look at these')).toBeTruthy();
     });
 
@@ -418,7 +418,7 @@ describe('QueuedMessageList', () => {
       expect(dialog).toBeTruthy();
       const lightboxImg = dialog?.querySelector('img');
       expect(lightboxImg?.getAttribute('src')).toBe('data:image/jpeg;base64,BBBB');
-      expect(lightboxImg?.getAttribute('alt')).toBe('Attached Image 2');
+      expect(lightboxImg?.getAttribute('alt')).toBe('Attached image 2');
 
       // Edit mode not triggered
       expect(container.querySelector('textarea')).toBeNull();

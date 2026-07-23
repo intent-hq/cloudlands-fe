@@ -58,7 +58,7 @@
     index: number,
   ) {
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
-    lightboxImageName = `Attached Image ${index + 1}`;
+    lightboxImageName = `Attached image ${index + 1}`;
     lightboxOpenerElement = openerElement;
     lightboxOpen = true;
   }
@@ -253,7 +253,7 @@
             e.stopPropagation();
             openImageLightbox(block, e.currentTarget, i);
           }}
-          aria-label="View attached image {i + 1} full size"
+          aria-label="View attached image {i + 1} of {message.imageBlocks.length} full size"
         >
           <img
             src="data:{block.mimeType};base64,{block.data}"
