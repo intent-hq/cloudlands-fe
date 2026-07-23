@@ -31,7 +31,6 @@ export type WorkspaceNavigationHistoryType =
   | "staged"
   | "unstaged"
   | "commit"
-  | "source"
   | "agent-aggregate-changes"
   | "commit-changeset"
   | "code-review";
@@ -53,7 +52,6 @@ export type WorkspaceNavigationMainPanelType =
   | "staged"
   | "unstaged"
   | "commit"
-  | "source"
   | "agent-aggregate-changes"
   | "commit-changeset"
   | "code-review";
@@ -80,7 +78,6 @@ export interface WorkspaceNavigationHistoryEntry {
   branchBaseRef?: string;
   branchBaseCommitSha?: string;
   selectedCommit?: WorkspaceNavigationCommit;
-  selectedSourceId?: string;
   agentTurnData?: WorkspaceNavigationAgentTurn;
   activityEventData?: WorkspaceEvent;
   chatChanges?: JsonValue[];
@@ -109,7 +106,6 @@ export interface WorkspaceNavigationMainPanelState {
   selectedActivityEvent?: WorkspaceEvent;
   selectedAgentTurn?: WorkspaceNavigationAgentTurn;
   selectedCommit?: WorkspaceNavigationCommit;
-  selectedSourceId?: string;
   chatChanges?: JsonValue[];
   chatChangesTitle?: string;
   chatChangesMessageId?: string;
@@ -560,16 +556,6 @@ export const workspaceNavigationReducer = createReducer(initialState)
               id: selection.selectedCommit.hash,
               label: selection.selectedCommit.message?.slice(0, 50) || "Commit",
               selectedCommit: selection.selectedCommit,
-            });
-          }
-          break;
-        case "source":
-          if (selection?.selectedSourceId) {
-            nextState = pushHistoryEntry(nextState, {
-              type: "source",
-              id: selection.selectedSourceId,
-              label: "Source",
-              selectedSourceId: selection.selectedSourceId,
             });
           }
           break;
