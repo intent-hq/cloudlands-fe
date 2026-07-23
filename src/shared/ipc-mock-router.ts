@@ -111,13 +111,8 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // stay hidden until a daemon surface exists.
   ['git:get-auto-commit-status', undefined],
   // ── IPC batch 8: the remaining frozen audit debt, dispositioned ──
-  // Host command execution (CommitsTimeline's amend-commit / force-push
-  // flow; bridged to daemon host.exec in the Electron build). The caller
-  // requires `.success` and folds the shaped failure into its toast.
-  [
-    'system:execute-command',
-    { success: false, error: 'Host command execution is not available in this build' },
-  ],
+  // (system:execute-command is bridged to daemon host.exec — shell-wrapped on
+  // the daemon host's OS — in host-bridge-seeder.ts.)
   // DebugPanel resume trigger. The caller requires `.success` and folds the
   // shaped failure into its status feedback.
   [
