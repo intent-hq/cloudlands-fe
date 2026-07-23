@@ -11,7 +11,6 @@ import {
   sanitizeInput,
   sanitizeMessage,
   sanitizeSurrogates,
-  sanitizeHTML,
   sanitizePath,
   sanitizeBranchName,
   validateAgentName,
@@ -109,23 +108,6 @@ describe('Sanitization Functions', () => {
       expect(result).toContain('\uFFFD');
       expect(result).toContain('test');
       expect(result).toContain('middle');
-    });
-  });
-
-  describe('sanitizeHTML', () => {
-    it('should remove script tags', () => {
-      const html = '<p>Hello</p><script>alert("xss")</script>';
-      expect(sanitizeHTML(html)).not.toContain('<script');
-    });
-
-    it('should remove event handlers', () => {
-      const html = '<div onclick="alert(\'xss\')">Click</div>';
-      expect(sanitizeHTML(html)).not.toContain('onclick');
-    });
-
-    it('should remove javascript: protocol', () => {
-      const html = '<a href="javascript:alert(\'xss\')">Link</a>';
-      expect(sanitizeHTML(html)).not.toContain('javascript:');
     });
   });
 

@@ -11,6 +11,7 @@
  */
 
 import { Logger } from '../../../shared/logger';
+import { urlMatchesAnyDomain } from './mcp-host-match';
 import { getMcpAuthHeaderAsync } from './mcp-oauth';
 
 const logger = new Logger('McpAuthProviders');
@@ -62,12 +63,7 @@ const sentryProvider: McpAuthProvider = {
   displayName: 'Sentry',
 
   matchesUrl(url: string): boolean {
-    try {
-      const parsed = new URL(url);
-      return parsed.hostname.includes('sentry.dev') || parsed.hostname.includes('sentry.io');
-    } catch {
-      return false;
-    }
+    return urlMatchesAnyDomain(url, ['sentry.dev', 'sentry.io']);
   },
 
   async getAuthHeaders(serverName?: string): Promise<Record<string, string> | null> {

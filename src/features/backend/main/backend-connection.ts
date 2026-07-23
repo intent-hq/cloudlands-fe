@@ -161,11 +161,11 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
     throw new Error('TCP transport requires host and port');
   }
   // Remote transport stub: TLS-with-pinning and the WSS handshake are deferred.
+  // Certificate validation stays at the Node default (rejectUnauthorized: true).
   if (config.tls) {
     return tls.connect({
       host: config.host,
       port: config.port,
-      rejectUnauthorized: false,
     });
   }
   return net.connect({ host: config.host, port: config.port });

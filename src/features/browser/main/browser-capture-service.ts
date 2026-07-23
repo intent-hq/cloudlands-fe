@@ -10,6 +10,7 @@
  * - Agent explicitly instruments when they need to debug
  */
 
+import { randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { webContents } from 'electron';
@@ -335,7 +336,7 @@ class BrowserCaptureService {
     const domain = extractDomain(url);
     // Sanitize user-provided name to prevent path traversal
     const sessionName = sanitizePathName(name || generateTimestamp());
-    const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sessionId = `session-${randomUUID()}`;
     const outputDir = WorkspaceConfig.paths.browserSnapshotSession(workspaceId, domain, sessionName);
 
     // Create output directory

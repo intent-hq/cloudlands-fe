@@ -174,4 +174,25 @@ describe('HTML to Markdown Conversion', () => {
       expect(result).toBe(expected);
     });
   });
+
+  describe('Mermaid Blocks (legacy HTML-entity encoding)', () => {
+    it('should decode legacy HTML entities in mermaid code', () => {
+      // Attribute value contains "A --&gt; B &quot;label&quot;" after HTML parsing
+      const html =
+        '<div data-type="mermaid-block" data-mermaid-code="graph TD; A --&amp;gt; B &amp;quot;label&amp;quot;"></div>';
+
+      const result = processHTMLToMarkdown(html);
+      expect(result).toBe('```mermaid\ngraph TD; A --> B "label"\n```');
+    });
+
+    it('should not double-unescape double-encoded entities (&amp;quot; stays &quot;)', () => {
+      // Attribute value after HTML parsing is "say &amp;quot;hi&amp;quot;":
+      // legacy decode must produce &quot; (not ") since &amp; decodes last
+      const html =
+        '<div data-type="mermaid-block" data-mermaid-code="say &amp;amp;quot;hi&amp;amp;quot;"></div>';
+
+      const result = processHTMLToMarkdown(html);
+      expect(result).toBe('```mermaid\nsay &quot;hi&quot;\n```');
+    });
+  });
 });

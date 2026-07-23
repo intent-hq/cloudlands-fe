@@ -13,7 +13,7 @@
  *   dist-electron/release-notes.json
  */
 
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -66,14 +66,13 @@ Commits:
 ${commitList}`;
 
   try {
-    const result = execSync(
-      `auggie --print -i "${instruction.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`,
-      {
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 120000, // 2 minute timeout
-      },
-    ).trim();
+    // Pass the instruction as an argument (no shell) so commit-message content
+    // is never interpreted by a shell
+    const result = execFileSync('auggie', ['--print', '-i', instruction], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 120000, // 2 minute timeout
+    }).trim();
 
     // Parse bullet points from the output
     const lines = result
