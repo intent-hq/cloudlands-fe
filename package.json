@@ -211,7 +211,7 @@
     "playwright": "^1.56.1",
     "postcss": "^8.5.6",
     "prettier": "^3.4.2",
-    "prettier-plugin-svelte": "^3.4.0",
+    "prettier-plugin-svelte": "^4.1.1",
     "svelte-check": "^4.3.2",
     "svelte-eslint-parser": "^1.4.1",
     "tailwind-merge": "^3.3.1",
