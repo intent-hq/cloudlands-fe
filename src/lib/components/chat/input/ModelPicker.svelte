@@ -147,14 +147,11 @@
 
   let pendingModelUpdate = $state<string | null>(null);
 
-  // Provider explicitly resolved from the prop or the agent session, or null
-  // when neither determines one (in which case fetching falls back to the
-  // active provider, but the trigger icon prefers the displayed model's provider).
+  // Provider from the prop or agent session, or null when neither determines
+  // one (fetching then uses the active provider; the trigger icon prefers the
+  // displayed model's provider).
   const explicitProviderId = $derived.by(() => {
-    if (providerId) {
-      return getProviderConfig(providerId).id;
-    }
-
+    if (providerId) return getProviderConfig(providerId).id;
     if (agentId && workspaceId) {
       const session = $agentSession$;
       if (session) {
@@ -167,10 +164,9 @@
 
   const effectiveProviderId = $derived(explicitProviderId ?? $activeProviderId$);
 
-  // Single-provider restriction — applies only when the provider is explicitly
-  // locked via the providerId prop (e.g. provider change locked in SimpleRichInput).
-  // An unlocked agent whose session provider differs from the global active
-  // provider still gets the full multi-provider list.
+  // Single-provider restriction — only when the provider is explicitly locked
+  // via the providerId prop (e.g. SimpleRichInput). An unlocked agent whose
+  // session provider differs from the active one keeps the multi-provider list.
   const isAgentProviderOverride = $derived(Boolean(providerId));
 
   let agentProviderModels = $state<
@@ -579,8 +575,7 @@
       return parseCompoundModelId(localModel).providerId;
     }
     if (explicitProviderId) return explicitProviderId;
-    // No explicit provider or model — the trigger displays the default model,
-    // so show that model's provider rather than the global active provider.
+    // No explicit provider or model — show the displayed default model's provider.
     if (defaultModelId) return parseCompoundModelId(defaultModelId).providerId;
     return $activeProviderId$;
   });
