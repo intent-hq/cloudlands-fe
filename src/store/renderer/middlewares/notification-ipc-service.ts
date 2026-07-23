@@ -19,21 +19,16 @@
  *   - `system:memory-pressure` → surface a toast on memory pressure level
  *     transitions so users see why background watchers and idle agents paused.
  *
- * Dependency-light per src/store/renderer/AGENTS.md: state is read directly
- * off `appStore.state` (no selector modules) and the sound util is imported
- * lazily like the deleted saga did.
+ * The sound gate and click-navigation routing are shared with the
+ * web-platform substitute (`$features/notifications/web-notification-service`)
+ * via `notification-sound-gate.ts` / `notification-navigation.ts` — extracted
+ * verbatim from this module so both delivery paths behave identically.
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
-import { navigateToRoute } from "$lib/utils/navigation.client";
-import { store as appStore } from "$store/renderer/store";
-import type { StoreState } from "../types";
 import { isElectron } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
-import { CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
-import {
-  openPanel,
-  setChiefActiveAgentId,
-} from "$store/renderer/slices/sidebar-nav/sidebar-nav-slice";
+import { handleNotificationNavigate } from "$features/notifications/notification-navigation";
+import { playNotificationSoundPerSettings } from "$features/notifications/notification-sound-gate";
 
 const logger = createLogger("NotificationIpcService");
 
@@ -44,15 +39,6 @@ interface NotificationShowEvent {
   timestamp?: string;
 }
 
-/** Payload of `notification:navigate` (sent on notification click). */
-interface NotificationNavigateEvent {
-  workspaceId?: string;
-  /** Set for chief-of-staff completions — route to the sidebar Assistant panel. */
-  chief?: boolean;
-  /** Chief chat thread (agent) to select in the Assistant panel. */
-  agentId?: string;
-}
-
 /** Payload of `system:memory-pressure` (sent on pressure level transitions). */
 interface MemoryPressureEvent {
   level?: "normal" | "warning" | "critical";
@@ -60,52 +46,7 @@ interface MemoryPressureEvent {
 }
 
 async function handleNotificationShow(_data?: NotificationShowEvent): Promise<void> {
-  const state = appStore.state as StoreState;
-  const { soundEnabled, soundOnlyWhenUnfocused, volume } = state.userPreferences;
-
-  if (!soundEnabled) {
-    return;
-  }
-  if (soundOnlyWhenUnfocused && document.hasFocus()) {
-    return;
-  }
-
-  try {
-    const { playNotificationSound } = await import("$lib/utils/notification-sound");
-    await playNotificationSound(volume);
-  } catch (error) {
-    // Sound is best-effort — never let playback failures propagate.
-    logger.warn("Failed to play notification sound", { error });
-  }
-}
-
-async function handleNotificationNavigate(data?: NotificationNavigateEvent): Promise<void> {
-  if (!data?.workspaceId) {
-    return;
-  }
-
-  // Chief-of-staff completions: never navigate to the hidden chief workspace
-  // page — open the sidebar Assistant panel and select the chat thread.
-  if (data.chief === true || data.workspaceId === CHIEF_WORKSPACE_ID) {
-    try {
-      if (data.agentId) {
-        appStore.dispatch(setChiefActiveAgentId(data.agentId));
-      }
-      appStore.dispatch(openPanel("chief"));
-    } catch (error) {
-      logger.warn("Failed to open Assistant panel from notification click", { error });
-    }
-    return;
-  }
-
-  try {
-    await navigateToRoute(`/workspace/${data.workspaceId}`);
-  } catch (error) {
-    logger.warn("Failed to navigate from notification click", {
-      workspaceId: data.workspaceId,
-      error,
-    });
-  }
+  await playNotificationSoundPerSettings();
 }
 
 async function handleMemoryPressure(data?: MemoryPressureEvent): Promise<void> {
