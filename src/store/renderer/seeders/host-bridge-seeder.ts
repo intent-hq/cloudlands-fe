@@ -302,6 +302,109 @@ registerMockIpcHandler("external-editors:open-with-other", async (arg) => {
   };
 });
 
+/** `system.status` result subset the exec bridge consumes (PROTOCOL §5.7). */
+interface SystemStatusResult {
+  host?: { os: string };
+}
+
+/** Daemon `host.exec` result shape (PROTOCOL §5.14). */
+interface HostExecResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timedOut?: boolean;
+}
+
+/** Matches the Electron main-process handler's 30s exec bound (system.ipc.ts). */
+const EXECUTE_COMMAND_TIMEOUT_MS = 30_000;
+
+/** Transport-timeout headroom over the daemon-side exec bound, so the daemon's
+ * structured non-zero-exit / `timedOut` result wins over a client-side
+ * `JSON-RPC request timed out` rejection (shell-reveal-bridge-seeder idiom). */
+const EXECUTE_COMMAND_TRANSPORT_HEADROOM_MS = 5_000;
+
+/** POSIX single-quote `value` so the shell takes it literally (' → '\''). */
+function posixSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Fold `cwd` into the shell script instead of passing it on the wire:
+ * `host.exec` rejects `cwd` without `workspaceId` (§5.14 containment guard),
+ * and the legacy channel payload carries no workspace identity — the callers
+ * (CommitsTimeline amend/force-push) send only `{ command, cwd }`.
+ */
+function shellScriptWithCwd(os: string, command: string, cwd: string): string {
+  if (os === "windows") {
+    // cmd.exe: `"` is not a legal filename character, so plain quoting is
+    // sufficient; `/d` switches drives when needed. Caveat: cmd.exe expands
+    // `%VAR%` even inside double quotes, so a cwd containing `%` would be
+    // env-expanded — accepted, as `%` is vanishingly rare in real paths and
+    // the Electron main-process handler has the same exposure.
+    return `cd /d "${cwd}" && ${command}`;
+  }
+  return `cd -- ${posixSingleQuote(cwd)} && ${command}`;
+}
+
+/** The Electron handler's catch envelope (system.ipc.ts EXECUTE_COMMAND) —
+ * a generic message, never the underlying error or the command string. */
+const EXECUTE_COMMAND_FAILURE = {
+  success: false,
+  error: "Command execution failed",
+  data: { stdout: "", stderr: "", code: 1 },
+} as const;
+
+/**
+ * `system:execute-command` → daemon `host.exec` (PROTOCOL §5.14).
+ *
+ * The wire schema is a shell-form command string, so — mirroring the Electron
+ * main-process handler — it is wrapped via the DAEMON host's shell (`/bin/sh
+ * -c` on POSIX, `cmd.exe /c` on Windows; the OS comes from `system.status`
+ * `host.os`, shell-reveal-bridge-seeder idiom). Envelope parity with that
+ * handler: exit 0 → `{success:true, data:{stdout,stderr,code:0}}`; non-zero →
+ * `{success:false, error, data:{stdout,stderr,code}}` (CommitsTimeline's
+ * upstream-branch fallback greps `data.stderr`); any thrown error folds to the
+ * generic catch envelope. SECURITY: the command string and env are never
+ * logged and never appear in an error surface.
+ */
+registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
+  const params = asRecord(arg);
+  const command = typeof params.command === "string" ? params.command : "";
+  const cwd = typeof params.cwd === "string" ? params.cwd : "";
+  if (!command) {
+    return EXECUTE_COMMAND_FAILURE;
+  }
+  try {
+    const status = await backendRequest<SystemStatusResult>("system.status");
+    const os = status?.host?.os;
+    if (!os) {
+      // Older intentd without the §5.7 `host` block — don't guess a shell
+      // (shell-reveal-bridge-seeder idiom); folds to the catch envelope.
+      throw new Error("The daemon does not report host info (older intentd?)");
+    }
+    const [shellCmd, shellFlag] = os === "windows" ? ["cmd.exe", "/c"] : ["/bin/sh", "-c"];
+    const script = cwd ? shellScriptWithCwd(os, command, cwd) : command;
+    const result = await backendRequest<HostExecResult>(
+      "host.exec",
+      { command: shellCmd, args: [shellFlag, script], timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS },
+      { timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS + EXECUTE_COMMAND_TRANSPORT_HEADROOM_MS },
+    );
+    if (result.exitCode === 0) {
+      return {
+        success: true,
+        data: { stdout: result.stdout, stderr: result.stderr, code: 0 },
+      };
+    }
+    return {
+      success: false,
+      error: "Command execution failed", // Don't expose full error message
+      data: { stdout: result.stdout, stderr: result.stderr, code: result.exitCode },
+    };
+  } catch {
+    return EXECUTE_COMMAND_FAILURE;
+  }
+});
+
 /**
  * `external-editors:detect-installed` → `host.listInstalledEditors`, enriched
  * with the shared EDITOR_REGISTRY display metadata (the daemon reports only
