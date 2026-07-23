@@ -237,7 +237,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
     // NOTE: Do NOT call global.gc() here. Multiple independent GC call sites
     // can trigger V8 garbage collection at unsafe moments while async resources
     // (child processes, streams) are being torn down, causing native SIGSEGV crashes
-    // in AsyncWrap::~AsyncWrap(). GC is centralized in shared/main/memory-monitor.ts.
+    // in AsyncWrap::~AsyncWrap().
   }
 
   /**

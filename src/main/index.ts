@@ -14,9 +14,8 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const { ipcMain, app, BrowserWindow } = require('electron');
 
-// PERF: Enable --expose-gc to allow manual GC on critical memory pressure
-// This must be done before app.isReady() and only triggers GC when memory is critically high
-// See memoryMonitor.onPressure handler below for usage
+// PERF: Enable --expose-gc to allow manual GC
+// This must be done before app.isReady()
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
 
 // EARLY: Redirect userData to the "intent-cloudlands" directory under the platform
@@ -109,13 +108,11 @@ import { Logger } from '../shared/logger';
 import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
-import { clearAllCaches } from './utils/cache';
 import { setupWebviewSecurity } from './webview-security';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
 
 // No custom protocol needed - we'll use file:// protocol
 import { ipcDebugTracker } from '../shared/main/ipc-debug-tracker';
-import { memoryMonitor } from '../shared/main/memory-monitor';
 
 // Early startup timing for diagnostics
 const startupStartTime = Date.now();
@@ -1406,149 +1403,6 @@ app.whenReady().then(async () => {
 
     startupMetrics.end('secondaryIPC');
     logger.info('All secondary IPC handlers registered successfully');
-
-    // PERF: Start memory monitoring to detect and prevent GC pauses
-    memoryMonitor.start();
-
-    // Shared cleanup function used by both memory pressure and proactive workspace-switch cleanup
-    // skipStreamCleanup: when true, skips cleanupStalledStreams() to avoid killing active streams
-    // (cleanupStalledStreams uses a short inactivity threshold which is too aggressive for workspace switch)
-    // NOTE: Stream cleanup is also skipped during forced GC (critical pressure) because the GC pause
-    // itself can make active streams appear stalled, causing a death spiral where cleanup kills
-    // streams that are merely paused by the GC.
-    const performMemoryCleanup = (
-      reason: string,
-      { forceGC = false, skipStreamCleanup = false } = {},
-    ) => {
-      // Always skip stream cleanup when forcing GC — the GC pause blocks the event loop,
-      // making active streams appear stalled and causing false-positive cleanup
-      const effectiveSkipStreamCleanup = skipStreamCleanup || forceGC;
-      logger.info('Memory cleanup triggered', {
-        reason,
-        skipStreamCleanup: effectiveSkipStreamCleanup,
-        forceGC,
-      });
-
-      if (!effectiveSkipStreamCleanup) {
-        import('../features/agent/main/stream-manager')
-          .then(({ streamManager }) => {
-            const beforeMetrics = streamManager.getMetrics();
-            logger.info('Stream manager cleanup starting', { beforeMetrics });
-            streamManager.cleanupStalledStreams();
-            const afterMetrics = streamManager.getMetrics();
-            logger.info('Stream manager cleanup complete', { afterMetrics });
-          })
-          .catch(() => {});
-      }
-
-      import('../store/main/slices/message-accumulator/message-accumulator-api')
-        .then((accumulatorApi) => {
-          const beforeStats = accumulatorApi.getStats();
-          logger.info('Message accumulator cleanup starting', { beforeStats });
-          accumulatorApi.cleanupStale();
-          const afterStats = accumulatorApi.getStats();
-          logger.info('Message accumulator cleanup complete', { afterStats });
-        })
-        .catch(() => {});
-
-      // Orphaned-provider cleanup retired with the FE `AgentBackendHandler`;
-      // provider lifecycle is now owned by intentd (PROTOCOL.md §5.5).
-
-      // On critical pressure, drop unified main-process caches.
-      // Entries are lazily re-populated from disk on next access.
-      if (forceGC) {
-        try {
-          clearAllCaches();
-          logger.info('Cleared unified main-process caches during critical memory pressure');
-        } catch (error) {
-          logger.warn('Failed to clear unified main-process caches', {
-            error: (error as Error).message,
-          });
-        }
-      }
-
-      if (forceGC) {
-        const gc = (global as unknown as { gc?: () => void }).gc;
-        if (typeof gc === 'function') {
-          logger.info('Forcing garbage collection', { reason });
-          gc();
-        }
-      }
-
-      // Hint incremental GC to help reduce heap between workspace loads
-      memoryMonitor.hintGC(reason);
-    };
-
-    // PERF: Allow renderer to trigger proactive cleanup during workspace switch
-    // This avoids waiting for the 30s memory monitor interval to detect pressure
-    // NOTE: Skips stream cleanup because active streams must survive workspace switches
-    // (stream handlers intentionally persist across workspaces to avoid losing chunks)
-    ipcMain.handle('app:trigger-memory-cleanup', () => {
-      performMemoryCleanup('workspace-switch', { skipStreamCleanup: true });
-    });
-
-    // Listen for memory pressure warnings to trigger cleanup
-    let lastBroadcastPressureLevel: 'normal' | 'warning' | 'critical' = 'normal';
-    memoryMonitor.onPressure((level) => {
-      if (level === 'warning' || level === 'critical') {
-        logger.warn('Memory pressure detected, triggering cleanup', { level });
-        performMemoryCleanup(`memory-pressure-${level}`, {
-          forceGC: level === 'critical',
-          skipStreamCleanup: true,
-        });
-      }
-
-      // Notify renderer windows on transitions so the UI can surface an
-      // explanation when background work pauses (file watchers stop,
-      // agents are evicted). Only broadcast when the level actually
-      // changes to avoid spamming a toast every 30s while still pressured.
-      if (level !== lastBroadcastPressureLevel) {
-        const previousLevel = lastBroadcastPressureLevel;
-        lastBroadcastPressureLevel = level;
-        for (const window of BrowserWindow.getAllWindows()) {
-          if (window.isDestroyed()) continue;
-          const webContents = window.webContents;
-          if (!webContents || webContents.isDestroyed()) continue;
-          try {
-            webContents.send('system:memory-pressure', { level, previousLevel });
-          } catch (error) {
-            logger.warn('Failed to broadcast memory pressure level', {
-              level,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      }
-
-      // Evict idle auggie processes — the biggest single source of memory (~200-300 MB each).
-      // Warning: conservative (up to 2), Critical: aggressive (all idle).
-      if (level === 'warning' || level === 'critical') {
-        const maxEvict = level === 'critical' ? undefined : 2;
-        import('../features/agent/main/agent-process-registry')
-          .then(({ evictIdleProcesses }) => evictIdleProcesses(maxEvict))
-          .then((evicted) => {
-            if (evicted > 0) {
-              logger.info('Evicted idle auggie processes due to memory pressure', {
-                level,
-                evicted,
-              });
-            }
-          })
-          .catch((err) => logger.warn('Failed to evict idle processes on memory pressure', err));
-      }
-
-      // Stop all native @parcel/watcher subscriptions on ANY memory pressure.
-      // Under high memory pressure the native C++ layer can throw an unrecoverable
-      // Napi::Error that terminates the entire process via libc++abi / std::terminate().
-      // The crash in 0.2.12 happened at 952MB (between warning=512MB and critical=1024MB),
-      // so we must stop watchers at warning level too, not just critical.
-      // Watchers restart on next workspace:open when memory is lower.
-      if (level === 'warning' || level === 'critical') {
-        import('../features/workspace/main/unified-workspace-watcher')
-          .then(({ stopAllWatchers }) => stopAllWatchers())
-          .catch((err) => logger.warn('Failed to stop watchers on memory pressure', err));
-      }
-    });
   });
 
   // Create window(s) immediately after critical handlers
