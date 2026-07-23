@@ -416,8 +416,8 @@
             } as any),
           );
           layoutManager.updateTabTitle(tab.id, newName);
-          // Persist the rename via the lightweight IPC path so other windows
-          // pick it up immediately (full saveSession would stall for minutes).
+          // Persist the rename via the mutation middleware (`agent.rename`,
+          // PROTOCOL §5.5) so other windows pick it up immediately.
           try {
             const action = renameAgentSessionRequested(workspaceId, agentId, newName);
             appStore.dispatch(action);
