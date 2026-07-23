@@ -111,6 +111,22 @@ describe("model-catalog-bridge-seeder", () => {
     expect(response.stale).toBe(true);
   });
 
+  it("returns an honest empty-with-warning envelope for a degraded static fallback", async () => {
+    mockedRequest.mockResolvedValue({
+      providerId: "opencode",
+      models: [],
+      source: "static",
+      warning: "opencode: opencode binary not found",
+    });
+
+    const response = await mockInvoke<Envelope>("opencode:get-models");
+
+    expect(mockedRequest).toHaveBeenCalledWith("models.list", { providerId: "opencode" });
+    expect(response.success).toBe(true);
+    expect(response.data).toEqual([]);
+    expect(response.warning).toBe("opencode: opencode binary not found");
+  });
+
   it("passes claude-code catalogs through unmodified — the daemon owns the `default` alias", async () => {
     // The daemon returns the adapter's real `default` row on the live probe
     // and includes `default` in its static tier fallback, so the FE must not
