@@ -381,9 +381,11 @@ function predictProposalBlockId(toolUseBlockId: unknown): string | undefined {
   if (typeof toolUseBlockId !== 'string') return undefined;
   const separator = toolUseBlockId.lastIndexOf(':');
   if (separator < 0) return undefined;
-  const index = Number(toolUseBlockId.slice(separator + 1));
-  if (!Number.isInteger(index)) return undefined;
-  return `${toolUseBlockId.slice(0, separator)}:${index + 2}`;
+  // Bare unsigned decimal only — mirrors the daemon's `usize::parse` in
+  // `next_block_id` (subscriptions.rs), which rejects empty/hex/exponent forms.
+  const suffix = toolUseBlockId.slice(separator + 1);
+  if (!/^[0-9]+$/.test(suffix)) return undefined;
+  return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2}`;
 }
 
 function dispatchStreamUpdate(
