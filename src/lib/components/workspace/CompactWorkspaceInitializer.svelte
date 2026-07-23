@@ -104,7 +104,11 @@
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { parseCompoundModelId } from '$shared/config/provider-config';
-  import { resolveSubmitModel } from '$lib/utils/effective-model-resolution';
+  import {
+    dropCrossProviderFallbackModel,
+    resolveSubmitModel,
+    resolveSubmitProvider,
+  } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
@@ -1812,6 +1816,24 @@
         }
       }
 
+      // Guard the non-overridden fallback: when the resolved model belongs to
+      // a different provider than the form's selection (e.g. the selected
+      // provider's models haven't loaded and the fallback came from the
+      // default provider's store selection), drop the model so the daemon
+      // uses the selected provider's own default instead of the fallback
+      // silently flipping the submitted provider. Explicit user overrides
+      // (modelWasOverridden) may legitimately cross providers and are kept.
+      if (!modelWasOverridden) {
+        resolvedModel = dropCrossProviderFallbackModel(resolvedModel, selectedProvider);
+      }
+
+      // Derive the submitted provider from the final resolved model so intent
+      // and daemon spawn can never diverge: the daemon's resolve_provider_id
+      // gives a compound model prefix precedence over the provider field, and
+      // a bare model id resolves to the default provider. When no model
+      // resolves, keep the form's selected provider.
+      const submitProvider = resolveSubmitProvider(resolvedModel, selectedProvider);
+
       // No client-minted agentId: the daemon assigns the initial agent's id
       // and returns it on the create result (supersedes the fresh-id-per-
       // attempt fix — with no client id there is nothing to poison retries).
@@ -1822,14 +1844,14 @@
         behaviorPrompt: resolvedBehaviorPrompt, // Pass to IPC for workspace creation
         prompt: initialPrompt.trim() || undefined,
         agentType: createAgentTypeId('workspace'),
-        provider: selectedProvider, // ACP provider ID (auggie, claude-code, codex)
+        provider: submitProvider, // ACP provider ID (auggie, claude-code, codex)
         contextReferences: contextReferences.length > 0 ? contextReferences : undefined,
         imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
         metadata: {
           source: 'compact-initializer',
           isInitialAgent: true,
           specialist: specialistId ?? undefined,
-          provider: selectedProvider, // Also store in metadata for reference
+          provider: submitProvider, // Also store in metadata for reference
           workMode: isTeamMode ? 'team' : 'single', // For analytics: which mode card was selected
           createdAt: new Date().toISOString(),
         },

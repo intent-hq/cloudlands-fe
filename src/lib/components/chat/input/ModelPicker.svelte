@@ -147,11 +147,11 @@
 
   let pendingModelUpdate = $state<string | null>(null);
 
-  const effectiveProviderId = $derived.by(() => {
-    if (providerId) {
-      return getProviderConfig(providerId).id;
-    }
-
+  // Provider from the prop or agent session, or null when neither determines
+  // one (fetching then uses the active provider; the trigger icon prefers the
+  // displayed model's provider).
+  const explicitProviderId = $derived.by(() => {
+    if (providerId) return getProviderConfig(providerId).id;
     if (agentId && workspaceId) {
       const session = $agentSession$;
       if (session) {
@@ -159,13 +159,14 @@
         if (provider) return getProviderConfig(provider).id;
       }
     }
-    return $activeProviderId$;
+    return null;
   });
 
-  // Single-provider restriction — applies only when the provider is explicitly
-  // locked via the providerId prop (e.g. provider change locked in SimpleRichInput).
-  // An unlocked agent whose session provider differs from the global active
-  // provider still gets the full multi-provider list.
+  const effectiveProviderId = $derived(explicitProviderId ?? $activeProviderId$);
+
+  // Single-provider restriction — only when the provider is explicitly locked
+  // via the providerId prop (e.g. SimpleRichInput). An unlocked agent whose
+  // session provider differs from the active one keeps the multi-provider list.
   const isAgentProviderOverride = $derived(Boolean(providerId));
 
   let agentProviderModels = $state<
@@ -570,9 +571,13 @@
   });
 
   const triggerProviderId = $derived.by(() => {
-    if (!localModel || !hasExplicitModel) return effectiveProviderId;
-    const { providerId: modelProvider } = parseCompoundModelId(localModel);
-    return modelProvider;
+    if (localModel && hasExplicitModel) {
+      return parseCompoundModelId(localModel).providerId;
+    }
+    if (explicitProviderId) return explicitProviderId;
+    // No explicit provider or model — show the displayed default model's provider.
+    if (defaultModelId) return parseCompoundModelId(defaultModelId).providerId;
+    return $activeProviderId$;
   });
 
   const isTriggerLabelResolved = $derived.by(() => {

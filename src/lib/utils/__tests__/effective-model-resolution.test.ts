@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { getDefaultProviderId, PROVIDER_MODEL_TIERS } from '$shared/config/provider-config';
 
 import {
+  dropCrossProviderFallbackModel,
   resolveEffectiveModelForSpecialist,
   resolveSubmitModel,
+  resolveSubmitProvider,
 } from '../effective-model-resolution';
 
 describe('resolveEffectiveModelForSpecialist', () => {
@@ -73,6 +75,34 @@ describe('resolveEffectiveModelForSpecialist', () => {
         specialistInfo: { defaultModelTier: 'smart', defaultModel: 'custom-model' },
       }),
     ).toBe('custom-model');
+  });
+
+  it('skips a bare (default-provider) defaultModel when a non-default provider is selected', () => {
+    expect(
+      resolveEffectiveModelForSpecialist({
+        specialistId: 'spec-writer',
+        selectedProvider: 'claude-code',
+        availableModelValues: ['claude-code:sonnet', 'claude-code:haiku'],
+        globalSelectedModel: undefined,
+        effectiveCodingAgent: 'auggie',
+        effectiveModel: undefined,
+        specialistInfo: { defaultModel: 'fable-5' },
+      }),
+    ).toBe('claude-code:sonnet');
+  });
+
+  it('keeps a compound defaultModel that matches the selected provider', () => {
+    expect(
+      resolveEffectiveModelForSpecialist({
+        specialistId: 'custom-agent',
+        selectedProvider: 'claude-code',
+        availableModelValues: ['claude-code:sonnet'],
+        globalSelectedModel: undefined,
+        effectiveCodingAgent: 'auggie',
+        effectiveModel: undefined,
+        specialistInfo: { defaultModel: 'claude-code:custom' },
+      }),
+    ).toBe('claude-code:custom');
   });
 
   it('resolves the preferred default model when no specialist is selected', () => {
@@ -161,5 +191,49 @@ describe('resolveSubmitModel', () => {
         globalSelectedModel: 'sonnet4.5',
       }),
     ).toBe('opus4.6');
+  });
+});
+
+describe('resolveSubmitProvider', () => {
+  const defaultProviderId = getDefaultProviderId();
+
+  it('derives the provider from a compound model prefix', () => {
+    expect(resolveSubmitProvider('claude-code:sonnet', 'grok')).toBe('claude-code');
+  });
+
+  it('resolves a bare model id to the default provider', () => {
+    expect(resolveSubmitProvider('fable-5', 'grok')).toBe(defaultProviderId);
+  });
+
+  it('keeps the selected provider when no model resolved', () => {
+    expect(resolveSubmitProvider(undefined, 'grok')).toBe('grok');
+  });
+
+  it('keeps the selected provider for an empty compound prefix (mirrors the daemon filter)', () => {
+    expect(resolveSubmitProvider(':sonnet', 'grok')).toBe('grok');
+  });
+});
+
+describe('dropCrossProviderFallbackModel', () => {
+  const defaultProviderId = getDefaultProviderId();
+
+  it('keeps a model owned by the selected provider', () => {
+    expect(dropCrossProviderFallbackModel('grok:grok-4', 'grok')).toBe('grok:grok-4');
+  });
+
+  it('keeps a bare model id when the selected provider is the default provider', () => {
+    expect(dropCrossProviderFallbackModel('opus4.7', defaultProviderId)).toBe('opus4.7');
+  });
+
+  it('drops a bare default-provider model when the selected provider is non-default', () => {
+    expect(dropCrossProviderFallbackModel('opus4.7', 'grok')).toBeUndefined();
+  });
+
+  it('drops a compound model owned by a different provider', () => {
+    expect(dropCrossProviderFallbackModel('claude-code:sonnet', 'grok')).toBeUndefined();
+  });
+
+  it('passes through undefined', () => {
+    expect(dropCrossProviderFallbackModel(undefined, 'grok')).toBeUndefined();
   });
 });
