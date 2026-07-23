@@ -406,6 +406,15 @@ export interface AgentsClient {
    */
   stop(agentId: string): Promise<MutationResult>;
   /**
+   * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
+   * new name and an applied rename emits `agent:renamed` (in
+   * `AGENT_LIFECYCLE_EVENTS`), so the reactive `subscribe` refetch reconciles
+   * other windows. `workspaceId` is accepted for caller parity with `delete`
+   * but is not part of the wire contract — the daemon resolves the workspace
+   * itself.
+   */
+  rename(agentId: string, name: string, workspaceId?: string): Promise<MutationResult>;
+  /**
    * Permanently delete an agent session (`agent.delete`, §5.5). The daemon is
    * **idempotent** — it returns `{ success: true }` even when the agent is
    * already gone — and emits `agent:deleted` (in `AGENT_LIFECYCLE_EVENTS`), so

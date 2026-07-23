@@ -520,6 +520,39 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('stop boom');
   });
 
+  it('rename forwards agent.rename with §5.5 params and folds the ack into success', async () => {
+    // PROTOCOL §5.5: agent.rename takes `{ agentId, name }` (name non-empty)
+    // and returns `{ success: true, name }`; an applied rename emits
+    // `agent:renamed`. The user-initiated seam never sends the optional
+    // `skipIfExplicitlySet` guard — a user rename always wins — and the
+    // seam's optional workspaceId argument stays off the wire.
+    backend.onRequest('agent.rename', () => ({ success: true, name: 'New Name' }));
+    const client = new LiveAgentsClient();
+
+    expect(await client.rename('agent-1', 'New Name', 'ws-1')).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.rename',
+      params: { agentId: 'agent-1', name: 'New Name' },
+    });
+    expect(backend.requests[0]?.params).not.toHaveProperty('skipIfExplicitlySet');
+    expect(backend.requests[0]?.params).not.toHaveProperty('workspaceId');
+  });
+
+  it('rename surfaces a daemon rejection as a non-success MutationResult (no throw)', async () => {
+    backend.onRequest('agent.rename', () => {
+      throw new BackendError(
+        buildErrorPayload('INVALID_PARAMS', 'name must be a non-empty string', {
+          rpcCode: -32602,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.rename('agent-1', '');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('name must be a non-empty string');
+  });
+
   it('delete forwards agent.delete with §5.5 params and folds the idempotent BE body into success', async () => {
     // PROTOCOL §5.5: agent.delete takes `{ agentId }` (workspaceId optional, the
     // daemon resolves it) and returns `{ success: true }` — idempotently, even

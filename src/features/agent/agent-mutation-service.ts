@@ -24,6 +24,12 @@
  * ACTIVE (promoting `status` to Active when a backendSessionId is present);
  * on failure mark ERROR and reject.
  *
+ * It also services `renameAgentSessionRequested`: the dispatch sites
+ * (AgentCard / PanelLayout) apply the rename to Redux optimistically BEFORE
+ * dispatching and revert on rejection, so the handler only forwards
+ * `agent.rename` (PROTOCOL §5.5) and settles the promise — the daemon's
+ * `agent:renamed` event reconciles other windows.
+ *
  * It also services the orphaned agent-deletion triggers
  * (`deleteAgentWithUndoRequested`, `deleteAgentSessionRequested`,
  * `undoAgentDeletionRequested`, `commitPendingAgentDeletionRequested`,
@@ -60,6 +66,7 @@ import {
   deleteAgentWithUndoRequested,
   flushPendingAgentDeletionsRequested,
   removeAgent,
+  renameAgentSessionRequested,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
   undoAgentDeletionRequested,
@@ -213,6 +220,30 @@ function handleSave(
   // IS the runtime state. Resolve immediately so callers awaiting
   // `saveAction.promise` (agent-stream-lifecycle pre-send) can proceed.
   appStore.dispatch(action.success(undefined as never));
+}
+
+/**
+ * `renameAgentSessionRequested`: forward the (already optimistically applied)
+ * rename to the daemon via `agent.rename` (PROTOCOL §5.5). The dispatch sites
+ * update Redux BEFORE dispatching and revert on rejection, so this handler
+ * only settles the promise: success when the daemon acked, failure when it
+ * did not — so AgentCard's revert-on-failure path fires.
+ */
+async function handleRename(
+  action: ReturnType<typeof renameAgentSessionRequested>,
+): Promise<void> {
+  const [wsId, agentId, name] = action.payload;
+  try {
+    const result = await appClient.agents.rename(agentId, name, wsId);
+    if (!result.success) {
+      appStore.dispatch(action.failure(new Error(result.error || "Failed to rename agent")));
+      return;
+    }
+    appStore.dispatch(action.success(undefined as never));
+  } catch (error) {
+    logger.error("Failed to rename agent session", error);
+    appStore.dispatch(action.failure(toError(error, "Failed to rename agent session")));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -411,6 +442,9 @@ export function createAgentMutationMiddleware(): StoreMiddleware {
         break;
       case saveAgentSessionRequested.type:
         handleSave(action as ReturnType<typeof saveAgentSessionRequested>);
+        break;
+      case renameAgentSessionRequested.type:
+        void handleRename(action as ReturnType<typeof renameAgentSessionRequested>);
         break;
       case deleteAgentWithUndoRequested.type:
         handleDeleteWithUndo(action as ReturnType<typeof deleteAgentWithUndoRequested>);

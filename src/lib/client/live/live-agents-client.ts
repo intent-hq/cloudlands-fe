@@ -297,6 +297,15 @@ export class LiveAgentsClient implements AgentsClient {
     // `agent:stream:end` (§7), which converges the FE streaming state.
     return runMutation("agent.stop", { agentId });
   }
+  async rename(agentId: string, name: string): Promise<MutationResult> {
+    // `agent.rename` (§5.5) takes `{ agentId, name }` (name non-empty) and
+    // returns `{ success: true, name }`; an applied rename emits
+    // `agent:renamed` (in AGENT_LIFECYCLE_EVENTS), which reconciles the list.
+    // The optional `skipIfExplicitlySet` guard is never sent from this seam —
+    // a user-initiated rename always wins — and workspaceId is not part of
+    // the wire contract, so the seam's optional third argument is dropped.
+    return runMutation("agent.rename", { agentId, name });
+  }
   async delete(agentId: string): Promise<MutationResult> {
     // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;
     // the daemon resolves the workspace itself (agent_delete_op only consumes
