@@ -57,6 +57,10 @@ const logger = createLogger('WebNotificationService');
 let installed = false;
 /** Log the missing-permission skip once, not on every idle event. */
 let loggedPermissionSkip = false;
+/** In-flight permission prompt, shared so concurrent idle events coalesce
+ * into ONE `Notification.requestPermission()` call (overlapping prompts throw
+ * or misbehave in some browsers). */
+let pendingPermissionRequest: Promise<NotificationPermission> | null = null;
 /** Strong refs so pending notifications aren't GC'd before click (parity with main). */
 const activeNotifications = new Set<Notification>();
 
@@ -66,8 +70,28 @@ function isNotificationSupported(): boolean {
 }
 
 /**
- * Resolve notification permission, requesting it lazily on 'default'. Returns
- * true only when granted. Never rejects; 'denied' and request failures fold to
+ * Resolve notification permission, requesting it lazily on 'default'.
+ * Concurrent callers share one in-flight `requestPermission()` prompt.
+ * REJECTS when the browser's request itself throws — callers decide whether
+ * to fold that to a silent skip (idle path) or a shaped error (settings
+ * bridge).
+ */
+async function resolvePermission(): Promise<NotificationPermission> {
+  let permission = Notification.permission;
+  if (permission === 'default') {
+    if (!pendingPermissionRequest) {
+      pendingPermissionRequest = Promise.resolve(Notification.requestPermission()).finally(() => {
+        pendingPermissionRequest = null;
+      });
+    }
+    permission = await pendingPermissionRequest;
+  }
+  return permission;
+}
+
+/**
+ * Resolve notification permission for the notification path. Returns true
+ * only when granted. Never rejects; 'denied' and request failures fold to
  * false (logged once).
  */
 async function ensurePermission(): Promise<boolean> {
@@ -78,17 +102,15 @@ async function ensurePermission(): Promise<boolean> {
     }
     return false;
   }
-  let permission = Notification.permission;
-  if (permission === 'default') {
-    try {
-      permission = await Notification.requestPermission();
-    } catch (error) {
-      if (!loggedPermissionSkip) {
-        loggedPermissionSkip = true;
-        logger.warn('Notification permission request failed', { error });
-      }
-      return false;
+  let permission: NotificationPermission;
+  try {
+    permission = await resolvePermission();
+  } catch (error) {
+    if (!loggedPermissionSkip) {
+      loggedPermissionSkip = true;
+      logger.warn('Notification permission request failed', { error });
     }
+    return false;
   }
   if (permission !== 'granted') {
     if (!loggedPermissionSkip) {
@@ -100,6 +122,48 @@ async function ensurePermission(): Promise<boolean> {
     return false;
   }
   return true;
+}
+
+/** Daemon setting paths consulted per idle event (PROTOCOL §5.12). */
+const SETTING_PATH_ENABLED = 'notifications.enabled';
+const SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED = 'notifications.soundOnlyWhenUnfocused';
+
+/** Notification preferences consulted per idle event. */
+interface NotificationPrefs {
+  enabled: boolean;
+  soundOnlyWhenUnfocused: boolean;
+}
+
+/**
+ * Fetch fresh `notifications.*` preferences from the daemon — parity with the
+ * main-process service's per-event `refreshPrefs()` (settings toggles take
+ * effect without a reload, and a not-yet-hydrated store can't leak a stale
+ * value). Falls back to the Redux store's values (kept in sync by the
+ * user-preferences-notification-persistence middleware) when the daemon read
+ * fails.
+ */
+async function fetchNotificationPrefs(): Promise<NotificationPrefs> {
+  const state = appStore.state as StoreState;
+  const fallback: NotificationPrefs = {
+    enabled: state.userPreferences.enabled ?? true,
+    soundOnlyWhenUnfocused: state.userPreferences.soundOnlyWhenUnfocused ?? true,
+  };
+  try {
+    const [enabled, soundOnlyWhenUnfocused] = await Promise.all([
+      backendRequest('settings.get', { path: SETTING_PATH_ENABLED }),
+      backendRequest('settings.get', { path: SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED }),
+    ]);
+    const enabledValue = (enabled as { value?: unknown } | null)?.value;
+    const soundValue = (soundOnlyWhenUnfocused as { value?: unknown } | null)?.value;
+    return {
+      enabled: typeof enabledValue === 'boolean' ? enabledValue : fallback.enabled,
+      soundOnlyWhenUnfocused:
+        typeof soundValue === 'boolean' ? soundValue : fallback.soundOnlyWhenUnfocused,
+    };
+  } catch (error) {
+    logger.warn('Failed to fetch notifications.* settings from daemon', { error });
+    return fallback;
+  }
 }
 
 /** `agent.list` response subset consulted for suppression (PROTOCOL §5.5). */
@@ -182,8 +246,10 @@ export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
     const workspaceId = event.workspaceId;
     if (typeof workspaceId !== 'string' || workspaceId.length === 0) return;
 
-    const state = appStore.state as StoreState;
-    const { enabled, soundOnlyWhenUnfocused } = state.userPreferences;
+    // Fresh read so settings toggles take effect without a reload and a
+    // not-yet-hydrated store can't leak a stale value (main-process
+    // refreshPrefs parity); folds back to the store on daemon failure.
+    const { enabled, soundOnlyWhenUnfocused } = await fetchNotificationPrefs();
 
     if (!enabled) {
       logger.debug('Notifications disabled', { workspaceId });
@@ -251,7 +317,7 @@ export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
     // always sent). Electron's per-window focus check collapses to
     // `document.hasFocus()` + the active workspace id on the single web tab.
     const activeWorkspaceId =
-      (state as { workspace?: { activeWorkspaceId?: string | null } }).workspace
+      (appStore.state as { workspace?: { activeWorkspaceId?: string | null } }).workspace
         ?.activeWorkspaceId ?? null;
     const focusedViewingWorkspace =
       typeof document !== 'undefined' && document.hasFocus() && activeWorkspaceId === workspaceId;
@@ -313,8 +379,11 @@ export async function requestWebNotificationPermission(): Promise<{
         error: 'Desktop notifications are not supported on this platform',
       };
     }
-    const granted = await ensurePermission();
-    return { success: true, granted };
+    // resolvePermission (not ensurePermission): a thrown requestPermission
+    // must surface as the { success: false, error } arm here — the settings
+    // flow reports real failures instead of folding them to granted: false.
+    const permission = await resolvePermission();
+    return { success: true, granted: permission === 'granted' };
   } catch (error) {
     return {
       success: false,
@@ -347,5 +416,6 @@ export function createWebNotificationMiddleware(): StoreMiddleware {
 export function __resetWebNotificationServiceForTesting(): void {
   installed = false;
   loggedPermissionSkip = false;
+  pendingPermissionRequest = null;
   activeNotifications.clear();
 }

@@ -183,19 +183,35 @@ describe('web-notification-service', () => {
       expect(MockNotification.instances[0].options?.body).toBe('Finished');
     });
 
-    it('skips when notifications are disabled', async () => {
+    it('skips when notifications are disabled (store fallback)', async () => {
       mockState.userPreferences.enabled = false;
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances).toHaveLength(0);
-      expect(mockBackendRequest).not.toHaveBeenCalled();
+      expect(mockBackendRequest).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    });
+
+    it('prefers fresh daemon notifications.enabled over the store (refreshPrefs parity)', async () => {
+      mockState.userPreferences.enabled = true;
+      mockBackendRequest.mockImplementation(async (method: string, params?: unknown) => {
+        if (method === 'settings.get') {
+          const path = (params as { path?: string })?.path;
+          if (path === 'notifications.enabled') return { value: false };
+          return {};
+        }
+        if (method === 'agent.list') return SOLO_AGENT_LIST;
+        return undefined;
+      });
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(0);
     });
 
     it('skips background agents (event fast path)', async () => {
       await handleWebAgentIdle(makeIdleEvent({ isBackground: true }));
 
       expect(MockNotification.instances).toHaveLength(0);
-      expect(mockBackendRequest).not.toHaveBeenCalled();
+      expect(mockBackendRequest).not.toHaveBeenCalledWith('agent.list', expect.anything());
     });
 
     it('skips background agents (agent.list metadata)', async () => {
@@ -312,6 +328,23 @@ describe('web-notification-service', () => {
 
       expect(MockNotification.instances).toHaveLength(0);
     });
+
+    it('coalesces concurrent permission prompts into one requestPermission call', async () => {
+      MockNotification.permission = 'default';
+      let resolvePrompt!: (value: NotificationPermission) => void;
+      MockNotification.requestPermission = vi.fn(
+        () => new Promise<NotificationPermission>((resolve) => (resolvePrompt = resolve)),
+      );
+
+      const first = handleWebAgentIdle(makeIdleEvent());
+      const second = handleWebAgentIdle(makeIdleEvent({ agentId: 'agent-1' }, 'ws-2'));
+      await flushAsync();
+      resolvePrompt('granted');
+      await Promise.all([first, second]);
+
+      expect(MockNotification.requestPermission).toHaveBeenCalledTimes(1);
+      expect(MockNotification.instances).toHaveLength(2);
+    });
   });
 
   describe('click navigation', () => {
@@ -401,6 +434,18 @@ describe('web-notification-service', () => {
       __resetWebNotificationServiceForTesting();
       MockNotification.permission = 'denied';
       expect(await requestWebNotificationPermission()).toEqual({ success: true, granted: false });
+    });
+
+    it('requestWebNotificationPermission surfaces a thrown requestPermission as { success: false, error }', async () => {
+      MockNotification.permission = 'default';
+      MockNotification.requestPermission = vi.fn(async () => {
+        throw new Error('prompt already in progress');
+      });
+
+      expect(await requestWebNotificationPermission()).toEqual({
+        success: false,
+        error: 'prompt already in progress',
+      });
     });
   });
 });
