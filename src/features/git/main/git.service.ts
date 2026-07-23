@@ -494,8 +494,11 @@ export class GitService {
     try {
       // Make the commit - capture both stdout and stderr for debugging
       // Use larger buffer and timeout to handle large files with pre-commit hooks
-      const { stdout: commitStdout, stderr: commitStderr } = await execAsync(
-        `git commit -m "${fullMessage.replace(/"/g, '\\"')}"`,
+      // Pass the message as an argument (no shell) so special characters in
+      // commit messages are never interpreted by a shell
+      const { stdout: commitStdout, stderr: commitStderr } = await execFileAsyncWithRetry(
+        'git',
+        ['commit', '-m', fullMessage],
         {
           cwd: worktreePath,
           maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large pre-commit hook output

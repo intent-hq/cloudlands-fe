@@ -30,7 +30,7 @@ if (fs.existsSync(indexPath)) {
   html = html.replace(/\.ts"/g, '.js"');
 
   // Collect inline script hashes so we can remove unsafe-inline/unsafe-eval in production
-  const scriptTagRegex = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  const scriptTagRegex = /<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi;
   const inlineScripts = [];
   let match;
 

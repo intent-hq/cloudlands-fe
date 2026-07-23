@@ -248,31 +248,6 @@ export function sanitizeMarkdownHTML(html: string): string {
 }
 
 /**
- * Extract text content from HTML safely
- */
-export function extractTextFromHTML(html: string): string {
-  if (!html) return '';
-
-  try {
-    // First sanitize the HTML
-    const sanitized = sanitizeHTML(html);
-
-    // Then extract text content
-    if (typeof document !== 'undefined' && typeof DOMParser !== 'undefined') {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(sanitized, 'text/html');
-      return doc.body.textContent || '';
-    }
-
-    // Fallback for non-browser environments
-    return sanitized.replace(/<[^>]*>/g, '');
-  } catch (error) {
-    logger.error('Failed to extract text from HTML', error as Error);
-    return '';
-  }
-}
-
-/**
  * Check if HTML contains potentially dangerous content
  */
 export function isDangerousHTML(html: string): boolean {

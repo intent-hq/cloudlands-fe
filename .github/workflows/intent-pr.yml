@@ -16,6 +16,8 @@ jobs:
     name: Type Check (renderer)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     env:
       GIT_TERMINAL_PROMPT: '0'
       NODE_OPTIONS: '--max-old-space-size=4096'
@@ -44,6 +46,8 @@ jobs:
     name: Build & Verify (main process)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     env:
       GIT_TERMINAL_PROMPT: '0'
       NODE_OPTIONS: '--max-old-space-size=4096'
@@ -117,6 +121,8 @@ jobs:
     name: Type Check (preload)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     env:
       GIT_TERMINAL_PROMPT: '0'
       NODE_OPTIONS: '--max-old-space-size=4096'
@@ -145,6 +151,8 @@ jobs:
     name: Lint & Static Checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     env:
       GIT_TERMINAL_PROMPT: '0'
       NODE_OPTIONS: '--max-old-space-size=4096'
@@ -175,6 +183,8 @@ jobs:
     name: Build (web)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     env:
       GIT_TERMINAL_PROMPT: '0'
       # The full production renderer build needs more heap than the other
@@ -210,6 +220,8 @@ jobs:
     name: Unit Tests (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -239,6 +251,7 @@ jobs:
   gate:
     name: Type Check & Test
     runs-on: ubuntu-latest
+    permissions: {}
     if: always()
     needs:
       [

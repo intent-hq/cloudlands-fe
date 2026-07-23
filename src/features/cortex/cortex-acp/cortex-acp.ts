@@ -10,6 +10,7 @@
  * Usage: node cortex-acp.js
  */
 
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -464,7 +465,7 @@ class CortexAcpAdapter {
     const model = (metadata.model as string) || null;
 
     // Generate ACP session ID
-    this.acpSessionId = `cortex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.acpSessionId = `cortex-${randomUUID()}`;
 
     // Inject MCP servers if provided
     const mcpServers = params.mcpServers as AcpMcpServer[] | undefined;

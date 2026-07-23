@@ -19,7 +19,7 @@
  *   pnpm memory-events duckdb <query>     # Run custom DuckDB query
  */
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -45,7 +45,9 @@ function duckdb(query: string): string {
   try {
     // Replace placeholder with actual path
     const fullQuery = query.replace(/\$FILE/g, EVENTS_PATH);
-    return execSync(`duckdb -c ${JSON.stringify(fullQuery)}`, { encoding: 'utf-8' });
+    // Pass the query as an argument (no shell) so path/query content is never
+    // interpreted by a shell
+    return execFileSync('duckdb', ['-c', fullQuery], { encoding: 'utf-8' });
   } catch (err: any) {
     return `DuckDB error: ${err.message}`;
   }

@@ -10,6 +10,7 @@ import {
   vi,
 } from 'vitest';
 import { GitService } from '../main/git.service';
+import { execAsyncRobust, execFileAsyncWithRetry } from '../../../shared/git/git-env';
 
 vi.mock('../../../shared/git/git-env', () => ({
   execFileAsync: vi.fn(),
@@ -255,6 +256,40 @@ describe('GitService', () => {
       expect(result[0].path).toBe('.intent/skills/my-skill/config.json');
       expect(result[0].status).toBe('A');
       expect(result[0].staged).toBe(true);
+    });
+  });
+
+  describe('commit', () => {
+    it('should pass the commit message as an argument without shell interpretation', async () => {
+      const service = new GitService();
+      vi.spyOn(service as any, 'getWorktreePath').mockReturnValue('/tmp/worktree');
+
+      const message = 'fix: handle "quotes", \\backslashes\\ and $(date) `subshells`';
+      const description = 'Multi-line description\nwith a second line';
+      const fullMessage = `${message}\n\n${description}`;
+
+      vi.mocked(execFileAsyncWithRetry).mockResolvedValue({ stdout: '', stderr: '' });
+      vi.mocked(execAsyncRobust).mockImplementation(async (command: string) => {
+        if (command.startsWith('git log -1')) {
+          return {
+            stdout: 'abc123|Author|author@example.com|2026-07-23T00:00:00Z|subject\n',
+            stderr: '',
+          };
+        }
+        if (command.startsWith('git diff-tree')) {
+          return { stdout: 'file1.ts\n', stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await service.commit('workspace-1' as any, message, description);
+
+      expect(result.ok).toBe(true);
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
+        'git',
+        ['commit', '-m', fullMessage],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
     });
   });
 

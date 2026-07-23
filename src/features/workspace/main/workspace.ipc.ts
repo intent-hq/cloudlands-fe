@@ -25,7 +25,7 @@ import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/
 
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 import { InstructionService } from '../../agent/main/instruction-service';
-import { execAsync } from '../../../shared/git/git-env';
+import { execFileAsync } from '../../../shared/git/git-env';
 import { GitService } from '../../git/main/git.service';
 import { getWorkspaceGitInfo } from '../../git/main/git-router';
 import { getBackendClient } from '../../backend/main/backend.ipc';
@@ -2084,9 +2084,9 @@ export function setupWorkspaceIPC(): void {
           }
 
           // Try ripgrep first; fallback to grep/findstr
-          const sanitize = (s: string) => String(s).replace(/"/g, '\\"');
-          const q = sanitize(query || '');
+          const q = String(query || '');
           if (!q) return [];
+          const searchRoot = workspacePath;
 
           let stdout = '';
 
@@ -2102,22 +2102,44 @@ export function setupWorkspaceIPC(): void {
             return [];
           }
 
-          const execSearchCommand = async (cmd: string): Promise<string> => {
-            const result = await execAsync(cmd, {
-              cwd: workspacePath,
+          // Execute the search without a shell so the query is passed as an
+          // argument and never interpreted by a shell
+          const execSearchCommand = async (file: string, args: string[]): Promise<string> => {
+            const result = await execFileAsync(file, args, {
+              cwd: searchRoot,
               maxBuffer: 20 * 1024 * 1024,
             });
             return result.stdout || '';
           };
 
           try {
-            const cmd = `rg -n --hidden --no-ignore -S -F -g "!node_modules" -g "!.git" "${q}" "${workspacePath}"`;
-            stdout = await execSearchCommand(cmd);
+            stdout = await execSearchCommand('rg', [
+              '-n',
+              '--hidden',
+              '--no-ignore',
+              '-S',
+              '-F',
+              '-g',
+              '!node_modules',
+              '-g',
+              '!.git',
+              '-e',
+              q,
+              '--',
+              searchRoot,
+            ]);
           } catch {
             // Fallbacks - for remote, only use grep (no Windows findstr)
             try {
-              const grepCmd = `grep -RIn --exclude-dir={.git,node_modules} -e "${q}" "${workspacePath}"`;
-              stdout = await execSearchCommand(grepCmd);
+              stdout = await execSearchCommand('grep', [
+                '-RIn',
+                '--exclude-dir=.git',
+                '--exclude-dir=node_modules',
+                '-e',
+                q,
+                '--',
+                searchRoot,
+              ]);
             } catch (e2: any) {
               stdout = e2?.stdout || '';
             }
