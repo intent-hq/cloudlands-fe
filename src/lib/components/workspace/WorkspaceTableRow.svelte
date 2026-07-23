@@ -3,7 +3,6 @@
    * WorkspaceTableRow - A single workspace row in the table view
    */
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import { cn } from '$lib/utils';
   import type { Workspace } from '$shared/types';
   import {
@@ -34,19 +33,11 @@
   import { deriveWorkspacePhase } from './workspace-phase';
   import WorkspaceHoverCard from './WorkspaceHoverCard.svelte';
   import WorkspacePhaseIndicator from './WorkspacePhaseIndicator.svelte';
-
-  // Agent display info with computed avatar state
-  interface AgentDisplayInfo {
-    id: string;
-    state: AvatarState;
-    specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
-    isActive: boolean;
-    isUnread: boolean;
-  }
+  import type { WorkspaceAgentDisplayInfo } from './utils/workspace-agent-display';
 
   interface Props {
     workspace: Workspace;
-    agents: AgentDisplayInfo[];
+    agents: WorkspaceAgentDisplayInfo[];
     isLastInGroup?: boolean;
     showRepoAvatar?: boolean;
     groupByRepo?: boolean;
@@ -86,7 +77,7 @@
 
   // Compute workspace phase
   const workspacePhase = $derived.by(() => {
-    const hasActiveAgents = agents.some((a) => a.isActive);
+    const hasActiveAgents = agents.some((a) => a.state === 'running');
     return deriveWorkspacePhase(ws, { hasActiveAgents, taskProgress: $workspaceTaskProgress$ });
   });
 
@@ -154,7 +145,9 @@
     }
   }
 
-  const activeAgentIds = $derived(agents.filter((agent) => agent.isActive).map((agent) => agent.id));
+  const activeAgentIds = $derived(
+    agents.filter((agent) => agent.state === 'running').map((agent) => agent.id),
+  );
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -207,7 +200,7 @@
                 >
                   <AugieAvatarWithState
                     agentId={agent.id}
-                    state={agent.isUnread ? 'unread' : 'running'}
+                    state={agent.isUnread ? 'unread' : agent.state}
                     size={16}
                     specialist={agent.specialist}
                   />

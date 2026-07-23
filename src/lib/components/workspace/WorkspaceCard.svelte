@@ -14,7 +14,6 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
-  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import type { WorkspacePhaseInfo, WorkspacePhaseStats, WorkspacePhase } from './workspace-phase';
@@ -27,8 +26,12 @@
     incrementContextMenuOpen,
     decrementContextMenuOpen,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import type { Workspace, WorkspaceAgentInfo } from '$shared/types';
+  import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
+  import {
+    getWorkspaceAgentDisplayInfos,
+    type WorkspaceAgentDisplayInfo,
+  } from './utils/workspace-agent-display';
   import { writable } from 'svelte/store';
   import { store as appStore } from "$store/renderer/store";
   import {
@@ -195,35 +198,27 @@
     return getPRTooltipContent(activePR ?? undefined);
   });
 
-  function getSummaryAgentState(agent: { id: string }): AvatarState {
-    // Treat workspace.activity === 'idle' as authoritative — no running state
-    // when the daemon says idle, even if stale Redux/tracker data remains.
-    if (workspace?.activity === 'idle') return 'idle';
-
-    const reduxState = appStore.state;
-    const loadedSession = selectAgentSession.select(reduxState, agent.id);
-    const isWaiting = loadedSession
-      ? selectAgentIsWaiting.select(reduxState, agent.id)
-      : false;
-    const isResponding = loadedSession
-      ? selectAgentIsResponding.select(reduxState, agent.id)
-      : streamingAgentIds.includes(agent.id);
-
-    if (isWaiting) return 'waiting';
-    if (isResponding) return 'running';
-    return 'idle';
-  }
-
   const agentInfos = $derived.by(() => {
-    const memberIds = workspace?.agentSummary?.agentIds ?? [];
-    const unreadSet = new Set(unreadAgentIds);
-    return memberIds
-      .map((id) => ({
-        id,
-        specialist: (selectAgentSession.select(appStore.state, id)?.metadata?.specialist ??
-          null) as WorkspaceAgentInfo['specialist'],
-      }))
-      .filter((agent) => getSummaryAgentState(agent) !== 'idle' || unreadSet.has(agent.id));
+    const reduxState = appStore.state;
+    return getWorkspaceAgentDisplayInfos({
+      memberAgentIds: workspace?.agentSummary?.agentIds ?? [],
+      unreadAgentIds,
+      workspaceActivity: workspace?.activity,
+      getAgentSnapshot: (agentId) => {
+        const loadedSession = selectAgentSession.select(reduxState, agentId);
+        return {
+          hasLoadedSession: !!loadedSession,
+          isWaiting: loadedSession ? selectAgentIsWaiting.select(reduxState, agentId) : false,
+          isResponding: loadedSession
+            ? selectAgentIsResponding.select(reduxState, agentId)
+            : false,
+          isStreamingFallback: streamingAgentIds.includes(agentId),
+          sessionStatus: loadedSession?.status as string | undefined,
+          specialist: (loadedSession?.metadata?.specialist ??
+            null) as WorkspaceAgentDisplayInfo['specialist'],
+        };
+      },
+    });
   });
 
   function handleKeydown(e: KeyboardEvent) {
@@ -450,7 +445,7 @@
               <AugieAvatarWithState
                 agentId={agent.id}
                 size={14}
-                state={getSummaryAgentState(agent)}
+                state={agent.state}
                 specialist={agent.specialist}
               />
             {/each}
