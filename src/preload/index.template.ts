@@ -241,7 +241,6 @@ const ALLOWED_CHANNELS = [
   'app:name',
   'app:path',
   'app:root',
-  'app:get-memory-usage',
   'window:reload',
   'window:toggle-devtools',
   'window:minimize',
@@ -658,12 +657,12 @@ function generateListenerId(): string {
 // Define the API exposed to the renderer
 const electronAPI = {
   // IPC invoke (request/response)
-  invoke: (channel: string, data?: any) => {
+  invoke: (channel: string, ...args: any[]) => {
     // Use generated allowed channels for security
     if (isChannelAllowed(channel)) {
-      // Pass data as-is to respect union schemas and other complex types
+      // Pass args as-is to respect union schemas and other complex types
       // The validation middleware will handle type checking
-      return ipcRenderer.invoke(channel, data).catch((err) => {
+      return ipcRenderer.invoke(channel, ...args).catch((err) => {
         logger.error(`[Preload] IPC invoke failed for ${channel}:`, err);
         throw err;
       });

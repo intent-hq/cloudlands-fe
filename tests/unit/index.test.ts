@@ -9,7 +9,6 @@ import { describe, it, expect } from 'vitest';
 
 // Import all test suites
 import './unified-id-service.test';
-import './memory-manager.test';
 import './performance-optimizer.test';
 
 describe('Agent System Unit Test Suite', () => {
@@ -17,21 +16,19 @@ describe('Agent System Unit Test Suite', () => {
     // This test ensures all test files are included
     const testFiles = [
       'unified-id-service.test',
-      'memory-manager.test',
       'performance-optimizer.test',
     ];
 
-    expect(testFiles).toHaveLength(3);
+    expect(testFiles).toHaveLength(2);
   });
 
   it('should cover all core services', () => {
     const services = [
       'UnifiedIdService',
-      'MemoryManager',
       'PerformanceOptimizer',
     ];
 
-    expect(services).toHaveLength(3);
+    expect(services).toHaveLength(2);
   });
 });
 
@@ -42,7 +39,6 @@ describe('Agent System Unit Test Suite', () => {
  * -------------------------------|-----------------|------------------
  * UnifiedIdService               | 90%+            | ID generation, validation, mapping, cleanup
  * UnifiedStateStore              | 90%+            | State management, persistence, context, models
- * MemoryManager                  | 90%+            | Resource tracking, cleanup, leak detection
  * PerformanceOptimizer           | 90%+            | Tracking, memoization, coalescing, workers
  *
  * Total Target Coverage: 90%+

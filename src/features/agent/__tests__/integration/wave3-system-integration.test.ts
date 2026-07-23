@@ -2,7 +2,7 @@
  * Wave 3 System Integration Tests
  *
  * Comprehensive end-to-end tests for the complete agent system
- * including memory management, cleanup, and concurrent operations.
+ * including listener cleanup and concurrent operations.
  */
 
 import {
@@ -14,25 +14,17 @@ import {
   vi,
 } from 'vitest';
 import { ListenerManager } from '../../../../shared/utils/listener-manager';
-import { MemoryMonitor } from '../../../../shared/monitoring/memory-monitor';
 import { EventEmitter } from '../../../../shared/event-emitter';
 
 describe('Wave 3 System Integration', () => {
   let listenerManager: ListenerManager;
-  let memoryMonitor: MemoryMonitor;
 
   beforeEach(() => {
     listenerManager = new ListenerManager();
-    memoryMonitor = new MemoryMonitor({
-      checkInterval: 100,
-      warningThreshold: 100 * 1024 * 1024,
-      enableGC: false,
-    });
   });
 
   afterEach(() => {
     listenerManager.cleanup();
-    memoryMonitor.stop();
   });
 
   it('should manage listeners without memory leaks', () => {
@@ -48,24 +40,6 @@ describe('Wave 3 System Integration', () => {
     listenerManager.cleanup();
 
     expect(listenerManager.getListenerCount()).toBe(0);
-  });
-
-  it('should monitor memory and emit events', async () => {
-    let statsReceived = false;
-
-    memoryMonitor.on('stats', () => {
-      statsReceived = true;
-    });
-
-    memoryMonitor.start();
-
-    await new Promise((resolve) => {
-      setTimeout(() => {
-        expect(statsReceived).toBe(true);
-        memoryMonitor.stop();
-        resolve(undefined);
-      }, 200);
-    });
   });
 
   it('should handle concurrent listener operations', () => {
