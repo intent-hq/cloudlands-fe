@@ -482,6 +482,207 @@ describe("host-bridge-seeder", () => {
       restoreElectronApi();
     });
   });
+
+  describe("system:execute-command → daemon host.exec (PROTOCOL §5.14)", () => {
+    // Route the two daemon methods the handler touches: `system.status` for
+    // the host-OS shell pick and `host.exec` for the one-shot run. Payloads
+    // mirror PROTOCOL §5.7 / §5.14.
+    function routeDaemon(responses: Record<string, unknown>): void {
+      mockedRequest.mockImplementation(async (method: string) => {
+        if (!(method in responses)) throw new Error(`unexpected daemon method: ${method}`);
+        return responses[method];
+      });
+    }
+
+    const localHost = (os: string) => ({
+      running: true,
+      host: { os, arch: "arm64", hasDisplay: true, locality: "local" },
+    });
+
+    /** All params of every `host.exec` call the handler emitted. */
+    const hostExecCalls = () =>
+      mockedRequest.mock.calls.filter(([method]) => method === "host.exec");
+
+    it("wraps the shell-form command via `/bin/sh -c` with cwd folded into the script on a POSIX daemon host (regression: web folded to the disabled-allowlist failure)", async () => {
+      routeDaemon({
+        "system.status": localHost("macos"),
+        "host.exec": { stdout: "[main abc1234] amended\n", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: 'git commit --amend -m "fix: typo"',
+        cwd: "/Users/alex/code/project",
+      });
+
+      expect(hostExecCalls()).toEqual([
+        [
+          "host.exec",
+          {
+            command: "/bin/sh",
+            args: ["-c", `cd -- '/Users/alex/code/project' && git commit --amend -m "fix: typo"`],
+            timeoutMs: 30_000,
+          },
+          { timeoutMs: 35_000 },
+        ],
+      ]);
+      // Envelope parity with the Electron main-process handler
+      // (system.ipc.ts EXECUTE_COMMAND): exit 0 → {success, data:{stdout,stderr,code:0}}.
+      expect(response).toEqual({
+        success: true,
+        data: { stdout: "[main abc1234] amended\n", stderr: "", code: 0 },
+      });
+    });
+
+    it("single-quotes a cwd containing quotes/spaces so the shell cannot re-interpret it", async () => {
+      routeDaemon({
+        "system.status": localHost("linux"),
+        "host.exec": { stdout: "", stderr: "", exitCode: 0 },
+      });
+
+      await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git status",
+        cwd: "/tmp/it's a repo",
+      });
+
+      expect(hostExecCalls()[0][1]).toEqual({
+        command: "/bin/sh",
+        args: ["-c", `cd -- '/tmp/it'\\''s a repo' && git status`],
+        timeoutMs: 30_000,
+      });
+    });
+
+    it("runs the bare command (no cd prefix) when no cwd is supplied", async () => {
+      routeDaemon({
+        "system.status": localHost("macos"),
+        "host.exec": { stdout: "ok\n", stderr: "", exitCode: 0 },
+      });
+
+      await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, { command: "git --version" });
+
+      expect(hostExecCalls()[0][1]).toEqual({
+        command: "/bin/sh",
+        args: ["-c", "git --version"],
+        timeoutMs: 30_000,
+      });
+    });
+
+    it("uses `cmd.exe /c` with `cd /d` on a Windows daemon host", async () => {
+      routeDaemon({
+        "system.status": localHost("windows"),
+        "host.exec": { stdout: "", stderr: "", exitCode: 0 },
+      });
+
+      await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git push --force-with-lease",
+        cwd: "C:\\code\\project",
+      });
+
+      expect(hostExecCalls()[0][1]).toEqual({
+        command: "cmd.exe",
+        args: ["/c", `cd /d "C:\\code\\project" && git push --force-with-lease`],
+        timeoutMs: 30_000,
+      });
+    });
+
+    it("maps a non-zero exit to the Electron failure envelope with stdout/stderr/code preserved", async () => {
+      // CommitsTimeline's force-push fallback branches on
+      // `pushResult.data?.stderr?.includes('has no upstream branch')`, so the
+      // buffers must survive the failure envelope verbatim.
+      routeDaemon({
+        "system.status": localHost("macos"),
+        "host.exec": {
+          stdout: "",
+          stderr: "fatal: The current branch feat has no upstream branch\n",
+          exitCode: 128,
+        },
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git push --force-with-lease",
+        cwd: "/repo",
+      });
+
+      expect(response).toEqual({
+        success: false,
+        error: "Command execution failed",
+        data: {
+          stdout: "",
+          stderr: "fatal: The current branch feat has no upstream branch\n",
+          code: 128,
+        },
+      });
+    });
+
+    it("folds a transport/RPC error to the Electron catch envelope without leaking the command", async () => {
+      routeDaemon({ "system.status": localHost("macos") });
+      mockedRequest.mockRejectedValue(new Error("boom: something sensitive"));
+
+      const response = await mockInvoke<{
+        success: boolean;
+        error?: string;
+        data?: { stdout: string; stderr: string; code: number };
+      }>(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git commit --amend -m secret-token",
+        cwd: "/repo",
+      });
+
+      expect(response).toEqual({
+        success: false,
+        error: "Command execution failed",
+        data: { stdout: "", stderr: "", code: 1 },
+      });
+      expect(JSON.stringify(response)).not.toContain("secret-token");
+    });
+
+    it("folds a system.status response without the §5.7 host block (older intentd) to the catch envelope without guessing a shell", async () => {
+      routeDaemon({
+        "system.status": { running: true },
+        "host.exec": { stdout: "", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git status",
+        cwd: "/repo",
+      });
+
+      expect(response).toEqual({
+        success: false,
+        error: "Command execution failed",
+        data: { stdout: "", stderr: "", code: 1 },
+      });
+      expect(hostExecCalls()).toEqual([]);
+    });
+
+    it("folds a system.status failure to the catch envelope without reaching host.exec", async () => {
+      routeDaemon({ "host.exec": { stdout: "", stderr: "", exitCode: 0 } });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git status",
+        cwd: "/repo",
+      });
+
+      expect(response).toEqual({
+        success: false,
+        error: "Command execution failed",
+        data: { stdout: "", stderr: "", code: 1 },
+      });
+      expect(hostExecCalls()).toEqual([]);
+    });
+
+    it("rejects a missing/empty command with the failure envelope and no daemon call", async () => {
+      const response = await mockInvoke<{ success: boolean }>(
+        IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND,
+        {},
+      );
+
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(response).toEqual({
+        success: false,
+        error: "Command execution failed",
+        data: { stdout: "", stderr: "", code: 1 },
+      });
+    });
+  });
 });
 
 describe("misc-ui-events-seeder window:open-new bridge", () => {
