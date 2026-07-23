@@ -34,6 +34,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PUSHED_TAG: ${{ github.ref_name }}
           INPUT_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
           if [ "$EVENT_NAME" = "push" ]; then
             TAG="$PUSHED_TAG"
@@ -42,6 +44,12 @@ jobs:
           fi
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]]; then
             echo "::error::Invalid tag '$TAG'. Expected v<semver> (e.g., v1.2.3 or v1.2.3-beta.1)"
+            exit 1
+          fi
+          # On the dispatch fallback the tag must already exist; fail here with a
+          # clear message instead of checkout's generic "couldn't find remote ref"
+          if [ "$EVENT_NAME" != "push" ] && ! gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag '$TAG' does not exist on ${REPO}. The dispatch fallback only rebuilds existing tags."
             exit 1
           fi
           VERSION="${TAG#v}"
@@ -82,8 +90,9 @@ jobs:
       # Guards against tags not created by release-please: release-please tags the
       # version-bump commit, so the tag and package.json always agree
       - name: Verify tag matches package.json version
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
-          VERSION="${{ steps.release.outputs.version }}"
           PKG_VERSION=$(jq -r .version package.json)
           if [ "$PKG_VERSION" != "$VERSION" ]; then
             echo "::error::Tag v${VERSION} does not match package.json version ${PKG_VERSION} at this commit. Release tags must point at the release-please version-bump commit."
@@ -94,13 +103,24 @@ jobs:
       - name: Check for duplicate release
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
-          VERSION="${{ steps.release.outputs.version }}"
-          if gh release view "v${VERSION}" --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+          # Distinguish "release not found" (proceed) from auth/network failures
+          # (abort) so a bad token doesn't silently pass the guard and waste a
+          # full signed build before the publish step fails
+          set +e
+          RESPONSE=$(gh api "repos/intent-hq/cloudlands-releases/releases/tags/v${VERSION}" 2>&1)
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
             echo "::error::Release v${VERSION} already exists on intent-hq/cloudlands-releases. Delete it there first to rebuild this tag."
             exit 1
+          elif echo "$RESPONSE" | grep -q "HTTP 404"; then
+            echo "No existing v${VERSION} release on intent-hq/cloudlands-releases, proceeding"
+          else
+            echo "::error::Failed to check for existing v${VERSION} release on intent-hq/cloudlands-releases: ${RESPONSE}"
+            exit 1
           fi
-          echo "No existing v${VERSION} release on intent-hq/cloudlands-releases, proceeding"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -323,8 +343,9 @@ jobs:
             --notes-file release-notes.md
 
       - name: Post summary
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
-          VERSION="${{ steps.release.outputs.version }}"
           # Derive actual DMG filename from dist-electron and URL-encode it
           DMG_FILE=$(find dist-electron -maxdepth 1 -name "*.dmg" -exec basename {} \; -quit)
           DMG_ENCODED=$(printf '%s' "$DMG_FILE" | jq -sRr @uri)

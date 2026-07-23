@@ -32,7 +32,7 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
 - **`CLOUDLANDS_APPLE_TEAM_ID`** - Apple Developer Team ID (e.g., `6947A73B2N`)
 - **`RELEASE_PAT`** - Personal Access Token (classic or fine-grained) with:
   - Classic: `repo` scope on `intent-hq/cloudlands-fe` and `intent-hq/cloudlands-releases`
-  - Fine-grained: `Contents: Read and write` + `Pull requests: Read and write`, with repository access to `cloudlands-fe` and `cloudlands-releases`
+  - Fine-grained: `Contents: Read and write`, with repository access to `cloudlands-fe` (tag checkout) and `cloudlands-releases` (publishing)
 - **`INTENTD_READ_PAT`** - Personal Access Token used by `scripts/fetch-sidecar.cjs` to download the pinned intentd release assets while the repo is private:
   - Fine-grained (preferred): `Contents: Read-only` with repository access to `intent-hq/intentd`
   - Classic: `repo` scope (classic scopes are write-capable; only read access is exercised — prefer fine-grained)
@@ -147,10 +147,11 @@ After verifying a beta release, promote it to the stable channel using the **Rel
 
 ### RELEASE_PAT Permissions
 
-**Symptom:** A publish step fails with a permissions error (e.g., "Publish to GitHub Releases").
+**Symptom:** The "Checkout release tag" or a publish step fails with a permissions error (e.g., "Publish to GitHub Releases").
 
 **Fix:** The `RELEASE_PAT` is missing required permissions:
-- For cloudlands-releases publishing: `Contents: Read and write` (fine-grained) or `repo` scope (classic)
+- For the cloudlands-fe tag checkout: `Contents: Read` (fine-grained) or `repo` scope (classic) on `intent-hq/cloudlands-fe`
+- For cloudlands-releases publishing: `Contents: Read and write` (fine-grained) or `repo` scope (classic) on `intent-hq/cloudlands-releases`
 
 Update the token's permissions in GitHub settings.
 

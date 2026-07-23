@@ -9,7 +9,7 @@ Intent uses a channel-based update model:
 - **`beta`** — Rolling release tag for beta testing; auto-updater pulls from `https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml`
 - **`stable`** — Rolling release tag for general availability; auto-updater pulls from `https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml`
 
-Each workflow dispatch also creates an immutable versioned release (`v{version}`) for archival and rollback.
+Each release also creates an immutable versioned release (`v{version}`) for archival and rollback.
 
 ## Required GitHub Secrets
 
