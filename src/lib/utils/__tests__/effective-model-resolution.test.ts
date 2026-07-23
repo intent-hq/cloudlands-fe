@@ -5,6 +5,7 @@ import { getDefaultProviderId, PROVIDER_MODEL_TIERS } from '$shared/config/provi
 import {
   resolveEffectiveModelForSpecialist,
   resolveSubmitModel,
+  resolveSubmitProvider,
 } from '../effective-model-resolution';
 
 describe('resolveEffectiveModelForSpecialist', () => {
@@ -73,6 +74,34 @@ describe('resolveEffectiveModelForSpecialist', () => {
         specialistInfo: { defaultModelTier: 'smart', defaultModel: 'custom-model' },
       }),
     ).toBe('custom-model');
+  });
+
+  it('skips a bare (default-provider) defaultModel when a non-default provider is selected', () => {
+    expect(
+      resolveEffectiveModelForSpecialist({
+        specialistId: 'spec-writer',
+        selectedProvider: 'claude-code',
+        availableModelValues: ['claude-code:sonnet', 'claude-code:haiku'],
+        globalSelectedModel: undefined,
+        effectiveCodingAgent: 'auggie',
+        effectiveModel: undefined,
+        specialistInfo: { defaultModel: 'fable-5' },
+      }),
+    ).toBe('claude-code:sonnet');
+  });
+
+  it('keeps a compound defaultModel that matches the selected provider', () => {
+    expect(
+      resolveEffectiveModelForSpecialist({
+        specialistId: 'custom-agent',
+        selectedProvider: 'claude-code',
+        availableModelValues: ['claude-code:sonnet'],
+        globalSelectedModel: undefined,
+        effectiveCodingAgent: 'auggie',
+        effectiveModel: undefined,
+        specialistInfo: { defaultModel: 'claude-code:custom' },
+      }),
+    ).toBe('claude-code:custom');
   });
 
   it('resolves the preferred default model when no specialist is selected', () => {
@@ -161,5 +190,21 @@ describe('resolveSubmitModel', () => {
         globalSelectedModel: 'sonnet4.5',
       }),
     ).toBe('opus4.6');
+  });
+});
+
+describe('resolveSubmitProvider', () => {
+  const defaultProviderId = getDefaultProviderId();
+
+  it('derives the provider from a compound model prefix', () => {
+    expect(resolveSubmitProvider('claude-code:sonnet', 'grok')).toBe('claude-code');
+  });
+
+  it('resolves a bare model id to the default provider', () => {
+    expect(resolveSubmitProvider('fable-5', 'grok')).toBe(defaultProviderId);
+  });
+
+  it('keeps the selected provider when no model resolved', () => {
+    expect(resolveSubmitProvider(undefined, 'grok')).toBe('grok');
   });
 });

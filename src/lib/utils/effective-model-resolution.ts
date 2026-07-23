@@ -7,6 +7,7 @@
 import {
   getDefaultModelForProvider,
   getDefaultProviderId,
+  parseCompoundModelId,
   PROVIDER_MODEL_TIERS,
   resolvePreferredModel,
   type ModelTier,
@@ -106,8 +107,14 @@ export function resolveEffectiveModelForSpecialist(
       // Tier model not available — fall through to fallback below
     }
 
-    // Fallback to hardcoded defaultModel (custom specialists, etc.)
-    if (specialistInfo?.defaultModel) {
+    // Fallback to hardcoded defaultModel (custom specialists, etc.) — but only
+    // when it belongs to the selected provider. A bare model id parses to the
+    // default provider, so e.g. 'fable-5' must not leak onto a non-default
+    // provider; fall through to the provider's own available models instead.
+    if (
+      specialistInfo?.defaultModel &&
+      parseCompoundModelId(specialistInfo.defaultModel).providerId === selectedProvider
+    ) {
       return specialistInfo.defaultModel;
     }
   }
@@ -130,4 +137,19 @@ export function resolveSubmitModel(
 ): string | undefined {
   if (input.modelWasOverridden && input.overriddenModel) return input.overriddenModel;
   return resolveEffectiveModelForSpecialist(input);
+}
+
+/**
+ * Derive the provider to submit alongside the resolved model so FE intent and
+ * daemon spawn can never diverge. Mirrors the daemon's resolve_provider_id
+ * precedence: a compound model prefix wins, a bare model id resolves to the
+ * default provider, and with no resolved model the form's selected provider
+ * is kept.
+ */
+export function resolveSubmitProvider(
+  resolvedModel: string | undefined,
+  selectedProvider: string,
+): string {
+  if (!resolvedModel) return selectedProvider;
+  return parseCompoundModelId(resolvedModel).providerId;
 }
