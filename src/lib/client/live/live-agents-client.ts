@@ -148,6 +148,12 @@ export class LiveAgentsClient implements AgentsClient {
     }
     if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
     if (request.name !== undefined) params.name = request.name;
+    // Strict boolean on the wire (§5.5): only sent when the caller supplied it,
+    // so older daemons and name-less creates keep the daemon-side default
+    // (name-present ⇒ explicitly set).
+    if (request.nameExplicitlySet !== undefined) {
+      params.nameExplicitlySet = request.nameExplicitlySet;
+    }
     if (request.provider !== undefined) params.provider = request.provider;
     if (request.agentType !== undefined) params.agentType = request.agentType;
     if (request.metadata !== undefined) params.metadata = request.metadata;

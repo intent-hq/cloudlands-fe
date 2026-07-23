@@ -119,6 +119,11 @@ export interface MutationResult {
  * - `provider` / `agentType` / `metadata` / `workspacePath` / `workspaceContext`
  *   are the widened FE-facing spawn hints — the daemon persists `provider` on
  *   the session; the rest are accepted but not yet stored (deferred).
+ * - `nameExplicitlySet` marks whether the supplied `name` was chosen by the
+ *   user (strict boolean on the wire). Pass `false` for generated placeholder
+ *   names so the daemon leaves the session self-renameable
+ *   (`ws.workspace.setAgentName`); omitted, the daemon defaults to
+ *   `name`-present ⇒ explicitly set.
  */
 export interface AgentCreateRequest {
   workspaceId: string;
@@ -126,6 +131,7 @@ export interface AgentCreateRequest {
   model?: string;
   specialist?: string | null;
   name?: string;
+  nameExplicitlySet?: boolean;
   agentId?: string;
   provider?: string;
   agentType?: string;

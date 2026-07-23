@@ -53,6 +53,9 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       model: 'opus',
       specialist: 'implementor',
       name: 'widened',
+      // Generated placeholder name — the flag must reach the wire verbatim so
+      // the daemon keeps the session self-renameable (§5.5).
+      nameExplicitlySet: false,
       // Even when a legacy caller passes an id, it must NOT hit the wire —
       // the daemon assigns the session id.
       agentId: 'agent-legacy-client',
@@ -75,6 +78,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
         specialistId: 'implementor',
         behaviorPrompt: 'do the thing',
         name: 'widened',
+        nameExplicitlySet: false,
         provider: 'auggie',
         agentType: 'task-loop',
         metadata: { tag: 'unit' },
@@ -85,6 +89,23 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
     // The client-supplied agentId is dropped before the request is sent.
     expect(backend.requests[0]?.params).not.toHaveProperty('agentId');
+  });
+
+  it('create forwards nameExplicitlySet:true verbatim (user-chosen name)', async () => {
+    backend.onRequest('agent.create', () => ({
+      agent: { id: 'agent-explicit-1', workspaceId: 'ws-p212a', status: 'pending' },
+    }));
+    const client = new LiveAgentsClient();
+
+    await client.create({
+      workspaceId: 'ws-p212a',
+      name: 'My Chosen Name',
+      nameExplicitlySet: true,
+    });
+
+    expect(backend.requests[0]?.params).toEqual(
+      expect.objectContaining({ name: 'My Chosen Name', nameExplicitlySet: true }),
+    );
   });
 
   it('create omits absent optional params (backward-compat with the pre-P2-12a callers)', async () => {
@@ -104,6 +125,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       'specialistId',
       'behaviorPrompt',
       'name',
+      'nameExplicitlySet',
       'agentId',
       'provider',
       'agentType',
