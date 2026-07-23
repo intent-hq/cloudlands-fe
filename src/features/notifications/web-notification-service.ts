@@ -326,6 +326,11 @@ export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
         workspaceId,
         agentName: event.data.agentName,
       });
+      // Structural parity with Electron's always-sent `notification:show`:
+      // on the single web tab this call is effectively a no-op (the gate's
+      // soundOnlyWhenUnfocused + hasFocus() decline matches this branch's
+      // condition), but keeping it means the sound gate remains the single
+      // decision point if the suppression condition ever diverges.
       void playNotificationSoundPerSettings();
       return;
     }
