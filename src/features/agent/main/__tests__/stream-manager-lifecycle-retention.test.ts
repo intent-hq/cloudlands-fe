@@ -25,13 +25,6 @@ vi.mock('$shared/services/unified-id.service', () => ({
   },
 }));
 
-vi.mock('$features/agent/services/memory-manager', () => ({
-  memoryManager: {
-    registerTimer: vi.fn(() => vi.fn()),
-    cleanup: vi.fn(),
-  },
-}));
-
 vi.mock('$store/renderer/renderer-store-bridge', () => ({
   getRendererStore: () => ({
     get state() {
@@ -152,5 +145,13 @@ describe('StreamManager lifecycle retention cleanup', () => {
 
     expect(cleanup).toHaveBeenCalledTimes(1);
     expect(manager.getSession(agentId)).toBeNull();
+  });
+
+  it('clears its cleanup and health-check intervals on dispose', () => {
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    manager.dispose();
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

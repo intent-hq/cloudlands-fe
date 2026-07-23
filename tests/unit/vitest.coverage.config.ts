@@ -21,7 +21,6 @@ export default defineConfig({
         'src/features/agent/services/stream-manager.ts',
         'src/features/agent/services/unified-state-store.ts',
         'src/features/agent/services/cached-rules-service.ts',
-        'src/features/agent/main/utils/memory-manager.ts',
         'src/features/agent/services/performance-optimizer.ts',
       ],
 
