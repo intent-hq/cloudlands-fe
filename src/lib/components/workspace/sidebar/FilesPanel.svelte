@@ -1,8 +1,16 @@
 <script lang="ts">
   import FileTreeView from '$lib/components/file-explorer/file-tree-view.svelte';
+  import MessageDialog from '$lib/components/modals/MessageDialog.svelte';
   import { cn } from '$lib/utils';
-  import { invoke, dialog } from '$lib/electron-bridge';
+  import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
+  import {
+    FILE_CONFLICT_BUTTONS,
+    FILE_CONFLICT_TITLE,
+    fileConflictMessage,
+    promptFileConflict,
+    type WebConflictPromptRequest,
+  } from './file-conflict-prompt';
   import { toast } from 'svelte-sonner';
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
@@ -29,10 +37,7 @@
 
   // Helper to generate a unique filename if the file already exists
   // e.g., "file.txt" -> "file (1).txt", "file (1).txt" -> "file (2).txt"
-  async function generateUniqueFilename(
-    folder: string,
-    originalName: string,
-  ): Promise<string> {
+  async function generateUniqueFilename(folder: string, originalName: string): Promise<string> {
     const lastDotIndex = originalName.lastIndexOf('.');
     const hasExtension = lastDotIndex > 0;
     const baseName = hasExtension ? originalName.slice(0, lastDotIndex) : originalName;
@@ -56,28 +61,14 @@
     return newName;
   }
 
-  // File conflict resolution options
-  type ConflictResolution = 'overwrite' | 'rename' | 'skip';
+  // Pending web drop-conflict prompt; non-null renders the in-app MessageDialog.
+  // On electron promptFileConflict uses the native dialog and never sets this.
+  let webConflictPrompt: WebConflictPromptRequest | null = $state(null);
 
-  // Show dialog for file conflict resolution
-  async function promptFileConflict(fileName: string): Promise<ConflictResolution> {
-    const result = await dialog.message(
-      `A file named "${fileName}" already exists at this location. What would you like to do?`,
-      {
-        title: 'File Already Exists',
-        type: 'warning',
-        buttons: ['Skip', 'Rename', 'Overwrite'],
-      },
-    );
-    // result is the button index: 0 = Skip, 1 = Rename, 2 = Overwrite
-    switch (result) {
-      case 2:
-        return 'overwrite';
-      case 1:
-        return 'rename';
-      default:
-        return 'skip';
-    }
+  function resolveWebConflictPrompt(buttonIndex: number) {
+    const request = webConflictPrompt;
+    webConflictPrompt = null;
+    request?.resolve(buttonIndex);
   }
 
   interface Props {
@@ -140,7 +131,10 @@
 
   // Handle external files dropped onto the file tree
   async function handleExternalFilesDrop(files: File[], targetPath: string | null) {
-    const workspacePath = selectEffectiveFileExplorerWorkspacePath.select(appStore.state, workspaceId);
+    const workspacePath = selectEffectiveFileExplorerWorkspacePath.select(
+      appStore.state,
+      workspaceId,
+    );
     if (!workspacePath || files.length === 0) return;
 
     // Use the drop target path if provided, otherwise fall back to workspace root
@@ -180,10 +174,9 @@
         // Folders have size 0 and no type, but we can't read their contents via File API
         const isLikelyFolder = !sourcePath && file.size === 0 && file.type === '';
         if (isLikelyFolder) {
-          logger.warn(
-            'Folder dropped from Finder cannot be copied (browser File API limitation)',
-            { fileName: file.name },
-          );
+          logger.warn('Folder dropped from Finder cannot be copied (browser File API limitation)', {
+            fileName: file.name,
+          });
           failedCount++;
           failedFiles.push(`${file.name} (folders not supported)`);
           continue;
@@ -200,7 +193,10 @@
             destinationPath,
           });
 
-          const resolution = await promptFileConflict(file.name);
+          const resolution = await promptFileConflict(
+            file.name,
+            (request) => (webConflictPrompt = request),
+          );
 
           if (resolution === 'skip') {
             logger.info('User chose to skip existing file', { fileName: file.name });
@@ -326,11 +322,7 @@
   }
 
   // Helper to format success message based on what was added
-  function formatSuccessMessage(
-    successCount: number,
-    folderCount: number,
-    files: File[],
-  ): string {
+  function formatSuccessMessage(successCount: number, folderCount: number, files: File[]): string {
     if (successCount === 1) {
       const itemType = folderCount === 1 ? 'folder' : 'file';
       return `Added ${itemType} "${files[0].name}"`;
@@ -396,3 +388,14 @@
     <div class="px-4 py-3 text-sm text-subtle">No space folder linked</div>
   {/if}
 </div>
+
+{#if webConflictPrompt}
+  <MessageDialog
+    open={true}
+    title={FILE_CONFLICT_TITLE}
+    message={fileConflictMessage(webConflictPrompt.fileName)}
+    type="warning"
+    buttons={[...FILE_CONFLICT_BUTTONS]}
+    onSelect={resolveWebConflictPrompt}
+  />
+{/if}

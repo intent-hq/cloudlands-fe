@@ -111,12 +111,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // stay hidden until a daemon surface exists.
   ['git:get-auto-commit-status', undefined],
   // ── IPC batch 8: the remaining frozen audit debt, dispositioned ──
-  // Native OS message box. Sole invoke site: FilesPanel's drop-conflict
-  // prompt via the electron-bridge dialog.message wrapper, which is typed
-  // Promise<number> (button index). There is no native dialog in this build;
-  // index 0 matches the wrapper's own no-electronAPI fallback and folds the
-  // conflict prompt to its first-button ('skip') branch.
-  ['dialog:message', 0],
   // Host command execution (CommitsTimeline's amend-commit / force-push
   // flow; bridged to daemon host.exec in the Electron build). The caller
   // requires `.success` and folds the shaped failure into its toast.
