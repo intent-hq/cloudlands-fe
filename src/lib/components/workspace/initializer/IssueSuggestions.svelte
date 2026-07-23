@@ -522,9 +522,10 @@
 
   // Instant pre-filter over already-loaded rows while the debounced server
   // search is pending. Server results replace the list once the query commits.
+  // Trimmed to match the query that will be committed (see the search $effect).
   function matchesSearch(title: string, identifier: string) {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
     return title.toLowerCase().includes(query) || identifier.toLowerCase().includes(query);
   }
 
@@ -1628,6 +1629,17 @@
       <div class="max-h-64 overflow-y-auto flex flex-col" onscroll={handleResultsScroll}>
         <!-- Provider issues -->
         {#if isLoading}
+          <div class="space-y-1 p-2">
+            {#each [1, 2, 3] as { }}
+              <div class="flex items-center gap-2 px-2 py-1.5">
+                <Skeleton class="h-4 w-4 rounded" />
+                <Skeleton class="h-3 w-14" />
+                <Skeleton class="h-3 flex-1" />
+              </div>
+            {/each}
+          </div>
+        {:else if activeIsFetching && !hasVisibleIssues}
+          <!-- Committed server search in flight with nothing to pre-filter -->
           <div class="space-y-1 p-2">
             {#each [1, 2, 3] as { }}
               <div class="flex items-center gap-2 px-2 py-1.5">
