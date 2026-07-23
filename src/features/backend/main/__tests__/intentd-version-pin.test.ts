@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -53,7 +54,11 @@ describe('resolvePinFilePath / readPinnedVersion', () => {
 
   it('resolves the FE-root pin file in dev and reads the real pin', () => {
     const pinPath = resolvePinFilePath(false);
-    expect(pinPath.endsWith(path.join('cloudlands-fe', 'intentd.version'))).toBe(true);
+    // Anchor the expectation to this test file's location (5 levels below the
+    // FE root) so the assertion holds regardless of the checkout's directory name.
+    const testDir = path.dirname(fileURLToPath(import.meta.url));
+    const feRoot = path.resolve(testDir, '../../../../..');
+    expect(pinPath).toBe(path.join(feRoot, 'intentd.version'));
     const pinned = readPinnedVersion();
     expect(pinned).toMatch(/^\d+\.\d+\.\d+/);
   });
