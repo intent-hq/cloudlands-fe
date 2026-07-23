@@ -104,7 +104,11 @@
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { parseCompoundModelId } from '$shared/config/provider-config';
-  import { resolveSubmitModel, resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
+  import {
+    dropCrossProviderFallbackModel,
+    resolveSubmitModel,
+    resolveSubmitProvider,
+  } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
@@ -1810,6 +1814,17 @@
           });
           resolvedModel = $selectedModel$;
         }
+      }
+
+      // Guard the non-overridden fallback: when the resolved model belongs to
+      // a different provider than the form's selection (e.g. the selected
+      // provider's models haven't loaded and the fallback came from the
+      // default provider's store selection), drop the model so the daemon
+      // uses the selected provider's own default instead of the fallback
+      // silently flipping the submitted provider. Explicit user overrides
+      // (modelWasOverridden) may legitimately cross providers and are kept.
+      if (!modelWasOverridden) {
+        resolvedModel = dropCrossProviderFallbackModel(resolvedModel, selectedProvider);
       }
 
       // Derive the submitted provider from the final resolved model so intent

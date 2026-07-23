@@ -33,6 +33,11 @@ export const selectProviderInUseReasons = store.createSelector(
     // Only an explicitly selected global model counts as a pin. The
     // UI_INITIAL_MODEL fallback used by selectSelectedModel is implicit and
     // must not permanently block the default provider.
+    // Note: providerModels values are normalized on write (bare iff the
+    // provider is the default, prefixed otherwise), so this branch only ever
+    // pins the active provider itself. ProviderSelector already hides Disable
+    // for the active provider; the pin is defense in depth for callers that
+    // bypass that UI (e.g. toggles or agent-driven settings proposals).
     const activeProviderId = selectActiveProviderId.select(state);
     const globalModel = selectProviderModels.select(state)[activeProviderId];
     if (globalModel) {

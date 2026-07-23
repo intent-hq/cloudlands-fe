@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { getDefaultProviderId, PROVIDER_MODEL_TIERS } from '$shared/config/provider-config';
 
 import {
+  dropCrossProviderFallbackModel,
   resolveEffectiveModelForSpecialist,
   resolveSubmitModel,
   resolveSubmitProvider,
@@ -206,5 +207,33 @@ describe('resolveSubmitProvider', () => {
 
   it('keeps the selected provider when no model resolved', () => {
     expect(resolveSubmitProvider(undefined, 'grok')).toBe('grok');
+  });
+
+  it('keeps the selected provider for an empty compound prefix (mirrors the daemon filter)', () => {
+    expect(resolveSubmitProvider(':sonnet', 'grok')).toBe('grok');
+  });
+});
+
+describe('dropCrossProviderFallbackModel', () => {
+  const defaultProviderId = getDefaultProviderId();
+
+  it('keeps a model owned by the selected provider', () => {
+    expect(dropCrossProviderFallbackModel('grok:grok-4', 'grok')).toBe('grok:grok-4');
+  });
+
+  it('keeps a bare model id when the selected provider is the default provider', () => {
+    expect(dropCrossProviderFallbackModel('opus4.7', defaultProviderId)).toBe('opus4.7');
+  });
+
+  it('drops a bare default-provider model when the selected provider is non-default', () => {
+    expect(dropCrossProviderFallbackModel('opus4.7', 'grok')).toBeUndefined();
+  });
+
+  it('drops a compound model owned by a different provider', () => {
+    expect(dropCrossProviderFallbackModel('claude-code:sonnet', 'grok')).toBeUndefined();
+  });
+
+  it('passes through undefined', () => {
+    expect(dropCrossProviderFallbackModel(undefined, 'grok')).toBeUndefined();
   });
 });

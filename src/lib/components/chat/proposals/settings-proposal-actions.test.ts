@@ -17,6 +17,10 @@ import {
   applyProposalRequested,
   undoProposalRequested,
 } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
+import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { initialState as specialistsInitialState } from '$store/renderer/slices/specialists/specialists-slice';
+import { initialState as modelInitialState } from '$store/renderer/slices/model/model-slice';
+import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
 import type { StoreState } from '$lib/store/types';
 
 const mocks = vi.hoisted(() => ({
@@ -229,6 +233,48 @@ describe('settings-proposal-actions', () => {
         proposalId: 'tool-settings',
         kind: 'settings-change',
       }),
+    );
+  });
+
+  it('blocks agent-driven proposals from disabling an in-use provider', async () => {
+    mocks.getState.mockReturnValue(
+      makeState({
+        providerSettings: {
+          activeProviderId: 'auggie',
+          enabledProviders: { 'claude-code': true, codex: true },
+        },
+        model: { ...modelInitialState, providerModels: {} },
+        specialists: {
+          ...specialistsInitialState,
+          fileSpecialists: createCollection('id', [
+            {
+              id: 'my-spec',
+              name: 'My Spec',
+              description: 'test',
+              codingAgent: 'claude-code',
+              model: '',
+              behaviorPrompt: 'prompt',
+              filePath: '/tmp/my-spec.md',
+              source: 'user',
+            },
+          ] as never[]),
+        },
+        featureCodes: { activeFeatures: [], initialized: true },
+        githubAuth: { isAuthenticated: false },
+      } as Partial<StoreState>),
+    );
+    const proposal = makeProposal('providers.enabled', {
+      'claude-code': false,
+      codex: false,
+    });
+
+    await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      setProviderEnabled({ providerId: 'claude-code', enabled: false }),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setProviderEnabled({ providerId: 'codex', enabled: false }),
     );
   });
 
