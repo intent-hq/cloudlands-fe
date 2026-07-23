@@ -597,6 +597,25 @@ describe("host-bridge-seeder", () => {
       });
     });
 
+    it("forwards workspaceId even without cwd (Electron-handler parity; inert on the wire per §5.14)", async () => {
+      routeDaemon({
+        "system.status": localHost("macos"),
+        "host.exec": { stdout: "ok\n", stderr: "", exitCode: 0 },
+      });
+
+      await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git --version",
+        workspaceId: "ws-1",
+      });
+
+      expect(hostExecCalls()[0][1]).toEqual({
+        command: "/bin/sh",
+        args: ["-c", "git --version"],
+        workspaceId: "ws-1",
+        timeoutMs: 30_000,
+      });
+    });
+
     it("uses `cmd.exe /c` with `cd /d` on a Windows daemon host", async () => {
       routeDaemon({
         "system.status": localHost("windows"),

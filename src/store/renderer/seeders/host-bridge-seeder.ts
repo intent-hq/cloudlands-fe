@@ -399,6 +399,10 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
     } = { command: shellCmd, args: [shellFlag, script], timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS };
     if (wireNativeCwd) {
       execParams.cwd = cwd;
+    }
+    if (workspaceId) {
+      // Forwarded whenever present (Electron-handler parity; hostExec only
+      // omits blank values) — inert on the wire without cwd, per §5.14.
       execParams.workspaceId = workspaceId;
     }
     const result = await backendRequest<HostExecResult>(
