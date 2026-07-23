@@ -23,7 +23,6 @@ export function shouldSafetyNetTrigger({
   lastSafetyNetSyncedContent,
   isInitialized,
   isUserTyping,
-  hasUserEditedSinceLastSave,
   isUpdatingFromExternal,
 }: {
   reduxContent: string | undefined;
@@ -31,7 +30,6 @@ export function shouldSafetyNetTrigger({
   lastSafetyNetSyncedContent: string | undefined;
   isInitialized: boolean;
   isUserTyping: boolean;
-  hasUserEditedSinceLastSave: boolean;
   isUpdatingFromExternal: boolean;
 }): boolean {
   if (reduxContent === undefined) {
@@ -44,7 +42,6 @@ export function shouldSafetyNetTrigger({
   // context; debounced saves tripped the daemon's content-reduction guard).
   // Protecting genuinely-unsaved edits is the job of
   // shouldRejectExternalUpdateDueToUnsavedEdits downstream in the pipeline.
-  void hasUserEditedSinceLastSave;
   if (!isInitialized || isUserTyping) {
     return false;
   }

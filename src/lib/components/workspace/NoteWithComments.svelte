@@ -1513,7 +1513,6 @@
         lastSafetyNetSyncedContent,
         isInitialized,
         isUserTyping,
-        hasUserEditedSinceLastSave,
         isUpdatingFromExternal,
       })
     ) {

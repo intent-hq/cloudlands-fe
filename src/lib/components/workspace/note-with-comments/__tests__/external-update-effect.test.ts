@@ -214,6 +214,60 @@ describe('external-update-effect', () => {
       updateVersion: 3,
     });
   });
+
+  it('rejects at apply time when the user types during the 150ms debounce window', async () => {
+    // Timing regression guard: the entry-point isUserTyping check passes before the
+    // debounce, but the unsaved-edits guard reads getHasUserEditedSinceLastSave()
+    // and the editor content fresh at apply time. A keystroke landing inside the
+    // debounce window must still block the external apply.
+    vi.useFakeTimers();
+
+    const { editor, getSetContentHtml } = createMockEditor({
+      initialHtml: '<p>saved</p>',
+    });
+
+    let editorMarkdown = 'saved-md';
+    let lastKnownContent = 'saved-md';
+    let hasUserEditedSinceLastSave = false;
+
+    const result = runExternalContentUpdateEffect({
+      updateVersion: 4,
+      getEditor: () => editor as any,
+      getIsInitialized: () => true,
+      getIsUserTyping: () => false,
+      getCurrentNoteContent: () => 'server-md',
+      getLastKnownContent: () => lastKnownContent,
+      setLastKnownContent: (v) => {
+        lastKnownContent = v;
+      },
+      getHasUserEditedSinceLastSave: () => hasUserEditedSinceLastSave,
+      setHasUserEditedSinceLastSave: vi.fn(),
+      getIsUpdatingFromExternal: () => false,
+      setIsUpdatingFromExternal: vi.fn(),
+      getWorkspaceId: () => undefined,
+      getNoteId: () => 'note-1',
+      getCommentManager: () => null,
+      processMarkdownToHTML: async () => '<p>server</p>',
+      processHTMLToMarkdown: () => editorMarkdown,
+      createTextSelection: vi.fn(),
+      logger,
+    });
+
+    // Simulate a keystroke arriving inside the debounce window: the flag latches
+    // and the editor now differs from both lastKnownContent and the incoming content.
+    hasUserEditedSinceLastSave = true;
+    editorMarkdown = 'saved-md plus unsaved typing';
+
+    await vi.advanceTimersByTimeAsync(200);
+    await result;
+
+    expect(getSetContentHtml()).toBeNull();
+    expect(lastKnownContent).toBe('saved-md');
+    expect(logger.info).toHaveBeenCalledWith(
+      '[NoteWithComments] Rejecting external update - user has unsaved edits',
+      expect.objectContaining({ noteId: 'note-1', updateVersion: 4 }),
+    );
+  });
 });
 
 describe('shouldSafetyNetTrigger', () => {
@@ -223,7 +277,6 @@ describe('shouldSafetyNetTrigger', () => {
     lastSafetyNetSyncedContent: undefined as string | undefined,
     isInitialized: true,
     isUserTyping: false,
-    hasUserEditedSinceLastSave: false,
     isUpdatingFromExternal: false,
   };
 
@@ -245,13 +298,19 @@ describe('shouldSafetyNetTrigger', () => {
     expect(shouldSafetyNetTrigger({ ...baseArgs, isUserTyping: true })).toBe(false);
   });
 
-  it('returns true even when user has edited since last save (guard decides downstream)', () => {
+  it('does not accept hasUserEditedSinceLastSave as an input (guard decides downstream)', () => {
     // Regression (stale-editor incident): hasUserEditedSinceLastSave latches on the
     // first local edit and nothing clears it on save, so gating the safety-net on it
     // permanently disconnected open editors from server-side note growth. The
-    // safety-net must still queue the pipeline; protecting genuinely-unsaved edits
-    // is shouldRejectExternalUpdateDueToUnsavedEdits' job.
-    expect(shouldSafetyNetTrigger({ ...baseArgs, hasUserEditedSinceLastSave: true })).toBe(true);
+    // safety-net must still queue the pipeline regardless of local edit history;
+    // protecting genuinely-unsaved edits is
+    // shouldRejectExternalUpdateDueToUnsavedEdits' job.
+    expect(
+      shouldSafetyNetTrigger({
+        ...baseArgs,
+        hasUserEditedSinceLastSave: true,
+      } as Parameters<typeof shouldSafetyNetTrigger>[0]),
+    ).toBe(true);
   });
 
   it('returns false when an external update is in progress', () => {
