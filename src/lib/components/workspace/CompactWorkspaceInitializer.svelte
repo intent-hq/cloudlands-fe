@@ -594,17 +594,19 @@
   // survives app restarts. Gates the save effect below until it settles so an
   // initial empty save cannot clear a not-yet-restored draft. Non-fatal.
   let draftRestored = $state(false);
+  let draftRestoreFailed = false;
   (async () => {
     try {
-      const draft = await restoreNewWorkspaceDraft(appClient.drafts);
-      if (draft) {
-        if (draft.contextItems.length > 0 && contextItems.length === 0) {
-          contextItems = draft.contextItems;
+      const restore = await restoreNewWorkspaceDraft(appClient.drafts);
+      draftRestoreFailed = restore.status === 'error';
+      if (restore.status === 'restored') {
+        if (restore.contextItems.length > 0 && contextItems.length === 0) {
+          contextItems = restore.contextItems;
         }
-        if (draft.text && !initialPrompt) {
-          initialPrompt = draft.text;
+        if (restore.text && !initialPrompt) {
+          initialPrompt = restore.text;
           setTimeout(() => {
-            richTextarea?.setContent(draft.text);
+            richTextarea?.setContent(restore.text);
           }, 50);
         }
       }
@@ -615,13 +617,21 @@
 
   // Save the draft to the daemon (debounced) so it survives app restarts.
   // Empty text with no attachments is the documented clear (PROTOCOL §5.16).
+  // Only the cheap dependency reads run per keystroke; payload serialization
+  // (incl. the size-guard stringify) is deferred into the debounce timeout.
+  // `contextItems` is only ever reassigned wholesale, so the reference read
+  // is sufficient for reactivity.
   let promptSaveTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     if (!draftRestored) return;
-    const payload = buildNewWorkspaceDraftPayload(initialPrompt, contextItems);
+    const text = initialPrompt;
+    const items = contextItems;
     if (promptSaveTimer) clearTimeout(promptSaveTimer);
     promptSaveTimer = setTimeout(() => {
-      persistNewWorkspaceDraft(appClient.drafts, payload);
+      // If the restore failed, an empty save could clear a daemon draft we
+      // never got to read — skip it. Non-empty saves still persist.
+      if (draftRestoreFailed && !text && items.length === 0) return;
+      persistNewWorkspaceDraft(appClient.drafts, buildNewWorkspaceDraftPayload(text, items));
     }, 300);
   });
 

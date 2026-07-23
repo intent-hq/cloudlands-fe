@@ -70,6 +70,7 @@ describe('restoreNewWorkspaceDraft', () => {
     expect(drafts.get).toHaveBeenCalledOnce();
     expect(drafts.get).toHaveBeenCalledWith('__new-workspace__', '__initializer__');
     expect(restored).toEqual({
+      status: 'restored',
       text: 'half-written prompt',
       contextItems: [
         {
@@ -83,13 +84,27 @@ describe('restoreNewWorkspaceDraft', () => {
         },
       ],
     });
-    expect(restored!.contextItems[0].file).toBeUndefined();
+    expect(restored.status === 'restored' && restored.contextItems[0].file).toBeUndefined();
   });
 
   it('restores a text-only draft (no attachments field) with empty contextItems', async () => {
     const drafts = createMockDrafts({ text: 'text only', updatedAt: '2026-07-23T00:00:00Z' });
 
-    expect(await restoreNewWorkspaceDraft(drafts)).toEqual({ text: 'text only', contextItems: [] });
+    expect(await restoreNewWorkspaceDraft(drafts)).toEqual({
+      status: 'restored',
+      text: 'text only',
+      contextItems: [],
+    });
+  });
+
+  it('removes the stale legacy sessionStorage key when a daemon draft exists', async () => {
+    sessionStorage.setItem(LEGACY_PROMPT_SESSION_KEY, 'stale legacy prompt');
+    const drafts = createMockDrafts({ text: 'daemon wins', updatedAt: '2026-07-23T00:00:00Z' });
+
+    const restored = await restoreNewWorkspaceDraft(drafts);
+
+    expect(restored).toEqual({ status: 'restored', text: 'daemon wins', contextItems: [] });
+    expect(sessionStorage.getItem(LEGACY_PROMPT_SESSION_KEY)).toBeNull();
   });
 
   it('migrates the legacy sessionStorage prompt once when the daemon draft is null', async () => {
@@ -98,12 +113,21 @@ describe('restoreNewWorkspaceDraft', () => {
 
     const restored = await restoreNewWorkspaceDraft(drafts);
 
-    expect(restored).toEqual({ text: 'legacy prompt', contextItems: [] });
+    expect(restored).toEqual({ status: 'restored', text: 'legacy prompt', contextItems: [] });
     expect(sessionStorage.getItem(LEGACY_PROMPT_SESSION_KEY)).toBeNull();
+    // Migration persists the legacy value to the daemon immediately, not via
+    // the caller's debounced save path.
+    expect(drafts.set).toHaveBeenCalledOnce();
+    expect(drafts.set).toHaveBeenCalledWith(
+      '__new-workspace__',
+      '__initializer__',
+      'legacy prompt',
+      undefined,
+    );
   });
 
-  it('returns null when there is no daemon draft and no legacy value', async () => {
-    expect(await restoreNewWorkspaceDraft(createMockDrafts(null))).toBeNull();
+  it('returns empty when there is no daemon draft and no legacy value', async () => {
+    expect(await restoreNewWorkspaceDraft(createMockDrafts(null))).toEqual({ status: 'empty' });
   });
 
   it('is non-fatal when drafts.get rejects and skips the legacy migration', async () => {
@@ -111,8 +135,9 @@ describe('restoreNewWorkspaceDraft', () => {
     const drafts = createMockDrafts();
     vi.mocked(drafts.get).mockRejectedValue(new Error('daemon unavailable'));
 
-    expect(await restoreNewWorkspaceDraft(drafts)).toBeNull();
+    expect(await restoreNewWorkspaceDraft(drafts)).toEqual({ status: 'error' });
     expect(sessionStorage.getItem(LEGACY_PROMPT_SESSION_KEY)).toBe('legacy prompt');
+    expect(drafts.set).not.toHaveBeenCalled();
   });
 });
 
@@ -136,7 +161,7 @@ describe('buildNewWorkspaceDraftPayload', () => {
     const payload = buildNewWorkspaceDraftPayload('text only', [plainItem]);
 
     expect(payload).toEqual({ text: 'text only' });
-    expect('attachments' in payload).toBe(false);
+    expect('attachments' in payload!).toBe(false);
   });
 
   it('drops attachments (keeping text) when the serialized payload exceeds the size guard', () => {
@@ -148,7 +173,26 @@ describe('buildNewWorkspaceDraftPayload', () => {
     const payload = buildNewWorkspaceDraftPayload('still saved', [oversizedItem]);
 
     expect(payload).toEqual({ text: 'still saved' });
-    expect('attachments' in payload).toBe(false);
+    expect('attachments' in payload!).toBe(false);
+  });
+
+  it('guards on text + attachments combined, not attachments alone', () => {
+    const nearLimitItem: ContextItem = {
+      ...imageItem,
+      imageData: 'a'.repeat(MAX_DRAFT_ATTACHMENTS_BYTES - 200),
+    };
+    const longText = 'b'.repeat(400);
+
+    const payload = buildNewWorkspaceDraftPayload(longText, [nearLimitItem]);
+
+    expect(payload).toEqual({ text: longText });
+    expect('attachments' in payload!).toBe(false);
+  });
+
+  it('returns null (skip persistence) when the text alone exceeds the size guard', () => {
+    const hugeText = 'a'.repeat(MAX_DRAFT_ATTACHMENTS_BYTES + 1);
+
+    expect(buildNewWorkspaceDraftPayload(hugeText, [])).toBeNull();
   });
 });
 
@@ -180,6 +224,14 @@ describe('persistNewWorkspaceDraft', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(drafts.set).toHaveBeenCalledOnce();
+  });
+
+  it('is a no-op for a null payload (size guard skipped persistence)', () => {
+    const drafts = createMockDrafts();
+
+    persistNewWorkspaceDraft(drafts, null);
+
+    expect(drafts.set).not.toHaveBeenCalled();
   });
 });
 

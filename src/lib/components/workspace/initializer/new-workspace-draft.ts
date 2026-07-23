@@ -28,10 +28,15 @@ export const NEW_WORKSPACE_DRAFT_AGENT_ID = '__initializer__';
 export const LEGACY_PROMPT_SESSION_KEY = 'compact-workspace-initializer-state-prompt';
 
 /**
- * Size guard for the serialized `attachments` payload: stay well under the
- * daemon's 25 MB cap (PROTOCOL §5.16) so `drafts.set` never fails with -32602
- * mid-typing. Oversized attachments are dropped from the wire call only —
- * in-memory context items are unaffected.
+ * Size guard for the serialized draft payload (text + attachments combined):
+ * stay well under the daemon's 25 MB cap (PROTOCOL §5.16) so `drafts.set`
+ * never fails with -32602 mid-typing. Oversized attachments are dropped from
+ * the wire call only — in-memory context items are unaffected.
+ *
+ * Measured in UTF-16 code units (`string.length`), not UTF-8 bytes as the
+ * daemon counts them. Base64 attachment payloads are ASCII so it's ~1:1 in
+ * practice, and the 5 MB headroom covers non-ASCII text/labels — do not
+ * tighten the margin without switching to a byte-accurate measure.
  */
 export const MAX_DRAFT_ATTACHMENTS_BYTES = 20 * 1024 * 1024;
 
@@ -42,21 +47,38 @@ export interface NewWorkspaceDraftPayload {
   attachments?: DraftAttachment[];
 }
 
+/** Result of {@link restoreNewWorkspaceDraft}: `error` means `drafts.get`
+ * failed, so the caller must not treat the daemon draft as absent (an empty
+ * debounced save would clear a draft that may still exist). */
+export type NewWorkspaceDraftRestore =
+  | { status: 'restored'; text: string; contextItems: ContextItem[] }
+  | { status: 'empty' }
+  | { status: 'error' };
+
 /**
- * Restore the modal draft from the daemon. Returns the prompt text and
- * rehydrated context items, or `null` when there is nothing to restore.
- * When the daemon has no draft, falls back once to the legacy sessionStorage
- * text draft and removes that key (one-time migration). A failed `drafts.get`
- * is non-fatal and skips the migration so the legacy value survives for a
- * later attempt.
+ * Restore the modal draft from the daemon. When the daemon has no draft,
+ * falls back once to the legacy sessionStorage text draft: the legacy value
+ * is persisted to the daemon immediately (fire-and-forget `drafts.set`) and
+ * the key removed, so the one-time migration does not depend on the caller's
+ * debounced save path. A failed `drafts.get` is non-fatal, returns
+ * `{ status: 'error' }`, and skips the migration so the legacy value
+ * survives for a later attempt.
  */
 export async function restoreNewWorkspaceDraft(
   drafts: DraftsClient,
-): Promise<{ text: string; contextItems: ContextItem[] } | null> {
+): Promise<NewWorkspaceDraftRestore> {
   try {
     const draft = await drafts.get(NEW_WORKSPACE_DRAFT_WORKSPACE_ID, NEW_WORKSPACE_DRAFT_AGENT_ID);
     if (draft) {
+      // The daemon draft supersedes any legacy value — drop the legacy key so
+      // a stale prompt can't be "migrated" back in after the draft is cleared.
+      try {
+        sessionStorage.removeItem(LEGACY_PROMPT_SESSION_KEY);
+      } catch {
+        // sessionStorage unavailable — nothing to remove
+      }
       return {
+        status: 'restored',
         text: draft.text ?? '',
         contextItems: draft.attachments?.length
           ? deserializeDraftAttachments(draft.attachments)
@@ -67,7 +89,7 @@ export async function restoreNewWorkspaceDraft(
     logger.warn('drafts.get failed; continuing without a persisted draft', {
       error: String(err),
     });
-    return null;
+    return { status: 'error' };
   }
 
   let legacyPrompt: string | null = null;
@@ -77,24 +99,38 @@ export async function restoreNewWorkspaceDraft(
   } catch {
     // sessionStorage unavailable — nothing to migrate
   }
-  return legacyPrompt ? { text: legacyPrompt, contextItems: [] } : null;
+  if (!legacyPrompt) return { status: 'empty' };
+  // Persist the migrated value right away so the handoff doesn't depend on
+  // the caller's debounced save firing (it may drop the text if the prompt
+  // was already populated).
+  persistNewWorkspaceDraft(drafts, { text: legacyPrompt });
+  return { status: 'restored', text: legacyPrompt, contextItems: [] };
 }
 
 /**
  * Build the debounced `drafts.set` payload from the current prompt text and
  * context items. Serializes image attachments (empty ⇒ field omitted) and
- * applies the size guard: oversized attachments are dropped so text still
- * persists. Empty text with no attachments is the documented clear.
+ * applies the size guard to text + attachments combined: oversized
+ * attachments are dropped so text still persists, and a pathologically large
+ * text returns `null` (skip the wire call entirely). Empty text with no
+ * attachments is the documented clear.
  */
 export function buildNewWorkspaceDraftPayload(
   text: string,
   contextItems: ContextItem[],
-): NewWorkspaceDraftPayload {
+): NewWorkspaceDraftPayload | null {
+  if (text.length > MAX_DRAFT_ATTACHMENTS_BYTES) {
+    logger.warn('Draft text exceeds the size guard; skipping persistence', {
+      textLength: text.length,
+      limit: MAX_DRAFT_ATTACHMENTS_BYTES,
+    });
+    return null;
+  }
   const attachments = serializeDraftAttachments(contextItems);
   if (attachments.length === 0) return { text };
-  const serializedBytes = JSON.stringify(attachments).length;
+  const serializedBytes = text.length + JSON.stringify(attachments).length;
   if (serializedBytes > MAX_DRAFT_ATTACHMENTS_BYTES) {
-    logger.warn('Draft attachments exceed the size guard; persisting text only', {
+    logger.warn('Draft text + attachments exceed the size guard; persisting text only', {
       serializedBytes,
       limit: MAX_DRAFT_ATTACHMENTS_BYTES,
       attachmentCount: attachments.length,
@@ -104,11 +140,13 @@ export function buildNewWorkspaceDraftPayload(
   return { text, attachments };
 }
 
-/** Fire-and-forget `drafts.set` under the sentinel keys; failures log only. */
+/** Fire-and-forget `drafts.set` under the sentinel keys; failures log only.
+ * A `null` payload (size guard) is a no-op. */
 export function persistNewWorkspaceDraft(
   drafts: DraftsClient,
-  payload: NewWorkspaceDraftPayload,
+  payload: NewWorkspaceDraftPayload | null,
 ): void {
+  if (!payload) return;
   drafts
     .set(
       NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
