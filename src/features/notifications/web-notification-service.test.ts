@@ -147,6 +147,10 @@ function stubBackendWire({
         'notifications.enabled': mockState.userPreferences.enabled,
         'notifications.soundOnlyWhenUnfocused': mockState.userPreferences.soundOnlyWhenUnfocused,
       };
+      // Guard against a missing key silently serving value: undefined, which
+      // would make fetchNotificationPrefs() fall back to the store and let
+      // tests pass for the wrong reason.
+      expect(typeof values[path]).toBe('boolean');
       return settingsGetResult(path, values[path]);
     }
     if (method === 'agent.list' || method === 'workspace.get') {
