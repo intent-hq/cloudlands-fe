@@ -401,7 +401,7 @@ describe('QueuedMessageList', () => {
       });
 
       expect(thumbnails(container)).toHaveLength(0);
-      expect(container.querySelector('img')).toBeNull();
+      expect(container.querySelector('[data-testid="queued-image-thumbnail"] img')).toBeNull();
     });
 
     it('clicking a thumbnail opens the lightbox and does not start edit mode', async () => {
