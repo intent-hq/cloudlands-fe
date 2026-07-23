@@ -245,8 +245,13 @@ describe('shouldSafetyNetTrigger', () => {
     expect(shouldSafetyNetTrigger({ ...baseArgs, isUserTyping: true })).toBe(false);
   });
 
-  it('returns false when user has edited since last save', () => {
-    expect(shouldSafetyNetTrigger({ ...baseArgs, hasUserEditedSinceLastSave: true })).toBe(false);
+  it('returns true even when user has edited since last save (guard decides downstream)', () => {
+    // Regression (stale-editor incident): hasUserEditedSinceLastSave latches on the
+    // first local edit and nothing clears it on save, so gating the safety-net on it
+    // permanently disconnected open editors from server-side note growth. The
+    // safety-net must still queue the pipeline; protecting genuinely-unsaved edits
+    // is shouldRejectExternalUpdateDueToUnsavedEdits' job.
+    expect(shouldSafetyNetTrigger({ ...baseArgs, hasUserEditedSinceLastSave: true })).toBe(true);
   });
 
   it('returns false when an external update is in progress', () => {

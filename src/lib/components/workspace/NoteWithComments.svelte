@@ -1781,12 +1781,11 @@
                 delayedContentIsUndefined: delayedContent === undefined,
                 contentsDiffer: delayedContent !== lastKnownContent,
               });
-              if (
-                delayedContent !== undefined &&
-                delayedContent !== lastKnownContent &&
-                !isUserTyping &&
-                !hasUserEditedSinceLastSave
-              ) {
+              // NOTE: hasUserEditedSinceLastSave intentionally does not gate this
+              // re-check — the flag latches on the first local edit, and genuinely
+              // unsaved edits are protected downstream by
+              // shouldRejectExternalUpdateDueToUnsavedEdits in the update pipeline.
+              if (delayedContent !== undefined && delayedContent !== lastKnownContent && !isUserTyping) {
                 logger.info(
                   '[NoteWithComments] Delayed re-check: content diverged, triggering update',
                   {
