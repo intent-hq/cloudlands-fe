@@ -230,6 +230,43 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(await client.queue('agent-1', 'later')).toEqual({ success: true });
   });
 
+  it('queue forwards imageBlocks on agent.queueMessage params when supplied (§5.5)', async () => {
+    // PROTOCOL §5.5: agent.queueMessage accepts optional imageBlocks; the
+    // daemon persists them on the QueuedMessage so queued attachments
+    // survive queue-on-send. The seam forwards them verbatim.
+    const imageBlocks = [
+      { type: 'image' as const, data: 'aGVsbG8=', mimeType: 'image/png' },
+    ];
+    const queuedMessage = {
+      id: 'qm-img-1',
+      content: 'later with image',
+      queuedAt: '2026-06-29T00:00:00.000Z',
+      position: 0,
+      imageBlocks,
+    };
+    backend.onRequest('agent.queueMessage', () => ({ success: true, queuedMessage }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.queue('agent-1', 'later with image', { imageBlocks });
+    expect(result).toEqual({ success: true, queuedMessage });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.queueMessage',
+      params: { agentId: 'agent-1', content: 'later with image', imageBlocks },
+    });
+  });
+
+  it('queue omits the imageBlocks key entirely when no images are supplied', async () => {
+    backend.onRequest('agent.queueMessage', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    await client.queue('agent-1', 'no images', {});
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.queueMessage',
+      params: { agentId: 'agent-1', content: 'no images' },
+    });
+    expect('imageBlocks' in (backend.requests[0]?.params as object)).toBe(false);
+  });
+
   it('removeQueued forwards agent.removeQueuedMessage with PROTOCOL §5.5 params and folds the idempotent BE body into success', async () => {
     // PROTOCOL §5.5: the daemon's agent.removeQueuedMessage ALWAYS returns
     // `{ success: true }`, including when the messageId is unknown or the

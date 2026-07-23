@@ -167,7 +167,13 @@ async function dispatchToLifecycle(
   if (!forceSubmit && deps.selectAgentIsResponding.select(appStore.state, agentId)) {
     appStore.dispatch(clearChatDraft(wsId, agentId));
     try {
-      const result = await appClient.agents.queue(agentId, content);
+      // Image attachments must survive queue-on-send: forward them on the
+      // seam (only when present, mirroring the force-send path) so the
+      // daemon persists them on the QueuedMessage per PROTOCOL §5.5.
+      const result =
+        options.imageBlocks !== undefined
+          ? await appClient.agents.queue(agentId, content, { imageBlocks: options.imageBlocks })
+          : await appClient.agents.queue(agentId, content);
       if (!result.success) {
         // AUDIT-P0-2: surface the daemon-rejected queue attempt so the UI
         // can render the error instead of silently dropping the message.

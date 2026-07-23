@@ -217,14 +217,24 @@ export class LiveAgentsClient implements AgentsClient {
     if (params.model !== undefined) rpcParams.model = params.model;
     return runMutation("agent.editAndRegenerate", rpcParams);
   }
-  async queue(agentId: string, message: string): Promise<MutationResult> {
+  async queue(
+    agentId: string,
+    message: string,
+    options?: {
+      imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+    },
+  ): Promise<MutationResult> {
     // `agent.queueMessage` returns `{ success, queuedMessage }` (§5.5); we
     // surface `queuedMessage` on the MutationResult so callers can render the
     // queue position / id without an extra `agent.getQueue` round-trip.
+    // Optional `imageBlocks` only ride along when supplied (like
+    // `agent.forceMessage`) so the daemon sees an omitted param otherwise.
     try {
+      const params: Record<string, unknown> = { agentId, content: message };
+      if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
       const result = await backendRequest<{ queuedMessage?: QueuedMessage } | undefined>(
         "agent.queueMessage",
-        { agentId, content: message },
+        params,
       );
       const queuedMessage = result?.queuedMessage;
       return queuedMessage ? { success: true, queuedMessage } : { success: true };
