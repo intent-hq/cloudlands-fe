@@ -8,7 +8,7 @@
 /**
  * User-facing warning when the codex CLI is installed but the ACP adapter
  * cannot run: neither a local `codex-acp` binary nor npx (which runs the
- * version-pinned `@zed-industries/codex-acp` fallback — see
+ * version-pinned `@agentclientprotocol/codex-acp` fallback — see
  * CODEX_ACP_NPX_PACKAGE in codex-resolver) is available.
  */
 export const CODEX_ADAPTER_MISSING_WARNING =
