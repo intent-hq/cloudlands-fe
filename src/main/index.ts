@@ -149,10 +149,15 @@ if (process.platform !== 'win32') {
 }
 
 async function seedPathFromHostEnv(): Promise<void> {
+  const abortController = new AbortController();
   const hostEnvPromise = (async () => {
     try {
       const { initializeHostEnv } = await import('../shared/main/find-binary');
-      const result = await initializeHostEnv({ retryForMs: 2000, retryDelayMs: 100 });
+      const result = await initializeHostEnv({
+        retryForMs: 2000,
+        retryDelayMs: 100,
+        signal: abortController.signal,
+      });
       if (result) {
         if (result.enhancedPath) {
           process.env.PATH = result.enhancedPath;
@@ -174,6 +179,7 @@ async function seedPathFromHostEnv(): Promise<void> {
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const hostEnvTimeout = new Promise<void>((resolve) => {
     timeoutHandle = setTimeout(() => {
+      abortController.abort();
       mainLogger.warn('host.env took too long, continuing without waiting');
       resolve();
     }, 2000);

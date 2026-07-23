@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Logger } from '../logger';
 import { getBackendClient } from '../../features/backend/main/backend.ipc';
+import { JsonRpcError } from '../../features/backend/main/json-rpc-errors';
 
 const logger = new Logger('FindBinary');
 
@@ -62,6 +63,14 @@ interface HostEnvInitOptions {
   /** Keep retrying transient connection failures while the sidecar starts. */
   retryForMs?: number;
   retryDelayMs?: number;
+  /** Stop retrying and ignore any in-flight response after startup moves on. */
+  signal?: AbortSignal;
+}
+
+function isRetryableHostEnvError(error: unknown): boolean {
+  // A JSON-RPC response proves the daemon is reachable; protocol/server errors
+  // will not be fixed by reconnecting. Transport failures remain retryable.
+  return !(error instanceof JsonRpcError);
 }
 
 function isWindows(): boolean {
@@ -86,16 +95,22 @@ export async function initializeHostEnv(
 ): Promise<HostEnvResult | null> {
   const deadline = Date.now() + (options.retryForMs ?? 0);
   const retryDelayMs = options.retryDelayMs ?? 100;
+  const signal = options.signal;
   let lastError: unknown;
+
+  if (signal?.aborted) return null;
 
   do {
     try {
       const result = await getBackendClient().request<HostEnvResult>('host.env');
+      if (signal?.aborted) return null;
       cachedHostEnv = result;
       return result;
     } catch (error) {
       lastError = error;
+      if (!isRetryableHostEnvError(error)) break;
     }
+    if (signal?.aborted) return null;
     if (Date.now() >= deadline) break;
     await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
   } while (true);
