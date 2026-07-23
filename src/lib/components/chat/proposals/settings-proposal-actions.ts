@@ -22,6 +22,7 @@ import {
   selectActiveProviderId,
   selectEnabledProviders,
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
 import {
   selectMcpDisabledServers,
   selectMcpEnabled,
@@ -351,11 +352,17 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'providers.active':
       appStore.dispatch(setActiveProvider(String(value ?? '')));
       return true;
-    case 'providers.enabled':
+    case 'providers.enabled': {
+      // Same in-use guard as the Settings UI: agent-driven proposals must not
+      // disable a provider pinned by the default model or a specialist,
+      // recreating the stale-provider state the UI guard prevents.
+      const inUseReasons = selectProviderInUseReasons.select(appStore.state);
       for (const [providerId, enabled] of Object.entries(objectValue(value))) {
+        if (!enabled && inUseReasons[providerId]) continue;
         appStore.dispatch(setProviderEnabled({ providerId, enabled: Boolean(enabled) }));
       }
       return true;
+    }
     case 'notifications.enabled':
       appStore.dispatch(setNotificationEnabled(Boolean(value)));
       return true;

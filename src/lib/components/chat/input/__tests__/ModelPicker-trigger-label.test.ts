@@ -323,6 +323,66 @@ describe('ModelPicker trigger label regressions', () => {
     expect(screen.getByRole('button').textContent ?? '').toContain('Auggie Butler');
   });
 
+  it('derives the trigger icon from a bare defaultModelId (default provider) instead of the active provider', () => {
+    activeProviderId$.set('anthropic');
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'butler',
+        isLocked: true,
+      },
+    });
+
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('auggie');
+  });
+
+  it('derives the trigger icon from a compound defaultModelId instead of the active provider', () => {
+    activeProviderId$.set('auggie');
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'anthropic:claude-opus-4-7',
+        isLocked: true,
+      },
+    });
+
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+      'anthropic',
+    );
+  });
+
+  it('prefers an explicit providerId prop over the defaultModelId for the trigger icon', () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        providerId: 'anthropic',
+        defaultModelId: 'auggie:butler',
+        isLocked: true,
+      },
+    });
+
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+      'anthropic',
+    );
+  });
+
+  it('falls back to the active provider when no model or provider is resolvable', () => {
+    activeProviderId$.set('anthropic');
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        isLocked: true,
+      },
+    });
+
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+      'anthropic',
+    );
+  });
+
   it('reacts when the Redux session provider changes without remounting', async () => {
     sessions.set('agent-1', { id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
     sessionVersion$.update((value) => value + 1);
