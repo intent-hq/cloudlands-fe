@@ -15,6 +15,15 @@
  * Install by importing this module early (e.g., in hooks.client.ts).
  */
 
+import {
+  resolveBrowserWsUrl,
+  sanitizeWsUrlForDisplay,
+} from './client/live/browser-websocket-transport';
+import {
+  getWebDaemonStatusSource,
+  onWebDaemonStatusSourceRegistered,
+} from './client/live/web-daemon-status';
+
 /**
  * Whether the browser mock is allowed to activate: dev builds or explicit
  * opt-in only — never packaged/daemon-bridged runs.
@@ -126,6 +135,27 @@ function mockBackendInvoke(channel: string, data?: any): any {
     return { ok: true, result: {} };
   }
   if (channel === 'backend:get-status') {
+    // dev:web — reflect the live BrowserWebSocketTransport state so the
+    // daemon-health slice doesn't show a false "intentd is stopped" overlay
+    // while the WS connection to the daemon is healthy.
+    const source = getWebDaemonStatusSource();
+    if (source) {
+      return {
+        status: source.getStatus(),
+        transport: { mode: 'external-ws', target: source.getTarget() },
+      };
+    }
+    const wsUrl = resolveBrowserWsUrl();
+    if (wsUrl) {
+      // The WS transport singleton is created lazily on first request and is
+      // not up yet — report external-ws immediately so the daemon-loss UI
+      // hides the spawn-sidecar button and locality treats the daemon as
+      // remote from the very first status read.
+      return {
+        status: 'connecting',
+        transport: { mode: 'external-ws', target: sanitizeWsUrlForDisplay(wsUrl) },
+      };
+    }
     // Bare status shape (no envelope), mirroring backend.ipc.ts. `disconnected`
     // keeps connection-gated boot flows (e.g. interrupted-agents) inert.
     return { status: 'disconnected', transport: 'browser-mock' };
@@ -278,11 +308,19 @@ function mockInvoke(channel: string, data?: any): any {
 }
 
 // ---------------------------------------------------------------------------
-// Event listeners (no live events — purely a stub for browser-mode preview)
+// Event listeners (only backend:status is live — forwarded from the WS
+// transport in dev:web; every other channel is a stub for browser preview)
 // ---------------------------------------------------------------------------
 
 type EventListener = { id: string; channel: string; callback: (...args: any[]) => void };
 const eventListeners: EventListener[] = [];
+
+/** Deliver a payload to every mock listener registered on a channel. */
+function emitBrowserMockEvent(channel: string, payload: unknown): void {
+  for (const listener of [...eventListeners]) {
+    if (listener.channel === channel) listener.callback(payload);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Mock electronAPI object
@@ -374,6 +412,19 @@ export function installBrowserMock(): boolean {
     '[BrowserMock] Installing mock electronAPI for browser-mode rendering — all IPC responses are DEV MOCKS',
   );
   (window as any).electronAPI = browserElectronAPI;
+
+  // dev:web daemon health: once the BrowserWebSocketTransport registers as
+  // the status source (lazily, on first backend request), forward its
+  // connection-status transitions as backend:status push events — the
+  // daemon-health service subscribes via electronAPI.on, not the mock router.
+  onWebDaemonStatusSourceRegistered((source) => {
+    source.onStatusChange((status) => {
+      emitBrowserMockEvent('backend:status', {
+        status,
+        transport: { mode: 'external-ws', target: source.getTarget() },
+      });
+    });
+  });
 
   return true;
 }
