@@ -139,6 +139,33 @@ describe('ProviderCard selected-state indicator', () => {
   });
 });
 
+describe('ProviderCard needsLogin derivation', () => {
+  const loginBadge = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('span')).find((el) => el.textContent?.trim() === 'Log in');
+
+  it('renders the Log in badge only for an explicit authenticated: false', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), authenticated: false, authDetails: undefined },
+      },
+    });
+    expect(loginBadge(container)).toBeDefined();
+    expect(container.textContent).not.toContain('Connected');
+  });
+
+  it('treats an unknown auth verdict (authenticated: undefined) as ready, not needs-login', () => {
+    const { container } = render(ProviderCard, {
+      props: {
+        ...baseProps(),
+        provider: { ...readyProvider(), authenticated: undefined, authDetails: undefined },
+      },
+    });
+    expect(loginBadge(container)).toBeUndefined();
+    expect(container.textContent).toContain('Connected');
+  });
+});
+
 describe('ProviderCard click affordance', () => {
   const card = (root: HTMLElement) => root.querySelector('.group\\/card') as HTMLElement;
 
