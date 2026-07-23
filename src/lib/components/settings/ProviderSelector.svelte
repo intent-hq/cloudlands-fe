@@ -596,12 +596,6 @@
                   onPathChange={(path) => handlePathChange('auggie', path)}
                 />
               </div>
-              {#if isAuggieReady}
-                <span class="text-xs text-subtle flex items-center gap-1">
-                  <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-                  Ready
-                </span>
-              {/if}
             </div>
             {#if needsUpdate}
               <p class="text-xs text-amber-500">
