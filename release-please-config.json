@@ -3,7 +3,6 @@
   "release-type": "node",
   "include-v-in-tag": true,
   "include-component-in-tag": false,
-  "last-release-sha": "562af4d27f8c6a0e0fe82f14fd94cfda3fdc7db2",
   "pull-request-title-pattern": "chore(release): ${version}",
   "changelog-sections": [
     { "type": "feat", "section": "🚀 Features" },
