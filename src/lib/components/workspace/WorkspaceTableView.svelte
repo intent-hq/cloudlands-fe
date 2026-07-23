@@ -7,13 +7,16 @@
   selectAgentIsWaiting,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
   import {
   buildRepoPathLookup,
   getGroupKey,
 } from './utils/workspace-grouping';
+  import {
+  getWorkspaceAgentDisplayInfos,
+  type WorkspaceAgentDisplayInfo,
+} from './utils/workspace-agent-display';
   import { onMount } from 'svelte';
   import { quintOut } from 'svelte/easing';
   import {
@@ -48,15 +51,6 @@
 
   function receive(node: Element, _params: { key: any }) {
     return scale(node, { duration: 200, start: 0.95, easing: quintOut });
-  }
-
-  // Local agent display info with computed avatar state
-  interface AgentDisplayInfo {
-    id: string;
-    state: AvatarState;
-    specialist?: 'spec-writer' | 'implementor' | 'verifier' | null;
-    isActive: boolean;
-    isUnread: boolean;
   }
 
   export interface RepoInfo {
@@ -116,52 +110,31 @@
   });
 
   // Get agent display info for a workspace from its member agent IDs
-  // Only returns agents that are ACTIVE (streaming/busy) or have UNREAD messages
-  function getWorkspaceAgentInfo(ws: Workspace): AgentDisplayInfo[] {
+  // Only returns agents that are NOT IDLE (running/waiting/failed) or have UNREAD messages
+  function getWorkspaceAgentInfo(ws: Workspace): WorkspaceAgentDisplayInfo[] {
     // Reference version for reactivity
     void activeStreamsVersion;
-    const memberAgentIds = ws.agentSummary?.agentIds ?? [];
-
-    if (memberAgentIds.length === 0) {
-      return [];
-    }
-
-    // Get unread agent IDs for this workspace
-    const unreadAgentIds = new Set($unreadAgentIdsByWorkspace$[ws.id] ?? []);
     const reduxState = appStore.state;
 
-    return memberAgentIds
-      .map((agentId) => {
+    return getWorkspaceAgentDisplayInfos({
+      memberAgentIds: ws.agentSummary?.agentIds ?? [],
+      unreadAgentIds: $unreadAgentIdsByWorkspace$[ws.id] ?? [],
+      workspaceActivity: ws.activity,
+      getAgentSnapshot: (agentId) => {
         const loadedSession = selectAgentSession.select(reduxState, agentId);
-        const isWaiting = loadedSession
-          ? selectAgentIsWaiting.select(reduxState, agentId)
-          : false;
-        const isResponding = loadedSession
-          ? selectAgentIsResponding.select(reduxState, agentId)
-          : activeStreamsTracker.isAgentStreaming(agentId);
-        const isUnread = unreadAgentIds.has(agentId);
-        const sessionStatus = loadedSession?.status as string | undefined;
-
-        // Determine avatar state using canonical selectors when the session is
-        // loaded; otherwise fall back to streaming-tracker data only.
-        let state: AvatarState = 'idle';
-        if (sessionStatus === 'error' || sessionStatus === 'failed') {
-          state = 'failed';
-        } else if (isWaiting) {
-          state = 'waiting';
-        } else if (isResponding) {
-          state = 'running';
-        }
-
         return {
-          id: agentId,
-          state,
-          specialist: (loadedSession?.metadata?.specialist ?? null) as AgentDisplayInfo['specialist'],
-          isActive: isResponding && !isWaiting,
-          isUnread,
+          hasLoadedSession: !!loadedSession,
+          isWaiting: loadedSession ? selectAgentIsWaiting.select(reduxState, agentId) : false,
+          isResponding: loadedSession
+            ? selectAgentIsResponding.select(reduxState, agentId)
+            : false,
+          isStreamingFallback: loadedSession ? false : activeStreamsTracker.isAgentStreaming(agentId),
+          sessionStatus: loadedSession?.status as string | undefined,
+          specialist: (loadedSession?.metadata?.specialist ??
+            null) as WorkspaceAgentDisplayInfo['specialist'],
         };
-      })
-      .filter((agent) => agent.isActive || agent.isUnread); // Only show active or unread agents
+      },
+    });
   }
 
   // Track collapsed groups
