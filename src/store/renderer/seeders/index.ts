@@ -28,3 +28,4 @@ import './misc-ui-events-seeder';
 import './panel-layout-bridge-seeder';
 import './auto-update-bridge-seeder';
 import './window-state-bridge-seeder';
+import './native-dialog-bridge-seeder';
