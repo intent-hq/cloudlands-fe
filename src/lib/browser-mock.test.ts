@@ -208,3 +208,146 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(typeof sub.subscriptionId).toBe('string');
   });
 });
+
+/**
+ * Regression tests for the dev:web false "intentd is stopped" overlay.
+ *
+ * In dev:web (browser mock installed + VITE_INTENTD_WS_URL configured) the
+ * daemon-health service reads `backend:get-status` and listens on
+ * `backend:status` through `window.electronAPI` — the browser mock. The mock
+ * used to hardcode `{ status: 'disconnected', transport: 'browser-mock' }`
+ * and never emit `backend:status`, so the DaemonStoppedOverlay appeared even
+ * while the BrowserWebSocketTransport was fully healthy. The mock must
+ * reflect the live WS transport state and report the transport as
+ * `{ mode: 'external-ws', target: <sanitized ws url> }`.
+ */
+describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', () => {
+  const originalElectronAPI = (window as any).electronAPI;
+
+  class FakeWebSocket {
+    static instances: FakeWebSocket[] = [];
+    onopen: ((event?: unknown) => void) | null = null;
+    onmessage: ((event: { data: unknown }) => void) | null = null;
+    onerror: ((event?: unknown) => void) | null = null;
+    onclose: ((event?: unknown) => void) | null = null;
+    readonly sent: string[] = [];
+
+    constructor(readonly url: string) {
+      FakeWebSocket.instances.push(this);
+    }
+
+    send(data: string): void {
+      this.sent.push(data);
+    }
+
+    close(): void {}
+
+    open(): void {
+      this.onopen?.();
+    }
+
+    receive(frame: unknown): void {
+      this.onmessage?.({ data: JSON.stringify(frame) });
+    }
+
+    drop(): void {
+      this.onclose?.();
+    }
+  }
+
+  let api: any;
+
+  beforeEach(async () => {
+    delete (window as any).electronAPI;
+    vi.stubEnv('DEV', true);
+    vi.stubEnv('VITE_INTENTD_WS_URL', 'ws://127.0.0.1:5181/rpc?token=secret');
+    FakeWebSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await importBrowserMock();
+    api = (window as any).electronAPI;
+    expect(api).toBeDefined();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    (window as any).electronAPI = originalElectronAPI;
+  });
+
+  /** Resolve the (WS) transport via the factory and drive it to connected. */
+  async function connectTransport() {
+    const { resolveBackendTransport } = await import('./client/live/backend-transport-factory');
+    const transport = resolveBackendTransport();
+    const pending = transport.request<{ running?: boolean }>('system.status');
+    const socket = FakeWebSocket.instances[0];
+    expect(socket).toBeDefined();
+    socket.open();
+    await Promise.resolve();
+    await Promise.resolve();
+    const frame = JSON.parse(socket.sent[socket.sent.length - 1]) as { id: number };
+    socket.receive({ jsonrpc: '2.0', id: frame.id, result: { running: true } });
+    await pending;
+    return { transport, socket };
+  }
+
+  it('backend:get-status reflects a healthy WS transport instead of hardcoded disconnected', async () => {
+    const { transport } = await connectTransport();
+    const res = await api.invoke('backend:get-status');
+    expect(res.status).toBe('connected');
+    // Sanitized target: no ?token= query, external-ws mode so the overlay
+    // hides the spawn-sidecar button and locality treats the daemon as remote.
+    expect(res.transport).toEqual({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' });
+    (transport as { dispose?: () => void }).dispose?.();
+  });
+
+  it('reports external-ws (status connecting) before the transport singleton exists', async () => {
+    const res = await api.invoke('backend:get-status');
+    expect(res.status).toBe('connecting');
+    expect(res.transport).toEqual({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' });
+  });
+
+  it('delivers backend:status push events to electronAPI.on listeners across drop and reconnect', async () => {
+    const { transport, socket } = await connectTransport();
+    const events: Array<{ status: string; transport?: unknown }> = [];
+    api.on('backend:status', (payload: { status: string; transport?: unknown }) => {
+      events.push(payload);
+    });
+
+    vi.useFakeTimers();
+    socket.drop();
+    expect(events).toContainEqual({
+      status: 'disconnected',
+      transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
+    });
+
+    // Reconnect: backoff timer fires, a new socket opens, status goes healthy.
+    vi.advanceTimersByTime(1_000);
+    const reconnectSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    expect(reconnectSocket).not.toBe(socket);
+    reconnectSocket.open();
+    expect(events).toContainEqual({
+      status: 'connected',
+      transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
+    });
+    // Mirrors backend.ipc.ts: the 2nd+ connect also carries the
+    // `reconnected: true` marker AFTER the plain 'connected' event.
+    expect(events[events.length - 1]).toEqual({
+      status: 'connected',
+      reconnected: true,
+      transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
+    });
+    (transport as { dispose?: () => void }).dispose?.();
+  });
+
+  it('keeps the legacy mock disconnected shape when no WS URL is configured', async () => {
+    vi.stubEnv('VITE_INTENTD_WS_URL', '');
+    delete (window as any).electronAPI;
+    await importBrowserMock();
+    api = (window as any).electronAPI;
+    const res = await api.invoke('backend:get-status');
+    expect(res).toEqual({ status: 'disconnected', transport: 'browser-mock' });
+  });
+});

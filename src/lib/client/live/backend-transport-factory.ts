@@ -8,8 +8,10 @@ import type { BackendTransport } from "./backend-transport-types";
 import {
   createBrowserWebSocketTransport,
   resolveBrowserWsUrl,
+  sanitizeWsUrlForDisplay,
 } from "./browser-websocket-transport";
 import { createElectronIpcBackendTransport } from "./electron-ipc-transport";
+import { registerWebDaemonStatusSource } from "./web-daemon-status";
 
 let cachedTransport: BackendTransport | null = null;
 
@@ -22,7 +24,19 @@ function pickTransport(): BackendTransport {
   // Plain browser: speak JSON-RPC directly to the daemon over a WebSocket
   // when VITE_INTENTD_WS_URL is configured.
   const wsUrl = resolveBrowserWsUrl();
-  if (wsUrl) return createBrowserWebSocketTransport({ url: wsUrl });
+  if (wsUrl) {
+    const transport = createBrowserWebSocketTransport({ url: wsUrl });
+    // Register as the web daemon-health status source so the browser mock
+    // serves backend:get-status / backend:status from the live transport
+    // instead of a hardcoded 'disconnected' (false dev:web stopped-overlay).
+    registerWebDaemonStatusSource({
+      getStatus: () => transport.getConnectionStatus(),
+      getTarget: () => sanitizeWsUrlForDisplay(wsUrl),
+      onStatusChange: (handler) => transport.onConnectionStatusChange(handler),
+      onReconnected: (handler) => transport.onReconnected(handler),
+    });
+    return transport;
+  }
   // Otherwise fall back to the Electron-IPC transport, which re-checks the
   // bridge per call and degrades exactly like the legacy module (UNAVAILABLE
   // errors, no-op disposers) — with the mock installed this is what routes

@@ -16,6 +16,7 @@ import {
   type BrowserWebSocketLike,
   createBrowserWebSocketTransport,
   resolveBrowserWsUrl,
+  sanitizeWsUrlForDisplay,
 } from "./browser-websocket-transport";
 
 class FakeWebSocket implements BrowserWebSocketLike {
@@ -111,6 +112,23 @@ describe("resolveBrowserWsUrl", () => {
     expect(resolveBrowserWsUrl("http://localhost:9100/rpc")).toBeUndefined();
     expect(warn).toHaveBeenCalledOnce();
     warn.mockRestore();
+  });
+});
+
+describe("sanitizeWsUrlForDisplay", () => {
+  it("strips userinfo, query, and hash from parseable URLs", () => {
+    expect(sanitizeWsUrlForDisplay("ws://user:pass@host:9100/rpc?token=secret#frag")).toBe(
+      "ws://host:9100/rpc",
+    );
+  });
+
+  it("strips userinfo, query, and hash in the parse-failure fallback", () => {
+    // Missing scheme separator slashes with an explicit ws:// prefix on the
+    // authority — a shape `new URL()` rejects in some engines; force the
+    // fallback with an unparseable port instead.
+    expect(sanitizeWsUrlForDisplay("ws://user:pass@host:not-a-port/rpc?token=secret#frag")).toBe(
+      "ws://host:not-a-port/rpc",
+    );
   });
 });
 
