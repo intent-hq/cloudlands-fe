@@ -123,6 +123,27 @@ function buildWindowOptions(opts: {
 }
 
 /**
+ * Forward renderer console warnings/errors into the main-process log so they
+ * land in {userData}/logs/console-output.log (via setupConsoleLogCapture) and
+ * debug exports. Closes the diagnosability gap where renderer-only breadcrumbs
+ * (e.g. failed comment.add evidence) were invisible in persistent logs.
+ * Info/debug/verbose messages are intentionally not forwarded to keep the log
+ * file bounded.
+ */
+function forwardRendererConsoleToMainLog(window: BrowserWindowType): void {
+  window.webContents.on('console-message', (details) => {
+    const { level, message, sourceId, lineNumber } = details;
+    if (level !== 'warning' && level !== 'error') return;
+    const origin = `${sourceId || 'renderer'}:${lineNumber}`;
+    if (level === 'error') {
+      logger.error(`[RendererConsole] ${message} (${origin})`);
+    } else {
+      logger.warn(`[RendererConsole] ${message} (${origin})`);
+    }
+  });
+}
+
+/**
  * Build the URL to load in a window (dev server or production app:// protocol).
  */
 function buildLoadUrl(route: string = '/'): string {
@@ -299,6 +320,7 @@ export function createWindowForSession(session: WindowSession, setAsMain: boolea
   const window = new BrowserWindow(
     buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
   );
+  forwardRendererConsoleToMainLog(window);
 
   if (setAsMain) {
     setMainWindow(window);
@@ -393,6 +415,7 @@ export function createWindow() {
   const window = new BrowserWindow(
     buildWindowOptions({ bounds: windowBounds, title: resolveAppTitle(), iconPath }),
   );
+  forwardRendererConsoleToMainLog(window);
 
   setMainWindow(window);
 
@@ -501,6 +524,7 @@ export async function createWindowForDeepLink(deepLinkUrl: string, deepLinkHandl
   const newWindow = new BrowserWindow(
     buildWindowOptions({ bounds, title: resolveAppTitle() }),
   );
+  forwardRendererConsoleToMainLog(newWindow);
 
   const encodedAction = encodeURIComponent(JSON.stringify(action));
   newWindow.loadURL(buildLoadUrl(`/?deepLink=${encodedAction}`));
