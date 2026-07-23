@@ -20,7 +20,7 @@ import { ensureManagedCodexAcp, MANAGED_CODEX_ACP_VERSION } from './codex-acp-ma
  * managed install. intentd pins the same package/version in
  * `intent-providers/src/config.rs`.
  */
-export const CODEX_ACP_NPX_PACKAGE = `@zed-industries/codex-acp@${MANAGED_CODEX_ACP_VERSION}`;
+export const CODEX_ACP_NPX_PACKAGE = `@agentclientprotocol/codex-acp@${MANAGED_CODEX_ACP_VERSION}`;
 
 /**
  * Pinned Codex CLI version for the npx MCP-server fallback. Bumping it is a
