@@ -307,6 +307,7 @@
           const result = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
             command: `git commit --amend -m "${escapedMessage}"`,
             cwd: gitPath,
+            workspaceId,
           })) as { success: boolean; error?: string };
 
           if (!result.success) {
@@ -317,6 +318,7 @@
             let pushResult = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
               command: 'git push --force-with-lease',
               cwd: gitPath,
+              workspaceId,
             })) as { success: boolean; error?: string; data?: { stderr?: string } };
 
             if (
@@ -326,6 +328,7 @@
               const branchResult = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
                 command: 'git rev-parse --abbrev-ref HEAD',
                 cwd: gitPath,
+                workspaceId,
               })) as { success: boolean; data?: { stdout?: string } };
 
               if (branchResult.success && branchResult.data?.stdout) {
@@ -333,6 +336,7 @@
                 pushResult = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
                   command: `git push --force-with-lease --set-upstream origin ${branchName}`,
                   cwd: gitPath,
+                  workspaceId,
                 })) as { success: boolean; error?: string; data?: { stderr?: string } };
               }
             }

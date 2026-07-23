@@ -1227,6 +1227,7 @@ export const UserMcpTestConnectionSchema = z.object({
 export const SystemExecuteCommandSchema = z.object({
   command: z.string().min(1, 'Command is required'),
   cwd: z.string().optional(),
+  workspaceId: WorkspaceIdSchema.optional(),
 });
 
 export const SystemExecuteCommandStreamingSchema = z.object({
