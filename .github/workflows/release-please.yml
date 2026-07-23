@@ -1,0 +1,41 @@
+# Release-please (https://github.com/googleapis/release-please) in
+# Release-PR mode — the Node analog of intentd's release-plz setup:
+#
+# - On every push to main it opens/updates a Release PR that bumps
+#   `package.json` and CHANGELOG.md from conventional commits
+#   (feat -> minor, fix -> patch, `type!:` / BREAKING CHANGE -> major).
+# - Merging the Release PR creates the `vX.Y.Z` tag plus a GitHub Release on
+#   this repo (the changelog anchor; user-facing artifacts stay on
+#   `intent-hq/cloudlands-releases`).
+#
+# The action authenticates with the RELEASE_PAT secret (a PAT with contents +
+# pull-requests write access) instead of the default GITHUB_TOKEN: tags and
+# PRs created with GITHUB_TOKEN do not trigger other workflows, and the
+# release build must fire on the tag push.
+
+name: Release-please
+
+permissions: {}
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # The single job never uses the implicit GITHUB_TOKEN (the action
+  # authenticates with the RELEASE_PAT PAT), so it inherits the top-level
+  # `permissions: {}` and the implicit token stays powerless.
+  release-please:
+    name: Release-please
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'intent-hq' }}
+    concurrency:
+      group: release-please-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Run release-please
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.RELEASE_PAT }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

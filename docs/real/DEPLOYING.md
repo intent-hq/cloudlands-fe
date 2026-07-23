@@ -11,6 +11,64 @@ Intent uses a channel-based update model:
 
 Each workflow dispatch also creates an immutable versioned release (`v{version}`) for archival and rollback.
 
+## Versioning — release-please Release PRs
+
+Version numbers are computed from conventional commits by
+[release-please](https://github.com/googleapis/release-please)
+(`.github/workflows/release-please.yml`, configured via
+`release-please-config.json` + `.release-please-manifest.json`). Nobody types a
+version number by hand.
+
+**Flow:**
+
+1. On every push to `main`, release-please opens (or updates) a **Release PR**
+   that bumps `package.json` and regenerates `CHANGELOG.md` from the
+   conventional commits since the last `v*` tag.
+2. A human merges the Release PR when it's time to ship — that is the release
+   timing gate.
+3. On the merge, release-please creates the `v{version}` tag and a GitHub
+   Release on `cloudlands-fe`. The workflow authenticates with `RELEASE_PAT`
+   (not the default `GITHUB_TOKEN`) so the pushed tag triggers downstream
+   workflows.
+
+**Version math** (the app is ≥ 1.0, so full semver rules apply):
+
+- `fix:` → patch (e.g. 2.0.13 → 2.0.14)
+- `feat:` → minor (e.g. 2.0.13 → 2.1.0)
+- `type!:` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer → major
+  (e.g. 2.0.13 → 3.0.0)
+- `chore:`, `docs:`, `refactor:`, etc. → no release on their own
+
+**Conventions:**
+
+- **Breaking changes** must be marked with `!` after the type/scope
+  (`feat!: drop legacy settings migration`) or a `BREAKING CHANGE:` footer, or
+  the major bump will be missed.
+- **intentd sidecar pin bumps** must use `fix(sidecar):` (e.g.
+  `fix(sidecar): bump intentd pin to 0.4.2`) so a new pinned daemon triggers at
+  least a patch release. A plain `chore:` pin bump would not produce a release.
+- **Plain versions only** — no prerelease suffixes (`-beta.N`). Beta vs. stable
+  remains a *promotion* distinction on `cloudlands-releases`, not a version
+  distinction.
+
+**Why a GitHub Release on `cloudlands-fe` too?** Creating the tag via a GitHub
+Release is how release-please operates, and the release body carries the
+changelog for that version. It does not conflict with the publishing model:
+`cloudlands-fe` is private, so user-facing artifacts live exclusively on the
+public `intent-hq/cloudlands-releases` repo, while the `cloudlands-fe` release
+is the internal changelog anchor for the tag.
+
+**Bootstrap note (remove after the first release-please release):** the
+pre-release-please tag `v2.0.13` points at a commit that is not on `main` (the
+old workflow tagged its own bump commit and merged a squashed copy of it), so
+release-please cannot bound the commit range from the tag alone.
+`release-please-config.json` pins `last-release-sha` to `562af4d2` (the
+`chore: bump version to 2.0.13` commit on `main`) so the first Release PR only
+considers commits since v2.0.13. Once the first release-please release has
+been merged and tagged (tags now land on `main`), **delete the
+`last-release-sha` line** — leaving it in place would make every later Release
+PR re-include already-released commits.
+
 ## Required GitHub Secrets
 
 Release workflows require the following secrets configured on `intent-hq/cloudlands-fe`:
