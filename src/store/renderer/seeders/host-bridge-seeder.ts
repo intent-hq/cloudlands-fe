@@ -329,10 +329,11 @@ function posixSingleQuote(value: string): string {
 }
 
 /**
- * Fold `cwd` into the shell script instead of passing it on the wire:
- * `host.exec` rejects `cwd` without `workspaceId` (§5.14 containment guard),
- * and the legacy channel payload carries no workspace identity — the callers
- * (CommitsTimeline amend/force-push) send only `{ command, cwd }`.
+ * Legacy fallback ONLY, for payloads that carry `cwd` but no `workspaceId`:
+ * fold `cwd` into the shell script instead of passing it on the wire, because
+ * `host.exec` rejects `cwd` without `workspaceId` (§5.14 containment guard).
+ * Payloads that do carry `workspaceId` (CommitsTimeline amend/force-push)
+ * bypass this wrapper and go wire-native so the guard actually runs.
  */
 function shellScriptWithCwd(os: string, command: string, cwd: string): string {
   if (os === "windows") {
@@ -360,17 +361,21 @@ const EXECUTE_COMMAND_FAILURE = {
  * The wire schema is a shell-form command string, so — mirroring the Electron
  * main-process handler — it is wrapped via the DAEMON host's shell (`/bin/sh
  * -c` on POSIX, `cmd.exe /c` on Windows; the OS comes from `system.status`
- * `host.os`, shell-reveal-bridge-seeder idiom). Envelope parity with that
- * handler: exit 0 → `{success:true, data:{stdout,stderr,code:0}}`; non-zero →
- * `{success:false, error, data:{stdout,stderr,code}}` (CommitsTimeline's
- * upstream-branch fallback greps `data.stderr`); any thrown error folds to the
- * generic catch envelope. SECURITY: the command string and env are never
- * logged and never appear in an error surface.
+ * `host.os`, shell-reveal-bridge-seeder idiom). Payloads carrying a
+ * `workspaceId` pass `cwd` + `workspaceId` wire-native so the daemon's
+ * within-workspace containment guard runs; legacy cwd-only payloads fall back
+ * to folding `cwd` into the script (`shellScriptWithCwd`). Envelope parity
+ * with that handler: exit 0 → `{success:true, data:{stdout,stderr,code:0}}`;
+ * non-zero → `{success:false, error, data:{stdout,stderr,code}}`
+ * (CommitsTimeline's upstream-branch fallback greps `data.stderr`); any
+ * thrown error folds to the generic catch envelope. SECURITY: the command
+ * string and env are never logged and never appear in an error surface.
  */
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
   const params = asRecord(arg);
   const command = typeof params.command === "string" ? params.command : "";
   const cwd = typeof params.cwd === "string" ? params.cwd : "";
+  const workspaceId = typeof params.workspaceId === "string" ? params.workspaceId : "";
   if (!command) {
     return EXECUTE_COMMAND_FAILURE;
   }
@@ -383,10 +388,22 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
       throw new Error("The daemon does not report host info (older intentd?)");
     }
     const [shellCmd, shellFlag] = os === "windows" ? ["cmd.exe", "/c"] : ["/bin/sh", "-c"];
-    const script = cwd ? shellScriptWithCwd(os, command, cwd) : command;
+    const wireNativeCwd = Boolean(cwd) && Boolean(workspaceId);
+    const script = cwd && !wireNativeCwd ? shellScriptWithCwd(os, command, cwd) : command;
+    const execParams: {
+      command: string;
+      args: string[];
+      cwd?: string;
+      workspaceId?: string;
+      timeoutMs: number;
+    } = { command: shellCmd, args: [shellFlag, script], timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS };
+    if (wireNativeCwd) {
+      execParams.cwd = cwd;
+      execParams.workspaceId = workspaceId;
+    }
     const result = await backendRequest<HostExecResult>(
       "host.exec",
-      { command: shellCmd, args: [shellFlag, script], timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS },
+      execParams,
       { timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS + EXECUTE_COMMAND_TRANSPORT_HEADROOM_MS },
     );
     if (result.exitCode === 0) {

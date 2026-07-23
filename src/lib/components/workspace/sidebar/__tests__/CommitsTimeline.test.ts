@@ -11,6 +11,7 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import type { CommitInfo } from '$features/file-tracking/types';
+import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -464,6 +465,72 @@ describe('CommitsTimeline', () => {
         }),
       ),
     );
+  });
+
+  // Double-click the rendered message into edit mode, type a new message, and
+  // commit with Enter (saveCommitEdit).
+  async function editCommitMessage(container: HTMLElement, from: string, to: string) {
+    const message = container.querySelector(`[title="${from}"]`) as HTMLElement;
+    expect(message).toBeTruthy();
+    await fireEvent.dblClick(message);
+    const input = await waitFor(() => {
+      const el = container.querySelector('input[type="text"]') as HTMLInputElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    await fireEvent.input(input, { target: { value: to } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+  }
+
+  it('saveCommitEdit amends with cwd + workspaceId on the execute-command payload (monorepo#537)', async () => {
+    mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
+    mockInvoke.mockResolvedValue({ success: true });
+
+    const { container } = await renderTimeline();
+    await editCommitMessage(container, 'feat: one', 'feat: better');
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
+    expect(mockInvoke.mock.calls).toEqual([
+      [
+        SYSTEM_CHANNELS.EXECUTE_COMMAND,
+        {
+          command: 'git commit --amend -m "feat: better"',
+          cwd: '/repo',
+          workspaceId: 'ws-1',
+        },
+      ],
+    ]);
+  });
+
+  it('pushed-commit edit carries workspaceId on every execute-command payload, including the upstream fallback (monorepo#537)', async () => {
+    mocks.ftCommits.push(makeCommit('abc', 'feat: one', { isPushed: true }));
+    mockInvoke
+      .mockResolvedValueOnce({ success: true }) // amend
+      .mockResolvedValueOnce({
+        success: false,
+        data: { stderr: 'fatal: The current branch feature/branch has no upstream branch\n' },
+      }) // force-push without upstream
+      .mockResolvedValueOnce({ success: true, data: { stdout: 'feature/branch\n' } }) // rev-parse
+      .mockResolvedValueOnce({ success: true }); // set-upstream force-push
+
+    const { container } = await renderTimeline();
+    await editCommitMessage(container, 'feat: one', 'feat: better');
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(4));
+    const expectedPayload = (command: string) => ({
+      command,
+      cwd: '/repo',
+      workspaceId: 'ws-1',
+    });
+    expect(mockInvoke.mock.calls).toEqual([
+      [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload('git commit --amend -m "feat: better"')],
+      [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload('git push --force-with-lease')],
+      [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload('git rev-parse --abbrev-ref HEAD')],
+      [
+        SYSTEM_CHANNELS.EXECUTE_COMMAND,
+        expectedPayload('git push --force-with-lease --set-upstream origin feature/branch'),
+      ],
+    ]);
   });
 
   it('handleCommitFileClick: fetches file contents and dispatches openWorkspaceDiff', async () => {

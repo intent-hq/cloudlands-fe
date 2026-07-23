@@ -115,6 +115,56 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
     expect(result.data?.code).toBe(0);
   });
 
+  it('forwards workspaceId alongside cwd so the daemon containment guard runs (monorepo#537)', async () => {
+    hostExecMock.mockResolvedValue({
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND);
+    const result = (await handler(
+      {},
+      {
+        command: 'git commit --amend -m "fix: typo"',
+        cwd: '/ws/repo',
+        workspaceId: 'ws-1',
+      },
+    )) as { success: boolean };
+
+    expect(hostExecMock).toHaveBeenCalledTimes(1);
+    expect(hostExecMock.mock.calls[0]).toEqual([
+      SHELL_CMD,
+      {
+        args: [SHELL_FLAG, 'git commit --amend -m "fix: typo"'],
+        cwd: '/ws/repo',
+        workspaceId: 'ws-1',
+        timeoutMs: 30_000,
+      },
+    ]);
+    expect(result.success).toBe(true);
+  });
+
+  it('keeps cwd-without-workspaceId behavior: a host.exec rejection folds to the generic failure envelope', async () => {
+    hostExecMock.mockRejectedValue(
+      new Error(
+        'Invalid parameter: cwd requires workspaceId for the containment guard',
+      ),
+    );
+
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND);
+    const result = await handler(
+      {},
+      { command: 'git status', cwd: '/ws/repo' },
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: 'Command execution failed',
+      data: { stdout: '', stderr: '', code: 1 },
+    });
+  });
+
   it('reports non-zero host.exec exits with a scrubbed error and the exit code', async () => {
     hostExecMock.mockResolvedValue({
       stdout: '',

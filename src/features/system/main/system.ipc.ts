@@ -2155,14 +2155,17 @@ export function setupSystemIPC() {
   // Execute command (with security warning) — delegated to the daemon
   // (`host.exec`, PROTOCOL.md §5.14). The wire schema is a shell-form command
   // string, so we wrap it via the host shell (`sh -c` on POSIX / `cmd /c` on
-  // Windows) and let the daemon run it on the workspace host.
+  // Windows) and let the daemon run it on the workspace host. `cwd` is
+  // forwarded together with the caller's `workspaceId` so the daemon's
+  // within-workspace containment guard (§5.14) can run — `host.exec` rejects
+  // cwd without workspaceId with -32602.
   ipcMain.handle(
     SYSTEM_CHANNELS.EXECUTE_COMMAND,
     createSafeValidatedHandler(
       SystemExecuteCommandSchema,
       async (_event, validated) => {
         try {
-          const { command, cwd } = validated;
+          const { command, cwd, workspaceId } = validated;
 
           // SECURITY WARNING: This executes arbitrary commands
           // This should only be used for trusted, internal operations
@@ -2176,6 +2179,7 @@ export function setupSystemIPC() {
           const result = await hostExec(shellCmd, {
             args: [shellFlag, command],
             cwd,
+            workspaceId,
             timeoutMs: 30_000,
           });
 
