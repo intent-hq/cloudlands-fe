@@ -45,6 +45,19 @@ describe('MessageDialog', () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(0);
   });
 
+  it('does not dismiss on backdrop click — an explicit choice is required', async () => {
+    const onSelect = vi.fn();
+    const MessageDialog = (await import('../MessageDialog.svelte')).default;
+
+    render(MessageDialog, { props: { ...PROPS, onSelect } });
+
+    const dialogEl = await screen.findByRole('alertdialog', { name: 'File Already Exists' });
+    await fireEvent.click(dialogEl.parentElement!);
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: 'File Already Exists' })).toBeTruthy();
+  });
+
   it('renders nothing when closed', async () => {
     const MessageDialog = (await import('../MessageDialog.svelte')).default;
 

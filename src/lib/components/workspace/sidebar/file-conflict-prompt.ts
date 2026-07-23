@@ -44,7 +44,7 @@ export interface WebConflictPromptRequest {
 /**
  * Prompt the user to resolve a drop conflict for `fileName`.
  *
- * Electron: native `dialog.message` (unchanged behavior). Web: invokes
+ * Electron: native `dialog.message` (via the bridge seeder). Web: invokes
  * `openWebDialog` with a request whose `resolve(buttonIndex)` settles the
  * returned promise — it stays pending until the user actually chooses.
  */
@@ -53,6 +53,9 @@ export async function promptFileConflict(
   openWebDialog: (request: WebConflictPromptRequest) => void,
 ): Promise<ConflictResolution> {
   if (getPlatform() === 'electron') {
+    // Still routes through the mock router: this only works because
+    // native-dialog-bridge-seeder registers the `dialog:message` forwarder at
+    // startup (seeders/index.ts); without it this invoke rejects at runtime.
     const index = await dialog.message(fileConflictMessage(fileName), {
       title: FILE_CONFLICT_TITLE,
       type: 'warning',

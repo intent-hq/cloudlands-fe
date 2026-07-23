@@ -283,7 +283,10 @@ export function off(event: string, _handler: (...args: any[]) => void): void {
   );
 }
 
-// File dialog replacements
+// File dialog replacements. Always routes through the dialog:message channel
+// (native-dialog-bridge-seeder); the old window.electronAPI gate silently
+// resolved 0 — the first button, typically a destructive-adjacent 'skip' —
+// on bridge-less web builds instead of failing loudly.
 export const dialog = {
   async message(
     message: string,
@@ -293,13 +296,10 @@ export const dialog = {
       buttons?: string[];
     },
   ): Promise<number> {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      return await invoke<number>('dialog:message', {
-        message,
-        ...options,
-      });
-    }
-    return 0;
+    return await invoke<number>('dialog:message', {
+      message,
+      ...options,
+    });
   },
 };
 

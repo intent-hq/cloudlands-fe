@@ -193,10 +193,12 @@
             destinationPath,
           });
 
-          const resolution = await promptFileConflict(
-            file.name,
-            (request) => (webConflictPrompt = request),
-          );
+          const resolution = await promptFileConflict(file.name, (request) => {
+            // Settle any still-pending request as 'skip' before replacing it so
+            // its awaiting drop loop can never be orphaned mid-iteration.
+            webConflictPrompt?.resolve(0);
+            webConflictPrompt = request;
+          });
 
           if (resolution === 'skip') {
             logger.info('User chose to skip existing file', { fileName: file.name });

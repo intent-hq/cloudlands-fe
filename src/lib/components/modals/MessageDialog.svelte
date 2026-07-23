@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import Portal from '$lib/components/ui/Portal.svelte';
   import Fa from 'svelte-fa';
   import { faXmark, faExclamationTriangle, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
 
@@ -10,7 +11,7 @@
     type?: 'info' | 'warning' | 'error';
     /** One button per label; selection reports the label's index. */
     buttons: string[];
-    /** Index reported when the dialog is dismissed (Escape / backdrop / X). */
+    /** Index reported when the dialog is dismissed (Escape / X). */
     cancelIndex?: number;
     onSelect?: (buttonIndex: number) => void;
   }
@@ -41,85 +42,85 @@
     open = false;
     onSelect?.(index);
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      select(cancelIndex);
-    }
-  }
 </script>
 
 {#if open}
-  <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="presentation"
-    onkeydown={handleKeydown}
-    onclick={() => select(cancelIndex)}
-  >
+  <!--
+    Render through Portal so the overlay escapes any clipping/stacking ancestor
+    (this dialog is mounted deep inside the resizable-panel/sidebar tree), same
+    as Modal and PullConflictDialog. Backdrop clicks deliberately do NOT
+    dismiss: like a native message box, an alertdialog demands an explicit
+    choice — dismissal is Escape or the X button only.
+  -->
+  <Portal target="body" zIndex={10000}>
     <div
-      bind:this={dialogRef}
-      class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
-      onclick={(e) => e.stopPropagation()}
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="message-dialog-title"
-      aria-describedby="message-dialog-description"
-      tabindex="-1"
-      onkeydown={(e) => {
-        e.stopPropagation();
-        if (e.key === 'Escape') {
-          select(cancelIndex);
-        }
-      }}
+      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      role="presentation"
     >
-      <!-- Header -->
-      <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          {#if type === 'error'}
-            <div class="text-red-600 dark:text-red-500">
-              <Fa icon={faExclamationTriangle} size="lg" />
-            </div>
-          {:else if type === 'warning'}
-            <div class="text-amber-600 dark:text-amber-500">
-              <Fa icon={faExclamationTriangle} size="lg" />
-            </div>
-          {:else}
-            <div class="text-subtle">
-              <Fa icon={faCircleInfo} size="lg" />
-            </div>
-          {/if}
-          <h2 id="message-dialog-title" class="text-lg font-semibold">{title}</h2>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onclick={() => select(cancelIndex)}
-          aria-label="Close message dialog"
-        >
-          <Fa icon={faXmark} />
-        </Button>
-      </div>
-
-      <!-- Content -->
-      <div class="p-6">
-        <p id="message-dialog-description" class="text-sm text-subtle">{message}</p>
-      </div>
-
-      <!-- Footer -->
-      <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        {#each buttons as label, index (index)}
+      <div
+        bind:this={dialogRef}
+        class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="message-dialog-title"
+        aria-describedby="message-dialog-description"
+        tabindex="-1"
+        onkeydown={(e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            select(cancelIndex);
+          }
+        }}
+      >
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            {#if type === 'error'}
+              <div class="text-red-600 dark:text-red-500">
+                <Fa icon={faExclamationTriangle} size="lg" />
+              </div>
+            {:else if type === 'warning'}
+              <div class="text-amber-600 dark:text-amber-500">
+                <Fa icon={faExclamationTriangle} size="lg" />
+              </div>
+            {:else}
+              <div class="text-subtle">
+                <Fa icon={faCircleInfo} size="lg" />
+              </div>
+            {/if}
+            <h2 id="message-dialog-title" class="text-lg font-semibold">{title}</h2>
+          </div>
           <Button
-            variant={index === cancelIndex
-              ? 'ghost'
-              : index === buttons.length - 1
-                ? 'default'
-                : 'outline'}
-            onclick={() => select(index)}
+            variant="ghost"
+            size="icon"
+            onclick={() => select(cancelIndex)}
+            aria-label="Close message dialog"
           >
-            {label}
+            <Fa icon={faXmark} />
           </Button>
-        {/each}
+        </div>
+
+        <!-- Content -->
+        <div class="p-6">
+          <p id="message-dialog-description" class="text-sm text-subtle">{message}</p>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
+          {#each buttons as label, index (index)}
+            <Button
+              variant={index === cancelIndex
+                ? 'ghost'
+                : index === buttons.length - 1
+                  ? 'default'
+                  : 'outline'}
+              onclick={() => select(index)}
+            >
+              {label}
+            </Button>
+          {/each}
+        </div>
       </div>
     </div>
-  </div>
+  </Portal>
 {/if}
