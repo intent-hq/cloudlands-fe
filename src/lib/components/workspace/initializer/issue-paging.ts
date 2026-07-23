@@ -94,6 +94,9 @@ export function createPagedSource<T>(config: PagedSourceConfig<T>): PagedSource<
       nextToken = page.nextToken;
     } catch (error) {
       if (gen !== generation) return;
+      // The stored cursor belongs to the previous query/list; drop it so a
+      // later loadMore() can't paginate with a mismatched token.
+      nextToken = null;
       config.onError?.(error);
     } finally {
       if (gen === generation) {

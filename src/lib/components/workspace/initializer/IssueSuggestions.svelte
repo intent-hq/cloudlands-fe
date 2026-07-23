@@ -783,7 +783,10 @@
       // Fetch both assigned and created issues for grouping
       await Promise.all([linearAssignedPager.refresh(''), linearCreatedPager.refresh('')]);
 
-      // Update cache (initial unfiltered page only)
+      // Update cache (initial unfiltered page only); pager state may have
+      // been superseded while this was in flight, but the assigned/created
+      // pagers only ever hold the default listing, so the state is safe to
+      // cache as long as no newer load replaced it (generation guard).
       issueCache.linear = {
         data: {
           assigned: linearAssignedPager.state.items,
@@ -951,8 +954,11 @@
         try {
           await githubIssuesPager.refresh(query);
 
-          // Update cache (initial unfiltered page only)
-          if (query === '') {
+          // Update cache (initial unfiltered page only). Re-check the
+          // committed query: a search may have superseded this load while it
+          // was in flight, in which case the pager state belongs to the
+          // search and must not be cached as the unfiltered listing.
+          if (query === '' && committedQueries['github-issues'] === '') {
             issueCache.github = {
               data: {
                 issues: githubIssuesPager.state.items,
@@ -1092,8 +1098,11 @@
           // 2. Fetch fresh data (pager reads githubPRFilter at call time)
           await githubPRsPager.refresh(query);
 
-          // 3. Update cache (initial unfiltered page only)
-          if (query === '') {
+          // 3. Update cache (initial unfiltered page only). Re-check the
+          // committed query and filter: a search or filter switch may have
+          // superseded this load while it was in flight, in which case the
+          // pager state must not be cached under this filter's listing.
+          if (query === '' && committedQueries['github-prs'] === '' && githubPRFilter === filter) {
             setCachedPRs(
               repositoryOwner,
               repositoryName,

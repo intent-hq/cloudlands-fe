@@ -128,6 +128,21 @@ describe('createPagedSource', () => {
     expect(source.state.isFetching).toBe(false);
   });
 
+  it('clears a stale nextToken when a refresh fails', async () => {
+    const fetchPage = vi
+      .fn<(q: string, t: string | null) => Promise<PageResult<Item>>>()
+      .mockResolvedValueOnce({ items: [item('a')], nextToken: 'old-token' })
+      .mockRejectedValueOnce(new Error('boom'));
+    const source = createPagedSource<Item>({ getId: (i) => i.id, fetchPage, onError: vi.fn() });
+
+    await source.refresh('old');
+    await source.refresh('new');
+
+    expect(source.state.nextToken).toBeNull();
+    await source.loadMore();
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
+
   it('seed primes items and token and dedupes', () => {
     const source = createPagedSource<Item>({
       getId: (i) => i.id,
