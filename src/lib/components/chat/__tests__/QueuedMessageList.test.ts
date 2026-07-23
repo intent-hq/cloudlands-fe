@@ -434,8 +434,11 @@ describe('QueuedMessageList', () => {
       const tooltips = buttonTooltips(container);
       expect(tooltips.filter((t) => t === 'Remove')).toHaveLength(1);
       expect(tooltips.filter((t) => t === 'Edit')).toHaveLength(1);
+      // Every thumbnail button is a view-only affordance
       for (const button of thumbnails(container)) {
-        expect(button.querySelector('button')).toBeNull();
+        expect(button.getAttribute('aria-label')).toMatch(
+          /^View attached image \d+ of \d+ full size$/,
+        );
       }
     });
 
