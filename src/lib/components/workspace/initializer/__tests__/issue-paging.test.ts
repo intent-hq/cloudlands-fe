@@ -66,7 +66,7 @@ describe('createPagedSource', () => {
     expect(source.state.nextToken).toBeNull();
   });
 
-  it('loadMore is a no-op when exhausted or already in flight', async () => {
+  it('loadMore is a no-op when exhausted', async () => {
     const fetchPage = vi
       .fn<(q: string, t: string | null) => Promise<PageResult<Item>>>()
       .mockResolvedValue({ items: [item('a')], nextToken: null });
@@ -75,6 +75,37 @@ describe('createPagedSource', () => {
     await source.refresh('');
     await source.loadMore();
     expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('loadMore is a no-op while another loadMore is in flight', async () => {
+    const slow = deferred<PageResult<Item>>();
+    const fetchPage = vi
+      .fn<(q: string, t: string | null) => Promise<PageResult<Item>>>()
+      .mockResolvedValueOnce({ items: [item('a')], nextToken: 't1' })
+      .mockReturnValueOnce(slow.promise);
+    const source = createPagedSource<Item>({ getId: (i) => i.id, fetchPage });
+
+    await source.refresh('');
+    const first = source.loadMore();
+    await source.loadMore();
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    slow.resolve({ items: [item('b')], nextToken: null });
+    await first;
+    expect(source.state.items.map((i) => i.id)).toEqual(['a', 'b']);
+  });
+
+  it('loadMore is a no-op while a refresh is in flight', async () => {
+    const slow = deferred<PageResult<Item>>();
+    const fetchPage = vi
+      .fn<(q: string, t: string | null) => Promise<PageResult<Item>>>()
+      .mockReturnValueOnce(slow.promise);
+    const source = createPagedSource<Item>({ getId: (i) => i.id, fetchPage });
+
+    const refreshing = source.refresh('q');
+    await source.loadMore();
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    slow.resolve({ items: [item('a')], nextToken: 't1' });
+    await refreshing;
   });
 
   it('discards out-of-order responses from a superseded refresh', async () => {
@@ -128,7 +159,7 @@ describe('createPagedSource', () => {
     expect(source.state.isFetching).toBe(false);
   });
 
-  it('clears a stale nextToken when a refresh fails', async () => {
+  it('clears stale items and nextToken when a refresh fails', async () => {
     const fetchPage = vi
       .fn<(q: string, t: string | null) => Promise<PageResult<Item>>>()
       .mockResolvedValueOnce({ items: [item('a')], nextToken: 'old-token' })
@@ -138,9 +169,44 @@ describe('createPagedSource', () => {
     await source.refresh('old');
     await source.refresh('new');
 
+    expect(source.state.items).toEqual([]);
     expect(source.state.nextToken).toBeNull();
     await source.loadMore();
     expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops the cursor when loadMore fails (no retry storm from the sentinel)', async () => {
+    const fetchPage = vi
+      .fn<(q: string, t: string | null) => Promise<PageResult<Item>>>()
+      .mockResolvedValueOnce({ items: [item('a')], nextToken: 't1' })
+      .mockRejectedValueOnce(new Error('rate limited'));
+    const onError = vi.fn();
+    const source = createPagedSource<Item>({ getId: (i) => i.id, fetchPage, onError });
+
+    await source.refresh('');
+    await source.loadMore();
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(source.state.items.map((i) => i.id)).toEqual(['a']);
+    expect(source.state.nextToken).toBeNull();
+    await source.loadMore();
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('refresh resolves true when applied and false when failed or superseded', async () => {
+    const slow = deferred<PageResult<Item>>();
+    const fetchPage = vi
+      .fn<(q: string, t: string | null) => Promise<PageResult<Item>>>()
+      .mockReturnValueOnce(slow.promise)
+      .mockResolvedValueOnce({ items: [item('b')], nextToken: null })
+      .mockRejectedValueOnce(new Error('boom'));
+    const source = createPagedSource<Item>({ getId: (i) => i.id, fetchPage, onError: vi.fn() });
+
+    const superseded = source.refresh('one');
+    await expect(source.refresh('two')).resolves.toBe(true);
+    slow.resolve({ items: [item('a')], nextToken: null });
+    await expect(superseded).resolves.toBe(false);
+    await expect(source.refresh('three')).resolves.toBe(false);
   });
 
   it('seed primes items and token and dedupes', () => {

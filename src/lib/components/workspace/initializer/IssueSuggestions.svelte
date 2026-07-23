@@ -781,21 +781,24 @@
       }
 
       // Fetch both assigned and created issues for grouping
-      await Promise.all([linearAssignedPager.refresh(''), linearCreatedPager.refresh('')]);
+      const [assignedApplied, createdApplied] = await Promise.all([
+        linearAssignedPager.refresh(''),
+        linearCreatedPager.refresh(''),
+      ]);
 
-      // Update cache (initial unfiltered page only); pager state may have
-      // been superseded while this was in flight, but the assigned/created
-      // pagers only ever hold the default listing, so the state is safe to
-      // cache as long as no newer load replaced it (generation guard).
-      issueCache.linear = {
-        data: {
-          assigned: linearAssignedPager.state.items,
-          created: linearCreatedPager.state.items,
-          assignedNextToken: linearAssignedPager.state.nextToken,
-          createdNextToken: linearCreatedPager.state.nextToken,
-        },
-        timestamp: Date.now(),
-      };
+      // Update cache (initial unfiltered page only); only when both fetches
+      // were applied (not failed / superseded by a newer load)
+      if (assignedApplied && createdApplied) {
+        issueCache.linear = {
+          data: {
+            assigned: linearAssignedPager.state.items,
+            created: linearCreatedPager.state.items,
+            assignedNextToken: linearAssignedPager.state.nextToken,
+            createdNextToken: linearCreatedPager.state.nextToken,
+          },
+          timestamp: Date.now(),
+        };
+      }
 
       logger.debug('Loaded Linear issues', {
         assigned: linearAssignedPager.state.items.length,
@@ -829,11 +832,11 @@
         isLoadingSentry = true;
       }
 
-      await sentryPager.refresh('');
+      const applied = await sentryPager.refresh('');
 
-      // Update cache (initial unfiltered page only); skip if a search
-      // superseded this load while it was in flight
-      if (committedQueries['sentry'] === '') {
+      // Update cache (initial unfiltered page only); skip if this fetch
+      // failed or a search superseded it while in flight
+      if (applied && committedQueries['sentry'] === '') {
         issueCache.sentry = {
           data: { issues: sentryPager.state.items, nextToken: sentryPager.state.nextToken },
           timestamp: Date.now(),
@@ -952,13 +955,13 @@
         }
 
         try {
-          await githubIssuesPager.refresh(query);
+          const applied = await githubIssuesPager.refresh(query);
 
-          // Update cache (initial unfiltered page only). Re-check the
-          // committed query: a search may have superseded this load while it
-          // was in flight, in which case the pager state belongs to the
-          // search and must not be cached as the unfiltered listing.
-          if (query === '' && committedQueries['github-issues'] === '') {
+          // Update cache (initial unfiltered page only). `applied` is false
+          // when the fetch failed or a newer refresh (e.g. a committed
+          // search) superseded it; the committed-query re-check guards the
+          // window after apply where a search commits before this write.
+          if (applied && query === '' && committedQueries['github-issues'] === '') {
             issueCache.github = {
               data: {
                 issues: githubIssuesPager.state.items,
@@ -1096,13 +1099,18 @@
 
         try {
           // 2. Fetch fresh data (pager reads githubPRFilter at call time)
-          await githubPRsPager.refresh(query);
+          const applied = await githubPRsPager.refresh(query);
 
-          // 3. Update cache (initial unfiltered page only). Re-check the
-          // committed query and filter: a search or filter switch may have
-          // superseded this load while it was in flight, in which case the
-          // pager state must not be cached under this filter's listing.
-          if (query === '' && committedQueries['github-prs'] === '' && githubPRFilter === filter) {
+          // 3. Update cache (initial unfiltered page only). `applied` is
+          // false when the fetch failed or was superseded; the committed
+          // query + filter re-checks guard the window after apply where a
+          // search or filter switch commits before this write.
+          if (
+            applied &&
+            query === '' &&
+            committedQueries['github-prs'] === '' &&
+            githubPRFilter === filter
+          ) {
             setCachedPRs(
               repositoryOwner,
               repositoryName,

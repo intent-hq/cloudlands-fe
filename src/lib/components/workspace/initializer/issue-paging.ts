@@ -32,8 +32,12 @@ export interface PagedSourceConfig<T> {
 }
 
 export interface PagedSource<T> {
-  /** Replace the list with a fresh first page for `query`. */
-  refresh(query: string): Promise<void>;
+  /**
+   * Replace the list with a fresh first page for `query`. Resolves `true`
+   * when the page was applied, `false` when the request failed or was
+   * superseded by a newer `refresh()`/`seed()`/`reset()`.
+   */
+  refresh(query: string): Promise<boolean>;
   /** Append the next page (no-op when exhausted or a fetch is in flight). */
   loadMore(): Promise<void>;
   /** Prime state without fetching (e.g. from a cache). Invalidates in-flight requests. */
@@ -81,7 +85,7 @@ export function createPagedSource<T>(config: PagedSourceConfig<T>): PagedSource<
     config.onChange?.({ items, nextToken, isFetching, isLoadingMore });
   }
 
-  async function refresh(newQuery: string): Promise<void> {
+  async function refresh(newQuery: string): Promise<boolean> {
     const gen = ++generation;
     query = newQuery;
     isFetching = true;
@@ -89,15 +93,19 @@ export function createPagedSource<T>(config: PagedSourceConfig<T>): PagedSource<
     emit();
     try {
       const page = await config.fetchPage(newQuery, null);
-      if (gen !== generation) return;
+      if (gen !== generation) return false;
       items = dedupeById(page.items, config.getId);
       nextToken = page.nextToken;
+      return true;
     } catch (error) {
-      if (gen !== generation) return;
-      // The stored cursor belongs to the previous query/list; drop it so a
-      // later loadMore() can't paginate with a mismatched token.
+      if (gen !== generation) return false;
+      // The stale items and cursor belong to the previous query/list; drop
+      // them so the old listing isn't presented as results for the new query
+      // and a later loadMore() can't paginate with a mismatched token.
+      items = [];
       nextToken = null;
       config.onError?.(error);
+      return false;
     } finally {
       if (gen === generation) {
         isFetching = false;
@@ -119,6 +127,10 @@ export function createPagedSource<T>(config: PagedSourceConfig<T>): PagedSource<
       nextToken = page.nextToken;
     } catch (error) {
       if (gen !== generation) return;
+      // Latch: drop the cursor so a still-intersecting sentinel can't hammer
+      // a persistently failing endpoint. Pagination resumes after the next
+      // refresh()/seed() (query, source, or filter change).
+      nextToken = null;
       config.onError?.(error);
     } finally {
       if (gen === generation) {
