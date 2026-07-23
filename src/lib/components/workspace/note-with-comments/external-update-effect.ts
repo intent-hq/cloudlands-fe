@@ -23,7 +23,6 @@ export function shouldSafetyNetTrigger({
   lastSafetyNetSyncedContent,
   isInitialized,
   isUserTyping,
-  hasUserEditedSinceLastSave,
   isUpdatingFromExternal,
 }: {
   reduxContent: string | undefined;
@@ -31,13 +30,19 @@ export function shouldSafetyNetTrigger({
   lastSafetyNetSyncedContent: string | undefined;
   isInitialized: boolean;
   isUserTyping: boolean;
-  hasUserEditedSinceLastSave: boolean;
   isUpdatingFromExternal: boolean;
 }): boolean {
   if (reduxContent === undefined) {
     return false;
   }
-  if (!isInitialized || isUserTyping || hasUserEditedSinceLastSave) {
+  // NOTE: hasUserEditedSinceLastSave intentionally does NOT gate the safety-net.
+  // The flag latches on the first local edit and is only cleared by a successful
+  // external apply, so gating on it permanently disconnected open editors from
+  // server-side note growth (stale-editor incident: comment.add sent unfindable
+  // context; debounced saves tripped the daemon's content-reduction guard).
+  // Protecting genuinely-unsaved edits is the job of
+  // shouldRejectExternalUpdateDueToUnsavedEdits downstream in the pipeline.
+  if (!isInitialized || isUserTyping) {
     return false;
   }
   if (isUpdatingFromExternal) {
@@ -243,16 +248,18 @@ export function runExternalContentUpdateEffect({
       const editor = getEditor();
       if (!editor || editor.isDestroyed) return;
 
-      // CRITICAL: Check if user has made actual edits since last save
-      // We use a flag-based approach instead of content comparison because:
-      // - HTML→Markdown conversion can produce slightly different output
-      // - This caused false positives where agent updates were rejected
+      // CRITICAL: Check if user has genuinely-unsaved edits before applying.
+      // The guard combines the hasUserEditedSinceLastSave flag (fast path) with a
+      // content comparison against lastKnownContent, because the flag alone
+      // latches on the first local edit and cannot distinguish "unsaved edits"
+      // from "saved edits + stale editor".
       //
       // Scenario: User types "A" → saves → types "B" → external update arrives with "A"
-      // We should reject the external update because user has typed since last save
+      // Editor ("AB") differs from both lastKnownContent and the incoming content,
+      // so the update is rejected and the user's typing is preserved.
       //
-      // But if agent updates note and user hasn't typed, we should accept the update
-      // even if there are minor formatting differences in the markdown
+      // Scenario: User types "A" → saves → agent appends server-side ("A + more")
+      // Editor matches lastKnownContent ("A"), so the grown content is applied.
       if (
         shouldRejectExternalUpdateDueToUnsavedEdits({
           hasUserEditedSinceLastSave: getHasUserEditedSinceLastSave(),
