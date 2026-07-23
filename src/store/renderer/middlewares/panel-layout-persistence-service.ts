@@ -230,9 +230,24 @@ function loadStoredLayout(wsId: string): WorkspacePanelLayout | "invalid" | null
   return isStoredLayoutValid(stored) ? stored : "invalid";
 }
 
+function hasAnyTab(panels: WorkspacePanelLayout["panels"]): boolean {
+  return Object.values(panels).some((panel) => panel.tabs.length > 0);
+}
+
 function persistToLocalStorage(state: StoreState, wsId: string): void {
   const ws = state.panelLayout.byWorkspaceId[wsId];
   if (!ws) return;
+  // Pre-restore clobber guard: any persist action dispatched for a workspace
+  // before its once-per-session restore runs lazily creates an empty (tab-less)
+  // workspace state in the reducer. Persisting that would overwrite a good
+  // stored layout with a valid-but-empty one, losing the user's tabs (e.g. the
+  // initial agent tab of a freshly created workspace). Skip the write when the
+  // workspace hasn't been restored this session, the state has no tabs, and a
+  // valid non-empty layout is already stored.
+  if (!restoredWorkspaceIds.has(wsId) && !hasAnyTab(ws.panels)) {
+    const stored = loadStoredLayout(wsId);
+    if (stored !== null && stored !== "invalid" && hasAnyTab(stored.panels)) return;
+  }
   const layout: WorkspacePanelLayout = {
     root: ws.root,
     panels: ws.panels,
