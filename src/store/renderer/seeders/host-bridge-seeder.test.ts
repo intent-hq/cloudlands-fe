@@ -503,7 +503,38 @@ describe("host-bridge-seeder", () => {
     const hostExecCalls = () =>
       mockedRequest.mock.calls.filter(([method]) => method === "host.exec");
 
-    it("wraps the shell-form command via `/bin/sh -c` with cwd folded into the script on a POSIX daemon host (regression: web folded to the disabled-allowlist failure)", async () => {
+    it("passes cwd + workspaceId wire-native (no cd wrapper) so the daemon containment guard runs (monorepo#537)", async () => {
+      routeDaemon({
+        "system.status": localHost("macos"),
+        "host.exec": { stdout: "[main abc1234] amended\n", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: 'git commit --amend -m "fix: typo"',
+        cwd: "/Users/alex/code/project",
+        workspaceId: "ws-1",
+      });
+
+      expect(hostExecCalls()).toEqual([
+        [
+          "host.exec",
+          {
+            command: "/bin/sh",
+            args: ["-c", 'git commit --amend -m "fix: typo"'],
+            cwd: "/Users/alex/code/project",
+            workspaceId: "ws-1",
+            timeoutMs: 30_000,
+          },
+          { timeoutMs: 35_000 },
+        ],
+      ]);
+      expect(response).toEqual({
+        success: true,
+        data: { stdout: "[main abc1234] amended\n", stderr: "", code: 0 },
+      });
+    });
+
+    it("wraps the shell-form command via `/bin/sh -c` with cwd folded into the script for legacy cwd-only payloads on a POSIX daemon host (regression: web folded to the disabled-allowlist failure)", async () => {
       routeDaemon({
         "system.status": localHost("macos"),
         "host.exec": { stdout: "[main abc1234] amended\n", stderr: "", exitCode: 0 },
@@ -562,6 +593,25 @@ describe("host-bridge-seeder", () => {
       expect(hostExecCalls()[0][1]).toEqual({
         command: "/bin/sh",
         args: ["-c", "git --version"],
+        timeoutMs: 30_000,
+      });
+    });
+
+    it("forwards workspaceId even without cwd (Electron-handler parity; inert on the wire per §5.14)", async () => {
+      routeDaemon({
+        "system.status": localHost("macos"),
+        "host.exec": { stdout: "ok\n", stderr: "", exitCode: 0 },
+      });
+
+      await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git --version",
+        workspaceId: "ws-1",
+      });
+
+      expect(hostExecCalls()[0][1]).toEqual({
+        command: "/bin/sh",
+        args: ["-c", "git --version"],
+        workspaceId: "ws-1",
         timeoutMs: 30_000,
       });
     });
