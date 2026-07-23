@@ -357,7 +357,21 @@ export interface AgentsClient {
     content: string;
     model?: string;
   }): Promise<MutationResult>;
-  queue(agentId: string, message: string): Promise<MutationResult>;
+  /**
+   * Queue a message behind the agent's in-flight turn (`agent.queueMessage`,
+   * §5.5). Optional `imageBlocks` (same shape as `force`) are only forwarded
+   * when supplied so queued attachments survive queue-on-send. The daemon
+   * returns `{ success, queuedMessage }`, surfaced as `queuedMessage` on the
+   * MutationResult. Transport / daemon errors fold into
+   * `{ success: false, error }` — this method never throws.
+   */
+  queue(
+    agentId: string,
+    message: string,
+    options?: {
+      imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+    },
+  ): Promise<MutationResult>;
   /**
    * Edit a queued message in place (`agent.editQueuedMessage`, §5.5). The
    * daemon returns `{ success, queuedMessage }` (QueuedMessage shape as

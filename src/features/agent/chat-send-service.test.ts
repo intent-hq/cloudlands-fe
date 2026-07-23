@@ -189,6 +189,51 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(agentsQueue).toHaveBeenCalledWith(AGENT, "queue me");
   });
 
+  it("queue-on-send: forwards imageBlocks to agents.queue so attachments survive queuing (§5.5)", async () => {
+    // PROTOCOL §5.5: agent.queueMessage accepts optional imageBlocks. The
+    // queue-on-send branch must pass the composer's attachments through the
+    // seam (options object, mirroring the force-send shape) — otherwise
+    // images are silently dropped when the agent is mid-turn.
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    const imageBlocks = [{ type: "image" as const, data: "aGVsbG8=", mimeType: "image/png" }];
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "queue me", imageBlocks }));
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
+    expect(agentsQueue).toHaveBeenCalledWith(AGENT, "queue me", { imageBlocks });
+  });
+
+  it("queue-on-send: retains imageBlocks from the PROTOCOL-shaped queuedMessage response in the agent-queue slice", async () => {
+    // Mock a PROTOCOL §5.5-shaped `{ success, queuedMessage }` response where
+    // the daemon echoes the persisted imageBlocks; the slice entry seeded via
+    // replaceAgentQueue must retain them so QueuedMessageList can render the
+    // thumbnail without an extra hydration round trip.
+    seedSession({ isResponding: true, status: AgentStatus.Active });
+    const imageBlocks = [{ type: "image" as const, data: "aGVsbG8=", mimeType: "image/png" }];
+    const queued: QueuedMessage = {
+      id: "q-img-1",
+      content: "queue me",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+      imageBlocks,
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queued }),
+    );
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "queue me", imageBlocks }));
+    await flush();
+    await flush();
+
+    const stored = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.id).toBe("q-img-1");
+    expect(stored[0]?.imageBlocks).toEqual(imageBlocks);
+  });
+
   it("queue-on-send: seeds the local agent-queue slice from the returned queuedMessage", async () => {
     // The seam returns the persisted queue entry on success; the service
     // must dispatch replaceAgentQueue so the queued-UI lights up immediately
