@@ -1,8 +1,7 @@
 /**
- * Dependency-light POSIX shell single-quoting, shared by the host IPC bridge
- * seeder (legacy cwd-only `cd` fallback) and CommitsTimeline's amend command
- * (monorepo#579). Extracted per AGENTS.md: utility functions must not be
- * exported from orchestration modules.
+ * Dependency-light POSIX shell single-quoting (monorepo#579). Extracted per
+ * AGENTS.md: utility functions must not be exported from orchestration
+ * modules.
  *
  * Single quotes make the shell take the value fully literally — no `$VAR`
  * expansion, no backtick/`$(...)` command substitution, no `\` processing —

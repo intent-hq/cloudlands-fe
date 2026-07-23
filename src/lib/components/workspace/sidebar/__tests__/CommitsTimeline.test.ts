@@ -507,7 +507,8 @@ describe('CommitsTimeline', () => {
     mockInvoke.mockResolvedValue({ success: true });
 
     const { container } = await renderTimeline();
-    const hostile = 'fix: handle `rm -rf /tmp` and $(whoami) with "double" and \'single\' quotes';
+    const hostile =
+      'fix: handle `rm -rf /tmp` and $(whoami) with "double" and \'single\' quotes and back\\slash';
     await editCommitMessage(container, 'feat: one', hostile);
 
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
@@ -515,7 +516,7 @@ describe('CommitsTimeline', () => {
       [
         SYSTEM_CHANNELS.EXECUTE_COMMAND,
         {
-          command: `git commit --amend -m 'fix: handle \`rm -rf /tmp\` and $(whoami) with "double" and '\\''single'\\'' quotes'`,
+          command: `git commit --amend -m 'fix: handle \`rm -rf /tmp\` and $(whoami) with "double" and '\\''single'\\'' quotes and back\\slash'`,
           cwd: '/repo',
           workspaceId: 'ws-1',
         },
