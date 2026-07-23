@@ -85,6 +85,7 @@
   canAmendCommit as canAmendCommitUtil,
 } from './sidebar-changes-utils';
   import { store as appStore } from '$store/renderer/store';
+  import { posixSingleQuote } from '$lib/utils/posix-single-quote';
 
 
   interface Props {
@@ -303,9 +304,12 @@
       if (commit && trimmed !== commit.message) {
         try {
           const wasPushed = commit.isPushed;
-          const escapedMessage = trimmed.replace(/"/g, '\\"').replace(/\$/g, '\\$');
+          // Single-quote the message so the shell takes it literally — double-quote
+          // escaping left backticks live for command substitution (monorepo#579).
+          // Caveat: POSIX-only; a cmd.exe daemon host does not honor single quotes
+          // (same accepted limitation as the host-bridge-seeder cwd fallback).
           const result = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
-            command: `git commit --amend -m "${escapedMessage}"`,
+            command: `git commit --amend -m ${posixSingleQuote(trimmed)}`,
             cwd: gitPath,
             workspaceId,
           })) as { success: boolean; error?: string };

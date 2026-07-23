@@ -27,6 +27,7 @@ import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { openExternalUrl } from "$lib/utils/open-external";
+import { posixSingleQuote } from "$lib/utils/posix-single-quote";
 import { EDITOR_REGISTRY } from "$shared/editors/editor-registry";
 import type { InstalledEditor } from "$store/renderer/slices/external-editors/external-editors-slice";
 
@@ -322,11 +323,6 @@ const EXECUTE_COMMAND_TIMEOUT_MS = 30_000;
  * structured non-zero-exit / `timedOut` result wins over a client-side
  * `JSON-RPC request timed out` rejection (shell-reveal-bridge-seeder idiom). */
 const EXECUTE_COMMAND_TRANSPORT_HEADROOM_MS = 5_000;
-
-/** POSIX single-quote `value` so the shell takes it literally (' → '\''). */
-function posixSingleQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
 
 /**
  * Legacy fallback ONLY, for payloads that carry `cwd` but no `workspaceId`:
