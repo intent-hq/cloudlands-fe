@@ -8,10 +8,12 @@
 #   this repo (the changelog anchor; user-facing artifacts stay on
 #   `intent-hq/cloudlands-releases`).
 #
-# The action authenticates with the RELEASE_PAT secret (a PAT with contents +
-# pull-requests write access) instead of the default GITHUB_TOKEN: tags and
-# PRs created with GITHUB_TOKEN do not trigger other workflows, and the
-# release build must fire on the tag push.
+# The action authenticates with the RELEASE_PAT secret instead of the default
+# GITHUB_TOKEN: tags and PRs created with GITHUB_TOKEN do not trigger other
+# workflows, and the release build must fire on the tag push. The PAT needs
+# contents, pull-requests, AND issues write access (release-please labels its
+# Release PRs via the issues API); the existing classic `repo`-scoped
+# RELEASE_PAT covers all three.
 
 name: Release-please
 

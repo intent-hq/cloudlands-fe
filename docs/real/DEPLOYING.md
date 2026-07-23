@@ -29,7 +29,9 @@ version number by hand.
 3. On the merge, release-please creates the `v{version}` tag and a GitHub
    Release on `cloudlands-fe`. The workflow authenticates with `RELEASE_PAT`
    (not the default `GITHUB_TOKEN`) so the pushed tag triggers downstream
-   workflows.
+   workflows. release-please needs contents, pull-requests, and issues write
+   access (Release-PR labels go through the issues API); the classic
+   `repo`-scoped `RELEASE_PAT` covers all three.
 
 **Version math** (the app is ≥ 1.0, so full semver rules apply):
 
@@ -82,7 +84,7 @@ Release workflows require the following secrets configured on `intent-hq/cloudla
 - `CLOUDLANDS_APPLE_TEAM_ID` — 10-character team ID
 
 **Repository access:**
-- `RELEASE_PAT` — Personal access token with `repo` scope on `cloudlands-fe` + `cloudlands-releases`
+- `RELEASE_PAT` — Personal access token with `repo` scope on `cloudlands-fe` + `cloudlands-releases` (also used by release-please, which needs contents + pull-requests + issues write; `repo` scope covers all three)
 - `INTENTD_READ_PAT` — Personal access token with read-only access to `intent-hq/intentd` (used to download the pinned intentd release assets while the repo is private)
 
 ## Beta Release Workflow
