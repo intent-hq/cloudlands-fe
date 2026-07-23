@@ -56,10 +56,8 @@
 } from '$store/renderer/slices/model/model-utils';
 
   import {
-  getDefaultProviderId,
   getProviderConfig,
   parseCompoundModelId,
-  resolvePreferredModel,
 } from '$shared/config/provider-config';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
@@ -69,7 +67,10 @@
 } from './model-picker-provider-errors';
   import { buildGroupedModelOptions } from './model-picker-groups';
   import {
+  findModelFallbackOption,
+  isProviderEnabled,
   isUserProviderSettled,
+  normalizeModelIdForMatch,
   toDropdownOptions,
 } from './model-picker-utils';
   import { cn } from '$lib/utils';
@@ -594,9 +595,7 @@
   };
 
   const isEffectiveProviderEnabled = $derived(
-    $enabledProviderIds$.some(
-      (pid) => getProviderConfig(pid).id === getProviderConfig(effectiveProviderId).id,
-    ),
+    isProviderEnabled($enabledProviderIds$, effectiveProviderId),
   );
 
   const flatModelOptions = $derived<DropdownOption[]>([
@@ -707,19 +706,6 @@
     })),
   );
 
-  // Normalize a model ID for equivalence comparison: strip the default-provider
-  // prefix so `auggie:sonnet4.6` matches bare `sonnet4.6` (and vice versa) when
-  // `auggie` is the default provider. Non-default-provider prefixes are preserved
-  // so `opencode:foo` still only matches the compound form.
-  function normalizeModelIdForMatch(modelId: string): string {
-    const defaultId = getDefaultProviderId();
-    const prefix = `${defaultId}:`;
-    if (modelId.startsWith(prefix)) {
-      return modelId.slice(prefix.length);
-    }
-    return modelId;
-  }
-
   const isSelectedModelUnavailable = $derived.by(() => {
     if (isLoadingModels) return false;
     if (!isAgentProviderOverride && !allProvidersLoaded) return false;
@@ -781,22 +767,14 @@
     return null;
   });
 
-  /** Find the best fallback option: preference list → globally selected model → first available */
   function findFallbackOption(restrictToProvider?: string): DropdownOption | undefined {
-    let candidates = flatModelOptions.filter((opt) => opt.value !== USE_DEFAULT_VALUE);
-
-    if (restrictToProvider) {
-      candidates = candidates.filter((opt) => {
-        const { providerId: optProvider } = parseCompoundModelId(opt.value);
-        return optProvider === restrictToProvider;
-      });
-    }
-
-    const optionValues = candidates.map((opt) => opt.value);
-    const preferredValue = resolvePreferredModel(MODEL_DEFAULTS.UI_MODEL_PREFERENCE, optionValues);
-    return preferredValue
-      ? candidates.find((opt) => opt.value === preferredValue)
-      : (candidates.find((opt) => opt.value === $selectedModel$) ?? candidates[0]);
+    return findModelFallbackOption({
+      options: flatModelOptions,
+      excludeValue: USE_DEFAULT_VALUE,
+      restrictToProvider,
+      preferredModels: MODEL_DEFAULTS.UI_MODEL_PREFERENCE,
+      globallySelectedModel: $selectedModel$,
+    });
   }
 
   // Auto-fallback: When the selected model becomes unavailable, automatically switch to an available model.
