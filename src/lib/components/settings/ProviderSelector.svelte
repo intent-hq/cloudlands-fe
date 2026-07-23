@@ -17,6 +17,7 @@
   selectActiveProviderId,
   selectEnabledProviders,
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
   setActiveProvider,
   setProviderEnabled,
@@ -61,6 +62,7 @@
   const logger = createLogger('ProviderSelector');
   const activeProviderId = selectActiveProviderId();
   const enabledProviders$ = selectEnabledProviders();
+  const providerInUseReasons$ = selectProviderInUseReasons();
 
   // Provider availability state
   let providerAvailability: ProviderAvailabilityResult | null = $state(null);
@@ -234,6 +236,15 @@
   }
 
   function handleToggleProvider(providerId: string, enabled: boolean) {
+    if (!enabled) {
+      const reason = $providerInUseReasons$[providerId];
+      if (reason) {
+        toast.error(`Cannot disable ${ACP_PROVIDERS[providerId]?.displayName || providerId}`, {
+          description: reason,
+        });
+        return;
+      }
+    }
     appStore.dispatch(setProviderEnabled({ providerId, enabled }));
   }
 
@@ -578,6 +589,7 @@
       {@const isAuggieEnabled = isProviderEnabled('auggie')}
       {@const isAuggieReady = isProviderReadyForUse('auggie')}
       {@const canManageAuggieEnablement = canManageProviderEnablement('auggie')}
+      {@const auggieInUseReason = $providerInUseReasons$['auggie'] ?? null}
       {#if auggieProvider}
         <div class="flex items-start justify-between gap-4">
           <div class="space-y-1">
@@ -646,7 +658,11 @@
             {#if canManageAuggieEnablement && !isAuggieActive && isAuggieEnabled}
               <button
                 type="button"
-                class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors font-medium"
+                class="font-medium transition-colors {auggieInUseReason
+                  ? 'text-muted-foreground/50 cursor-not-allowed'
+                  : 'text-muted-foreground hover:text-foreground cursor-pointer'}"
+                disabled={!!auggieInUseReason}
+                title={auggieInUseReason ?? undefined}
                 onclick={() => handleToggleProvider('auggie', false)}
               >
                 Disable
@@ -719,6 +735,7 @@
       {@const isEnabled = isProviderEnabled(provider.id)}
       {@const isReady = isProviderReadyForUse(provider.id)}
       {@const canManageEnablement = canManageProviderEnablement(provider.id)}
+      {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
       <div>
         <div class="flex items-start justify-between gap-4">
           <div class="space-y-1">
@@ -813,7 +830,11 @@
               {#if canManageEnablement && !isActive && isEnabled}
                 <button
                   type="button"
-                  class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors font-medium"
+                  class="font-medium transition-colors {inUseReason
+                    ? 'text-muted-foreground/50 cursor-not-allowed'
+                    : 'text-muted-foreground hover:text-foreground cursor-pointer'}"
+                  disabled={!!inUseReason}
+                  title={inUseReason ?? undefined}
                   onclick={() => handleToggleProvider(provider.id, false)}
                 >
                   Disable
