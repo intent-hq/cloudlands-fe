@@ -147,15 +147,30 @@ describe('StreamManager lifecycle retention cleanup', () => {
     expect(manager.getSession(agentId)).toBeNull();
   });
 
-  it('clears its cleanup and health-check intervals on dispose', () => {
-    // Unrelated timers may exist in the fake-timer scope (e.g. from other
-    // module imports), so assert the delta rather than an absolute count:
-    // dispose() must clear exactly the two manager intervals.
-    const before = vi.getTimerCount();
-    expect(before).toBeGreaterThanOrEqual(2);
-
+  it('clears its cleanup and health-check intervals on dispose', async () => {
+    // Global timer counts are non-deterministic in CI (other environment
+    // timers shift them), so capture the exact interval handles the manager
+    // creates during construction and assert dispose() clears those handles.
     manager.dispose();
+    vi.resetModules();
 
-    expect(vi.getTimerCount()).toBe(before - 2);
+    const setIntervalSpy = vi.spyOn(global, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(global, 'clearInterval');
+    try {
+      const mod = await import('../stream-manager');
+      manager = mod.StreamManager.getInstance();
+
+      const managerIntervals = setIntervalSpy.mock.results.map((result) => result.value);
+      expect(managerIntervals).toHaveLength(2);
+
+      manager.dispose();
+
+      for (const handle of managerIntervals) {
+        expect(clearIntervalSpy).toHaveBeenCalledWith(handle);
+      }
+    } finally {
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+    }
   });
 });
