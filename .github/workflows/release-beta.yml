@@ -1,10 +1,13 @@
 name: Release Beta
 
 on:
+  push:
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version number (e.g., 1.0.0)'
+      tag:
+        description: 'Existing tag to (re)build (e.g., v2.1.0)'
         required: true
         type: string
 
@@ -22,16 +25,31 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Validate version format
+      # Tags are created by release-please when its Release PR merges; this resolves
+      # the tag from the push event, or from the workflow_dispatch fallback input
+      # used to (re)build an existing tag.
+      - name: Resolve release tag
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSHED_TAG: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          VERSION="${{ inputs.version }}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]]; then
-            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g., 1.2.3 or 1.2.3-beta.1)"
+          if [ "$EVENT_NAME" = "push" ]; then
+            TAG="$PUSHED_TAG"
+          else
+            TAG="$INPUT_TAG"
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "::error::Invalid tag '$TAG'. Expected v<semver> (e.g., v1.2.3 or v1.2.3-beta.1)"
             exit 1
           fi
-          echo "Version $VERSION is valid"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${TAG} (version ${VERSION})"
 
-      # Use RELEASE_PAT to push to protected branches and publish to cloudlands-releases
+      # Use RELEASE_PAT to publish to cloudlands-releases
       - name: Configure git token
         id: token
         env:
@@ -46,29 +64,43 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout cloudlands-fe main
+      - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: refs/tags/${{ steps.release.outputs.tag }}
           token: ${{ steps.token.outputs.token }}
 
-      # Captured before the version-bump commit is created so release notes can use a SHA
-      # that exists on origin (the local bump commit is unpushed and 404s on the compare API)
+      # The tag commit exists on origin, so release notes can use its SHA with the
+      # compare API
       - name: Capture fe SHA for release notes
         id: fe_info
         run: |
           FE_SHA=$(git rev-parse HEAD)
           echo "sha=${FE_SHA}" >> "$GITHUB_OUTPUT"
-          echo "Captured fe SHA (pre version-bump): ${FE_SHA}"
+          echo "Captured fe SHA (tag commit): ${FE_SHA}"
 
-      - name: Check for duplicate version tag
+      # Guards against tags not created by release-please: release-please tags the
+      # version-bump commit, so the tag and package.json always agree
+      - name: Verify tag matches package.json version
         run: |
-          VERSION="${{ inputs.version }}"
-          if git ls-remote --tags origin | grep -qF "refs/tags/v${VERSION}"; then
-            echo "::error::Tag v${VERSION} already exists on origin. Use a different version number."
+          VERSION="${{ steps.release.outputs.version }}"
+          PKG_VERSION=$(jq -r .version package.json)
+          if [ "$PKG_VERSION" != "$VERSION" ]; then
+            echo "::error::Tag v${VERSION} does not match package.json version ${PKG_VERSION} at this commit. Release tags must point at the release-please version-bump commit."
             exit 1
           fi
-          echo "Tag v${VERSION} does not exist, proceeding with release"
+          echo "Tag v${VERSION} matches package.json version"
+
+      - name: Check for duplicate release
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          if gh release view "v${VERSION}" --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+            echo "::error::Release v${VERSION} already exists on intent-hq/cloudlands-releases. Delete it there first to rebuild this tag."
+            exit 1
+          fi
+          echo "No existing v${VERSION} release on intent-hq/cloudlands-releases, proceeding"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -113,17 +145,6 @@ jobs:
           INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
         run: node scripts/fetch-sidecar.cjs
 
-      - name: Set version in package.json
-        run: pnpm run version:set "${{ inputs.version }}"
-
-      - name: Commit version bump and create tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json
-          git commit -m "chore: bump version to ${{ inputs.version }}"
-          git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
-
       - name: Import code signing certificate
         env:
           MACOS_CERTIFICATE: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
@@ -166,7 +187,7 @@ jobs:
           # RELEASE_PAT has repo scope on cloudlands-releases; keeps INTENTD_READ_PAT
           # scoped to downloading intentd release assets only
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           # Find the previous versioned release (highest vX.Y.Z tag strictly less than current version)
           # Node.js performs portable semver comparison (BSD sort lacks -V)
@@ -221,7 +242,7 @@ jobs:
       - name: Generate release notes
         env:
           FE_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_VERSION: ${{ steps.intentd_pin.outputs.version }}
           FE_HEAD_SHA: ${{ steps.fe_info.outputs.sha }}
@@ -231,9 +252,8 @@ jobs:
             exit 1
           fi
 
-          # FE head is the pre-version-bump SHA captured at checkout: it exists on origin
-          # (unlike the local bump commit, which 404s on the compare API) and keeps the
-          # version-bump commit out of the notes
+          # FE head is the tag commit captured at checkout; it exists on origin so the
+          # compare API can resolve it
 
           echo "Generating release notes: ${PREV_FE_TAG}...v${VERSION}"
           echo "  FE: ${PREV_FE_TAG}...${FE_HEAD_SHA}"
@@ -253,7 +273,7 @@ jobs:
       - name: Publish to GitHub Releases (versioned tag)
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           # Create an immutable versioned release on intent-hq/cloudlands-releases
           gh release create "v${VERSION}" \
@@ -271,7 +291,7 @@ jobs:
       - name: Publish to GitHub Releases (rolling beta tag)
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           # Ensure the rolling 'beta' release tag exists
           if ! gh release view beta --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
@@ -302,52 +322,9 @@ jobs:
           gh release edit beta --repo intent-hq/cloudlands-releases \
             --notes-file release-notes.md
 
-      - name: Push tag to cloudlands-fe
-        run: |
-          VERSION="${{ inputs.version }}"
-          git push origin "refs/tags/v${VERSION}"
-        env:
-          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
-
-      - name: Open version-bump PR to main
-        env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          BRANCH="release/v${VERSION}-version-bump"
-
-          # Push version-bump commit to feature branch (force-push for idempotency)
-          git push origin "HEAD:${BRANCH}" --force
-
-          # Check if PR already exists for this branch
-          EXISTING_PR=$(gh pr list --repo intent-hq/cloudlands-fe --head "${BRANCH}" --json number --jq '.[0].number // empty')
-
-          if [ -n "$EXISTING_PR" ]; then
-            echo "PR #${EXISTING_PR} already exists for branch ${BRANCH}"
-            echo "Branch was force-pushed with updated commit"
-          else
-            # Create new PR
-            gh pr create \
-              --repo intent-hq/cloudlands-fe \
-              --base main \
-              --head "${BRANCH}" \
-              --title "chore: bump version to ${VERSION}" \
-              --body "Automated version bump to v${VERSION} from release workflow.
-
-          **Note:** The tag \`v${VERSION}\` points to the workflow commit on this branch. After merging, the tag will reference this branch's commit, not the merge commit on main.
-
-          **Release artifacts:**
-          - [Versioned release](https://github.com/intent-hq/cloudlands-releases/releases/tag/v${VERSION})
-          - [Rolling beta channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/beta)
-
-          Triggered by workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
-            echo "Created PR for version bump to ${VERSION}"
-          fi
-
       - name: Post summary
         run: |
-          VERSION="${{ inputs.version }}"
+          VERSION="${{ steps.release.outputs.version }}"
           # Derive actual DMG filename from dist-electron and URL-encode it
           DMG_FILE=$(find dist-electron -maxdepth 1 -name "*.dmg" -exec basename {} \; -quit)
           DMG_ENCODED=$(printf '%s' "$DMG_FILE" | jq -sRr @uri)

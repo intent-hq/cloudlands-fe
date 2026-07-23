@@ -13,7 +13,8 @@ Releases are built and published by the **Release Beta** workflow in GitHub Acti
 5. Publishes artifacts to `intent-hq/cloudlands-releases` on GitHub, including:
    - DMG installer, ZIP archive, blockmap files, and `latest-mac.yml` (auto-updater feed)
    - `release-manifest.json` — metadata capturing the fe tag/SHA and the pinned `intentdVersion`
-6. Opens a version-bump PR to update `package.json` on the `main` branch
+
+The workflow is triggered by a `v*.*.*` tag push (created by release-please when its Release PR is merged) — it does not bump versions, create tags, or open version-bump PRs itself.
 
 No tags are pushed to `intent-hq/intentd`. To ship a newer intentd, update the `intentd.version` pin on `main` via a normal PR before cutting the release.
 
@@ -40,13 +41,15 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
 
 ## Cutting a Beta Release
 
-1. **Trigger the workflow**
+1. **Merge the release-please Release PR**
 
-   Go to [Actions > Release Beta](https://github.com/intent-hq/cloudlands-fe/actions/workflows/release-beta.yml) and click "Run workflow".
+   The **Release Beta** workflow triggers automatically when a `v*.*.*` tag is pushed. Tags are created by release-please when its Release PR (which bumps `package.json` and updates the changelog) is merged — releasing is a matter of merging that PR, not typing a version.
 
-   Enter the version number in semver format (e.g., `2.0.5`). The workflow validates the format and checks that the tag doesn't already exist.
+   The workflow validates the tag format, verifies the tag matches the `package.json` version at the tagged commit, and fails if a `v{version}` release already exists on `intent-hq/cloudlands-releases`.
 
-   The bundled intentd version comes from the `intentd.version` pin on `main` — there are no intentd-related workflow inputs. Make sure the pinned release exists on `intent-hq/intentd` (with assets for the build targets) before triggering, or the workflow will fail fast at the fetch step.
+   To rebuild an **existing** tag (e.g., after a transient build failure), use the `workflow_dispatch` fallback: go to [Actions > Release Beta](https://github.com/intent-hq/cloudlands-fe/actions/workflows/release-beta.yml), click "Run workflow", and enter the existing tag (e.g., `v2.1.0`). Note the duplicate-release guard: delete the failed `v{version}` release on `cloudlands-releases` first if it was partially published.
+
+   The bundled intentd version comes from the `intentd.version` pin at the tagged commit — there are no intentd-related workflow inputs. Make sure the pinned release exists on `intent-hq/intentd` (with assets for the build targets) before releasing, or the workflow will fail fast at the fetch step.
 
 2. **Wait for the build**
 
@@ -83,26 +86,6 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
    # Check the beta feed
    curl -sL https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml | grep version
    ```
-
-5. **Merge the version-bump PR**
-
-   The workflow automatically opens a PR to bump `package.json` to the new version. Review and merge it:
-
-   ```bash
-   # List open PRs
-   gh pr list --repo intent-hq/cloudlands-fe
-
-   # Review the version-bump PR
-   gh pr view <PR-number> --repo intent-hq/cloudlands-fe
-
-   # Wait for CI to pass
-   gh pr checks <PR-number> --repo intent-hq/cloudlands-fe --watch
-
-   # Merge the PR (the v<version> tag points to the commit on the release branch, not the merge commit)
-   gh pr merge <PR-number> --repo intent-hq/cloudlands-fe --squash --delete-branch
-   ```
-
-   **Note:** The `v<version>` tag was created by the workflow and points to the version-bump commit on the release branch (`release/v<version>-version-bump`), not the squashed merge commit on `main`. This is expected — the tag references the exact commit that was built and released.
 
 ## Promoting to Stable
 
@@ -164,13 +147,12 @@ After verifying a beta release, promote it to the stable channel using the **Rel
 
 ### RELEASE_PAT Permissions
 
-**Symptom:** "Open version-bump PR to main" step fails with a permissions error, or the workflow completes but no PR is visible.
+**Symptom:** A publish step fails with a permissions error (e.g., "Publish to GitHub Releases").
 
 **Fix:** The `RELEASE_PAT` is missing required permissions:
-- For cloudlands-fe PRs: `Pull requests: Read and write` (fine-grained) or `repo` scope (classic)
 - For cloudlands-releases publishing: `Contents: Read and write` (fine-grained) or `repo` scope (classic)
 
-Update the token's permissions in GitHub settings. Note: the workflow is idempotent and will re-use an existing PR if the branch already exists.
+Update the token's permissions in GitHub settings.
 
 ### Build Fails During Notarization
 
@@ -178,11 +160,11 @@ Update the token's permissions in GitHub settings. Note: the workflow is idempot
 
 **Fix:** Check that `CLOUDLANDS_APPLE_ID` and `CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD` are correct. The app-specific password must be generated in your Apple ID account settings.
 
-### Duplicate Version Tag
+### Duplicate Release
 
-**Symptom:** "Tag v<version> already exists on origin" error (on cloudlands-fe).
+**Symptom:** "Release v<version> already exists on intent-hq/cloudlands-releases" error.
 
-**Fix:** A release with this version already exists. Use a different version number or delete the existing tag if it was created in error.
+**Fix:** The tag was already built and published. To rebuild it (e.g., after a partial publish), delete the `v{version}` release on `intent-hq/cloudlands-releases` first, then re-run via the `workflow_dispatch` fallback with the existing tag.
 
 ### Release Notes Generation Fails
 
