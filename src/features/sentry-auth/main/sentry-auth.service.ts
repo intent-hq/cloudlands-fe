@@ -13,6 +13,7 @@ import type {
   SentryAuthState,
   SentryConfig,
   SentryIssue,
+  SentryIssuePage,
   SentryIssueResult,
   SentryProject,
 } from '../types';
@@ -193,12 +194,15 @@ export class SentryAuthService {
   }
 
   /**
-   * Fetch issues for the configured organization
+   * Fetch issues for the configured organization. Returns the
+   * `{ issues, nextToken }` page envelope; `nextToken` carries Sentry's
+   * opaque `cursor` for the next page (from the `Link` response header),
+   * or `null` on the last page.
    */
-  async fetchIssues(request: FetchIssuesRequest = {}): Promise<SentryIssueResult[]> {
+  async fetchIssues(request: FetchIssuesRequest = {}): Promise<SentryIssuePage> {
     if (!this.config) {
       logger.warn('Cannot fetch issues - not authenticated');
-      return [];
+      return { issues: [], nextToken: null };
     }
 
     try {
@@ -225,21 +229,38 @@ export class SentryAuthService {
       // Limit results
       params.set('limit', String(request.limit || 100));
 
-      const endpoint = `/organizations/${this.config.organization}/issues/?${params.toString()}`;
-      const issues = await this.apiCall(endpoint);
+      // Resume from a previous page's cursor
+      if (request.nextToken) {
+        params.set('cursor', request.nextToken);
+      }
 
-      return issues.map((issue: SentryIssue) => this.mapIssueToResult(issue));
+      const endpoint = `/organizations/${this.config.organization}/issues/?${params.toString()}`;
+      const { body: issues, nextToken } = await this.apiCallPaginated(endpoint);
+
+      return {
+        issues: issues.map((issue: SentryIssue) => this.mapIssueToResult(issue)),
+        nextToken,
+      };
     } catch (error) {
       logger.error('Failed to fetch Sentry issues', error as Error);
-      return [];
+      return { issues: [], nextToken: null };
     }
   }
 
   /**
    * Search issues by query
    */
-  async searchIssues(query: string, project?: string): Promise<SentryIssueResult[]> {
-    return this.fetchIssues({ query, project, limit: 50 });
+  async searchIssues(
+    query: string,
+    project?: string,
+    options?: { limit?: number; nextToken?: string },
+  ): Promise<SentryIssuePage> {
+    return this.fetchIssues({
+      query,
+      project,
+      limit: options?.limit ?? 50,
+      nextToken: options?.nextToken,
+    });
   }
 
   /**
@@ -263,6 +284,24 @@ export class SentryAuthService {
    * Make an authenticated API call to Sentry
    */
   private async apiCall(endpoint: string): Promise<any> {
+    return (await this.apiCallRaw(endpoint)).json();
+  }
+
+  /**
+   * Like `apiCall`, but also extracts the next-page cursor from Sentry's
+   * `Link` response header (`rel="next"; results="true"; cursor="…"`).
+   */
+  private async apiCallPaginated(endpoint: string): Promise<{ body: any; nextToken: string | null }> {
+    const response = await this.apiCallRaw(endpoint);
+    const link = response.headers.get('link') ?? '';
+    const nextSegment = link
+      .split(',')
+      .find((segment) => segment.includes('rel="next"') && segment.includes('results="true"'));
+    const cursorMatch = nextSegment?.match(/cursor="([^"]+)"/);
+    return { body: await response.json(), nextToken: cursorMatch?.[1] ?? null };
+  }
+
+  private async apiCallRaw(endpoint: string): Promise<Response> {
     if (!this.config) {
       throw new Error('Not authenticated with Sentry');
     }
@@ -280,7 +319,7 @@ export class SentryAuthService {
       throw new Error(`Sentry API error: ${response.status} ${response.statusText}`);
     }
 
-    return response.json();
+    return response;
   }
 
   /**

@@ -53,7 +53,8 @@ export function setupSentryAuthIPC(): void {
     }
   });
 
-  // Fetch issues for a project or organization
+  // Fetch issues for a project or organization; returns the
+  // { issues, nextToken } page envelope
   ipcMain.handle(
     SENTRY_AUTH_CHANNELS.FETCH_ISSUES,
     async (_event, request?: FetchIssuesRequest) => {
@@ -61,20 +62,23 @@ export function setupSentryAuthIPC(): void {
         return await sentryAuthService.fetchIssues(request);
       } catch (error) {
         logger.error('Failed to fetch Sentry issues', error as Error);
-        return [];
+        return { issues: [], nextToken: null };
       }
     },
   );
 
-  // Search issues by query
+  // Search issues by query; returns the { issues, nextToken } page envelope
   ipcMain.handle(
     SENTRY_AUTH_CHANNELS.SEARCH_ISSUES,
-    async (_event, data: { query: string; project?: string }) => {
+    async (_event, data: { query: string; project?: string; limit?: number; nextToken?: string }) => {
       try {
-        return await sentryAuthService.searchIssues(data.query, data.project);
+        return await sentryAuthService.searchIssues(data.query, data.project, {
+          limit: data.limit,
+          nextToken: data.nextToken,
+        });
       } catch (error) {
         logger.error('Failed to search Sentry issues', error as Error);
-        return [];
+        return { issues: [], nextToken: null };
       }
     },
   );
