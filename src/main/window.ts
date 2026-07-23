@@ -122,23 +122,45 @@ function buildWindowOptions(opts: {
   };
 }
 
+// Bounds for the renderer-console forwarder: per-message size cap and
+// consecutive-duplicate suppression keep console-output.log bounded even
+// under tight-loop console spam.
+const RENDERER_CONSOLE_MAX_MESSAGE_CHARS = 4096;
+
 /**
  * Forward renderer console warnings/errors into the main-process log so they
  * land in {userData}/logs/console-output.log (via setupConsoleLogCapture) and
  * debug exports. Closes the diagnosability gap where renderer-only breadcrumbs
  * (e.g. failed comment.add evidence) were invisible in persistent logs.
- * Info/debug/verbose messages are intentionally not forwarded to keep the log
- * file bounded.
+ * Info/debug/verbose messages are intentionally not forwarded, messages are
+ * truncated to a few KB, and consecutive duplicates are counted instead of
+ * re-written, to keep the log file bounded.
  */
-function forwardRendererConsoleToMainLog(window: BrowserWindowType): void {
+export function forwardRendererConsoleToMainLog(window: BrowserWindowType): void {
+  let lastLine = '';
+  let suppressed = 0;
   window.webContents.on('console-message', (details) => {
     const { level, message, sourceId, lineNumber } = details;
     if (level !== 'warning' && level !== 'error') return;
     const origin = `${sourceId || 'renderer'}:${lineNumber}`;
+    const bounded =
+      message.length > RENDERER_CONSOLE_MAX_MESSAGE_CHARS
+        ? `${message.slice(0, RENDERER_CONSOLE_MAX_MESSAGE_CHARS)}… [truncated ${message.length - RENDERER_CONSOLE_MAX_MESSAGE_CHARS} chars]`
+        : message;
+    const line = `[RendererConsole] ${bounded} (${origin})`;
+    if (line === lastLine) {
+      suppressed += 1;
+      return;
+    }
+    if (suppressed > 0) {
+      logger.warn(`[RendererConsole] previous message repeated ${suppressed} more time(s)`);
+      suppressed = 0;
+    }
+    lastLine = line;
     if (level === 'error') {
-      logger.error(`[RendererConsole] ${message} (${origin})`);
+      logger.error(line);
     } else {
-      logger.warn(`[RendererConsole] ${message} (${origin})`);
+      logger.warn(line);
     }
   });
 }

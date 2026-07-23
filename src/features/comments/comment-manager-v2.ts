@@ -952,6 +952,13 @@ export class CommentManagerV2 {
           editorTextLength: this.editor.state.doc.textContent.length,
         })}`,
       );
+      // The write service rolled the optimistic comment back out of the store;
+      // mirror that in the editor so the just-inserted invisible anchors are
+      // not serialized into the note as debris for a comment that never
+      // persisted.
+      this.editor.chain().removeCommentAnchors(addedComment.id).run();
+      this.updateDecorations();
+      return null;
     }
 
     // Update decorations

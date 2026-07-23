@@ -12,12 +12,17 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const storeControl = vi.hoisted(() => ({ reset: () => {} }));
+
 vi.mock('$store/renderer/store', async () => {
   const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
   const { commentsReducer, initialState } = await vi.importActual<
     typeof import('$store/renderer/slices/comments/comments-slice')
   >('$store/renderer/slices/comments/comments-slice');
   let state = { comments: initialState };
+  storeControl.reset = () => {
+    state = { comments: initialState };
+  };
   const readable = <T>(getter: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
       listener(getter());
@@ -60,10 +65,7 @@ vi.mock('../comments-write-service', () => ({
 }));
 
 import { Editor } from '@tiptap/core';
-import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
-import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
-import { MentionFromSpan, mentionRenderText } from '$lib/utils/editor-config';
+import { createEditorConfig, mentionRenderText } from '$lib/utils/editor-config';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { CommentManagerV2 } from '../comment-manager-v2';
 import * as commentsWrite from '../comments-write-service';
@@ -79,35 +81,51 @@ const SPEC_V16_EXCERPT =
   '[#490](https://github.com/intent-hq/monorepo/issues/490) filed+closed; ' +
   '@KNOWN_ISSUES.md was retired on main in favor of GitHub issues).';
 
-function createEditor(html: string): Editor {
+// Build the editor from the production config (markdown + mentions + comments
+// branch) so the regression guard covers the real wiring — including the
+// `renderText` this PR adds to the Mention configuration — not a test-local
+// extension set.
+function createEditor(html: string): { editor: Editor; container: HTMLElement } {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  return new Editor({
-    element: container,
-    extensions: [
-      StarterKit.configure({ link: false }),
-      Link,
-      CommentAnchor,
-      MentionFromSpan.configure({ renderText: mentionRenderText }),
-    ],
-    content: html,
-  });
+  const editor = new Editor(
+    createEditorConfig({
+      element: container,
+      content: html,
+      editable: true,
+      onUpdate: () => {},
+      useMarkdown: true,
+      enableComments: true,
+      useNewCommentSystem: true,
+      workspace: { id: 'comment-add' },
+      enableMentions: true,
+    }),
+  );
+  return { editor, container };
 }
 
 describe('comment.add params with mention chips in the selection', () => {
   let editor: Editor;
+  let container: HTMLElement;
   let manager: CommentManagerV2;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    storeControl.reset();
     const html = await processMarkdownToHTML(SPEC_V16_EXCERPT);
-    editor = createEditor(html);
+    ({ editor, container } = createEditor(html));
     manager = new CommentManagerV2('comment-add', 'spec');
     await manager.initialize(editor);
   });
 
   afterEach(() => {
     editor.destroy();
+    container.remove();
+  });
+
+  it('production editor config wires mention renderText in both branches', () => {
+    const mention = editor.extensionManager.extensions.find((e) => e.name === 'mention');
+    expect(mention?.options.renderText).toBe(mentionRenderText);
   });
 
   it('renders the excerpt with a mention atom for @KNOWN_ISSUES.md', () => {
@@ -138,5 +156,36 @@ describe('comment.add params with mention chips in the selection', () => {
     // Link text must survive extraction so the daemon's plaintext projection
     // (which keeps link text, drops the URL) can match.
     expect(params.commentTarget).toContain('#359');
+  });
+
+  it('on persist failure: logs one bounded [CommentDiag] line, scrubs anchors, returns null', async () => {
+    vi.mocked(commentsWrite.addComment).mockResolvedValueOnce(false);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    editor.commands.setTextSelection({ from: 1, to: editor.state.doc.content.size - 1 });
+
+    const added = await manager.addComment('needs follow-up');
+    expect(added).toBeNull();
+
+    // One single-string console.error line (the main-process forwarder relays
+    // message text only), carrying bounded snippets — never full note text.
+    const diagCalls = errorSpy.mock.calls.filter(
+      (args) => typeof args[0] === 'string' && args[0].startsWith('[CommentDiag]'),
+    );
+    expect(diagCalls).toHaveLength(1);
+    expect(diagCalls[0]).toHaveLength(1);
+    const diag = JSON.parse((diagCalls[0][0] as string).replace('[CommentDiag] comment.add failed ', ''));
+    expect(diag.noteId).toBe('spec');
+    expect(diag.searchContextHead.length).toBeLessThanOrEqual(24);
+    expect(diag.searchContextTail.length).toBeLessThanOrEqual(24);
+    expect(diag.commentTargetLength).toBeGreaterThan(0);
+
+    // The just-inserted invisible anchors were rolled back with the store.
+    let anchorCount = 0;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'commentAnchor') anchorCount += 1;
+      return true;
+    });
+    expect(anchorCount).toBe(0);
+    errorSpy.mockRestore();
   });
 });

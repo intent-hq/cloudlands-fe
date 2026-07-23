@@ -816,6 +816,7 @@ export function setupSystemIPC() {
   async function createAppWindow(route?: string): Promise<BrowserWindow> {
     const { BrowserWindow } = await import('electron');
     const path = await import('path');
+    const { forwardRendererConsoleToMainLog } = await import('../../../main/window');
 
     const isDarkMode = nativeTheme.shouldUseDarkColors;
     const newWindow = new BrowserWindow({
@@ -840,6 +841,7 @@ export function setupSystemIPC() {
       title: 'Intent',
       backgroundColor: isDarkMode ? '#0a0a0a' : '#ffffff',
     });
+    forwardRendererConsoleToMainLog(newWindow);
 
     newWindow.once('ready-to-show', () => {
       newWindow.show();

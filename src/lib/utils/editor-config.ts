@@ -1,5 +1,6 @@
 import type { EditorOptions } from '@tiptap/core';
 import { Extension } from '@tiptap/core';
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Mention from '@tiptap/extension-mention';
@@ -135,7 +136,7 @@ export const MentionFromSpan = Mention.extend({
  * extraction (TipTap `getTextBetween`, markdown round-trips) reproduces the
  * note's source text instead of dropping the atom node.
  */
-export const mentionRenderText = ({ node }: { node: any }): string => {
+export const mentionRenderText = ({ node }: { node: ProseMirrorNode }): string => {
   const data = node.attrs || {};
   try {
     return toPromptToken({
