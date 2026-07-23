@@ -8,6 +8,11 @@
  * file-backed entries into their store slices happens in the seeder. Reads
  * fold transport failures to an empty list so the specialist picker falls
  * back to the hardcoded `SPECIALISTS` constant instead of breaking.
+ *
+ * The daemon watches the user/project specialist tiers and emits
+ * `specialists:changed` (payload `{ workspaceId }`) when the resolved set
+ * changes; `subscribe` listens for that event and refetches — mirroring
+ * `live-skills-client.ts`. No FE-side filesystem watching.
  */
 import type {
   AppClient,
@@ -16,7 +21,20 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
-import { backendRequest } from "./backend-transport";
+import {
+  backendRequest,
+  backendSubscribe,
+  backendUnsubscribe,
+  onBackendNotification,
+} from "./backend-transport";
+
+/**
+ * Trailing debounce applied to `specialists:changed` bursts so one refetch
+ * serves e.g. a multi-file save (the daemon already debounces per workspace,
+ * but a user-tier change fans out one event per open workspace and
+ * `specialist.list` is global — one refetch covers them all).
+ */
+const REFETCH_DEBOUNCE_MS = 100;
 
 export class LiveSpecialistsClient implements SpecialistsClient {
   async list(): Promise<SpecialistDef[]> {
@@ -31,14 +49,54 @@ export class LiveSpecialistsClient implements SpecialistsClient {
   }
 
   subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe {
-    // No `specialist:*` change events exist on the wire yet (PROTOCOL §6), so
-    // the subscription is a one-shot snapshot of the current resolved view.
-    let cancelled = false;
+    // Subscribe to `specialists:changed` — emitted when the daemon detects a
+    // create/modify/delete under a specialist tier it watches. The payload
+    // carries `{ workspaceId }`, but `specialist.list` is global, so events
+    // are debounced into a single refetch and the workspaceId is not needed.
+    let disposed = false;
+    let subscriptionId: string | undefined;
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+    // Initial snapshot: emit the current resolved view.
     void this.list().then((specialists) => {
-      if (!cancelled) handler(specialists);
+      if (!disposed) handler(specialists);
     });
+
+    // Register daemon subscription. Guard the late-resolving case: if the
+    // subscriber disposed while registration was in flight, release the id
+    // instead of leaking the daemon-side subscription.
+    backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ["specialists:changed"] })
+      .then((result) => {
+        subscriptionId = result?.subscriptionId;
+        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+      })
+      .catch(() => {
+        // Without a daemon subscription we stay with the one-shot snapshot.
+      });
+
+    // Listen for specialists:changed events and refetch the resolved view,
+    // coalescing bursts into one `specialist.list` call.
+    const removeNotificationListener = onBackendNotification((n) => {
+      if (n.method === "specialists:changed" && !disposed) {
+        if (debounceTimer !== undefined) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          debounceTimer = undefined;
+          // `list()` folds failures to [] (picker falls back to SPECIALISTS).
+          void this.list().then((specialists) => {
+            if (!disposed) handler(specialists);
+          });
+        }, REFETCH_DEBOUNCE_MS);
+      }
+    });
+
     return () => {
-      cancelled = true;
+      disposed = true;
+      if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+      }
+      removeNotificationListener();
+      if (subscriptionId) void backendUnsubscribe(subscriptionId);
     };
   }
 

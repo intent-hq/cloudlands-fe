@@ -117,6 +117,7 @@
   import '$store/renderer/seeders';
   import { startGitStatusSubscription } from '$features/git/git-status-subscription';
   import { startWorkspaceListSubscription } from '$features/workspace/workspace-list-subscription';
+  import { startSpecialistsListSubscription } from '$features/specialists/specialists-list-subscription';
   import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
   import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
@@ -130,10 +131,13 @@
     const stopGitStatusSubscription = startGitStatusSubscription();
     // Live-update the workspace list on daemon workspace:* events (e.g. rename).
     const stopWorkspaceListSubscription = startWorkspaceListSubscription();
+    // Live-update specialists on daemon specialists:changed events (file edits on disk).
+    const stopSpecialistsListSubscription = startSpecialistsListSubscription();
 
     return () => {
       stopGitStatusSubscription();
       stopWorkspaceListSubscription();
+      stopSpecialistsListSubscription();
       storeContext.dispose();
     };
   }

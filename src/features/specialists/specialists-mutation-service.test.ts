@@ -30,6 +30,7 @@ import {
   type FileSpecialist,
 } from "$store/renderer/slices/specialists/specialists-slice";
 import { SPECIALISTS } from "$lib/constants/specialists";
+import { dispatchSpecialistList } from "./specialists-mutation-service";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -376,6 +377,29 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       const futureEntry = bundled.find((s) => s.id === "future-specialist");
       expect(futureEntry).toBeDefined();
       expect(futureEntry?.name).toBe("Future Specialist");
+    });
+  });
+
+  describe("dispatchSpecialistList (exported for the specialists:changed live subscription)", () => {
+    it("dispatches the bundled/file split directly from a defs array (no refetch)", async () => {
+      dispatchSpecialistList([COORDINATOR_DEF, USER_DEF]);
+
+      // No wire call: the live subscription hands the already-refetched defs in.
+      expect(list).not.toHaveBeenCalled();
+
+      const state = appStore.state as {
+        specialists?: {
+          bundledSpecialists?: typeof SPECIALISTS;
+          fileSpecialists?: { map: Record<string, FileSpecialist> };
+          fileSpecialistsLoaded?: boolean;
+        };
+      };
+      // Bundled set reconstructed from SPECIALISTS overlaid with the daemon entry.
+      expect(state.specialists?.bundledSpecialists?.length).toBeGreaterThanOrEqual(
+        SPECIALISTS.length,
+      );
+      expect(state.specialists?.fileSpecialists?.map["reviewer"]).toBeDefined();
+      expect(state.specialists?.fileSpecialistsLoaded).toBe(true);
     });
   });
 });
