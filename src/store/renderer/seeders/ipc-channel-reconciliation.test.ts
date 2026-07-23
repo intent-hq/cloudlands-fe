@@ -222,11 +222,14 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     // (Threshold rebased from 200 after IPC batch 8 retired the caller-less
     // legacy clients — lib/api/{client,mcp-client,ssh-client}.ts and
     // panel-layout-history.client.ts — and their ~25 channels; rebased again
-    // from 150 after telemetry removal shrank the scan to ~150 channels, and
+    // from 150 after telemetry removal shrank the scan to ~150 channels;
     // from 140 after the legacy-surface removal — SSH/remote-fs,
     // third-party sources, patch/reference actions, native dialog pickers —
-    // shrank the scan to ~115 channels.)
-    expect(invoked.size).toBeGreaterThan(105);
+    // shrank the scan to ~115 channels; and from 105 after the agent-IPC
+    // migration deleted the renderer unifiedOrchestrator proxy and its 5
+    // queue-channel invokes — ChatPanel now calls appClient.agents.* over
+    // the live transport.)
+    expect(invoked.size).toBeGreaterThan(100);
     // git:status moved to the daemon (backendRequest('git.status'), 4C-3) and
     // git:show-file followed with D2 (backendRequest('git.showFile'));
     // git:numstat remains a local-IPC invoke (bridged via git-bridge-seeder).
@@ -717,6 +720,35 @@ const RETIRED_IPC_CHANNELS: ReadonlySet<string> = new Set([
   'agent:reset-metrics',
   'agent:get-logs',
   'agent:clear-logs',
+  // Retired AGENT_BACKEND request channels (T6 removed most of them; T7
+  // deleted the main-process handlers and retired the remainder — the whole
+  // agent:backend:* namespace is gone).
+  'agent:backend:create',
+  'agent:backend:get-status',
+  'agent:backend:cancel-stream',
+  'agent:backend:stop',
+  'agent:backend:get',
+  'agent:backend:list',
+  'agent:backend:delete',
+  'agent:backend:isActive',
+  'agent:backend:resume',
+  'agent:backend:check-process',
+  'agent:backend:reconnect',
+  'agent:backend:resume-stream',
+  'agent:backend:get-checkpoint',
+  'agent:backend:stream-message',
+  'agent:backend:queue-message',
+  'agent:backend:edit-queued',
+  'agent:backend:remove-queued',
+  'agent:backend:get-queue',
+  'agent:backend:force-message',
+  // Retired agent event channels (no producer since the daemon IPC migration;
+  // the wake-handshake and backend-health fan-out went with
+  // ConsolidatedBackendService).
+  'agent:stream-starting',
+  'agent:prepare-handler',
+  'agent:handler-ready',
+  'health:check',
 ]);
 
 describe('Retired file-tracking / line-attribution / file-attribution channels stay retired', () => {

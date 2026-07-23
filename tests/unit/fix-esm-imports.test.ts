@@ -27,7 +27,7 @@ describe('fix-esm-imports', () => {
         "import { gitService } from '$features/git/main/git.service';",
         "const rename = await import('$features/agent/main/agent-rename');",
         'const backend = await import(',
-        "  '$features/agent/main/consolidated-backend.service'",
+        "  '$features/agent/main/stream-manager'",
         ');',
         "const logger = await import('$shared/logger');",
         "const validator = await import('$lib/utils/workspace-validation');",
@@ -45,7 +45,7 @@ describe('fix-esm-imports', () => {
     expect(rewritten).not.toContain('$store/');
     expect(rewritten).toContain("from '../../../git/main/git.service.js'");
     expect(rewritten).toContain("import('../../../agent/main/agent-rename.js')");
-    expect(rewritten).toContain("import('../../../agent/main/consolidated-backend.service.js')");
+    expect(rewritten).toContain("import('../../../agent/main/stream-manager.js')");
     expect(rewritten).toContain("import('../../../../shared/logger.js')");
     expect(rewritten).toContain("import('../../../../lib/utils/workspace-validation.js')");
     expect(rewritten).toContain("from '../../../../store/renderer/store.js'");

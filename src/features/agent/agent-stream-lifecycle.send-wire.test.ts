@@ -2,23 +2,22 @@
  * Wire-level regression test for the chat send path (empty-transcript bug).
  *
  * Drives the REAL agent-stream-lifecycle `sendMessage()` against the REAL
- * configured store, REAL mutation middleware, REAL live-agents-client, and the
- * REAL agent IPC bridge seeder — only `backend-transport.backendRequest` is
- * mocked, returning PROTOCOL.md §5.5-shaped daemon payloads captured from a
- * live daemon (a fresh `pending` agent projection with no acpSessionId).
+ * configured store and REAL mutation middleware — only
+ * `backend-transport.backendRequest` is mocked, returning PROTOCOL.md
+ * §5.5-shaped daemon payloads captured from a live daemon (a fresh `pending`
+ * agent projection with no acpSessionId).
  *
- * Asserts the daemon receives `agent.sendMessage` with the right params when
- * the user sends the first message to a freshly created (pending) agent.
+ * `sendMessage()` calls `backendRequest("agent.sendMessage", …)` directly on
+ * the BackendTransport seam (no mock-IPC hop). Asserts the daemon receives
+ * `agent.sendMessage` with the exact PROTOCOL.md §5.5 params, and covers the
+ * success, queued ({success:true, queued:true}) and error envelopes plus
+ * transport-level rejections.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { backendRequestMock } = vi.hoisted(() => ({
   backendRequestMock: vi.fn(),
 }));
-// test-setup.ts globally fakes `$lib/electron-bridge` with canned `{success:true}`
-// responses — which HIDES a dropped send. Unmock it so the REAL invoke →
-// ipc-mock-router → bridge-seeder → backendRequest chain runs.
-vi.unmock("$lib/electron-bridge");
 vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: backendRequestMock,
   backendSubscribe: vi.fn(async () => ({})),
@@ -30,8 +29,6 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   BackendError: class BackendError extends Error {},
 }));
 
-// Register the real bridge (agent:backend:stream-message → agent.sendMessage).
-import "$store/renderer/seeders/agent-ipc-bridge-seeder";
 import { store as appStore } from "$store/renderer/store";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
 import {
@@ -135,13 +132,25 @@ describe("send path wire contract (pending agent, first message)", () => {
       workspaceId: WS,
       content: "persist me please",
     });
+    const params = sendCall[1] as Record<string, unknown>;
+    // Renderer-minted identity trio rides along (PROTOCOL.md §5.5).
+    expect(typeof params.assistantMessageId).toBe("string");
+    expect(typeof params.assistantAppMessageId).toBe("string");
+    expect(typeof params.userAppMessageId).toBe("string");
+    // Legacy-only fields the daemon ignores must no longer be sent.
+    expect(params).not.toHaveProperty("messages");
+    expect(params).not.toHaveProperty("resetHistory");
+    expect(params).not.toHaveProperty("behaviorPrompt");
+    expect(params).not.toHaveProperty("specialist");
+    expect(params).not.toHaveProperty("personality");
+    expect(params).not.toHaveProperty("sessionId");
   }, 30000);
 
-  it("handles queued response (auto-queue race) by cleaning up stream and seeding queue", async () => {
+  it("handles queued response (auto-queue race) by clearing placeholder and seeding queue", async () => {
     // Regression test for STAB-XX: when agent.sendMessage returns
     // { success: true, queued: true, queuedMessage } (auto-queue race during
     // interrupt), the FE must NOT pretend a stream is starting. It should:
-    // 1. Clean up the just-registered stream handler/placeholder
+    // 1. Clear the optimistic streaming placeholder (no stale message remains)
     // 2. Reset isStreaming flag
     // 3. Seed the local queue with queuedMessage (like chat-send-service L167-199)
     const queuedMessage: QueuedMessage = {
@@ -168,6 +177,12 @@ describe("send path wire contract (pending agent, first message)", () => {
     const session = appStore.state.agentSessions?.byAgentId[AGENT];
     expect(session?.isStreaming).toBe(false);
 
+    // Assert no stale streaming placeholder remains in the transcript
+    const stalePlaceholders = (session?.messages ?? []).filter(
+      (m) => m.role === "assistant" && m.isStreaming === true,
+    );
+    expect(stalePlaceholders).toHaveLength(0);
+
     // Assert the local queue was seeded with the queuedMessage
     const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
     expect(queueMessages).toHaveLength(1);
@@ -177,19 +192,37 @@ describe("send path wire contract (pending agent, first message)", () => {
     });
   }, 30000);
 
-  it("fails loudly (not silently) when the stream-message bridge is unregistered", async () => {
-    // Pre-#7 regression shape: `agent:backend:stream-message` had no handler,
-    // so the mock IPC router resolved to its `undefined` fallback and the send
-    // silently succeeded while the daemon never saw agent.sendMessage.
-    // NOTE: must stay the LAST test in this file — it unregisters the bridge
-    // handler and the seeder only registers at (cached) module import time.
-    const router = await import("$shared/ipc-mock-router");
-    router.unregisterMockIpcHandler("agent:backend:stream-message");
+  it("throws on a raw daemon error envelope ({success:false, error:string})", async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === "agent.get") return { agent: daemonPendingAgent };
+      if (method === "agent.sendMessage") {
+        // Daemon surfaces errors as a plain string on the raw envelope.
+        return { success: false, error: "Agent not found" };
+      }
+      return {};
+    });
+
+    await expect(
+      lifecycleSendMessage(AGENT, "will fail", workspace(), {}),
+    ).rejects.toThrow();
+    // The FE must NOT leave the UI stuck in "Thinking" after exhausting retries.
+    const session = appStore.state.agentSessions?.byAgentId[AGENT];
+    expect(session?.isStreaming).toBe(false);
+  }, 30000);
+
+  it("throws when the transport rejects (BackendError-style JSON-RPC failure)", async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === "agent.get") return { agent: daemonPendingAgent };
+      if (method === "agent.sendMessage") {
+        throw new Error("Invalid params: content is required (-32602)");
+      }
+      return {};
+    });
 
     await expect(
       lifecycleSendMessage(AGENT, "will be dropped", workspace(), {}),
     ).rejects.toThrow();
-    const calls = backendRequestMock.mock.calls.map((c) => c[0]);
-    expect(calls).not.toContain("agent.sendMessage");
+    const session = appStore.state.agentSessions?.byAgentId[AGENT];
+    expect(session?.isStreaming).toBe(false);
   }, 30000);
 });

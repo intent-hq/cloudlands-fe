@@ -17,7 +17,6 @@ import { IPC_CHANNELS } from '../ipc-registry';
 
 // Re-export organized channel constants by domain
 export const AGENT_CHANNELS = IPC_CHANNELS.AGENT;
-export const AGENT_BACKEND_CHANNELS = IPC_CHANNELS.AGENT_BACKEND;
 export const WORKSPACE_CHANNELS = IPC_CHANNELS.WORKSPACE;
 export const FILE_CHANNELS = IPC_CHANNELS.FILE;
 export const SYSTEM_CHANNELS = IPC_CHANNELS.SYSTEM;

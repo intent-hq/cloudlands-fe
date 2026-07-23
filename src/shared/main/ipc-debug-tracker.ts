@@ -240,7 +240,8 @@ class IPCDebugTracker {
       if (channel.startsWith('workspace:')) {
         suggestions[channel] = 'Check src/features/workspace/main/workspace.ipc.ts';
       } else if (channel.startsWith('agent:')) {
-        suggestions[channel] = 'Check src/features/agent/main/unified-agent-handlers.ts';
+        suggestions[channel] =
+          'Agent flows route through the intentd daemon (agent.* RPCs); check the BackendTransport seam';
       } else if (channel.startsWith('git:')) {
         suggestions[channel] = 'Check src/features/git/git.ipc.ts';
       } else if (channel.startsWith('file:')) {

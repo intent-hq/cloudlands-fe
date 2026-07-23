@@ -320,7 +320,7 @@ export const flushPendingAgentDeletionsRequested = createAsyncAction<[
   wsId: string,
 ], void>("workspaceAgents/flushPendingAgentDeletions", "workspaceAgents/flushPendingAgentDeletionsRequested");
 
-// Stream lifecycle actions (saga-only — stream state lives in stream-handler-registry.ts)
+// Stream lifecycle actions
 
 /** Request the safety timeout check after reconnect (replaces startStreamingSafetyTimeout) */
 export const triggerStreamingSafetyCheck = createAction<[confirmedActiveIds: string[]]>(

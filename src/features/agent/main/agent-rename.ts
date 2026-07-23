@@ -2,10 +2,11 @@
  * Lightweight agent-rename helper.
  *
  * Patches only the `name` and `nameExplicitlySet` fields of an agent session
- * through the daemon (`agent.update`, PROTOCOL.md §5.5), then syncs the
- * in-memory backend session and emits `agent:renamed` through Redux workspace
- * events. It is the implementation used by both the MCP `setAgentName` tool
- * and the user-triggered rename IPC handler.
+ * through the daemon (`agent.update`, PROTOCOL.md §5.5), then emits
+ * `agent:renamed` through Redux workspace events. It is the implementation
+ * used by both the MCP `setAgentName` tool and the user-triggered rename IPC
+ * handler. The daemon is the single source of session state — there is no
+ * main-process session cache to sync.
  */
 
 import { Logger } from '$shared/logger';
@@ -75,7 +76,6 @@ export async function renameAgentOnDisk(
         existingName,
         requestedName: trimmedName,
       });
-      await syncInMemorySession(agentId, existingName, true);
       return { ok: true, name: existingName, skipped: true };
     }
   }
@@ -92,8 +92,6 @@ export async function renameAgentOnDisk(
     throw new Error(msg || 'Failed to rename agent session');
   }
 
-  await syncInMemorySession(agentId, trimmedName, true);
-
   mainDispatch(
     emitWorkspaceEvent(
       createWorkspaceEvent(
@@ -106,25 +104,4 @@ export async function renameAgentOnDisk(
   );
 
   return { ok: true, name: trimmedName };
-}
-
-async function syncInMemorySession(
-  agentId: string,
-  name: string,
-  nameExplicitlySet: boolean,
-): Promise<void> {
-  try {
-    const { ConsolidatedBackendService } = await import('./consolidated-backend.service');
-    const backend = ConsolidatedBackendService.getInstance();
-    const session = backend.getSession(agentId);
-    if (session) {
-      session.name = name;
-      (session as unknown as { nameExplicitlySet?: boolean }).nameExplicitlySet = nameExplicitlySet;
-    }
-  } catch (err) {
-    logger.warn('Failed to update in-memory session for agent name', {
-      agentId,
-      error: err,
-    });
-  }
 }

@@ -50,13 +50,6 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockRequest }),
 }));
 
-const getSession = vi.fn();
-vi.mock('../consolidated-backend.service', () => ({
-  ConsolidatedBackendService: {
-    getInstance: () => ({ getSession }),
-  },
-}));
-
 describe('renameAgentOnDisk', () => {
   const workspaceId = 'ws-rename-test';
   const agentId = 'agent-rename-1';
@@ -64,13 +57,10 @@ describe('renameAgentOnDisk', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequest.mockReset();
-    getSession.mockReset();
   });
 
   it('sends agent.update with the whitelisted patch and broadcasts', async () => {
     mockRequest.mockResolvedValueOnce({ success: true });
-    const session: { name?: string; nameExplicitlySet?: boolean } = { name: 'Old Name' };
-    getSession.mockReturnValue(session);
 
     const { renameAgentOnDisk } = await import('../agent-rename');
 
@@ -83,8 +73,6 @@ describe('renameAgentOnDisk', () => {
       workspaceId,
       changes: { name: 'New Name', nameExplicitlySet: true },
     });
-    expect(session.name).toBe('New Name');
-    expect(session.nameExplicitlySet).toBe(true);
     expect(createWorkspaceEvent).toHaveBeenCalledWith('agent:renamed', workspaceId, {
       type: 'user',
       id: 'user',
@@ -108,8 +96,6 @@ describe('renameAgentOnDisk', () => {
     mockRequest.mockResolvedValueOnce({
       agent: { name: 'User Chosen', nameExplicitlySet: true },
     });
-    const session: { name?: string; nameExplicitlySet?: boolean } = { name: 'Old' };
-    getSession.mockReturnValue(session);
 
     const { renameAgentOnDisk } = await import('../agent-rename');
 
@@ -123,8 +109,6 @@ describe('renameAgentOnDisk', () => {
     expect(result).toEqual({ ok: true, name: 'User Chosen', skipped: true });
     expect(mockRequest).toHaveBeenCalledTimes(1);
     expect(mockRequest).toHaveBeenCalledWith('agent.get', { agentId, workspaceId });
-    expect(session.name).toBe('User Chosen');
-    expect(session.nameExplicitlySet).toBe(true);
     expect(mainDispatch).not.toHaveBeenCalled();
   });
 
@@ -132,7 +116,6 @@ describe('renameAgentOnDisk', () => {
     mockRequest
       .mockResolvedValueOnce({ agent: { name: 'Auto Name', nameExplicitlySet: false } })
       .mockResolvedValueOnce({ success: true });
-    getSession.mockReturnValue({ name: 'Auto Name' });
 
     const { renameAgentOnDisk } = await import('../agent-rename');
 
