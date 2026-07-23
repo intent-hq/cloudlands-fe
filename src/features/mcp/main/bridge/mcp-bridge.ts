@@ -19,7 +19,7 @@ import {
   type McpActor,
 } from '../../types/events';
 import type { ToolName } from '../../types/schemas';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { emitAgentFileChange } from '../mcp/workspace-file-tools';
 import { hostExec } from '../../../../shared/main/host-exec';
 import { assertAgentCommitAllowed } from '$features/workspace/main/workspace-settings.service';
@@ -327,7 +327,7 @@ export class McpBridge extends EventEmitter {
     // NOTE: Agent sessions are managed client-side via renderer agent APIs
     // This MCP tool returns a mock session for compatibility
     // Actual session creation should be done through client-side agent APIs
-    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const sessionId = `session_${randomUUID()}`;
 
     return {
       success: true,

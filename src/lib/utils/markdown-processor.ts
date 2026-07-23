@@ -1582,12 +1582,13 @@ export function processHTMLToMarkdown(
           decodedCode = decodeURIComponent(escape(atob(mermaidCode)));
         } else {
           // Legacy: decode HTML entities that were escaped during markdown->HTML conversion
+          // Decode &amp; last so double-encoded entities (e.g. &amp;quot;) are not double-unescaped
           decodedCode = mermaidCode
             .replace(/&lt;/g, '<')
             .replace(/&gt;/g, '>')
-            .replace(/&amp;/g, '&')
             .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'");
+            .replace(/&#39;/g, "'")
+            .replace(/&amp;/g, '&');
         }
       } catch {
         // If decode fails, use as-is

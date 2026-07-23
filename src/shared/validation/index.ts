@@ -230,22 +230,6 @@ export function isValidURL(value: string): boolean {
 // ============================================================================
 
 /**
- * Sanitize HTML content to prevent XSS attacks
- */
-export function sanitizeHTML(html: string): string {
-  if (typeof html !== 'string') {
-    return '';
-  }
-
-  const sanitized = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
-    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '') // Remove event handlers
-    .replace(/javascript:/gi, ''); // Remove javascript: protocol
-
-  return sanitized.trim();
-}
-
-/**
  * Sanitize file paths to prevent directory traversal attacks
  */
 export function sanitizePath(inputPath: string): string {
@@ -342,7 +326,6 @@ export function isValidOptimisticId(id: string): boolean {
 export default {
   sanitizeInput,
   sanitizeMessage,
-  sanitizeHTML,
   sanitizePath,
   sanitizeBranchName,
   validateAgentName,
