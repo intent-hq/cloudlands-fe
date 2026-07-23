@@ -29,18 +29,29 @@ describe('CommentDialog', () => {
   });
 
   it('re-asserts focus if another element steals it right after mount', async () => {
-    const { textarea } = await renderDialog();
+    // Fake timers keep the action's rAF/timeout retries pending until we
+    // advance them, so the steal deterministically happens inside the retry
+    // window regardless of how slow the test runner is.
+    vi.useFakeTimers();
+    try {
+      render(CommentDialog, { props: { x: 10, y: 20 } });
+      // Flush Portal's async child mount.
+      await vi.advanceTimersByTimeAsync(0);
+      const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+      expect(textarea).not.toBeNull();
 
-    // Simulate the editor/button stealing focus back after the dialog mounts.
-    const stealer = document.createElement('button');
-    document.body.appendChild(stealer);
-    stealer.focus();
-    expect(document.activeElement).toBe(stealer);
+      // Simulate the editor/button stealing focus back after the dialog mounts.
+      const stealer = document.createElement('button');
+      document.body.appendChild(stealer);
+      stealer.focus();
+      expect(document.activeElement).toBe(stealer);
 
-    // The delayed retry (setTimeout fallback) should reclaim focus.
-    await waitFor(() => {
+      // The pending rAF/setTimeout retries should reclaim focus.
+      await vi.advanceTimersByTimeAsync(100);
       expect(document.activeElement).toBe(textarea);
-    });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('closes on Escape', async () => {
