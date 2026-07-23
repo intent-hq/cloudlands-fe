@@ -50,27 +50,40 @@
     updatedAt?: string;
   }
 
-  // Module-level cache (persists across component mounts, but not page refreshes)
+  // Module-level cache (persists across component mounts, but not page refreshes).
+  // Only holds the initial unfiltered first page (+ its nextToken cursor).
   const issueCache: {
-    linear?: IssueCache<{ assigned: LinearIssueResult[]; created: LinearIssueResult[] }>;
-    sentry?: IssueCache<SentryIssueResult[]>;
-    github?: IssueCache<{ issues: GitHubIssueLocal[]; key: string }>;
+    linear?: IssueCache<{
+      assigned: LinearIssueResult[];
+      created: LinearIssueResult[];
+      assignedNextToken: string | null;
+      createdNextToken: string | null;
+    }>;
+    sentry?: IssueCache<{ issues: SentryIssueResult[]; nextToken: string | null }>;
+    github?: IssueCache<{ issues: GitHubIssueLocal[]; nextToken: string | null; key: string }>;
   } = {};
 
   // Per-filter cache for GitHub PRs (keyed by repo + filter)
   type PRFilterType = 'all' | 'assigned' | 'created' | 'review-requested' | 'involves';
-  const githubPRCache: Map<string, { data: GitHubPRLocal[]; timestamp: number }> = new Map();
+  const githubPRCache: Map<
+    string,
+    { data: GitHubPRLocal[]; nextToken: string | null; timestamp: number }
+  > = new Map();
   const PR_CACHE_DURATION_MS = 60000; // 1 minute
 
   function getPRCacheKey(owner: string, repo: string, filter: PRFilterType): string {
     return `${owner}/${repo}:${filter}`;
   }
 
-  function getCachedPRs(owner: string, repo: string, filter: PRFilterType): GitHubPRLocal[] | null {
+  function getCachedPRs(
+    owner: string,
+    repo: string,
+    filter: PRFilterType,
+  ): { data: GitHubPRLocal[]; nextToken: string | null } | null {
     const key = getPRCacheKey(owner, repo, filter);
     const cached = githubPRCache.get(key);
     if (cached && Date.now() - cached.timestamp < PR_CACHE_DURATION_MS) {
-      return cached.data;
+      return { data: cached.data, nextToken: cached.nextToken };
     }
     return null;
   }
@@ -80,9 +93,10 @@
     repo: string,
     filter: PRFilterType,
     data: GitHubPRLocal[],
+    nextToken: string | null,
   ): void {
     const key = getPRCacheKey(owner, repo, filter);
-    githubPRCache.set(key, { data, timestamp: Date.now() });
+    githubPRCache.set(key, { data, nextToken, timestamp: Date.now() });
   }
 
   function isCacheValid<T>(cache: IssueCache<T> | undefined): cache is IssueCache<T> {
@@ -137,19 +151,24 @@
                 return;
               }
 
-              const [assignedIssues, createdIssues] = await Promise.all([
-                linearAuthClient.fetchMyIssues('assigned'),
-                linearAuthClient.fetchMyIssues('created'),
+              const [assignedPage, createdPage] = await Promise.all([
+                linearAuthClient.fetchMyIssuesPage('assigned'),
+                linearAuthClient.fetchMyIssuesPage('created'),
               ]);
 
               issueCache.linear = {
-                data: { assigned: assignedIssues, created: createdIssues },
+                data: {
+                  assigned: assignedPage.issues,
+                  created: createdPage.issues,
+                  assignedNextToken: assignedPage.nextToken,
+                  createdNextToken: createdPage.nextToken,
+                },
                 timestamp: Date.now(),
               };
 
               preloadLogger.debug('Preloaded Linear issues', {
-                assigned: assignedIssues.length,
-                created: createdIssues.length,
+                assigned: assignedPage.issues.length,
+                created: createdPage.issues.length,
               });
             } catch (error) {
               preloadLogger.error('Failed to preload Linear issues', error as Error);
@@ -169,14 +188,14 @@
                 return;
               }
 
-              const issues = await sentryAuthClient.fetchIssues();
+              const page = await sentryAuthClient.fetchIssuesPage();
 
               issueCache.sentry = {
-                data: issues,
+                data: { issues: page.issues, nextToken: page.nextToken },
                 timestamp: Date.now(),
               };
 
-              preloadLogger.debug('Preloaded Sentry issues', { count: issues.length });
+              preloadLogger.debug('Preloaded Sentry issues', { count: page.issues.length });
             } catch (error) {
               preloadLogger.error('Failed to preload Sentry issues', error as Error);
             }
@@ -233,6 +252,11 @@
 
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import {
+  createPagedSource,
+  createTrailingDebouncer,
+  type PagedSourceState,
+} from './issue-paging';
 
   const logger = createLogger('ContextPicker');
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
@@ -316,27 +340,49 @@
   let searchQuery = $state('');
   let activeSource = $state<ContextSource>(initialSource ?? 'linear');
 
-  // Linear state - grouped by relationship
-  let linearAssignedIssues = $state<LinearIssueResult[]>([]);
-  let linearCreatedIssues = $state<LinearIssueResult[]>([]);
+  function emptyPage<T>(): PagedSourceState<T> {
+    return { items: [], nextToken: null, isFetching: false, isLoadingMore: false };
+  }
+
+  // Last query committed to the server per source (after debounce)
+  let committedQueries = $state<Record<ContextSource, string>>({
+    linear: '',
+    sentry: '',
+    'github-issues': '',
+    'github-prs': '',
+  });
+
+  // Linear state - grouped by relationship; paged via createPagedSource
+  let linearAssignedPage = $state(emptyPage<LinearIssueResult>());
+  let linearCreatedPage = $state(emptyPage<LinearIssueResult>());
+  let linearSearchPage = $state(emptyPage<LinearIssueResult>());
+  // Non-empty committed Linear query switches Linear to search-results mode
+  let linearActiveQuery = $state('');
+  const linearAssignedIssues = $derived(linearAssignedPage.items);
+  const linearCreatedIssues = $derived(linearCreatedPage.items);
+  const linearSearchResults = $derived(linearSearchPage.items);
+  const linearSearchMode = $derived(linearActiveQuery !== '');
   let isLoadingLinear = $state(false);
   let isRefreshingLinear = $state(false);
   let isLinearAuthenticated = $state(false);
 
   // Sentry state
-  let sentryIssues = $state<SentryIssueResult[]>([]);
+  let sentryPage = $state(emptyPage<SentryIssueResult>());
+  const sentryIssues = $derived(sentryPage.items);
   let isLoadingSentry = $state(false);
   let isRefreshingSentry = $state(false);
   let isSentryAuthenticated = $state(false);
 
   // GitHub state (GitHubIssueLocal interface is defined in module script above)
-  let githubIssues = $state<GitHubIssueLocal[]>([]);
+  let githubIssuesPage = $state(emptyPage<GitHubIssueLocal>());
+  const githubIssues = $derived(githubIssuesPage.items);
   let isLoadingGitHub = $state(false);
   let isRefreshingGitHub = $state(false);
   let isGitHubAuthenticated = $state(false);
 
   // GitHub PRs state
-  let githubPRs = $state<GitHubPRLocal[]>([]);
+  let githubPRsPage = $state(emptyPage<GitHubPRLocal>());
+  const githubPRs = $derived(githubPRsPage.items);
   let isLoadingGitHubPRs = $state(false);
   let _isRefreshingGitHubPRs = $state(false);
 
@@ -344,6 +390,77 @@
   let githubPRFilter = $state<'all' | 'assigned' | 'created' | 'review-requested' | 'involves'>(
     prFilter ?? 'all',
   );
+
+  // Paged sources: one per list. Each owns items + nextToken + in-flight
+  // bookkeeping and mirrors its state into the $state page objects above.
+  const linearAssignedPager = createPagedSource<LinearIssueResult>({
+    getId: (issue) => issue.id,
+    fetchPage: async (_query, token) => {
+      const page = await linearAuthClient.fetchMyIssuesPage(
+        'assigned',
+        token ? { nextToken: token } : undefined,
+      );
+      return { items: page.issues, nextToken: page.nextToken };
+    },
+    onChange: (s) => (linearAssignedPage = s),
+    onError: (error) => logger.error('Failed to load Linear assigned issues', error as Error),
+  });
+
+  const linearCreatedPager = createPagedSource<LinearIssueResult>({
+    getId: (issue) => issue.id,
+    fetchPage: async (_query, token) => {
+      const page = await linearAuthClient.fetchMyIssuesPage(
+        'created',
+        token ? { nextToken: token } : undefined,
+      );
+      return { items: page.issues, nextToken: page.nextToken };
+    },
+    onChange: (s) => (linearCreatedPage = s),
+    onError: (error) => logger.error('Failed to load Linear created issues', error as Error),
+  });
+
+  const linearSearchPager = createPagedSource<LinearIssueResult>({
+    getId: (issue) => issue.id,
+    fetchPage: async (query, token) => {
+      const page = await linearAuthClient.searchIssuesPage(
+        query,
+        token ? { nextToken: token } : undefined,
+      );
+      return { items: page.issues, nextToken: page.nextToken };
+    },
+    onChange: (s) => (linearSearchPage = s),
+    onError: (error) => logger.error('Failed to search Linear issues', error as Error),
+  });
+
+  const sentryPager = createPagedSource<SentryIssueResult>({
+    getId: (issue) => issue.id,
+    fetchPage: async (query, token) => {
+      const page = query
+        ? await sentryAuthClient.searchIssuesPage(
+            query,
+            undefined,
+            token ? { nextToken: token } : undefined,
+          )
+        : await sentryAuthClient.fetchIssuesPage(token ? { nextToken: token } : undefined);
+      return { items: page.issues, nextToken: page.nextToken };
+    },
+    onChange: (s) => (sentryPage = s),
+    onError: (error) => logger.error('Failed to load Sentry issues', error as Error),
+  });
+
+  const githubIssuesPager = createPagedSource<GitHubIssueLocal>({
+    getId: (issue) => issue.id,
+    fetchPage: (query, token) => fetchGitHubIssuesPage(query, token),
+    onChange: (s) => (githubIssuesPage = s),
+    onError: (error) => logger.error('Failed to load GitHub issues', error as Error),
+  });
+
+  const githubPRsPager = createPagedSource<GitHubPRLocal>({
+    getId: (pr) => pr.id,
+    fetchPage: (query, token) => fetchGitHubPRsPage(githubPRFilter, query, token),
+    onChange: (s) => (githubPRsPage = s),
+    onError: (error) => logger.error('Failed to load GitHub PRs', error as Error),
+  });
 
   // Tooltip state - track which tooltip is open to close on scroll or when another opens
   let openTooltipId = $state<string | null>(null);
@@ -378,8 +495,7 @@
       .sort((a, b) => a.name.localeCompare(b.name));
   });
 
-  // Check if any source is refreshing in background
-  const isRefreshing = $derived(isRefreshingLinear || isRefreshingSentry || isRefreshingGitHub);
+
 
   function handleTooltipOpenChange(id: string, open: boolean) {
     if (open) {
@@ -404,7 +520,8 @@
     }
   });
 
-  // Helper to filter issues by search query
+  // Instant pre-filter over already-loaded rows while the debounced server
+  // search is pending. Server results replace the list once the query commits.
   function matchesSearch(title: string, identifier: string) {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
@@ -428,11 +545,20 @@
     return date.toLocaleDateString();
   }
 
+  // The instant pre-filter only applies while the typed query hasn't produced
+  // server results yet (debounce pending or first-page fetch in flight). Once
+  // the server results for the query arrive, they are shown unfiltered —
+  // server matches may hit fields (e.g. issue body) the client filter can't
+  // see. (activeIsFetching is a lazily-evaluated $derived declared below.)
+  const preFilterActive = $derived.by(
+    () => searchQuery.trim() !== committedQueries[activeSource] || activeIsFetching,
+  );
+
   // Filter Linear issues - group by Assigned to me, Created by me (excluding already shown)
   const filteredLinearAssigned = $derived(
     linearAssignedIssues
       .filter((issue) => !selectedLinearTeam || issue.teamKey === selectedLinearTeam)
-      .filter((issue) => matchesSearch(issue.title, issue.identifier)),
+      .filter((issue) => !preFilterActive || matchesSearch(issue.title, issue.identifier)),
   );
 
   // Created issues, excluding ones already in assigned
@@ -441,68 +567,161 @@
     return linearCreatedIssues
       .filter((issue) => !assignedIds.has(issue.id))
       .filter((issue) => !selectedLinearTeam || issue.teamKey === selectedLinearTeam)
-      .filter((issue) => matchesSearch(issue.title, issue.identifier));
+      .filter((issue) => !preFilterActive || matchesSearch(issue.title, issue.identifier));
   });
 
-  // Filter Sentry issues based on search and project filter
-  const filteredSentryIssues = $derived(
-    sentryIssues
-      .filter((issue) => !selectedSentryProject || issue.projectSlug === selectedSentryProject)
-      .filter(
-        (issue) =>
-          !searchQuery ||
-          issue.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          issue.shortId.toLowerCase().includes(searchQuery.toLowerCase()),
-      ),
-  );
-
-  // Filter GitHub issues based on search
-  const filteredGitHubIssues = $derived(
-    githubIssues.filter(
-      (issue) =>
-        !searchQuery ||
-        issue.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        `#${issue.number}`.includes(searchQuery.toLowerCase()),
+  // Linear server-side search results (search mode)
+  const filteredLinearSearch = $derived(
+    linearSearchResults.filter(
+      (issue) => !selectedLinearTeam || issue.teamKey === selectedLinearTeam,
     ),
   );
 
-  // Filter GitHub PRs based on search and filter type
-  // Filter PRs by search query only - API handles author/assignee filtering
-  const filteredGitHubPRs = $derived.by(() => {
-    return githubPRs.filter(
-      (pr) =>
-        !searchQuery ||
-        pr.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        `#${pr.number}`.includes(searchQuery.toLowerCase()),
-    );
-  });
-
-  // Show GitHub PRs based on active source
-  const visibleGitHubPRs = $derived(
-    activeSource === 'github-prs' ? filteredGitHubPRs.slice(0, 20) : [],
+  // Filter Sentry issues based on project filter (+ instant pre-filter)
+  const filteredSentryIssues = $derived(
+    sentryIssues
+      .filter((issue) => !selectedSentryProject || issue.projectSlug === selectedSentryProject)
+      .filter((issue) => !preFilterActive || matchesSearch(issue.title, issue.shortId)),
   );
 
-  // Show issues based on active source
+  // GitHub issues (+ instant pre-filter)
+  const filteredGitHubIssues = $derived(
+    githubIssues.filter(
+      (issue) => !preFilterActive || matchesSearch(issue.title, `#${issue.number}`),
+    ),
+  );
+
+  // GitHub PRs (+ instant pre-filter) - API handles author/assignee filtering
+  const filteredGitHubPRs = $derived(
+    githubPRs.filter((pr) => !preFilterActive || matchesSearch(pr.title, `#${pr.number}`)),
+  );
+
+  // Show GitHub PRs based on active source
+  const visibleGitHubPRs = $derived(activeSource === 'github-prs' ? filteredGitHubPRs : []);
+
+  // Show issues based on active source; in search mode Linear shows the
+  // server-side search results as a single flat list instead of the groups
   const visibleLinearAssigned = $derived(
-    activeSource === 'linear' ? filteredLinearAssigned.slice(0, 10) : [],
+    activeSource === 'linear' && !linearSearchMode ? filteredLinearAssigned : [],
   );
 
   const visibleLinearCreated = $derived(
-    activeSource === 'linear' ? filteredLinearCreated.slice(0, 10) : [],
+    activeSource === 'linear' && !linearSearchMode ? filteredLinearCreated : [],
+  );
+
+  const visibleLinearSearch = $derived(
+    activeSource === 'linear' && linearSearchMode ? filteredLinearSearch : [],
   );
 
   // Combined for hasVisibleIssues check
-  const visibleLinearIssues = $derived([...visibleLinearAssigned, ...visibleLinearCreated]);
+  const visibleLinearIssues = $derived([
+    ...visibleLinearAssigned,
+    ...visibleLinearCreated,
+    ...visibleLinearSearch,
+  ]);
 
   // Show Sentry issues based on active source
-  const visibleSentryIssues = $derived(
-    activeSource === 'sentry' ? filteredSentryIssues.slice(0, 20) : [],
-  );
+  const visibleSentryIssues = $derived(activeSource === 'sentry' ? filteredSentryIssues : []);
 
   // Show GitHub issues based on active source
   const visibleGitHubIssues = $derived(
-    activeSource === 'github-issues' ? filteredGitHubIssues.slice(0, 20) : [],
+    activeSource === 'github-issues' ? filteredGitHubIssues : [],
   );
+
+  // Infinite scroll: whether the active source has more pages / is appending
+  const activeHasMore = $derived.by(() => {
+    switch (activeSource) {
+      case 'linear':
+        return linearSearchMode
+          ? linearSearchPage.nextToken !== null
+          : linearAssignedPage.nextToken !== null || linearCreatedPage.nextToken !== null;
+      case 'sentry':
+        return sentryPage.nextToken !== null;
+      case 'github-issues':
+        return githubIssuesPage.nextToken !== null;
+      case 'github-prs':
+        return githubPRsPage.nextToken !== null;
+    }
+  });
+
+  const activeIsLoadingMore = $derived.by(() => {
+    switch (activeSource) {
+      case 'linear':
+        return linearSearchMode
+          ? linearSearchPage.isLoadingMore
+          : linearAssignedPage.isLoadingMore || linearCreatedPage.isLoadingMore;
+      case 'sentry':
+        return sentryPage.isLoadingMore;
+      case 'github-issues':
+        return githubIssuesPage.isLoadingMore;
+      case 'github-prs':
+        return githubPRsPage.isLoadingMore;
+    }
+  });
+
+  // First-page fetch in flight for the active source (e.g. a committed search)
+  const activeIsFetching = $derived.by(() => {
+    switch (activeSource) {
+      case 'linear':
+        return linearSearchMode
+          ? linearSearchPage.isFetching
+          : linearAssignedPage.isFetching || linearCreatedPage.isFetching;
+      case 'sentry':
+        return sentryPage.isFetching;
+      case 'github-issues':
+        return githubIssuesPage.isFetching;
+      case 'github-prs':
+        return githubPRsPage.isFetching;
+    }
+  });
+
+  // Check if any source is refreshing in background; also spins while a
+  // committed server-side search is in flight for the active source
+  const isRefreshing = $derived(
+    isRefreshingLinear ||
+      isRefreshingSentry ||
+      isRefreshingGitHub ||
+      (searchQuery !== '' && activeIsFetching),
+  );
+
+  function loadMoreActiveSource() {
+    switch (activeSource) {
+      case 'linear':
+        if (linearSearchMode) {
+          linearSearchPager.loadMore();
+        } else {
+          linearAssignedPager.loadMore();
+          linearCreatedPager.loadMore();
+        }
+        break;
+      case 'sentry':
+        sentryPager.loadMore();
+        break;
+      case 'github-issues':
+        githubIssuesPager.loadMore();
+        break;
+      case 'github-prs':
+        githubPRsPager.loadMore();
+        break;
+    }
+  }
+
+  // IntersectionObserver sentinel at the bottom of the results list
+  let sentinelEl = $state<HTMLElement | null>(null);
+  $effect(() => {
+    const el = sentinelEl;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadMoreActiveSource();
+        }
+      },
+      { root: el.parentElement, rootMargin: '100px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
 
   // Check if we're loading anything
   const isLoading = $derived(
@@ -547,36 +766,37 @@
       if (!isLinearAuthenticated) return;
 
       // Check cache and populate immediately if valid
-      const hasCachedData =
+      const cached =
         isCacheValid(issueCache.linear) &&
-        (issueCache.linear.data.assigned.length > 0 || issueCache.linear.data.created.length > 0);
+        (issueCache.linear.data.assigned.length > 0 || issueCache.linear.data.created.length > 0)
+          ? issueCache.linear.data
+          : null;
 
-      if (hasCachedData) {
-        linearAssignedIssues = issueCache.linear!.data.assigned;
-        linearCreatedIssues = issueCache.linear!.data.created;
+      if (cached) {
+        linearAssignedPager.seed(cached.assigned, cached.assignedNextToken);
+        linearCreatedPager.seed(cached.created, cached.createdNextToken);
         isRefreshingLinear = true;
       } else {
         isLoadingLinear = true;
       }
 
       // Fetch both assigned and created issues for grouping
-      const [assignedIssues, createdIssues] = await Promise.all([
-        linearAuthClient.fetchMyIssues('assigned'),
-        linearAuthClient.fetchMyIssues('created'),
-      ]);
+      await Promise.all([linearAssignedPager.refresh(''), linearCreatedPager.refresh('')]);
 
-      linearAssignedIssues = assignedIssues;
-      linearCreatedIssues = createdIssues;
-
-      // Update cache
+      // Update cache (initial unfiltered page only)
       issueCache.linear = {
-        data: { assigned: assignedIssues, created: createdIssues },
+        data: {
+          assigned: linearAssignedPager.state.items,
+          created: linearCreatedPager.state.items,
+          assignedNextToken: linearAssignedPager.state.nextToken,
+          createdNextToken: linearCreatedPager.state.nextToken,
+        },
         timestamp: Date.now(),
       };
 
       logger.debug('Loaded Linear issues', {
-        assigned: assignedIssues.length,
-        created: createdIssues.length,
+        assigned: linearAssignedPager.state.items.length,
+        created: linearCreatedPager.state.items.length,
       });
     } catch (error) {
       logger.error('Failed to load Linear issues', error as Error);
@@ -594,31 +814,92 @@
       if (!isSentryAuthenticated) return;
 
       // Check cache and populate immediately if valid
-      const hasCachedData = isCacheValid(issueCache.sentry) && issueCache.sentry.data.length > 0;
+      const cached =
+        isCacheValid(issueCache.sentry) && issueCache.sentry.data.issues.length > 0
+          ? issueCache.sentry.data
+          : null;
 
-      if (hasCachedData) {
-        sentryIssues = issueCache.sentry!.data;
+      if (cached) {
+        sentryPager.seed(cached.issues, cached.nextToken);
         isRefreshingSentry = true;
       } else {
         isLoadingSentry = true;
       }
 
-      const issues = await sentryAuthClient.fetchIssues();
-      sentryIssues = issues;
+      await sentryPager.refresh('');
 
-      // Update cache
-      issueCache.sentry = {
-        data: issues,
-        timestamp: Date.now(),
-      };
+      // Update cache (initial unfiltered page only); skip if a search
+      // superseded this load while it was in flight
+      if (committedQueries['sentry'] === '') {
+        issueCache.sentry = {
+          data: { issues: sentryPager.state.items, nextToken: sentryPager.state.nextToken },
+          timestamp: Date.now(),
+        };
+      }
 
-      logger.debug('Loaded Sentry issues', { count: issues.length });
+      logger.debug('Loaded Sentry issues', { count: sentryPager.state.items.length });
     } catch (error) {
       logger.error('Failed to load Sentry issues', error as Error);
     } finally {
       isLoadingSentry = false;
       isRefreshingSentry = false;
     }
+  }
+
+  // Fetch and map one page of GitHub issues (search API with is:issue filter)
+  async function fetchGitHubIssuesPage(query: string, token: string | null) {
+    if (!repositoryOwner || !repositoryName) {
+      return { items: [] as GitHubIssueLocal[], nextToken: null };
+    }
+    const response = await invoke<any>('git-tracking:search-github-issues', {
+      owner: repositoryOwner,
+      repo: repositoryName,
+      options: {
+        state: 'open',
+        per_page: 20,
+        filter: 'all',
+        ...(query ? { query } : {}),
+        ...(token ? { nextToken: token } : {}),
+      },
+    });
+    if (!response?.success) {
+      throw new Error(response?.error ?? 'Failed to search GitHub issues');
+    }
+    const items: GitHubIssueLocal[] = (response.data ?? []).map(
+      (issue: {
+        id: string;
+        number: number;
+        title: string;
+        body?: string;
+        htmlUrl: string;
+        state: 'open' | 'closed';
+        owner: string;
+        repo: string;
+        author?: { login?: string; name?: string };
+        assignee?: { login?: string; name?: string };
+        labels?: string[];
+        createdAt?: string;
+        updatedAt?: string;
+      }) => ({
+        id: issue.id,
+        number: issue.number,
+        title: issue.title,
+        body: issue.body,
+        url: issue.htmlUrl,
+        state: issue.state,
+        owner: issue.owner,
+        repo: issue.repo,
+        author: issue.author?.name || issue.author?.login,
+        assignee: issue.assignee?.name || issue.assignee?.login,
+        labels: issue.labels?.join(', '),
+        createdAt: issue.createdAt,
+        updatedAt: issue.updatedAt,
+      }),
+    );
+    return {
+      items,
+      nextToken: typeof response.nextToken === 'string' ? response.nextToken : null,
+    };
   }
 
   async function loadGitHubIssues() {
@@ -651,69 +932,40 @@
 
       if (isElectronPlatform()) {
         const cacheKey = `${repositoryOwner}/${repositoryName}`;
-        const hasCachedData =
+        const query = committedQueries['github-issues'];
+        const cached =
+          query === '' &&
           isCacheValid(issueCache.github) &&
           issueCache.github.data.key === cacheKey &&
-          issueCache.github.data.issues.length > 0;
+          issueCache.github.data.issues.length > 0
+            ? issueCache.github.data
+            : null;
 
-        if (hasCachedData) {
-          githubIssues = issueCache.github!.data.issues;
+        if (cached) {
+          githubIssuesPager.seed(cached.issues, cached.nextToken);
           isRefreshingGitHub = true;
         } else {
           isLoadingGitHub = true;
         }
 
         try {
-          // Use search API with is:issue filter to get only actual issues (not PRs)
-          const response = await invoke<any>('git-tracking:search-github-issues', {
-            owner: repositoryOwner,
-            repo: repositoryName,
-            options: { state: 'open', per_page: 20, filter: 'all' },
-          });
-          if (response?.success && response.data) {
-            const mappedIssues = response.data.map(
-              (issue: {
-                id: string;
-                number: number;
-                title: string;
-                body?: string;
-                htmlUrl: string;
-                state: 'open' | 'closed';
-                owner: string;
-                repo: string;
-                author?: { login?: string; name?: string };
-                assignee?: { login?: string; name?: string };
-                labels?: string[];
-                createdAt?: string;
-                updatedAt?: string;
-              }) => ({
-                id: issue.id,
-                number: issue.number,
-                title: issue.title,
-                body: issue.body,
-                url: issue.htmlUrl,
-                state: issue.state,
-                owner: issue.owner,
-                repo: issue.repo,
-                author: issue.author?.name || issue.author?.login,
-                assignee: issue.assignee?.name || issue.assignee?.login,
-                labels: issue.labels?.join(', '),
-                createdAt: issue.createdAt,
-                updatedAt: issue.updatedAt,
-              }),
-            );
-            githubIssues = mappedIssues;
+          await githubIssuesPager.refresh(query);
 
-            // Update cache
+          // Update cache (initial unfiltered page only)
+          if (query === '') {
             issueCache.github = {
-              data: { issues: mappedIssues, key: cacheKey },
+              data: {
+                issues: githubIssuesPager.state.items,
+                nextToken: githubIssuesPager.state.nextToken,
+                key: cacheKey,
+              },
               timestamp: Date.now(),
             };
-
-            logger.debug('Loaded GitHub issues', { count: githubIssues.length });
           }
-        } catch (err) {
-          logger.error('Failed to load GitHub issues', err as Error);
+
+          logger.debug('Loaded GitHub issues', {
+            count: githubIssuesPager.state.items.length,
+          });
         } finally {
           isLoadingGitHub = false;
           isRefreshingGitHub = false;
@@ -724,53 +976,63 @@
     }
   }
 
-  // Helper to fetch and map PRs for a specific filter
-  async function fetchGitHubPRsForFilter(
-    filter: PRFilterType,
-    owner: string,
-    repo: string,
-  ): Promise<GitHubPRLocal[]> {
+  // Fetch and map one page of PRs for a specific filter
+  async function fetchGitHubPRsPage(filter: PRFilterType, query: string, token: string | null) {
+    if (!repositoryOwner || !repositoryName) {
+      return { items: [] as GitHubPRLocal[], nextToken: null };
+    }
+    const owner = repositoryOwner;
+    const repo = repositoryName;
     const response = await invoke<any>('git-tracking:search-pull-requests', {
       owner,
       repo,
-      options: { state: 'open', per_page: 50, filter },
+      options: {
+        state: 'open',
+        per_page: 50,
+        filter,
+        ...(query ? { query } : {}),
+        ...(token ? { nextToken: token } : {}),
+      },
     });
-
-    if (response?.success && response.data) {
-      return response.data.map(
-        (pr: {
-          id: string;
-          number: number;
-          title: string;
-          description?: string;
-          htmlUrl: string;
-          state: 'open' | 'closed' | 'merged' | 'draft';
-          author?: { login?: string; name?: string };
-          assignees?: string[];
-          sourceBranch?: string;
-          targetBranch?: string;
-          createdAt?: string;
-          updatedAt?: string;
-        }) => ({
-          id: pr.id,
-          number: pr.number,
-          title: pr.title,
-          body: pr.description,
-          url: pr.htmlUrl,
-          state: pr.state,
-          owner,
-          repo,
-          authorLogin: pr.author?.login,
-          authorName: pr.author?.name,
-          assignees: pr.assignees || [],
-          sourceBranch: pr.sourceBranch,
-          targetBranch: pr.targetBranch,
-          createdAt: pr.createdAt,
-          updatedAt: pr.updatedAt,
-        }),
-      );
+    if (!response?.success) {
+      throw new Error(response?.error ?? 'Failed to search pull requests');
     }
-    return [];
+    const items: GitHubPRLocal[] = (response.data ?? []).map(
+      (pr: {
+        id: string;
+        number: number;
+        title: string;
+        description?: string;
+        htmlUrl: string;
+        state: 'open' | 'closed' | 'merged' | 'draft';
+        author?: { login?: string; name?: string };
+        assignees?: string[];
+        sourceBranch?: string;
+        targetBranch?: string;
+        createdAt?: string;
+        updatedAt?: string;
+      }) => ({
+        id: pr.id,
+        number: pr.number,
+        title: pr.title,
+        body: pr.description,
+        url: pr.htmlUrl,
+        state: pr.state,
+        owner,
+        repo,
+        authorLogin: pr.author?.login,
+        authorName: pr.author?.name,
+        assignees: pr.assignees || [],
+        sourceBranch: pr.sourceBranch,
+        targetBranch: pr.targetBranch,
+        createdAt: pr.createdAt,
+        updatedAt: pr.updatedAt,
+      }),
+    );
+    return {
+      items,
+      nextToken: typeof response.nextToken === 'string' ? response.nextToken : null,
+    };
   }
 
   // Prefetch other filters in background for instant switching
@@ -790,9 +1052,9 @@
       if (getCachedPRs(owner, repo, filter)) continue;
 
       try {
-        const prs = await fetchGitHubPRsForFilter(filter, owner, repo);
-        setCachedPRs(owner, repo, filter, prs);
-        logger.debug('Prefetched GitHub PRs', { filter, count: prs.length });
+        const page = await fetchGitHubPRsPage(filter, '', null);
+        setCachedPRs(owner, repo, filter, page.items, page.nextToken);
+        logger.debug('Prefetched GitHub PRs', { filter, count: page.items.length });
       } catch (err) {
         // Silently fail prefetch - it's just optimization
         logger.debug('Failed to prefetch PRs', { filter, error: err });
@@ -801,7 +1063,7 @@
   }
 
   async function loadGitHubPRs(
-    filter: 'all' | 'assigned' | 'created' | 'review-requested' | 'involves' = 'all',
+    filter: 'all' | 'assigned' | 'created' | 'review-requested' | 'involves' = githubPRFilter,
   ) {
     try {
       if (!isGitHubAuthenticated) {
@@ -815,9 +1077,11 @@
 
       if (isElectronPlatform()) {
         // 1. Check cache first - show cached data immediately for snappy UI
-        const cachedPRs = getCachedPRs(repositoryOwner, repositoryName, filter);
+        const query = committedQueries['github-prs'];
+        const cachedPRs =
+          query === '' ? getCachedPRs(repositoryOwner, repositoryName, filter) : null;
         if (cachedPRs) {
-          githubPRs = cachedPRs;
+          githubPRsPager.seed(cachedPRs.data, cachedPRs.nextToken);
           // Still refresh in background, but user sees data instantly
           _isRefreshingGitHubPRs = true;
         } else {
@@ -825,18 +1089,25 @@
         }
 
         try {
-          // 2. Fetch fresh data
-          const mappedPRs = await fetchGitHubPRsForFilter(filter, repositoryOwner, repositoryName);
+          // 2. Fetch fresh data (pager reads githubPRFilter at call time)
+          await githubPRsPager.refresh(query);
 
-          // 3. Update cache and state
-          setCachedPRs(repositoryOwner, repositoryName, filter, mappedPRs);
-          githubPRs = mappedPRs;
-          logger.debug('Loaded GitHub PRs', { count: githubPRs.length, filter });
-
-          // 4. Prefetch other filters in background for instant switching
-          prefetchOtherPRFilters(filter, repositoryOwner, repositoryName);
-        } catch (err) {
-          logger.error('Failed to load GitHub PRs', err as Error);
+          // 3. Update cache (initial unfiltered page only)
+          if (query === '') {
+            setCachedPRs(
+              repositoryOwner,
+              repositoryName,
+              filter,
+              githubPRsPager.state.items,
+              githubPRsPager.state.nextToken,
+            );
+            // 4. Prefetch other filters in background for instant switching
+            prefetchOtherPRFilters(filter, repositoryOwner, repositoryName);
+          }
+          logger.debug('Loaded GitHub PRs', {
+            count: githubPRsPager.state.items.length,
+            filter,
+          });
         } finally {
           isLoadingGitHubPRs = false;
           _isRefreshingGitHubPRs = false;
@@ -846,6 +1117,58 @@
       logger.error('Failed to load GitHub PRs', error as Error);
     }
   }
+
+  // Debounced server-side search: typing schedules a commit; the commit
+  // updates committedQueries and triggers a fresh first-page fetch for the
+  // active source. Empty query restores the default listing.
+  const SEARCH_DEBOUNCE_MS = 300;
+  const searchDebouncer = createTrailingDebouncer(SEARCH_DEBOUNCE_MS);
+
+  function commitSearch(source: ContextSource, query: string) {
+    committedQueries[source] = query;
+    switch (source) {
+      case 'linear':
+        linearActiveQuery = query;
+        if (query) {
+          void linearSearchPager.refresh(query);
+        } else {
+          // Assigned/created pagers still hold the default listing
+          linearSearchPager.reset();
+        }
+        break;
+      case 'sentry':
+        if (query) {
+          void sentryPager.refresh(query);
+        } else {
+          void loadSentryIssues();
+        }
+        break;
+      case 'github-issues':
+        if (query) {
+          void githubIssuesPager.refresh(query);
+        } else {
+          void loadGitHubIssues();
+        }
+        break;
+      case 'github-prs':
+        if (query) {
+          void githubPRsPager.refresh(query);
+        } else {
+          void loadGitHubPRs(githubPRFilter);
+        }
+        break;
+    }
+  }
+
+  $effect(() => {
+    const source = activeSource;
+    const query = searchQuery.trim();
+    if (query === committedQueries[source]) {
+      searchDebouncer.cancel();
+      return;
+    }
+    searchDebouncer.schedule(() => commitSearch(source, query));
+  });
 
   function handleLinearIssueClick(issue: LinearIssueResult) {
     const issueText = `[${issue.identifier}] ${issue.title}`;
@@ -1014,6 +1337,8 @@
   });
 
   onDestroy(() => {
+    // Drop any pending debounced search
+    searchDebouncer.cancel();
     // Cancel pending callbacks to prevent API calls on unmounted component
     if (pendingCallbackId !== undefined) {
       // Both cancelIdleCallback and clearTimeout work with numeric IDs
@@ -1459,6 +1784,68 @@
                 </TooltipRich>
               {/each}
             {/if}
+
+            <!-- Server-side search results (flat list) -->
+            {#each visibleLinearSearch as issue (issue.id)}
+              <TooltipRich
+                side="top"
+                align="start"
+                delayDuration={400}
+                maxWidth="36rem"
+                disableHoverableContent={true}
+                open={openTooltipId === `linear-search-${issue.id}`}
+                onOpenChange={(open) => handleTooltipOpenChange(`linear-search-${issue.id}`, open)}
+              >
+                {#snippet trigger()}
+                  <button
+                    type="button"
+                    onclick={() => handleLinearIssueClick(issue)}
+                    class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
+                  >
+                    <LinearIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
+                    <span class="text-xs font-medium text-subtle shrink-0"
+                      >{issue.identifier}</span
+                    >
+                    <span
+                      class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground min-w-0"
+                      >{issue.title}</span
+                    >
+                    {#if issue.updatedAt || issue.createdAt}
+                      <span class="text-xs text-subtle shrink-0"
+                        >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
+                      >
+                    {/if}
+                  </button>
+                {/snippet}
+                {#snippet content()}
+                  <div class="space-y-2">
+                    <div class="flex items-center gap-2">
+                      <LinearIcon class="w-4 h-4 text-ghost shrink-0" />
+                      <span class="text-xs font-medium text-subtle">{issue.identifier}</span>
+                      {#if issue.state}
+                        <span class="text-xs px-1.5 py-0.5 rounded bg-muted/60 text-subtle"
+                          >{issue.state}</span
+                        >
+                      {/if}
+                    </div>
+                    <div class="text-sm font-medium">{issue.title}</div>
+                    {#if issue.description}
+                      <div class="text-sm text-subtle line-clamp-3">
+                        {issue.description}
+                      </div>
+                    {/if}
+                    <div class="flex items-center gap-2 text-xs text-subtle pt-1">
+                      {#if issue.assignee}
+                        <span>Assignee: {issue.assignee}</span>
+                      {/if}
+                      {#if issue.createdAt}
+                        <span class="ml-auto">{formatRelativeTime(issue.createdAt)}</span>
+                      {/if}
+                    </div>
+                  </div>
+                {/snippet}
+              </TooltipRich>
+            {/each}
           {/if}
 
           <!-- Sentry issues -->
@@ -1618,6 +2005,17 @@
               {/snippet}
             </TooltipRich>
           {/each}
+
+          <!-- Infinite scroll: loading-more spinner + sentinel -->
+          {#if activeIsLoadingMore}
+            <div class="flex items-center justify-center gap-2 px-3 py-2 text-xs text-subtle">
+              <Fa icon={faSync} class="w-2.5 h-2.5 animate-spin" />
+              <span>Loading more…</span>
+            </div>
+          {/if}
+          {#if activeHasMore && !activeIsLoadingMore}
+            <div bind:this={sentinelEl} class="h-px shrink-0" aria-hidden="true"></div>
+          {/if}
         {/if}
 
         <!-- Linear auth status - only show when not authenticated -->
