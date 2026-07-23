@@ -630,6 +630,22 @@ describe("host-bridge-seeder", () => {
       expect(JSON.stringify(response)).not.toContain("secret-token");
     });
 
+    it("folds a system.status failure to the catch envelope without reaching host.exec", async () => {
+      routeDaemon({ "host.exec": { stdout: "", stderr: "", exitCode: 0 } });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
+        command: "git status",
+        cwd: "/repo",
+      });
+
+      expect(response).toEqual({
+        success: false,
+        error: "Command execution failed",
+        data: { stdout: "", stderr: "", code: 1 },
+      });
+      expect(hostExecCalls()).toEqual([]);
+    });
+
     it("rejects a missing/empty command with the failure envelope and no daemon call", async () => {
       const response = await mockInvoke<{ success: boolean }>(
         IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND,
