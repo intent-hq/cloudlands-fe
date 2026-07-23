@@ -86,7 +86,7 @@ describe('codex-resolver', () => {
       argsPrefix: ['-y', CODEX_ACP_NPX_PACKAGE],
       usesNpx: true,
     });
-    expect(CODEX_ACP_NPX_PACKAGE).toMatch(/^@zed-industries\/codex-acp@\d+\.\d+\.\d+$/);
+    expect(CODEX_ACP_NPX_PACKAGE).toMatch(/^@agentclientprotocol\/codex-acp@\d+\.\d+\.\d+$/);
   });
 
   it('prepends the official codex app-server candidate when a recent CLI is available', async () => {

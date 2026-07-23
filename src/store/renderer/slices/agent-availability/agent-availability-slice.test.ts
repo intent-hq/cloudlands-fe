@@ -61,13 +61,13 @@ describe('agentAvailabilityReducer managed install status', () => {
       installing,
       setManagedInstallStatus('codex', {
         managedInstallState: 'failed',
-        error: 'Integrity mismatch for @zed-industries/codex-acp',
+        error: 'Integrity mismatch for @agentclientprotocol/codex-acp',
       }),
     );
 
     expect(failed.providerStatusMap.codex).toMatchObject({
       managedInstallState: 'failed',
-      error: 'Integrity mismatch for @zed-industries/codex-acp',
+      error: 'Integrity mismatch for @agentclientprotocol/codex-acp',
     });
   });
 

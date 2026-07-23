@@ -11,8 +11,9 @@ import * as path from 'path';
 import { pipeline } from 'stream/promises';
 import { hostExec } from '../../../shared/main/host-exec';
 
-export const MANAGED_CODEX_ACP_VERSION = '0.16.0';
-const CODEX_ACP_APPLE_TEAM_ID = 'MQ55VZLNZQ';
+export const MANAGED_CODEX_ACP_VERSION = '1.1.7';
+// The vendored native codex CLI is signed by OpenAI OpCo, LLC.
+const CODEX_APPLE_TEAM_ID = '2DC432GLL2';
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 const SPAWN_TIMEOUT_MS = 30_000;
 
@@ -24,35 +25,144 @@ type ManagedCodexAcpPackage = {
 
 type SupportedPlatformKey = 'darwin-arm64' | 'darwin-x64' | 'linux-x64' | 'win32-x64';
 
+const ENTRY_PACKAGE_NAME = '@agentclientprotocol/codex-acp';
+
+/**
+ * Vendor directory target triples inside the per-platform `@openai/codex-*`
+ * packages (mirrors `PLATFORM_PACKAGE_BY_TARGET` in `@openai/codex/bin/codex.js`).
+ */
+const CODEX_VENDOR_TARGET_TRIPLES: Record<SupportedPlatformKey, string> = {
+  'darwin-arm64': 'aarch64-apple-darwin',
+  'darwin-x64': 'x86_64-apple-darwin',
+  'linux-x64': 'x86_64-unknown-linux-musl',
+  'win32-x64': 'x86_64-pc-windows-msvc',
+};
+
+/**
+ * Pinned flat dependency closure of `@agentclientprotocol/codex-acp@1.1.7`
+ * (resolved from the npm registry on 2026-07-23). The successor package is
+ * pure Node but has runtime npm dependencies, so the whole closure is staged
+ * into a flat `node_modules` — unpacking the top-level tarball alone would
+ * not be runnable. `packages` are platform-independent; `platforms` holds the
+ * per-platform `@openai/codex` optional dependency vendoring the native codex
+ * CLI that the adapter spawns.
+ */
 export const MANAGED_CODEX_ACP_INTEGRITY: {
-  wrapper: ManagedCodexAcpPackage;
+  packages: ManagedCodexAcpPackage[];
   platforms: Record<SupportedPlatformKey, ManagedCodexAcpPackage>;
 } = {
-  wrapper: {
-    packageName: '@zed-industries/codex-acp',
-    tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp/-/codex-acp-${MANAGED_CODEX_ACP_VERSION}.tgz`,
-    integrity: 'sha512-XKzqztT5R8Wg1BVFnk6/U4JVx5GNUaZgxpf9gP2Cw6BsknvJWh3aefcAGZQljgdMivRqczjNKYL4F6H65dc5vA==',
-  },
+  packages: [
+    {
+      packageName: '@agentclientprotocol/codex-acp',
+      tarballUrl: `https://registry.npmjs.org/@agentclientprotocol/codex-acp/-/codex-acp-${MANAGED_CODEX_ACP_VERSION}.tgz`,
+      integrity: 'sha512-bhFLbGtOMEw6+PAp33vNERb6dXlULOfV3mWbRdps4v7sY7PHha/C2T1dnlG0yVcvBu9W+NYPzL0CAupnVoFTiQ==',
+    },
+    {
+      packageName: '@agentclientprotocol/sdk',
+      tarballUrl: 'https://registry.npmjs.org/@agentclientprotocol/sdk/-/sdk-1.3.0.tgz',
+      integrity: 'sha512-i3h/efaeuMUFAO1HSfo97QZQnnvMd7wWBYtBsdL6UMZg3a78sk3Ffya5Xu7C7tYsXomXoDXJBAzQF2PcFKAhIQ==',
+    },
+    {
+      packageName: '@openai/codex',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0.tgz',
+      integrity: 'sha512-/PSPSFujjjmiyVFvG2yu/grOFhsWdokTH8t2KGWhXSo/M5n/dIDsnbsnO82/7bLtIoDuzQf7ATBUMWqPWQINlQ==',
+    },
+    {
+      packageName: 'bundle-name',
+      tarballUrl: 'https://registry.npmjs.org/bundle-name/-/bundle-name-4.1.0.tgz',
+      integrity: 'sha512-tjwM5exMg6BGRI+kNmTntNsvdZS1X8BFYS6tnJ2hdH0kVxM6/eVZ2xy+FqStSWvYmtfFMDLIxurorHwDKfDz5Q==',
+    },
+    {
+      packageName: 'default-browser',
+      tarballUrl: 'https://registry.npmjs.org/default-browser/-/default-browser-5.5.0.tgz',
+      integrity: 'sha512-H9LMLr5zwIbSxrmvikGuI/5KGhZ8E2zH3stkMgM5LpOWDutGM2JZaj460Udnf1a+946zc7YBgrqEWwbk7zHvGw==',
+    },
+    {
+      packageName: 'default-browser-id',
+      tarballUrl: 'https://registry.npmjs.org/default-browser-id/-/default-browser-id-5.0.1.tgz',
+      integrity: 'sha512-x1VCxdX4t+8wVfd1so/9w+vQ4vx7lKd2Qp5tDRutErwmR85OgmfX7RlLRMWafRMY7hbEiXIbudNrjOAPa/hL8Q==',
+    },
+    {
+      packageName: 'define-lazy-prop',
+      tarballUrl: 'https://registry.npmjs.org/define-lazy-prop/-/define-lazy-prop-3.0.0.tgz',
+      integrity: 'sha512-N+MeXYoqr3pOgn8xfyRPREN7gHakLYjhsHhWGT3fWAiL4IkAt0iDw14QiiEm2bE30c5XX5q0FtAA3CK5f9/BUg==',
+    },
+    {
+      packageName: 'diff',
+      tarballUrl: 'https://registry.npmjs.org/diff/-/diff-9.0.0.tgz',
+      integrity: 'sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==',
+    },
+    {
+      packageName: 'is-docker',
+      tarballUrl: 'https://registry.npmjs.org/is-docker/-/is-docker-3.0.0.tgz',
+      integrity: 'sha512-eljcgEDlEns/7AXFosB5K/2nCM4P7FQPkGc/DWLy5rmFEWvZayGrik1d9/QIY5nJ4f9YsVvBkA6kJpHn9rISdQ==',
+    },
+    {
+      packageName: 'is-in-ssh',
+      tarballUrl: 'https://registry.npmjs.org/is-in-ssh/-/is-in-ssh-1.0.0.tgz',
+      integrity: 'sha512-jYa6Q9rH90kR1vKB6NM7qqd1mge3Fx4Dhw5TVlK1MUBqhEOuCagrEHMevNuCcbECmXZ0ThXkRm+Ymr51HwEPAw==',
+    },
+    {
+      packageName: 'is-inside-container',
+      tarballUrl: 'https://registry.npmjs.org/is-inside-container/-/is-inside-container-1.0.0.tgz',
+      integrity: 'sha512-KIYLCCJghfHZxqjYBE7rEy0OBuTd5xCHS7tHVgvCLkx7StIoaxwNW3hCALgEUjFfeRk+MG/Qxmp/vtETEF3tRA==',
+    },
+    {
+      packageName: 'is-wsl',
+      tarballUrl: 'https://registry.npmjs.org/is-wsl/-/is-wsl-3.1.1.tgz',
+      integrity: 'sha512-e6rvdUCiQCAuumZslxRJWR/Doq4VpPR82kqclvcS0efgt430SlGIk05vdCN58+VrzgtIcfNODjozVielycD4Sw==',
+    },
+    {
+      packageName: 'open',
+      tarballUrl: 'https://registry.npmjs.org/open/-/open-11.0.0.tgz',
+      integrity: 'sha512-smsWv2LzFjP03xmvFoJ331ss6h+jixfA4UUV/Bsiyuu4YJPfN+FIQGOIiv4w9/+MoHkfkJ22UIaQWRVFRfH6Vw==',
+    },
+    {
+      packageName: 'powershell-utils',
+      tarballUrl: 'https://registry.npmjs.org/powershell-utils/-/powershell-utils-0.1.0.tgz',
+      integrity: 'sha512-dM0jVuXJPsDN6DvRpea484tCUaMiXWjuCn++HGTqUWzGDjv5tZkEZldAJ/UMlqRYGFrD/etByo4/xOuC/snX2A==',
+    },
+    {
+      packageName: 'run-applescript',
+      tarballUrl: 'https://registry.npmjs.org/run-applescript/-/run-applescript-7.1.0.tgz',
+      integrity: 'sha512-DPe5pVFaAsinSaV6QjQ6gdiedWDcRCbUuiQfQa2wmWV7+xC9bGulGI8+TdRmoFkAPaBXk8CrAbnlY2ISniJ47Q==',
+    },
+    {
+      packageName: 'vscode-jsonrpc',
+      tarballUrl: 'https://registry.npmjs.org/vscode-jsonrpc/-/vscode-jsonrpc-9.0.1.tgz',
+      integrity: 'sha512-rfuA6T75H6m5EkbhtEPzre9pT0HPcDI2MMy4+nPFIBks5J8JBAUHD4tRYSgaBOijIEC7SRkC1kKyXTLqbmh9jw==',
+    },
+    {
+      packageName: 'wsl-utils',
+      tarballUrl: 'https://registry.npmjs.org/wsl-utils/-/wsl-utils-0.3.1.tgz',
+      integrity: 'sha512-g/eziiSUNBSsdDJtCLB8bdYEUMj4jR7AGeUo96p/3dTafgjHhpF4RiCFPiRILwjQoDXx5MqkBr4fwWtR3Ky4Wg==',
+    },
+    {
+      packageName: 'zod',
+      tarballUrl: 'https://registry.npmjs.org/zod/-/zod-4.4.3.tgz',
+      integrity: 'sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==',
+    },
+  ],
   platforms: {
     'darwin-arm64': {
-      packageName: '@zed-industries/codex-acp-darwin-arm64',
-      tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp-darwin-arm64/-/codex-acp-darwin-arm64-${MANAGED_CODEX_ACP_VERSION}.tgz`,
-      integrity: 'sha512-2AmbWsc/+Mpn6U8UOIlPLvgwGsGOr/LFpgcvrnjcCT9V1yY92MLrqzjMX82+VjTrRLRuXvc25SB5Z1++4Pw29g==',
+      packageName: '@openai/codex-darwin-arm64',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-darwin-arm64.tgz',
+      integrity: 'sha512-h6aQ0UxnaP8mIM/9/qPAH9MNkRliJo88toq1T36IxNM2L5JSU0TFamu+MZn7YkFgDsrp0RfiI+97Tm8AVVxqtA==',
     },
     'darwin-x64': {
-      packageName: '@zed-industries/codex-acp-darwin-x64',
-      tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp-darwin-x64/-/codex-acp-darwin-x64-${MANAGED_CODEX_ACP_VERSION}.tgz`,
-      integrity: 'sha512-QCWggk0s4GTPLCR7eznyx29Dls4gzUKvp4MjZ4nzPX5gDL/02PGY+oCV1WsQOsnzWRK0RxM+GlK19rG1qzqplw==',
+      packageName: '@openai/codex-darwin-x64',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-darwin-x64.tgz',
+      integrity: 'sha512-FCYzVKCa9VoLtg9gVyzKpqylonfgZrfcWZN6HsXAZPeuo8CukdMqdgTUOhDn2V6h3MbqS0z6VqQVKUllN/yKhA==',
     },
     'linux-x64': {
-      packageName: '@zed-industries/codex-acp-linux-x64',
-      tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp-linux-x64/-/codex-acp-linux-x64-${MANAGED_CODEX_ACP_VERSION}.tgz`,
-      integrity: 'sha512-xs5zZBLpJuciEbZNx6ZSNL0qCa9h3i/zWpj40sp6QtF+L4Ow/7qzHdBzboGhHdcz1jrLedfZeRFDA2Elj8TLMA==',
+      packageName: '@openai/codex-linux-x64',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-linux-x64.tgz',
+      integrity: 'sha512-u8w8LLv3DvsfrDCoswLIemZ0SoNEXyi511WsfFsSiYUazk9qMsB/NtU8N9vhAfN7mZAxLFoMex4v66JjHuZWwA==',
     },
     'win32-x64': {
-      packageName: '@zed-industries/codex-acp-win32-x64',
-      tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp-win32-x64/-/codex-acp-win32-x64-${MANAGED_CODEX_ACP_VERSION}.tgz`,
-      integrity: 'sha512-ZriI/ay5E3DCg8s22LZykIRI2XzQL6sZg/t81K+6qc86ldscaSWQSOT6KSnRcv31QJCMfBlFxMj22pZiGSVjQA==',
+      packageName: '@openai/codex-win32-x64',
+      tarballUrl: 'https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-win32-x64.tgz',
+      integrity: 'sha512-u0h9lk094CaXRSqE34SBW2dRaQTPa6fASXqehczWH9QdsU62mBsiAgAdp6tCG4i+YzPmmhjD8FdXNnYGNmwuMg==',
     },
   },
 };
@@ -120,9 +230,11 @@ function getPlatformPackage(): ManagedCodexAcpPackage {
 }
 
 function packageInstallPath(versionDir: string, packageName: string): string {
-  const [scope, name] = packageName.split('/');
-  if (!scope || !name) throw new Error(`Unexpected package name: ${packageName}`);
-  return path.join(versionDir, 'node_modules', scope, name);
+  const segments = packageName.split('/');
+  if (segments.some((segment) => !segment)) {
+    throw new Error(`Unexpected package name: ${packageName}`);
+  }
+  return path.join(versionDir, 'node_modules', ...segments);
 }
 
 function getRuntimePaths(): {
@@ -132,20 +244,12 @@ function getRuntimePaths(): {
   nativeBinaryPath: string;
 } {
   const version = getVersion();
-  const manifest = getManifest();
   const platformPackage = getPlatformPackage();
   const baseDir = path.join(app.getPath('userData'), 'runtimes', 'codex-acp');
   const versionDir = path.join(baseDir, version);
-  const wrapperPath = path.join(
-    packageInstallPath(versionDir, manifest.wrapper.packageName),
-    'bin',
-    'codex-acp.js',
-  );
-  const nativeBinaryName = getPlatform() === 'win32' ? 'codex-acp.exe' : 'codex-acp';
-  const nativeBinaryPath = path.join(
-    packageInstallPath(versionDir, platformPackage.packageName),
-    'bin',
-    nativeBinaryName,
+  const { wrapperPath, nativeBinaryPath } = getPathsForVersion(
+    versionDir,
+    platformPackage.packageName,
   );
   return { baseDir, versionDir, wrapperPath, nativeBinaryPath };
 }
@@ -200,18 +304,18 @@ async function installManagedCodexAcp(): Promise<ManagedCodexAcpResult> {
 
     const stageDir = path.join(paths.baseDir, `.tmp-${version}-${process.pid}-${Date.now()}-${randomUUID()}`);
     const installDir = path.join(stageDir, 'install');
-    const wrapperTarballPath = path.join(stageDir, 'codex-acp.tgz');
-    const nativeTarballPath = path.join(stageDir, 'codex-acp-native.tgz');
 
     try {
       await fs.mkdir(stageDir, { recursive: true });
-      await downloadAndVerify(manifest.wrapper, wrapperTarballPath);
-      await downloadAndVerify(platformPackage, nativeTarballPath);
-      await extractPackageTarball(wrapperTarballPath, packageInstallPath(installDir, manifest.wrapper.packageName));
-      await extractPackageTarball(nativeTarballPath, packageInstallPath(installDir, platformPackage.packageName));
-      await chmodInstalledBins(installDir, manifest.wrapper.packageName, platformPackage.packageName);
+      const packagesToInstall = [...manifest.packages, platformPackage];
+      for (const [index, pkg] of packagesToInstall.entries()) {
+        const tarballPath = path.join(stageDir, `pkg-${index}.tgz`);
+        await downloadAndVerify(pkg, tarballPath);
+        await extractPackageTarball(tarballPath, packageInstallPath(installDir, pkg.packageName));
+      }
+      await chmodInstalledBins(installDir, platformPackage.packageName);
 
-      const installPaths = getPathsForVersion(installDir, manifest.wrapper.packageName, platformPackage.packageName);
+      const installPaths = getPathsForVersion(installDir, platformPackage.packageName);
       if (getPlatform() === 'darwin') {
         await verifyMacCodeSignature(installPaths.nativeBinaryPath);
       }
@@ -233,11 +337,18 @@ async function installManagedCodexAcp(): Promise<ManagedCodexAcpResult> {
   }
 }
 
-function getPathsForVersion(versionDir: string, wrapperPackageName: string, nativePackageName: string) {
-  const nativeBinaryName = getPlatform() === 'win32' ? 'codex-acp.exe' : 'codex-acp';
+function getPathsForVersion(versionDir: string, nativePackageName: string) {
+  const targetTriple = CODEX_VENDOR_TARGET_TRIPLES[platformKey()];
+  const nativeBinaryName = getPlatform() === 'win32' ? 'codex.exe' : 'codex';
   return {
-    wrapperPath: path.join(packageInstallPath(versionDir, wrapperPackageName), 'bin', 'codex-acp.js'),
-    nativeBinaryPath: path.join(packageInstallPath(versionDir, nativePackageName), 'bin', nativeBinaryName),
+    wrapperPath: path.join(packageInstallPath(versionDir, ENTRY_PACKAGE_NAME), 'dist', 'index.js'),
+    nativeBinaryPath: path.join(
+      packageInstallPath(versionDir, nativePackageName),
+      'vendor',
+      targetTriple,
+      'bin',
+      nativeBinaryName,
+    ),
   };
 }
 
@@ -315,14 +426,9 @@ async function extractPackageTarball(tarballPath: string, packageDir: string): P
 
 async function chmodInstalledBins(
   versionDir: string,
-  wrapperPackageName: string,
   nativePackageName: string,
 ): Promise<void> {
-  const { wrapperPath, nativeBinaryPath } = getPathsForVersion(
-    versionDir,
-    wrapperPackageName,
-    nativePackageName,
-  );
+  const { wrapperPath, nativeBinaryPath } = getPathsForVersion(versionDir, nativePackageName);
   await fs.chmod(wrapperPath, 0o755);
   if (getPlatform() !== 'win32') await fs.chmod(nativeBinaryPath, 0o755);
 }
@@ -336,15 +442,19 @@ async function verifyMacCodeSignature(nativeBinaryPath: string): Promise<void> {
   });
   const teamMatch = `${details.stdout}\n${details.stderr}`.match(/TeamIdentifier=(\S+)/);
   const actualTeamId = teamMatch?.[1];
-  if (actualTeamId !== CODEX_ACP_APPLE_TEAM_ID) {
+  if (actualTeamId !== CODEX_APPLE_TEAM_ID) {
     throw new Error(
-      `Downloaded codex-acp binary signed by unexpected team: expected ${CODEX_ACP_APPLE_TEAM_ID}, got ${actualTeamId ?? 'unknown'}`,
+      `Downloaded codex binary signed by unexpected team: expected ${CODEX_APPLE_TEAM_ID}, got ${actualTeamId ?? 'unknown'}`,
     );
   }
 }
 
+/**
+ * `--version` (not `--help`) — the successor adapter treats unknown flags as a
+ * normal server start and never exits, while `--version` prints and exits 0.
+ */
 async function validateWrapper(wrapperPath: string): Promise<void> {
-  await runProcess(process.execPath, [wrapperPath, '--help'], {
+  await runProcess(process.execPath, [wrapperPath, '--version'], {
     timeoutMs: SPAWN_TIMEOUT_MS,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   });

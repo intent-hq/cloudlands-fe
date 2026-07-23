@@ -42,12 +42,18 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
 
 type PlatformKey = 'darwin-arm64' | 'darwin-x64' | 'linux-x64' | 'win32-x64';
 
-const wrapperPackageName = '@zed-industries/codex-acp';
+const entryPackageName = '@agentclientprotocol/codex-acp';
 const nativePackageNames: Record<PlatformKey, string> = {
-  'darwin-arm64': '@zed-industries/codex-acp-darwin-arm64',
-  'darwin-x64': '@zed-industries/codex-acp-darwin-x64',
-  'linux-x64': '@zed-industries/codex-acp-linux-x64',
-  'win32-x64': '@zed-industries/codex-acp-win32-x64',
+  'darwin-arm64': '@openai/codex-darwin-arm64',
+  'darwin-x64': '@openai/codex-darwin-x64',
+  'linux-x64': '@openai/codex-linux-x64',
+  'win32-x64': '@openai/codex-win32-x64',
+};
+const vendorTriples: Record<PlatformKey, string> = {
+  'darwin-arm64': 'aarch64-apple-darwin',
+  'darwin-x64': 'x86_64-apple-darwin',
+  'linux-x64': 'x86_64-unknown-linux-musl',
+  'win32-x64': 'x86_64-pc-windows-msvc',
 };
 
 let tempRoots: string[] = [];
@@ -67,14 +73,31 @@ afterEach(async () => {
 });
 
 describe('codex-acp-manager', () => {
-  it('pins the real wrapper and supported native package integrities', async () => {
+  it('pins the real dependency closure and supported native package integrities', async () => {
     const manager = await import('../codex-acp-manager');
 
-    expect(manager.MANAGED_CODEX_ACP_VERSION).toBe('0.16.0');
-    expect(manager.MANAGED_CODEX_ACP_INTEGRITY.wrapper).toMatchObject({
-      packageName: wrapperPackageName,
-      integrity: 'sha512-XKzqztT5R8Wg1BVFnk6/U4JVx5GNUaZgxpf9gP2Cw6BsknvJWh3aefcAGZQljgdMivRqczjNKYL4F6H65dc5vA==',
+    expect(manager.MANAGED_CODEX_ACP_VERSION).toBe('1.1.7');
+    const entry = manager.MANAGED_CODEX_ACP_INTEGRITY.packages.find(
+      (pkg) => pkg.packageName === entryPackageName,
+    );
+    expect(entry).toMatchObject({
+      packageName: entryPackageName,
+      integrity: 'sha512-bhFLbGtOMEw6+PAp33vNERb6dXlULOfV3mWbRdps4v7sY7PHha/C2T1dnlG0yVcvBu9W+NYPzL0CAupnVoFTiQ==',
     });
+    // Runtime deps of the pure-Node adapter must be part of the staged closure.
+    const packageNames = manager.MANAGED_CODEX_ACP_INTEGRITY.packages.map((pkg) => pkg.packageName);
+    expect(packageNames).toEqual(expect.arrayContaining([
+      '@agentclientprotocol/sdk',
+      '@openai/codex',
+      'diff',
+      'open',
+      'vscode-jsonrpc',
+      'zod',
+    ]));
+    for (const pkg of manager.MANAGED_CODEX_ACP_INTEGRITY.packages) {
+      expect(pkg.integrity).toMatch(/^sha512-/);
+      expect(pkg.tarballUrl).toMatch(/^https:\/\/registry\.npmjs\.org\//);
+    }
     expect(Object.keys(manager.MANAGED_CODEX_ACP_INTEGRITY.platforms).sort()).toEqual([
       'darwin-arm64',
       'darwin-x64',
@@ -83,13 +106,13 @@ describe('codex-acp-manager', () => {
     ]);
     const expectedPlatformIntegrities: Record<PlatformKey, string> = {
       'darwin-arm64':
-        'sha512-2AmbWsc/+Mpn6U8UOIlPLvgwGsGOr/LFpgcvrnjcCT9V1yY92MLrqzjMX82+VjTrRLRuXvc25SB5Z1++4Pw29g==',
+        'sha512-h6aQ0UxnaP8mIM/9/qPAH9MNkRliJo88toq1T36IxNM2L5JSU0TFamu+MZn7YkFgDsrp0RfiI+97Tm8AVVxqtA==',
       'darwin-x64':
-        'sha512-QCWggk0s4GTPLCR7eznyx29Dls4gzUKvp4MjZ4nzPX5gDL/02PGY+oCV1WsQOsnzWRK0RxM+GlK19rG1qzqplw==',
+        'sha512-FCYzVKCa9VoLtg9gVyzKpqylonfgZrfcWZN6HsXAZPeuo8CukdMqdgTUOhDn2V6h3MbqS0z6VqQVKUllN/yKhA==',
       'linux-x64':
-        'sha512-xs5zZBLpJuciEbZNx6ZSNL0qCa9h3i/zWpj40sp6QtF+L4Ow/7qzHdBzboGhHdcz1jrLedfZeRFDA2Elj8TLMA==',
+        'sha512-u8w8LLv3DvsfrDCoswLIemZ0SoNEXyi511WsfFsSiYUazk9qMsB/NtU8N9vhAfN7mZAxLFoMex4v66JjHuZWwA==',
       'win32-x64':
-        'sha512-ZriI/ay5E3DCg8s22LZykIRI2XzQL6sZg/t81K+6qc86ldscaSWQSOT6KSnRcv31QJCMfBlFxMj22pZiGSVjQA==',
+        'sha512-u0h9lk094CaXRSqE34SBW2dRaQTPa6fASXqehczWH9QdsU62mBsiAgAdp6tCG4i+YzPmmhjD8FdXNnYGNmwuMg==',
     };
     for (const key of Object.keys(nativePackageNames) as PlatformKey[]) {
       expect(manager.MANAGED_CODEX_ACP_INTEGRITY.platforms[key].packageName).toBe(
@@ -117,9 +140,9 @@ describe('codex-acp-manager', () => {
     ]);
 
     expect(first).toEqual(second);
-    expect(mocks.httpsGet).toHaveBeenCalledTimes(2);
+    expect(mocks.httpsGet).toHaveBeenCalledTimes(3);
     expect(first.wrapperPath).toContain(
-      path.join('runtimes', 'codex-acp', '0.16.0', 'node_modules', '@zed-industries', 'codex-acp'),
+      path.join('runtimes', 'codex-acp', '1.1.7', 'node_modules', '@agentclientprotocol', 'codex-acp'),
     );
     await expect(fs.access(first.wrapperPath)).resolves.toBeUndefined();
     expect(mocks.backendRequest).toHaveBeenCalledWith(
@@ -127,8 +150,8 @@ describe('codex-acp-manager', () => {
       expect.objectContaining({
         command: process.execPath,
         args: [
-          expect.stringContaining(path.join('codex-acp', 'bin', 'codex-acp.js')),
-          '--help',
+          expect.stringContaining(path.join('codex-acp', 'dist', 'index.js')),
+          '--version',
         ],
         env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }),
       }),
@@ -147,14 +170,14 @@ describe('codex-acp-manager', () => {
       arch: 'x64',
       manifest: fixtures.manifest,
     });
-    mockDownloads(new Map([[fixtures.manifest.wrapper.tarballUrl, Buffer.from('wrong')]]));
+    mockDownloads(new Map([[fixtures.manifest.packages[0].tarballUrl, Buffer.from('wrong')]]));
 
     await expect(manager.ensureManagedCodexAcp()).rejects.toThrow('Integrity mismatch');
 
     const baseDir = path.join(mocks.userData, 'runtimes', 'codex-acp');
     const entries = await fs.readdir(baseDir).catch(() => []);
     expect(entries.filter((entry) => entry.startsWith('.tmp-'))).toEqual([]);
-    expect(entries).not.toContain('0.16.0');
+    expect(entries).not.toContain('1.1.7');
   });
 
   it('cleans stale temp directories before installing', async () => {
@@ -193,7 +216,7 @@ describe('codex-acp-manager', () => {
     await manager.ensureManagedCodexAcp();
 
     const entries = (await fs.readdir(baseDir)).sort();
-    expect(entries).toEqual(['0.12.0', '0.16.0']);
+    expect(entries).toEqual(['0.12.0', '1.1.7']);
   });
 
   it('rejects unsupported platform and arch combinations without downloading', async () => {
@@ -222,7 +245,7 @@ describe('codex-acp-manager', () => {
     mocks.backendRequest.mockImplementation(
       async (_method: string, params: { command: string; args?: string[] }) => {
         if (params.command === 'codesign' && params.args?.[0] === '-dv') {
-          return { stdout: '', stderr: 'TeamIdentifier=MQ55VZLNZQ\n', exitCode: 0 };
+          return { stdout: '', stderr: 'TeamIdentifier=2DC432GLL2\n', exitCode: 0 };
         }
         return { stdout: '', stderr: '', exitCode: 0 };
       },
@@ -251,28 +274,39 @@ describe('codex-acp-manager', () => {
       'host.exec',
       expect.objectContaining({
         command: process.execPath,
-        args: expect.arrayContaining(['--help']),
+        args: expect.arrayContaining(['--version']),
       }),
     );
   });
 });
 
 function createFixtures(platform: PlatformKey) {
-  const nativeBinaryName = platform === 'win32-x64' ? 'codex-acp.exe' : 'codex-acp';
-  const wrapperTarball = createTarGz({
-    'package/bin/codex-acp.js': '#!/usr/bin/env node\nconsole.log("codex-acp help")\n',
-    'package/package.json': JSON.stringify({ name: wrapperPackageName }),
+  const nativeBinaryName = platform === 'win32-x64' ? 'codex.exe' : 'codex';
+  const entryTarball = createTarGz({
+    'package/dist/index.js': '#!/usr/bin/env node\nconsole.log("codex-acp 1.1.7")\n',
+    'package/package.json': JSON.stringify({ name: entryPackageName }),
+  });
+  const depTarball = createTarGz({
+    'package/index.js': 'module.exports = {}\n',
+    'package/package.json': JSON.stringify({ name: 'zod' }),
   });
   const nativeTarball = createTarGz({
-    [`package/bin/${nativeBinaryName}`]: 'native-binary',
+    [`package/vendor/${vendorTriples[platform]}/bin/${nativeBinaryName}`]: 'native-binary',
     'package/package.json': JSON.stringify({ name: nativePackageNames[platform] }),
   });
   const manifest = {
-    wrapper: {
-      packageName: wrapperPackageName,
-      tarballUrl: 'https://example.test/codex-acp.tgz',
-      integrity: integrityFor(wrapperTarball),
-    },
+    packages: [
+      {
+        packageName: entryPackageName,
+        tarballUrl: 'https://example.test/codex-acp.tgz',
+        integrity: integrityFor(entryTarball),
+      },
+      {
+        packageName: 'zod',
+        tarballUrl: 'https://example.test/zod.tgz',
+        integrity: integrityFor(depTarball),
+      },
+    ],
     platforms: Object.fromEntries(
       (Object.keys(nativePackageNames) as PlatformKey[]).map((key) => [
         key,
@@ -287,7 +321,8 @@ function createFixtures(platform: PlatformKey) {
   return {
     manifest,
     downloads: new Map<string, Buffer>([
-      [manifest.wrapper.tarballUrl, wrapperTarball],
+      [manifest.packages[0].tarballUrl, entryTarball],
+      [manifest.packages[1].tarballUrl, depTarball],
       [manifest.platforms[platform].tarballUrl, nativeTarball],
     ]),
   };

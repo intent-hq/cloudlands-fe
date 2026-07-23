@@ -264,7 +264,9 @@
         id: 'codex',
         name: ACP_PROVIDERS.codex.displayName,
         command: ACP_PROVIDERS.codex.command,
-        installCommand: codexSetupInProgress ? undefined : 'npm install -g @zed-industries/codex-acp',
+        installCommand: codexSetupInProgress
+          ? undefined
+          : 'npm install -g @agentclientprotocol/codex-acp',
         setupStatus: codexSetupStatus,
         description: "OpenAI's Codex as an ACP agent",
         available: providerAvailability?.providers.codex.available ?? false,
