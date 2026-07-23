@@ -35,10 +35,16 @@ describe('CommentDialog', () => {
     vi.useFakeTimers();
     try {
       render(CommentDialog, { props: { x: 10, y: 20 } });
-      // Flush Portal's async child mount.
-      await vi.advanceTimersByTimeAsync(0);
-      const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
-      expect(textarea).not.toBeNull();
+      // Flush Portal's async child mount (onMount effect + microtask
+      // re-render); drain in a bounded loop so this stays deterministic
+      // even if the flush takes multiple microtask cycles.
+      let found: HTMLTextAreaElement | null = null;
+      for (let i = 0; i < 10 && !found; i++) {
+        await vi.advanceTimersByTimeAsync(0);
+        found = document.querySelector('textarea');
+      }
+      expect(found).not.toBeNull();
+      const textarea = found as HTMLTextAreaElement;
 
       // Simulate the editor/button stealing focus back after the dialog mounts.
       const stealer = document.createElement('button');
