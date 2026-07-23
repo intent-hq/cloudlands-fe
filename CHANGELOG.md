@@ -4,16 +4,6 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
-## [2.0.13](https://github.com/intent-hq/cloudlands-releases/releases/tag/v2.0.13) (2026-07-23)
-
-Last release cut before auto-generated changelog entries were introduced; see the releases page for its notes.
-
----
-
-## Historical Releases (0.x)
-
-The entries below document releases prior to 2.0.0.
-
 ## [2.1.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.0.13...v2.1.0) (2026-07-23)
 
 
@@ -46,6 +36,16 @@ The entries below document releases prior to 2.0.0.
 * **sidecar:** bump intentd pin to 0.2.3 ([#307](https://github.com/intent-hq/cloudlands-fe/issues/307)) ([5ec2e4c](https://github.com/intent-hq/cloudlands-fe/commit/5ec2e4ca05168175bb1cd986fa537efc8d9f77d0))
 * surface empty-with-warning providers in the ModelPicker instead of hiding them ([#273](https://github.com/intent-hq/cloudlands-fe/issues/273)) ([0429f93](https://github.com/intent-hq/cloudlands-fe/commit/0429f93d78366909015c86d187730a17005e95cb))
 * update vulnerable dependencies to resolve 57 Dependabot alerts ([#288](https://github.com/intent-hq/cloudlands-fe/issues/288)) ([4a9a619](https://github.com/intent-hq/cloudlands-fe/commit/4a9a61953eda015ef0a245cd3c311f3ae57bf062))
+
+## [2.0.13](https://github.com/intent-hq/cloudlands-releases/releases/tag/v2.0.13) (2026-07-23)
+
+Last release cut before auto-generated changelog entries were introduced; see the releases page for its notes.
+
+---
+
+## Historical Releases (0.x)
+
+The entries below document releases prior to 2.0.0.
 
 ## 0.4.0
 
