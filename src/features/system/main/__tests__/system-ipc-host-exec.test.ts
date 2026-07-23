@@ -128,7 +128,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
       {
         command: 'git commit --amend -m "fix: typo"',
         cwd: '/ws/repo',
-        workspaceId: 'ws-1',
+        workspaceId: 'amber-forest',
       },
     )) as { success: boolean };
 
@@ -138,7 +138,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
       {
         args: [SHELL_FLAG, 'git commit --amend -m "fix: typo"'],
         cwd: '/ws/repo',
-        workspaceId: 'ws-1',
+        workspaceId: 'amber-forest',
         timeoutMs: 30_000,
       },
     ]);
