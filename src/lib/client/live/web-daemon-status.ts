@@ -50,7 +50,7 @@ export function onWebDaemonStatusSourceRegistered(
 }
 
 /** Test-only: clear the registered source and registration hooks. */
-export function resetWebDaemonStatusSourceForTests(): void {
+export function __resetWebDaemonStatusSourceForTests(): void {
   currentSource = null;
   registrationHandlers.clear();
 }

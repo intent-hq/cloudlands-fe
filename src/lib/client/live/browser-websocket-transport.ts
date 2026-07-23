@@ -50,7 +50,9 @@ export function resolveBrowserWsUrl(
  * Sanitize a WS URL for display by removing userinfo (user:pass@), query
  * parameters, and hash — never exposes secrets/tokens. Mirrors the
  * main-process `transport-info.ts` sanitizer (a `main/` module the renderer
- * must not import). Falls back to stripping the query string on parse failure.
+ * must not import). The parse-failure fallback strips the same three
+ * components textually so secret material never leaks even for URLs that
+ * `new URL()` rejects.
  */
 export function sanitizeWsUrlForDisplay(rawUrl: string): string {
   try {
@@ -61,7 +63,9 @@ export function sanitizeWsUrlForDisplay(rawUrl: string): string {
     url.hash = "";
     return url.toString();
   } catch {
-    return rawUrl.replace(/\?.*$/, "");
+    return rawUrl
+      .replace(/[?#].*$/, "")
+      .replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, "$1");
   }
 }
 

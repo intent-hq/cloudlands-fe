@@ -413,20 +413,35 @@ export function installBrowserMock(): boolean {
   );
   (window as any).electronAPI = browserElectronAPI;
 
-  // dev:web daemon health: once the BrowserWebSocketTransport registers as
-  // the status source (lazily, on first backend request), forward its
-  // connection-status transitions as backend:status push events — the
-  // daemon-health service subscribes via electronAPI.on, not the mock router.
+  installWebDaemonStatusBridge();
+
+  return true;
+}
+
+let webDaemonStatusBridgeInstalled = false;
+
+/**
+ * dev:web daemon health: once the BrowserWebSocketTransport registers as the
+ * status source (lazily, on first backend request), forward its
+ * connection-status transitions as backend:status push events — the
+ * daemon-health service subscribes via electronAPI.on, not the mock router.
+ * Idempotent (guarded for repeat installBrowserMock calls, e.g. HMR), and a
+ * re-registered source replaces the previous onStatusChange subscription so
+ * events are never emitted in duplicate.
+ */
+function installWebDaemonStatusBridge(): void {
+  if (webDaemonStatusBridgeInstalled) return;
+  webDaemonStatusBridgeInstalled = true;
+  let unsubscribeStatus: (() => void) | null = null;
   onWebDaemonStatusSourceRegistered((source) => {
-    source.onStatusChange((status) => {
+    unsubscribeStatus?.();
+    unsubscribeStatus = source.onStatusChange((status) => {
       emitBrowserMockEvent('backend:status', {
         status,
         transport: { mode: 'external-ws', target: source.getTarget() },
       });
     });
   });
-
-  return true;
 }
 
 // Auto-install on import
