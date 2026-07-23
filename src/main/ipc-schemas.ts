@@ -1226,7 +1226,9 @@ export const UserMcpTestConnectionSchema = z.object({
 // SYSTEM_CHANNELS schemas
 // `cwd` requires `workspaceId` so the daemon's within-workspace containment
 // guard (PROTOCOL §5.14) always runs — mirrors `host.exec`'s own -32602 parse
-// guard (monorepo#578).
+// guard (monorepo#578). An empty-string cwd is deliberately treated as absent:
+// both bridges drop blank cwd before the wire (`hostExec` omits it, the web
+// bridge's `if (cwd)` does the same), so only a non-empty cwd arms the guard.
 export const SystemExecuteCommandSchema = z
   .object({
     command: z.string().min(1, 'Command is required'),

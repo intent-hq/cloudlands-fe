@@ -171,6 +171,29 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
     });
   });
 
+  it('treats an empty-string cwd as absent — passes validation and hostExec drops it off the wire', async () => {
+    hostExecMock.mockResolvedValue({
+      stdout: 'git version 2.44.0\n',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND);
+    const result = (await handler({}, { command: 'git --version', cwd: '' })) as {
+      success: boolean;
+    };
+
+    // A blank cwd never arms the cwd⇒workspaceId guard: `hostExec` only
+    // forwards non-empty cwd strings, so nothing reaches the daemon's
+    // containment check (parity with the web bridge's `if (cwd)`).
+    expect(hostExecMock).toHaveBeenCalledWith(SHELL_CMD, {
+      args: [SHELL_FLAG, 'git --version'],
+      cwd: '',
+      timeoutMs: 30_000,
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('folds a host.exec rejection to the generic failure envelope', async () => {
     hostExecMock.mockRejectedValue(new Error('boom: transport failure'));
 

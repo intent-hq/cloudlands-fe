@@ -534,17 +534,15 @@ describe("host-bridge-seeder", () => {
       });
     });
 
-    it("rejects a cwd-only payload with the schema-validation envelope and no daemon call (monorepo#578)", async () => {
-      routeDaemon({
-        "system.status": localHost("macos"),
-        "host.exec": { stdout: "", stderr: "", exitCode: 0 },
-      });
-
+    it("rejects a cwd-only payload with the schema-validation envelope before any daemon dispatch (monorepo#578)", async () => {
       const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
         command: "git status",
         cwd: "/Users/alex/code/project",
       });
 
+      // No system.status OS probe and no host.exec call — the rejection
+      // precedes OS detection, so no `cd` wrapper can be emitted for any
+      // daemon host OS (POSIX or Windows).
       expect(mockedRequest).not.toHaveBeenCalled();
       // Identical to the Electron bridge's createSafeValidatedHandler zod
       // rejection (SystemExecuteCommandSchema cwd⇒workspaceId refinement).
@@ -564,22 +562,23 @@ describe("host-bridge-seeder", () => {
       });
     });
 
-    it("never folds a cwd-only payload into a `cd` wrapper on a Windows daemon host either (monorepo#578)", async () => {
+    it("treats an empty-string cwd as absent (never armed the guard; blank cwd stays off the wire, hostExec parity)", async () => {
       routeDaemon({
-        "system.status": localHost("windows"),
-        "host.exec": { stdout: "", stderr: "", exitCode: 0 },
+        "system.status": localHost("macos"),
+        "host.exec": { stdout: "ok\n", stderr: "", exitCode: 0 },
       });
 
       const response = await mockInvoke<{ success: boolean }>(
         IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND,
-        {
-          command: "git push --force-with-lease",
-          cwd: "C:\\code\\project",
-        },
+        { command: "git --version", cwd: "" },
       );
 
-      expect(hostExecCalls()).toEqual([]);
-      expect(response.success).toBe(false);
+      expect(hostExecCalls()[0][1]).toEqual({
+        command: "/bin/sh",
+        args: ["-c", "git --version"],
+        timeoutMs: 30_000,
+      });
+      expect(response.success).toBe(true);
     });
 
     it("runs the bare command (no cd prefix) when no cwd is supplied", async () => {
