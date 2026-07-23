@@ -1,7 +1,10 @@
 import type { DropdownGroup, DropdownOption } from '$lib/components/ui/dropdown';
 import { ACP_PROVIDERS, getProviderConfig } from '$shared/config/provider-config';
 
-import type { ProviderLoadError } from './model-picker-provider-errors';
+import {
+  formatProviderLoadError,
+  type ProviderLoadError,
+} from './model-picker-provider-errors';
 import { toDropdownOptions } from './model-picker-utils';
 
 type ModelPickerOptions = Parameters<typeof toDropdownOptions>[0];
@@ -16,6 +19,7 @@ interface BuildGroupedModelOptionsParams {
   allProviderModels: Record<string, DropdownOption[]>;
   allProviderLoading: Record<string, boolean>;
   allProviderErrors: Record<string, ProviderLoadError>;
+  allProviderWarnings: Record<string, string>;
 }
 
 export function buildGroupedModelOptions({
@@ -28,6 +32,7 @@ export function buildGroupedModelOptions({
   allProviderModels,
   allProviderLoading,
   allProviderErrors,
+  allProviderWarnings,
 }: BuildGroupedModelOptionsParams): DropdownGroup[] {
   const groups: DropdownGroup[] = [];
 
@@ -93,6 +98,25 @@ export function buildGroupedModelOptions({
             disabled: true,
             class: 'cursor-default disabled:opacity-100',
             data: { providerLoadError: error },
+          },
+        ],
+      });
+    } else if (allProviderWarnings[pid]) {
+      // Enabled provider that legitimately returned zero models with a
+      // daemon warning (PROTOCOL §5.30 degraded response) — surface the
+      // warning as a disabled row instead of silently dropping the group.
+      const warning = formatProviderLoadError(pid, allProviderWarnings[pid]);
+      groups.push({
+        key: pid,
+        label: warning.providerName,
+        options: [
+          {
+            value: `provider-warning:${pid}`,
+            label: warning.displayText,
+            description: warning.hint,
+            disabled: true,
+            class: 'cursor-default disabled:opacity-100',
+            data: { providerLoadError: warning },
           },
         ],
       });
