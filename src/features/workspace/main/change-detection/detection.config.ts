@@ -2,16 +2,15 @@
  * Change-detection layer configuration.
  *
  * Home for the sub-configs consumed by the FE change-detection / infra
- * survivors (`file-watcher`, `snapshot-manager`, `change-detector-refactored`,
- * `event-coordinator`, `workspace.ipc`, `recovery-manager`).
+ * survivors (`snapshot-manager`, `change-detector-refactored`,
+ * `event-coordinator`, `recovery-manager`).
  * Extracted out of the retiring `features/file-tracking/tracking.config.ts`.
  * Values mirror the originals byte-for-byte to preserve runtime behaviour.
+ * Change detection is driven by intentd `file:*` events; there is no local
+ * file watcher or periodic git polling, so no intervals for those live here.
  */
 
 export const CHANGE_DETECTION_CONFIG = {
-  gitPollingInterval: 15000,
-  gitPollingIntervalLargeRepo: 30000,
-  fileWatcherDebounce: 300,
   immediateCheckDebounce: 500,
 
   maxParallelFileProcessing: 5,
@@ -28,9 +27,6 @@ export const CHANGE_DETECTION_CONFIG = {
   maxGitRetries: 3,
 
   largeRepoThreshold: 1000,
-
-  disableFileWatcher: false,
-  gitPollingOnly: false,
 
   additionalIgnorePatterns: ['.workspace-notes/**', '.workspace-notes.backup/**'],
 } as const;

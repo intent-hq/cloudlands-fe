@@ -178,16 +178,14 @@ export class ChangeDetectorManager extends EventEmitter {
     const debugMode = process.env.VERBOSE_CHANGE_DETECTOR === 'true';
 
     // Use ChangeDetectorRefactored for local workspaces
-    // FSEvents-based file watching with adaptive polling fallback (intervals from CHANGE_DETECTION_CONFIG)
+    // Change detection is driven by intentd file:* events (no local watcher/polling)
     const detector: any = new ChangeDetector({
       workspaceId: workspace.id,
       workspacePath: workspace.worktreePath,
-      disableFileWatcher: false,
-      gitPollingOnly: false,
     });
 
     logger.debug(
-      `[ChangeDetectorManager] Using FSEvents-based file watching with polling fallback for workspace ${workspace.id}`,
+      `[ChangeDetectorManager] Using intentd file-event-driven change detection for workspace ${workspace.id}`,
     );
 
     // Listen for changes

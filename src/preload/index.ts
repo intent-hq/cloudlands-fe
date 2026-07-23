@@ -400,7 +400,6 @@ const ALLOWED_CHANNELS = [
   "specialists:get-folder-path",
   "specialists:export-builtin",
   "specialists:file-exists",
-  "specialists:files-changed",
   "config:getAll",
   "user-activity:mark-note-read",
   "user-activity:get-note-read-status",
@@ -544,7 +543,6 @@ const ALLOWED_CHANNELS = [
   "file:deleted",
   "file:renamed",
   "file:content-changed",
-  "watcher:file-changed",
   "note:created",
   "note:updated",
   "note:deleted",
@@ -664,7 +662,6 @@ const ALLOWED_CHANNELS = [
   "script:output",
   "script:error",
   "script:url-detected",
-  "specialists:files-changed",
   "websocket-api:discovery-auto-disabled",
   "token-usage:changed",
   "backend:notification",
@@ -718,7 +715,6 @@ const EVENT_CHANNELS = [
   "file:deleted",
   "file:renamed",
   "file:content-changed",
-  "watcher:file-changed",
   "note:created",
   "note:updated",
   "note:deleted",
@@ -838,7 +834,6 @@ const EVENT_CHANNELS = [
   "script:output",
   "script:error",
   "script:url-detected",
-  "specialists:files-changed",
   "websocket-api:discovery-auto-disabled",
   "token-usage:changed",
   "backend:notification",
@@ -892,12 +887,12 @@ function generateListenerId(): string {
 // Define the API exposed to the renderer
 const electronAPI = {
   // IPC invoke (request/response)
-  invoke: (channel: string, ...args: any[]) => {
+  invoke: (channel: string, data?: any) => {
     // Use generated allowed channels for security
     if (isChannelAllowed(channel)) {
-      // Pass args as-is to respect union schemas and other complex types
+      // Pass data as-is to respect union schemas and other complex types
       // The validation middleware will handle type checking
-      return ipcRenderer.invoke(channel, ...args).catch((err) => {
+      return ipcRenderer.invoke(channel, data).catch((err) => {
         logger.error(`[Preload] IPC invoke failed for ${channel}:`, err);
         throw err;
       });
