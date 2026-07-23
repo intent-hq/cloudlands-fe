@@ -411,4 +411,34 @@ describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
     expect(migrated.kind).toBe('bulk-op');
     expect(migrated.applyToolCallId).toBe('tool-1');
   });
+
+  it("migrateFromLegacy converts the daemon's standalone proposal-resource block (PROTOCOL §7.1)", () => {
+    // Exact wire shape from tool_block.rs::build_proposal_resource_block: the
+    // tool-output resource item echoed verbatim with the stable block id
+    // stamped on ({messageId}:{index}).
+    const migrated = migrateFromLegacy({
+      type: 'resource',
+      id: 'msg_1:2',
+      resource: {
+        uri: 'intent-proposal://workspace-create/tc-1',
+        name: 'Create workspace',
+        mimeType: 'application/vnd.intent.proposal+json',
+        text: JSON.stringify({
+          kind: 'workspace-create',
+          payload: { operation: 'workspace.create', params: { repositoryPath: '/repo' } },
+          preview: { title: 'Create workspace' },
+          applyToolCallId: 'tc-1',
+        }),
+      },
+    });
+
+    expect(migrated.type).toBe('proposal');
+    expect(migrated.kind).toBe('workspace-create');
+    expect(migrated.id).toBe('msg_1:2');
+    expect(migrated.applyToolCallId).toBe('tc-1');
+    expect(migrated.proposal?.payload).toEqual({
+      operation: 'workspace.create',
+      params: { repositoryPath: '/repo' },
+    });
+  });
 });

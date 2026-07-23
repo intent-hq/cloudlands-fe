@@ -116,6 +116,7 @@ import type {
   Workspace,
 } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
+import { PROPOSAL_RESOURCE_MIME_TYPE } from '$shared/types/proposal-resource';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
@@ -218,6 +219,15 @@ interface StreamState {
   workspaceId: string;
   blocksByIndex: Map<number, ContentBlock>;
   toolResultsByUseIndex: Map<number, ContentBlock>;
+  /**
+   * `tool_use` index → standalone proposal-resource block (PROTOCOL §7.1).
+   * When a completed tool's output carries a proposal-MIME resource item the
+   * daemon appends the item as a standalone `resource` block right after the
+   * `tool_result` (see `crates/intent-services/src/tool_block.rs::
+   * find_proposal_resource`); mirror that lift here so the live transcript
+   * matches the persisted one and `ProposalCard` renders mid-stream.
+   */
+  proposalsByUseIndex: Map<number, ContentBlock>;
 }
 
 const streamsByAgent = new Map<string, StreamState>();
@@ -287,6 +297,7 @@ function ensureStream(agentId: string, messageId: string, workspaceId: string): 
     workspaceId,
     blocksByIndex: new Map(),
     toolResultsByUseIndex: new Map(),
+    proposalsByUseIndex: new Map(),
   };
   streamsByAgent.set(agentId, fresh);
   return fresh;
@@ -329,8 +340,50 @@ function buildContentBlocks(state: StreamState): ContentBlock[] {
     result.push(state.blocksByIndex.get(key)!);
     const toolResult = state.toolResultsByUseIndex.get(key);
     if (toolResult) result.push(toolResult);
+    const proposalBlock = state.proposalsByUseIndex.get(key);
+    if (proposalBlock) result.push(proposalBlock);
   }
   return result;
+}
+
+/**
+ * Find the first well-formed proposal resource item in a completed tool's
+ * `output` array — `{ type: "resource", resource: { mimeType: <proposal MIME>,
+ * text: <string> } }` — mirroring the daemon's
+ * `crates/intent-services/src/tool_block.rs::find_proposal_resource` (§7.1).
+ * Returns null for non-array output, no matching item, or a malformed resource.
+ */
+function findProposalResourceItem(output: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(output)) return null;
+  for (const item of output) {
+    if (!item || typeof item !== 'object') continue;
+    const candidate = item as { type?: unknown; resource?: { mimeType?: unknown; text?: unknown } };
+    if (
+      candidate.type === 'resource' &&
+      candidate.resource &&
+      typeof candidate.resource === 'object' &&
+      candidate.resource.mimeType === PROPOSAL_RESOURCE_MIME_TYPE &&
+      typeof candidate.resource.text === 'string'
+    ) {
+      return item as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
+/**
+ * Predict the standalone proposal block's stable id from the `tool_use`
+ * blockId: the daemon appends `tool_result` at index + 1 and the proposal
+ * block at index + 2 (`{messageId}:{index}` scheme, §7.1 tool_delta).
+ * Returns undefined when the blockId does not follow that scheme.
+ */
+function predictProposalBlockId(toolUseBlockId: unknown): string | undefined {
+  if (typeof toolUseBlockId !== 'string') return undefined;
+  const separator = toolUseBlockId.lastIndexOf(':');
+  if (separator < 0) return undefined;
+  const index = Number(toolUseBlockId.slice(separator + 1));
+  if (!Number.isInteger(index)) return undefined;
+  return `${toolUseBlockId.slice(0, separator)}:${index + 2}`;
 }
 
 function dispatchStreamUpdate(
@@ -472,6 +525,22 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
       output: output as ContentBlock['output'],
       is_error: status === 'error',
     } as ContentBlock);
+
+    // §7.1: lift a proposal-MIME resource item out of a COMPLETED tool's
+    // output into a standalone `resource` block right after the tool_result,
+    // mirroring the daemon's persisted transcript (`record_tool`) and live
+    // delta stream (`tool_delta`) so `ProposalCard` renders mid-stream. A
+    // tool that ends in `error` never surfaces a standalone proposal block.
+    if (status === 'completed') {
+      const proposalItem = findProposalResourceItem(output);
+      if (proposalItem) {
+        const proposalBlockId = predictProposalBlockId(blockId);
+        state.proposalsByUseIndex.set(blockIndex, {
+          ...proposalItem,
+          ...(proposalBlockId ? { id: proposalBlockId } : {}),
+        } as unknown as ContentBlock);
+      }
+    }
   }
 
   dispatchStreamUpdate(agentId, state, 'content-blocks');
