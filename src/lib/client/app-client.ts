@@ -307,6 +307,17 @@ export interface WorkspacesClient {
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe;
 }
 
+/**
+ * Image content block attached to a message (PROTOCOL §5.5:
+ * `{ type: "image", data, mimeType }`). Shared shape for the optional
+ * `imageBlocks` params on `agents.queue` and `agents.force`.
+ */
+export interface ImageBlock {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
 export interface AgentsClient {
   list(workspaceId: string): Promise<AgentSession[]>;
   get(agentId: string): Promise<AgentSession | null>;
@@ -369,7 +380,7 @@ export interface AgentsClient {
     agentId: string,
     message: string,
     options?: {
-      imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+      imageBlocks?: ImageBlock[];
     },
   ): Promise<MutationResult>;
   /**
@@ -398,7 +409,7 @@ export interface AgentsClient {
     messageId: string;
     content: string;
     workspaceId: string;
-    imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+    imageBlocks?: ImageBlock[];
     noteIds?: string[];
   }): Promise<MutationResult>;
   /**

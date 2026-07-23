@@ -14,6 +14,7 @@ import type { QueuedMessage } from "$shared/types/agent-session";
 import type {
   AgentCreateRequest,
   AgentsClient,
+  ImageBlock,
   MutationResult,
   PermissionOutcome,
   RespondPermissionResult,
@@ -221,7 +222,7 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string,
     message: string,
     options?: {
-      imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+      imageBlocks?: ImageBlock[];
     },
   ): Promise<MutationResult> {
     // `agent.queueMessage` returns `{ success, queuedMessage }` (§5.5); we
@@ -271,7 +272,7 @@ export class LiveAgentsClient implements AgentsClient {
     messageId: string;
     content: string;
     workspaceId: string;
-    imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+    imageBlocks?: ImageBlock[];
     noteIds?: string[];
   }): Promise<MutationResult> {
     // `agent.forceMessage` (§5.5) stops the current stream, dequeues, and
