@@ -2141,8 +2141,9 @@ export function setupSystemIPC() {
   // string, so we wrap it via the host shell (`sh -c` on POSIX / `cmd /c` on
   // Windows) and let the daemon run it on the workspace host. `cwd` is
   // forwarded together with the caller's `workspaceId` so the daemon's
-  // within-workspace containment guard (§5.14) can run — `host.exec` rejects
-  // cwd without workspaceId with -32602.
+  // within-workspace containment guard (§5.14) can run — cwd-only payloads
+  // are rejected by SystemExecuteCommandSchema's cwd⇒workspaceId refinement
+  // before this handler runs (monorepo#578), mirroring `host.exec`'s -32602.
   ipcMain.handle(
     SYSTEM_CHANNELS.EXECUTE_COMMAND,
     createSafeValidatedHandler(

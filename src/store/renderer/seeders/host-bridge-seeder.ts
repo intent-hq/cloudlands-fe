@@ -27,7 +27,6 @@ import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { openExternalUrl } from "$lib/utils/open-external";
-import { posixSingleQuote } from "$lib/utils/posix-single-quote";
 import { EDITOR_REGISTRY } from "$shared/editors/editor-registry";
 import type { InstalledEditor } from "$store/renderer/slices/external-editors/external-editors-slice";
 
@@ -324,24 +323,26 @@ const EXECUTE_COMMAND_TIMEOUT_MS = 30_000;
  * `JSON-RPC request timed out` rejection (shell-reveal-bridge-seeder idiom). */
 const EXECUTE_COMMAND_TRANSPORT_HEADROOM_MS = 5_000;
 
-/**
- * Legacy fallback ONLY, for payloads that carry `cwd` but no `workspaceId`:
- * fold `cwd` into the shell script instead of passing it on the wire, because
- * `host.exec` rejects `cwd` without `workspaceId` (§5.14 containment guard).
- * Payloads that do carry `workspaceId` (CommitsTimeline amend/force-push)
- * bypass this wrapper and go wire-native so the guard actually runs.
- */
-function shellScriptWithCwd(os: string, command: string, cwd: string): string {
-  if (os === "windows") {
-    // cmd.exe: `"` is not a legal filename character, so plain quoting is
-    // sufficient; `/d` switches drives when needed. Caveat: cmd.exe expands
-    // `%VAR%` even inside double quotes, so a cwd containing `%` would be
-    // env-expanded — accepted, as `%` is vanishingly rare in real paths and
-    // the Electron main-process handler has the same exposure.
-    return `cd /d "${cwd}" && ${command}`;
-  }
-  return `cd -- ${posixSingleQuote(cwd)} && ${command}`;
-}
+/** Mirrors the Electron bridge's schema rejection (createSafeValidatedHandler
+ * + SystemExecuteCommandSchema's cwd⇒workspaceId refinement): a cwd-only
+ * payload fails validation before any daemon call, so the daemon's
+ * within-workspace containment guard (§5.14) is enforced uniformly on both
+ * bridges instead of only when the caller supplies `workspaceId`
+ * (monorepo#578; retires the legacy `cd`-wrapper fallback). */
+const EXECUTE_COMMAND_CWD_VALIDATION_FAILURE = {
+  success: false,
+  error: {
+    code: "VALIDATION_ERROR",
+    message: "Invalid request parameters",
+    details: [
+      {
+        code: "custom",
+        message: "cwd requires workspaceId (PROTOCOL §5.14 containment guard)",
+        path: ["workspaceId"],
+      },
+    ],
+  },
+} as const;
 
 /** The Electron handler's catch envelope (system.ipc.ts EXECUTE_COMMAND) —
  * a generic message, never the underlying error or the command string. */
@@ -357,10 +358,11 @@ const EXECUTE_COMMAND_FAILURE = {
  * The wire schema is a shell-form command string, so — mirroring the Electron
  * main-process handler — it is wrapped via the DAEMON host's shell (`/bin/sh
  * -c` on POSIX, `cmd.exe /c` on Windows; the OS comes from `system.status`
- * `host.os`, shell-reveal-bridge-seeder idiom). Payloads carrying a
- * `workspaceId` pass `cwd` + `workspaceId` wire-native so the daemon's
- * within-workspace containment guard runs; legacy cwd-only payloads fall back
- * to folding `cwd` into the script (`shellScriptWithCwd`). Envelope parity
+ * `host.os`, shell-reveal-bridge-seeder idiom). `cwd` always goes wire-native
+ * together with `workspaceId` so the daemon's within-workspace containment
+ * guard runs; cwd-only payloads are rejected up front with the same
+ * schema-validation envelope the Electron bridge produces (monorepo#578 — the
+ * legacy `cd`-wrapper fallback is retired). Envelope parity
  * with that handler: exit 0 → `{success:true, data:{stdout,stderr,code:0}}`;
  * non-zero → `{success:false, error, data:{stdout,stderr,code}}`
  * (CommitsTimeline's upstream-branch fallback greps `data.stderr`); any
@@ -375,6 +377,9 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
   if (!command) {
     return EXECUTE_COMMAND_FAILURE;
   }
+  if (cwd && !workspaceId) {
+    return EXECUTE_COMMAND_CWD_VALIDATION_FAILURE;
+  }
   try {
     const status = await backendRequest<SystemStatusResult>("system.status");
     const os = status?.host?.os;
@@ -384,16 +389,14 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, async (arg) => {
       throw new Error("The daemon does not report host info (older intentd?)");
     }
     const [shellCmd, shellFlag] = os === "windows" ? ["cmd.exe", "/c"] : ["/bin/sh", "-c"];
-    const wireNativeCwd = Boolean(cwd) && Boolean(workspaceId);
-    const script = cwd && !wireNativeCwd ? shellScriptWithCwd(os, command, cwd) : command;
     const execParams: {
       command: string;
       args: string[];
       cwd?: string;
       workspaceId?: string;
       timeoutMs: number;
-    } = { command: shellCmd, args: [shellFlag, script], timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS };
-    if (wireNativeCwd) {
+    } = { command: shellCmd, args: [shellFlag, command], timeoutMs: EXECUTE_COMMAND_TIMEOUT_MS };
+    if (cwd) {
       execParams.cwd = cwd;
     }
     if (workspaceId) {

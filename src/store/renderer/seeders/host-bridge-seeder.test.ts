@@ -534,52 +534,51 @@ describe("host-bridge-seeder", () => {
       });
     });
 
-    it("wraps the shell-form command via `/bin/sh -c` with cwd folded into the script for legacy cwd-only payloads on a POSIX daemon host (regression: web folded to the disabled-allowlist failure)", async () => {
-      routeDaemon({
-        "system.status": localHost("macos"),
-        "host.exec": { stdout: "[main abc1234] amended\n", stderr: "", exitCode: 0 },
-      });
-
+    it("rejects a cwd-only payload with the schema-validation envelope before any daemon dispatch (monorepo#578)", async () => {
       const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
-        command: 'git commit --amend -m "fix: typo"',
+        command: "git status",
         cwd: "/Users/alex/code/project",
       });
 
-      expect(hostExecCalls()).toEqual([
-        [
-          "host.exec",
-          {
-            command: "/bin/sh",
-            args: ["-c", `cd -- '/Users/alex/code/project' && git commit --amend -m "fix: typo"`],
-            timeoutMs: 30_000,
-          },
-          { timeoutMs: 35_000 },
-        ],
-      ]);
-      // Envelope parity with the Electron main-process handler
-      // (system.ipc.ts EXECUTE_COMMAND): exit 0 → {success, data:{stdout,stderr,code:0}}.
+      // No system.status OS probe and no host.exec call — the rejection
+      // precedes OS detection, so no `cd` wrapper can be emitted for any
+      // daemon host OS (POSIX or Windows).
+      expect(mockedRequest).not.toHaveBeenCalled();
+      // Identical to the Electron bridge's createSafeValidatedHandler zod
+      // rejection (SystemExecuteCommandSchema cwd⇒workspaceId refinement).
       expect(response).toEqual({
-        success: true,
-        data: { stdout: "[main abc1234] amended\n", stderr: "", code: 0 },
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid request parameters",
+          details: [
+            {
+              code: "custom",
+              message: "cwd requires workspaceId (PROTOCOL §5.14 containment guard)",
+              path: ["workspaceId"],
+            },
+          ],
+        },
       });
     });
 
-    it("single-quotes a cwd containing quotes/spaces so the shell cannot re-interpret it", async () => {
+    it("treats an empty-string cwd as absent (never armed the guard; blank cwd stays off the wire, hostExec parity)", async () => {
       routeDaemon({
-        "system.status": localHost("linux"),
-        "host.exec": { stdout: "", stderr: "", exitCode: 0 },
+        "system.status": localHost("macos"),
+        "host.exec": { stdout: "ok\n", stderr: "", exitCode: 0 },
       });
 
-      await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
-        command: "git status",
-        cwd: "/tmp/it's a repo",
-      });
+      const response = await mockInvoke<{ success: boolean }>(
+        IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND,
+        { command: "git --version", cwd: "" },
+      );
 
       expect(hostExecCalls()[0][1]).toEqual({
         command: "/bin/sh",
-        args: ["-c", `cd -- '/tmp/it'\\''s a repo' && git status`],
+        args: ["-c", "git --version"],
         timeoutMs: 30_000,
       });
+      expect(response.success).toBe(true);
     });
 
     it("runs the bare command (no cd prefix) when no cwd is supplied", async () => {
@@ -616,7 +615,7 @@ describe("host-bridge-seeder", () => {
       });
     });
 
-    it("uses `cmd.exe /c` with `cd /d` on a Windows daemon host", async () => {
+    it("uses `cmd.exe /c` on a Windows daemon host with cwd + workspaceId wire-native", async () => {
       routeDaemon({
         "system.status": localHost("windows"),
         "host.exec": { stdout: "", stderr: "", exitCode: 0 },
@@ -625,11 +624,14 @@ describe("host-bridge-seeder", () => {
       await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
         command: "git push --force-with-lease",
         cwd: "C:\\code\\project",
+        workspaceId: "ws-1",
       });
 
       expect(hostExecCalls()[0][1]).toEqual({
         command: "cmd.exe",
-        args: ["/c", `cd /d "C:\\code\\project" && git push --force-with-lease`],
+        args: ["/c", "git push --force-with-lease"],
+        cwd: "C:\\code\\project",
+        workspaceId: "ws-1",
         timeoutMs: 30_000,
       });
     });
@@ -650,6 +652,7 @@ describe("host-bridge-seeder", () => {
       const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
         command: "git push --force-with-lease",
         cwd: "/repo",
+        workspaceId: "ws-1",
       });
 
       expect(response).toEqual({
@@ -674,6 +677,7 @@ describe("host-bridge-seeder", () => {
       }>(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
         command: "git commit --amend -m secret-token",
         cwd: "/repo",
+        workspaceId: "ws-1",
       });
 
       expect(response).toEqual({
@@ -693,6 +697,7 @@ describe("host-bridge-seeder", () => {
       const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
         command: "git status",
         cwd: "/repo",
+        workspaceId: "ws-1",
       });
 
       expect(response).toEqual({
@@ -709,6 +714,7 @@ describe("host-bridge-seeder", () => {
       const response = await mockInvoke(IPC_CHANNELS.SYSTEM.EXECUTE_COMMAND, {
         command: "git status",
         cwd: "/repo",
+        workspaceId: "ws-1",
       });
 
       expect(response).toEqual({
