@@ -1,13 +1,14 @@
 /**
  * Graceful-shutdown ordering regression guard (AST-based).
  *
- * `ConsolidatedBackendService.shutdown()` (invoked by `shutdownUnifiedBackend`)
- * kills providers and saves sessions during teardown. The persist-in-flight
- * hook (`agentBackendHandler.persistShutdownState()`) was retired alongside
- * the FE `AgentBackendHandler` (C1d-7) — the daemon now owns in-flight session
- * persistence via `agent.completeOnce` (PROTOCOL.md §5.32). What remains is
- * the non-teardown ordering (running-agent prompt BEFORE any teardown, single
- * SIGINT/SIGTERM owner, non-macOS delegate-to-gracefulShutdown path).
+ * The persist-in-flight hook (`agentBackendHandler.persistShutdownState()`)
+ * was retired alongside the FE `AgentBackendHandler` (C1d-7), and the
+ * `shutdownUnifiedBackend` / `ConsolidatedBackendService.shutdown()` teardown
+ * was retired with the main-process agent handlers — the daemon owns agent
+ * lifecycle and in-flight session persistence via `agent.completeOnce`
+ * (PROTOCOL.md §5.32). What remains is the non-teardown ordering
+ * (running-agent prompt BEFORE any teardown, single SIGINT/SIGTERM owner,
+ * non-macOS delegate-to-gracefulShutdown path).
  *
  * Importing `src/main/index.ts` has heavy top-level side effects (Sentry,
  * electron app, IPC registration), so we parse the source with the
@@ -99,12 +100,14 @@ describe('gracefulShutdown call ordering (AST)', () => {
   it('does not re-introduce the retired persistShutdownState hook in gracefulShutdown', () => {
     // Sentinel: `agentBackendHandler.persistShutdownState()` was retired in
     // C1d-7 (daemon owns in-flight persistence via `agent.completeOnce`,
-    // PROTOCOL.md §5.32). Adding it back would resurrect the FE handler.
+    // PROTOCOL.md §5.32), and `shutdownUnifiedBackend` was retired with the
+    // main-process agent handlers. Adding either back would resurrect the FE
+    // agent backend.
     const sf = parseIndex();
     const gs = findGracefulShutdown(sf);
     const calls = callsitesIn(gs.body!);
     expect(calls.some((c) => c.text === 'agentBackendHandler.persistShutdownState')).toBe(false);
-    expect(calls.some((c) => c.text === 'shutdownUnifiedBackend')).toBe(true);
+    expect(calls.some((c) => c.text === 'shutdownUnifiedBackend')).toBe(false);
   });
 
   it('window-all-closed does not re-introduce the retired persistShutdownState hook', () => {

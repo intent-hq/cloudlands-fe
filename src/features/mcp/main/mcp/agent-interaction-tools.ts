@@ -3240,40 +3240,14 @@ If you were created directly by a user, this tool will return an error.`,
         return this.error('Failed to save completion report. Please try again.');
       }
 
-      // Defense-in-depth: also push the completion report into the in-memory
-      // backend session so anything reading from the live session sees it
-      // immediately. The daemon is the source of truth; this is a
-      // belt-and-suspenders sync for the still-in-process FE session cache.
-      let inMemorySyncAttempted = false;
-      let inMemorySyncSucceeded = false;
-      try {
-        inMemorySyncAttempted = true;
-        const { ConsolidatedBackendService } =
-          await import('../../../agent/main/consolidated-backend.service');
-        const backend = ConsolidatedBackendService.getInstance();
-        const session = backend.getSession(ctx.agentId);
-        if (session) {
-          session.metadata = {
-            ...(session.metadata ?? {}),
-            completionReport: trimmedReport,
-            completionReportTimestamp: savedAt,
-          };
-          inMemorySyncSucceeded = true;
-        }
-      } catch (syncErr) {
-        logger.warn('In-memory session sync for completion report failed', {
-          agentId: ctx.agentId,
-          error: (syncErr as Error)?.message,
-        });
-      }
-
+      // The daemon is the single source of session state; readers observe the
+      // report via `agent.getSession` / the emitted `agent:updated` event, so
+      // no main-process cache sync remains.
       logger.info('Completion report saved successfully', {
         agentId: ctx.agentId,
         parentAgentId,
         reportLength: report.length,
         savedAt,
-        inMemorySyncAttempted,
-        inMemorySyncSucceeded,
       });
 
       return this.success(

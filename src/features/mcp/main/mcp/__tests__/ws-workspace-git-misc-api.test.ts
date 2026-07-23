@@ -288,40 +288,6 @@ describe('buildWorkspaceApi – setAgentName', () => {
     vi.doUnmock('$features/backend/main/backend.ipc');
   });
 
-  it('updates in-memory backend session (regression)', async () => {
-    // Mock ConsolidatedBackendService to track in-memory update
-    const mockSession = { name: 'Old Name', id: agentId };
-
-    const mockRequest = vi.fn().mockResolvedValue({ success: true });
-    vi.doMock('$features/backend/main/backend.ipc', () => ({
-      getBackendClient: () => ({ request: mockRequest }),
-    }));
-    vi.doMock('$features/agent/main/consolidated-backend.service', () => ({
-      ConsolidatedBackendService: {
-        getInstance: () => ({
-          getSession: (id: string) => (id === agentId ? mockSession : undefined),
-        }),
-      },
-    }));
-
-    // Re-import to pick up the mocks
-    const { buildWorkspaceApi: freshBuildApi } = await import('../ws-workspace-api');
-    const api = freshBuildApi({
-      workspacePath: '/tmp/test',
-      workspaceId,
-      workspaceManager: {},
-      call,
-    });
-
-    await api.setAgentName('Updated Name');
-
-    // The in-memory session should have been updated
-    expect(mockSession.name).toBe('Updated Name');
-
-    vi.doUnmock('$features/backend/main/backend.ipc');
-    vi.doUnmock('$features/agent/main/consolidated-backend.service');
-  });
-
   it('throws when name is empty', async () => {
     const api = makeApi({});
     await expect(api.setAgentName('')).rejects.toThrow('name is required');

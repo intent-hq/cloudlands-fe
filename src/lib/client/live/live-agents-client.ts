@@ -226,6 +226,60 @@ export class LiveAgentsClient implements AgentsClient {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
+  async editQueued(
+    agentId: string,
+    messageId: string,
+    content: string,
+    editing?: boolean,
+  ): Promise<MutationResult> {
+    // `agent.editQueuedMessage` (§5.5) returns `{ success, queuedMessage }`
+    // like `agent.queueMessage`; surface `queuedMessage` so callers can render
+    // the updated entry. The `editing` flag (STAB-27) holds the message during
+    // edit — daemon drain skips held entries — and is only forwarded when the
+    // caller supplied it so older daemons see an omitted param.
+    try {
+      const params: Record<string, unknown> = { agentId, messageId, content };
+      if (editing !== undefined) params.editing = editing;
+      const result = await backendRequest<{ queuedMessage?: QueuedMessage } | undefined>(
+        "agent.editQueuedMessage",
+        params,
+      );
+      const queuedMessage = result?.queuedMessage;
+      return queuedMessage ? { success: true, queuedMessage } : { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  async force(params: {
+    agentId: string;
+    messageId: string;
+    content: string;
+    workspaceId: string;
+    imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+    noteIds?: string[];
+  }): Promise<MutationResult> {
+    // `agent.forceMessage` (§5.5) stops the current stream, dequeues, and
+    // delivers atomically. Optional arrays only ride along when supplied so
+    // the daemon sees omitted params rather than explicit nulls/undefined.
+    const rpcParams: Record<string, unknown> = {
+      agentId: params.agentId,
+      messageId: params.messageId,
+      content: params.content,
+      workspaceId: params.workspaceId,
+    };
+    if (params.imageBlocks !== undefined) rpcParams.imageBlocks = params.imageBlocks;
+    if (params.noteIds !== undefined) rpcParams.noteIds = params.noteIds;
+    return runMutation("agent.forceMessage", rpcParams);
+  }
+  async getQueue(agentId: string): Promise<QueuedMessage[]> {
+    // `agent.getQueue` (§5.5/§6.6) returns `{ success, queue }`; hand the
+    // daemon's queue array through verbatim (incl. optional `messageMetadata`).
+    // Errors propagate as rejections, like the other reads.
+    const result = await backendRequest<{ queue?: QueuedMessage[] }>("agent.getQueue", {
+      agentId,
+    });
+    return Array.isArray(result?.queue) ? result.queue : [];
+  }
   async removeQueued(agentId: string, messageId: string): Promise<MutationResult> {
     // `agent.removeQueuedMessage` is **idempotent** on the daemon (§5.5): the
     // BE returns `{ success: true }` whether or not the messageId existed in

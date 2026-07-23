@@ -353,6 +353,43 @@ export interface AgentsClient {
   }): Promise<MutationResult>;
   queue(agentId: string, message: string): Promise<MutationResult>;
   /**
+   * Edit a queued message in place (`agent.editQueuedMessage`, §5.5). The
+   * daemon returns `{ success, queuedMessage }` (QueuedMessage shape as
+   * `agent.queueMessage`), surfaced as `queuedMessage` on the MutationResult.
+   * The optional `editing` flag (STAB-27) holds the message in the queue while
+   * the user edits it (the daemon skips held entries during drain); it is only
+   * forwarded when the caller supplies it. Transport / daemon errors fold into
+   * `{ success: false, error }` — this method never throws.
+   */
+  editQueued(
+    agentId: string,
+    messageId: string,
+    content: string,
+    editing?: boolean,
+  ): Promise<MutationResult>;
+  /**
+   * Force-send a queued message (`agent.forceMessage`, §5.5): the daemon stops
+   * the current stream, dequeues the message, and delivers it immediately —
+   * atomically. Optional `imageBlocks` / `noteIds` are only forwarded when
+   * supplied. Transport / daemon errors fold into `{ success: false, error }`.
+   */
+  force(params: {
+    agentId: string;
+    messageId: string;
+    content: string;
+    workspaceId: string;
+    imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+    noteIds?: string[];
+  }): Promise<MutationResult>;
+  /**
+   * Read the agent's persisted message queue (`agent.getQueue`, §5.5/§6.6).
+   * Returns the daemon's `queue` array (QueuedMessage =
+   * `{ id, content, queuedAt, position, imageBlocks?, fileBlocks?,
+   * messageMetadata? }`) verbatim; `[]` when the queue is empty. Transport /
+   * daemon errors propagate as rejections, like the other reads.
+   */
+  getQueue(agentId: string): Promise<QueuedMessage[]>;
+  /**
    * Remove a queued message (`agent.removeQueuedMessage`, §5.5). The daemon is
    * **idempotent** — it always returns `{ success: true }` even when the queue
    * is empty or the messageId is unknown — so callers MUST treat any thrown

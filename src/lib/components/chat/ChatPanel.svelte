@@ -156,7 +156,6 @@
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
-  import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -2210,8 +2209,8 @@
 
   onDestroy(() => {
     // CRITICAL: Set destruction flag FIRST, before any other cleanup.
-    // This prevents async callbacks (like unifiedOrchestrator.getQueue().then(...))
-    // from accessing reactive state after destruction, which would cause
+    // This prevents async callbacks (like appClient.agents.* promises resolving
+    // late) from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
 
@@ -2246,9 +2245,11 @@
     });
   });
 
-  // Handle editing a queued message
+  // Handle editing a queued message. `agents.editQueued` never throws — the
+  // seam folds transport/daemon errors (raw BackendError) into
+  // `{ success: false, error }`, so branching on `result.success` is safe.
   async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
-    const result = await unifiedOrchestrator.editQueuedMessage(agentId, messageId, content, editing);
+    const result = await appClient.agents.editQueued(agentId, messageId, content, editing);
     if (!result.success) {
       logger.error('Failed to edit queued message', { messageId, error: result.error });
     }

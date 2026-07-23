@@ -206,17 +206,6 @@ vi.mock('$features/workspace/main/workspace-settings.service', () => ({
   isAutoCommitEnabled: (...args: any[]) => mockIsAutoCommitEnabled(...args),
 }));
 
-// Fake in-memory backend for ReportToParentTool defense-in-depth sync tests.
-const mockBackendSessions = new Map<string, any>();
-const mockConsolidatedBackend = {
-  getSession: vi.fn((agentId: string) => mockBackendSessions.get(agentId)),
-};
-vi.mock('$features/agent/main/consolidated-backend.service', () => ({
-  ConsolidatedBackendService: {
-    getInstance: () => mockConsolidatedBackend,
-  },
-}));
-
 vi.mock('$shared/types/branded-ids', () => ({
   AgentId: (id: string) => id,
   WorkspaceId: (id: string) => id,
@@ -2158,7 +2147,6 @@ describe('Agent Interaction Tools', () => {
     beforeEach(async () => {
       const module = await import('../agent-interaction-tools');
       ReportToParentTool = module.ReportToParentTool;
-      mockBackendSessions.clear();
     });
 
     it('should save completion report for delegated agent', async () => {
@@ -2199,7 +2187,7 @@ describe('Agent Interaction Tools', () => {
       expect(text).toContain('parent-agent-id');
     });
 
-    it('should persist to disk AND sync the in-memory backend session', async () => {
+    it('should persist the trimmed report via agent.reportToParent', async () => {
       const tool = new ReportToParentTool(workspaceId);
 
       stubDaemonAgentLoad({
@@ -2214,14 +2202,6 @@ describe('Agent Interaction Tools', () => {
           messages: [],
         },
       });
-
-      // Seed an in-memory session so the tool's sync path has something to update.
-      mockBackendSessions.clear();
-      mockConsolidatedBackend.getSession.mockClear();
-      const fakeSession: { metadata?: Record<string, unknown> } = {
-        metadata: { specialist: 'implementor' },
-      };
-      mockBackendSessions.set('child-agent-id', fakeSession);
 
       const call: ToolCall = {
         name: 'report_to_parent',
@@ -2240,21 +2220,14 @@ describe('Agent Interaction Tools', () => {
 
       expect(result.isError).toBe(false);
 
-      // (a) The daemon persist happened via agent.reportToParent with the
-      // trimmed report (PROTOCOL.md §5.5). The daemon owns the timestamp.
+      // The daemon persist happened via agent.reportToParent with the
+      // trimmed report (PROTOCOL.md §5.5). The daemon owns the timestamp and
+      // is the single source of session state — no in-memory cache sync.
       const rtpCall = mockRequest.mock.calls.find(
         (call) => call[0] === 'agent.reportToParent',
       );
       expect(rtpCall).toBeDefined();
       expect(rtpCall?.[1]).toEqual({ report: 'Finished the work. Tests pass.' });
-
-      // (b) in-memory session now has both fields (and preserves prior metadata)
-      expect(mockConsolidatedBackend.getSession).toHaveBeenCalledWith('child-agent-id');
-      expect(fakeSession.metadata).toMatchObject({
-        specialist: 'implementor',
-        completionReport: 'Finished the work. Tests pass.',
-        completionReportTimestamp: expect.any(String),
-      });
     });
 
     it('should reject report from non-delegated agent', async () => {
