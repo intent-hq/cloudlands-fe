@@ -38,6 +38,11 @@ jobs:
       - name: Run release-please
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
+          # RELEASE_PAT (not GITHUB_TOKEN) MUST be the action's token: the
+          # action creates the vX.Y.Z tag + GitHub Release via the API with
+          # this token, and GitHub's recursion guard suppresses workflow
+          # triggers for events created with the default GITHUB_TOKEN — the
+          # tag-triggered release-beta workflow would silently never fire.
           token: ${{ secrets.RELEASE_PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
