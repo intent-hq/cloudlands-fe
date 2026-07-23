@@ -744,8 +744,10 @@ export class UnifiedAgentFactory {
         workspacePath,
         name: agent.name,
         // Wire `nameExplicitlySet` (PROTOCOL §5.5): false marks a generated
-        // placeholder name so the created agent stays self-renameable.
-        nameExplicitlySet,
+        // placeholder name so the created agent stays self-renameable. Only
+        // include the key when the caller supplied it so the daemon default
+        // (name-present ⇒ explicitly set) is preserved for legacy callers.
+        ...(nameExplicitlySet !== undefined ? { nameExplicitlySet } : {}),
         model: agent.model ?? undefined, // Coerce null to undefined for wire format
         provider, // Provider ID (e.g., 'auggie', 'claude-code', 'codex') from activeProviderStore
         agentType: agent.metadata?.agentType, // Daemon builds system prompt from this

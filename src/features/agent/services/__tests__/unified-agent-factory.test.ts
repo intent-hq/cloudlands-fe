@@ -264,8 +264,9 @@ describe('UnifiedAgentFactory', () => {
 
       const [request] = agentsApi.create.mock.calls[0] as [Record<string, unknown>];
       // Absent flag stays absent — the daemon default (name-present ⇒
-      // explicitly set) must not be overridden by the FE.
-      expect(request.nameExplicitlySet).toBeUndefined();
+      // explicitly set) must not be overridden by the FE. The key itself must
+      // be omitted so presence-based transports don't forward `undefined`.
+      expect('nameExplicitlySet' in request).toBe(false);
     });
 
     it('adopts the daemon-assigned agent id from the create response', async () => {
