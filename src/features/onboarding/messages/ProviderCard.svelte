@@ -107,7 +107,7 @@
     provider.available &&
       !provider.statusLoading &&
       !needsUpdate &&
-      provider.authenticated !== true,
+      provider.authenticated === false,
   );
   const ready = $derived(installed && !needsLogin && !needsUpdate);
   const needsAction = $derived(
