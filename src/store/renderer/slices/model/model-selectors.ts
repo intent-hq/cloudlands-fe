@@ -5,7 +5,11 @@ import {
 } from '$lib/store-shim/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
-import { selectActiveProviderId } from '../provider-settings/provider-settings-selectors';
+import {
+  selectActiveProviderId,
+  selectEnabledProviderIds,
+} from '../provider-settings/provider-settings-selectors';
+import { parseCompoundModelId } from '$shared/config/provider-config';
 import type { ModelLoadingState } from './model-types';
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
@@ -85,10 +89,18 @@ export const selectProviderModels = store.createSelector((state): Record<string,
 
 /**
  * Select the default model for a specific workspace.
- * Falls back to the global selected model if no workspace-specific model is set.
+ * Falls back to the global selected model if no workspace-specific model is set,
+ * or if the workspace override's provider is no longer enabled (#584).
+ * Bare (non-compound) overrides resolve to the active provider and are returned as-is.
  */
 export const selectWorkspaceDefaultModel = store.createSelector((state, workspaceId: string): string => {
   const workspaceModel = state.model.workspaceModels[workspaceId];
+  if (workspaceModel && workspaceModel.includes(':')) {
+    const { providerId } = parseCompoundModelId(workspaceModel);
+    if (!selectEnabledProviderIds.select(state).includes(providerId)) {
+      return selectSelectedModel.select(state);
+    }
+  }
   return workspaceModel || selectSelectedModel.select(state);
 });
 
