@@ -3,7 +3,7 @@
  *
  * Home for the sub-configs consumed by the FE change-detection / infra
  * survivors (`file-watcher`, `snapshot-manager`, `change-detector-refactored`,
- * `event-coordinator`, `workspace.ipc`, `recovery-manager`, `memory-monitor`).
+ * `event-coordinator`, `workspace.ipc`, `recovery-manager`).
  * Extracted out of the retiring `features/file-tracking/tracking.config.ts`.
  * Values mirror the originals byte-for-byte to preserve runtime behaviour.
  */
@@ -74,17 +74,6 @@ export const RECOVERY_CONFIG = {
   includeStackTrace: process.env.NODE_ENV === 'development',
 } as const;
 
-export const MEMORY_MONITOR_CONFIG = {
-  enabled: true,
-  metricsInterval: 60000,
-  slowOperationThreshold: 1000,
-
-  memoryCheckInterval: 30000,
-  memoryWarningThreshold: 100 * 1024 * 1024,
-  memoryCriticalThreshold: 200 * 1024 * 1024,
-} as const;
-
 export type ChangeDetectionConfig = typeof CHANGE_DETECTION_CONFIG;
 export type EventBusConfig = typeof EVENT_BUS_CONFIG;
 export type RecoveryConfig = typeof RECOVERY_CONFIG;
-export type MemoryMonitorConfig = typeof MEMORY_MONITOR_CONFIG;

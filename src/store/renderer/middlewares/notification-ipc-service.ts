@@ -16,8 +16,6 @@
  *     null/missing payloads. Chief-of-staff payloads (`chief: true` or the
  *     chief virtual workspace id) open the sidebar Assistant panel and select
  *     the chat thread instead — the chief workspace page is hidden.
- *   - `system:memory-pressure` → surface a toast on memory pressure level
- *     transitions so users see why background watchers and idle agents paused.
  *
  * The sound gate and click-navigation routing are shared with the
  * web-platform substitute (`$features/notifications/web-notification-service`)
@@ -26,11 +24,8 @@
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import { isElectron } from "$lib/electron-bridge";
-import { createLogger } from "$lib/utils/client-logger";
 import { handleNotificationNavigate } from "$features/notifications/notification-navigation";
 import { playNotificationSoundPerSettings } from "$features/notifications/notification-sound-gate";
-
-const logger = createLogger("NotificationIpcService");
 
 /** Payload of `notification:show` (see notification.service.ts in main). */
 interface NotificationShowEvent {
@@ -39,43 +34,8 @@ interface NotificationShowEvent {
   timestamp?: string;
 }
 
-/** Payload of `system:memory-pressure` (sent on pressure level transitions). */
-interface MemoryPressureEvent {
-  level?: "normal" | "warning" | "critical";
-  previousLevel?: "normal" | "warning" | "critical";
-}
-
 async function handleNotificationShow(_data?: NotificationShowEvent): Promise<void> {
   await playNotificationSoundPerSettings();
-}
-
-async function handleMemoryPressure(data?: MemoryPressureEvent): Promise<void> {
-  try {
-    const { toast } = await import("svelte-sonner");
-    if (data?.level === "critical") {
-      toast.error("App is low on memory", {
-        description:
-          "Background file watchers and idle agents are paused to recover. Active agents keep running. Closing unused workspaces helps.",
-        duration: 8000,
-        id: "memory-pressure",
-      });
-    } else if (data?.level === "warning") {
-      toast.warning("Memory usage is high", {
-        description: "Background work may slow down. Closing unused workspaces can help.",
-        duration: 6000,
-        id: "memory-pressure",
-      });
-    } else if (data?.level === "normal" && data.previousLevel && data.previousLevel !== "normal") {
-      toast.success("Memory pressure cleared", {
-        description: "Background watchers and agents will resume on demand.",
-        duration: 4000,
-        id: "memory-pressure",
-      });
-    }
-  } catch (error) {
-    // Toasts are best-effort — never let UI notification failures propagate.
-    logger.warn("Failed to show memory pressure toast", { error });
-  }
 }
 
 export function createNotificationIpcMiddleware(): StoreMiddleware {
@@ -86,7 +46,6 @@ export function createNotificationIpcMiddleware(): StoreMiddleware {
       // so registering them directly is safe — and lets tests await them.
       window.electronAPI.on("notification:show", handleNotificationShow);
       window.electronAPI.on("notification:navigate", handleNotificationNavigate);
-      window.electronAPI.on("system:memory-pressure", handleMemoryPressure);
       // Note: No cleanup is performed. The listeners persist for the lifetime
       // of the renderer process (same as zoom-sync-service).
     }

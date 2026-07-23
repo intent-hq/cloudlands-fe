@@ -25,7 +25,6 @@ import {
   WorkspaceId,
 } from '../../../shared/types/branded-ids';
 import { createAppMessageId } from '$shared/utils/app-message-id';
-import { memoryManager } from './utils/memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
 import { newAssistantMessage } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
@@ -575,13 +574,10 @@ export class StreamManager extends EventEmitter implements IDisposable {
    * Start health monitoring
    */
   private startHealthMonitoring(): void {
-    const cleanup = memoryManager.registerTimer(
+    this.healthCheckInterval = setInterval(
       () => this.checkStreamHealth(),
       STREAM_CONFIG.HEALTH_CHECK_INTERVAL,
-      'interval',
-      this,
     );
-    this.healthCheckInterval = { cleanup } as any;
   }
 
   /**
@@ -1163,13 +1159,10 @@ export class StreamManager extends EventEmitter implements IDisposable {
    * force-terminated here.
    */
   private startCleanupInterval(): void {
-    const cleanup = memoryManager.registerTimer(
+    this.cleanupInterval = setInterval(
       () => this.cleanupCompletedSessions(),
       STREAM_CONFIG.CLEANUP_INTERVAL,
-      'interval',
-      this,
     );
-    this.cleanupInterval = { cleanup } as any;
   }
 
   /**
@@ -1302,24 +1295,13 @@ export class StreamManager extends EventEmitter implements IDisposable {
    * Destroy the manager
    */
   destroy(): void {
-    // FIX: Handle memoryManager cleanup objects (same pattern as dispose())
-    // cleanupInterval and healthCheckInterval are { cleanup } objects from
-    // memoryManager.registerTimer(), not raw interval IDs
     if (this.cleanupInterval) {
-      if (typeof this.cleanupInterval === 'object' && 'cleanup' in this.cleanupInterval) {
-        (this.cleanupInterval as any).cleanup();
-      } else {
-        clearInterval(this.cleanupInterval);
-      }
+      clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
 
     if (this.healthCheckInterval) {
-      if (typeof this.healthCheckInterval === 'object' && 'cleanup' in this.healthCheckInterval) {
-        (this.healthCheckInterval as any).cleanup();
-      } else {
-        clearInterval(this.healthCheckInterval);
-      }
+      clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
     }
 
@@ -1585,9 +1567,6 @@ export class StreamManager extends EventEmitter implements IDisposable {
     // - Calls cleanupAll() which cleans up each session's timers, listeners, and removes them
     // - Removes all event listeners
     this.destroy();
-
-    // Clean up with memory manager
-    memoryManager.cleanup(this);
 
     logger.info('StreamManager disposed successfully');
   }

@@ -540,22 +540,6 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Get memory usage
-  ipcMain.handle(
-    APP_CHANNELS.GET_MEMORY_USAGE,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        const memoryUsage = process.memoryUsage();
-        return {
-          heapUsed: memoryUsage.heapUsed,
-          heapTotal: memoryUsage.heapTotal,
-        };
-      },
-      APP_CHANNELS.GET_MEMORY_USAGE,
-    ),
-  );
-
   // Set dock badge (macOS only)
   ipcMain.handle(
     APP_CHANNELS.SET_BADGE,

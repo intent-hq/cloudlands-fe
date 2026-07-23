@@ -7,11 +7,6 @@ import {
   vi,
 } from 'vitest';
 
-const mockMemoryMonitor = {
-  start: vi.fn(),
-  stop: vi.fn(),
-};
-
 const mockMemoryLeakDetector = {
   dispose: vi.fn(),
   getStats: vi.fn(() => ({ timers: 0, intervals: 0 })),
@@ -39,10 +34,6 @@ vi.mock('./memory-leak-detector.service', () => ({
 
 vi.mock('./disposal-manager.service', () => ({
   componentDisposalManager: mockComponentDisposalManager,
-}));
-
-vi.mock('$shared/monitoring/memory-monitor', () => ({
-  getMemoryMonitor: vi.fn(() => mockMemoryMonitor),
 }));
 
 describe('globalCleanupService visibility lifecycle', () => {
@@ -82,7 +73,6 @@ describe('globalCleanupService visibility lifecycle', () => {
 
     expect(mockMemoryLeakDetector.dispose).not.toHaveBeenCalled();
     expect(mockComponentDisposalManager.disposeAll).not.toHaveBeenCalled();
-    expect(mockMemoryMonitor.stop).not.toHaveBeenCalled();
   });
 
   it('disposes singleton listeners without running destructive cleanup handlers', async () => {
@@ -103,7 +93,6 @@ describe('globalCleanupService visibility lifecycle', () => {
     expect(removeWindowListenerSpy).toHaveBeenCalledWith('unload', unloadListener);
     expect(mockMemoryLeakDetector.dispose).not.toHaveBeenCalled();
     expect(mockComponentDisposalManager.disposeAll).not.toHaveBeenCalled();
-    expect(mockMemoryMonitor.stop).not.toHaveBeenCalled();
   });
 
   it('does not duplicate default handlers after force cleanup and reinitialize', async () => {
@@ -118,6 +107,5 @@ describe('globalCleanupService visibility lifecycle', () => {
 
     expect(mockMemoryLeakDetector.dispose).toHaveBeenCalledTimes(1);
     expect(mockComponentDisposalManager.disposeAll).toHaveBeenCalledTimes(1);
-    expect(mockMemoryMonitor.stop).toHaveBeenCalledTimes(1);
   });
 });

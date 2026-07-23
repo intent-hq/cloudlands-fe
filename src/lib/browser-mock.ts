@@ -194,9 +194,6 @@ function mockInvoke(channel: string, data?: any): any {
   if (channel === 'system:get-info') {
     return { success: true, data: { platform: 'browser', arch: 'wasm', hostname: 'localhost' } };
   }
-  if (channel === 'app:get-memory-usage') {
-    return { success: true, data: { heapUsed: 0, heapTotal: 0 } };
-  }
 
   // Provider / model channels
   if (channel === 'auggie:check-availability') {
