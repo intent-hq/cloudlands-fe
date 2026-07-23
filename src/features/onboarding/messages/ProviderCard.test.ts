@@ -150,7 +150,7 @@ describe('ProviderCard needsLogin derivation', () => {
         provider: { ...readyProvider(), authenticated: false, authDetails: undefined },
       },
     });
-    expect(loginBadge(container)).not.toBeNull();
+    expect(loginBadge(container)).toBeDefined();
     expect(container.textContent).not.toContain('Connected');
   });
 

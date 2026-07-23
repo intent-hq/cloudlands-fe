@@ -238,13 +238,15 @@
       });
   });
 
-  /** A provider is ready when installed, authenticated, and (for Auggie) on
-   *  a supported version. Matches ProviderCard's own `ready` derivation and
-   *  is the gate for both "clickable to select" and "counts as available". */
+  /** A provider is ready when installed, not explicitly unauthenticated
+   *  (unknown auth verdicts count as ready, matching settings'
+   *  `isProviderReadyForUse`), and (for Auggie) on a supported version.
+   *  Matches ProviderCard's own `ready` derivation and is the gate for both
+   *  "clickable to select" and "counts as available". */
   function isProviderReady(p: (typeof visibleProviders)[number]): boolean {
     if (!p.available || p.statusLoading) return false;
     if (p.id === 'auggie' && auggieNeedsUpdate) return false;
-    return p.authenticated === true;
+    return p.authenticated !== false;
   }
 
   const readyProviderIds = $derived(
