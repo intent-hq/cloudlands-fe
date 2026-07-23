@@ -494,7 +494,29 @@ describe('CommitsTimeline', () => {
       [
         SYSTEM_CHANNELS.EXECUTE_COMMAND,
         {
-          command: 'git commit --amend -m "feat: better"',
+          command: "git commit --amend -m 'feat: better'",
+          cwd: '/repo',
+          workspaceId: 'ws-1',
+        },
+      ],
+    ]);
+  });
+
+  it('saveCommitEdit passes backticks, $(...), and quotes literally via single-quote escaping (monorepo#579)', async () => {
+    mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
+    mockInvoke.mockResolvedValue({ success: true });
+
+    const { container } = await renderTimeline();
+    const hostile =
+      'fix: handle `rm -rf /tmp` and $(whoami) with "double" and \'single\' quotes and back\\slash';
+    await editCommitMessage(container, 'feat: one', hostile);
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
+    expect(mockInvoke.mock.calls).toEqual([
+      [
+        SYSTEM_CHANNELS.EXECUTE_COMMAND,
+        {
+          command: `git commit --amend -m 'fix: handle \`rm -rf /tmp\` and $(whoami) with "double" and '\\''single'\\'' quotes and back\\slash'`,
           cwd: '/repo',
           workspaceId: 'ws-1',
         },
@@ -523,7 +545,7 @@ describe('CommitsTimeline', () => {
       workspaceId: 'ws-1',
     });
     expect(mockInvoke.mock.calls).toEqual([
-      [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload('git commit --amend -m "feat: better"')],
+      [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload("git commit --amend -m 'feat: better'")],
       [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload('git push --force-with-lease')],
       [SYSTEM_CHANNELS.EXECUTE_COMMAND, expectedPayload('git rev-parse --abbrev-ref HEAD')],
       [
