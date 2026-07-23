@@ -99,6 +99,16 @@ export class ChangeDetectorRefactored extends EventEmitter {
    * its subscription instead of leaking it on the daemon.
    */
   private subscriptionEpoch = 0;
+  /**
+   * Bounded exponential-backoff retry for a failed `events.subscribe` on a
+   * healthy connection (no reconnect event fires there, and there is no
+   * polling fallback anymore). Reconnect resets the budget and re-issues the
+   * subscribe itself.
+   */
+  private subscribeRetryTimer: NodeJS.Timeout | null = null;
+  private subscribeRetryAttempts = 0;
+  private readonly SUBSCRIBE_RETRY_BASE_DELAY_MS = 1_000;
+  private readonly SUBSCRIBE_RETRY_MAX_ATTEMPTS = 5;
 
   // Debounced git checks (batches rapid daemon events into one status run)
   private debouncedPollTimer: NodeJS.Timeout | null = null;
@@ -348,6 +358,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
       // down were missed, so the current git state must be re-read.
       this.daemonSubscriptionId = undefined;
       this.subscriptionEpoch += 1;
+      this.cancelSubscribeRetry();
       if (!this.isRunning) return;
       void this.subscribeToDaemonFileEvents();
       this.gitOps.invalidateCache();
@@ -384,21 +395,57 @@ export class ChangeDetectorRefactored extends EventEmitter {
         return;
       }
       this.daemonSubscriptionId = result?.subscriptionId;
+      this.subscribeRetryAttempts = 0;
       logger.debug('Subscribed to daemon file events', {
         workspaceId: this.workspaceId,
         subscriptionId: this.daemonSubscriptionId,
       });
     } catch (error) {
-      logger.warn('events.subscribe for file events failed; will retry on reconnect', {
+      logger.warn('events.subscribe for file events failed', {
         workspaceId: this.workspaceId,
         error: error instanceof Error ? error.message : String(error),
       });
+      this.scheduleSubscribeRetry(epoch);
     }
+  }
+
+  /**
+   * Schedule a bounded exponential-backoff re-attempt of `events.subscribe`.
+   * A subscribe can fail without the connection dropping (e.g. a request
+   * timeout under daemon load); with no polling fallback the workspace would
+   * otherwise have no steady-state change trigger until the next reconnect.
+   */
+  private scheduleSubscribeRetry(epoch: number): void {
+    if (epoch !== this.subscriptionEpoch || this.subscribeRetryTimer) return;
+    if (this.subscribeRetryAttempts >= this.SUBSCRIBE_RETRY_MAX_ATTEMPTS) {
+      logger.warn('Giving up on events.subscribe retries; will retry on reconnect', {
+        workspaceId: this.workspaceId,
+        attempts: this.subscribeRetryAttempts,
+      });
+      return;
+    }
+    const delay = this.SUBSCRIBE_RETRY_BASE_DELAY_MS * 2 ** this.subscribeRetryAttempts;
+    this.subscribeRetryAttempts += 1;
+    this.subscribeRetryTimer = setTimeout(() => {
+      this.subscribeRetryTimer = null;
+      if (epoch !== this.subscriptionEpoch) return;
+      void this.subscribeToDaemonFileEvents();
+    }, delay);
+  }
+
+  /** Cancel any pending subscribe retry and reset the backoff budget. */
+  private cancelSubscribeRetry(): void {
+    if (this.subscribeRetryTimer) {
+      clearTimeout(this.subscribeRetryTimer);
+      this.subscribeRetryTimer = null;
+    }
+    this.subscribeRetryAttempts = 0;
   }
 
   /** Detach the notification listener, reconnect handler, and daemon subscription. */
   private detachDaemonSubscription(): void {
     this.subscriptionEpoch += 1;
+    this.cancelSubscribeRetry();
     if (this.reconnectDisposer) {
       this.reconnectDisposer();
       this.reconnectDisposer = null;

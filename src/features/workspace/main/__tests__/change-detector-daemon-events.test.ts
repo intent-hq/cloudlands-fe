@@ -279,6 +279,47 @@ describe('ChangeDetectorRefactored daemon file-event subscription', () => {
     await detector.stop();
   });
 
+  it('retries a failed events.subscribe with backoff without waiting for a reconnect', async () => {
+    vi.useFakeTimers();
+    mocks.request.mockRejectedValueOnce(new Error('request timed out'));
+
+    const detector = new ChangeDetectorRefactored({
+      workspaceId: 'ws-retry',
+      workspacePath: '/workspace',
+    });
+
+    await detector.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    expect(mocks.request).toHaveBeenLastCalledWith('events.subscribe', {
+      eventTypes: ['file:changed', 'file:created', 'file:deleted'],
+      workspaceId: 'ws-retry',
+    });
+
+    await detector.stop();
+  });
+
+  it('cancels a pending subscribe retry on stop', async () => {
+    vi.useFakeTimers();
+    mocks.request.mockRejectedValueOnce(new Error('request timed out'));
+
+    const detector = new ChangeDetectorRefactored({
+      workspaceId: 'ws-retry-stop',
+      workspacePath: '/workspace',
+    });
+
+    await detector.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await detector.stop();
+
+    mocks.request.mockClear();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
   it('releases a subscription whose subscribe resolves after stop instead of leaking it', async () => {
     let resolveSubscribe!: (value: { subscriptionId: string }) => void;
     mocks.request.mockImplementationOnce(
