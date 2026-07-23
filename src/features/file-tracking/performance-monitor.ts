@@ -14,7 +14,6 @@ export interface PerformanceMetrics {
   // Timing metrics (in milliseconds)
   gitPollDuration: number;
   eventProcessingTime: number;
-  fileWatcherResponseTime: number;
   ipcRoundTripTime: number;
   uiRenderTime: number;
 
@@ -27,7 +26,6 @@ export interface PerformanceMetrics {
   };
 
   // Count metrics
-  activeWatchers: number;
   eventQueueSize: number;
   trackedFiles: number;
   pendingChanges: number;
@@ -98,7 +96,6 @@ export class PerformanceMonitor extends EventEmitter {
     this.metrics = {
       gitPollDuration: 0,
       eventProcessingTime: 0,
-      fileWatcherResponseTime: 0,
       ipcRoundTripTime: 0,
       uiRenderTime: 0,
       memoryUsage: {
@@ -107,7 +104,6 @@ export class PerformanceMonitor extends EventEmitter {
         external: 0,
         rss: 0,
       },
-      activeWatchers: 0,
       eventQueueSize: 0,
       trackedFiles: 0,
       pendingChanges: 0,
@@ -208,9 +204,6 @@ export class PerformanceMonitor extends EventEmitter {
       case 'eventProcessing':
         this.metrics.eventProcessingTime = duration;
         break;
-      case 'fileWatcher':
-        this.metrics.fileWatcherResponseTime = duration;
-        break;
       case 'ipcRoundTrip':
         this.metrics.ipcRoundTripTime = duration;
         break;
@@ -231,9 +224,6 @@ export class PerformanceMonitor extends EventEmitter {
 
     // Update corresponding metric
     switch (name) {
-      case 'activeWatchers':
-        this.metrics.activeWatchers = current + amount;
-        break;
       case 'eventQueueSize':
         this.metrics.eventQueueSize = current + amount;
         break;

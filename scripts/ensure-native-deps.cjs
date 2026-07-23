@@ -31,15 +31,9 @@ function getInstalledVersion(pkgName, fallback) {
 
 // Packages that ship per-platform prebuilds as separate npm packages.
 // The version is read from the installed package to stay in sync automatically.
-const PLATFORM_PACKAGES = [
-  {
-    // @parcel/watcher requires @parcel/watcher-{platform}-{arch}
-    parentPkg: '@parcel/watcher',
-    nameTemplate: '@parcel/watcher-{platform}-{arch}',
-    platforms: ['darwin'],
-    arches: ['arm64'],
-  },
-];
+// (Currently empty — FE file watching and its native dependency were removed.
+// The script still rebuilds node-pty for Electron below.)
+const PLATFORM_PACKAGES = [];
 
 function main() {
   console.log('🔍 Ensuring cross-architecture native dependencies...\n');

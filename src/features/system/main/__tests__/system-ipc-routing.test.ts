@@ -82,12 +82,12 @@ describe('sendToWorkspaceWindows routing', () => {
     const winB = makeWindow();
     electronMocks.getAllWindows.mockReturnValue([winA, winB]);
 
-    sendToWorkspaceWindows(undefined, 'specialists:files-changed', {});
+    sendToWorkspaceWindows(undefined, 'websocket-api:discovery-auto-disabled', {});
 
-    expect(winA.webContents.send).toHaveBeenCalledWith('specialists:files-changed', {});
-    expect(winB.webContents.send).toHaveBeenCalledWith('specialists:files-changed', {});
+    expect(winA.webContents.send).toHaveBeenCalledWith('websocket-api:discovery-auto-disabled', {});
+    expect(winB.webContents.send).toHaveBeenCalledWith('websocket-api:discovery-auto-disabled', {});
     expect(electronMocks.broadcastToBrowserIpcClients).toHaveBeenCalledWith(
-      'specialists:files-changed',
+      'websocket-api:discovery-auto-disabled',
       {},
       undefined,
     );

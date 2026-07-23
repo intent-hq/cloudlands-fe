@@ -19,7 +19,6 @@ const nodeOnlyModules = [
   'atomically',
   'stubborn-fs',
   'stubborn-utils',
-  'chokidar',
 ];
 
 const EMPTY_MODULE = `
@@ -282,7 +281,6 @@ export default defineConfig(({ mode }) => {
         'node-pty',
         'ssh2',
         'cpu-features',
-        'chokidar',
         // Don't externalize TypeScript files - they should be bundled
         // Only externalize Node.js built-in modules
       ],
@@ -294,7 +292,7 @@ export default defineConfig(({ mode }) => {
     // Instead, externalize only Node.js built-ins and native modules
     external: [
       'fs', 'path', 'os', 'crypto', 'stream', 'util', 'events', 'child_process',
-      'node-pty', 'ssh2', 'cpu-features', 'chokidar',
+      'node-pty', 'ssh2', 'cpu-features',
     ],
   },
 
@@ -421,7 +419,7 @@ export default defineConfig(({ mode }) => {
       // Node.js built-ins
       'fs', 'path', 'os', 'crypto', 'stream', 'util', 'events', 'child_process', 'electron',
       // Native modules (cannot be bundled by esbuild)
-      'node-pty', 'ssh2', 'cpu-features', 'chokidar',
+      'node-pty', 'ssh2', 'cpu-features',
       // Svelte internals (but NOT @sveltejs/kit - it needs to be pre-bundled for virtual modules to work)
       'svelte', 'svelte/internal', 'svelte/internal/client',
       // Node.js only packages

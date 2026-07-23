@@ -102,7 +102,7 @@ describe('InstructionService', () => {
   afterEach(async () => {
     // Cleanup
     service.destroy();
-    // Small delay to allow file watchers to fully close
+    // Small delay to allow pending fs operations to settle
     await new Promise((resolve) => setTimeout(resolve, 50));
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -840,59 +840,29 @@ describe('InstructionService', () => {
     });
   });
 
-  describe('File Watching', () => {
-    it('should watch workspace files for changes', async () => {
-      // Create workspace rules file
+  describe('Cache Invalidation', () => {
+    it('should clear full prompt cache when workspace rules are invalidated', async () => {
       const rulesDir = path.join(workspacePath, '.augment', 'agent-rules');
       await fs.mkdir(rulesDir, { recursive: true });
-      const workspaceRules = '# Initial Rules';
-      await fs.writeFile(path.join(rulesDir, 'debug.md'), workspaceRules);
+      const rulesPath = path.join(rulesDir, 'debug.md');
+      await fs.writeFile(rulesPath, '# Rules');
 
-      // Load rules (should create watcher)
       await service.getSpecializationRules('debug', workspacePath);
+      await service.buildSystemPrompt({ agentType: 'debug', workspacePath });
+      expect((service as any).systemPromptCache.size).toBeGreaterThan(0);
 
-      // Check that watcher was created (or at least attempted)
-      // Note: File watching may not work in test environment, so we just verify
-      // the service doesn't crash and returns valid rules
-      const stats = service.getStats();
-      expect(stats.watcherCount).toBeGreaterThanOrEqual(0);
+      service.invalidate('debug', workspacePath);
+
+      expect((service as any).systemPromptCache.size).toBe(0);
     });
 
-    it('should clear full prompt cache when watched workspace rules invalidate', async () => {
-      const rulesDir = path.join(workspacePath, '.augment', 'agent-rules');
-      await fs.mkdir(rulesDir, { recursive: true });
-      const rulesPath = path.join(rulesDir, 'debug.md');
-      await fs.writeFile(rulesPath, '# Rules');
-
-      let invalidateWatchedFile: (() => void) | undefined;
-      const watchFileSpy = vi
-        .spyOn(service as any, 'watchFile')
-        .mockImplementation((_filePath: string, onInvalidate: () => void) => {
-          invalidateWatchedFile = onInvalidate;
-        });
-
-      try {
-        await service.getSpecializationRules('debug', workspacePath);
-        await service.buildSystemPrompt({ agentType: 'debug', workspacePath });
-        expect((service as any).systemPromptCache.size).toBeGreaterThan(0);
-        expect(invalidateWatchedFile).toBeDefined();
-
-        invalidateWatchedFile?.();
-
-        expect((service as any).systemPromptCache.size).toBe(0);
-      } finally {
-        watchFileSpy.mockRestore();
-      }
-    });
-
-    it('should clean up watchers on destroy', async () => {
+    it('should clear caches on destroy', async () => {
       // Create workspace rules file
       const rulesDir = path.join(workspacePath, '.augment', 'agent-rules');
       await fs.mkdir(rulesDir, { recursive: true });
       const rulesPath = path.join(rulesDir, 'debug.md');
       await fs.writeFile(rulesPath, '# Rules');
 
-      // Load rules (should create watcher)
       await service.getSpecializationRules('debug', workspacePath);
       await service.buildSystemPrompt({ agentType: 'debug', workspacePath });
       expect((service as any).systemPromptCache.size).toBeGreaterThan(0);
@@ -900,11 +870,8 @@ describe('InstructionService', () => {
       // Destroy service
       service.destroy();
 
-      // Watchers should be cleaned up
+      // Caches should be cleared
       const stats2 = service.getStats();
-      expect(stats2.watcherCount).toBe(0);
-
-      // Cache should also be cleared
       expect(stats2.size).toBe(0);
       expect((service as any).systemPromptCache.size).toBe(0);
     });

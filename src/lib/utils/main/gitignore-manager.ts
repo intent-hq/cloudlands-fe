@@ -27,8 +27,8 @@ export class GitignoreManager {
   // Default patterns applied before user's .gitignore rules.
   // Added first so user negation patterns (e.g. `!dist`) can override them.
   // Keep in sync with DEFAULT_IGNORE_PATTERNS in file-explorer-store.svelte.ts
-  // (the file explorer has the same core set; this list adds chokidar-specific
-  // entries like .env that we don't want the file watcher to track).
+  // (the file explorer has the same core set; this list adds extra entries
+  // like .env that we don't want change detection to track).
   private static readonly DEFAULT_PATTERNS = [
     'node_modules',
     '.git',
@@ -98,8 +98,8 @@ export class GitignoreManager {
     return [...this.patterns];
   }
 
-  getChokidarPatterns(): string[] {
-    // Convert gitignore patterns to chokidar ignore patterns.
+  getGlobPatterns(): string[] {
+    // Convert gitignore patterns to glob ignore patterns.
     // Negation patterns (e.g. !important.log) need special handling:
     // the `!` prefix must stay at the front, wrapping only the path part.
     return this.patterns

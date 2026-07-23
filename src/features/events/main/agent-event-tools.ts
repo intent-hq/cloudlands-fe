@@ -228,7 +228,7 @@ export class AgentEventTools {
     };
   }
 
-  // watchFile and watchAgentActivity removed during Redux migration.
+  // The file/agent-activity watch tools were removed during the Redux migration.
   // Real-time subscriptions are now handled by Redux sagas (event-triggered-sagas.ts).
 
   /**

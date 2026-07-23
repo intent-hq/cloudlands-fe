@@ -28,7 +28,6 @@ const REQUIRED_SUBSCRIPTION_CHANNELS = [
   'agent:subscriptions-changed',
   'agent:event-delivery-failed',
   'agent:event-delivery-timeout',
-  'watcher:file-changed',
 ] as const;
 
 /**

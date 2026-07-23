@@ -10,7 +10,6 @@
  * - Load specialization rules with 3-tier fallback
  * - Assemble complete system prompts
  * - Caching with TTL and LRU eviction
- * - File watching for auto-invalidation
  *
  * System prompt layers:
  * 1. Base system prompt (identity and tools)
@@ -35,10 +34,6 @@
  */
 
 import * as fs from 'fs/promises';
-import {
-  watch,
-  type FSWatcher,
-} from 'fs';
 import os from 'os';
 import path from 'path';
 import { Logger } from '$shared/logger';
@@ -101,9 +96,6 @@ export class InstructionService {
     ttlMs: 30 * 1000,
     maxSize: 20,
   });
-
-  // File watching
-  private watchers = new Map<string, FSWatcher>();
 
   // Dependencies
   private endUserRulesManager: EndUserRulesManager;
@@ -230,11 +222,6 @@ export class InstructionService {
       const content = await this.readFileSafe(workspaceFile);
       if (content && content.trim().length > 0) {
         this.cache.set(cacheKey, { content, hits: 0 });
-        this.watchFile(workspaceFile, () => {
-          this.cache.delete(cacheKey);
-          this.invalidateSystemPromptCache(agentType, workspacePath);
-          logger.debug('Cache invalidated due to file change', { agentType, workspaceFile });
-        });
         logger.debug('Specialization rules loaded from workspace file', {
           agentType,
           workspacePath,
@@ -815,7 +802,7 @@ The instructions in <specialist_role> define your primary function. Prioritize t
   /**
    * Get cache statistics
    */
-  getStats(): { size: number; totalHits: number; watcherCount: number } {
+  getStats(): { size: number; totalHits: number } {
     let totalHits = 0;
     // keys() is LRU-ordered, so iterating with get() preserves relative recency
     for (const key of this.cache.keys()) {
@@ -828,7 +815,6 @@ The instructions in <specialist_role> define your primary function. Prioritize t
     return {
       size: this.cache.size,
       totalHits,
-      watcherCount: this.watchers.size,
     };
   }
 
@@ -932,29 +918,6 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       return await fs.readFile(filePath, 'utf-8');
     } catch {
       return null;
-    }
-  }
-
-  /**
-   * Watch a file for changes and call callback on change
-   */
-  private watchFile(filePath: string, onInvalidate: () => void): void {
-    // Don't create duplicate watchers
-    if (this.watchers.has(filePath)) {
-      return;
-    }
-
-    try {
-      const watcher = watch(filePath, (eventType) => {
-        logger.debug('File change detected', { filePath, eventType });
-        onInvalidate();
-      });
-
-      this.watchers.set(filePath, watcher);
-      logger.debug('File watcher created', { filePath });
-    } catch (error) {
-      // File watching is optional - don't fail if it doesn't work
-      logger.debug('Could not watch file', { filePath, error });
     }
   }
 
@@ -1100,18 +1063,9 @@ All new branches must use the prefix "${branchPrefix}" (e.g. "${branchPrefix}my-
   }
 
   /**
-   * Cleanup watchers on shutdown
+   * Cleanup caches on shutdown
    */
   destroy(): void {
-    this.watchers.forEach((watcher, filePath) => {
-      try {
-        watcher.close();
-        logger.debug('File watcher closed', { filePath });
-      } catch (error) {
-        logger.warn('Failed to close file watcher', { filePath, error });
-      }
-    });
-    this.watchers.clear();
     this.cache.clear();
     this.systemPromptCache.clear();
     logger.info('InstructionService destroyed');
