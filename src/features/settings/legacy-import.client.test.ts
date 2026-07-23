@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { importLegacyWorkspaces, type LegacyImportReport } from './legacy-import.client';
 
@@ -22,6 +22,10 @@ describe('importLegacyWorkspaces', () => {
     vi.stubGlobal('window', {
       electronAPI: { invoke, on: vi.fn(), offById: vi.fn() },
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('sends the default non-overwriting request and returns the report', async () => {

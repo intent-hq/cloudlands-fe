@@ -1,19 +1,33 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
-import type { LegacyImportReport } from '$features/settings/legacy-import.client';
+import { legacyImportRequested } from '$store/renderer/slices/legacy-import/legacy-import-slice';
+import type { LegacyImportReport } from '$store/renderer/slices/legacy-import/legacy-import-types';
 import LegacyImportSettings from './LegacyImportSettings.svelte';
 
 const mocks = vi.hoisted(() => ({
-  importLegacyWorkspaces: vi.fn(),
   dispatch: vi.fn(),
+  state: {
+    loading: false,
+    report: null as LegacyImportReport | null,
+    error: null as string | null,
+  },
+  makeSelector:
+    <T>(read: () => T) =>
+    () => ({
+      subscribe(run: (value: T) => void) {
+        run(read());
+        return () => {};
+      },
+    }),
 }));
 
-vi.mock('$features/settings/legacy-import.client', () => ({
-  importLegacyWorkspaces: mocks.importLegacyWorkspaces,
+vi.mock('$store/renderer/slices/legacy-import/legacy-import-selectors', () => ({
+  selectLegacyImportLoading: mocks.makeSelector(() => mocks.state.loading),
+  selectLegacyImportReport: mocks.makeSelector(() => mocks.state.report),
+  selectLegacyImportError: mocks.makeSelector(() => mocks.state.error),
 }));
 
 vi.mock('$store/renderer/store', () => ({
@@ -34,51 +48,52 @@ const report: LegacyImportReport = {
 };
 
 describe('LegacyImportSettings', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.state.loading = false;
+    mocks.state.report = null;
+    mocks.state.error = null;
+  });
   afterEach(cleanup);
 
-  it('shows loading and report states, then refreshes workspaces', async () => {
-    let resolveImport!: (value: LegacyImportReport) => void;
-    mocks.importLegacyWorkspaces.mockReturnValue(
-      new Promise((resolve) => {
-        resolveImport = resolve;
-      }),
-    );
+  it('dispatches a non-overwriting import request', async () => {
     render(LegacyImportSettings);
 
-    const button = screen.getByRole('button', {
-      name: 'Import legacy workspaces',
-    }) as HTMLButtonElement;
-    await fireEvent.click(button);
-    expect(button.disabled).toBe(true);
-    expect(screen.getByText('Importing…')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Import legacy workspaces' }));
 
-    resolveImport(report);
-    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('2 imported'));
-    expect(mocks.dispatch).toHaveBeenCalledWith(loadWorkspacesRequested());
+    expect(mocks.dispatch).toHaveBeenCalledWith(legacyImportRequested(false));
   });
 
   it('maps the overwrite control to force=true', async () => {
-    mocks.importLegacyWorkspaces.mockResolvedValue(report);
     render(LegacyImportSettings);
 
     await fireEvent.click(screen.getByRole('switch', { name: 'Overwrite existing workspaces' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Import legacy workspaces' }));
 
-    await waitFor(() => expect(mocks.importLegacyWorkspaces).toHaveBeenCalledWith(true));
+    expect(mocks.dispatch).toHaveBeenCalledWith(legacyImportRequested(true));
   });
 
-  it('surfaces RPC errors without refreshing workspaces', async () => {
-    mocks.importLegacyWorkspaces.mockRejectedValue(new Error('Local connection required'));
+  it('renders loading state from the slice', () => {
+    mocks.state.loading = true;
     render(LegacyImportSettings);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Import legacy workspaces' }));
+    const button = screen.getByRole('button', { name: 'Importing…' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert').textContent).toContain(
-        'Import failed: Local connection required',
-      ),
+  it('renders report state from the slice', () => {
+    mocks.state.report = report;
+    render(LegacyImportSettings);
+
+    expect(screen.getByRole('status').textContent).toContain('2 imported');
+  });
+
+  it('renders error state from the slice', () => {
+    mocks.state.error = 'Local connection required';
+    render(LegacyImportSettings);
+
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Import failed: Local connection required',
     );
-    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 });

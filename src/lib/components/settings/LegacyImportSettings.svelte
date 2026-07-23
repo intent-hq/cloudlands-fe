@@ -1,36 +1,26 @@
 <script lang="ts">
-  /* eslint-disable intent/no-component-async-data-fetch */
-  import {
-    importLegacyWorkspaces,
-    type LegacyImportReport,
-  } from '$features/settings/legacy-import.client';
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { store as appStore } from '$store/renderer/store';
-  import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
+  import { legacyImportRequested } from '$store/renderer/slices/legacy-import/legacy-import-slice';
+  import {
+    selectLegacyImportError,
+    selectLegacyImportLoading,
+    selectLegacyImportReport,
+  } from '$store/renderer/slices/legacy-import/legacy-import-selectors';
+  import type { LegacyImportReport } from '$store/renderer/slices/legacy-import/legacy-import-types';
 
   let overwrite = $state(false);
-  let loading = $state(false);
-  let report = $state<LegacyImportReport | null>(null);
-  let error = $state('');
+  const loading = selectLegacyImportLoading();
+  const report = selectLegacyImportReport();
+  const error = selectLegacyImportError();
 
   function summary(value: LegacyImportReport): string {
     return `${value.imported} imported, ${value.updated} updated, ${value.skipped} skipped · ${value.notes} notes, ${value.comments} comments, ${value.agents} agents, ${value.assets} assets.`;
   }
 
-  async function handleImport() {
-    loading = true;
-    report = null;
-    error = '';
-    try {
-      report = await importLegacyWorkspaces(overwrite);
-      appStore.dispatch(loadWorkspacesRequested());
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      error = `Import failed: ${message}`;
-    } finally {
-      loading = false;
-    }
+  function handleImport() {
+    appStore.dispatch(legacyImportRequested(overwrite));
   }
 </script>
 
@@ -41,24 +31,24 @@
         <p class="text-sm font-medium text-foreground">Legacy workspaces</p>
         <p class="text-xs text-subtle mt-0.5">Import workspaces from a previous Intent install.</p>
       </div>
-      <Button size="sm" disabled={loading} onclick={handleImport}>
-        {loading ? 'Importing…' : 'Import legacy workspaces'}
+      <Button size="sm" disabled={$loading} onclick={handleImport}>
+        {$loading ? 'Importing…' : 'Import legacy workspaces'}
       </Button>
     </div>
 
-    {#if report}
+    {#if $report}
       <p class="text-xs text-foreground mt-3" role="status">
-        {summary(report)}
-        {#if report.compatibilityFailures}
+        {summary($report)}
+        {#if $report.compatibilityFailures}
           Some workspaces could not be imported.
         {/if}
       </p>
-    {:else if error}
+    {:else if $error}
       <p
         class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 mt-3"
         role="alert"
       >
-        {error}
+        Import failed: {$error}
       </p>
     {/if}
   </section>
@@ -73,7 +63,7 @@
         variant="indicator"
         size="xs"
         pressed={overwrite}
-        disabled={loading}
+        disabled={$loading}
         ariaLabel="Overwrite existing workspaces"
         onLabel="On"
         offLabel="Off"
