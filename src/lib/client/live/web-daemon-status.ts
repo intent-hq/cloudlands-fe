@@ -21,6 +21,12 @@ export interface WebDaemonStatusSource {
   getTarget(): string;
   /** Subscribe to status transitions; returns an unsubscriber. */
   onStatusChange(handler: (status: WebDaemonConnectionStatus) => void): () => void;
+  /**
+   * Subscribe to the 2nd+ successful connect (RESUB-1); returns an
+   * unsubscriber. Lets the mock emit the `reconnected: true` status marker
+   * mirroring the main-process `backend.ipc.ts` contract.
+   */
+  onReconnected(handler: () => void): () => void;
 }
 
 let currentSource: WebDaemonStatusSource | null = null;

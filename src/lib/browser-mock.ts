@@ -433,11 +433,24 @@ function installWebDaemonStatusBridge(): void {
   if (webDaemonStatusBridgeInstalled) return;
   webDaemonStatusBridgeInstalled = true;
   let unsubscribeStatus: (() => void) | null = null;
+  let unsubscribeReconnected: (() => void) | null = null;
   onWebDaemonStatusSourceRegistered((source) => {
     unsubscribeStatus?.();
+    unsubscribeReconnected?.();
     unsubscribeStatus = source.onStatusChange((status) => {
       emitBrowserMockEvent('backend:status', {
         status,
+        transport: { mode: 'external-ws', target: source.getTarget() },
+      });
+    });
+    // Mirror backend.ipc.ts: on the 2nd+ successful connect, emit a
+    // `reconnected: true` marker AFTER the plain 'connected' status event so
+    // consumers (interrupted-agents, provider-availability) distinguish
+    // reconnects from the initial connect.
+    unsubscribeReconnected = source.onReconnected(() => {
+      emitBrowserMockEvent('backend:status', {
+        status: 'connected',
+        reconnected: true,
         transport: { mode: 'external-ws', target: source.getTarget() },
       });
     });

@@ -332,6 +332,13 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
       status: 'connected',
       transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
     });
+    // Mirrors backend.ipc.ts: the 2nd+ connect also carries the
+    // `reconnected: true` marker AFTER the plain 'connected' event.
+    expect(events[events.length - 1]).toEqual({
+      status: 'connected',
+      reconnected: true,
+      transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
+    });
     (transport as { dispose?: () => void }).dispose?.();
   });
 
