@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Middleware unit tests: exercise `createPanelLayoutPersistenceMiddleware` with
 // a fake middleware API + in-memory localStorage. Testing the factory directly
@@ -9,6 +9,7 @@ import {
   loadLayoutHistory,
   clearPanelLayout,
   setRestoreStatus,
+  setDeferSpecTab,
   openTab,
   closeTab,
   splitPanel,
@@ -24,6 +25,8 @@ import {
   type WorkspacePanelLayout,
 } from "$store/renderer/slices/panel-layout/panel-layout-types";
 import type { StoreState } from "$store/renderer/types";
+import { hydrateWorkspaceNavigation } from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
+import { store as appStore } from "$store/renderer/store";
 import { createPanelLayoutPersistenceMiddleware } from "./panel-layout-persistence-service";
 
 vi.mock("$features/layout/panel-layout-history.client", () => ({
@@ -78,6 +81,33 @@ const validLayout: WorkspacePanelLayout = {
   },
   focusedPanelId: "panel-1",
 };
+
+function agentTabLayout(wsId: string, agentId: string): WorkspacePanelLayout {
+  return {
+    root: { type: "panel", panelId: "panel-1" },
+    panels: {
+      "panel-1": {
+        id: "panel-1",
+        tabs: [
+          {
+            id: "tab-agent-1",
+            type: "agent",
+            title: "Agent",
+            agentId,
+            workspaceId: wsId,
+            closable: true,
+          },
+        ],
+        activeTabId: "tab-agent-1",
+      },
+    },
+    focusedPanelId: "panel-1",
+  };
+}
+
+function tabsOf(layout: WorkspacePanelLayout | Pick<WorkspacePanelLayout, "panels">): Array<{ id: string; type: string }> {
+  return Object.values(layout.panels).flatMap((panel) => panel.tabs);
+}
 
 beforeEach(() => {
   installMemoryLocalStorage();
@@ -329,5 +359,109 @@ describe("panelLayoutPersistenceService — history", () => {
 
     expect(savePanelLayoutHistory).toHaveBeenCalled();
     vi.useRealTimers();
+  });
+});
+
+describe("panelLayoutPersistenceService — pre-restore clobber guard", () => {
+  function build(): { api: FakeApi; dispatch: (action: unknown) => unknown } {
+    const api = createFakeApi();
+    const chain = createPanelLayoutPersistenceMiddleware()(api);
+    const next = (action: unknown) => api.dispatch(action);
+    const dispatch = chain(next);
+    return { api, dispatch };
+  }
+
+  it("does not overwrite a stored non-empty layout with an empty one before restore has run", () => {
+    const KEY = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}ws-preclobber`;
+    safeLocalStorage.setJSON(KEY, agentTabLayout("ws-preclobber", "agent-1"));
+    const { dispatch } = build();
+
+    // A persist action arriving before workspaceMounted lazily creates the
+    // empty workspace state in the reducer — it must NOT clobber storage.
+    dispatch(setDeferSpecTab("ws-preclobber", true));
+
+    const stored = safeLocalStorage.getJSON<WorkspacePanelLayout>(KEY);
+    expect(stored).toBeDefined();
+    expect(tabsOf(stored!).map((t) => t.id)).toContain("tab-agent-1");
+  });
+
+  it("restores the stored agent tab on mount even after a pre-restore persist action", () => {
+    const KEY = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}ws-preclobber-mount`;
+    safeLocalStorage.setJSON(KEY, agentTabLayout("ws-preclobber-mount", "agent-1"));
+    const { api, dispatch } = build();
+
+    dispatch(setDeferSpecTab("ws-preclobber-mount", true));
+    dispatch(workspaceMounted("ws-preclobber-mount"));
+
+    const ws = api.getState().panelLayout.byWorkspaceId["ws-preclobber-mount"];
+    expect(ws).toBeDefined();
+    expect(ws.restoreStatus).toBe("restored");
+    expect(tabsOf(ws).map((t) => t.id)).toContain("tab-agent-1");
+  });
+
+  it("still persists an empty layout once the workspace has been restored this session", () => {
+    const KEY = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}ws-emptyok`;
+    safeLocalStorage.setJSON(KEY, agentTabLayout("ws-emptyok", "agent-1"));
+    const { dispatch } = build();
+
+    dispatch(workspaceMounted("ws-emptyok"));
+    dispatch(closeTab("ws-emptyok", "tab-agent-1"));
+
+    const stored = safeLocalStorage.getJSON<WorkspacePanelLayout>(KEY);
+    expect(stored).toBeDefined();
+    expect(tabsOf(stored!)).toHaveLength(0);
+  });
+});
+
+// Create-flow regression: drive the REAL middleware chain (configured store) the
+// way CompactWorkspaceInitializer / OnboardingPage do — `clearPanelLayout` +
+// `hydrateWorkspaceNavigation` with an agent-only drawer — and assert the
+// initial agent tab lands in `panel-layout-{wsId}` and survives a fresh session.
+describe("panelLayoutPersistenceService — workspace creation flow (real middleware chain)", () => {
+  beforeAll(() => {
+    installMemoryLocalStorage();
+    appStore.init();
+  });
+
+  it("persists the initial agent tab for a brand-new workspace and restores it in a fresh session", () => {
+    const WS = "ws-create-flow";
+    const AGENT = "agent-initial";
+    const KEY = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WS}`;
+
+    appStore.dispatch(clearPanelLayout(WS));
+    appStore.dispatch(
+      hydrateWorkspaceNavigation(WS, {
+        version: 2,
+        workspace: { id: WS, status: "loading" },
+        mainPanel: { type: "empty" },
+        drawer: { open: true, type: "agent", itemId: AGENT },
+        navigation: { history: [], currentIndex: -1 },
+        ui: { hasInitialized: false },
+      }),
+    );
+
+    const stored = safeLocalStorage.getJSON<WorkspacePanelLayout>(KEY);
+    expect(stored).toBeDefined();
+    const storedAgentTabs = tabsOf(stored!).filter(
+      (t) => t.type === "agent" && (t as { agentId?: string }).agentId === AGENT,
+    );
+    expect(storedAgentTabs).toHaveLength(1);
+
+    // Simulate a fresh session: unmount clears the once-per-session restore
+    // flag, the reducer state is wiped, and only localStorage survives.
+    const persisted = mem.get(KEY)!;
+    appStore.dispatch(workspaceUnmounted(WS));
+    appStore.dispatch(clearPanelLayout(WS)); // wipes reducer state (also removes the key)
+    mem.set(KEY, persisted); // storage survives an app restart
+
+    appStore.dispatch(workspaceMounted(WS));
+
+    const wsState = appStore.state.panelLayout.byWorkspaceId[WS];
+    expect(wsState).toBeDefined();
+    expect(wsState.restoreStatus).toBe("restored");
+    const restoredAgentTabs = tabsOf(wsState).filter(
+      (t) => t.type === "agent" && (t as { agentId?: string }).agentId === AGENT,
+    );
+    expect(restoredAgentTabs).toHaveLength(1);
   });
 });
