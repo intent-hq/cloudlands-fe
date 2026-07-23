@@ -96,9 +96,8 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', as
   return { selectAgentSession };
 });
 
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => {
-  const { readable } = await import('svelte/store');
-  const selectAgentSession = vi.fn(() => readable(undefined));
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
+  const selectAgentSession = vi.fn(() => mockAgentSession$);
   selectAgentSession.select = vi.fn(() => undefined);
   return { selectAgentSession };
 });
@@ -207,13 +206,16 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
 
 const enabledProviderIds$ = writable(['auggie']);
 const activeProviderId$ = writable('auggie');
+const mockAgentSession$ = writable<
+  { id: string; workspaceId: string; provider?: string } | undefined
+>(undefined);
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
   selectEnabledProviderIds: () => enabledProviderIds$,
 }));
 
 vi.mock('$shared/types/agent-session', () => ({
-  getAgentProvider: vi.fn(() => 'auggie'),
+  getAgentProvider: vi.fn((session?: { provider?: string }) => session?.provider),
   isPendingAgentSession: vi.fn((session: { isPending?: boolean; status?: string }) =>
     session?.isPending === true || session?.status === 'pending',
   ),
@@ -795,5 +797,212 @@ describe('ModelPicker multi-provider mode', () => {
 
     // Reset for other tests
     activeProviderId$.set('auggie');
+  });
+});
+
+describe('ModelPicker unlocked agent provider handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [
+      { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
+    ];
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockAgentSession$.set(undefined);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+        };
+      }
+      if (providerId === 'auggie') {
+        return {
+          models: [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }],
+        };
+      }
+      return { models: [] };
+    });
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+    mockAgentSession$.set(undefined);
+    activeProviderId$.set('auggie');
+  });
+
+  it('shows all enabled providers when the agent session provider differs from the active provider', async () => {
+    enabledProviderIds$.set(['auggie', 'codex']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    // The agent's provider is visible…
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    // …and so is every other enabled provider — not just the agent's.
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+  });
+
+  it('fetches and shows a newly enabled provider group live (unlocked, agent present)', async () => {
+    enabledProviderIds$.set(['auggie']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /GPT-5 Codex/ })).toBeNull();
+
+    // Toggling a provider ON in Settings reaches the picker as an update to
+    // the enabled-provider-ids selector (settings:changed →
+    // applySettingsChanges → loadEnabledProvidersFromStorage → selector; that
+    // leg is asserted in daemon-events-bridge.client.test.ts). The picker must
+    // refetch and show the new provider's group without a restart.
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+  });
+
+  it('fetches an enabled agent provider only once in unlocked mode (no duplicate wire fetch)', async () => {
+    enabledProviderIds$.set(['auggie', 'codex']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+
+    // The agent's provider is enabled, so its models are already covered by the
+    // all-providers fetch — the per-agent fetch must not fire a duplicate call.
+    const codexCalls = vi
+      .mocked(getModelsForProviderForLoadingState)
+      .mock.calls.filter(([pid]) => pid === 'codex');
+    expect(codexCalls).toHaveLength(1);
+  });
+
+  it('group refresh in unlocked mode updates the group list via allProviderModels', async () => {
+    enabledProviderIds$.set(['auggie', 'codex']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Smarter' }],
+        };
+      }
+      return { models: [] };
+    });
+
+    await fireEvent.click(screen.getByTitle('Refresh OpenAI Codex models'));
+
+    // The refreshed list replaces the group (allProviderModels path); the
+    // per-agent snapshot is not used for an enabled provider in unlocked mode.
+    expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /GPT-5 Codex/ })).toBeNull();
+  });
+
+  it('keeps the agent provider group visible when that provider was since disabled', async () => {
+    enabledProviderIds$.set(['auggie']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    // The enabled providers are all listed…
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+    // …and the agent's (now disabled) provider group stays visible so the
+    // currently selected model isn't orphaned.
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+  });
+
+  it('restricts to a single provider when providerId is explicitly passed (locked)', async () => {
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        providerId: 'codex',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
+  });
+
+  it('restricts to the locked provider even when it matches the active provider', async () => {
+    enabledProviderIds$.set(['auggie', 'codex']);
+    activeProviderId$.set('codex');
+    mockModelState.availableModels = [
+      { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' },
+    ];
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        providerId: 'codex',
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
   });
 });

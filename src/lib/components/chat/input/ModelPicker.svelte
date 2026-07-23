@@ -56,10 +56,8 @@
 } from '$store/renderer/slices/model/model-utils';
 
   import {
-  getDefaultProviderId,
   getProviderConfig,
   parseCompoundModelId,
-  resolvePreferredModel,
 } from '$shared/config/provider-config';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
@@ -69,7 +67,10 @@
 } from './model-picker-provider-errors';
   import { buildGroupedModelOptions } from './model-picker-groups';
   import {
+  findModelFallbackOption,
+  isProviderEnabled,
   isUserProviderSettled,
+  normalizeModelIdForMatch,
   toDropdownOptions,
 } from './model-picker-utils';
   import { cn } from '$lib/utils';
@@ -161,7 +162,11 @@
     return $activeProviderId$;
   });
 
-  const isAgentProviderOverride = $derived(effectiveProviderId !== $activeProviderId$);
+  // Single-provider restriction — applies only when the provider is explicitly
+  // locked via the providerId prop (e.g. provider change locked in SimpleRichInput).
+  // An unlocked agent whose session provider differs from the global active
+  // provider still gets the full multi-provider list.
+  const isAgentProviderOverride = $derived(Boolean(providerId));
 
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
@@ -259,10 +264,26 @@
     );
   }
 
+  const isEffectiveProviderEnabled = $derived(
+    isProviderEnabled($enabledProviderIds$, effectiveProviderId),
+  );
+
+  // The per-agent fetch is only needed when the effective provider's models
+  // aren't already covered elsewhere: the locked case, or an unlocked agent
+  // whose provider was since disabled (fetchAllProviderModels only fetches
+  // enabled providers). Skipping it otherwise avoids a duplicate wire fetch.
+  const usesAgentProviderFetch = $derived(
+    effectiveProviderId !== $activeProviderId$ &&
+      (isAgentProviderOverride || !isEffectiveProviderEnabled),
+  );
+
+  // Separate generation counter from fetchAllProviderModels: in unlocked mode
+  // both fetches can run concurrently and must not cancel each other.
+  let agentFetchGeneration = 0;
   $effect(() => {
     const epid = effectiveProviderId;
-    const currentGen = ++fetchGeneration;
-    if (epid === $activeProviderId$) {
+    const currentGen = ++agentFetchGeneration;
+    if (!usesAgentProviderFetch) {
       agentProviderModels = null;
       agentProviderLoading = false;
       agentProviderError = null;
@@ -273,13 +294,13 @@
     agentProviderError = null;
     getModelsForProviderForLoadingState(epid)
       .then((result) => {
-        if (fetchGeneration !== currentGen) return;
+        if (agentFetchGeneration !== currentGen) return;
         agentProviderModels = result.models;
         setProviderWarningState(epid, result.warning);
         agentProviderLoading = false;
       })
       .catch((err) => {
-        if (fetchGeneration !== currentGen) return;
+        if (agentFetchGeneration !== currentGen) return;
         const providerError = formatProviderLoadError(epid, err);
         agentProviderError = providerError.displayText;
         setProviderErrorState(epid, providerError.displayText);
@@ -295,18 +316,19 @@
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
   });
 
+  // Models for the effective provider: the per-agent fetch result when the
+  // agent's provider differs from the active one, the global store otherwise.
   const availableModels = $derived(
-    isAgentProviderOverride
-      ? agentProviderLoading
-        ? []
-        : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$))
-      : (agentProviderModels ?? $availableModels$),
+    agentProviderLoading
+      ? []
+      : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
   );
   const isLoadingModels = $derived(
     isAgentProviderOverride
       ? agentProviderLoading
-      : !hasProviderResult(effectiveProviderId) &&
-          ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded),
+      : agentProviderLoading ||
+          (!hasProviderResult(effectiveProviderId) &&
+            ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded)),
   );
   const loadError = $derived(isAgentProviderOverride ? agentProviderError : $loadError$);
 
@@ -332,9 +354,10 @@
       const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
       if (fetchGeneration !== gen) return;
       setProviderWarningState(providerId, result.warning);
-      if (isAgentProviderOverride && providerId === effectiveProviderId) {
+      if (providerId === effectiveProviderId && usesAgentProviderFetch) {
         agentProviderModels = result.models;
-      } else {
+      }
+      if (!isAgentProviderOverride) {
         const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
         allProviderErrors = remainingErrors;
         allProviderModels = {
@@ -588,7 +611,12 @@
     ...(showDefaultOption ? [useDefaultOption] : []),
     ...(isAgentProviderOverride
       ? toDropdownOptions(availableModels)
-      : $enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? [])),
+      : [
+          ...$enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? []),
+          // Keep the agent's current provider selectable even if it was since
+          // disabled, so the selected model isn't treated as unavailable.
+          ...(isEffectiveProviderEnabled ? [] : toDropdownOptions(availableModels)),
+        ]),
   ]);
 
   const hasLoadedModelOptions = $derived(
@@ -687,19 +715,6 @@
     })),
   );
 
-  // Normalize a model ID for equivalence comparison: strip the default-provider
-  // prefix so `auggie:sonnet4.6` matches bare `sonnet4.6` (and vice versa) when
-  // `auggie` is the default provider. Non-default-provider prefixes are preserved
-  // so `opencode:foo` still only matches the compound form.
-  function normalizeModelIdForMatch(modelId: string): string {
-    const defaultId = getDefaultProviderId();
-    const prefix = `${defaultId}:`;
-    if (modelId.startsWith(prefix)) {
-      return modelId.slice(prefix.length);
-    }
-    return modelId;
-  }
-
   const isSelectedModelUnavailable = $derived.by(() => {
     if (isLoadingModels) return false;
     if (!isAgentProviderOverride && !allProvidersLoaded) return false;
@@ -761,22 +776,14 @@
     return null;
   });
 
-  /** Find the best fallback option: preference list → globally selected model → first available */
   function findFallbackOption(restrictToProvider?: string): DropdownOption | undefined {
-    let candidates = flatModelOptions.filter((opt) => opt.value !== USE_DEFAULT_VALUE);
-
-    if (restrictToProvider) {
-      candidates = candidates.filter((opt) => {
-        const { providerId: optProvider } = parseCompoundModelId(opt.value);
-        return optProvider === restrictToProvider;
-      });
-    }
-
-    const optionValues = candidates.map((opt) => opt.value);
-    const preferredValue = resolvePreferredModel(MODEL_DEFAULTS.UI_MODEL_PREFERENCE, optionValues);
-    return preferredValue
-      ? candidates.find((opt) => opt.value === preferredValue)
-      : (candidates.find((opt) => opt.value === $selectedModel$) ?? candidates[0]);
+    return findModelFallbackOption({
+      options: flatModelOptions,
+      excludeValue: USE_DEFAULT_VALUE,
+      restrictToProvider,
+      preferredModels: MODEL_DEFAULTS.UI_MODEL_PREFERENCE,
+      globallySelectedModel: $selectedModel$,
+    });
   }
 
   // Auto-fallback: When the selected model becomes unavailable, automatically switch to an available model.
