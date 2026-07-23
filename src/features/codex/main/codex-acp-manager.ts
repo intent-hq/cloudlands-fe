@@ -231,7 +231,8 @@ function getPlatformPackage(): ManagedCodexAcpPackage {
 
 function packageInstallPath(versionDir: string, packageName: string): string {
   const segments = packageName.split('/');
-  if (segments.some((segment) => !segment)) {
+  const expectedSegments = packageName.startsWith('@') ? 2 : 1;
+  if (segments.length !== expectedSegments || segments.some((segment) => !segment)) {
     throw new Error(`Unexpected package name: ${packageName}`);
   }
   return path.join(versionDir, 'node_modules', ...segments);
@@ -339,6 +340,9 @@ async function installManagedCodexAcp(): Promise<ManagedCodexAcpResult> {
 
 function getPathsForVersion(versionDir: string, nativePackageName: string) {
   const targetTriple = CODEX_VENDOR_TARGET_TRIPLES[platformKey()];
+  if (!targetTriple) {
+    throw new Error(`No codex vendor target triple for platform: ${platformKey()}`);
+  }
   const nativeBinaryName = getPlatform() === 'win32' ? 'codex.exe' : 'codex';
   return {
     wrapperPath: path.join(packageInstallPath(versionDir, ENTRY_PACKAGE_NAME), 'dist', 'index.js'),
