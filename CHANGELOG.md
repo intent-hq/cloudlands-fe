@@ -12,6 +12,39 @@ See the releases page for detailed changelogs of all 2.x versions.
 
 The entries below document releases prior to 2.0.0.
 
+## [2.1.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.0.13...v2.1.0) (2026-07-23)
+
+
+### 🚀 Features
+
+* bridge system:execute-command to daemon host.exec on web ([#296](https://github.com/intent-hq/cloudlands-fe/issues/296)) ([395969d](https://github.com/intent-hq/cloudlands-fe/commit/395969da4cccb4cc1b0c90e2befa6f81ea3f4144))
+* **ci:** rework release-beta to be tag-triggered ([#300](https://github.com/intent-hq/cloudlands-fe/issues/300)) ([d7544aa](https://github.com/intent-hq/cloudlands-fe/commit/d7544aaf6f46da1eff21dd5e8f078164530cd8b1))
+* in-app file-conflict dialog for web builds ([#289](https://github.com/intent-hq/cloudlands-fe/issues/289)) ([8245302](https://github.com/intent-hq/cloudlands-fe/commit/82453025e33d6f388968bc4c5e5c5fc424e5b21c))
+* persist New Workspace modal draft (text + images) via daemon drafts API ([#303](https://github.com/intent-hq/cloudlands-fe/issues/303)) ([c8fca23](https://github.com/intent-hq/cloudlands-fe/commit/c8fca23abcc0ccb7dff9327c2dd23286a1133ba6))
+* render and apply daemon-delivered standalone proposal blocks ([#290](https://github.com/intent-hq/cloudlands-fe/issues/290)) ([fa16266](https://github.com/intent-hq/cloudlands-fe/commit/fa162660c3dffb929667754c6001c81d569d1e8f))
+* render clickable inline image thumbnails in QueuedMessageList ([#272](https://github.com/intent-hq/cloudlands-fe/issues/272)) ([9468c53](https://github.com/intent-hq/cloudlands-fe/commit/9468c53552888aba3e73388dbc8c111895cd05e6))
+* server-side search + infinite scroll in context picker ([#305](https://github.com/intent-hq/cloudlands-fe/issues/305)) ([249a713](https://github.com/intent-hq/cloudlands-fe/commit/249a71345fdf4662b40696a50fbc0b2531cbe881))
+* thread query + nextToken through integrations plumbing ([#301](https://github.com/intent-hq/cloudlands-fe/issues/301)) ([f8f7e59](https://github.com/intent-hq/cloudlands-fe/commit/f8f7e5954c2a571e59021c59b76aae4c18cbbdcb))
+* web Notifications API substitute for native notifications ([#298](https://github.com/intent-hq/cloudlands-fe/issues/298)) ([6cbd776](https://github.com/intent-hq/cloudlands-fe/commit/6cbd776c08651d9c3817934615bafa698785fe2c))
+
+
+### 🐛 Bug Fixes
+
+* align onboarding needsLogin semantics with settings (unknown != needs login) ([#270](https://github.com/intent-hq/cloudlands-fe/issues/270)) ([d4f8568](https://github.com/intent-hq/cloudlands-fe/commit/d4f85688ec8355403bacd10c8a2c80dedfc38cbd))
+* converge open note editor to server content after local edits are saved ([#280](https://github.com/intent-hq/cloudlands-fe/issues/280)) ([2163aef](https://github.com/intent-hq/cloudlands-fe/commit/2163aef0698769d8ab606242596e854767925b89))
+* false 'intentd is stopped' overlay in dev:web (bridge live WS transport status into the browser mock) ([55051ee](https://github.com/intent-hq/cloudlands-fe/commit/55051ee51827e092090cc21b2606a2ee330c2eb1))
+* guard panel-layout persistence against pre-restore clobber of initial agent tab ([#276](https://github.com/intent-hq/cloudlands-fe/issues/276)) ([eea65c4](https://github.com/intent-hq/cloudlands-fe/commit/eea65c4aecec7720abc75f7e2fc9d1c571e7ac1d))
+* persist agent renames and allow self-rename of placeholder names ([#275](https://github.com/intent-hq/cloudlands-fe/issues/275)) ([66937bf](https://github.com/intent-hq/cloudlands-fe/commit/66937bf1a5505e51682f34e8a9973e13f7616386))
+* pin CODEX_PATH/CODEX_CONFIG to empty in managed codex-acp spawns ([9c26736](https://github.com/intent-hq/cloudlands-fe/commit/9c267360788e94cd9bb9da8c4819d74f946b92ce))
+* reliably focus the comment textarea when the comment dialog opens ([#278](https://github.com/intent-hq/cloudlands-fe/issues/278)) ([31d050b](https://github.com/intent-hq/cloudlands-fe/commit/31d050b314e236aa875c5aa4a41c7637ce5676e0))
+* remove Auggie Ready status badge in provider settings ([#274](https://github.com/intent-hq/cloudlands-fe/issues/274)) ([aac3b5b](https://github.com/intent-hq/cloudlands-fe/commit/aac3b5bff14ad92f21146f74623998b7f94ce77e))
+* resolve CodeQL code scanning alerts ([#282](https://github.com/intent-hq/cloudlands-fe/issues/282)) ([cbeb5b8](https://github.com/intent-hq/cloudlands-fe/commit/cbeb5b8e394ad3512d48a3754fe9ff8f794dbe9c))
+* restructure managed codex-acp runtime for @agentclientprotocol/codex-acp ([#283](https://github.com/intent-hq/cloudlands-fe/issues/283)) ([5f17d34](https://github.com/intent-hq/cloudlands-fe/commit/5f17d345111e0ef4aa7ce34b4189051f081dd787))
+* show waiting agents in home page workspace rows to match sidebar ([#279](https://github.com/intent-hq/cloudlands-fe/issues/279)) ([685173c](https://github.com/intent-hq/cloudlands-fe/commit/685173cb3c46df13ef0bf3156d041d91e7e60518))
+* **sidecar:** bump intentd pin to 0.2.3 ([#307](https://github.com/intent-hq/cloudlands-fe/issues/307)) ([5ec2e4c](https://github.com/intent-hq/cloudlands-fe/commit/5ec2e4ca05168175bb1cd986fa537efc8d9f77d0))
+* surface empty-with-warning providers in the ModelPicker instead of hiding them ([#273](https://github.com/intent-hq/cloudlands-fe/issues/273)) ([0429f93](https://github.com/intent-hq/cloudlands-fe/commit/0429f93d78366909015c86d187730a17005e95cb))
+* update vulnerable dependencies to resolve 57 Dependabot alerts ([#288](https://github.com/intent-hq/cloudlands-fe/issues/288)) ([4a9a619](https://github.com/intent-hq/cloudlands-fe/commit/4a9a61953eda015ef0a245cd3c311f3ae57bf062))
+
 ## 0.4.0
 
 - Diffs in agent responses now render with the full diff viewer instead of plain code blocks.
