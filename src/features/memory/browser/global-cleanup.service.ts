@@ -6,12 +6,8 @@
 import { Logger } from '$lib/utils/logger';
 import { memoryLeakDetector } from './memory-leak-detector.service';
 import { componentDisposalManager } from './disposal-manager.service';
-import { getMemoryMonitor } from '$shared/monitoring/memory-monitor';
 
 const logger = new Logger({ category: 'GlobalCleanup' });
-
-// Get memory monitor instance
-const memoryMonitor = getMemoryMonitor();
 
 class GlobalCleanupService {
   private isInitialized = false;
@@ -69,15 +65,6 @@ class GlobalCleanupService {
       logger.debug('Cleaning up component disposal manager');
       componentDisposalManager.disposeAll();
     });
-
-    this.registerCleanupHandler(() => {
-      logger.debug('Stopping memory monitor');
-      memoryMonitor.stop();
-    });
-
-    // Start memory monitoring
-    memoryMonitor.start(); // Uses default check interval from config
-    logger.debug('Memory monitoring started');
 
     this.isInitialized = true;
     logger.debug('Global cleanup initialized');

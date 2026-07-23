@@ -246,8 +246,6 @@ const ALLOWED_CHANNELS = [
   "app:name",
   "app:path",
   "app:root",
-  "app:get-memory-usage",
-  "app:trigger-memory-cleanup",
   "app:ui:navigate",
   "app:ui:highlight",
   "window:reload",
@@ -636,7 +634,6 @@ const ALLOWED_CHANNELS = [
   "agent:plan-required",
   "notification:show",
   "notification:navigate",
-  "system:memory-pressure",
   "app:workspace-operation-requested",
   "auto-update:status-changed",
   "auto-update:progress",
@@ -811,7 +808,6 @@ const EVENT_CHANNELS = [
   "agent:plan-required",
   "notification:show",
   "notification:navigate",
-  "system:memory-pressure",
   "app:workspace-operation-requested",
   "auto-update:status-changed",
   "auto-update:progress",
@@ -896,12 +892,12 @@ function generateListenerId(): string {
 // Define the API exposed to the renderer
 const electronAPI = {
   // IPC invoke (request/response)
-  invoke: (channel: string, ...args: any[]) => {
+  invoke: (channel: string, data?: any) => {
     // Use generated allowed channels for security
     if (isChannelAllowed(channel)) {
-      // Pass args as-is to respect union schemas and other complex types
+      // Pass data as-is to respect union schemas and other complex types
       // The validation middleware will handle type checking
-      return ipcRenderer.invoke(channel, ...args).catch((err) => {
+      return ipcRenderer.invoke(channel, data).catch((err) => {
         logger.error(`[Preload] IPC invoke failed for ${channel}:`, err);
         throw err;
       });

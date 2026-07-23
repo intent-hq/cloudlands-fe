@@ -13,25 +13,17 @@ import {
   afterEach,
 } from 'vitest';
 import { ListenerManager } from '../../../../shared/utils/listener-manager';
-import { MemoryMonitor } from '../../../../shared/monitoring/memory-monitor';
 import { EventEmitter } from '../../../../shared/event-emitter';
 
 describe('Wave 3 Performance Integration', () => {
   let listenerManager: ListenerManager;
-  let memoryMonitor: MemoryMonitor;
 
   beforeEach(() => {
     listenerManager = new ListenerManager();
-    memoryMonitor = new MemoryMonitor({
-      checkInterval: 100,
-      warningThreshold: 500 * 1024 * 1024,
-      enableGC: false,
-    });
   });
 
   afterEach(() => {
     listenerManager.cleanup();
-    memoryMonitor.stop();
   });
 
   it('should manage many listeners efficiently', () => {
@@ -53,31 +45,6 @@ describe('Wave 3 Performance Integration', () => {
 
     expect(cleanupTime).toBeLessThan(100); // Should cleanup in < 100ms
     expect(listenerManager.getListenerCount()).toBe(0);
-  });
-
-  it('should track memory stats efficiently', async () => {
-    const stats: any[] = [];
-
-    memoryMonitor.on('stats', (stat: any) => {
-      stats.push(stat);
-    });
-
-    memoryMonitor.start();
-
-    await new Promise((resolve) => {
-      setTimeout(() => {
-        expect(stats.length).toBeGreaterThan(0);
-
-        const history = memoryMonitor.getHistory();
-        expect(history.length).toBeGreaterThan(0);
-
-        const avg = memoryMonitor.getAverageUsage();
-        expect(avg).toBeGreaterThan(0);
-
-        memoryMonitor.stop();
-        resolve(undefined);
-      }, 300);
-    });
   });
 
   it('should handle rapid listener add/remove cycles', () => {

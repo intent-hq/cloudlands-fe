@@ -300,8 +300,6 @@ export const IPC_CHANNELS = {
     NAME: 'app:name',
     PATH: 'app:path',
     ROOT: 'app:root',
-    GET_MEMORY_USAGE: 'app:get-memory-usage',
-    TRIGGER_MEMORY_CLEANUP: 'app:trigger-memory-cleanup',
     UI_NAVIGATE: 'app:ui:navigate',
     UI_HIGHLIGHT: 'app:ui:highlight',
   },
@@ -943,7 +941,6 @@ export const EVENT_CHANNELS = [
   'agent:plan-required', // Agent plan upgrade required notification (enterprise users without Intent access)
   'notification:show', // Notification shown event for sound playback in renderer
   'notification:navigate', // Notification click navigates to workspace (chief payloads open the sidebar Assistant panel)
-  'system:memory-pressure', // Memory pressure level transitioned (normal/warning/critical)
   'app:workspace-operation-requested', // App-level MCP workspace operation request (main → renderer saga)
   // Auto-update events
   'auto-update:status-changed',

@@ -241,7 +241,6 @@ const ALLOWED_CHANNELS = [
   'app:name',
   'app:path',
   'app:root',
-  'app:get-memory-usage',
   'window:reload',
   'window:toggle-devtools',
   'window:minimize',
