@@ -80,8 +80,7 @@ export const sentryAuthClient = {
    */
   async fetchIssuesPage(request?: FetchIssuesRequest): Promise<SentryIssuePage> {
     try {
-      const page = await invoke<SentryIssuePage>(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, request);
-      return toIssuePage(page);
+      return await invoke<SentryIssuePage>(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, request);
     } catch {
       return { issues: [], nextToken: null };
     }
@@ -104,12 +103,11 @@ export const sentryAuthClient = {
     options?: { limit?: number; nextToken?: string },
   ): Promise<SentryIssuePage> {
     try {
-      const page = await invoke<SentryIssuePage>(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, {
+      return await invoke<SentryIssuePage>(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, {
         query,
         project,
         ...options,
       });
-      return toIssuePage(page);
     } catch {
       return { issues: [], nextToken: null };
     }
@@ -126,14 +124,6 @@ export const sentryAuthClient = {
     }
   },
 };
-
-/** Guard the wire envelope into a well-formed page. */
-function toIssuePage(page: SentryIssuePage | undefined): SentryIssuePage {
-  return {
-    issues: Array.isArray(page?.issues) ? page.issues : [],
-    nextToken: typeof page?.nextToken === 'string' ? page.nextToken : null,
-  };
-}
 
 // Re-export types for convenience
 export type { SentryIssuePage, SentryIssueResult, SentryProject } from '../types';

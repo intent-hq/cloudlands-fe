@@ -86,8 +86,8 @@ export class LiveIntegrationsClient implements IntegrationsClient {
       if (status?.authenticated !== true) return [];
       // §5.28: cursor-paginated `{ issues, nextToken }` envelope; the pane
       // consumes the first page only.
-      const result = await backendRequest<{ issues?: LinearIssueResult[] }>("linear.listIssues");
-      return Array.isArray(result?.issues) ? result.issues : [];
+      const result = await backendRequest<{ issues: LinearIssueResult[] }>("linear.listIssues");
+      return result.issues;
     } catch {
       return [];
     }
@@ -99,8 +99,8 @@ export class LiveIntegrationsClient implements IntegrationsClient {
       if (status?.authenticated !== true) return [];
       // §5.29: cursor-paginated `{ issues, nextToken }` envelope; the pane
       // consumes the first page only.
-      const result = await backendRequest<{ issues?: SentryIssueResult[] }>("sentry.listIssues");
-      return Array.isArray(result?.issues) ? result.issues : [];
+      const result = await backendRequest<{ issues: SentryIssueResult[] }>("sentry.listIssues");
+      return result.issues;
     } catch {
       return [];
     }

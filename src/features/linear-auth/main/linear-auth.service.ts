@@ -182,7 +182,7 @@ export class LinearAuthService {
         ...(options?.limit !== undefined ? { limit: options.limit } : {}),
         ...(options?.nextToken ? { nextToken: options.nextToken } : {}),
       });
-      return toIssuePage(response);
+      return { issues: response.issues, nextToken: response.nextToken };
     } catch (error) {
       if (!isMethodNotFound(error)) {
         logger.error('Failed to fetch Linear issues from daemon', error as Error);
@@ -210,7 +210,7 @@ export class LinearAuthService {
         ...(options?.limit !== undefined ? { limit: options.limit } : {}),
         ...(options?.nextToken ? { nextToken: options.nextToken } : {}),
       });
-      return toIssuePage(response);
+      return { issues: response.issues, nextToken: response.nextToken };
     } catch (error) {
       if (!isMethodNotFound(error)) {
         logger.error('Failed to search Linear issues from daemon', error as Error);
@@ -218,14 +218,6 @@ export class LinearAuthService {
       return { issues: [], nextToken: null };
     }
   }
-}
-
-/** Guard the daemon envelope into a well-formed page. */
-function toIssuePage(response: LinearIssuePage | undefined): LinearIssuePage {
-  return {
-    issues: Array.isArray(response?.issues) ? response.issues : [],
-    nextToken: typeof response?.nextToken === 'string' ? response.nextToken : null,
-  };
 }
 
 /** Cursor-pagination options shared by the two issue reads (§5.28). */

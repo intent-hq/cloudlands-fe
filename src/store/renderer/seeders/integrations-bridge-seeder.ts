@@ -323,11 +323,11 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, async (ar
   const params = searchParams(arg);
   if (!params) return { success: false, error: 'owner and repo are required' };
   try {
-    const result = await backendRequest<{ issues?: GithubIssueWire[]; nextToken?: string | null }>(
+    const result = await backendRequest<{ issues: GithubIssueWire[]; nextToken?: string | null }>(
       'github.issues.search',
       params,
     );
-    const data = (result?.issues ?? []).map((issue) => ({
+    const data = result.issues.map((issue) => ({
       id: String(issue.number),
       number: issue.number,
       title: issue.title,
@@ -341,7 +341,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, async (ar
       createdAt: issue.createdAt,
       updatedAt: issue.updatedAt,
     }));
-    return { success: true, data, nextToken: result?.nextToken ?? null };
+    return { success: true, data, nextToken: result.nextToken ?? null };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
@@ -355,11 +355,11 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS, async (ar
   const params = searchParams(arg);
   if (!params) return { success: false, error: 'owner and repo are required' };
   try {
-    const result = await backendRequest<{ pulls?: GithubPullWire[]; nextToken?: string | null }>(
+    const result = await backendRequest<{ pulls: GithubPullWire[]; nextToken?: string | null }>(
       'github.pulls.search',
       params,
     );
-    const data = (result?.pulls ?? []).map((pull) => ({
+    const data = result.pulls.map((pull) => ({
       id: String(pull.number),
       number: pull.number,
       title: pull.title,
@@ -373,7 +373,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS, async (ar
       createdAt: pull.createdAt,
       updatedAt: pull.updatedAt,
     }));
-    return { success: true, data, nextToken: result?.nextToken ?? null };
+    return { success: true, data, nextToken: result.nextToken ?? null };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
@@ -416,17 +416,6 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.GET_PULL_REQUEST, async (arg) =
 });
 
 // ── Linear (PROTOCOL §5.28 — cursor-paginated { issues, nextToken } envelope) ──
-
-/** Guard a daemon `{ issues, nextToken }` envelope into a well-formed page. */
-function toIssuePage<T>(result: { issues?: T[]; nextToken?: string | null } | undefined): {
-  issues: T[];
-  nextToken: string | null;
-} {
-  return {
-    issues: Array.isArray(result?.issues) ? result.issues : [],
-    nextToken: typeof result?.nextToken === 'string' ? result.nextToken : null,
-  };
-}
 
 /** Optional `{ limit, nextToken }` pagination forwarded from the clients. */
 function pageParams(arg: unknown): { limit?: number; nextToken?: string } {
@@ -473,11 +462,11 @@ registerMockIpcHandler(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, async (filter, opti
       ...(typeof filter === 'string' && filter ? { filter } : {}),
       ...pageParams(options),
     };
-    const result = await backendRequest<{ issues?: LinearIssueResult[]; nextToken?: string | null }>(
+    const result = await backendRequest<{ issues: LinearIssueResult[]; nextToken: string | null }>(
       'linear.listIssues',
       params,
     );
-    return toIssuePage(result);
+    return { issues: result.issues, nextToken: result.nextToken };
   } catch {
     return { issues: [], nextToken: null };
   }
@@ -486,11 +475,11 @@ registerMockIpcHandler(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, async (filter, opti
 registerMockIpcHandler(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, async (query, options) => {
   if (typeof query !== 'string' || query.length === 0) return { issues: [], nextToken: null };
   try {
-    const result = await backendRequest<{ issues?: LinearIssueResult[]; nextToken?: string | null }>(
+    const result = await backendRequest<{ issues: LinearIssueResult[]; nextToken: string | null }>(
       'linear.searchIssues',
       { query, ...pageParams(options) },
     );
-    return toIssuePage(result);
+    return { issues: result.issues, nextToken: result.nextToken };
   } catch {
     return { issues: [], nextToken: null };
   }
@@ -544,7 +533,7 @@ registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_PROJECTS, async () => {
 registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, async (request) => {
   const { project, status, query } = asRecord(request);
   try {
-    const result = await backendRequest<{ issues?: SentryIssueResult[]; nextToken?: string | null }>(
+    const result = await backendRequest<{ issues: SentryIssueResult[]; nextToken: string | null }>(
       'sentry.listIssues',
       {
         ...(typeof project === 'string' && project ? { project } : {}),
@@ -553,7 +542,7 @@ registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, async (request) => {
         ...pageParams(request),
       },
     );
-    return toIssuePage(result);
+    return { issues: result.issues, nextToken: result.nextToken };
   } catch {
     return { issues: [], nextToken: null };
   }
@@ -563,7 +552,7 @@ registerMockIpcHandler(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, async (arg) => {
   const { query, project } = asRecord(arg);
   if (typeof query !== 'string' || query.length === 0) return { issues: [], nextToken: null };
   try {
-    const result = await backendRequest<{ issues?: SentryIssueResult[]; nextToken?: string | null }>(
+    const result = await backendRequest<{ issues: SentryIssueResult[]; nextToken: string | null }>(
       'sentry.searchIssues',
       {
         query,
@@ -571,7 +560,7 @@ registerMockIpcHandler(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, async (arg) => {
         ...pageParams(arg),
       },
     );
-    return toIssuePage(result);
+    return { issues: result.issues, nextToken: result.nextToken };
   } catch {
     return { issues: [], nextToken: null };
   }

@@ -70,12 +70,7 @@ export const linearAuthClient = {
     options?: LinearIssuePageOptions,
   ): Promise<LinearIssuePage> {
     try {
-      const page = await invoke<LinearIssuePage>(
-        LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES,
-        filter,
-        options,
-      );
-      return toIssuePage(page);
+      return await invoke<LinearIssuePage>(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, filter, options);
     } catch {
       return { issues: [], nextToken: null };
     }
@@ -97,21 +92,12 @@ export const linearAuthClient = {
     options?: LinearIssuePageOptions,
   ): Promise<LinearIssuePage> {
     try {
-      const page = await invoke<LinearIssuePage>(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, query, options);
-      return toIssuePage(page);
+      return await invoke<LinearIssuePage>(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, query, options);
     } catch {
       return { issues: [], nextToken: null };
     }
   },
 };
-
-/** Guard the wire envelope into a well-formed page. */
-function toIssuePage(page: LinearIssuePage | undefined): LinearIssuePage {
-  return {
-    issues: Array.isArray(page?.issues) ? page.issues : [],
-    nextToken: typeof page?.nextToken === 'string' ? page.nextToken : null,
-  };
-}
 
 /** Cursor-pagination options for the issue reads (PROTOCOL §5.28). */
 export interface LinearIssuePageOptions {
