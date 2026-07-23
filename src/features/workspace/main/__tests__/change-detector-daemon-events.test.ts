@@ -279,6 +279,32 @@ describe('ChangeDetectorRefactored daemon file-event subscription', () => {
     await detector.stop();
   });
 
+  it('releases a subscription whose subscribe resolves after stop instead of leaking it', async () => {
+    let resolveSubscribe!: (value: { subscriptionId: string }) => void;
+    mocks.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSubscribe = resolve;
+        }),
+    );
+
+    const detector = new ChangeDetectorRefactored({
+      workspaceId: 'ws-late',
+      workspacePath: '/workspace',
+    });
+
+    await detector.start();
+    await detector.stop();
+
+    mocks.request.mockClear();
+    resolveSubscribe({ subscriptionId: 'late-sub' });
+    await flushPromises();
+
+    expect(mocks.request).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'late-sub',
+    });
+  });
+
   it('starts successfully even when the initial events.subscribe fails', async () => {
     mocks.request.mockRejectedValueOnce(new Error('daemon not reachable'));
 

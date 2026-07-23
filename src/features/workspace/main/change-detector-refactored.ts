@@ -93,6 +93,12 @@ export class ChangeDetectorRefactored extends EventEmitter {
   private daemonSubscriptionId: string | undefined;
   private notificationListener: ((n: JsonRpcNotification) => void) | null = null;
   private reconnectDisposer: (() => void) | null = null;
+  /**
+   * Bumped on detach and reconnect so an in-flight `events.subscribe` that
+   * resolves late can detect it belongs to a torn-down consumer and release
+   * its subscription instead of leaking it on the daemon.
+   */
+  private subscriptionEpoch = 0;
 
   // Debounced git checks (batches rapid daemon events into one status run)
   private debouncedPollTimer: NodeJS.Timeout | null = null;
@@ -341,6 +347,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
       // run a one-time full refresh — events emitted while the connection was
       // down were missed, so the current git state must be re-read.
       this.daemonSubscriptionId = undefined;
+      this.subscriptionEpoch += 1;
       if (!this.isRunning) return;
       void this.subscribeToDaemonFileEvents();
       this.gitOps.invalidateCache();
@@ -356,6 +363,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
 
   /** Issue `events.subscribe` for this workspace's `file:*` events. */
   private async subscribeToDaemonFileEvents(): Promise<void> {
+    const epoch = this.subscriptionEpoch;
     try {
       const result = await getBackendClient().request<{ subscriptionId?: string }>(
         'events.subscribe',
@@ -364,6 +372,17 @@ export class ChangeDetectorRefactored extends EventEmitter {
           workspaceId: this.workspaceId,
         },
       );
+      if (epoch !== this.subscriptionEpoch) {
+        // Detached or reconnected while the request was in flight; release
+        // the fresh subscription so it doesn't leak on the daemon.
+        const staleId = result?.subscriptionId;
+        if (staleId) {
+          void getBackendClient()
+            .request('events.unsubscribe', { subscriptionId: staleId })
+            .catch(() => {});
+        }
+        return;
+      }
       this.daemonSubscriptionId = result?.subscriptionId;
       logger.debug('Subscribed to daemon file events', {
         workspaceId: this.workspaceId,
@@ -379,6 +398,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
 
   /** Detach the notification listener, reconnect handler, and daemon subscription. */
   private detachDaemonSubscription(): void {
+    this.subscriptionEpoch += 1;
     if (this.reconnectDisposer) {
       this.reconnectDisposer();
       this.reconnectDisposer = null;
