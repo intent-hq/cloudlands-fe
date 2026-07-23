@@ -35,11 +35,15 @@ version number by hand.
 
 **Version math** (the app is ≥ 1.0, so full semver rules apply):
 
-- `fix:` → patch (e.g. 2.0.13 → 2.0.14)
+- `fix:` / `perf:` → patch (e.g. 2.0.13 → 2.0.14)
 - `feat:` → minor (e.g. 2.0.13 → 2.1.0)
 - `type!:` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer → major
   (e.g. 2.0.13 → 3.0.0)
-- `chore:`, `docs:`, `refactor:`, etc. → no release on their own
+- `chore:`, `docs:`, `refactor:`, `style:`, `test:`, `ci:` → no release on
+  their own. These types are marked `"hidden": true` in the config's
+  `changelog-sections`; release-please only opens a Release PR when the
+  rendered release notes are non-empty, so hidden-only pushes neither appear
+  in `CHANGELOG.md` nor trigger a release proposal.
 
 **Conventions:**
 
