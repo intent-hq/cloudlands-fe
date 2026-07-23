@@ -212,7 +212,7 @@
           isResponding: loadedSession
             ? selectAgentIsResponding.select(reduxState, agentId)
             : false,
-          isStreamingFallback: streamingAgentIds.includes(agentId),
+          isStreamingFallback: loadedSession ? false : streamingAgentIds.includes(agentId),
           sessionStatus: loadedSession?.status as string | undefined,
           specialist: (loadedSession?.metadata?.specialist ??
             null) as WorkspaceAgentDisplayInfo['specialist'],

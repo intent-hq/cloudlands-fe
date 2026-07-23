@@ -48,6 +48,14 @@ describe('deriveWorkspaceAgentState', () => {
     ).toBe('idle');
   });
 
+  it('ignores the streaming fallback when the session is loaded', () => {
+    expect(
+      deriveWorkspaceAgentState(
+        makeSnapshot({ hasLoadedSession: true, isResponding: false, isStreamingFallback: true }),
+      ),
+    ).toBe('idle');
+  });
+
   it('treats workspace activity idle as authoritative over running/waiting', () => {
     expect(
       deriveWorkspaceAgentState(makeSnapshot({ isResponding: true }), 'idle'),
@@ -100,6 +108,17 @@ describe('getWorkspaceAgentDisplayInfos', () => {
     });
     expect(result).toEqual([
       { id: 'agent-1', state: 'idle', specialist: null, isUnread: true },
+    ]);
+  });
+
+  it('keeps state running for an unread agent that is running (unread override happens at render)', () => {
+    const result = getWorkspaceAgentDisplayInfos({
+      memberAgentIds: ['agent-1'],
+      unreadAgentIds: ['agent-1'],
+      getAgentSnapshot: () => makeSnapshot({ isResponding: true }),
+    });
+    expect(result).toEqual([
+      { id: 'agent-1', state: 'running', specialist: null, isUnread: true },
     ]);
   });
 
