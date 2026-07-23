@@ -67,6 +67,10 @@ describe('IPC Channels', () => {
       expect(isValidChannel('file:unwatch')).toBe(false);
     });
 
+    it('should reject removed specialist file watcher channels', () => {
+      expect(isValidChannel('specialists:files-changed')).toBe(false);
+    });
+
     it('should reject invalid channels', () => {
       expect(isValidChannel('invalid:channel')).toBe(false);
       expect(isValidChannel('agent:invalid')).toBe(false);

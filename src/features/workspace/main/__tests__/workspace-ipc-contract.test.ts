@@ -75,15 +75,9 @@ vi.mock('../../../../store/main/slices/workspace-events/sagas/persistence-saga',
 vi.mock('../../../terminal/main/terminal.ipc', () => ({ cleanupWorkspaceTerminals: vi.fn() }));
 vi.mock('../../../scripts/main/script-process-manager', () => ({ disposeScriptProcessManager: vi.fn() }));
 vi.mock('../../../scripts/main/scripts-persistence', () => ({ readScripts: vi.fn(() => []) }));
-vi.mock('../unified-workspace-watcher', () => ({
-  getUnifiedWatcher: vi.fn(),
-  shutdownUnifiedWatcher: vi.fn(),
-  shutdownOtherWatchers: vi.fn(),
-}));
 vi.mock('../change-detection/detection.config', () => ({
-  CHANGE_DETECTION_CONFIG: { gitPollingOnly: false, disableFileWatcher: false },
+  CHANGE_DETECTION_CONFIG: {},
 }));
-vi.mock('../../../../shared/binary-file-extensions', () => ({ isBinaryExtension: vi.fn(() => false) }));
 vi.mock('../../../agent/main/instruction-service', () => ({
   InstructionService: { getInstance: vi.fn(() => ({ warmCache: vi.fn() })) },
 }));

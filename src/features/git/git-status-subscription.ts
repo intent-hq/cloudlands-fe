@@ -1,7 +1,7 @@
 /**
  * Git status subscription — event-driven half of the git-status refresh restore.
  *
- * External/out-of-app git changes (other tools, the git-watcher, agent commits)
+ * External/out-of-app git changes (other tools, agent commits)
  * must auto-refresh the display. The daemon publishes those as `git:*` /
  * `changes:git-status` notifications. The sanctioned seam channel for them is
  * `appClient.git.subscribe`: in live mode `LiveGitClient.subscribe` is the ONLY

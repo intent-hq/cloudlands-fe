@@ -34,7 +34,6 @@ import {
 } from './specialist-file-loader';
 import { refreshSpecialistsFromFiles } from '../../agent/main/specialists.service';
 import { mergeSpecialistsByPriority } from '../../../shared/specialist-file-types';
-import { startSpecialistFileWatcher } from './specialist-file-watcher';
 
 const logger = new Logger('SpecialistsIPC');
 
@@ -327,16 +326,4 @@ export function setupSpecialistsIPC(): void {
   );
 
   logger.info('Specialists IPC handlers registered');
-
-  // Start watching user specialists directory immediately.
-  // Project watcher will be updated when a workspace is mounted.
-  startSpecialistFileWatcher(undefined, () => {
-    // Specialist file changes are global — broadcast to all windows
-    const { sendToWorkspaceWindows } = require('../../system/main/system.ipc') as {
-      sendToWorkspaceWindows: (workspaceId: string | undefined, channel: string, data: unknown) => void;
-    };
-    sendToWorkspaceWindows(undefined, 'specialists:files-changed', {});
-  }).catch((error) => {
-    logger.error('Failed to start specialist file watcher', error as Error);
-  });
 }

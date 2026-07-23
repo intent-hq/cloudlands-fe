@@ -9,9 +9,6 @@
 export { GitOperationsSafe } from './git-operations-safe-wrapper';
 export type { GitStatus, GitDiffResult } from './git-types';
 
-export { FileWatcher } from './file-watcher';
-export type { FileWatchEvent } from './file-watcher';
-
 export { ChangeProcessor } from './change-processor';
 export type { FileChange, ProcessedChange } from './change-processor';
 

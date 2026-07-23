@@ -576,7 +576,6 @@ export const IPC_CHANNELS = {
     GET_FOLDER_PATH: 'specialists:get-folder-path',
     EXPORT_BUILTIN: 'specialists:export-builtin',
     FILE_EXISTS: 'specialists:file-exists',
-    FILES_CHANGED: 'specialists:files-changed',
   },
 
   // Config Rules
@@ -845,7 +844,6 @@ export const EVENT_CHANNELS = [
   'file:deleted',
   'file:renamed',
   'file:content-changed',
-  'watcher:file-changed',
   'note:created',
   'note:updated',
   'note:deleted',
@@ -983,8 +981,6 @@ export const EVENT_CHANNELS = [
   'script:output',
   'script:error',
   'script:url-detected',
-  // Specialist file watcher events (main → renderer)
-  'specialists:files-changed',
   // WebSocket API events (main → renderer)
   'websocket-api:discovery-auto-disabled',
   // Workspace token usage changed (main → renderer)

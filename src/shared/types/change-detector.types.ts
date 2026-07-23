@@ -54,17 +54,12 @@ export interface ChangeDetectorOptions {
   worktreePath?: string;
   workspacePath?: string;
   repositoryPath?: string;
-  pollInterval?: number;
   ignorePatterns?: string[];
   isRemote?: boolean;
-  gitPollingOnly?: boolean;
-  disableFileWatcher?: boolean;
 }
 
 export interface ChangeDetectorStats {
   isRunning: boolean;
-  gitPollingEnabled: boolean;
-  fileWatcherEnabled: boolean;
   lastGitPoll: string | null;
   totalChangesDetected: number;
   totalEventsEmitted: number;

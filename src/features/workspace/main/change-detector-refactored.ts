@@ -24,12 +24,10 @@ export type {
 
 // Import modular components
 import {
-  FileWatcher,
   ChangeProcessor,
   EventCoordinator,
   SnapshotManager,
   type GitStatus,
-  type FileWatchEvent,
   type ProcessedChange,
 } from './change-detection';
 import { isBinaryExtension } from '../../../shared/binary-file-extensions';
@@ -43,26 +41,28 @@ import { GitOperationsSafe as GitOperations } from './change-detection/git-opera
 
 // Import performance monitor
 import { PerformanceMonitor } from '../../file-tracking/performance-monitor';
-
-// Import adaptive polling manager
-import { AdaptivePollingManager } from './change-detection/adaptive-polling-manager';
 import { isKeychainAccessSuppressed } from '../../../shared/git/keychain-suppression';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
+import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 
 const logger = new Logger('ChangeDetector');
+
+/**
+ * Daemon `file:*` event types the detector subscribes to. The daemon emits
+ * `file:created` / `file:changed` / `file:deleted` (modify and rename collapse
+ * onto `file:changed`; `data.action` carries the raw verb).
+ */
+const DAEMON_FILE_EVENT_TYPES = ['file:changed', 'file:created', 'file:deleted'];
 
 export interface ChangeDetectorOptions {
   workspaceId: string;
   workspacePath: string;
   isRemote?: boolean;
-  gitPollingOnly?: boolean;
-  disableFileWatcher?: boolean;
 }
 
 export interface ChangeDetectorStats {
   isRunning: boolean;
-  gitPollingEnabled: boolean;
-  fileWatcherEnabled: boolean;
   lastGitPoll: string | null;
   totalChangesDetected: number;
   totalEventsEmitted: number;
@@ -77,31 +77,42 @@ export class ChangeDetectorRefactored extends EventEmitter {
 
   // Modular components
   private gitOps: GitOperations;
-  private fileWatcher: FileWatcher;
   private changeProcessor: ChangeProcessor;
   private eventCoordinator: EventCoordinator;
   private snapshotManager: SnapshotManager;
 
   // Services
   private performanceMonitor: PerformanceMonitor;
-  private adaptivePolling: AdaptivePollingManager;
   private thresholdExceededHandler: ((alerts: string[]) => void) | null = null;
   private resourcesCleanedUp = false;
 
   // Configuration
   private config = CHANGE_DETECTION_CONFIG;
-  private gitPollingOnly: boolean;
-  private disableFileWatcher: boolean;
 
-  // Polling
-  private gitPollingTimer: NodeJS.Timeout | null = null;
+  // Daemon `file:*` event subscription (sole steady-state change trigger)
+  private daemonSubscriptionId: string | undefined;
+  private notificationListener: ((n: JsonRpcNotification) => void) | null = null;
+  private reconnectDisposer: (() => void) | null = null;
+  /**
+   * Bumped on detach and reconnect so an in-flight `events.subscribe` that
+   * resolves late can detect it belongs to a torn-down consumer and release
+   * its subscription instead of leaking it on the daemon.
+   */
+  private subscriptionEpoch = 0;
+  /**
+   * Bounded exponential-backoff retry for a failed `events.subscribe` on a
+   * healthy connection (no reconnect event fires there, and there is no
+   * polling fallback anymore). Reconnect resets the budget and re-issues the
+   * subscribe itself.
+   */
+  private subscribeRetryTimer: NodeJS.Timeout | null = null;
+  private subscribeRetryAttempts = 0;
+  private readonly SUBSCRIBE_RETRY_BASE_DELAY_MS = 1_000;
+  private readonly SUBSCRIBE_RETRY_MAX_ATTEMPTS = 5;
+
+  // Debounced git checks (batches rapid daemon events into one status run)
   private debouncedPollTimer: NodeJS.Timeout | null = null;
-  private intervalChangedHandler: (({ newInterval }: { newInterval: number }) => void) | null =
-    null;
-  private fileWatcherActiveOnStart: boolean = false;
   private readonly DEBOUNCE_DELAY_MS = 300;
-  private readonly FOLLOW_UP_POLL_INTERVAL_MS = 2000;
-  private readonly FOLLOW_UP_POLL_WINDOW_MS = 15000;
   private lastGitPoll: string | null = null;
   private lastGitStatus: GitStatus | null = null;
   /**
@@ -111,14 +122,8 @@ export class ChangeDetectorRefactored extends EventEmitter {
    * event dispatch when nothing actually changed.
    */
   private lastGitStatusSerialized: string | null = null;
-  private gitPollErrorCount: number = 0;
-  private lastActivityTime: number = Date.now();
   private isPollingGitStatus: boolean = false;
   private pollRequestedWhilePolling: boolean = false;
-  private followUpPollTimer: NodeJS.Timeout | null = null;
-  private followUpPollUntil: number = 0;
-  private readonly IDLE_THRESHOLD = 60000; // 1 minute of inactivity
-  private isIdle = false;
 
   // Statistics
   private stats = {
@@ -132,26 +137,13 @@ export class ChangeDetectorRefactored extends EventEmitter {
     this.workspaceId = options.workspaceId;
     this.workspacePath = options.workspacePath;
     this.isRemote = options.isRemote || false;
-    this.gitPollingOnly = options.gitPollingOnly ?? this.config.gitPollingOnly;
-    this.disableFileWatcher = options.disableFileWatcher ?? this.config.disableFileWatcher;
 
     // Initialize components
     this.gitOps = new GitOperations(this.workspacePath);
-    this.fileWatcher = new FileWatcher(this.workspaceId, this.workspacePath);
     this.changeProcessor = new ChangeProcessor(this.workspacePath, this.workspaceId);
     this.eventCoordinator = new EventCoordinator(this.workspaceId);
     this.snapshotManager = new SnapshotManager(this.workspacePath);
     this.performanceMonitor = PerformanceMonitor.getInstance();
-
-    // Initialize adaptive polling with custom config for this workspace
-    // Cap maxInterval at 15s so external changes (patches, git commands) are
-    // detected within a reasonable time even when idle. The previous 45s max
-    // (gitPollingIntervalLargeRepo * 3) caused unacceptable staleness.
-    this.adaptivePolling = AdaptivePollingManager.getInstance({
-      minInterval: this.config.gitPollingInterval,
-      maxInterval: this.config.gitPollingIntervalLargeRepo, // 15 seconds max (was 45s)
-      idleThreshold: this.IDLE_THRESHOLD,
-    });
 
     this.setupEventHandlers();
   }
@@ -160,35 +152,6 @@ export class ChangeDetectorRefactored extends EventEmitter {
    * Setup event handlers for components
    */
   private setupEventHandlers(): void {
-    // File watcher events
-    this.fileWatcher.on('file-change', (event: FileWatchEvent) => {
-      this.handleFileWatchEvent(event);
-    });
-
-    this.fileWatcher.on('error', (error: Error) => {
-      logger.error('File watcher error:', error);
-      this.emit('error', error);
-    });
-
-    // When the OS file-event queue overflows (e.g. macOS FSEvents drop),
-    // the FileWatcher emits 'rescan-required'.  We must re-poll git so that
-    // any changes made while events were lost are still detected.
-    this.fileWatcher.on('rescan-required', () => {
-      logger.info('File watcher rescan required - triggering immediate git poll', {
-        workspaceId: this.workspaceId,
-      });
-      // Invalidate git status cache so the poll reads fresh state from disk
-      this.gitOps.invalidateCache();
-      // Reset activity time so adaptive polling uses a short interval
-      this.lastActivityTime = Date.now();
-      this.adaptivePolling.recordActivity(1, true);
-      this.triggerImmediateCheck('rescan-required').catch((error) => {
-        logger.error('Failed to poll git status after rescan', error as Error, {
-          workspaceId: this.workspaceId,
-        });
-      });
-    });
-
     // Change processor events
     this.changeProcessor.on('changes-batch', (changes: ProcessedChange[]) => {
       this.handleChangesBatch(changes);
@@ -254,7 +217,6 @@ export class ChangeDetectorRefactored extends EventEmitter {
       logger.info('Starting change detector', {
         workspaceId: this.workspaceId,
         workspacePath: this.workspacePath,
-        gitPollingOnly: this.gitPollingOnly,
       });
 
       // Initialize components
@@ -268,43 +230,10 @@ export class ChangeDetectorRefactored extends EventEmitter {
       // Start performance monitoring
       this.performanceMonitor.start(5000);
 
-      // Start file watcher if enabled
-      if (!this.gitPollingOnly && !this.disableFileWatcher) {
-        const watcherStart = Date.now();
-        await this.fileWatcher.start();
-        logger.info('fileWatcher.start completed', {
-          workspaceId: this.workspaceId,
-          durationMs: Date.now() - watcherStart,
-        });
-      }
-
-      // Fall back to periodic git polling if file watcher is not active.
-      // FileWatcher.start() may silently decline to start (e.g., if CHANGE_DETECTION_CONFIG
-      // disables watching independently of the constructor options).
-      // This ensures we always have at least one change detection mechanism.
-      const fileWatcherActive = this.fileWatcher.getStats().isWatching;
-      this.fileWatcherActiveOnStart = fileWatcherActive;
-      if (fileWatcherActive) {
-        this.performanceMonitor.incrementCounter('activeWatchers', 1);
-      } else {
-        logger.info('File watcher inactive after startup; using git polling fallback', {
-          workspaceId: this.workspaceId,
-          workspacePath: this.workspacePath,
-        });
-        this.startGitPolling();
-        // Register interval change listener for git polling restarts.
-        // Only needed when periodic polling is active.
-        if (!this.intervalChangedHandler) {
-          this.intervalChangedHandler = ({ newInterval }: { newInterval: number }) => {
-            logger.debug('Polling interval changed - restarting git polling', { newInterval });
-            if (this.isRunning && this.gitPollingTimer) {
-              this.stopGitPolling();
-              this.startGitPolling();
-            }
-          };
-          this.adaptivePolling.on('intervalChanged', this.intervalChangedHandler);
-        }
-      }
+      // Subscribe to intentd `file:*` events — the sole steady-state change
+      // trigger. The daemon watches the worktree; this detector no longer
+      // watches the filesystem or runs periodic git polling itself.
+      this.attachDaemonSubscription();
 
       // Mark as running BEFORE taking snapshot so workspace is usable immediately
       this.isRunning = true;
@@ -375,23 +304,17 @@ export class ChangeDetectorRefactored extends EventEmitter {
       this.thresholdExceededHandler = null;
     }
 
-    if (this.intervalChangedHandler) {
-      this.adaptivePolling.off('intervalChanged', this.intervalChangedHandler);
-      this.intervalChangedHandler = null;
-    }
-
     // Stop performance monitoring
     this.performanceMonitor.stop();
 
-    // Stop git polling
-    this.stopGitPolling();
-
-    // Stop file watcher
-    await this.fileWatcher.stop();
-    if (this.fileWatcherActiveOnStart) {
-      this.performanceMonitor.incrementCounter('activeWatchers', -1);
-      this.fileWatcherActiveOnStart = false;
+    // Cancel any pending debounced git check
+    if (this.debouncedPollTimer) {
+      clearTimeout(this.debouncedPollTimer);
+      this.debouncedPollTimer = null;
     }
+
+    // Tear down the daemon file-event subscription
+    this.detachDaemonSubscription();
 
     // Flush any pending events
     await this.eventCoordinator.flush();
@@ -402,116 +325,150 @@ export class ChangeDetectorRefactored extends EventEmitter {
   }
 
   /**
-   * Start git polling
+   * Attach the daemon notification listener, register the reconnect handler,
+   * and issue the initial `events.subscribe` for `file:*` events scoped to
+   * this workspace. Mirrors the long-lived subscription pattern used by the
+   * terminal registry / script manager: the notification listener persists
+   * across reconnects (same singleton client); only the subscription id is
+   * re-issued.
    */
-  private startGitPolling(): void {
-    if (this.gitPollingTimer) {
-      return;
-    }
+  private attachDaemonSubscription(): void {
+    const client = getBackendClient();
+    const listener = (n: JsonRpcNotification): void => {
+      if (n.method !== 'events.event') return;
+      const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
+      const subId = typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
+      // Strict match: the shared client also carries notifications for other
+      // consumers' subscriptions; only our own subscription's events count.
+      if (!this.daemonSubscriptionId || subId !== this.daemonSubscriptionId) return;
+      const event = params?.event as
+        | { type?: unknown; workspaceId?: unknown; data?: unknown }
+        | undefined;
+      if (!event || typeof event.type !== 'string' || !event.type.startsWith('file:')) return;
+      if (event.workspaceId !== this.workspaceId) return;
+      this.handleDaemonFileEvent(event.type, event.data as Record<string, unknown> | undefined);
+    };
+    this.notificationListener = listener;
+    client.on('notification', listener);
 
-    const poll = async () => {
-      // Track idle state for logging, but don't skip polls.
-      // The AdaptivePollingManager already increases the interval when idle,
-      // so randomly skipping polls on top of that compounds the delay and
-      // makes external change detection unacceptably slow (~90s worst case).
-      const now = Date.now();
-      const timeSinceActivity = now - this.lastActivityTime;
-
-      if (timeSinceActivity > this.IDLE_THRESHOLD) {
-        if (!this.isIdle) {
-          this.isIdle = true;
-          logger.info('Workspace is idle, adaptive polling handles interval', {
-            workspaceId: this.workspaceId,
-            timeSinceActivity,
-          });
-        }
-      } else if (this.isIdle) {
-        this.isIdle = false;
-        logger.info('Workspace is active again', {
+    this.reconnectDisposer = onBackendReconnected(() => {
+      // The daemon dropped every in-memory subscription on reconnect; the
+      // stale id belonged to the previous connection. Re-issue subscribe and
+      // run a one-time full refresh — events emitted while the connection was
+      // down were missed, so the current git state must be re-read.
+      this.daemonSubscriptionId = undefined;
+      this.subscriptionEpoch += 1;
+      this.cancelSubscribeRetry();
+      if (!this.isRunning) return;
+      void this.subscribeToDaemonFileEvents();
+      this.gitOps.invalidateCache();
+      this.triggerImmediateCheck('backend-reconnected').catch((error) => {
+        logger.error('Post-reconnect refresh failed', error as Error, {
           workspaceId: this.workspaceId,
         });
-      }
+      });
+    });
 
-      try {
-        await this.pollGitStatus();
+    void this.subscribeToDaemonFileEvents();
+  }
 
-        // Reset error count on success
-        if (this.gitPollErrorCount > 0) {
-          logger.info('Git polling recovered from errors', {
-            previousErrorCount: this.gitPollErrorCount,
-          });
-          this.gitPollErrorCount = 0;
+  /** Issue `events.subscribe` for this workspace's `file:*` events. */
+  private async subscribeToDaemonFileEvents(): Promise<void> {
+    const epoch = this.subscriptionEpoch;
+    try {
+      const result = await getBackendClient().request<{ subscriptionId?: string }>(
+        'events.subscribe',
+        {
+          eventTypes: DAEMON_FILE_EVENT_TYPES,
+          workspaceId: this.workspaceId,
+        },
+      );
+      if (epoch !== this.subscriptionEpoch) {
+        // Detached or reconnected while the request was in flight; release
+        // the fresh subscription so it doesn't leak on the daemon.
+        const staleId = result?.subscriptionId;
+        if (staleId) {
+          void getBackendClient()
+            .request('events.unsubscribe', { subscriptionId: staleId })
+            .catch(() => {});
         }
-      } catch (error) {
-        logger.error('Git polling error:', error);
-        this.gitPollErrorCount++;
-
-        // Log warning if errors are accumulating
-        if (this.gitPollErrorCount > 5) {
-          logger.warn('Multiple git polling errors', {
-            errorCount: this.gitPollErrorCount,
-            workspaceId: this.workspaceId,
-          });
-        }
+        return;
       }
-    };
-
-    // Initial poll
-    poll();
-
-    // Set up recurring poll with adaptive interval
-    const currentInterval = this.adaptivePolling.getCurrentInterval();
-    this.gitPollingTimer = setInterval(poll, currentInterval);
-
-    logger.debug(`Git polling started (interval: ${currentInterval}ms)`);
+      this.daemonSubscriptionId = result?.subscriptionId;
+      this.subscribeRetryAttempts = 0;
+      logger.debug('Subscribed to daemon file events', {
+        workspaceId: this.workspaceId,
+        subscriptionId: this.daemonSubscriptionId,
+      });
+    } catch (error) {
+      logger.warn('events.subscribe for file events failed', {
+        workspaceId: this.workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.scheduleSubscribeRetry(epoch);
+    }
   }
 
   /**
-   * Stop git polling
+   * Schedule a bounded exponential-backoff re-attempt of `events.subscribe`.
+   * A subscribe can fail without the connection dropping (e.g. a request
+   * timeout under daemon load); with no polling fallback the workspace would
+   * otherwise have no steady-state change trigger until the next reconnect.
    */
-  private stopGitPolling(): void {
-    if (this.debouncedPollTimer) {
-      clearTimeout(this.debouncedPollTimer);
-      this.debouncedPollTimer = null;
+  private scheduleSubscribeRetry(epoch: number): void {
+    if (epoch !== this.subscriptionEpoch || this.subscribeRetryTimer) return;
+    if (this.subscribeRetryAttempts >= this.SUBSCRIBE_RETRY_MAX_ATTEMPTS) {
+      logger.warn('Giving up on events.subscribe retries; will retry on reconnect', {
+        workspaceId: this.workspaceId,
+        attempts: this.subscribeRetryAttempts,
+      });
+      return;
     }
-    if (this.followUpPollTimer) {
-      clearTimeout(this.followUpPollTimer);
-      this.followUpPollTimer = null;
-    }
-    this.followUpPollUntil = 0;
-    if (this.gitPollingTimer) {
-      clearInterval(this.gitPollingTimer);
-      this.gitPollingTimer = null;
-      logger.debug('Git polling stopped');
-    }
+    const delay = this.SUBSCRIBE_RETRY_BASE_DELAY_MS * 2 ** this.subscribeRetryAttempts;
+    this.subscribeRetryAttempts += 1;
+    this.subscribeRetryTimer = setTimeout(() => {
+      this.subscribeRetryTimer = null;
+      if (epoch !== this.subscriptionEpoch) return;
+      void this.subscribeToDaemonFileEvents();
+    }, delay);
   }
 
-  private scheduleFollowUpPolling(): void {
-    this.followUpPollUntil = Math.max(
-      this.followUpPollUntil,
-      Date.now() + this.FOLLOW_UP_POLL_WINDOW_MS,
-    );
-    this.scheduleNextFollowUpPoll();
+  /** Cancel any pending subscribe retry and reset the backoff budget. */
+  private cancelSubscribeRetry(): void {
+    if (this.subscribeRetryTimer) {
+      clearTimeout(this.subscribeRetryTimer);
+      this.subscribeRetryTimer = null;
+    }
+    this.subscribeRetryAttempts = 0;
   }
 
-  private scheduleNextFollowUpPoll(): void {
-    if (this.followUpPollTimer || Date.now() >= this.followUpPollUntil) return;
-
-    this.followUpPollTimer = setTimeout(() => {
-      this.followUpPollTimer = null;
-      if (!this.isRunning) return;
-
-      this.pollGitStatus()
-        .catch((error) => {
-          logger.debug('Follow-up git poll failed', {
-            workspaceId: this.workspaceId,
-            error: (error as Error).message,
-          });
-        })
-        .finally(() => {
-          this.scheduleNextFollowUpPoll();
-        });
-    }, this.FOLLOW_UP_POLL_INTERVAL_MS);
+  /** Detach the notification listener, reconnect handler, and daemon subscription. */
+  private detachDaemonSubscription(): void {
+    this.subscriptionEpoch += 1;
+    this.cancelSubscribeRetry();
+    if (this.reconnectDisposer) {
+      this.reconnectDisposer();
+      this.reconnectDisposer = null;
+    }
+    if (this.notificationListener) {
+      try {
+        getBackendClient().off('notification', this.notificationListener);
+      } catch {
+        // Client may already be disposed during shutdown
+      }
+      this.notificationListener = null;
+    }
+    if (this.daemonSubscriptionId) {
+      const subscriptionId = this.daemonSubscriptionId;
+      this.daemonSubscriptionId = undefined;
+      try {
+        void getBackendClient()
+          .request('events.unsubscribe', { subscriptionId })
+          .catch(() => {});
+      } catch {
+        // Client may already be disposed during shutdown
+      }
+    }
   }
 
   /**
@@ -575,17 +532,13 @@ export class ChangeDetectorRefactored extends EventEmitter {
         // processed status: skip the expensive detectGitChanges() (batch diffs
         // + file reads) and all downstream change processing/dispatch.
         //
-        // Exceptions where we deliberately re-diff even when the status string is
-        // unchanged, because a same-path edit (e.g. a file that stays "modified"
-        // while its content changes) does not alter the status but must still be
-        // detected:
-        //   - during the bounded follow-up polling window, and
-        //   - when an explicit signal forces the poll (file-save / watcher).
+        // An explicit forced poll (file-save / daemon file event) deliberately
+        // re-diffs even when the status string is unchanged, because a
+        // same-path edit (e.g. a file that stays "modified" while its content
+        // changes) does not alter the status but must still be detected.
         const serializedStatus = this.serializeGitStatus(status);
-        const inFollowUpWindow = Date.now() < this.followUpPollUntil;
         if (
           !force &&
-          !inFollowUpWindow &&
           this.lastGitStatusSerialized !== null &&
           serializedStatus === this.lastGitStatusSerialized
         ) {
@@ -604,10 +557,6 @@ export class ChangeDetectorRefactored extends EventEmitter {
           this.stats.totalChangesDetected += changes.length;
           this.performanceMonitor.recordChange();
 
-          // Record activity for adaptive polling
-          this.adaptivePolling.recordActivity(changes.length, false);
-          this.lastActivityTime = Date.now();
-
           // Start event processing timing (workspace-specific key)
           const eventTimerKey = `eventProcessing-${this.workspaceId}`;
           this.performanceMonitor.startTimer(eventTimerKey);
@@ -617,7 +566,6 @@ export class ChangeDetectorRefactored extends EventEmitter {
 
           // Handle processed changes
           if (processed.length > 0) {
-            this.scheduleFollowUpPolling();
             await this.eventCoordinator.handleChangesBatch(processed);
             this.performanceMonitor.recordEvent();
 
@@ -630,7 +578,6 @@ export class ChangeDetectorRefactored extends EventEmitter {
               const action = change.change.action;
               if (action === 'Modify' || action === 'Create') {
                 const absolutePath = `${this.workspacePath}/${change.change.path}`;
-	                // NOTE: Redundant once watcher:file-changed direct subscription is stable. See spec.
                 this.emitFileContentChangedToRenderer(absolutePath, change.change.path);
               }
             }
@@ -891,37 +838,42 @@ export class ChangeDetectorRefactored extends EventEmitter {
   }
 
   /**
-   * Handle file watch event
+   * Handle a daemon `file:*` event (`file:created`/`file:changed`/`file:deleted`).
+   * The event `data` carries `{ path, relativePath, action }` with both paths
+   * workspace-relative; burst summaries carry `data.burst = true` with no
+   * per-file rows and only trigger a git re-check.
    */
-  private async handleFileWatchEvent(event: FileWatchEvent): Promise<void> {
+  private handleDaemonFileEvent(
+    eventType: string,
+    data: Record<string, unknown> | undefined,
+  ): void {
     this.stats.totalChangesDetected++;
-
-    // Update activity time and record for adaptive polling
-    this.lastActivityTime = Date.now();
-    this.adaptivePolling.recordActivity(1, true); // User-initiated change
 
     // Invalidate git status cache when file changes are detected
     this.gitOps.invalidateCache();
 
-    // Clear gitignore cache when .gitignore files change (they may affect what's ignored)
-    if (event.relativePath.endsWith('.gitignore')) {
-      this.gitOps.clearGitIgnoreCache();
-    }
+    const relativePath = typeof data?.relativePath === 'string' ? data.relativePath : undefined;
+    const isBurst = data?.burst === true;
 
-    const action = this.mapWatchEventToAction(event.type);
-    if (!action) return;
+    if (relativePath && !isBurst) {
+      // Clear gitignore cache when .gitignore files change (they may affect what's ignored)
+      if (relativePath.endsWith('.gitignore')) {
+        this.gitOps.clearGitIgnoreCache();
+      }
 
-    // Emit file:content-changed event to renderer for real-time file viewer updates
-    // This ensures the file viewer updates when files are edited externally
-    if (action === 'Modify' || action === 'Create') {
-	      // NOTE: Redundant once watcher:file-changed direct subscription is stable. See spec.
-      this.emitFileContentChangedToRenderer(event.path, event.relativePath);
-    }
+      const absolutePath = `${this.workspacePath}/${relativePath}`;
 
-    // Emit file:deleted event for delete actions
-    // This uses a separate channel that the UI subscribes to for file deletions
-    if (action === 'Delete') {
-      this.emitFileDeletedToRenderer(event.path, event.relativePath);
+      // Emit file:content-changed event to renderer for real-time file viewer updates
+      // This ensures the file viewer updates when files are edited externally
+      if (eventType === 'file:changed' || eventType === 'file:created') {
+        this.emitFileContentChangedToRenderer(absolutePath, relativePath);
+      }
+
+      // Emit file:deleted event for delete actions
+      // This uses a separate channel that the UI subscribes to for file deletions
+      if (eventType === 'file:deleted') {
+        this.emitFileDeletedToRenderer(absolutePath, relativePath);
+      }
     }
 
     // Trigger a debounced git status poll instead of direct processing
@@ -931,7 +883,9 @@ export class ChangeDetectorRefactored extends EventEmitter {
 
   /**
    * Schedule a debounced poll of git status
-   * Batches rapid file changes into a single git status run
+   * Batches rapid file changes into a single git status run. The poll is
+   * forced so a same-path content edit that leaves the git status string
+   * unchanged is still re-diffed.
    */
   private scheduleDebouncedPoll(): void {
     if (this.debouncedPollTimer) {
@@ -939,7 +893,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
     }
     this.debouncedPollTimer = setTimeout(() => {
       this.debouncedPollTimer = null;
-      this.pollGitStatus().catch((error) => {
+      this.pollGitStatus({ force: true }).catch((error) => {
         logger.debug('Debounced git poll failed', {
           workspaceId: this.workspaceId,
           error: (error as Error).message,
@@ -1036,24 +990,6 @@ export class ChangeDetectorRefactored extends EventEmitter {
         path: relativePath,
         error: (error as Error).message,
       });
-    }
-  }
-
-  /**
-   * Map watch event type to file action
-   */
-  private mapWatchEventToAction(
-    type: FileWatchEvent['type'],
-  ): 'Create' | 'Modify' | 'Delete' | null {
-    switch (type) {
-      case 'add':
-        return 'Create';
-      case 'change':
-        return 'Modify';
-      case 'unlink':
-        return 'Delete';
-      default:
-        return null;
     }
   }
 
@@ -1160,12 +1096,9 @@ export class ChangeDetectorRefactored extends EventEmitter {
    */
   getStats(): ChangeDetectorStats {
     const eventStats = this.eventCoordinator.getStats();
-    const fileWatcherStats = this.fileWatcher.getStats();
 
     return {
       isRunning: this.isRunning,
-      gitPollingEnabled: !!this.gitPollingTimer,
-      fileWatcherEnabled: fileWatcherStats.isWatching,
       lastGitPoll: this.lastGitPoll,
       totalChangesDetected: this.stats.totalChangesDetected,
       totalEventsEmitted: eventStats.totalEvents,

@@ -151,12 +151,11 @@ export class GitignoreManager {
   }
 
   /**
-   * Get patterns that would be used by chokidar
-   * This converts gitignore patterns to glob patterns for chokidar
+   * Get common ignore patterns as globs
+   * This converts gitignore patterns to glob patterns
    */
-  getChokidarPatterns(): string[] {
-    // These are patterns that chokidar can use directly
-    // We'll return common patterns that work well with chokidar
+  getGlobPatterns(): string[] {
+    // Common glob ignore patterns that can be used directly
     return [
       '**/node_modules/**',
       '**/.git/**',
