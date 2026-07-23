@@ -135,6 +135,7 @@ import {
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { __resetDaemonEventsBridgeForTests } from '$features/events/daemon-events-bridge.client';
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
 import {
@@ -490,6 +491,39 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
 
     const state = appStore.state as { mcpSettings: { enabled: boolean } };
     expect(state.mcpSettings.enabled).toBe(true);
+  });
+
+  it('propagates a providers.enabled toggle from settings:changed into the enabled-provider-ids selector', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const settingsChanged = (id: string, enabled: Record<string, boolean>) => ({
+      method: 'events.event',
+      params: {
+        event: {
+          id,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'settings:changed',
+          actor: { type: 'system' },
+          data: {
+            changes: [{ path: 'providers.enabled', value: enabled }],
+          },
+        },
+      },
+    });
+
+    handler(settingsChanged('evt-set-2', { auggie: true, codex: false }));
+    expect(selectEnabledProviderIds.select(appStore.state)).not.toContain('codex');
+
+    // Toggling the provider ON in Settings arrives as the same event shape —
+    // the slice and selector must reflect it live, no restart required.
+    handler(settingsChanged('evt-set-3', { auggie: true, codex: true }));
+
+    const state = appStore.state as {
+      providerSettings: { enabledProviders: Record<string, boolean> };
+    };
+    expect(state.providerSettings.enabledProviders).toEqual({ auggie: true, codex: true });
+    expect(selectEnabledProviderIds.select(appStore.state)).toContain('codex');
   });
 });
 
