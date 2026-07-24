@@ -191,6 +191,7 @@ vi.mock('$features/protocol/main/protocol-adapter', () => ({
     }),
     markAsTask: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     assignAgentToTask: vi.fn().mockResolvedValue({ ok: true, data: {} }),
+    updateNote: vi.fn().mockResolvedValue({ ok: true, data: {} }),
   },
 }));
 
@@ -457,6 +458,7 @@ describe('Agent Interaction Tools', () => {
     });
     vi.mocked(protocolAdapter.markAsTask).mockResolvedValue({ ok: true, data: {} });
     vi.mocked(protocolAdapter.assignAgentToTask).mockResolvedValue({ ok: true, data: {} });
+    vi.mocked(protocolAdapter.updateNote).mockResolvedValue({ ok: true, data: {} });
     mockSelectorState.workspaceSubscriptionState = makeEmptyWorkspaceSubscriptionState();
   });
 
@@ -969,6 +971,85 @@ describe('Agent Interaction Tools', () => {
           provider: 'codex',
         }),
       );
+    });
+
+    // Wire-shape guarantees per PROTOCOL.md §5.5 `agent.create`: both delegate
+    // call sites derive the agent name (from the task title / task text), so
+    // the request must carry `nameExplicitlySet: false` to keep the session
+    // self-renameable on the daemon side (#525).
+    it('sends nameExplicitlySet:false on the delegate-by-taskNoteId agent.create wire', async () => {
+      const tool = new DelegateTaskTool(workspaceId, workspacePath);
+
+      mockBackendHandler.createAgent.mockResolvedValue({
+        id: 'delegated-agent-id',
+        name: 'Task Note',
+      });
+      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({ success: true });
+
+      const result = await tool.execute({
+        name: 'delegate_task',
+        arguments: {
+          taskNoteId: 'task-note-id',
+          specialist: 'implementor',
+        },
+        context: {
+          workspaceId,
+          agentId: 'parent-agent-id',
+          agentName: 'Parent Agent',
+          sessionId: 'session-123',
+          model: 'auggie:gpt5.4',
+          provider: 'auggie',
+        },
+      } as ToolCall);
+
+      expect(result.isError).toBe(false);
+      const createCalls = mockRequest.mock.calls.filter(([m]) => m === 'agent.create');
+      expect(createCalls).toHaveLength(1);
+      const body = createCalls[0][1] as Record<string, unknown>;
+      expect(body.name).toBe('Task Note');
+      expect(body.nameExplicitlySet).toBe(false);
+    });
+
+    it('sends nameExplicitlySet:false on the delegate-by-task-text agent.create wire', async () => {
+      const tool = new DelegateTaskTool(workspaceId, workspacePath);
+
+      vi.mocked(protocolAdapter.getNote).mockResolvedValue({
+        ok: true,
+        data: {
+          id: 'parent-note-id',
+          title: 'Parent Note',
+          content: '# Tasks\n- [ ] Wire the delegate task\n',
+        },
+      });
+      mockBackendHandler.createAgent.mockResolvedValue({
+        id: 'delegated-agent-id',
+        name: 'Wire the delegate task',
+      });
+      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({ success: true });
+
+      const result = await tool.execute({
+        name: 'delegate_task',
+        arguments: {
+          noteId: 'parent-note-id',
+          taskText: 'Wire the delegate task',
+          specialist: 'implementor',
+        },
+        context: {
+          workspaceId,
+          agentId: 'parent-agent-id',
+          agentName: 'Parent Agent',
+          sessionId: 'session-123',
+          model: 'auggie:gpt5.4',
+          provider: 'auggie',
+        },
+      } as ToolCall);
+
+      expect(result.isError).toBe(false);
+      const createCalls = mockRequest.mock.calls.filter(([m]) => m === 'agent.create');
+      expect(createCalls).toHaveLength(1);
+      const body = createCalls[0][1] as Record<string, unknown>;
+      expect(body.name).toBe('Wire the delegate task');
+      expect(body.nameExplicitlySet).toBe(false);
     });
   });
 

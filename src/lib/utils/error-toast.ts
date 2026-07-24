@@ -69,6 +69,8 @@ ${report.agentPrompt}`;
   const state = appStore.state;
   appStore.dispatch(createAgentFromConfigRequested(workspace.id, {
     name: 'Debug Agent',
+    // Generated placeholder — keep the session self-renameable.
+    nameExplicitlySet: false,
     workspaceId: WorkspaceId(workspace.id),
     agentType: createAgentTypeId('debug'),
     initialMessage: prompt,

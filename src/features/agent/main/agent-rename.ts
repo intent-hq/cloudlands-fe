@@ -1,12 +1,15 @@
 /**
  * Lightweight agent-rename helper.
  *
- * Patches only the `name` and `nameExplicitlySet` fields of an agent session
- * through the daemon (`agent.update`, PROTOCOL.md §5.5), then emits
- * `agent:renamed` through Redux workspace events. It is the implementation
- * used by both the MCP `setAgentName` tool and the user-triggered rename IPC
- * handler. The daemon is the single source of session state — there is no
- * main-process session cache to sync.
+ * Renames an agent session through the daemon (`agent.rename`,
+ * PROTOCOL.md §5.5) in a single call — the daemon enforces the
+ * `skipIfExplicitlySet` guard natively and returns
+ * `{ success: true, name, skipped? }`. On applied renames the helper also
+ * emits `agent:renamed` through Redux workspace events. Its only production
+ * caller today is the MCP `setAgentName` tool (`skipIfExplicitlySet: true`);
+ * the `skipIfExplicitlySet: false` branch is covered by tests. The daemon is
+ * the single source of session state — there is no main-process session
+ * cache to sync.
  */
 
 import { Logger } from '$shared/logger';
@@ -23,10 +26,10 @@ export interface RenameAgentOnDiskOptions {
   agentId: string;
   name: string;
   /**
-   * When true (used by the MCP agent-driven rename), the write is skipped if
-   * the session already has `nameExplicitlySet: true` on the daemon, so prior
+   * When true (used by the MCP agent-driven rename), the daemon skips the
+   * write if the session already has `nameExplicitlySet: true`, so prior
    * user/tool renames are not overwritten.
-   * When false (used by user-driven rename), the write always proceeds.
+   * When false, the write always proceeds.
    */
   skipIfExplicitlySet?: boolean;
 }
@@ -38,8 +41,8 @@ export interface RenameAgentOnDiskResult {
 }
 
 /**
- * Patch the `name` and `nameExplicitlySet` fields on an agent session via the
- * daemon. Throws if the name is empty or the daemon write fails.
+ * Rename an agent session via the daemon (`agent.rename`, PROTOCOL.md §5.5).
+ * Throws if the name is empty or the daemon write fails.
  */
 export async function renameAgentOnDisk(
   options: RenameAgentOnDiskOptions,
@@ -54,42 +57,26 @@ export async function renameAgentOnDisk(
     throw new Error('name must not be empty or whitespace-only');
   }
 
-  if (skipIfExplicitlySet) {
-    let existingName = trimmedName;
-    let existingExplicit = false;
-    try {
-      const res = (await getBackendClient().request('agent.get', {
-        agentId,
-        workspaceId,
-      })) as { agent?: { name?: string; nameExplicitlySet?: boolean } };
-      if (res.agent?.name) existingName = res.agent.name;
-      if (res.agent?.nameExplicitlySet === true) existingExplicit = true;
-    } catch (err) {
-      logger.warn('renameAgentOnDisk: agent.get failed; proceeding as if unset', {
-        agentId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    if (existingExplicit) {
-      logger.info('renameAgentOnDisk: skipping — name already explicitly set', {
-        agentId,
-        existingName,
-        requestedName: trimmedName,
-      });
-      return { ok: true, name: existingName, skipped: true };
-    }
-  }
-
+  let res: { success: boolean; name: string; skipped?: boolean };
   try {
-    await getBackendClient().request('agent.update', {
+    res = (await getBackendClient().request('agent.rename', {
       agentId,
-      workspaceId,
-      changes: { name: trimmedName, nameExplicitlySet: true },
-    });
+      name: trimmedName,
+      skipIfExplicitlySet,
+    })) as { success: boolean; name: string; skipped?: boolean };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.warn('agent.update failed', { agentId, error: msg });
+    logger.warn('agent.rename failed', { agentId, error: msg });
     throw new Error(msg || 'Failed to rename agent session');
+  }
+
+  if (res.skipped === true) {
+    logger.info('renameAgentOnDisk: skipped — name already explicitly set', {
+      agentId,
+      existingName: res.name,
+      requestedName: trimmedName,
+    });
+    return { ok: true, name: res.name, skipped: true };
   }
 
   mainDispatch(
@@ -98,10 +85,10 @@ export async function renameAgentOnDisk(
         WorkspaceEventType.AgentRenamed,
         workspaceId,
         { type: 'user' as const, id: 'user' },
-        { agentId, workspaceId, name: trimmedName },
+        { agentId, workspaceId, name: res.name },
       ),
     ),
   );
 
-  return { ok: true, name: trimmedName };
+  return { ok: true, name: res.name };
 }
