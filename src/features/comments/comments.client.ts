@@ -154,6 +154,7 @@ class CommentsClient {
         comment: params.content,
         type: params.type,
         ...(params.author ? { author: params.author } : {}),
+        ...(params.authorType ? { authorType: params.authorType } : {}),
       });
       const raw = (response ?? {}) as Record<string, unknown>;
       const now = new Date().toISOString();

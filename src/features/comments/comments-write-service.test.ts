@@ -125,12 +125,18 @@ describe("commentsWriteService (fake seam, real store)", () => {
 
   it("respond applies the reply optimistically and keeps it on success", async () => {
     const reply = makeComment("r-1", { parentId: "p-1", threadId: "thread-p" });
-    await respondToComment("note-1", reply, { commentId: "p-1", comment: "body", type: "comment" });
+    await respondToComment("note-1", reply, {
+      commentId: "p-1",
+      comment: "body",
+      type: "comment",
+      authorType: "user",
+    });
 
     expect(commentsApi.respond).toHaveBeenCalledWith("note-1", {
       commentId: "p-1",
       comment: "body",
       type: "comment",
+      authorType: "user",
     });
     expect(selectCommentById.select(appStore.state, "r-1")?.parentId).toBe("p-1");
   });

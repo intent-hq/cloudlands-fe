@@ -124,6 +124,7 @@ describe('commentsClient (daemon comment.* seam, fake transport)', () => {
       comment: 'a reply',
       type: 'comment',
       author: 'alice',
+      authorType: 'user',
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

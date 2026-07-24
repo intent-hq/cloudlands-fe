@@ -1088,6 +1088,12 @@ export interface CommentRespondParams {
   commentId?: string;
   comment: string;
   type?: CommentType;
+  /**
+   * Optional wire `authorType` (`"user" | "agent"`). The daemon defaults to
+   * `"agent"` when absent, so user-initiated replies MUST pass `"user"` for
+   * the reply to persist with the right attribution.
+   */
+  authorType?: AuthorType;
   suggestionOriginal?: string;
   suggestionProposed?: string;
 }
