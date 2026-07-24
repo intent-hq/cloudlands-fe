@@ -98,6 +98,26 @@ describe('UnifiedCommentThread', () => {
     expect(replyArea).toBeTruthy();
   });
 
+  it('renders the reply composer avatar as the user, not the hardcoded agent "A"', () => {
+    const { container } = render(TooltipWrapper, {
+      props: {
+        component: UnifiedCommentThread,
+        props: {
+          comment: mockComment,
+          replies: [],
+          isCollapsed: false,
+        },
+      },
+    });
+
+    const replyArea = container.querySelector('.px-3.py-1\\.5.border-t.border-border');
+    expect(replyArea).toBeTruthy();
+
+    const composerAvatar = replyArea?.querySelector('div[aria-hidden="true"]');
+    expect(composerAvatar).toBeTruthy();
+    expect(composerAvatar?.textContent?.trim()).toBe('U');
+  });
+
   it('shows replies count in collapsed state', () => {
     const { getByText } = render(UnifiedCommentThread, {
       props: {
