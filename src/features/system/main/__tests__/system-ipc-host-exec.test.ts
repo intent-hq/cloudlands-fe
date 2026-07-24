@@ -1,4 +1,5 @@
 import {
+  afterEach,
   beforeEach,
   describe,
   expect,
@@ -28,12 +29,13 @@ const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(() => []),
   fromId: vi.fn(),
   appOn: vi.fn(),
+  getAppPath: vi.fn(() => '/tmp/app'),
 }));
 
 vi.mock('electron', () => ({
   app: {
     on: electronMocks.appOn,
-    getAppPath: vi.fn(() => '/tmp/app'),
+    getAppPath: electronMocks.getAppPath,
     getVersion: vi.fn(() => '0.0.0'),
     getName: vi.fn(() => 'Intent'),
   },
@@ -72,7 +74,12 @@ vi.mock('../../../../shared/main/async-utils', () => ({
   findVSCodeAsync: vi.fn(),
 }));
 
-import { setupSystemIPC } from '../system.ipc';
+import fs from 'node:fs';
+
+import { installIntentCli, setupSystemIPC } from '../system.ipc';
+// Globally mocked in src/test-setup.ts — the exec seam installIntentCli's
+// osascript fallback goes through.
+import { execFileAsync } from '../../../../shared/git/git-env';
 import { SYSTEM_CHANNELS } from '../../../../shared/ipc/channels';
 
 function handlerFor(channel: string): Handler {
@@ -232,7 +239,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
 });
 
 describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell shim, PROTOCOL.md §5.14)', () => {
-  it('opens host.execStream via the shell shim and pipes stdout/stderr/close back to the renderer session', async () => {
+  it('opens host.execStream via the shell shim, forwards cwd + workspaceId, and pipes stdout/stderr/close back to the renderer session', async () => {
     let capturedOnStdout: ((chunk: Buffer) => void) | undefined;
     let capturedOnStderr: ((chunk: Buffer) => void) | undefined;
     let resolveDone!: (r: { ok: boolean; exitCode?: number }) => void;
@@ -255,6 +262,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
       sessionId: 'sess-1',
       command: 'echo hello',
       cwd: '/ws/repo',
+      workspaceId: 'amber-forest',
       stdin: 'ignored-payload',
     })) as { success: boolean };
 
@@ -262,6 +270,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
     expect(hostExecStreamMock).toHaveBeenCalledWith(SHELL_CMD, expect.objectContaining({
       args: [SHELL_FLAG, 'echo hello'],
       cwd: '/ws/repo',
+      workspaceId: 'amber-forest',
       stdin: 'ignored-payload',
     }));
 
@@ -289,6 +298,77 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
     });
   });
 
+  it('rejects a cwd-only payload at the schema level before the handler runs (monorepo#588)', async () => {
+    const send = vi.fn();
+    const event = { sender: { send } };
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING);
+    const result = await handler(event, {
+      sessionId: 'sess-3',
+      command: 'git status',
+      cwd: '/ws/repo',
+    });
+
+    expect(hostExecStreamMock).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid request parameters',
+        details: [
+          {
+            code: 'custom',
+            message: 'cwd requires workspaceId (PROTOCOL §5.14 containment guard)',
+            path: ['workspaceId'],
+          },
+        ],
+      },
+    });
+  });
+
+  it('accepts a no-cwd payload without workspaceId — the guard is never armed', async () => {
+    const donePromise = Promise.resolve({ ok: true, exitCode: 0 });
+    hostExecStreamMock.mockResolvedValue({ requestId: 'req-4', done: donePromise });
+
+    const send = vi.fn();
+    const event = { sender: { send } };
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING);
+    const result = (await handler(event, {
+      sessionId: 'sess-4',
+      command: 'echo hi',
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(hostExecStreamMock).toHaveBeenCalledWith(SHELL_CMD, expect.objectContaining({
+      args: [SHELL_FLAG, 'echo hi'],
+      cwd: undefined,
+      workspaceId: undefined,
+    }));
+  });
+
+  it('treats an empty-string cwd as absent — passes validation without workspaceId', async () => {
+    const donePromise = Promise.resolve({ ok: true, exitCode: 0 });
+    hostExecStreamMock.mockResolvedValue({ requestId: 'req-5', done: donePromise });
+
+    const send = vi.fn();
+    const event = { sender: { send } };
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING);
+    const result = (await handler(event, {
+      sessionId: 'sess-5',
+      command: 'echo hi',
+      cwd: '',
+    })) as { success: boolean };
+
+    // A blank cwd never arms the cwd⇒workspaceId guard (same `!params.cwd`
+    // blank-as-absent semantics as the non-streaming schema): validation
+    // passes and hostExecStream drops the empty cwd off the wire.
+    expect(result.success).toBe(true);
+    expect(hostExecStreamMock).toHaveBeenCalledWith(SHELL_CMD, expect.objectContaining({
+      args: [SHELL_FLAG, 'echo hi'],
+      cwd: '',
+      workspaceId: undefined,
+    }));
+  });
+
   it('surfaces host.execStream rejection as a stderr + null-code close frame', async () => {
     const rejected = Promise.reject(new Error('rpc down'));
     // Prevent unhandled-rejection warnings in test runner.
@@ -311,5 +391,46 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
       type: 'close',
       code: null,
     });
+  });
+});
+
+
+describe('installIntentCli osascript fallback → host.execStream (monorepo#585)', () => {
+  const spies: Array<{ mockRestore: () => void }> = [];
+
+  afterEach(() => {
+    for (const spy of spies.splice(0)) spy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it('single-quotes the symlink paths so backticks/$() and single quotes stay literal, and passes the AppleScript via argv (no outer shell)', async () => {
+    // Dev-mode path resolution so the mocked app.getAppPath() controls
+    // cliScriptPath; the hostile segments survive the '../..' join.
+    vi.stubEnv('NODE_ENV', 'development');
+    electronMocks.getAppPath.mockReturnValueOnce("/tmp/it`s $(bad)'dir/a/b");
+
+    spies.push(vi.spyOn(fs, 'existsSync').mockReturnValue(true));
+    spies.push(
+      vi
+        .spyOn(fs.promises, 'readlink')
+        .mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })),
+    );
+    spies.push(
+      vi
+        .spyOn(fs.promises, 'symlink')
+        .mockRejectedValue(Object.assign(new Error('EACCES'), { code: 'EACCES' })),
+    );
+    vi.mocked(execFileAsync).mockClear();
+
+    const result = await installIntentCli();
+
+    // Inner sh layer: both paths POSIX-single-quoted (' → '\''), so the
+    // backtick and $() are literal. AppleScript layer: the lone backslash of
+    // '\'' doubles to \\ inside the double-quoted `do shell script` string.
+    // Outer layer: argv form — the script is a single -e argument, no shell.
+    const expectedScript = `do shell script "ln -sf '/tmp/it\`s $(bad)'\\\\''dir/resources/bin/intent' '/usr/local/bin/intent'" with administrator privileges`;
+    expect(execFileAsync).toHaveBeenCalledTimes(1);
+    expect(execFileAsync).toHaveBeenCalledWith('osascript', ['-e', expectedScript]);
+    expect(result.success).toBe(true);
   });
 });

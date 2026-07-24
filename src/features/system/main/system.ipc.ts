@@ -69,6 +69,7 @@ import {
 } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
+import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -387,15 +388,19 @@ export async function installIntentCli(): Promise<{
         logger.info('Permission denied, attempting with admin privileges');
 
         try {
-          // Use osascript to run ln command with admin privileges
-          const command = `ln -sf "${cliScriptPath}" "${symlinkPath}"`;
+          // Use osascript to run ln command with admin privileges.
+          // Single-quote the paths so the inner shell takes them literally —
+          // no backtick/$() command substitution (monorepo#585).
+          const command = `ln -sf ${posixSingleQuote(cliScriptPath)} ${posixSingleQuote(symlinkPath)}`;
           // Escape backslashes first, then double quotes, for AppleScript
           const escapedCommand = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-          const osascriptCmd = `osascript -e 'do shell script "${escapedCommand}" with administrator privileges'`;
+          const script = `do shell script "${escapedCommand}" with administrator privileges`;
 
           // LOCAL-GUI: shows the macOS admin-auth prompt on the client host to
           // symlink the Intent CLI into /usr/local/bin; not workspace execution.
-          await execAsync(osascriptCmd);
+          // Argv form (no outer shell) so the AppleScript payload needs no
+          // third layer of quoting.
+          await execFileAsync('osascript', ['-e', script]);
 
           logger.info('CLI installed with admin privileges');
           return {
@@ -2217,13 +2222,14 @@ export function setupSystemIPC() {
       SystemExecuteCommandStreamingSchema,
       async (event, validated) => {
         try {
-          const { sessionId, command, cwd, stdin } = validated;
+          const { sessionId, command, cwd, workspaceId, stdin } = validated;
           const [shellCmd, shellFlag] =
             process.platform === 'win32' ? ['cmd.exe', '/c'] : ['/bin/sh', '-c'];
 
           const handle = await hostExecStream(shellCmd, {
             args: [shellFlag, command],
             cwd,
+            workspaceId,
             stdin,
             onStdout: (chunk) => {
               event.sender.send(`auggie:stream:${sessionId}`, {

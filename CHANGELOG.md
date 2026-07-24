@@ -4,6 +4,34 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.3.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.2.0...v2.3.0) (2026-07-24)
+
+
+### 🚀 Features
+
+* consolidated intentd delta in stable promotion notes ([#339](https://github.com/intent-hq/cloudlands-fe/issues/339)) ([a6e2434](https://github.com/intent-hq/cloudlands-fe/commit/a6e24349cedafc4024f707ea05c672929f99ce44))
+* render intentd commit delta in release notes ([#336](https://github.com/intent-hq/cloudlands-fe/issues/336)) ([474bb27](https://github.com/intent-hq/cloudlands-fe/commit/474bb279a9640f67f7e53d4d6c6ccfe9e7d93ee9))
+* send authorType user on comment thread replies ([#333](https://github.com/intent-hq/cloudlands-fe/issues/333)) ([204a029](https://github.com/intent-hq/cloudlands-fe/commit/204a029c609a3f69754edb9f0d6dbaeef62d1fad))
+* thread workspaceId through remaining resolver call sites + consume echoed noteRev ([#342](https://github.com/intent-hq/cloudlands-fe/issues/342)) ([fd7bd1b](https://github.com/intent-hq/cloudlands-fe/commit/fd7bd1baa38d21c49abf8942bae983cc4b8ac6cc))
+* wire previous intentd pin into the beta release workflow ([#338](https://github.com/intent-hq/cloudlands-fe/issues/338)) ([2ec589e](https://github.com/intent-hq/cloudlands-fe/commit/2ec589edc60b6010a680812ca0eeeca447044b63))
+
+
+### 🐛 Bug Fixes
+
+* advance note rev through the mutation queue on comment.add ([#334](https://github.com/intent-hq/cloudlands-fe/issues/334)) ([06e9a4e](https://github.com/intent-hq/cloudlands-fe/commit/06e9a4e441aa30dcfce85d60bc7c9ec5ad97f5f4))
+* editor sync trio — flush-window revert, typing-window drop, suppression-window keystroke loss ([#340](https://github.com/intent-hq/cloudlands-fe/issues/340)) ([cab7608](https://github.com/intent-hq/cloudlands-fe/commit/cab7608891466f84343be40472824eccf1fe2911))
+* nameExplicitlySet follow-ups — generated-name paths, rename seam, wire tests ([#525](https://github.com/intent-hq/cloudlands-fe/issues/525)) ([fcfe395](https://github.com/intent-hq/cloudlands-fe/commit/fcfe395e75781602ba5995c3df9833304f349248))
+* pass explicit workspaceId in comment/note mutations for shared note ids ([#331](https://github.com/intent-hq/cloudlands-fe/issues/331)) ([75cb149](https://github.com/intent-hq/cloudlands-fe/commit/75cb149fd545cab0b00c5ffe575cd6238c09ace7))
+* render ProposalCard for provider-collapsed proposal outputs at runtime ([#337](https://github.com/intent-hq/cloudlands-fe/issues/337)) ([6eb2018](https://github.com/intent-hq/cloudlands-fe/commit/6eb20185235aefffef1f915d64b9cf11b2e19c72))
+* reply composer avatar reflects the user instead of hardcoded A ([#345](https://github.com/intent-hq/cloudlands-fe/issues/345)) ([39ffcbd](https://github.com/intent-hq/cloudlands-fe/commit/39ffcbd21c5a887788e87922cfc98f557ea98400))
+* require workspaceId for cwd in EXECUTE_COMMAND_STREAMING (intent-hq/monorepo[#588](https://github.com/intent-hq/cloudlands-fe/issues/588)) ([568f7bd](https://github.com/intent-hq/cloudlands-fe/commit/568f7bd7a5de59e3bca420c40ae1253d9460c5ee))
+* resubscribe live skills/specialists clients on reconnect and keep last-known-good on refetch failure ([#335](https://github.com/intent-hq/cloudlands-fe/issues/335)) ([1a4db81](https://github.com/intent-hq/cloudlands-fe/commit/1a4db81618be822a0e30dab11777418d027e8d95))
+* seed PATH after sidecar startup ([#325](https://github.com/intent-hq/cloudlands-fe/issues/325)) ([8c880a5](https://github.com/intent-hq/cloudlands-fe/commit/8c880a58a516d9cea4b121cbbafca87462ce4be0))
+* serialize ClientLogger data payload into log message ([#348](https://github.com/intent-hq/cloudlands-fe/issues/348)) ([4a0eb3e](https://github.com/intent-hq/cloudlands-fe/commit/4a0eb3e804d57b0d6c1ab67ece149dba2f42a847))
+* single-quote installCli osascript shell command ([#351](https://github.com/intent-hq/cloudlands-fe/issues/351)) ([c5b0f32](https://github.com/intent-hq/cloudlands-fe/commit/c5b0f32490b372bfe5512677f9f191968da0b888))
+* skip release-plz bump commits and add blank line before section headings ([#341](https://github.com/intent-hq/cloudlands-fe/issues/341)) ([a348336](https://github.com/intent-hq/cloudlands-fe/commit/a348336e2c36a8261ba17758793b9e44f03d7ef5))
+* snapshot recentRepos before dispatching into Redux ([#346](https://github.com/intent-hq/cloudlands-fe/issues/346)) ([b62a51c](https://github.com/intent-hq/cloudlands-fe/commit/b62a51cff5e51d2984a3ec76ea63ab43b7a7bdfa))
+
 ## [2.2.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.1.0...v2.2.0) (2026-07-24)
 
 

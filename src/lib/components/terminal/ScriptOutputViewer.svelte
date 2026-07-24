@@ -236,6 +236,9 @@
     try {
       appStore.dispatch(createAgentFromConfigRequested(workspaceId, {
         name: `Fix: ${$script$?.name ?? 'script'}`,
+        // Derived from the script name, not user-chosen — keep the session
+        // self-renameable.
+        nameExplicitlySet: false,
         workspaceId: WorkspaceId(workspaceId),
         initialMessage: prompt,
         source: 'error-notification',
