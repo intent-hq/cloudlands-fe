@@ -37,12 +37,13 @@ const logger = createLogger("CommentsWriteService");
  * to the subscribe→refetch loop.
  *
  * `comment.add` rewrites the note's markdown daemon-side (anchor markers),
- * bumping the note's `rev` without a `note:updated` event or a rev echo in the
- * result. When the workspace is known, the call is therefore routed through
- * the note's §11.4-D mutation queue (`enqueueRevBumpingNoteMutation`) so the
- * stored rev advances before the anchor-insertion's debounced content save
- * flushes — otherwise that save sends a stale `expectedVersion` and trips the
- * "This note changed on the server" conflict toast.
+ * bumping the note's `rev` without a `note:updated` event. When the workspace
+ * is known, the call is therefore routed through the note's §11.4-D mutation
+ * queue (`enqueueRevBumpingNoteMutation`) so the stored rev advances — from
+ * the daemon's echoed `noteRev` when present (#638), else the rev+1 inference
+ * — before the anchor-insertion's debounced content save flushes; otherwise
+ * that save sends a stale `expectedVersion` and trips the "This note changed
+ * on the server" conflict toast.
  */
 export async function addComment(
   noteId: string,

@@ -187,6 +187,58 @@ describe("commentsWriteService (fake seam, real store)", () => {
     expect(selectNoteById.select(appStore.state, WS, "note-rev")?.rev).toBe(5);
   });
 
+  // FE side of monorepo#638: newer daemons echo the authoritative post-add
+  // rev (`noteRev`) on the result — it must be applied verbatim (the daemon
+  // may have advanced the rev by more than one), while its absence keeps the
+  // rev+1 inference above for older daemons.
+  it("uses the daemon's echoed noteRev verbatim over the rev+1 inference", async () => {
+    const WS = "ws-rev-echo";
+    seedNote(WS, makeNote(WS, "note-rev", { rev: 4 }));
+    commentsApi.add.mockResolvedValueOnce({ success: true, noteRev: 9 } as never);
+
+    const ok = await addComment("note-rev", makeComment("c-echo"), {
+      workspaceId: WS,
+      searchContext: "x y",
+      commentTarget: "x",
+      comment: "body",
+    });
+
+    expect(ok).toBe(true);
+    expect(selectNoteById.select(appStore.state, WS, "note-rev")?.rev).toBe(9);
+  });
+
+  it("applies an echoed noteRev even when the store had no rev to infer from", async () => {
+    const WS = "ws-rev-echo-2";
+    seedNote(WS, makeNote(WS, "note-rev", { rev: undefined }));
+    commentsApi.add.mockResolvedValueOnce({ success: true, noteRev: 3 } as never);
+
+    const ok = await addComment("note-rev", makeComment("c-echo-2"), {
+      workspaceId: WS,
+      searchContext: "x y",
+      commentTarget: "x",
+      comment: "body",
+    });
+
+    expect(ok).toBe(true);
+    expect(selectNoteById.select(appStore.state, WS, "note-rev")?.rev).toBe(3);
+  });
+
+  it("never regresses a newer stored rev with a stale echoed noteRev", async () => {
+    const WS = "ws-rev-echo-3";
+    seedNote(WS, makeNote(WS, "note-rev", { rev: 12 }));
+    commentsApi.add.mockResolvedValueOnce({ success: true, noteRev: 5 } as never);
+
+    const ok = await addComment("note-rev", makeComment("c-echo-3"), {
+      workspaceId: WS,
+      searchContext: "x y",
+      commentTarget: "x",
+      comment: "body",
+    });
+
+    expect(ok).toBe(true);
+    expect(selectNoteById.select(appStore.state, WS, "note-rev")?.rev).toBe(12);
+  });
+
   it("leaves the stored note rev untouched when the add fails", async () => {
     const WS = "ws-rev-2";
     seedNote(WS, makeNote(WS, "note-rev", { rev: 4 }));

@@ -69,11 +69,26 @@ export function extractConflict(error: unknown): { current: unknown } | undefine
 }
 
 /**
+ * Extract the daemon's echoed authoritative note revision (`noteRev`, #638)
+ * from a mutation response. Returned by mutations that rewrite a note's
+ * content daemon-side (e.g. `comment.add`'s anchor insertion). Tolerant of
+ * older daemons that omit the field: returns `undefined` unless the response
+ * carries a finite number.
+ */
+function extractNoteRev(result: unknown): number | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const noteRev = (result as { noteRev?: unknown }).noteRev;
+  return typeof noteRev === "number" && Number.isFinite(noteRev) ? noteRev : undefined;
+}
+
+/**
  * Issue a mutating JSON-RPC request and fold the outcome into a `MutationResult`:
  * success on resolve, `{ success: false, error }` on any transport/daemon error.
  * An optimistic-concurrency conflict (§11.4-D) additionally carries the raw
- * `conflict.current` so callers can reload-to-latest. The seam never throws from
- * a mutation. State convergence is otherwise left to the existing
+ * `conflict.current` so callers can reload-to-latest. When the daemon echoes an
+ * authoritative `noteRev` (#638), it is surfaced on the result so rev
+ * bookkeeping can consume it instead of inferring `rev + 1`. The seam never
+ * throws from a mutation. State convergence is otherwise left to the existing
  * subscribe→refetch loops driven by daemon events.
  *
  * `options.timeoutMs` overrides the JSON-RPC client's default 30s timeout for
@@ -87,10 +102,11 @@ export async function runMutation(
 ): Promise<MutationResult> {
   try {
     // Only forward options when defined to preserve 2-arg wire protocol shape
-    await (options !== undefined
+    const result = await (options !== undefined
       ? backendRequest(method, params, options)
       : backendRequest(method, params));
-    return { success: true };
+    const noteRev = extractNoteRev(result);
+    return noteRev !== undefined ? { success: true, noteRev } : { success: true };
   } catch (error) {
     const conflict = extractConflict(error);
     if (conflict) return { success: false, error: mutationErrorMessage(error), conflict };

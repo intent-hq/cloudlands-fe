@@ -227,13 +227,23 @@ export class LiveCommentsClient implements CommentsClient {
     return runMutation(method, { workspaceId, noteId, ...params });
   }
 
-  subscribe(noteId: string, handler: SubscriptionHandler<CommentV2[]>): Unsubscribe {
+  /**
+   * Subscribe to a note's comments. The caller's `workspaceId` (when supplied)
+   * pins every refetch to the owning workspace — note ids are not globally
+   * unique and the resolver cache is last-writer-wins across workspaces
+   * (monorepo#621) — otherwise the resolver fallback applies as before.
+   */
+  subscribe(
+    noteId: string,
+    handler: SubscriptionHandler<CommentV2[]>,
+    workspaceId?: string,
+  ): Unsubscribe {
     return createDeltaSubscription<CommentV2>({
       eventTypes: ["comment:added"],
       matchLegacyEvent: (method, params) => isEventInFamily(method, params, "comment"),
-      fetchAll: () => fetchComments(noteId),
+      fetchAll: () => fetchComments(noteId, workspaceId),
       getId: (raw) => String(raw.id ?? ""),
-      normalize: (raw) => normalizeComment(raw, noteId),
+      normalize: (raw) => normalizeComment(raw, noteId, workspaceId),
       handler,
     });
   }
