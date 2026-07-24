@@ -171,5 +171,172 @@ describe("LiveSkillsClient", () => {
 
       unsubscribe();
     });
+
+    it("keeps the last known-good view when the event-driven refetch fails (#610)", async () => {
+      let notificationCallback: ((n: { method: string; params?: unknown }) => void) | undefined;
+      vi.spyOn(backendTransport, "onBackendNotification").mockImplementation((cb) => {
+        notificationCallback = cb;
+        return vi.fn();
+      });
+      vi.spyOn(backendTransport, "backendSubscribe").mockResolvedValue({ subscriptionId: "sub-1" });
+      const backendRequestSpy = vi
+        .spyOn(backendTransport, "backendRequest")
+        .mockRejectedValue(new Error("Transport failure"));
+
+      const handler = vi.fn();
+      const unsubscribe = client.subscribe(handler);
+      expect(handler).toHaveBeenCalledWith([]);
+      handler.mockClear();
+
+      // Transient transport failure on the refetch: NO emit — the handler
+      // keeps its prior view instead of receiving a wiping [].
+      notificationCallback?.({ method: "skills:changed", params: { workspaceId: "ws-test" } });
+      await vi.waitFor(() => expect(backendRequestSpy).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(handler).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    describe("reconnect (RESUB-1, #609)", () => {
+      it("re-issues the subscribe and refetches the last-emitted workspace once on reconnect", async () => {
+        let notificationCallback: ((n: { method: string; params?: unknown }) => void) | undefined;
+        vi.spyOn(backendTransport, "onBackendNotification").mockImplementation((cb) => {
+          notificationCallback = cb;
+          return vi.fn();
+        });
+        let reconnect: (() => void) | undefined;
+        vi.spyOn(backendTransport, "onBackendReconnected").mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        const backendSubscribeSpy = vi
+          .spyOn(backendTransport, "backendSubscribe")
+          .mockResolvedValueOnce({ subscriptionId: "sub-1" })
+          .mockResolvedValueOnce({ subscriptionId: "sub-2" });
+        const backendUnsubscribeSpy = vi
+          .spyOn(backendTransport, "backendUnsubscribe")
+          .mockResolvedValue(undefined);
+
+        const skills = [
+          { name: "a-skill", description: "d", location: "/w/.intent/skills/a/SKILL.md", scope: "project" as const },
+        ];
+        const backendRequestSpy = vi
+          .spyOn(backendTransport, "backendRequest")
+          .mockResolvedValue(skills);
+
+        const handler = vi.fn();
+        const unsubscribe = client.subscribe(handler);
+        await vi.waitFor(() => expect(backendSubscribeSpy).toHaveBeenCalledTimes(1));
+
+        // Establish the last-emitted workspace via a skills:changed event.
+        notificationCallback?.({ method: "skills:changed", params: { workspaceId: "ws-test" } });
+        await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(skills));
+        handler.mockClear();
+        backendRequestSpy.mockClear();
+
+        reconnect?.();
+
+        // Re-subscribe with the same wire shape + exactly one snapshot refetch.
+        expect(backendSubscribeSpy).toHaveBeenCalledTimes(2);
+        expect(backendSubscribeSpy).toHaveBeenLastCalledWith({ eventTypes: ["skills:changed"] });
+        await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(skills));
+        expect(backendRequestSpy).toHaveBeenCalledTimes(1);
+        expect(backendRequestSpy).toHaveBeenCalledWith("skill.list", { workspaceId: "ws-test" });
+
+        // The refreshed id is released on dispose.
+        unsubscribe();
+        await vi.waitFor(() => expect(backendUnsubscribeSpy).toHaveBeenCalledWith("sub-2"));
+      });
+
+      it("re-subscribes without a refetch when no workspace has been emitted yet", async () => {
+        let reconnect: (() => void) | undefined;
+        vi.spyOn(backendTransport, "onBackendReconnected").mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        const backendSubscribeSpy = vi
+          .spyOn(backendTransport, "backendSubscribe")
+          .mockResolvedValue({ subscriptionId: "sub-1" });
+        const backendRequestSpy = vi.spyOn(backendTransport, "backendRequest").mockResolvedValue([]);
+
+        const unsubscribe = client.subscribe(vi.fn());
+        await vi.waitFor(() => expect(backendSubscribeSpy).toHaveBeenCalledTimes(1));
+
+        reconnect?.();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(backendSubscribeSpy).toHaveBeenCalledTimes(2);
+        expect(backendRequestSpy).not.toHaveBeenCalled();
+        unsubscribe();
+      });
+
+      it("keeps the last known-good view when the reconnect refetch fails", async () => {
+        let notificationCallback: ((n: { method: string; params?: unknown }) => void) | undefined;
+        vi.spyOn(backendTransport, "onBackendNotification").mockImplementation((cb) => {
+          notificationCallback = cb;
+          return vi.fn();
+        });
+        let reconnect: (() => void) | undefined;
+        vi.spyOn(backendTransport, "onBackendReconnected").mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        vi.spyOn(backendTransport, "backendSubscribe").mockResolvedValue({ subscriptionId: "sub-1" });
+        const skills = [
+          { name: "a-skill", description: "d", location: "/w/.intent/skills/a/SKILL.md", scope: "project" as const },
+        ];
+        const backendRequestSpy = vi
+          .spyOn(backendTransport, "backendRequest")
+          .mockResolvedValueOnce(skills);
+
+        const handler = vi.fn();
+        const unsubscribe = client.subscribe(handler);
+        notificationCallback?.({ method: "skills:changed", params: { workspaceId: "ws-test" } });
+        await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(skills));
+        handler.mockClear();
+
+        backendRequestSpy.mockRejectedValueOnce(new Error("Transport failure"));
+        reconnect?.();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(handler).not.toHaveBeenCalled();
+        unsubscribe();
+      });
+
+      it("does nothing when a reconnect races a dispose", async () => {
+        let notificationCallback: ((n: { method: string; params?: unknown }) => void) | undefined;
+        vi.spyOn(backendTransport, "onBackendNotification").mockImplementation((cb) => {
+          notificationCallback = cb;
+          return vi.fn();
+        });
+        let reconnect: (() => void) | undefined;
+        vi.spyOn(backendTransport, "onBackendReconnected").mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        const backendSubscribeSpy = vi
+          .spyOn(backendTransport, "backendSubscribe")
+          .mockResolvedValue({ subscriptionId: "sub-1" });
+        const backendRequestSpy = vi.spyOn(backendTransport, "backendRequest").mockResolvedValue([]);
+
+        const handler = vi.fn();
+        const unsubscribe = client.subscribe(handler);
+        await vi.waitFor(() => expect(backendSubscribeSpy).toHaveBeenCalledTimes(1));
+        notificationCallback?.({ method: "skills:changed", params: { workspaceId: "ws-test" } });
+        await vi.waitFor(() => expect(backendRequestSpy).toHaveBeenCalledTimes(1));
+        handler.mockClear();
+        backendRequestSpy.mockClear();
+
+        unsubscribe();
+        reconnect?.();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // No re-subscribe, no refetch, no emit after dispose.
+        expect(backendSubscribeSpy).toHaveBeenCalledTimes(1);
+        expect(backendRequestSpy).not.toHaveBeenCalled();
+        expect(handler).not.toHaveBeenCalled();
+      });
+    });
   });
 });
