@@ -71,24 +71,32 @@ interface PendingContent {
   content: string;
 }
 
+// Debounce/queue state is keyed by `${workspaceId}:${noteId}` — note ids are
+// not globally unique (every workspace has a `spec` note), so keying by
+// noteId alone would let same-id notes across workspaces clobber each other's
+// pending saves and share a mutation queue.
 const contentTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingContent = new Map<string, PendingContent>();
+
+function noteKey(workspaceId: string, noteId: string): string {
+  return `${workspaceId}:${noteId}`;
+}
 
 // Per-note mutation queues (§11.4-D): chain each note's mutations so a rename
 // issued while a content save is in flight waits for it — and therefore reads
 // the advanced `rev` — instead of racing it with a stale `expectedVersion`.
 const noteMutationQueues = new Map<string, Promise<void>>();
 
-function enqueueNoteMutation<T>(noteId: string, run: () => Promise<T>): Promise<T> {
-  const prior = noteMutationQueues.get(noteId) ?? Promise.resolve();
+function enqueueNoteMutation<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const prior = noteMutationQueues.get(key) ?? Promise.resolve();
   const result = prior.then(run);
   const tail = result.then(
     () => undefined,
     () => undefined,
   );
-  noteMutationQueues.set(noteId, tail);
+  noteMutationQueues.set(key, tail);
   void tail.then(() => {
-    if (noteMutationQueues.get(noteId) === tail) noteMutationQueues.delete(noteId);
+    if (noteMutationQueues.get(key) === tail) noteMutationQueues.delete(key);
   });
   return result;
 }
@@ -270,42 +278,48 @@ export function updateNoteContent(
   options?: { immediate?: boolean },
 ): void {
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { content }));
-  pendingContent.set(noteId, { workspaceId, content });
+  const key = noteKey(workspaceId, noteId);
+  pendingContent.set(key, { workspaceId, content });
 
-  const existing = contentTimers.get(noteId);
+  const existing = contentTimers.get(key);
   if (existing) clearTimeout(existing);
 
   if (options?.immediate) {
-    contentTimers.delete(noteId);
-    void flushContent(noteId);
+    contentTimers.delete(key);
+    void flushContent(key, noteId);
     return;
   }
   contentTimers.set(
-    noteId,
+    key,
     setTimeout(() => {
-      contentTimers.delete(noteId);
-      void flushContent(noteId);
+      contentTimers.delete(key);
+      void flushContent(key, noteId);
     }, NOTE_CONTENT_SAVE_DEBOUNCE_MS),
   );
 }
 
-async function flushContent(noteId: string): Promise<void> {
-  const pending = pendingContent.get(noteId);
+async function flushContent(key: string, noteId: string): Promise<void> {
+  const pending = pendingContent.get(key);
   if (!pending) return;
-  pendingContent.delete(noteId);
-  const timer = contentTimers.get(noteId);
+  pendingContent.delete(key);
+  const timer = contentTimers.get(key);
   if (timer) {
     clearTimeout(timer);
-    contentTimers.delete(noteId);
+    contentTimers.delete(key);
   }
-  await enqueueNoteMutation(noteId, async () => {
+  await enqueueNoteMutation(key, async () => {
     // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
     // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
+    // The explicit workspaceId pins the save to THIS workspace's note — shared
+    // ids like `spec` exist in every workspace and the fallback resolver cache
+    // is last-writer-wins across them.
     const rev = readNoteById(pending.workspaceId, noteId)?.rev;
-    const result =
-      rev !== undefined
-        ? await appClient.notes.setContent(noteId, pending.content, rev)
-        : await appClient.notes.setContent(noteId, pending.content);
+    const result = await appClient.notes.setContent(
+      noteId,
+      pending.content,
+      rev,
+      pending.workspaceId,
+    );
     if (!result.success) {
       if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
       logger.error("Failed to save note content", result.error);
@@ -319,7 +333,11 @@ async function flushContent(noteId: string): Promise<void> {
 
 /** Flush a pending debounced content save immediately (e.g. on editor teardown). */
 export function flushNoteContent(noteId: string): void {
-  if (pendingContent.has(noteId)) void flushContent(noteId);
+  // Flush every workspace's pending save for this note id (keys are
+  // `${workspaceId}:${noteId}`; note ids repeat across workspaces).
+  for (const key of [...pendingContent.keys()]) {
+    if (key.endsWith(`:${noteId}`)) void flushContent(key, noteId);
+  }
 }
 
 /** Update a note's title optimistically; rolls back to the prior title on failure. */
@@ -331,12 +349,9 @@ export async function updateNoteTitle(
   const previous = readNoteById(workspaceId, noteId)?.title;
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { title }));
 
-  await enqueueNoteMutation(noteId, async () => {
+  await enqueueNoteMutation(noteKey(workspaceId, noteId), async () => {
     const rev = readNoteById(workspaceId, noteId)?.rev;
-    const result =
-      rev !== undefined
-        ? await appClient.notes.updateMetadata(noteId, { title }, rev)
-        : await appClient.notes.updateMetadata(noteId, { title });
+    const result = await appClient.notes.updateMetadata(noteId, { title }, rev, workspaceId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error("Failed to update note title", result.error);
@@ -364,12 +379,9 @@ export async function updateNoteMetadata(
   if (metadata.tags !== undefined) rollback.tags = existing?.tags ?? [];
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, metadata));
 
-  await enqueueNoteMutation(noteId, async () => {
+  await enqueueNoteMutation(noteKey(workspaceId, noteId), async () => {
     const rev = readNoteById(workspaceId, noteId)?.rev;
-    const result =
-      rev !== undefined
-        ? await appClient.notes.updateMetadata(noteId, metadata, rev)
-        : await appClient.notes.updateMetadata(noteId, metadata);
+    const result = await appClient.notes.updateMetadata(noteId, metadata, rev, workspaceId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error("Failed to update note metadata", result.error);
@@ -388,12 +400,9 @@ export async function deleteNote(workspaceId: string, noteId: string): Promise<v
   const snapshot = readNoteById(workspaceId, noteId);
   appStore.dispatch(applyNoteDeleted(workspaceId, noteId));
 
-  await enqueueNoteMutation(noteId, async () => {
+  await enqueueNoteMutation(noteKey(workspaceId, noteId), async () => {
     const rev = snapshot?.rev;
-    const result =
-      rev !== undefined
-        ? await appClient.notes.delete(noteId, rev)
-        : await appClient.notes.delete(noteId);
+    const result = await appClient.notes.delete(noteId, rev, workspaceId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error("Failed to delete note", result.error);

@@ -892,8 +892,17 @@ export interface NotesClient {
    * Full-replacement of a note's content (`note.setContent`). Optional
    * `expectedVersion` (§11.4-D) is forwarded ONLY when the caller knows the
    * current `rev`; omitted otherwise → last-writer-wins, exactly as today.
+   * Optional `workspaceId` pins the mutation to the note's owning workspace —
+   * note ids are not globally unique (every workspace has a `spec` note), so
+   * callers that know the workspace MUST pass it rather than relying on the
+   * live client's last-writer-wins resolver cache.
    */
-  setContent(noteId: string, content: string, expectedVersion?: number): Promise<MutationResult>;
+  setContent(
+    noteId: string,
+    content: string,
+    expectedVersion?: number,
+    workspaceId?: string,
+  ): Promise<MutationResult>;
   /** Surgical, append-safe insert (`note.add`). `expectedVersion` is optional (§11.4-D). */
   add(
     noteId: string,
@@ -916,13 +925,14 @@ export interface NotesClient {
     content: string,
     expectedVersion?: number,
   ): Promise<MutationResult>;
-  /** Delete a note (`note.delete`). `expectedVersion` is optional (§11.4-D). */
-  delete(noteId: string, expectedVersion?: number): Promise<MutationResult>;
-  /** Update a note's title/tags metadata (`note.updateMetadata`). `expectedVersion` is optional (§11.4-D). */
+  /** Delete a note (`note.delete`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
+  delete(noteId: string, expectedVersion?: number, workspaceId?: string): Promise<MutationResult>;
+  /** Update a note's title/tags metadata (`note.updateMetadata`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   updateMetadata(
     noteId: string,
     metadata: NoteMetadataPatch,
     expectedVersion?: number,
+    workspaceId?: string,
   ): Promise<MutationResult>;
   /**
    * Full version history for a note (`note.listVersions` + per-version
@@ -1049,6 +1059,14 @@ export interface TasksClient {
 
 /** Parameters for creating a note-anchored comment (`comment.add`). */
 export interface CommentAddParams {
+  /**
+   * The note's owning workspace. Note ids are NOT globally unique (every
+   * workspace has a note literally named `spec`), so callers that know the
+   * workspace MUST pass it; when absent the live client falls back to the
+   * last-writer-wins `resolveNoteWorkspaceId` cache, which can target the
+   * wrong workspace's same-id note.
+   */
+  workspaceId?: string;
   searchContext: string;
   commentTarget: string;
   comment: string;
@@ -1064,6 +1082,8 @@ export interface CommentAddParams {
 
 /** Parameters for replying to a thread or comment (`comment.respond`). */
 export interface CommentRespondParams {
+  /** The note's owning workspace (see `CommentAddParams.workspaceId`). */
+  workspaceId?: string;
   threadId?: string;
   commentId?: string;
   comment: string;
@@ -1073,14 +1093,15 @@ export interface CommentRespondParams {
 }
 
 export interface CommentsClient {
-  list(noteId: string): Promise<CommentV2[]>;
+  /** List a note's comments; pass `workspaceId` when known (note ids are not globally unique). */
+  list(noteId: string, workspaceId?: string): Promise<CommentV2[]>;
   subscribe(noteId: string, handler: SubscriptionHandler<CommentV2[]>): Unsubscribe;
   /** Create a note-anchored comment (`comment.add`); the live client attaches an idempotencyKey (§5.6). */
   add(noteId: string, params: CommentAddParams): Promise<MutationResult>;
   /** Reply to a thread or comment (`comment.respond`). */
   respond(noteId: string, params: CommentRespondParams): Promise<MutationResult>;
-  /** Delete a comment (`comment.delete`). */
-  delete(noteId: string, commentId: string): Promise<MutationResult>;
+  /** Delete a comment (`comment.delete`); pass `workspaceId` when known. */
+  delete(noteId: string, commentId: string, workspaceId?: string): Promise<MutationResult>;
 }
 
 /** Wire input for `script.create` (PROTOCOL §5.8); `workspaceId` is passed separately. */

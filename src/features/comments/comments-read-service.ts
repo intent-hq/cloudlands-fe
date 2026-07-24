@@ -57,9 +57,10 @@ function coalesce(key: string, fn: () => Promise<void>): void {
  * `noteId` (`existing.noteId === noteId`), leaving other notes' comments alone.
  *
  * Called from the daemon-events bridge with (workspaceId, noteId, kind). The
- * `workspaceId` is only used for logging today — comments are note-scoped on
- * the wire and in the slice — but it is threaded through so a future workspace
- * scope on the slice needs no bridge change.
+ * event's `workspaceId` scopes the refetch: `comment.list` is workspace-scoped
+ * on the wire and note ids are not globally unique (every workspace has a
+ * `spec` note), so passing it avoids the resolver cache targeting a same-id
+ * note in another workspace.
  */
 export function applyCommentFromEvent(
   workspaceId: string,
@@ -67,11 +68,15 @@ export function applyCommentFromEvent(
   _kind: "added" | "resolved",
 ): void {
   if (!workspaceId || !noteId) return;
-  coalesce(`comment:${noteId}`, async () => {
-    const fresh = await appClient.comments.list(noteId);
+  coalesce(`comment:${workspaceId}:${noteId}`, async () => {
+    const fresh = await appClient.comments.list(noteId, workspaceId);
     const state = appStore.state.comments;
+    // Scope the removal set by workspace too: note ids repeat across
+    // workspaces, so a bare noteId filter would treat another workspace's
+    // same-id note's comments as "removed". Comments without a workspaceId
+    // (boot-seeded before the field existed) stay reconcilable by noteId.
     const currentForNote = getItems(state.commentsById).filter(
-      (c) => c.noteId === noteId,
+      (c) => c.noteId === noteId && (c.workspaceId === undefined || c.workspaceId === workspaceId),
     );
     const currentById = new Map(currentForNote.map((c) => [c.id, c]));
     const freshById = new Map(fresh.map((c) => [c.id, c]));

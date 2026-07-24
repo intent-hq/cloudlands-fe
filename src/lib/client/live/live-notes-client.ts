@@ -179,8 +179,9 @@ export class LiveNotesClient implements NotesClient {
     noteId: string,
     content: string,
     expectedVersion?: number,
+    workspaceId?: string,
   ): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.setContent", { content }, expectedVersion);
+    return this.runNoteMutation(noteId, "note.setContent", { content }, expectedVersion, workspaceId);
   }
 
   async add(
@@ -220,14 +221,19 @@ export class LiveNotesClient implements NotesClient {
     return this.runNoteMutation(noteId, "note.editLines", { start, end, content }, expectedVersion);
   }
 
-  async delete(noteId: string, expectedVersion?: number): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.delete", {}, expectedVersion);
+  async delete(
+    noteId: string,
+    expectedVersion?: number,
+    workspaceId?: string,
+  ): Promise<MutationResult> {
+    return this.runNoteMutation(noteId, "note.delete", {}, expectedVersion, workspaceId);
   }
 
   async updateMetadata(
     noteId: string,
     metadata: NoteMetadataPatch,
     expectedVersion?: number,
+    workspaceId?: string,
   ): Promise<MutationResult> {
     return this.runNoteMutation(
       noteId,
@@ -237,6 +243,7 @@ export class LiveNotesClient implements NotesClient {
         ...(metadata.tags !== undefined ? { tags: metadata.tags } : {}),
       },
       expectedVersion,
+      workspaceId,
     );
   }
 
@@ -295,8 +302,11 @@ export class LiveNotesClient implements NotesClient {
   }
 
   /**
-   * Resolve a note's workspace, then issue a note-scoped mutation with
-   * `{ workspaceId, noteId, ...params }`. `expectedVersion` (§11.4-D) is added to
+   * Issue a note-scoped mutation with `{ workspaceId, noteId, ...params }`.
+   * Uses the caller's `explicitWorkspaceId` when supplied (note ids are not
+   * globally unique — every workspace has a `spec` note — and the resolver
+   * cache is last-writer-wins across workspaces); otherwise resolves the
+   * note's workspace via the cache. `expectedVersion` (§11.4-D) is added to
    * the params ONLY when defined — when absent the daemon ignores it and
    * last-writer-wins applies, exactly as today. Returns a failed MutationResult
    * (never throws, never faked success) when the workspace cannot be resolved.
@@ -306,8 +316,9 @@ export class LiveNotesClient implements NotesClient {
     method: string,
     params: Record<string, unknown>,
     expectedVersion?: number,
+    explicitWorkspaceId?: string,
   ): Promise<MutationResult> {
-    const workspaceId = await resolveNoteWorkspaceId(noteId);
+    const workspaceId = explicitWorkspaceId ?? (await resolveNoteWorkspaceId(noteId));
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
     }

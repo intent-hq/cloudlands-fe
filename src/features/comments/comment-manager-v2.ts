@@ -174,7 +174,7 @@ export class CommentManagerV2 {
 
         // Use type-safe conversion helper with runtime validation
         try {
-          return convertBackendCommentToV2(comment, anchor, this.noteId);
+          return convertBackendCommentToV2(comment, anchor, this.noteId, this.workspaceId);
         } catch (error) {
           // Log error but don't fail the entire load - just skip this comment
           logger.error('Failed to convert comment, skipping', {
@@ -195,6 +195,7 @@ export class CommentManagerV2 {
             updatedAt: comment.updatedAt || new Date().toISOString(),
             parentId: comment.parentId,
             noteId: this.noteId,
+            workspaceId: this.workspaceId,
             anchor,
             anchorText: comment.section,
             anchorContext: undefined, // NoteComment doesn't have anchorContext
@@ -872,6 +873,8 @@ export class CommentManagerV2 {
     const id = generateCommentId();
     const now = new Date().toISOString();
     const baseComment = {
+      noteId: this.noteId,
+      workspaceId: this.workspaceId,
       threadId: `thread-${Date.now()}`,
       content,
       author: 'User',
@@ -922,9 +925,13 @@ export class CommentManagerV2 {
     // `comment.add` + rollback are owned there. `searchContext` wraps the target
     // text with its surrounding context so the daemon can re-anchor it.
     // `authorType: 'user'` marks the editor-driven add as user-authored (the
-    // daemon defaults to 'agent' when absent).
+    // daemon defaults to 'agent' when absent). `workspaceId` pins the mutation
+    // to THIS manager's workspace — note ids like `spec` exist in every
+    // workspace, and the fallback resolver cache is last-writer-wins across
+    // them (the round-5 wrong-workspace `comment.add` failure).
     const searchContext = `${beforeText}${selectedText}${afterText}`;
     const persisted = await commentsWrite.addComment(this.noteId, addedComment, {
+      workspaceId: this.workspaceId,
       searchContext,
       commentTarget: selectedText,
       comment: content,
@@ -940,6 +947,7 @@ export class CommentManagerV2 {
       // args), landing this in console-output.log without a debugger.
       console.error(
         `[CommentDiag] comment.add failed ${JSON.stringify({
+          workspaceId: this.workspaceId,
           noteId: this.noteId,
           selection: { from, to },
           searchContextLength: searchContext.length,
@@ -983,7 +991,11 @@ export class CommentManagerV2 {
     // reflects daemon persistence. Anchors are only removed once the delete
     // persists so a rolled-back store entry does not desynchronise from the
     // document.
-    const { existed, success } = await commentsWrite.deleteComment(this.noteId, commentId);
+    const { existed, success } = await commentsWrite.deleteComment(
+      this.noteId,
+      commentId,
+      this.workspaceId,
+    );
 
     if (!success) {
       return false;
@@ -1034,6 +1046,8 @@ export class CommentManagerV2 {
     const replyId = generateCommentId();
     const now = new Date().toISOString();
     const reply: CommentV2 = {
+      noteId: this.noteId,
+      workspaceId: this.workspaceId,
       threadId: parentComment.threadId,
       content,
       type: 'comment',
@@ -1052,6 +1066,7 @@ export class CommentManagerV2 {
     // Persist through the write service: optimistic store dispatch +
     // `comment.respond` + rollback are owned there.
     await commentsWrite.respondToComment(this.noteId, reply, {
+      workspaceId: this.workspaceId,
       commentId: parentId,
       comment: content,
       type: 'comment',
