@@ -2219,13 +2219,14 @@ export function setupSystemIPC() {
       SystemExecuteCommandStreamingSchema,
       async (event, validated) => {
         try {
-          const { sessionId, command, cwd, stdin } = validated;
+          const { sessionId, command, cwd, workspaceId, stdin } = validated;
           const [shellCmd, shellFlag] =
             process.platform === 'win32' ? ['cmd.exe', '/c'] : ['/bin/sh', '-c'];
 
           const handle = await hostExecStream(shellCmd, {
             args: [shellFlag, command],
             cwd,
+            workspaceId,
             stdin,
             onStdout: (chunk) => {
               event.sender.send(`auggie:stream:${sessionId}`, {
