@@ -7,6 +7,45 @@
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+/** Cap on serialized data embedded in the message string (main-process forwarder caps lines at 4096 chars). */
+const MAX_SERIALIZED_DATA_LENGTH = 2000;
+const TRUNCATION_MARKER = '… [truncated]';
+
+/**
+ * Safely serialize a data payload to compact JSON for embedding in the log
+ * message string. Handles circular references, Errors, and BigInt; falls back
+ * to a placeholder instead of throwing.
+ */
+function serializeData(data: unknown): string {
+  try {
+    const seen = new WeakSet<object>();
+    const json = JSON.stringify(data, (_key, value) => {
+      if (typeof value === 'bigint') {
+        return value.toString();
+      }
+      if (value instanceof Error) {
+        return { name: value.name, message: value.message };
+      }
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return '[circular]';
+        }
+        seen.add(value);
+      }
+      return value;
+    });
+    if (json === undefined) {
+      return '[unserializable]';
+    }
+    if (json.length > MAX_SERIALIZED_DATA_LENGTH) {
+      return `${json.slice(0, MAX_SERIALIZED_DATA_LENGTH - TRUNCATION_MARKER.length)}${TRUNCATION_MARKER}`;
+    }
+    return json;
+  } catch {
+    return '[unserializable]';
+  }
+}
+
 export interface LoggerOptions {
   name: string;
   level?: LogLevel;
@@ -46,7 +85,7 @@ export class ClientLogger {
     const prefix = `[${timestamp}] [${level.toUpperCase()}] [${this.name}]`;
 
     if (data !== undefined) {
-      return `${prefix} ${message}`;
+      return `${prefix} ${message} ${serializeData(data)}`;
     }
 
     return `${prefix} ${message}`;
