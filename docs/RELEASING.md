@@ -107,8 +107,11 @@ After verifying a beta release, promote it to the stable channel using the **Rel
    - Uploads new assets to the rolling `stable` release tag with `--clobber` (versioned assets first, then `latest-mac.yml` last for atomic feed switch)
    - Deletes old versioned assets from the previous stable promotion (only after new assets are uploaded and live)
    - Verifies the `sha512` hash in `latest-mac.yml` matches the versioned release (with retries for CDN propagation)
-   - Aggregates release notes from all versions in the range `(prevStable, VERSION]`
+   - Generates a leading summary section (`scripts/generate-stable-summary.mjs`): promoted version, previous stable, and a consolidated intentd delta spanning the previous stable's pin → the promoted version's pin (pins recovered from each release's `release-manifest.json`, commit list from the intentd compare API via `INTENTD_READ_PAT`)
+   - Aggregates release notes from all versions in the range `(prevStable, VERSION]`, prefixed by the summary section
    - Updates the stable release body with the aggregated notes
+
+   The summary section is **fail-soft**: missing manifests or pins degrade it to pin line(s), a failed compare fetch falls back to the pin line + compare link, and any summary failure just drops the section — a notes problem never blocks a promotion.
 
    The workflow is **idempotent** — re-running with the same version is safe and updates assets/notes to match.
 
