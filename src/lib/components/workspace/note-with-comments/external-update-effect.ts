@@ -56,6 +56,41 @@ export function shouldSafetyNetTrigger({
   return reduxContent !== lastKnownContent;
 }
 
+/**
+ * Decides whether the pipeline should be re-queued (externalUpdateVersion bump)
+ * when the user-typing timeout clears. External updates skipped because
+ * `isUserTyping === true` were never re-queued — `isUserTyping` is a plain
+ * non-reactive `let`, so nothing re-ran the pipeline once typing stopped and
+ * the debounced save then clobbered the divergence out of Redux (monorepo#534).
+ */
+export function shouldRequeueExternalUpdateAfterTypingStops({
+  reduxContent,
+  lastKnownContent,
+}: {
+  reduxContent: string | undefined;
+  lastKnownContent: string;
+}): boolean {
+  if (reduxContent === undefined) return false;
+  return reduxContent !== lastKnownContent;
+}
+
+/**
+ * Decides whether the editor's onUpdate callback should ignore a local editor
+ * update. Programmatic applies are filtered upstream by the `external-update`
+ * transaction meta (editor-config's onUpdate never forwards them), so this
+ * intentionally does NOT gate on `isUpdatingFromExternal`: suppressing all
+ * input for the fixed 200ms post-apply reset tail dropped real keystrokes —
+ * neither `hasUserEditedSinceLastSave` nor a save timer was set, so the next
+ * external apply overwrote and never persisted them (monorepo#535).
+ */
+export function shouldIgnoreLocalEditorUpdate({
+  isInitializing,
+}: {
+  isInitializing: boolean;
+}): boolean {
+  return isInitializing;
+}
+
 export type ProcessMarkdownToHTMLLike = (
   markdown: string,
   opts: {
@@ -107,6 +142,7 @@ export function runExternalContentUpdateEffect({
   getEditor,
   getIsInitialized,
   getIsUserTyping,
+  getHasPendingNoteContent,
   getCurrentNoteContent,
   getLastKnownContent,
   setLastKnownContent,
@@ -129,6 +165,16 @@ export function runExternalContentUpdateEffect({
   getEditor: () => ExternalUpdateEffectEditorLike | null | undefined;
   getIsInitialized: () => boolean;
   getIsUserTyping: () => boolean;
+  /**
+   * Whether the write-service still holds an unacknowledged content save for
+   * this note (debounced or in flight). While true, Redux may hold refetched
+   * content that predates the save, so applying it would visibly revert the
+   * editor — and typing on the reverted doc before the flush would silently
+   * drop the earlier edit (monorepo#533). The apply is deferred; once the save
+   * flushes, the daemon's `note:updated` refetch re-triggers the pipeline via
+   * the safety-net.
+   */
+  getHasPendingNoteContent?: () => boolean;
   getCurrentNoteContent: () => string;
   getLastKnownContent: () => string;
   setLastKnownContent: (value: string) => void;
@@ -168,6 +214,18 @@ export function runExternalContentUpdateEffect({
       hasEditor: !!editor,
       isInitialized,
       isUserTyping,
+      updateVersion,
+      noteId,
+    });
+    return;
+  }
+
+  // Defer while a local content save is unflushed/unacked (monorepo#533):
+  // Redux may hold a refetch that predates the pending save, and applying it
+  // would revert the editor. Once the save lands, the daemon's `note:updated`
+  // refetch changes Redux content and the safety-net re-queues the pipeline.
+  if (getHasPendingNoteContent?.()) {
+    logger.info('[NoteWithComments] Deferring external effect - pending local save unflushed', {
       updateVersion,
       noteId,
     });
@@ -231,6 +289,15 @@ export function runExternalContentUpdateEffect({
     }
     // Also re-check destruction / content in case things changed during the debounce window.
     if (isDestroyed?.()) return;
+    // Re-check the pending-save window: a keystroke during the debounce may
+    // have scheduled a new save whose flush hasn't been acknowledged yet.
+    if (getHasPendingNoteContent?.()) {
+      logger.info(
+        '[NoteWithComments] Deferring external apply - pending local save appeared during debounce',
+        { updateVersion, noteId },
+      );
+      return;
+    }
     const freshContent = getCurrentNoteContent();
     const freshLastKnown = getLastKnownContent();
     if (freshContent === freshLastKnown) return;

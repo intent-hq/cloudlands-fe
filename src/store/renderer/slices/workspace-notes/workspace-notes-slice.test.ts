@@ -247,6 +247,78 @@ describe("workspaceNotesReducer", () => {
     );
   });
 
+  // ---- monorepo#533: rev gating on applyNoteUpdated --------------------------
+  // A refetch triggered by an older note:updated event can land after a newer
+  // state was already applied (or after advanceNoteRev recorded a daemon ack).
+  // A strictly-lower rev is definitively stale and must not revert content.
+
+  it("drops applyNoteUpdated carrying a strictly-lower rev than the stored note", () => {
+    const loadedState = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1", WS_1, { rev: 5, content: "newer" })] })
+    );
+    const staleNote = mockNote("note-1", WS_1, { rev: 4, content: "older" });
+
+    const nextState = workspaceNotesReducer(
+      loadedState,
+      applyNoteUpdated(WS_1, "note-1", staleNote)
+    );
+
+    expect(nextState).toBe(loadedState);
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.content).toBe(
+      "newer"
+    );
+  });
+
+  it("applies applyNoteUpdated with an equal rev (same-rev refetch is not stale)", () => {
+    const loadedState = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1", WS_1, { rev: 5 })] })
+    );
+    const sameRevNote = mockNote("note-1", WS_1, { rev: 5, content: "refetched" });
+
+    const nextState = workspaceNotesReducer(
+      loadedState,
+      applyNoteUpdated(WS_1, "note-1", sameRevNote)
+    );
+
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.content).toBe(
+      "refetched"
+    );
+  });
+
+  it("applies applyNoteUpdated with a higher rev", () => {
+    const loadedState = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1", WS_1, { rev: 5 })] })
+    );
+    const newerNote = mockNote("note-1", WS_1, { rev: 6, content: "advanced" });
+
+    const nextState = workspaceNotesReducer(
+      loadedState,
+      applyNoteUpdated(WS_1, "note-1", newerNote)
+    );
+
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.rev).toBe(6);
+  });
+
+  it("applies applyNoteUpdated when either rev is missing (older daemons, last-writer-wins)", () => {
+    const loadedState = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1", WS_1, { rev: 5 })] })
+    );
+    const revlessNote = mockNote("note-1", WS_1, { content: "no rev" });
+
+    const nextState = workspaceNotesReducer(
+      loadedState,
+      applyNoteUpdated(WS_1, "note-1", revlessNote)
+    );
+
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.content).toBe(
+      "no rev"
+    );
+  });
+
   it("returns state unchanged when note workspace ID does not match action workspace ID", () => {
     const loadedState = workspaceNotesReducer(
       initialState,
