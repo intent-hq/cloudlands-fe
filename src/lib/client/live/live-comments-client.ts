@@ -192,6 +192,7 @@ export class LiveCommentsClient implements CommentsClient {
         ...(params.commentId !== undefined ? { commentId: params.commentId } : {}),
         comment: params.comment,
         ...(params.type !== undefined ? { type: params.type } : {}),
+        ...(params.authorType !== undefined ? { authorType: params.authorType } : {}),
         ...(params.suggestionOriginal !== undefined
           ? { suggestionOriginal: params.suggestionOriginal }
           : {}),
