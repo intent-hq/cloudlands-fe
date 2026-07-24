@@ -10,7 +10,9 @@
  * on failure the optimistic change is rolled back.
  *
  * This module is dependency-light: it imports only the AppClient seam, the
- * configured store, slice actions, and selectors (per src/store AGENTS.md).
+ * configured store, slice actions, selectors (per src/store AGENTS.md), and
+ * the notes-write-service queue entry point (`comment.add` rewrites note
+ * content, so its rev bookkeeping lives with the note mutation queue).
  */
 import { appClient } from "$lib/client";
 import type { CommentAddParams, CommentRespondParams } from "$lib/client";
@@ -22,6 +24,7 @@ import {
   removeCommentAction,
 } from "$store/renderer/slices/comments/comments-slice";
 import { selectCommentById } from "$store/renderer/slices/comments/comments-selectors";
+import { enqueueRevBumpingNoteMutation } from "../notes/notes-write-service";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("CommentsWriteService");
@@ -32,6 +35,14 @@ const logger = createLogger("CommentsWriteService");
  * a toast surfaces the daemon error. Returns `true` on success so callers can
  * branch on the persist outcome; convergence to the daemon-assigned id is left
  * to the subscribe→refetch loop.
+ *
+ * `comment.add` rewrites the note's markdown daemon-side (anchor markers),
+ * bumping the note's `rev` without a `note:updated` event or a rev echo in the
+ * result. When the workspace is known, the call is therefore routed through
+ * the note's §11.4-D mutation queue (`enqueueRevBumpingNoteMutation`) so the
+ * stored rev advances before the anchor-insertion's debounced content save
+ * flushes — otherwise that save sends a stale `expectedVersion` and trips the
+ * "This note changed on the server" conflict toast.
  */
 export async function addComment(
   noteId: string,
@@ -40,7 +51,22 @@ export async function addComment(
 ): Promise<boolean> {
   appStore.dispatch(addCommentAction(optimistic));
 
-  const result = await appClient.comments.add(noteId, params);
+  let result;
+  if (params.workspaceId) {
+    result = await enqueueRevBumpingNoteMutation(params.workspaceId, noteId, () =>
+      appClient.comments.add(noteId, params),
+    );
+  } else {
+    // Without a workspace the rev bookkeeping above is impossible: a
+    // successful add still bumps the server rev, so the next conditional save
+    // will conflict (the Round 6b failure mode). Every production caller
+    // passes workspaceId; warn so a future caller that doesn't is visible.
+    logger.warn(
+      "addComment called without workspaceId; note rev bookkeeping skipped — the next save may conflict",
+      { noteId },
+    );
+    result = await appClient.comments.add(noteId, params);
+  }
   if (!result.success) {
     logger.error("Failed to add comment", result.error);
     toast.error("Failed to add comment", { description: result.error ?? "Unknown error" });
