@@ -160,7 +160,11 @@ describe('git-bridge-seeder', () => {
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, { workspaceId: 'ws-1' });
 
-      expect(mockedRequest).toHaveBeenCalledWith('git.numstat', { workspaceId: 'ws-1' });
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'git.numstat',
+        { workspaceId: 'ws-1' },
+        { timeoutMs: 60_000 },
+      );
       expect(result).toEqual({
         success: true,
         data: [
@@ -173,17 +177,21 @@ describe('git-bridge-seeder', () => {
     it('forwards staged:true and staged:false verbatim', async () => {
       mockedRequest.mockResolvedValueOnce([]);
       await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, { workspaceId: 'ws-1', staged: true });
-      expect(mockedRequest).toHaveBeenNthCalledWith(1, 'git.numstat', {
-        workspaceId: 'ws-1',
-        staged: true,
-      });
+      expect(mockedRequest).toHaveBeenNthCalledWith(
+        1,
+        'git.numstat',
+        { workspaceId: 'ws-1', staged: true },
+        { timeoutMs: 60_000 },
+      );
 
       mockedRequest.mockResolvedValueOnce([]);
       await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, { workspaceId: 'ws-1', staged: false });
-      expect(mockedRequest).toHaveBeenNthCalledWith(2, 'git.numstat', {
-        workspaceId: 'ws-1',
-        staged: false,
-      });
+      expect(mockedRequest).toHaveBeenNthCalledWith(
+        2,
+        'git.numstat',
+        { workspaceId: 'ws-1', staged: false },
+        { timeoutMs: 60_000 },
+      );
     });
 
     it('forwards baseRef / baseCommitSha / targetRef; an unresolvable boundary folds to [] on the daemon', async () => {
@@ -196,12 +204,16 @@ describe('git-bridge-seeder', () => {
         targetRef: 'HEAD',
       });
 
-      expect(mockedRequest).toHaveBeenCalledWith('git.numstat', {
-        workspaceId: 'ws-1',
-        baseRef: 'gone',
-        baseCommitSha: 'dead',
-        targetRef: 'HEAD',
-      });
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'git.numstat',
+        {
+          workspaceId: 'ws-1',
+          baseRef: 'gone',
+          baseCommitSha: 'dead',
+          targetRef: 'HEAD',
+        },
+        { timeoutMs: 60_000 },
+      );
       expect(result).toEqual({ success: true, data: [] });
     });
 
@@ -245,12 +257,16 @@ describe('git-bridge-seeder', () => {
         targetRef: 'HEAD',
       });
 
-      expect(mockedRequest).toHaveBeenCalledWith('git.branchDiff', {
-        workspaceId: 'ws-1',
-        baseRef: 'main',
-        targetRef: 'HEAD',
-        paths: ['a.ts'],
-      });
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'git.branchDiff',
+        {
+          workspaceId: 'ws-1',
+          baseRef: 'main',
+          targetRef: 'HEAD',
+          paths: ['a.ts'],
+        },
+        { timeoutMs: 60_000 },
+      );
       expect(result).toEqual({
         success: true,
         data: [{ file: 'a.ts', chunks: [], oldContent: 'old-a', newContent: 'new-a' }],
@@ -266,10 +282,11 @@ describe('git-bridge-seeder', () => {
         baseCommitSha: 'dead',
       });
 
-      expect(mockedRequest).toHaveBeenCalledWith('git.branchDiff', {
-        workspaceId: 'ws-1',
-        baseCommitSha: 'dead',
-      });
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'git.branchDiff',
+        { workspaceId: 'ws-1', baseCommitSha: 'dead' },
+        { timeoutMs: 60_000 },
+      );
       expect(result).toEqual({ success: true, data: [] });
     });
 

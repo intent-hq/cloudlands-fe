@@ -143,8 +143,10 @@ registerMockIpcHandler(IPC_CHANNELS.GIT.NUMSTAT, async (arg) => {
   }
   try {
     // Bare-array result `[{ filePath, additions, deletions }]`; the daemon
-    // folds an unresolvable branch boundary to [] (legacy parity).
-    const data = await backendRequest('git.numstat', request);
+    // folds an unresolvable branch boundary to [] (legacy parity). Keeps the
+    // legacy 60s local-op bound — large repos can outrun the transport's flat
+    // 30s default.
+    const data = await backendRequest('git.numstat', request, { timeoutMs: LOCAL_TIMEOUT_MS });
     return { success: true, data };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -181,7 +183,9 @@ registerMockIpcHandler(IPC_CHANNELS.GIT.DIFF, async (arg) => {
     // the branch-base consumer (TrackedChangeDiffViewer via
     // batchedGitBranchBaseDiff) renders from oldContent/newContent only. The
     // daemon folds an unresolvable branch boundary to [] (legacy parity).
-    const data = await backendRequest('git.branchDiff', request);
+    // Keeps the legacy 60s local-op bound — large repos can outrun the
+    // transport's flat 30s default.
+    const data = await backendRequest('git.branchDiff', request, { timeoutMs: LOCAL_TIMEOUT_MS });
     return { success: true, data };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
