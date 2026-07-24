@@ -17,9 +17,10 @@
  * Results are NOT cached across calls — callers are responsible for their own
  * invalidation (the existing file-watcher path already triggers a re-fetch).
  *
- * Still on local Electron IPC (no daemon arm yet): the branch-base committed
- * diff (`git:diff` with baseRef/baseCommitSha) and `git:numstat` (workdir
- * line stats) — both tracked for a follow-up daemon surface.
+ * The branch-base committed diff (`git:diff` with baseRef/baseCommitSha) and
+ * `git:numstat` (workdir line stats) stay on the legacy channels here; the
+ * git bridge seeder routes them to the daemon `git.branchDiff` / `git.numstat`
+ * (PROTOCOL §5.6).
  */
 import { invoke } from '$lib/electron-bridge';
 import { backendRequest } from '$lib/client/live/backend-transport';

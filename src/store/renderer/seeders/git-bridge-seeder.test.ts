@@ -2,9 +2,9 @@
  * Wire-contract tests for the git IPC bridge seeder.
  *
  * Asserts each legacy `git:*` / `git-tracking:*` channel (a) forwards to the
- * daemon-owned exec (`host.exec`, PROTOCOL §5.14) / `host.directoryStatus`
- * with the exact argv + workspace-cwd containment params, and (b) maps the
- * exec result to the legacy `{ success, data?, error? }` envelope the call
+ * matching daemon RPC (`git.*`, PROTOCOL §5.6; `host.exec` §5.14;
+ * `host.directoryStatus`) with the exact method + params, and (b) maps the
+ * daemon result to the legacy `{ success, data?, error? }` envelope the call
  * sites (git.client.ts, diff-ipc-batcher, workspace-validation, the
  * onboarding/initializer pickers) already consume.
  */
@@ -151,21 +151,16 @@ describe('git-bridge-seeder', () => {
     });
   });
 
-  describe('git:numstat → git diff --numstat (legacy arg-building parity)', () => {
-    it("default (staged undefined) diffs against HEAD and parses entries incl. binary '-'", async () => {
-      mockedRequest.mockResolvedValueOnce(
-        execResult({ stdout: '3\t1\tsrc/a.ts\n-\t-\tassets/logo.png\n' }),
-      );
+  describe('git:numstat → git.numstat (§5.6)', () => {
+    it('default (no options) forwards only workspaceId and passes the bare-array result through', async () => {
+      mockedRequest.mockResolvedValueOnce([
+        { filePath: 'src/a.ts', additions: 3, deletions: 1 },
+        { filePath: 'assets/logo.png', additions: 0, deletions: 0 },
+      ]);
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, { workspaceId: 'ws-1' });
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
-        command: 'git',
-        args: ['diff', '--numstat', 'HEAD'],
-        cwd: '.',
-        workspaceId: 'ws-1',
-        timeoutMs: 60_000,
-      });
+      expect(mockedRequest).toHaveBeenCalledWith('git.numstat', { workspaceId: 'ws-1' });
       expect(result).toEqual({
         success: true,
         data: [
@@ -175,61 +170,59 @@ describe('git-bridge-seeder', () => {
       });
     });
 
-    it('staged:true uses --cached; staged:false diffs the plain worktree', async () => {
-      mockedRequest.mockResolvedValueOnce(execResult({ stdout: '' }));
+    it('forwards staged:true and staged:false verbatim', async () => {
+      mockedRequest.mockResolvedValueOnce([]);
       await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, { workspaceId: 'ws-1', staged: true });
-      expect(mockedRequest.mock.calls[0][1]).toMatchObject({
-        args: ['diff', '--numstat', '--cached'],
-      });
-
-      mockedRequest.mockResolvedValueOnce(execResult({ stdout: '' }));
-      await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, { workspaceId: 'ws-1', staged: false });
-      expect(mockedRequest.mock.calls[1][1]).toMatchObject({ args: ['diff', '--numstat'] });
-    });
-
-    it('baseRef resolves origin/<base> merge-base first and diffs boundary..targetRef', async () => {
-      mockedRequest
-        .mockResolvedValueOnce(execResult()) // rev-parse --verify origin/main
-        .mockResolvedValueOnce(execResult({ stdout: 'abc123\n' })) // merge-base
-        .mockResolvedValueOnce(execResult({ stdout: '1\t0\ta.ts\n' })); // numstat
-
-      const result = await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, {
+      expect(mockedRequest).toHaveBeenNthCalledWith(1, 'git.numstat', {
         workspaceId: 'ws-1',
-        baseRef: 'main',
+        staged: true,
       });
 
-      expect(mockedRequest.mock.calls[0][1]).toMatchObject({
-        args: ['rev-parse', '--verify', 'origin/main'],
-      });
-      expect(mockedRequest.mock.calls[1][1]).toMatchObject({
-        args: ['merge-base', 'HEAD', 'origin/main'],
-      });
-      expect(mockedRequest.mock.calls[2][1]).toMatchObject({
-        args: ['diff', '--numstat', 'abc123..HEAD'],
-      });
-      expect(result).toEqual({
-        success: true,
-        data: [{ filePath: 'a.ts', additions: 1, deletions: 0 }],
+      mockedRequest.mockResolvedValueOnce([]);
+      await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, { workspaceId: 'ws-1', staged: false });
+      expect(mockedRequest).toHaveBeenNthCalledWith(2, 'git.numstat', {
+        workspaceId: 'ws-1',
+        staged: false,
       });
     });
 
-    it('an unresolvable boundary folds to an empty result (legacy /dev/null parity)', async () => {
-      mockedRequest
-        .mockResolvedValueOnce(execResult({ exitCode: 128 })) // rev-parse origin/gone
-        .mockResolvedValueOnce(execResult({ exitCode: 128 })) // rev-parse gone
-        .mockResolvedValueOnce(execResult({ exitCode: 1 })); // --is-ancestor sha
+    it('forwards baseRef / baseCommitSha / targetRef; an unresolvable boundary folds to [] on the daemon', async () => {
+      mockedRequest.mockResolvedValueOnce([]);
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, {
         workspaceId: 'ws-1',
         baseRef: 'gone',
         baseCommitSha: 'dead',
+        targetRef: 'HEAD',
       });
 
+      expect(mockedRequest).toHaveBeenCalledWith('git.numstat', {
+        workspaceId: 'ws-1',
+        baseRef: 'gone',
+        baseCommitSha: 'dead',
+        targetRef: 'HEAD',
+      });
       expect(result).toEqual({ success: true, data: [] });
+    });
+
+    it('folds a daemon rejection into the error envelope', async () => {
+      mockedRequest.mockRejectedValueOnce(new Error('workspace not found'));
+      expect(await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, { workspaceId: 'ws-1' })).toEqual({
+        success: false,
+        error: 'workspace not found',
+      });
+    });
+
+    it('without a workspaceId fails without touching the wire', async () => {
+      expect(await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, {})).toEqual({
+        success: false,
+        error: 'Invalid workspace ID',
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
     });
   });
 
-  describe('git:diff (branch-base only) → boundary + per-file show contents', () => {
+  describe('git:diff (branch-base only) → git.branchDiff (§5.6)', () => {
     it('rejects non-branch-base params (working-tree diffs read the daemon git.diffs)', async () => {
       const result = await mockInvoke(IPC_CHANNELS.GIT.DIFF, {
         workspaceId: 'ws-1',
@@ -240,13 +233,10 @@ describe('git-bridge-seeder', () => {
       expect(mockedRequest).not.toHaveBeenCalled();
     });
 
-    it('builds chunks with old/new full-file sides at boundary and targetRef', async () => {
-      mockedRequest
-        .mockResolvedValueOnce(execResult()) // rev-parse --verify origin/main
-        .mockResolvedValueOnce(execResult({ stdout: 'base99\n' })) // merge-base
-        .mockResolvedValueOnce(execResult({ stdout: 'a.ts\n' })) // diff --name-only
-        .mockResolvedValueOnce(execResult({ stdout: 'old-a' })) // show base99:a.ts
-        .mockResolvedValueOnce(execResult({ stdout: 'new-a' })); // show HEAD:a.ts
+    it('forwards baseRef + targetRef + paths and passes the bare-array result through', async () => {
+      mockedRequest.mockResolvedValueOnce([
+        { file: 'a.ts', chunks: [], oldContent: 'old-a', newContent: 'new-a' },
+      ]);
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.DIFF, {
         workspaceId: 'ws-1',
@@ -255,8 +245,11 @@ describe('git-bridge-seeder', () => {
         targetRef: 'HEAD',
       });
 
-      expect(mockedRequest.mock.calls[2][1]).toMatchObject({
-        args: ['diff', '--name-only', 'base99..HEAD', '--', 'a.ts'],
+      expect(mockedRequest).toHaveBeenCalledWith('git.branchDiff', {
+        workspaceId: 'ws-1',
+        baseRef: 'main',
+        targetRef: 'HEAD',
+        paths: ['a.ts'],
       });
       expect(result).toEqual({
         success: true,
@@ -264,23 +257,27 @@ describe('git-bridge-seeder', () => {
       });
     });
 
-    it("a file missing at one ref folds that side to '' (legacy parity)", async () => {
-      mockedRequest
-        .mockResolvedValueOnce(execResult()) // rev-parse
-        .mockResolvedValueOnce(execResult({ stdout: 'base99\n' })) // merge-base
-        .mockResolvedValueOnce(execResult({ stdout: 'new-file.ts\n' })) // name-only
-        .mockResolvedValueOnce(execResult({ exitCode: 128, stderr: 'does not exist' })) // old side
-        .mockResolvedValueOnce(execResult({ stdout: 'created' })); // new side
+    it('omits paths when empty and forwards baseCommitSha; unresolvable boundary folds to []', async () => {
+      mockedRequest.mockResolvedValueOnce([]);
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.DIFF, {
         workspaceId: 'ws-1',
-        baseRef: 'main',
+        paths: [],
+        baseCommitSha: 'dead',
       });
 
-      expect(result).toEqual({
-        success: true,
-        data: [{ file: 'new-file.ts', chunks: [], oldContent: '', newContent: 'created' }],
+      expect(mockedRequest).toHaveBeenCalledWith('git.branchDiff', {
+        workspaceId: 'ws-1',
+        baseCommitSha: 'dead',
       });
+      expect(result).toEqual({ success: true, data: [] });
+    });
+
+    it('folds a daemon rejection into the error envelope', async () => {
+      mockedRequest.mockRejectedValueOnce(new Error('workspace not found'));
+      expect(
+        await mockInvoke(IPC_CHANNELS.GIT.DIFF, { workspaceId: 'ws-1', baseRef: 'main' }),
+      ).toEqual({ success: false, error: 'workspace not found' });
     });
   });
 

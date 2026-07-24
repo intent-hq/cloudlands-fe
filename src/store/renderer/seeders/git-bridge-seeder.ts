@@ -13,13 +13,12 @@
  *  - `workspace:rename-branch`            → `git.renameBranch` (§5.6). The
  *    daemon rename requires the old branch name, so this handler first reads
  *    the current branch via `git.status` (§5.6) and forwards it.
- *  - `git:numstat` + branch-base `git:diff` → the legacy merge-base boundary
+ *  - `git:numstat` → `git.numstat` (§5.6); branch-base `git:diff` →
+ *    `git.branchDiff` (§5.6). The daemon owns the merge-base boundary
  *    resolution (`origin/<base>` → `<base>`, `--is-ancestor` sha fallback)
- *    still runs through the daemon-owned exec (`host.exec`, §5.14) because
- *    there is no dedicated daemon RPC for them yet; unresolvable boundaries
- *    fold to an empty result exactly like the legacy handlers. Working-tree
- *    `git:diff` reads were migrated to the daemon `git.diffs` (§5.6) and are
- *    rejected here.
+ *    and folds unresolvable boundaries to an empty array exactly like the
+ *    legacy handlers. Working-tree `git:diff` reads were migrated to the
+ *    daemon `git.diffs` (§5.6) and are rejected here.
  *  - `git:isRepository`                  → `host.directoryStatus.isGitRepo`.
  *  - `git-tracking:get-remote-url`       → `git -C <repoPath> config --get
  *    remote.origin.url` (path-based: the picker probes repos that predate any
@@ -53,7 +52,7 @@ interface GitStatusResult {
   branch?: string;
 }
 
-/** Local git reads used by the numstat / branch-base diff shims. */
+/** Path-based git reads still routed through the daemon-owned exec (§5.14). */
 const LOCAL_TIMEOUT_MS = 60_000;
 
 /** Legacy `git.service.push` timeout — network op can outrun the transport default. */
@@ -69,27 +68,6 @@ function asRecord(arg: unknown): Record<string, unknown> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** Run git in the workspace root on the daemon host (`cwd` containment §5.14). */
-async function gitExec(
-  workspaceId: string,
-  args: string[],
-  timeoutMs = LOCAL_TIMEOUT_MS,
-): Promise<HostExecResult> {
-  return await backendRequest<HostExecResult>('host.exec', {
-    command: 'git',
-    args,
-    cwd: '.',
-    workspaceId,
-    timeoutMs,
-  });
-}
-
-/** Fold a non-zero exec into the legacy error string (stderr-first). */
-function execError(result: HostExecResult, fallback: string): string {
-  if (result.timedOut) return `${fallback}: timed out`;
-  return result.stderr.trim() || result.stdout.trim() || fallback;
 }
 
 function requireWorkspaceId(arg: unknown): string | null {
@@ -148,103 +126,32 @@ async function handleHunk(arg: unknown, reverse: boolean): Promise<unknown> {
 registerMockIpcHandler(IPC_CHANNELS.GIT.STAGE_HUNK, (arg) => handleHunk(arg, false));
 registerMockIpcHandler(IPC_CHANNELS.GIT.UNSTAGE_HUNK, (arg) => handleHunk(arg, true));
 
-// ── Branch boundary resolution (shared by git:numstat + branch-base git:diff) ──
-
-/**
- * Legacy `resolveBranchBoundary` parity (git.service.ts): prefer the
- * merge-base of `targetRef` and the base ref (trying `origin/<base>` before
- * the bare ref name), falling back to `baseCommitSha` only when it is an
- * ancestor of `targetRef`. Returns null when no boundary can be resolved.
- */
-async function resolveBranchBoundary(
-  workspaceId: string,
-  baseRef: string | undefined,
-  baseCommitSha: string | undefined,
-  targetRef: string,
-): Promise<string | null> {
-  if (baseRef) {
-    const refsToTry = baseRef.includes('/') ? [baseRef] : [`origin/${baseRef}`, baseRef];
-    for (const ref of refsToTry) {
-      const verify = await gitExec(workspaceId, ['rev-parse', '--verify', ref]);
-      if (verify.exitCode !== 0) continue;
-      const mergeBase = await gitExec(workspaceId, ['merge-base', targetRef, ref]);
-      const sha = mergeBase.stdout.trim();
-      if (mergeBase.exitCode === 0 && sha) return sha;
-    }
-  }
-  if (baseCommitSha) {
-    const ancestor = await gitExec(workspaceId, [
-      'merge-base',
-      '--is-ancestor',
-      baseCommitSha,
-      targetRef,
-    ]);
-    if (ancestor.exitCode === 0) return baseCommitSha;
-  }
-  return null;
-}
-
-// ── git:numstat ──
-
-/** Legacy `parseNumstat` parity — binary entries (`-\t-\tpath`) fold to 0/0. */
-function parseNumstat(
-  output: string,
-): Array<{ filePath: string; additions: number; deletions: number }> {
-  return output
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [rawAdditions, rawDeletions, ...pathParts] = line.split('\t');
-      return {
-        filePath: pathParts.join('\t'),
-        additions: Number.parseInt(rawAdditions, 10) || 0,
-        deletions: Number.parseInt(rawDeletions, 10) || 0,
-      };
-    });
-}
+// ── git:numstat → git.numstat (§5.6) ──
 
 registerMockIpcHandler(IPC_CHANNELS.GIT.NUMSTAT, async (arg) => {
   const workspaceId = requireWorkspaceId(arg);
   if (!workspaceId) return { success: false, error: 'Invalid workspace ID' };
   const params = asRecord(arg);
-  const staged = typeof params.staged === 'boolean' ? params.staged : undefined;
-  const baseRef = typeof params.baseRef === 'string' && params.baseRef ? params.baseRef : undefined;
-  const baseCommitSha =
-    typeof params.baseCommitSha === 'string' && params.baseCommitSha
-      ? params.baseCommitSha
-      : undefined;
-  const targetRef =
-    typeof params.targetRef === 'string' && params.targetRef ? params.targetRef : 'HEAD';
+  const request: Record<string, unknown> = { workspaceId };
+  if (typeof params.staged === 'boolean') request.staged = params.staged;
+  if (typeof params.baseRef === 'string' && params.baseRef) request.baseRef = params.baseRef;
+  if (typeof params.baseCommitSha === 'string' && params.baseCommitSha) {
+    request.baseCommitSha = params.baseCommitSha;
+  }
+  if (typeof params.targetRef === 'string' && params.targetRef) {
+    request.targetRef = params.targetRef;
+  }
   try {
-    // Legacy `buildNumstatArgs` parity: boundary range > --cached > HEAD.
-    const args = ['diff', '--numstat'];
-    if (baseRef || baseCommitSha) {
-      const boundary = await resolveBranchBoundary(workspaceId, baseRef, baseCommitSha, targetRef);
-      if (!boundary) return { success: true, data: [] };
-      args.push(`${boundary}..${targetRef}`);
-    } else if (staged === true) {
-      args.push('--cached');
-    } else if (staged !== false) {
-      args.push('HEAD');
-    }
-    const result = await gitExec(workspaceId, args);
-    if (result.exitCode !== 0) {
-      return { success: false, error: execError(result, 'Failed to get numstat') };
-    }
-    return { success: true, data: parseNumstat(result.stdout) };
+    // Bare-array result `[{ filePath, additions, deletions }]`; the daemon
+    // folds an unresolvable branch boundary to [] (legacy parity).
+    const data = await backendRequest('git.numstat', request);
+    return { success: true, data };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
 });
 
-// ── git:diff (branch-base committed diff only) ──
-
-/** `git show <ref>:<path>`; a path missing at the ref folds to "" (legacy parity). */
-async function showFileAt(workspaceId: string, ref: string, filePath: string): Promise<string> {
-  const result = await gitExec(workspaceId, ['show', `${ref}:${filePath}`]);
-  return result.exitCode === 0 ? result.stdout : '';
-}
+// ── git:diff (branch-base committed diff only) → git.branchDiff (§5.6) ──
 
 registerMockIpcHandler(IPC_CHANNELS.GIT.DIFF, async (arg) => {
   const workspaceId = requireWorkspaceId(arg);
@@ -259,35 +166,22 @@ registerMockIpcHandler(IPC_CHANNELS.GIT.DIFF, async (arg) => {
     // Working-tree diffs migrated to the daemon `git.diffs` (PROTOCOL §5.6).
     return { success: false, error: 'Branch base information is required' };
   }
-  const targetRef =
-    typeof params.targetRef === 'string' && params.targetRef ? params.targetRef : 'HEAD';
   const paths = Array.isArray(params.paths)
     ? params.paths.filter((p): p is string => typeof p === 'string' && p.length > 0)
     : undefined;
+  const request: Record<string, unknown> = { workspaceId };
+  if (baseRef) request.baseRef = baseRef;
+  if (baseCommitSha) request.baseCommitSha = baseCommitSha;
+  if (typeof params.targetRef === 'string' && params.targetRef) {
+    request.targetRef = params.targetRef;
+  }
+  if (paths && paths.length > 0) request.paths = paths;
   try {
-    const boundary = await resolveBranchBoundary(workspaceId, baseRef, baseCommitSha, targetRef);
-    if (!boundary) return { success: true, data: [] };
-
-    const nameArgs = ['diff', '--name-only', `${boundary}..${targetRef}`];
-    if (paths && paths.length > 0) nameArgs.push('--', ...paths);
-    const nameResult = await gitExec(workspaceId, nameArgs);
-    if (nameResult.exitCode !== 0) {
-      return { success: false, error: execError(nameResult, 'Failed to get branch-base diff') };
-    }
-    const files = nameResult.stdout.trim().split('\n').filter(Boolean);
-
-    // The branch-base consumer (TrackedChangeDiffViewer via
-    // batchedGitBranchBaseDiff) renders from oldContent/newContent only, so
-    // each chunk carries the two full-file sides at the boundary and target.
-    const data = await Promise.all(
-      files.map(async (file) => {
-        const [oldContent, newContent] = await Promise.all([
-          showFileAt(workspaceId, boundary, file),
-          showFileAt(workspaceId, targetRef, file),
-        ]);
-        return { file, chunks: [], oldContent, newContent };
-      }),
-    );
+    // Bare-array result `[{ file, chunks: [], oldContent, newContent }]` —
+    // the branch-base consumer (TrackedChangeDiffViewer via
+    // batchedGitBranchBaseDiff) renders from oldContent/newContent only. The
+    // daemon folds an unresolvable branch boundary to [] (legacy parity).
+    const data = await backendRequest('git.branchDiff', request);
     return { success: true, data };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
