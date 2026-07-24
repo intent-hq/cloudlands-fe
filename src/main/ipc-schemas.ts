@@ -521,11 +521,6 @@ export const GitRemoveLockSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
 
-export const GitGetBranchesSchema = z.object({
-  repoPath: z.string().min(1, 'Repository path is required'),
-  includeRemote: z.boolean().optional(),
-});
-
 export const GitRenameBranchSchema = z.object({
   workspaceId: WorkspaceIdSchema,
   oldBranchName: z.string().min(1, 'Old branch name is required'),
@@ -956,12 +951,6 @@ export const DiffsCreateSchema = z.object({
 export const DiffsUpdateSchema = z.object({
   workspaceId: WorkspaceIdSchema,
   diff: z.any(), // The diff object structure varies
-});
-
-export const DiffsGetSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  filePath: z.string().min(1, 'File path is required'),
-  staged: z.boolean().optional(),
 });
 
 // ============================================================================
