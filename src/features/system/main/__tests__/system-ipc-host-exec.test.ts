@@ -1,4 +1,5 @@
 import {
+  afterEach,
   beforeEach,
   describe,
   expect,
@@ -28,12 +29,13 @@ const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(() => []),
   fromId: vi.fn(),
   appOn: vi.fn(),
+  getAppPath: vi.fn(() => '/tmp/app'),
 }));
 
 vi.mock('electron', () => ({
   app: {
     on: electronMocks.appOn,
-    getAppPath: vi.fn(() => '/tmp/app'),
+    getAppPath: electronMocks.getAppPath,
     getVersion: vi.fn(() => '0.0.0'),
     getName: vi.fn(() => 'Intent'),
   },
@@ -72,7 +74,12 @@ vi.mock('../../../../shared/main/async-utils', () => ({
   findVSCodeAsync: vi.fn(),
 }));
 
-import { setupSystemIPC } from '../system.ipc';
+import fs from 'node:fs';
+
+import { installIntentCli, setupSystemIPC } from '../system.ipc';
+// Globally mocked in src/test-setup.ts — the exec seam installIntentCli's
+// osascript fallback goes through.
+import { execFileAsync } from '../../../../shared/git/git-env';
 import { SYSTEM_CHANNELS } from '../../../../shared/ipc/channels';
 
 function handlerFor(channel: string): Handler {
@@ -311,5 +318,46 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
       type: 'close',
       code: null,
     });
+  });
+});
+
+
+describe('installIntentCli osascript fallback → host.execStream (monorepo#585)', () => {
+  const spies: Array<{ mockRestore: () => void }> = [];
+
+  afterEach(() => {
+    for (const spy of spies.splice(0)) spy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it('single-quotes the symlink paths so backticks/$() and single quotes stay literal, and passes the AppleScript via argv (no outer shell)', async () => {
+    // Dev-mode path resolution so the mocked app.getAppPath() controls
+    // cliScriptPath; the hostile segments survive the '../..' join.
+    vi.stubEnv('NODE_ENV', 'development');
+    electronMocks.getAppPath.mockReturnValueOnce("/tmp/it`s $(bad)'dir/a/b");
+
+    spies.push(vi.spyOn(fs, 'existsSync').mockReturnValue(true));
+    spies.push(
+      vi
+        .spyOn(fs.promises, 'readlink')
+        .mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })),
+    );
+    spies.push(
+      vi
+        .spyOn(fs.promises, 'symlink')
+        .mockRejectedValue(Object.assign(new Error('EACCES'), { code: 'EACCES' })),
+    );
+    vi.mocked(execFileAsync).mockClear();
+
+    const result = await installIntentCli();
+
+    // Inner sh layer: both paths POSIX-single-quoted (' → '\''), so the
+    // backtick and $() are literal. AppleScript layer: the lone backslash of
+    // '\'' doubles to \\ inside the double-quoted `do shell script` string.
+    // Outer layer: argv form — the script is a single -e argument, no shell.
+    const expectedScript = `do shell script "ln -sf '/tmp/it\`s $(bad)'\\\\''dir/resources/bin/intent' '/usr/local/bin/intent'" with administrator privileges`;
+    expect(execFileAsync).toHaveBeenCalledTimes(1);
+    expect(execFileAsync).toHaveBeenCalledWith('osascript', ['-e', expectedScript]);
+    expect(result.success).toBe(true);
   });
 });
