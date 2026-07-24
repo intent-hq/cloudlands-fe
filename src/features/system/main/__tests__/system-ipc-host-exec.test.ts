@@ -56,10 +56,17 @@ vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
   broadcastToBrowserIpcClients: vi.fn(),
 }));
 
-const { hostExecMock, hostExecStreamMock } = vi.hoisted(() => ({
+const { hostExecMock, hostExecStreamMock, spawnMock } = vi.hoisted(() => ({
   hostExecMock: vi.fn(),
   hostExecStreamMock: vi.fn(),
+  spawnMock: vi.fn(),
 }));
+
+vi.mock(import('child_process'), async (importOriginal) => {
+  const actual = await importOriginal();
+  const patched = { ...actual, spawn: spawnMock };
+  return { ...patched, default: patched };
+});
 
 vi.mock('../../../../shared/main/host-exec', () => ({
   hostExec: hostExecMock,
@@ -74,13 +81,19 @@ vi.mock('../../../../shared/main/async-utils', () => ({
   findVSCodeAsync: vi.fn(),
 }));
 
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 
 import { installIntentCli, setupSystemIPC } from '../system.ipc';
 // Globally mocked in src/test-setup.ts — the exec seam installIntentCli's
 // osascript fallback goes through.
 import { execFileAsync } from '../../../../shared/git/git-env';
-import { SYSTEM_CHANNELS } from '../../../../shared/ipc/channels';
+import { findVSCodeAsync } from '../../../../shared/main/async-utils';
+import {
+  JETBRAINS_CHANNELS,
+  SYSTEM_CHANNELS,
+  VSCODE_CHANNELS,
+} from '../../../../shared/ipc/channels';
 
 function handlerFor(channel: string): Handler {
   const call = electronMocks.handle.mock.calls.find((c) => c[0] === channel);
@@ -431,6 +444,131 @@ describe('installIntentCli osascript fallback → host.execStream (monorepo#585)
     const expectedScript = `do shell script "ln -sf '/tmp/it\`s $(bad)'\\\\''dir/resources/bin/intent' '/usr/local/bin/intent'" with administrator privileges`;
     expect(execFileAsync).toHaveBeenCalledTimes(1);
     expect(execFileAsync).toHaveBeenCalledWith('osascript', ['-e', expectedScript]);
+    expect(result.success).toBe(true);
+  });
+});
+
+
+const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+
+function setPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+}
+
+function restorePlatform() {
+  if (originalPlatform) {
+    Object.defineProperty(process, 'platform', originalPlatform);
+  }
+}
+
+// A hostile path: backtick, $(), and a single quote must all stay literal.
+const HOSTILE_FILE = "/tmp/it`s $(bad)'dir/src/main.ts";
+
+describe('VSCODE_CHANNELS.OPEN_FILE → execFileAsync argv (monorepo#672)', () => {
+  beforeEach(() => {
+    vi.mocked(execFileAsync).mockClear();
+    vi.mocked(findVSCodeAsync).mockReset();
+  });
+
+  afterEach(() => {
+    restorePlatform();
+  });
+
+  it('passes the hostile file path as a single argv entry through the macOS `open -a` fallback (no shell)', async () => {
+    setPlatform('darwin');
+    vi.mocked(findVSCodeAsync).mockResolvedValue(null);
+
+    const handler = handlerFor(VSCODE_CHANNELS.OPEN_FILE);
+    const result = (await handler({}, { file: HOSTILE_FILE })) as { success: boolean };
+
+    expect(execFileAsync).toHaveBeenCalledTimes(1);
+    expect(execFileAsync).toHaveBeenCalledWith('open', [
+      '-a',
+      'Visual Studio Code',
+      '--args',
+      '-n',
+      '--skip-add-to-recently-opened',
+      HOSTILE_FILE,
+    ]);
+    expect(result.success).toBe(true);
+  });
+
+  it('appends `:line` inside the same literal argv entry on the `open -a` fallback', async () => {
+    setPlatform('darwin');
+    vi.mocked(findVSCodeAsync).mockResolvedValue(null);
+
+    const handler = handlerFor(VSCODE_CHANNELS.OPEN_FILE);
+    const result = (await handler({}, { file: HOSTILE_FILE, line: 42 })) as { success: boolean };
+
+    expect(execFileAsync).toHaveBeenCalledTimes(1);
+    expect(execFileAsync).toHaveBeenCalledWith('open', [
+      '-a',
+      'Visual Studio Code',
+      '--args',
+      '-n',
+      '--skip-add-to-recently-opened',
+      '--goto',
+      `${HOSTILE_FILE}:42`,
+    ]);
+    expect(result.success).toBe(true);
+  });
+
+  it('invokes the resolved `code` binary directly with the hostile path as a literal argv entry', async () => {
+    vi.mocked(findVSCodeAsync).mockResolvedValue('/usr/local/bin/code');
+
+    const handler = handlerFor(VSCODE_CHANNELS.OPEN_FILE);
+    const result = (await handler({}, { file: HOSTILE_FILE, line: 7 })) as { success: boolean };
+
+    expect(execFileAsync).toHaveBeenCalledTimes(1);
+    expect(execFileAsync).toHaveBeenCalledWith('/usr/local/bin/code', [
+      '-n',
+      '--skip-add-to-recently-opened',
+      '--goto',
+      `${HOSTILE_FILE}:7`,
+    ]);
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('JETBRAINS_CHANNELS.OPEN fallback loop → execFileAsync argv (monorepo#672)', () => {
+  beforeEach(() => {
+    vi.mocked(execFileAsync).mockClear();
+    // Force the primary `spawn('idea', ...)` attempt to fail so the handler
+    // reaches the execFileAsync fallback loop.
+    spawnMock.mockImplementation(() => {
+      const child = new EventEmitter() as any;
+      child.unref = vi.fn();
+      queueMicrotask(() => child.emit('error', new Error('ENOENT')));
+      return child;
+    });
+  });
+
+  afterEach(() => {
+    spawnMock.mockReset();
+  });
+
+  it('tries `idea` first with the hostile path as a single literal argv entry', async () => {
+    const handler = handlerFor(JETBRAINS_CHANNELS.OPEN);
+    const result = (await handler({}, HOSTILE_FILE)) as { success: boolean };
+
+    expect(execFileAsync).toHaveBeenCalledTimes(1);
+    expect(execFileAsync).toHaveBeenCalledWith('idea', [HOSTILE_FILE]);
+    expect(result.success).toBe(true);
+  });
+
+  it('walks the fallback binaries in order (idea → pycharm → webstorm → …), one argv path each', async () => {
+    vi.mocked(execFileAsync)
+      .mockRejectedValueOnce(new Error('idea: command not found'))
+      .mockRejectedValueOnce(new Error('pycharm: command not found'));
+
+    const handler = handlerFor(JETBRAINS_CHANNELS.OPEN);
+    const result = (await handler({}, HOSTILE_FILE)) as { success: boolean };
+
+    expect(vi.mocked(execFileAsync).mock.calls).toEqual([
+      ['idea', [HOSTILE_FILE]],
+      ['pycharm', [HOSTILE_FILE]],
+      ['webstorm', [HOSTILE_FILE]],
+    ]);
     expect(result.success).toBe(true);
   });
 });
