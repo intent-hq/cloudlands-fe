@@ -36,7 +36,7 @@ registerMockSeeder("notes", async ({ store, client }) => {
     }
 
     for (const note of notes) {
-      allComments.push(...(await client.comments.list(String(note.id))));
+      allComments.push(...(await client.comments.list(String(note.id), wsId)));
     }
   }
 

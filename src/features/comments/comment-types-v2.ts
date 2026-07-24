@@ -30,6 +30,12 @@ interface BaseComment {
   updatedAt: string;
   parentId?: string;
   noteId?: string;
+  /**
+   * The note's owning workspace. Note ids are not globally unique (every
+   * workspace has a `spec` note), so consumers reconciling the global slice
+   * per note must scope by workspaceId too when it is present.
+   */
+  workspaceId?: string;
   anchor: CommentAnchor;
   anchorText?: string;
   anchorContext?: {
@@ -141,6 +147,7 @@ export function convertBackendCommentToV2(
   backendComment: any,
   anchor: CommentAnchor,
   noteId: string,
+  workspaceId?: string,
 ): CommentV2 {
   // Normalize reactions format
   const reactions = backendComment.reactions
@@ -163,6 +170,7 @@ export function convertBackendCommentToV2(
     updatedAt: backendComment.updatedAt,
     parentId: backendComment.parentId,
     noteId,
+    ...(workspaceId ? { workspaceId } : {}),
     anchor,
     anchorText: backendComment.section,
     anchorContext: backendComment.anchorContext,

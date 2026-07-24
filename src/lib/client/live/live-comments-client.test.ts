@@ -60,6 +60,72 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
     );
   });
 
+  // Round-5 regression (monorepo "comment-add" dogfood failure): note ids are
+  // NOT globally unique — every workspace has a note literally named `spec` —
+  // and `resolveNoteWorkspaceId`'s cache is last-writer-wins across workspaces
+  // (any other workspace's note:updated refetch overwrites the entry). A
+  // caller-supplied `workspaceId` must therefore win over the cache, otherwise
+  // comment.add targets another workspace's same-id note and the daemon
+  // correctly rejects with "Could not find the search context".
+  it("add uses the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValueOnce({ commentId: "c-1" });
+    // Cache poisoned by another workspace that also has a "spec" note.
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveCommentsClient();
+
+    await client.add("spec", {
+      workspaceId: "comment-add",
+      searchContext: "ctx",
+      commentTarget: "target",
+      comment: "hi",
+    });
+
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenCalledWith(
+      "comment.add",
+      expect.objectContaining({ workspaceId: "comment-add", noteId: "spec" }),
+    );
+  });
+
+  it("respond and delete use the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValue({ success: true });
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveCommentsClient();
+
+    await client.respond("spec", {
+      workspaceId: "comment-add",
+      commentId: "c-1",
+      comment: "reply",
+    });
+    await client.delete("spec", "c-1", "comment-add");
+
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenNthCalledWith(
+      1,
+      "comment.respond",
+      expect.objectContaining({ workspaceId: "comment-add", noteId: "spec" }),
+    );
+    expect(mockedRequest).toHaveBeenNthCalledWith(
+      2,
+      "comment.delete",
+      expect.objectContaining({ workspaceId: "comment-add", noteId: "spec" }),
+    );
+  });
+
+  it("list uses the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValueOnce({ threads: [] });
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveCommentsClient();
+
+    await client.list("spec", "comment-add");
+
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenCalledWith(
+      "comment.list",
+      expect.objectContaining({ workspaceId: "comment-add", noteId: "spec" }),
+    );
+  });
+
   it("add omits authorType from the wire params when not provided", async () => {
     mockedRequest.mockResolvedValueOnce({ commentId: "c-1" });
     const client = new LiveCommentsClient();

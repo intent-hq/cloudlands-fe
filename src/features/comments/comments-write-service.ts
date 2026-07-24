@@ -84,11 +84,12 @@ export async function respondToComment(
 export async function deleteComment(
   noteId: string,
   commentId: string,
+  workspaceId?: string,
 ): Promise<{ existed: boolean; success: boolean }> {
   const snapshot = selectCommentById.select(appStore.state, commentId);
   appStore.dispatch(removeCommentAction(commentId));
 
-  const result = await appClient.comments.delete(noteId, commentId);
+  const result = await appClient.comments.delete(noteId, commentId, workspaceId);
   if (!result.success) {
     logger.error("Failed to delete comment", result.error);
     toast.error("Failed to delete comment", { description: result.error ?? "Unknown error" });

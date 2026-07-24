@@ -158,7 +158,7 @@ describe("commentsWriteService (fake seam, real store)", () => {
 
     expect(existed).toBe(true);
     expect(success).toBe(true);
-    expect(commentsApi.delete).toHaveBeenCalledWith("note-1", "c-3");
+    expect(commentsApi.delete).toHaveBeenCalledWith("note-1", "c-3", undefined);
     expect(selectCommentById.select(appStore.state, "c-3")).toBeUndefined();
   });
 
