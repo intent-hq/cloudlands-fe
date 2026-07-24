@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.2.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.1.0...v2.2.0) (2026-07-24)
+
+
+### 🚀 Features
+
+* live-refresh specialists on specialists:changed ([#329](https://github.com/intent-hq/cloudlands-fe/issues/329)) ([2d5e910](https://github.com/intent-hq/cloudlands-fe/commit/2d5e9104d0692342fc3ff5bcbbca621039f500cb))
+
+
+### 🐛 Bug Fixes
+
+* ignore workspace default model when its provider is disabled ([#322](https://github.com/intent-hq/cloudlands-fe/issues/322)) ([ce3f66f](https://github.com/intent-hq/cloudlands-fe/commit/ce3f66fcc78d8591314acde20253378debb7711f))
+* include mention-chip text in comment.add search context ([#324](https://github.com/intent-hq/cloudlands-fe/issues/324)) ([fcaa212](https://github.com/intent-hq/cloudlands-fe/commit/fcaa2127760a2f4c11f0357c48c593a93f0a57a5))
+* pass workspaceId through system:execute-command to host.exec ([#537](https://github.com/intent-hq/cloudlands-fe/issues/537)) ([#312](https://github.com/intent-hq/cloudlands-fe/issues/312)) ([bf14dbc](https://github.com/intent-hq/cloudlands-fe/commit/bf14dbced24a98dcdc86d8fc98de7a2404fa0c6b))
+* preserve imageBlocks on queue-on-send messages ([0272cb6](https://github.com/intent-hq/cloudlands-fe/commit/0272cb6b5ffd9cce58d9e8d4e4341fdc75eb0b3d))
+* reconcile provider with resolved model at workspace creation ([#316](https://github.com/intent-hq/cloudlands-fe/issues/316)) ([e9cccbf](https://github.com/intent-hq/cloudlands-fe/commit/e9cccbfa49785a36fa4053e2bdf3bba0a202f842))
+* retire cwd-only cd wrapper; enforce cwd requires workspaceId at schema level (monorepo[#578](https://github.com/intent-hq/cloudlands-fe/issues/578)) ([#321](https://github.com/intent-hq/cloudlands-fe/issues/321)) ([cfcb272](https://github.com/intent-hq/cloudlands-fe/commit/cfcb272521e2cebdb1a189cb23a7b549a2279693))
+* show all enabled providers in ModelPicker for unlocked agents ([#309](https://github.com/intent-hq/cloudlands-fe/issues/309)) ([d88c948](https://github.com/intent-hq/cloudlands-fe/commit/d88c9482125bbec82a1dcc37c92c32a11d886806))
+* single-quote amend messages so backticks pass literally (monorepo[#579](https://github.com/intent-hq/cloudlands-fe/issues/579)) ([a3bcacc](https://github.com/intent-hq/cloudlands-fe/commit/a3bcacc14c98f134936b20bd09de909cd5e97fff))
+
 ## [2.1.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.0.13...v2.1.0) (2026-07-23)
 
 
