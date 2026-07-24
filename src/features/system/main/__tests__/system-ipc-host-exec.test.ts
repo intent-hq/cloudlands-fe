@@ -232,7 +232,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
 });
 
 describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell shim, PROTOCOL.md §5.14)', () => {
-  it('opens host.execStream via the shell shim and pipes stdout/stderr/close back to the renderer session', async () => {
+  it('opens host.execStream via the shell shim, forwards cwd + workspaceId, and pipes stdout/stderr/close back to the renderer session', async () => {
     let capturedOnStdout: ((chunk: Buffer) => void) | undefined;
     let capturedOnStderr: ((chunk: Buffer) => void) | undefined;
     let resolveDone!: (r: { ok: boolean; exitCode?: number }) => void;
@@ -255,6 +255,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
       sessionId: 'sess-1',
       command: 'echo hello',
       cwd: '/ws/repo',
+      workspaceId: 'amber-forest',
       stdin: 'ignored-payload',
     })) as { success: boolean };
 
@@ -262,6 +263,7 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
     expect(hostExecStreamMock).toHaveBeenCalledWith(SHELL_CMD, expect.objectContaining({
       args: [SHELL_FLAG, 'echo hello'],
       cwd: '/ws/repo',
+      workspaceId: 'amber-forest',
       stdin: 'ignored-payload',
     }));
 
@@ -287,6 +289,53 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
       type: 'close',
       code: 0,
     });
+  });
+
+  it('rejects a cwd-only payload at the schema level before the handler runs (monorepo#588)', async () => {
+    const send = vi.fn();
+    const event = { sender: { send } };
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING);
+    const result = await handler(event, {
+      sessionId: 'sess-3',
+      command: 'git status',
+      cwd: '/ws/repo',
+    });
+
+    expect(hostExecStreamMock).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid request parameters',
+        details: [
+          {
+            code: 'custom',
+            message: 'cwd requires workspaceId (PROTOCOL §5.14 containment guard)',
+            path: ['workspaceId'],
+          },
+        ],
+      },
+    });
+  });
+
+  it('accepts a no-cwd payload without workspaceId — the guard is never armed', async () => {
+    const donePromise = Promise.resolve({ ok: true, exitCode: 0 });
+    hostExecStreamMock.mockResolvedValue({ requestId: 'req-4', done: donePromise });
+
+    const send = vi.fn();
+    const event = { sender: { send } };
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING);
+    const result = (await handler(event, {
+      sessionId: 'sess-4',
+      command: 'echo hi',
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(hostExecStreamMock).toHaveBeenCalledWith(SHELL_CMD, expect.objectContaining({
+      args: [SHELL_FLAG, 'echo hi'],
+      cwd: undefined,
+      workspaceId: undefined,
+    }));
   });
 
   it('surfaces host.execStream rejection as a stderr + null-code close frame', async () => {
