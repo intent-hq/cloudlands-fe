@@ -13,6 +13,7 @@ import {
   nativeTheme,
   shell,
 } from 'electron';
+import { spawn } from 'child_process';
 import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
@@ -48,7 +49,7 @@ import {
 } from '../../../main/ipc-schemas';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
-import { execAsync, execFileAsync } from '../../../shared/git/git-env';
+import { execFileAsync } from '../../../shared/git/git-env';
 import { findBinary } from '../../../shared/main/find-binary';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { hostExec } from '../../../shared/main/host-exec';
@@ -1308,13 +1309,14 @@ export function setupSystemIPC() {
           if (!codeCommand) {
             // If we can't find the code command, try using open command on macOS
             if (process.platform === 'darwin') {
-              const openCommand = validated.line
-                ? `open -a "Visual Studio Code" --args -n --skip-add-to-recently-opened --goto "${validated.file}:${validated.line}"`
-                : `open -a "Visual Studio Code" --args -n --skip-add-to-recently-opened "${validated.file}"`;
+              // Argv form (no shell) so the file path stays literal.
+              const openArgs = validated.line
+                ? ['-a', 'Visual Studio Code', '--args', '-n', '--skip-add-to-recently-opened', '--goto', `${validated.file}:${validated.line}`]
+                : ['-a', 'Visual Studio Code', '--args', '-n', '--skip-add-to-recently-opened', validated.file];
 
               // LOCAL-GUI: launches the user's VSCode via macOS `open` on the
               // client host; not workspace execution.
-              await execAsync(openCommand);
+              await execFileAsync('open', openArgs);
               return { success: true };
             } else {
               throw new Error('VS Code command not found');
@@ -1323,13 +1325,14 @@ export function setupSystemIPC() {
 
           // Open file at specific line
           // Include -n and --skip-add-to-recently-opened to prevent GitLens tracking
-          const command = validated.line
-            ? `"${codeCommand}" -n --skip-add-to-recently-opened --goto "${validated.file}:${validated.line}"`
-            : `"${codeCommand}" -n --skip-add-to-recently-opened "${validated.file}"`;
+          const codeArgs = validated.line
+            ? ['-n', '--skip-add-to-recently-opened', '--goto', `${validated.file}:${validated.line}`]
+            : ['-n', '--skip-add-to-recently-opened', validated.file];
 
           // LOCAL-GUI: launches the user's VSCode on the client host to open a
-          // file; not workspace execution.
-          await execAsync(command);
+          // file; not workspace execution. Argv form (no shell) so the file
+          // path stays literal.
+          await execFileAsync(codeCommand, codeArgs);
           return { success: true };
         } catch (error) {
           logger.error('Failed to open file in VS Code:', error as Error);
@@ -1362,7 +1365,6 @@ export function setupSystemIPC() {
         try {
           // LOCAL-GUI: launches the user's JetBrains IDE on the client host to
           // open a project/file; not workspace execution.
-          const { spawn } = require('child_process');
           let args: string[] = [];
 
           // Handle both string path and object with folder/file
@@ -1409,19 +1411,14 @@ export function setupSystemIPC() {
             const pathToOpen = typeof validated === 'string' ? validated : validated.file;
 
             // Try common JetBrains IDE commands
-            const commands = [
-              `idea "${pathToOpen}"`,
-              `pycharm "${pathToOpen}"`,
-              `webstorm "${pathToOpen}"`,
-              `clion "${pathToOpen}"`,
-              `goland "${pathToOpen}"`,
-            ];
+            const ideBinaries = ['idea', 'pycharm', 'webstorm', 'clion', 'goland'];
 
-            for (const command of commands) {
+            for (const ideBinary of ideBinaries) {
               try {
                 // LOCAL-GUI: launches the user's JetBrains IDE on the client
-                // host as a fallback; not workspace execution.
-                await execAsync(command);
+                // host as a fallback; not workspace execution. Argv form (no
+                // shell) so the path stays literal.
+                await execFileAsync(ideBinary, [pathToOpen]);
                 return { success: true };
               } catch  {
                 // Continue to next command
