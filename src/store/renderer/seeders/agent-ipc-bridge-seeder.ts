@@ -53,8 +53,10 @@ function readString(record: Record<string, unknown>, key: string): string | unde
  * specialist picker in `agent-creation-service.ts`) — surface it as the
  * daemon's `specialistId`. `nameExplicitlySet` is a strict boolean on the
  * wire (PROTOCOL §5.5: omitted/null keeps the daemon default, non-boolean is
- * a -32602), so it is forwarded verbatim only when the request carries `true`
- * or `false` and never defaulted.
+ * a -32602), so it is forwarded verbatim when the request carries `true` or
+ * `false`, never defaulted, and a non-boolean value is rejected up front with
+ * `INVALID_REQUEST` (mirroring the daemon's -32602) rather than silently
+ * dropped — dropping would mask an upstream bug behind the daemon default.
  *
  * No `agentId` is forwarded: the daemon assigns the session id and returns it
  * on the response's `agent.id`. Callers must adopt that id for any follow-up
@@ -84,8 +86,22 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
     specialistId: readString(metadata, "specialist"),
     idempotencyKey: newIdempotencyKey(),
   };
-  if (typeof request.nameExplicitlySet === "boolean") {
-    params.nameExplicitlySet = request.nameExplicitlySet;
+  const nameExplicitlySet = request.nameExplicitlySet;
+  if (
+    nameExplicitlySet !== undefined &&
+    nameExplicitlySet !== null &&
+    typeof nameExplicitlySet !== "boolean"
+  ) {
+    return {
+      success: false,
+      error: {
+        code: "INVALID_REQUEST",
+        message: "nameExplicitlySet must be a boolean when present (PROTOCOL §5.5)",
+      },
+    };
+  }
+  if (typeof nameExplicitlySet === "boolean") {
+    params.nameExplicitlySet = nameExplicitlySet;
   }
   try {
     const result = await backendRequest<{ agent?: unknown }>("agent.create", params);

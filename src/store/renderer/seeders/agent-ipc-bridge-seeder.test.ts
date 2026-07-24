@@ -134,6 +134,31 @@ describe("agent-ipc-bridge-seeder", () => {
       expect(params.nameExplicitlySet).toBe(false);
     });
 
+    it("rejects a non-boolean nameExplicitlySet with INVALID_REQUEST instead of silently dropping it", async () => {
+      // PROTOCOL §5.5: non-boolean is a -32602 on the daemon wire. Silently
+      // dropping the value would mask an upstream bug behind the daemon
+      // default, so the bridge fails fast before any wire call — and the FE
+      // request schema rejects the same payload.
+      const request = {
+        workspaceId: WORKSPACE_ID,
+        workspacePath: "/tmp/ws",
+        name: "anon",
+        nameExplicitlySet: "false",
+      };
+      expect(() => validateIpcRequest("agent:create", request)).toThrow();
+
+      const response = await mockInvoke(AGENT_CHANNELS.CREATE, request);
+
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(response).toEqual({
+        success: false,
+        error: {
+          code: "INVALID_REQUEST",
+          message: "nameExplicitlySet must be a boolean when present (PROTOCOL §5.5)",
+        },
+      });
+    });
+
     it("omits nameExplicitlySet from the agent.create body when the request lacks it", async () => {
       // PROTOCOL §5.5: omitted reads as absent and keeps the daemon default —
       // the bridge must not default the flag on the caller's behalf.
