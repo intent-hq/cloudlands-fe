@@ -19,7 +19,12 @@ vi.mock("./backend-transport", () => ({
   onBackendNotification: vi.fn(() => () => {}),
 }));
 
-import { backendRequest } from "./backend-transport";
+import {
+  backendRequest,
+  backendSubscribe,
+  backendUnsubscribe,
+  onBackendNotification,
+} from "./backend-transport";
 import { LiveSpecialistsClient } from "./live-specialists-client";
 import type { AppClient, SpecialistDef } from "../app-client";
 // Importing the seeder module registers "misc-ui-events" with the bootstrap
@@ -33,6 +38,12 @@ import {
 import { SPECIALISTS } from "$lib/constants/specialists";
 
 const mockedRequest = vi.mocked(backendRequest);
+const mockedSubscribe = vi.mocked(backendSubscribe);
+const mockedUnsubscribe = vi.mocked(backendUnsubscribe);
+const mockedOnNotification = vi.mocked(onBackendNotification);
+
+/** Callback shape `onBackendNotification` registers (BackendNotification sink). */
+type NotificationCallback = Parameters<typeof onBackendNotification>[0];
 
 /** PROTOCOL §5.11 resolved view: a bundled def (no path) + a user-tier file. */
 const COORDINATOR_DEF: SpecialistDef = {
@@ -84,13 +95,167 @@ describe("LiveSpecialistsClient (fake transport)", () => {
     expect(await client.list()).toEqual([]);
   });
 
-  it("subscribe emits one snapshot of the current resolved view", async () => {
-    mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
-    const client = new LiveSpecialistsClient();
+  describe("subscribe (specialists:changed live refetch)", () => {
+    afterEach(() => vi.useRealTimers());
 
-    const handler = vi.fn();
-    client.subscribe(handler);
-    await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]));
+    it("emits an initial snapshot and registers the specialists:changed subscription", async () => {
+      mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+      const client = new LiveSpecialistsClient();
+
+      const handler = vi.fn();
+      const unsubscribe = client.subscribe(handler);
+
+      // Exact daemon subscription wire shape.
+      expect(mockedSubscribe).toHaveBeenCalledWith({ eventTypes: ["specialists:changed"] });
+      await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]));
+      expect(handler).toHaveBeenCalledTimes(1);
+      unsubscribe();
+    });
+
+    it("refetches specialist.list and emits the fresh resolved view on specialists:changed", async () => {
+      vi.useFakeTimers();
+      let notify: NotificationCallback | undefined;
+      mockedOnNotification.mockImplementation((cb) => {
+        notify = cb;
+        return vi.fn();
+      });
+      mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+      const client = new LiveSpecialistsClient();
+
+      const handler = vi.fn();
+      const unsubscribe = client.subscribe(handler);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]);
+      handler.mockClear();
+
+      mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF, USER_DEF] });
+      notify?.({ method: "specialists:changed", params: { workspaceId: "ws-1" } });
+      await vi.advanceTimersByTimeAsync(100);
+
+      // Refetch is the global specialist.list (no workspaceId).
+      expect(mockedRequest).toHaveBeenLastCalledWith("specialist.list");
+      expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]);
+      unsubscribe();
+    });
+
+    it("debounces a burst of specialists:changed events into one refetch", async () => {
+      vi.useFakeTimers();
+      let notify: NotificationCallback | undefined;
+      mockedOnNotification.mockImplementation((cb) => {
+        notify = cb;
+        return vi.fn();
+      });
+      mockedRequest.mockResolvedValue({ specialists: [COORDINATOR_DEF] });
+      const client = new LiveSpecialistsClient();
+
+      const handler = vi.fn();
+      const unsubscribe = client.subscribe(handler);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockedRequest).toHaveBeenCalledTimes(1); // initial snapshot
+
+      notify?.({ method: "specialists:changed", params: { workspaceId: "ws-1" } });
+      notify?.({ method: "specialists:changed", params: { workspaceId: "ws-2" } });
+      notify?.({ method: "specialists:changed", params: { workspaceId: "ws-3" } });
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(mockedRequest).toHaveBeenCalledTimes(2); // initial + ONE debounced refetch
+      unsubscribe();
+    });
+
+    it("ignores non-matching notifications", async () => {
+      vi.useFakeTimers();
+      let notify: NotificationCallback | undefined;
+      mockedOnNotification.mockImplementation((cb) => {
+        notify = cb;
+        return vi.fn();
+      });
+      mockedRequest.mockResolvedValue({ specialists: [COORDINATOR_DEF] });
+      const client = new LiveSpecialistsClient();
+
+      const handler = vi.fn();
+      const unsubscribe = client.subscribe(handler);
+      await vi.advanceTimersByTimeAsync(0);
+      handler.mockClear();
+
+      notify?.({ method: "skills:changed", params: { workspaceId: "ws-1" } });
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(mockedRequest).toHaveBeenCalledTimes(1); // initial snapshot only
+      expect(handler).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    it("unsubscribes from the daemon subscription and removes the listener on dispose", async () => {
+      const removeListener = vi.fn();
+      mockedOnNotification.mockImplementation(() => removeListener);
+      mockedSubscribe.mockResolvedValueOnce({ subscriptionId: "sub-42" });
+      mockedRequest.mockResolvedValueOnce({ specialists: [] });
+      const client = new LiveSpecialistsClient();
+
+      const unsubscribe = client.subscribe(vi.fn());
+      await vi.waitFor(() => expect(mockedSubscribe).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mockedUnsubscribe).not.toHaveBeenCalled();
+
+      unsubscribe();
+
+      expect(removeListener).toHaveBeenCalled();
+      expect(mockedUnsubscribe).toHaveBeenCalledWith("sub-42");
+    });
+
+    it("releases a daemon subscription that resolves after dispose (late-resolve guard)", async () => {
+      let resolveSubscribe!: (value: { subscriptionId: string }) => void;
+      mockedSubscribe.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSubscribe = resolve;
+        }),
+      );
+      mockedRequest.mockResolvedValueOnce({ specialists: [] });
+      const client = new LiveSpecialistsClient();
+
+      const unsubscribe = client.subscribe(vi.fn());
+      unsubscribe();
+      expect(mockedUnsubscribe).not.toHaveBeenCalled();
+
+      resolveSubscribe({ subscriptionId: "sub-late" });
+      await vi.waitFor(() => expect(mockedUnsubscribe).toHaveBeenCalledWith("sub-late"));
+    });
+
+    it("cancels a pending debounced refetch and stops emitting after dispose", async () => {
+      vi.useFakeTimers();
+      let notify: NotificationCallback | undefined;
+      mockedOnNotification.mockImplementation((cb) => {
+        notify = cb;
+        return vi.fn();
+      });
+      mockedRequest.mockResolvedValue({ specialists: [COORDINATOR_DEF] });
+      const client = new LiveSpecialistsClient();
+
+      const handler = vi.fn();
+      const unsubscribe = client.subscribe(handler);
+      await vi.advanceTimersByTimeAsync(0);
+      handler.mockClear();
+
+      notify?.({ method: "specialists:changed", params: { workspaceId: "ws-1" } });
+      unsubscribe(); // dispose before the debounce timer fires
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(mockedRequest).toHaveBeenCalledTimes(1); // no refetch after dispose
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("handles subscription registration failure gracefully (keeps the snapshot)", async () => {
+      mockedSubscribe.mockRejectedValueOnce(new Error("subscribe boom"));
+      mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+      const client = new LiveSpecialistsClient();
+
+      const handler = vi.fn();
+      const unsubscribe = client.subscribe(handler);
+
+      await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]));
+      unsubscribe();
+      expect(mockedUnsubscribe).not.toHaveBeenCalled();
+    });
   });
 
   describe("write methods (create/edit/delete)", () => {
