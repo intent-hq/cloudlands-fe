@@ -8,14 +8,27 @@ import {
   it,
   expect,
   vi,
+  beforeEach,
 } from 'vitest';
 import { GitService } from '../main/git.service';
-import { execAsyncRobust, execFileAsyncWithRetry } from '../../../shared/git/git-env';
+import {
+  execAsyncRobust,
+  execFileAsync,
+  execFileAsyncWithRetry,
+} from '../../../shared/git/git-env';
+import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 
 vi.mock('../../../shared/git/git-env', () => ({
   execFileAsync: vi.fn(),
   execAsyncRobust: vi.fn(),
   execFileAsyncWithRetry: vi.fn(),
+}));
+
+vi.mock('../../workspace/main/change-detection/diffable-file-filter', () => ({
+  filterDiffableFiles: vi.fn(async (_worktreePath: string, paths: string[]) => ({
+    diffable: paths,
+    skipped: [],
+  })),
 }));
 
 describe('GitService', () => {
@@ -290,6 +303,152 @@ describe('GitService', () => {
         ['commit', '-m', fullMessage],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
+    });
+  });
+
+  describe('shell-substitution safety for file paths (monorepo#672)', () => {
+    // Hostile tracked filename: backticks and $() must never reach a shell unquoted
+    const HOSTILE = 'a`touch pwned`$(touch pwned2).txt';
+    // Variant without whitespace so parseDiff can extract it from diff headers
+    const HOSTILE_NOSPACE = 'a`touch-pwned`$(touch-pwned2).txt';
+
+    let service: GitService;
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      service = new GitService();
+      vi.spyOn(service as any, 'getWorktreePath').mockReturnValue('/tmp/worktree');
+    });
+
+    const expectNoShellStringWithRawPath = (rawPath: string) => {
+      for (const [command] of vi.mocked(execAsyncRobust).mock.calls) {
+        expect(command).not.toContain(`"${rawPath}"`);
+        if (command.includes(rawPath)) {
+          expect(command).toContain(posixSingleQuote(rawPath));
+        }
+      }
+    };
+
+    it('getFileHistory passes the file path as a literal argv element', async () => {
+      vi.mocked(execFileAsync).mockResolvedValue({ stdout: '', stderr: '' });
+
+      const result = await service.getFileHistory('workspace-1' as any, HOSTILE, 20);
+
+      expect(result.ok).toBe(true);
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['log', '-n', '20', '--format=%H|%an|%ae|%aI|%s', '--follow', '--', HOSTILE],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expectNoShellStringWithRawPath(HOSTILE);
+    });
+
+    it('getDiff reads staged new files from the index via argv git show', async () => {
+      vi.mocked(execFileAsync).mockImplementation(async (_file, args) => {
+        if (args[0] === 'status') {
+          return { stdout: `A  ${HOSTILE}\n`, stderr: '' };
+        }
+        if (args[0] === 'show') {
+          return { stdout: 'staged content', stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await service.getDiff('workspace-1' as any, [HOSTILE], true);
+
+      expect(result.ok).toBe(true);
+      expect(result.ok && result.data[0]?.newContent).toBe('staged content');
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['status', '--porcelain', '--', HOSTILE],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', `:${HOSTILE}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expectNoShellStringWithRawPath(HOSTILE);
+    });
+
+    it('getDiff single-quotes paths in the composed diff command and uses argv for staged file contents', async () => {
+      const diffOutput = [
+        `diff --git a/${HOSTILE_NOSPACE} b/${HOSTILE_NOSPACE}`,
+        'index 0000000..1111111 100644',
+        `--- a/${HOSTILE_NOSPACE}`,
+        `+++ b/${HOSTILE_NOSPACE}`,
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+        '',
+      ].join('\n');
+
+      vi.mocked(execFileAsync).mockImplementation(async (_file, args) => {
+        if (args[0] === 'status') {
+          return { stdout: `M  ${HOSTILE_NOSPACE}\n`, stderr: '' };
+        }
+        return { stdout: 'file content', stderr: '' };
+      });
+      vi.mocked(execAsyncRobust).mockResolvedValue({ stdout: diffOutput, stderr: '' });
+
+      const result = await service.getDiff('workspace-1' as any, [HOSTILE_NOSPACE], true);
+
+      expect(result.ok).toBe(true);
+      expect(execAsyncRobust).toHaveBeenCalledWith(
+        `git diff --cached -- ${posixSingleQuote(HOSTILE_NOSPACE)}`,
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', `HEAD:${HOSTILE_NOSPACE}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', `:${HOSTILE_NOSPACE}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expectNoShellStringWithRawPath(HOSTILE_NOSPACE);
+    });
+
+    it('getDiff uses argv cat and git show for unstaged file contents', async () => {
+      const diffOutput = [
+        `diff --git a/${HOSTILE_NOSPACE} b/${HOSTILE_NOSPACE}`,
+        'index 0000000..1111111 100644',
+        `--- a/${HOSTILE_NOSPACE}`,
+        `+++ b/${HOSTILE_NOSPACE}`,
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+        '',
+      ].join('\n');
+
+      vi.mocked(execFileAsync).mockImplementation(async (_file, args) => {
+        if (args[0] === 'status') {
+          return { stdout: ` M ${HOSTILE_NOSPACE}\n`, stderr: '' };
+        }
+        return { stdout: 'file content', stderr: '' };
+      });
+      vi.mocked(execAsyncRobust).mockResolvedValue({ stdout: diffOutput, stderr: '' });
+
+      const result = await service.getDiff('workspace-1' as any, [HOSTILE_NOSPACE], false);
+
+      expect(result.ok).toBe(true);
+      expect(execAsyncRobust).toHaveBeenCalledWith(
+        `git diff -- ${posixSingleQuote(HOSTILE_NOSPACE)}`,
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'cat',
+        [HOSTILE_NOSPACE],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', `:${HOSTILE_NOSPACE}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expectNoShellStringWithRawPath(HOSTILE_NOSPACE);
     });
   });
 
