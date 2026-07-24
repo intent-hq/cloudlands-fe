@@ -48,9 +48,13 @@ function readString(record: Record<string, unknown>, key: string): string | unde
  *
  * The FE's `CreateRequest` carries more fields than `agent.create` accepts;
  * we forward only the parameters the daemon router consumes (`workspaceId`,
- * `name`, `model`, `specialistId`, `idempotencyKey`). The `specialist` value
- * lives under `metadata.specialist` (set by the specialist picker in
- * `agent-creation-service.ts`) — surface it as the daemon's `specialistId`.
+ * `name`, `model`, `specialistId`, `nameExplicitlySet`, `idempotencyKey`).
+ * The `specialist` value lives under `metadata.specialist` (set by the
+ * specialist picker in `agent-creation-service.ts`) — surface it as the
+ * daemon's `specialistId`. `nameExplicitlySet` is a strict boolean on the
+ * wire (PROTOCOL §5.5: omitted/null keeps the daemon default, non-boolean is
+ * a -32602), so it is forwarded verbatim only when the request carries `true`
+ * or `false` and never defaulted.
  *
  * No `agentId` is forwarded: the daemon assigns the session id and returns it
  * on the response's `agent.id`. Callers must adopt that id for any follow-up
@@ -80,6 +84,9 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
     specialistId: readString(metadata, "specialist"),
     idempotencyKey: newIdempotencyKey(),
   };
+  if (typeof request.nameExplicitlySet === "boolean") {
+    params.nameExplicitlySet = request.nameExplicitlySet;
+  }
   try {
     const result = await backendRequest<{ agent?: unknown }>("agent.create", params);
     const agent = (result as { agent?: unknown })?.agent;
