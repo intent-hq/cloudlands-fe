@@ -26,6 +26,7 @@ import {
   GitFileStatus,
   LineType,
 } from '../../../shared/types';
+import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { filterDiffableFiles } from '../../workspace/main/change-detection/diffable-file-filter';
 import { getWorktreesLocation } from '../../workspace/main/app-settings.service';
 import type { WorkspaceRepository } from '../../workspace/main/workspace.repository';
@@ -772,8 +773,9 @@ export class GitService {
         // Check the status of each file first
         for (const filePath of diffablePaths) {
           try {
-            const { stdout: statusOutput } = await execAsync(
-              `git status --porcelain -- "${filePath}"`,
+            const { stdout: statusOutput } = await execFileAsyncWithRetry(
+              'git',
+              ['status', '--porcelain', '--', filePath],
               { cwd: worktreePath },
             );
 
@@ -819,7 +821,7 @@ export class GitService {
                 if (isNewStagedFile) {
                   // For staged new files, read from the index
                   try {
-                    const { stdout } = await execAsync(`git show :"${filePath}"`, {
+                    const { stdout } = await execFileAsyncWithRetry('git', ['show', `:${filePath}`], {
                       cwd: worktreePath,
                     });
                     fileContent = stdout;
@@ -917,7 +919,9 @@ export class GitService {
       }
 
       if (normalizedPaths && normalizedPaths.length > 0) {
-        command += ` -- ${normalizedPaths.map((p) => `"${p}"`).join(' ')}`;
+        // Single-quote paths so the shell cannot perform command substitution
+        // on filenames containing backticks or $() (monorepo#672)
+        command += ` -- ${normalizedPaths.map((p) => posixSingleQuote(p)).join(' ')}`;
       }
 
       logger.info('Executing git diff command', {
@@ -960,9 +964,11 @@ export class GitService {
             // For staged changes: compare index (staged) vs HEAD
             // oldContent = HEAD version, newContent = staged version
             try {
-              const { stdout: headFileContent } = await execAsync(`git show HEAD:"${chunk.file}"`, {
-                cwd: worktreePath,
-              });
+              const { stdout: headFileContent } = await execFileAsyncWithRetry(
+                'git',
+                ['show', `HEAD:${chunk.file}`],
+                { cwd: worktreePath },
+              );
               oldFileContent = headFileContent;
             } catch  {
               // File might be new, so HEAD version doesn't exist
@@ -970,9 +976,11 @@ export class GitService {
             }
 
             try {
-              const { stdout: stagedFileContent } = await execAsync(`git show :"${chunk.file}"`, {
-                cwd: worktreePath,
-              });
+              const { stdout: stagedFileContent } = await execFileAsyncWithRetry(
+                'git',
+                ['show', `:${chunk.file}`],
+                { cwd: worktreePath },
+              );
               newFileContent = stagedFileContent;
             } catch  {
               // File might be deleted in staging
@@ -982,9 +990,13 @@ export class GitService {
             // For unstaged changes or all changes: use working tree
             // oldContent = HEAD (or index for unstaged), newContent = working tree
             try {
-              const { stdout: fileContent } = await execAsync(`cat "${chunk.file}"`, {
-                cwd: worktreePath,
-              });
+              // `--` ends option parsing so dash-prefixed filenames are not
+              // treated as cat options
+              const { stdout: fileContent } = await execFileAsyncWithRetry(
+                'cat',
+                ['--', chunk.file],
+                { cwd: worktreePath },
+              );
               newFileContent = fileContent;
             } catch  {
               // File might be deleted
@@ -994,9 +1006,11 @@ export class GitService {
             if (staged === false) {
               // For unstaged changes: oldContent = index version
               try {
-                const { stdout: indexFileContent } = await execAsync(`git show :"${chunk.file}"`, {
-                  cwd: worktreePath,
-                });
+                const { stdout: indexFileContent } = await execFileAsyncWithRetry(
+                  'git',
+                  ['show', `:${chunk.file}`],
+                  { cwd: worktreePath },
+                );
                 oldFileContent = indexFileContent;
               } catch  {
                 // File might be new, so index version doesn't exist
@@ -1005,8 +1019,9 @@ export class GitService {
             } else {
               // For all changes: oldContent = HEAD version
               try {
-                const { stdout: headFileContent } = await execAsync(
-                  `git show HEAD:"${chunk.file}"`,
+                const { stdout: headFileContent } = await execFileAsyncWithRetry(
+                  'git',
+                  ['show', `HEAD:${chunk.file}`],
                   { cwd: worktreePath },
                 );
                 oldFileContent = headFileContent;
@@ -1645,13 +1660,22 @@ export class GitService {
     try {
       const worktreePath = this.getWorktreePath(workspaceId);
 
-      // Build git log command for specific file
+      // Build git log args for specific file (argv form so filenames with
+      // backticks/$() are never shell-interpreted, monorepo#672)
       // Use --follow to track file through renames
-      const gitCommand = `git log -n ${limit} --format="%H|%an|%ae|%aI|%s" --follow -- "${filePath}"`;
+      const gitArgs = [
+        'log',
+        '-n',
+        String(limit),
+        '--format=%H|%an|%ae|%aI|%s',
+        '--follow',
+        '--',
+        filePath,
+      ];
 
-      logger.info('Getting file history', { gitCommand, cwd: worktreePath, filePath });
+      logger.info('Getting file history', { gitArgs, cwd: worktreePath, filePath });
 
-      const { stdout } = await execAsync(gitCommand, { cwd: worktreePath });
+      const { stdout } = await execFileAsyncWithRetry('git', gitArgs, { cwd: worktreePath });
 
       logger.info('File history output', {
         stdout: stdout.slice(0, 500),

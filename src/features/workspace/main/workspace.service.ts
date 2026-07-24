@@ -92,14 +92,7 @@ import {
   getWorktreesLocation,
 } from './app-settings.service';
 import { githubService } from '../../git-tracking/main/github.service';
-
-/**
- * Escape a value for safe inclusion in a POSIX shell command.
- * Uses single quotes and escapes any embedded single quotes.
- */
-function escapeShellArg(arg: string): string {
-  return "'" + arg.replace(/'/g, "'\\''") + "'";
-}
+import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { WorkspaceNotFoundError, WorkspaceValidationError, GitWorktreeError } = Errors;
@@ -424,7 +417,7 @@ export class WorkspaceService {
     const httpsUrl = `https://github.com/${owner}/${repo}.git`;
 
     try {
-      await execAsync(`git ls-remote --heads ${escapeShellArg(httpsUrl)}`, {
+      await execAsync(`git ls-remote --heads ${posixSingleQuote(httpsUrl)}`, {
         timeout: 8000,
       });
       return { ok: true, data: null };
