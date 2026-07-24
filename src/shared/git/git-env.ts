@@ -762,7 +762,7 @@ export function isGcmCredentialHelper(helper: string | null): boolean {
 /**
  * Detect if a git network operation will likely trigger keychain access.
  *
- * This is used by the git services to decide whether a network operation should
+ * This is used by git callers to decide whether a network operation should
  * enter the keychain consent path before running.
  *
  * @param cwd - The repository path

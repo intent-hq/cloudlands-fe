@@ -237,7 +237,12 @@ describe("agentCreationService (fake factory + client, real store)", () => {
 
     const action = agentSessionLaunchAgentRequested(
       CHIEF_WORKSPACE_ID,
-      { name: "Chief thread", agentType: createAgentTypeId("workspace"), source: "chief-card" },
+      {
+        name: "Chief thread",
+        nameExplicitlySet: false,
+        agentType: createAgentTypeId("workspace"),
+        source: "chief-card",
+      },
       { openAgent: false },
     );
     appStore.dispatch(action);
@@ -247,6 +252,9 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(createAgent).toHaveBeenCalledTimes(1);
     const [, config] = createAgent.mock.calls[0];
     expect(config).toMatchObject({ agentType: "workspace", source: "chief-card" });
+    // Launch path spreads the site config through, so the generated-name flag
+    // reaches the factory unchanged (wire `nameExplicitlySet`, PROTOCOL §5.5).
+    expect(config.nameExplicitlySet).toBe(false);
     // Chief thread is created with openAgent: false — no tab is opened.
     expect(agentTabs(CHIEF_WORKSPACE_ID, AGENT)).toHaveLength(0);
   });

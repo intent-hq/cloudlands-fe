@@ -48,6 +48,7 @@ import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-st
 import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
 import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
 import { createDirectoryPickerReadMiddleware } from "$features/onboarding/directory-picker-read-service";
+import { createLegacyImportMiddleware } from "$features/settings/legacy-import-service";
 import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
 import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
@@ -304,6 +305,9 @@ function buildMiddleware(): StoreMiddleware[] {
     // to the `directoryPicker` slice — keeping `backendRequest` out of the Svelte
     // component (per the `intent/no-component-async-data-fetch` rule).
     createDirectoryPickerReadMiddleware(),
+    // Route Settings legacy-import requests through the client service and
+    // reflect the asynchronous result in the legacyImport slice.
+    createLegacyImportMiddleware(),
     // Give the (post-saga) ui-layout persistence triggers real handlers so panel
     // sizes / group layouts / collapsed state read on mount and persist on change
     // across sessions via localStorage again.
