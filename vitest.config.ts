@@ -10,8 +10,17 @@ export default defineConfig(async () => {
       globals: true,
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
-      testTimeout: 10000,
-      hookTimeout: 10000,
+      // Cap workers at 50% of logical cores. Vitest defaults to one worker per
+      // core; ~20 jsdom workers oversubscribe the CPU and, when the machine is
+      // under external load (builds, other agents), heavy component suites blow
+      // past their timeouts in full-suite runs while passing in isolation.
+      // See intent-hq/monorepo#545.
+      maxWorkers: '50%',
+      // 30s (up from 10s) gives slow-machine/loaded-machine headroom for the
+      // heavy sidebar/component suites (intent-hq/monorepo#545). Genuine hangs
+      // still fail, just a bit later.
+      testTimeout: 30000,
+      hookTimeout: 30000,
       teardownTimeout: 10000,
       exclude: [
         '**/node_modules/**',
