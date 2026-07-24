@@ -21,12 +21,16 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
+import { createLogger } from "$lib/utils/client-logger";
 import {
   backendRequest,
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
+  onBackendReconnected,
 } from "./backend-transport";
+
+const logger = createLogger("LiveSpecialistsClient");
 
 /**
  * Trailing debounce applied to `specialists:changed` bursts so one refetch
@@ -37,12 +41,23 @@ import {
 const REFETCH_DEBOUNCE_MS = 100;
 
 export class LiveSpecialistsClient implements SpecialistsClient {
+  /**
+   * Raw `specialist.list` fetch — throws on transport/daemon failure. The
+   * public `list()` folds errors to an empty list (picker falls back to the
+   * hardcoded `SPECIALISTS`); event-driven refetches use this directly so a
+   * transient failure keeps the last known-good view instead of wiping the
+   * store (#610).
+   */
+  private async fetchList(): Promise<SpecialistDef[]> {
+    const result = await backendRequest<{ specialists?: unknown[] }>("specialist.list");
+    return Array.isArray(result?.specialists)
+      ? (result.specialists as SpecialistDef[])
+      : [];
+  }
+
   async list(): Promise<SpecialistDef[]> {
     try {
-      const result = await backendRequest<{ specialists?: unknown[] }>("specialist.list");
-      return Array.isArray(result?.specialists)
-        ? (result.specialists as SpecialistDef[])
-        : [];
+      return await this.fetchList();
     } catch {
       return [];
     }
@@ -62,17 +77,33 @@ export class LiveSpecialistsClient implements SpecialistsClient {
       if (!disposed) handler(specialists);
     });
 
+    // Event/reconnect refetch: non-folding — on failure, log and skip the
+    // emit so the store keeps its last known-good view (#610), matching
+    // `specialists-mutation-service.refetchAndDispatch`.
+    const refetch = () => {
+      this.fetchList()
+        .then((specialists) => {
+          if (!disposed) handler(specialists);
+        })
+        .catch((error) => {
+          logger.error("Failed to refetch specialist list; keeping last known-good view", error);
+        });
+    };
+
     // Register daemon subscription. Guard the late-resolving case: if the
     // subscriber disposed while registration was in flight, release the id
     // instead of leaking the daemon-side subscription.
-    backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ["specialists:changed"] })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
-      })
-      .catch(() => {
-        // Without a daemon subscription we stay with the one-shot snapshot.
-      });
+    const doSubscribe = () =>
+      backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ["specialists:changed"] })
+        .then((result) => {
+          subscriptionId = result?.subscriptionId;
+          if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+        })
+        .catch(() => {
+          // Without a daemon subscription we stay with the one-shot snapshot.
+        });
+
+    doSubscribe();
 
     // Listen for specialists:changed events and refetch the resolved view,
     // coalescing bursts into one `specialist.list` call.
@@ -81,12 +112,27 @@ export class LiveSpecialistsClient implements SpecialistsClient {
         if (debounceTimer !== undefined) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           debounceTimer = undefined;
-          // `list()` folds failures to [] (picker falls back to SPECIALISTS).
-          void this.list().then((specialists) => {
-            if (!disposed) handler(specialists);
-          });
+          refetch();
         }, REFETCH_DEBOUNCE_MS);
       }
+    });
+
+    // On reconnect the daemon dropped its subscription registry (RESUB-1);
+    // the notification handler is still wired, so re-issue the subscribe and
+    // refetch the resolved view once to converge on anything missed during
+    // the outage (#609). Mirrors `live-git-client.ts`.
+    const offReconnect = onBackendReconnected(() => {
+      if (disposed) return;
+      subscriptionId = undefined;
+      void doSubscribe();
+      // Cancel any pending debounced refetch so the reconnect refetch is the
+      // single one — otherwise a pre-outage burst's timer would fire later
+      // and issue a redundant second `specialist.list`.
+      if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+      }
+      refetch();
     });
 
     return () => {
@@ -96,6 +142,7 @@ export class LiveSpecialistsClient implements SpecialistsClient {
         debounceTimer = undefined;
       }
       removeNotificationListener();
+      offReconnect();
       if (subscriptionId) void backendUnsubscribe(subscriptionId);
     };
   }
