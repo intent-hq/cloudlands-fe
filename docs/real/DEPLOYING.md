@@ -128,12 +128,18 @@ The workflow no longer bumps `package.json`, creates tags, or opens version-bump
 
 ## Promote-to-Stable Workflow
 
-_(Not yet implemented — planned as a separate workflow)_
+**Workflow:** `.github/workflows/release-stable.yml` (manual `workflow_dispatch` with a `version` input)
 
-The promote-to-stable workflow will:
-1. Identify the latest beta release from `intent-hq/cloudlands-releases`
-2. Copy all artifacts to the `stable` rolling release tag
-3. Create an immutable stable versioned release
+The promote-to-stable workflow:
+1. Validates the version and verifies the versioned release exists on `intent-hq/cloudlands-releases`
+2. Reads the previous stable version from the stable channel's `latest-mac.yml` (tolerates a first promotion)
+3. Copies all artifacts from the versioned release to the `stable` rolling release tag (`latest-mac.yml` last for an atomic feed switch), then deletes superseded assets and verifies the feed `sha512`
+4. Builds aggregated release notes for the range `(prevStable, VERSION]`: a leading summary section (promoted version, previous stable, and a consolidated intentd pin delta recovered from the releases' `release-manifest.json` files and rendered from the intentd compare API via `scripts/generate-stable-summary.mjs`), followed by each version's release body
+5. Updates the `stable` release body with the aggregated notes
+
+The summary/notes enrichment is fail-soft — missing manifests, pins, or compare-API failures degrade the summary (down to omitting it entirely) without failing the promotion.
+
+See [docs/RELEASING.md](../RELEASING.md#promoting-to-stable) for the operator runbook.
 
 ## Rollback Workflow
 

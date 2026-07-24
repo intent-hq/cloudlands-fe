@@ -28,8 +28,12 @@ import {
   parseCommitMessage,
   shouldSkipCommit,
   renderRepoNotes,
-  renderIntentdSection,
 } from './release-notes-lib.mjs';
+import {
+  buildIntentdSectionWithDelta,
+  fetchCommits,
+  resolveCommitSha,
+} from './release-notes-net.mjs';
 
 /**
  * Parse CLI arguments
@@ -51,83 +55,6 @@ function parseArgs() {
   }
 
   return parsed;
-}
-
-/**
- * Resolve a git ref (tag, branch, or SHA) to a commit SHA
- * @param {string} owner
- * @param {string} repo
- * @param {string} ref
- * @param {string} token
- * @returns {Promise<string>}
- */
-async function resolveCommitSha(owner, repo, ref, token) {
-  const url = `https://api.github.com/repos/${owner}/${repo}/commits/${ref}`;
-
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'intent-release-notes-generator',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`GitHub API error resolving ${ref}: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.sha;
-}
-
-/**
- * Fetch commits from GitHub compare API
- * @param {string} owner
- * @param {string} repo
- * @param {string} base
- * @param {string} head
- * @param {string} token
- * @returns {Promise<Array<{ commit: { message: string }, sha: string }>>}
- */
-async function fetchCommits(owner, repo, base, head, token) {
-  const commits = [];
-  let page = 1;
-  const perPage = 100;
-
-  while (true) {
-    const url = `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}?per_page=${perPage}&page=${page}`;
-
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'intent-release-notes-generator',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    if (data.commits && data.commits.length > 0) {
-      commits.push(...data.commits);
-
-      // If we got fewer commits than requested, we've reached the end
-      if (data.commits.length < perPage) {
-        break;
-      }
-
-      page++;
-    } else {
-      break;
-    }
-  }
-
-  return commits;
 }
 
 /**
@@ -159,8 +86,6 @@ async function main() {
     );
     process.exit(1);
   }
-  const intentdTag = `v${intentdVersion}`;
-
   // Optional previous pin; invalid values are ignored (notes enrichment is fail-soft)
   let intentdBaseVersion = null;
   if (args['intentd-base']) {
@@ -184,50 +109,14 @@ async function main() {
     .map(c => parseCommitMessage(c.commit.message.split('\n')[0]))
     .filter(c => c && !shouldSkipCommit(c));
 
-  // Build the intentd section. When the previous pin is known and moved, fetch the
-  // commit delta from the intentd compare API; any failure falls back to the pin
-  // line + compare link (no commit list) so a notes problem never blocks a release
-  // (fail-soft).
-  let intentdSection;
-  if (intentdBaseVersion && intentdBaseVersion !== intentdVersion) {
-    const intentdToken = process.env.INTENTD_TOKEN || process.env.GITHUB_TOKEN;
-    if (!intentdToken) {
-      console.warn('⚠️ No INTENTD_TOKEN (or GITHUB_TOKEN fallback) available — skipping intentd delta fetch.');
-      intentdSection = renderIntentdSection({
-        version: intentdVersion,
-        baseVersion: intentdBaseVersion,
-        commits: null,
-      });
-    } else {
-      try {
-        console.log(`Fetching intentd commits (v${intentdBaseVersion}...${intentdTag})...`);
-        const intentdCommits = await fetchCommits(
-          'intent-hq', 'intentd', `v${intentdBaseVersion}`, intentdTag, intentdToken,
-        );
-        console.log(`  Found ${intentdCommits.length} commits\n`);
-
-        const parsedIntentdCommits = intentdCommits
-          .map(c => parseCommitMessage(c.commit.message.split('\n')[0]))
-          .filter(c => c && !shouldSkipCommit(c));
-
-        intentdSection = renderIntentdSection({
-          version: intentdVersion,
-          baseVersion: intentdBaseVersion,
-          commits: parsedIntentdCommits,
-        });
-      } catch (error) {
-        console.warn(`⚠️ Failed to fetch intentd delta (v${intentdBaseVersion}...${intentdTag}): ${error.message}`);
-        console.warn('   Falling back to the pin line + compare link (no commit list).');
-        intentdSection = renderIntentdSection({
-          version: intentdVersion,
-          baseVersion: intentdBaseVersion,
-          commits: null,
-        });
-      }
-    }
-  } else {
-    intentdSection = renderIntentdSection({ version: intentdVersion, baseVersion: intentdBaseVersion });
-  }
+  // Build the intentd section. When the previous pin is known and moved, the shared
+  // helper fetches the commit delta from the intentd compare API; any failure falls
+  // back to the pin line + compare link (no commit list) so a notes problem never
+  // blocks a release (fail-soft).
+  const intentdSection = await buildIntentdSectionWithDelta({
+    version: intentdVersion,
+    baseVersion: intentdBaseVersion,
+  });
 
   const markdown = [
     `Intent v${args.version}`,
