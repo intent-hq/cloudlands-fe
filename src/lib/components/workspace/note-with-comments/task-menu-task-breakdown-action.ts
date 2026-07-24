@@ -58,6 +58,8 @@ export function runTaskBreakdownTaskMenuAction({
 
   const launchAction = agentSessionLaunchAgentRequested(workspace.id, {
     name: agentName,
+    // Derived from the task text, not user-typed — keep the session self-renameable.
+    nameExplicitlySet: false,
     initialMessage: userMessage, // User message (sent as initial message)
     agentType: createAgentTypeId('task-breakdown'),
     contextReferences: context,
