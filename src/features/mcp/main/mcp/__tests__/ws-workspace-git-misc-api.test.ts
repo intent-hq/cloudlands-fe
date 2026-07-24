@@ -49,10 +49,6 @@ vi.mock('$lib/utils/workspace-validation', () => ({
 }));
 
 // --- Mocks for git API dependencies ---
-vi.mock('$features/git/main/git-router', () => ({
-  getWorkspaceGitInfo: vi.fn(),
-}));
-
 vi.mock('$shared/git/git-env', () => ({
   execFileAsync: vi.fn(),
 }));

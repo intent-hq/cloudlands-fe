@@ -6,7 +6,6 @@ import {
 } from '$shared/types/change-detector.types';
 import { DiffSummaryRepository } from './diff-summary.repository';
 import { EventEmitter } from 'events';
-import { gitService } from '../../git/main/git.service';
 import {
   getAllChangeHistory,
   getChangeHistoryForWorkspace,
@@ -419,10 +418,6 @@ export class ChangeDetectorManager extends EventEmitter {
         `[ChangeDetectorManager] Agent changes detected from ${diffChunk.provenance.agentName} (turn ${(diffChunk.provenance as any).turnNumber})`,
       );
     }
-
-    // Clear git service cache so next status call gets fresh data
-    gitService.clearStatusCache(WorkspaceIdBrand(workspaceId));
-    logger.debug(`[ChangeDetectorManager] Cleared git cache for workspace ${workspaceId}`);
 
     // Add to history
     this.addToHistory(workspaceId, diffChunk);
