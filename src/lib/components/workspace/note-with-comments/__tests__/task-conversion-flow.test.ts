@@ -313,6 +313,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
 
 vi.mock('$features/notes/notes-write-service', () => ({
   updateNoteContent: vi.fn(),
+  hasPendingNoteContent: vi.fn(() => false),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
