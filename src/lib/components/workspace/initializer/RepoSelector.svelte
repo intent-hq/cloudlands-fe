@@ -568,7 +568,9 @@
 
       // Save recent repos through Redux if persistence is enabled.
       if (debugConfig.get('enableFormPersistence')) {
-        appStore.dispatch(setWorkspaceInitializerRecentRepos(recentRepos));
+        // Snapshot so no $state proxy enters the Redux store (src/store/renderer/AGENTS.md §2) —
+        // a proxy in the persisted slice breaks settings.update's IPC structured clone.
+        appStore.dispatch(setWorkspaceInitializerRecentRepos($state.snapshot(recentRepos)));
       }
     } catch (err) {
       const appError = handleError(err, { component: 'RepoSelector', action: 'loadRecentRepos' });
