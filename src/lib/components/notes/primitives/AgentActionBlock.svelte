@@ -79,6 +79,9 @@
       const state = appStore.state;
       const action = createAgentFromConfigRequested(workspaceId, {
         name: primitive.goal.length > 40 ? primitive.goal.slice(0, 40) + '...' : primitive.goal,
+        // Derived from the primitive goal, not user-chosen — keep the session
+        // self-renameable.
+        nameExplicitlySet: false,
         workspaceId: WorkspaceId(workspaceId),
         model: selectWorkspaceDefaultModel.select(state, workspaceId),
         agentType: parseAgentTypeId(primitive.agentId || '') || 'chat',
