@@ -229,6 +229,7 @@ describe('generate-release-notes CLI', () => {
       '--manifest-out', manifestFile,
     ];
     process.env.GITHUB_TOKEN = 'fake-token';
+    const savedIntentdToken = process.env.INTENTD_TOKEN;
     process.env.INTENTD_TOKEN = 'intentd-token';
 
     try {
@@ -261,7 +262,8 @@ describe('generate-release-notes CLI', () => {
       const feCalls = authByUrl.filter(c => c.url.includes('/repos/intent-hq/cloudlands-fe/'));
       expect(feCalls.every(c => c.auth === 'Bearer fake-token')).toBe(true);
     } finally {
-      delete process.env.INTENTD_TOKEN;
+      if (savedIntentdToken !== undefined) process.env.INTENTD_TOKEN = savedIntentdToken;
+      else delete process.env.INTENTD_TOKEN;
     }
   });
 
@@ -316,7 +318,7 @@ describe('generate-release-notes CLI', () => {
     expect(manifest.intentdBaseVersion).toBe('0.9.0');
   });
 
-  it('falls back to the pin line when the intentd compare fetch fails', async () => {
+  it('falls back to the pin line + compare link when the intentd compare fetch fails', async () => {
     const mockFetch = vi.fn(async (url: string | URL | Request) => {
       const urlStr = url.toString();
 
@@ -356,18 +358,138 @@ describe('generate-release-notes CLI', () => {
       readFileSync(manifestFile, 'utf8');
     }, { timeout: 5000 });
 
-    // Fail-soft: notes are still generated with the plain pin line
+    // Fail-soft: notes are still generated with the pin line + compare link,
+    // without a commit list or a misleading "No changes." claim
     const markdown = readFileSync(outFile, 'utf8');
     expect(markdown).toContain('fe feature');
     expect(markdown).toContain(
-      'Bundles the pinned [intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0) release.',
+      'Bundles [intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0) (previously v0.8.0)',
     );
-    expect(markdown).not.toContain('previously');
+    expect(markdown).toContain('https://github.com/intent-hq/intentd/compare/v0.8.0...v0.9.0');
+    expect(markdown).not.toContain('No changes.');
+    expect(markdown).not.toContain('https://github.com/intent-hq/intentd/pull/');
 
     // The base is still recorded in the manifest
     const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
     expect(manifest.intentdVersion).toBe('0.9.0');
     expect(manifest.intentdBaseVersion).toBe('0.8.0');
+  });
+
+  it('skips the intentd delta fetch when no intentd-capable token is available', async () => {
+    const fetchCalls: string[] = [];
+    const mockFetch = vi.fn(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      fetchCalls.push(urlStr);
+
+      if (urlStr.includes('/repos/intent-hq/cloudlands-fe/compare/')) {
+        return Response.json({ commits: [{ commit: { message: 'feat: fe feature (#1)' }, sha: 'abc123' }] });
+      }
+      if (urlStr.includes('/repos/intent-hq/cloudlands-fe/commits/')) {
+        return Response.json({ sha: 'fe-resolved-sha' });
+      }
+      throw new Error(`Unexpected fetch URL: ${urlStr}`);
+    });
+    globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch;
+
+    const outFile = join(tempDir, 'notes.md');
+    const manifestFile = join(tempDir, 'manifest.json');
+
+    process.argv = [
+      'node',
+      'generate-release-notes.mjs',
+      '--version', '1.0.0',
+      '--fe-base', 'v0.9.0',
+      '--fe-head', 'v1.0.0',
+      '--intentd-version', '0.9.0',
+      '--intentd-base', '0.8.0',
+      '--out', outFile,
+      '--manifest-out', manifestFile,
+    ];
+    // FE_TOKEN only: no INTENTD_TOKEN and no GITHUB_TOKEN fallback for intentd calls
+    const savedGithubToken = process.env.GITHUB_TOKEN;
+    const savedFeToken = process.env.FE_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    delete process.env.INTENTD_TOKEN;
+    process.env.FE_TOKEN = 'fe-token';
+
+    try {
+      vi.resetModules();
+      await import('./generate-release-notes.mjs?t=' + Date.now());
+      await vi.waitFor(() => {
+        readFileSync(outFile, 'utf8');
+        readFileSync(manifestFile, 'utf8');
+      }, { timeout: 5000 });
+
+      // No intentd API call is attempted without a usable token
+      expect(fetchCalls.some(url => url.includes('/repos/intent-hq/intentd/'))).toBe(false);
+
+      // Pin line + compare link are still rendered (both constructible offline)
+      const markdown = readFileSync(outFile, 'utf8');
+      expect(markdown).toContain(
+        'Bundles [intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0) (previously v0.8.0)',
+      );
+      expect(markdown).toContain('https://github.com/intent-hq/intentd/compare/v0.8.0...v0.9.0');
+      expect(markdown).not.toContain('No changes.');
+
+      const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
+      expect(manifest.intentdBaseVersion).toBe('0.8.0');
+    } finally {
+      if (savedFeToken !== undefined) process.env.FE_TOKEN = savedFeToken;
+      else delete process.env.FE_TOKEN;
+      if (savedGithubToken !== undefined) process.env.GITHUB_TOKEN = savedGithubToken;
+    }
+  });
+
+  it('ignores an invalid --intentd-base and keeps the plain pin line', async () => {
+    const fetchCalls: string[] = [];
+    const mockFetch = vi.fn(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      fetchCalls.push(urlStr);
+
+      if (urlStr.includes('/repos/intent-hq/cloudlands-fe/compare/')) {
+        return Response.json({ commits: [{ commit: { message: 'feat: fe feature (#1)' }, sha: 'abc123' }] });
+      }
+      if (urlStr.includes('/repos/intent-hq/cloudlands-fe/commits/')) {
+        return Response.json({ sha: 'fe-resolved-sha' });
+      }
+      throw new Error(`Unexpected fetch URL: ${urlStr}`);
+    });
+    globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch;
+
+    const outFile = join(tempDir, 'notes.md');
+    const manifestFile = join(tempDir, 'manifest.json');
+
+    process.argv = [
+      'node',
+      'generate-release-notes.mjs',
+      '--version', '1.0.0',
+      '--fe-base', 'v0.9.0',
+      '--fe-head', 'v1.0.0',
+      '--intentd-version', '0.9.0',
+      '--intentd-base', 'garbage',
+      '--out', outFile,
+      '--manifest-out', manifestFile,
+    ];
+    process.env.GITHUB_TOKEN = 'fake-token';
+
+    vi.resetModules();
+    await import('./generate-release-notes.mjs?t=' + Date.now());
+    await vi.waitFor(() => {
+      readFileSync(outFile, 'utf8');
+      readFileSync(manifestFile, 'utf8');
+    }, { timeout: 5000 });
+
+    // Invalid base is warned about and ignored: no intentd traffic, plain pin line
+    expect(fetchCalls.some(url => url.includes('/repos/intent-hq/intentd/'))).toBe(false);
+    const markdown = readFileSync(outFile, 'utf8');
+    expect(markdown).toContain(
+      'Bundles the pinned [intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0) release.',
+    );
+    expect(markdown).not.toContain('previously');
+
+    const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
+    expect(manifest.intentdVersion).toBe('0.9.0');
+    expect(manifest.intentdBaseVersion).toBeUndefined();
   });
 
   it('fails fast with a clear error on an invalid --intentd-version', () => {

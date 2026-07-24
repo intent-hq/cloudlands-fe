@@ -185,31 +185,45 @@ async function main() {
     .filter(c => c && !shouldSkipCommit(c));
 
   // Build the intentd section. When the previous pin is known and moved, fetch the
-  // commit delta from the intentd compare API; any failure falls back to the plain
-  // pin line so a notes problem never blocks a release (fail-soft).
+  // commit delta from the intentd compare API; any failure falls back to the pin
+  // line + compare link (no commit list) so a notes problem never blocks a release
+  // (fail-soft).
   let intentdSection;
   if (intentdBaseVersion && intentdBaseVersion !== intentdVersion) {
     const intentdToken = process.env.INTENTD_TOKEN || process.env.GITHUB_TOKEN;
-    try {
-      console.log(`Fetching intentd commits (v${intentdBaseVersion}...${intentdTag})...`);
-      const intentdCommits = await fetchCommits(
-        'intent-hq', 'intentd', `v${intentdBaseVersion}`, intentdTag, intentdToken,
-      );
-      console.log(`  Found ${intentdCommits.length} commits\n`);
-
-      const parsedIntentdCommits = intentdCommits
-        .map(c => parseCommitMessage(c.commit.message.split('\n')[0]))
-        .filter(c => c && !shouldSkipCommit(c));
-
+    if (!intentdToken) {
+      console.warn('⚠️ No INTENTD_TOKEN (or GITHUB_TOKEN fallback) available — skipping intentd delta fetch.');
       intentdSection = renderIntentdSection({
         version: intentdVersion,
         baseVersion: intentdBaseVersion,
-        commits: parsedIntentdCommits,
+        commits: null,
       });
-    } catch (error) {
-      console.warn(`⚠️ Failed to fetch intentd delta (v${intentdBaseVersion}...${intentdTag}): ${error.message}`);
-      console.warn('   Falling back to the pin line.');
-      intentdSection = renderIntentdSection({ version: intentdVersion });
+    } else {
+      try {
+        console.log(`Fetching intentd commits (v${intentdBaseVersion}...${intentdTag})...`);
+        const intentdCommits = await fetchCommits(
+          'intent-hq', 'intentd', `v${intentdBaseVersion}`, intentdTag, intentdToken,
+        );
+        console.log(`  Found ${intentdCommits.length} commits\n`);
+
+        const parsedIntentdCommits = intentdCommits
+          .map(c => parseCommitMessage(c.commit.message.split('\n')[0]))
+          .filter(c => c && !shouldSkipCommit(c));
+
+        intentdSection = renderIntentdSection({
+          version: intentdVersion,
+          baseVersion: intentdBaseVersion,
+          commits: parsedIntentdCommits,
+        });
+      } catch (error) {
+        console.warn(`⚠️ Failed to fetch intentd delta (v${intentdBaseVersion}...${intentdTag}): ${error.message}`);
+        console.warn('   Falling back to the pin line + compare link (no commit list).');
+        intentdSection = renderIntentdSection({
+          version: intentdVersion,
+          baseVersion: intentdBaseVersion,
+          commits: null,
+        });
+      }
     }
   } else {
     intentdSection = renderIntentdSection({ version: intentdVersion, baseVersion: intentdBaseVersion });

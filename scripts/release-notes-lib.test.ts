@@ -213,4 +213,12 @@ describe('renderIntentdSection', () => {
     expect(result).toContain('https://github.com/intent-hq/intentd/compare/v0.8.0...v0.9.0');
     expect(result).toContain('No changes.');
   });
+
+  it('renders the pin line + compare link only when commits are unknown (null)', () => {
+    const result = renderIntentdSection({ version: '0.9.0', baseVersion: '0.8.0', commits: null });
+    expect(result).toContain('(previously v0.8.0)');
+    expect(result).toContain('https://github.com/intent-hq/intentd/compare/v0.8.0...v0.9.0');
+    expect(result).not.toContain('No changes.');
+    expect(result).not.toContain('###');
+  });
 });
