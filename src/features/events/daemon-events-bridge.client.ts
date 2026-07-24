@@ -115,8 +115,11 @@ import type {
   TaskStatus,
   Workspace,
 } from '$shared/types';
-import { WorkspaceStatus } from '$shared/types';
-import { PROPOSAL_RESOURCE_MIME_TYPE } from '$shared/types/proposal-resource';
+import { WorkspaceStatus, isProposal } from '$shared/types';
+import {
+  PROPOSAL_RESOURCE_MIME_TYPE,
+  createProposalResource,
+} from '$shared/types/proposal-resource';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
@@ -372,6 +375,82 @@ function findProposalResourceItem(output: unknown): Record<string, unknown> | nu
 }
 
 /**
+ * Size cap for the collapsed-output fallback parse — mirrors the daemon's
+ * `COLLAPSED_PROPOSAL_MAX_BYTES` (tool_block.rs): a stringified
+ * `{ok, proposal}` payload larger than this is never a real proposal echo.
+ */
+const COLLAPSED_PROPOSAL_MAX_BYTES = 256 * 1024;
+
+/**
+ * Extract the candidate stringified payload from a provider-collapsed tool
+ * output: `{ "output": "<string>" }` (auggie's shape) or a bare string —
+ * mirrors the daemon's `collapsed_output_text` (tool_block.rs).
+ */
+function collapsedOutputText(output: unknown): string | null {
+  if (typeof output === 'string') return output;
+  if (output && typeof output === 'object' && !Array.isArray(output)) {
+    const nested = (output as { output?: unknown }).output;
+    if (typeof nested === 'string') return nested;
+  }
+  return null;
+}
+
+/**
+ * §7.1 collapsed-output fallback — mirrors the daemon's
+ * `rebuild_collapsed_proposal_resource` (tool_block.rs). Some providers (e.g.
+ * auggie) flatten the daemon's dual text+resource MCP content items into a
+ * single `{ "output": "<stringified {ok, proposal}>" }` object, dropping the
+ * resource item, so `findProposalResourceItem` finds nothing in the live
+ * `agent:tool:call` output even though the daemon lifts the block into the
+ * persisted transcript. Recover the proposal from the collapsed string under
+ * the same guards (size cap, JSON object with `ok: true`, proposal passing
+ * canonical validation) and rebuild the resource item with the same shape the
+ * daemon's `build_proposal_resource_item` emits (`createProposalResource`).
+ * Note the rebuilt uri/text may differ superficially from the persisted
+ * block's (percent-encoding set, JSON key order); the daemon's re-hydrated
+ * transcript replaces the live block after the turn completes.
+ */
+function rebuildCollapsedProposalResourceItem(output: unknown): Record<string, unknown> | null {
+  const text = collapsedOutputText(output);
+  if (!text || !text.trimStart().startsWith('{')) return null;
+  // The cap is in BYTES like the daemon's; text.length counts UTF-16 code
+  // units (each up to 3 UTF-8 bytes), so only encode when the cheap length
+  // check cannot rule the payload in or out on its own.
+  if (text.length > COLLAPSED_PROPOSAL_MAX_BYTES) return null;
+  if (
+    text.length * 3 > COLLAPSED_PROPOSAL_MAX_BYTES &&
+    new TextEncoder().encode(text).length > COLLAPSED_PROPOSAL_MAX_BYTES
+  ) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const envelope = parsed as { ok?: unknown; proposal?: unknown };
+  if (envelope.ok !== true || !isProposal(envelope.proposal)) return null;
+  // The shared isProposal is looser than the daemon's is_valid_proposal
+  // (proposal.rs): match the daemon's extra requirements — non-empty
+  // preview.title and a payload that is a JSON object (not an array) — so the
+  // FE never lifts a block the daemon would decline to persist.
+  const proposal = envelope.proposal;
+  if (proposal.preview.title.length === 0 || Array.isArray(proposal.payload)) return null;
+  return { type: 'resource', resource: createProposalResource(proposal) };
+}
+
+/**
+ * Find or reconstruct the proposal resource item for a completed tool's
+ * output (§7.1) — mirrors the daemon's `lift_proposal_resource`
+ * (tool_block.rs): the array path first, then the collapsed-output fallback.
+ */
+function liftProposalResourceItem(output: unknown): Record<string, unknown> | null {
+  return findProposalResourceItem(output) ?? rebuildCollapsedProposalResourceItem(output);
+}
+
+/**
  * Predict the standalone proposal block's stable id from the `tool_use`
  * blockId: the daemon appends `tool_result` at index + 1 and the proposal
  * block at index + 2 (`{messageId}:{index}` scheme, §7.1 tool_delta).
@@ -531,10 +610,12 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
     // §7.1: lift a proposal-MIME resource item out of a COMPLETED tool's
     // output into a standalone `resource` block right after the tool_result,
     // mirroring the daemon's persisted transcript (`record_tool`) and live
-    // delta stream (`tool_delta`) so `ProposalCard` renders mid-stream. A
-    // tool that ends in `error` never surfaces a standalone proposal block.
+    // delta stream (`tool_delta`) so `ProposalCard` renders mid-stream —
+    // including the collapsed-output fallback for providers that flatten the
+    // MCP content-item array. A tool that ends in `error` never surfaces a
+    // standalone proposal block.
     if (status === 'completed') {
-      const proposalItem = findProposalResourceItem(output);
+      const proposalItem = liftProposalResourceItem(output);
       if (proposalItem) {
         const proposalBlockId = predictProposalBlockId(blockId);
         state.proposalsByUseIndex.set(blockIndex, {
