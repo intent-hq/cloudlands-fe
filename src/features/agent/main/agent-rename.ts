@@ -5,10 +5,11 @@
  * PROTOCOL.md §5.5) in a single call — the daemon enforces the
  * `skipIfExplicitlySet` guard natively and returns
  * `{ success: true, name, skipped? }`. On applied renames the helper also
- * emits `agent:renamed` through Redux workspace events. It is the
- * implementation used by both the MCP `setAgentName` tool and the
- * user-triggered rename IPC handler. The daemon is the single source of
- * session state — there is no main-process session cache to sync.
+ * emits `agent:renamed` through Redux workspace events. Its only production
+ * caller today is the MCP `setAgentName` tool (`skipIfExplicitlySet: true`);
+ * the `skipIfExplicitlySet: false` branch is covered by tests. The daemon is
+ * the single source of session state — there is no main-process session
+ * cache to sync.
  */
 
 import { Logger } from '$shared/logger';
@@ -28,7 +29,7 @@ export interface RenameAgentOnDiskOptions {
    * When true (used by the MCP agent-driven rename), the daemon skips the
    * write if the session already has `nameExplicitlySet: true`, so prior
    * user/tool renames are not overwritten.
-   * When false (used by user-driven rename), the write always proceeds.
+   * When false, the write always proceeds.
    */
   skipIfExplicitlySet?: boolean;
 }

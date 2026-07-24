@@ -1,8 +1,9 @@
 /**
  * Tests for the lightweight agent-rename helper.
  *
- * Covers both the user-driven rename path (no skipIfExplicitlySet) and the
- * MCP agent-driven path (skipIfExplicitlySet=true). Renames are issued as a
+ * Covers both the `skipIfExplicitlySet: false` path (tests only — no
+ * production caller today) and the MCP agent-driven path
+ * (skipIfExplicitlySet=true). Renames are issued as a
  * single `agent.rename` daemon RPC (PROTOCOL.md §5.5), which enforces the
  * skip-if-explicitly-set guard natively and returns
  * `{ success: true, name, skipped? }`. These tests mock
