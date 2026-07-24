@@ -405,12 +405,22 @@ function collapsedOutputText(output: unknown): string | null {
  * persisted transcript. Recover the proposal from the collapsed string under
  * the same guards (size cap, JSON object with `ok: true`, proposal passing
  * canonical validation) and rebuild the resource item with the same shape the
- * daemon's `build_proposal_resource_item` emits (`createProposalResource`),
- * so the live block matches the persisted one.
+ * daemon's `build_proposal_resource_item` emits (`createProposalResource`).
+ * Note the rebuilt uri/text may differ superficially from the persisted
+ * block's (percent-encoding set, JSON key order); the daemon's re-hydrated
+ * transcript replaces the live block after the turn completes.
  */
 function rebuildCollapsedProposalResourceItem(output: unknown): Record<string, unknown> | null {
   const text = collapsedOutputText(output);
-  if (!text || text.length > COLLAPSED_PROPOSAL_MAX_BYTES || !text.trimStart().startsWith('{')) {
+  if (!text || !text.trimStart().startsWith('{')) return null;
+  // The cap is in BYTES like the daemon's; text.length counts UTF-16 code
+  // units (each up to 3 UTF-8 bytes), so only encode when the cheap length
+  // check cannot rule the payload in or out on its own.
+  if (text.length > COLLAPSED_PROPOSAL_MAX_BYTES) return null;
+  if (
+    text.length * 3 > COLLAPSED_PROPOSAL_MAX_BYTES &&
+    new TextEncoder().encode(text).length > COLLAPSED_PROPOSAL_MAX_BYTES
+  ) {
     return null;
   }
   let parsed: unknown;
@@ -422,7 +432,13 @@ function rebuildCollapsedProposalResourceItem(output: unknown): Record<string, u
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   const envelope = parsed as { ok?: unknown; proposal?: unknown };
   if (envelope.ok !== true || !isProposal(envelope.proposal)) return null;
-  return { type: 'resource', resource: createProposalResource(envelope.proposal) };
+  // The shared isProposal is looser than the daemon's is_valid_proposal
+  // (proposal.rs): match the daemon's extra requirements — non-empty
+  // preview.title and a payload that is a JSON object (not an array) — so the
+  // FE never lifts a block the daemon would decline to persist.
+  const proposal = envelope.proposal;
+  if (proposal.preview.title.length === 0 || Array.isArray(proposal.payload)) return null;
+  return { type: 'resource', resource: createProposalResource(proposal) };
 }
 
 /**

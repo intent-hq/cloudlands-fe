@@ -338,9 +338,16 @@ describe("agent-stream.wss — chunk accumulation → transcript growth", () => 
     });
   });
 
-  it("never lifts from a collapsed output that fails the §7.1 guards", async () => {
-    // Ordinary collapsed tool outputs (valid JSON but not an `{ok: true,
-    // proposal}` echo) must never surface a standalone proposal block.
+  it("lifts a proposal from a bare-string collapsed output (§7.1)", async () => {
+    // Mirrors the daemon's Value::String arm (tool_block.rs::
+    // collapsed_output_text, pinned there by
+    // lift_proposal_resource_rebuilds_from_plain_string_output).
+    const proposal = {
+      kind: "workspace-create",
+      payload: { operation: "workspace.create", params: { repositoryPath: "/repo" } },
+      preview: { title: "Create workspace" },
+    };
+
     backend.pushEvent({
       type: "agent:tool:call",
       data: {
@@ -348,12 +355,12 @@ describe("agent-stream.wss — chunk accumulation → transcript growth", () => 
         messageId: MESSAGE_ID,
         blockIndex: 0,
         blockId: `${MESSAGE_ID}:0`,
-        toolCallId: "tc-plain-1",
-        toolName: "run_command",
-        toolKind: "execute",
+        toolCallId: "tc-bare-1",
+        toolName: "ws-app-proposal-show",
+        toolKind: "other",
         status: "completed",
         input: {},
-        output: { output: JSON.stringify({ ok: true, stdout: "done" }) },
+        output: JSON.stringify({ ok: true, proposal }),
         streamId: STREAM_ID,
       },
       workspaceId: WORKSPACE_ID,
@@ -364,7 +371,65 @@ describe("agent-stream.wss — chunk accumulation → transcript growth", () => 
     const messages = readAssistantMessages();
     expect(messages).toHaveLength(1);
     const blocks = messages[0].contentBlocks ?? [];
-    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result"]);
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result", "resource"]);
+  });
+
+  it("never lifts from a collapsed output that fails the §7.1 guards", async () => {
+    // Each collapsed output is valid JSON but must be rejected by a specific
+    // guard: not a proposal echo, daemon's non-empty-title requirement, and
+    // daemon's payload-must-be-an-object requirement (is_valid_proposal).
+    const rejected = [
+      { ok: true, stdout: "done" },
+      {
+        ok: true,
+        proposal: {
+          kind: "workspace-create",
+          payload: { operation: "workspace.create", params: {} },
+          preview: { title: "" },
+        },
+      },
+      {
+        ok: true,
+        proposal: {
+          kind: "workspace-create",
+          payload: [],
+          preview: { title: "Create workspace" },
+        },
+      },
+    ];
+    rejected.forEach((envelope, i) => {
+      backend.pushEvent({
+        type: "agent:tool:call",
+        data: {
+          agentId: AGENT_ID,
+          messageId: MESSAGE_ID,
+          blockIndex: i * 2,
+          blockId: `${MESSAGE_ID}:${i * 2}`,
+          toolCallId: `tc-guard-${i}`,
+          toolName: "run_command",
+          toolKind: "execute",
+          status: "completed",
+          input: {},
+          output: { output: JSON.stringify(envelope) },
+          streamId: STREAM_ID,
+        },
+        workspaceId: WORKSPACE_ID,
+        actor: { type: "agent", id: AGENT_ID },
+        subscriptionId: SUBSCRIPTION_ID,
+      });
+    });
+
+    const messages = readAssistantMessages();
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual([
+      "tool_use",
+      "tool_result",
+      "tool_use",
+      "tool_result",
+      "tool_use",
+      "tool_result",
+    ]);
   });
 
   it("never lifts a proposal block from a tool that ends in error (§7.1)", async () => {
