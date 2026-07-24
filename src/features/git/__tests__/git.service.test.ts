@@ -4,18 +4,30 @@
  */
 
 import {
+  beforeEach,
   describe,
   it,
   expect,
   vi,
 } from 'vitest';
 import { GitService } from '../main/git.service';
-import { execAsyncRobust, execFileAsyncWithRetry } from '../../../shared/git/git-env';
+import {
+  execAsyncRobust,
+  execFileAsync,
+  execFileAsyncWithRetry,
+} from '../../../shared/git/git-env';
 
 vi.mock('../../../shared/git/git-env', () => ({
   execFileAsync: vi.fn(),
   execAsyncRobust: vi.fn(),
   execFileAsyncWithRetry: vi.fn(),
+}));
+
+vi.mock('../../workspace/main/change-detection/diffable-file-filter', () => ({
+  filterDiffableFiles: vi.fn(async (_worktreePath: string, paths: string[]) => ({
+    diffable: paths,
+    skipped: [],
+  })),
 }));
 
 describe('GitService', () => {
@@ -290,6 +302,197 @@ describe('GitService', () => {
         ['commit', '-m', fullMessage],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
+    });
+  });
+
+  describe('getDiff exec seams (shell-free argv for file names)', () => {
+    // A filename that would trigger command substitution / quote breaking if it
+    // were ever interpolated into a shell string.
+    const hostileFile = "evil-`touch pwned`-$(id)-'quote'.txt";
+
+    const diffOutputFor = (file: string) =>
+      [
+        `diff --git a/${file} b/${file}`,
+        'index 0000000..1111111 100644',
+        `--- a/${file}`,
+        `+++ b/${file}`,
+        '@@ -1,1 +1,1 @@',
+        '-old',
+        '+new',
+        '',
+      ].join('\n');
+
+    function makeService(statusOutput: string, diffOutput: string) {
+      const service = new GitService();
+      vi.spyOn(service as any, 'getWorktreePath').mockReturnValue('/tmp/worktree');
+      vi.mocked(execAsyncRobust).mockImplementation(async (command: string) => {
+        if (command.startsWith('git status --porcelain')) {
+          return { stdout: statusOutput, stderr: '' };
+        }
+        if (command.startsWith('git diff')) {
+          return { stdout: diffOutput, stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+      });
+      return service;
+    }
+
+    beforeEach(() => {
+      vi.mocked(execFileAsync).mockReset();
+      vi.mocked(execAsyncRobust).mockReset();
+    });
+
+    it('reads a staged new file from the index via git show argv (no shell)', async () => {
+      const service = makeService(`A  ${hostileFile}\n`, '');
+      vi.mocked(execFileAsync).mockResolvedValue({ stdout: 'staged content', stderr: '' });
+
+      const result = await service.getDiff('workspace-1' as any, [hostileFile], true);
+
+      expect(result.ok).toBe(true);
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', `:${hostileFile}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      if (result.ok) {
+        expect(result.data[0].file).toBe(hostileFile);
+        expect(result.data[0].newContent).toBe('staged content');
+      }
+    });
+
+    it('staged diff reads HEAD and index versions via git show argv (no shell)', async () => {
+      const service = makeService(`M  ${hostileFile}\n`, diffOutputFor(hostileFile));
+      vi.mocked(execFileAsync).mockImplementation(async (_file, args) => {
+        if (args[1] === `HEAD:${hostileFile}`) return { stdout: 'head content', stderr: '' };
+        return { stdout: 'index content', stderr: '' };
+      });
+
+      const result = await service.getDiff('workspace-1' as any, [hostileFile], true);
+
+      expect(result.ok).toBe(true);
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', `HEAD:${hostileFile}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', `:${hostileFile}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      if (result.ok) {
+        expect(result.data[0].oldContent).toBe('head content');
+        expect(result.data[0].newContent).toBe('index content');
+      }
+    });
+
+    it('unstaged diff reads working tree via cat argv and index via git show argv (no shell)', async () => {
+      const service = makeService(` M ${hostileFile}\n`, diffOutputFor(hostileFile));
+      vi.mocked(execFileAsync).mockImplementation(async (file) => {
+        if (file === 'cat') return { stdout: 'worktree content', stderr: '' };
+        return { stdout: 'index content', stderr: '' };
+      });
+
+      const result = await service.getDiff('workspace-1' as any, [hostileFile], false);
+
+      expect(result.ok).toBe(true);
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'cat',
+        [hostileFile],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', `:${hostileFile}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      if (result.ok) {
+        expect(result.data[0].oldContent).toBe('index content');
+        expect(result.data[0].newContent).toBe('worktree content');
+      }
+    });
+
+    it('all-changes diff reads working tree via cat argv and HEAD via git show argv (no shell)', async () => {
+      const service = makeService(` M ${hostileFile}\n`, diffOutputFor(hostileFile));
+      vi.mocked(execFileAsync).mockImplementation(async (file) => {
+        if (file === 'cat') return { stdout: 'worktree content', stderr: '' };
+        return { stdout: 'head content', stderr: '' };
+      });
+
+      const result = await service.getDiff('workspace-1' as any, [hostileFile], undefined);
+
+      expect(result.ok).toBe(true);
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'cat',
+        [hostileFile],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', `HEAD:${hostileFile}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      if (result.ok) {
+        expect(result.data[0].oldContent).toBe('head content');
+        expect(result.data[0].newContent).toBe('worktree content');
+      }
+    });
+  });
+
+  describe('getHistory exec seams (shell-free argv for refs and hashes)', () => {
+    const hostileRef = 'main`touch pwned`;$(id)';
+    const hostileHash = 'abc123`touch pwned`$(id)';
+
+    beforeEach(() => {
+      vi.mocked(execFileAsync).mockReset();
+      vi.mocked(execAsyncRobust).mockReset();
+      vi.mocked(execFileAsyncWithRetry).mockReset();
+    });
+
+    it('passes refs to rev-parse/merge-base and hashes to branch --contains as argv (no shell)', async () => {
+      const service = new GitService();
+      vi.spyOn(service as any, 'getWorktreePath').mockReturnValue('/tmp/worktree');
+
+      vi.mocked(execAsyncRobust).mockImplementation(async (command: string) => {
+        if (command.startsWith('git branch --show-current')) {
+          return { stdout: 'feature\n', stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+      });
+      vi.mocked(execFileAsync).mockImplementation(async (_file, args) => {
+        if (args[0] === 'rev-parse') return { stdout: '', stderr: '' };
+        if (args[0] === 'merge-base') return { stdout: 'boundary123\n', stderr: '' };
+        if (args[0] === 'log') throw new Error('no upstream');
+        return { stdout: '', stderr: '' };
+      });
+      vi.mocked(execFileAsyncWithRetry).mockResolvedValue({
+        stdout: `${hostileHash}\x01Author\x01author@example.com\x012026-07-24T00:00:00Z\x01subject\x01\x00`,
+        stderr: '',
+      });
+
+      const result = await service.getHistory('workspace-1' as any, 50, undefined, hostileRef);
+
+      expect(result.ok).toBe(true);
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['rev-parse', '--verify', `origin/${hostileRef}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['merge-base', 'HEAD', `origin/${hostileRef}`],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['branch', '-r', '--contains', hostileHash],
+        expect.objectContaining({ cwd: '/tmp/worktree', timeout: 5000 }),
+      );
+      if (result.ok) {
+        expect(result.data.commits).toHaveLength(1);
+        expect(result.data.commits[0].hash).toBe(hostileHash);
+        expect(result.data.boundarySha).toBe('boundary123');
+      }
     });
   });
 

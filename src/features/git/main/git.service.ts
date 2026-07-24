@@ -819,7 +819,7 @@ export class GitService {
                 if (isNewStagedFile) {
                   // For staged new files, read from the index
                   try {
-                    const { stdout } = await execAsync(`git show :"${filePath}"`, {
+                    const { stdout } = await execFileAsync('git', ['show', `:${filePath}`], {
                       cwd: worktreePath,
                     });
                     fileContent = stdout;
@@ -960,9 +960,11 @@ export class GitService {
             // For staged changes: compare index (staged) vs HEAD
             // oldContent = HEAD version, newContent = staged version
             try {
-              const { stdout: headFileContent } = await execAsync(`git show HEAD:"${chunk.file}"`, {
-                cwd: worktreePath,
-              });
+              const { stdout: headFileContent } = await execFileAsync(
+                'git',
+                ['show', `HEAD:${chunk.file}`],
+                { cwd: worktreePath },
+              );
               oldFileContent = headFileContent;
             } catch  {
               // File might be new, so HEAD version doesn't exist
@@ -970,9 +972,11 @@ export class GitService {
             }
 
             try {
-              const { stdout: stagedFileContent } = await execAsync(`git show :"${chunk.file}"`, {
-                cwd: worktreePath,
-              });
+              const { stdout: stagedFileContent } = await execFileAsync(
+                'git',
+                ['show', `:${chunk.file}`],
+                { cwd: worktreePath },
+              );
               newFileContent = stagedFileContent;
             } catch  {
               // File might be deleted in staging
@@ -982,7 +986,7 @@ export class GitService {
             // For unstaged changes or all changes: use working tree
             // oldContent = HEAD (or index for unstaged), newContent = working tree
             try {
-              const { stdout: fileContent } = await execAsync(`cat "${chunk.file}"`, {
+              const { stdout: fileContent } = await execFileAsync('cat', [chunk.file], {
                 cwd: worktreePath,
               });
               newFileContent = fileContent;
@@ -994,9 +998,11 @@ export class GitService {
             if (staged === false) {
               // For unstaged changes: oldContent = index version
               try {
-                const { stdout: indexFileContent } = await execAsync(`git show :"${chunk.file}"`, {
-                  cwd: worktreePath,
-                });
+                const { stdout: indexFileContent } = await execFileAsync(
+                  'git',
+                  ['show', `:${chunk.file}`],
+                  { cwd: worktreePath },
+                );
                 oldFileContent = indexFileContent;
               } catch  {
                 // File might be new, so index version doesn't exist
@@ -1005,8 +1011,9 @@ export class GitService {
             } else {
               // For all changes: oldContent = HEAD version
               try {
-                const { stdout: headFileContent } = await execAsync(
-                  `git show HEAD:"${chunk.file}"`,
+                const { stdout: headFileContent } = await execFileAsync(
+                  'git',
+                  ['show', `HEAD:${chunk.file}`],
                   { cwd: worktreePath },
                 );
                 oldFileContent = headFileContent;
@@ -1359,10 +1366,12 @@ export class GitService {
             const refsToTry = [`origin/${baseRef}`, baseRef];
             for (const ref of refsToTry) {
               try {
-                await execAsync(`git rev-parse --verify ${ref}`, { cwd: worktreePath });
-                const { stdout: mergeBaseOut } = await execAsync(`git merge-base HEAD ${ref}`, {
-                  cwd: worktreePath,
-                });
+                await execFileAsync('git', ['rev-parse', '--verify', ref], { cwd: worktreePath });
+                const { stdout: mergeBaseOut } = await execFileAsync(
+                  'git',
+                  ['merge-base', 'HEAD', ref],
+                  { cwd: worktreePath },
+                );
                 const result = mergeBaseOut.trim();
                 if (result) {
                   logger.debug('getHistory: Found merge-base', {
@@ -1549,10 +1558,11 @@ export class GitService {
           isPushed = !unpushedHashes.has(hash);
         } else if (useContainsCheck) {
           try {
-            const { stdout: remoteBranches } = await execAsync(`git branch -r --contains ${hash}`, {
-              cwd: worktreePath,
-              timeout: 5000,
-            });
+            const { stdout: remoteBranches } = await execFileAsync(
+              'git',
+              ['branch', '-r', '--contains', hash],
+              { cwd: worktreePath, timeout: 5000 },
+            );
             isPushed = remoteBranches.trim().length > 0;
           } catch {
             // If check fails, assume not pushed
