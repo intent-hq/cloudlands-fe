@@ -253,6 +253,49 @@ describe('agent-session-slice reducer', () => {
 
       expect(next).toBe(state);
     });
+
+    // Regression (§7.1 lifted proposal-resource block): re-hydration after a
+    // finished turn delivers the SAME message id/count but with the daemon's
+    // appended trailing block (e.g. the standalone proposal resource the live
+    // accumulator missed). The no-op guard must not swallow that upsert.
+    it('applies an upsert when the last message gained a trailing content block', () => {
+      const finished = {
+        ...makeUniqueMessage('m-asst', 'assistant'),
+        contentBlocks: [
+          { type: 'text' as const, text: 'Review the proposal below.' },
+          { type: 'tool_use' as const, id: 'm-asst:1', name: 'ws-app-proposal-show', input: {} },
+        ],
+      };
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [finished] })),
+      );
+
+      const withProposal = {
+        ...finished,
+        contentBlocks: [
+          ...finished.contentBlocks,
+          {
+            type: 'resource' as const,
+            id: 'm-asst:2',
+            resource: {
+              uri: 'intent-proposal://workspace-create/Create%20workspace',
+              name: 'Create workspace',
+              mimeType: 'application/vnd.intent.proposal+json',
+              text: '{}',
+            },
+          },
+        ],
+      } as unknown as AgentMessage;
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [withProposal] })),
+      );
+
+      expect(next).not.toBe(state);
+      expect(getMsgs(next, 'a1')[0].contentBlocks).toHaveLength(3);
+      expect(getMsgs(next, 'a1')[0].contentBlocks?.[2]).toMatchObject({ type: 'resource' });
+    });
   });
 
   describe('removeSession', () => {
