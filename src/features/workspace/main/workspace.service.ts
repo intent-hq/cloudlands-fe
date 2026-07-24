@@ -92,7 +92,6 @@ import {
   getWorktreesLocation,
 } from './app-settings.service';
 import { githubService } from '../../git-tracking/main/github.service';
-import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { WorkspaceNotFoundError, WorkspaceValidationError, GitWorktreeError } = Errors;
@@ -417,7 +416,7 @@ export class WorkspaceService {
     const httpsUrl = `https://github.com/${owner}/${repo}.git`;
 
     try {
-      await execAsync(`git ls-remote --heads ${posixSingleQuote(httpsUrl)}`, {
+      await execFileAsync('git', ['ls-remote', '--heads', httpsUrl], {
         timeout: 8000,
       });
       return { ok: true, data: null };
