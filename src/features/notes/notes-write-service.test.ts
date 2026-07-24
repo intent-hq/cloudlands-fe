@@ -92,7 +92,7 @@ describe("notesWriteService (fake seam, real store)", () => {
 
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
     expect(notesApi.setContent).toHaveBeenCalledTimes(1);
-    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "edited");
+    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "edited", undefined, WS);
   });
 
   it("coalesces rapid edits into a single debounced save", async () => {
@@ -104,7 +104,7 @@ describe("notesWriteService (fake seam, real store)", () => {
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
 
     expect(notesApi.setContent).toHaveBeenCalledTimes(1);
-    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "abc");
+    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "abc", undefined, WS);
   });
 
   it("immediate save bypasses the debounce", async () => {
@@ -112,7 +112,7 @@ describe("notesWriteService (fake seam, real store)", () => {
 
     updateNoteContent(WS, "n1", "now", { immediate: true });
     await Promise.resolve();
-    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "now");
+    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "now", undefined, WS);
   });
 
   it("refetches to reconcile when a content save fails", async () => {
@@ -141,7 +141,7 @@ describe("notesWriteService (fake seam, real store)", () => {
     notesApi.updateMetadata.mockResolvedValueOnce({ success: false, error: "no" } as never);
 
     await updateNoteTitle(WS, "n1", "New");
-    expect(notesApi.updateMetadata).toHaveBeenCalledWith("n1", { title: "New" });
+    expect(notesApi.updateMetadata).toHaveBeenCalledWith("n1", { title: "New" }, undefined, WS);
     expect(selectNoteById.select(appStore.state, WS, "n1")?.title).toBe("Old");
     expect(toast.error).toHaveBeenCalledWith(
       "Failed to update note title",
@@ -154,7 +154,7 @@ describe("notesWriteService (fake seam, real store)", () => {
     notesApi.delete.mockResolvedValueOnce({ success: false, error: "no" } as never);
 
     await deleteNote(WS, "n1");
-    expect(notesApi.delete).toHaveBeenCalledWith("n1");
+    expect(notesApi.delete).toHaveBeenCalledWith("n1", undefined, WS);
     expect(selectNoteById.select(appStore.state, WS, "n1")).toBeDefined();
     expect(toast.error).toHaveBeenCalledWith(
       "Failed to delete note",
@@ -193,21 +193,21 @@ describe("notesWriteService (fake seam, real store)", () => {
 
     updateNoteContent(WS, "n1", "edited", { immediate: true });
     await Promise.resolve();
-    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "edited", 4);
+    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "edited", 4, WS);
   });
 
   it("passes the stored rev as expectedVersion on a title update", async () => {
     seed(makeNote("n1", { rev: 2 }));
 
     await updateNoteTitle(WS, "n1", "New");
-    expect(notesApi.updateMetadata).toHaveBeenCalledWith("n1", { title: "New" }, 2);
+    expect(notesApi.updateMetadata).toHaveBeenCalledWith("n1", { title: "New" }, 2, WS);
   });
 
   it("passes the stored rev as expectedVersion on delete", async () => {
     seed(makeNote("n1", { rev: 9 }));
 
     await deleteNote(WS, "n1");
-    expect(notesApi.delete).toHaveBeenCalledWith("n1", 9);
+    expect(notesApi.delete).toHaveBeenCalledWith("n1", 9, WS);
   });
 
   // ---- §11.4-D: successful conditional writes advance the stored rev --------
@@ -279,9 +279,9 @@ describe("notesWriteService (fake seam, real store)", () => {
     await updateNoteTitle(WS, "n1", "Renamed");
     await vi.advanceTimersByTimeAsync(1);
 
-    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "typed content", 3);
+    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "typed content", 3, WS);
     // The rename waited for the save and read the advanced rev — not the stale 3.
-    expect(notesApi.updateMetadata).toHaveBeenCalledWith("n1", { title: "Renamed" }, 4);
+    expect(notesApi.updateMetadata).toHaveBeenCalledWith("n1", { title: "Renamed" }, 4, WS);
 
     const note = selectNoteById.select(appStore.state, WS, "n1");
     expect(note?.title).toBe("Renamed");

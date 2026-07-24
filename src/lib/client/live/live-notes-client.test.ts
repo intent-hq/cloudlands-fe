@@ -77,6 +77,48 @@ describe("LiveNotesClient mutations (fake transport)", () => {
     });
   });
 
+  // Round-5 regression: note ids are not globally unique (every workspace has
+  // a `spec` note) and the resolver cache is last-writer-wins across
+  // workspaces, so a caller-supplied workspaceId must win over the cache —
+  // otherwise a debounced save can target (and conflict against) another
+  // workspace's same-id note.
+  it("setContent uses the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "spec" });
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveNotesClient();
+
+    await client.setContent("spec", "hello", 4, "comment-add");
+
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenCalledWith("note.setContent", {
+      workspaceId: "comment-add",
+      noteId: "spec",
+      content: "hello",
+      expectedVersion: 4,
+    });
+  });
+
+  it("updateMetadata and delete use the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValue({ id: "spec" });
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveNotesClient();
+
+    await client.updateMetadata("spec", { title: "T" }, undefined, "comment-add");
+    await client.delete("spec", undefined, "comment-add");
+
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenNthCalledWith(
+      1,
+      "note.updateMetadata",
+      expect.objectContaining({ workspaceId: "comment-add", noteId: "spec" }),
+    );
+    expect(mockedRequest).toHaveBeenNthCalledWith(
+      2,
+      "note.delete",
+      expect.objectContaining({ workspaceId: "comment-add", noteId: "spec" }),
+    );
+  });
+
   it("add forwards note.add with heading/position only when provided", async () => {
     mockedRequest.mockResolvedValue({ id: "note-1" });
     const client = new LiveNotesClient();

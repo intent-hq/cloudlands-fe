@@ -110,8 +110,8 @@ function normalizeComment(raw: Record<string, unknown>, noteId: string): Comment
   }
 }
 
-async function fetchComments(noteId: string): Promise<CommentV2[]> {
-  const workspaceId = await resolveNoteWorkspaceId(noteId);
+async function fetchComments(noteId: string, explicitWorkspaceId?: string): Promise<CommentV2[]> {
+  const workspaceId = explicitWorkspaceId ?? (await resolveNoteWorkspaceId(noteId));
   if (!workspaceId) return [];
   try {
     // PROTOCOL §5.3: `comment.list` returns `{ threads: [...] }` and only
@@ -148,58 +148,73 @@ async function fetchComments(noteId: string): Promise<CommentV2[]> {
 }
 
 export class LiveCommentsClient implements CommentsClient {
-  async list(noteId: string): Promise<CommentV2[]> {
-    return fetchComments(noteId);
+  async list(noteId: string, workspaceId?: string): Promise<CommentV2[]> {
+    return fetchComments(noteId, workspaceId);
   }
 
   // ---- Mutations ----------------------------------------------------------
   // Each forwards to the daemon (§7) and folds the outcome into a
   // MutationResult; the subscribe→refetch loop reconciles store state from the
-  // resulting `comment:*` events. Comments are note-scoped, so the workspace is
-  // resolved via `resolveNoteWorkspaceId` (the seam signature lacks it).
+  // resulting `comment:*` events. Comments are note-scoped; the workspace is
+  // the caller-supplied `workspaceId` when provided, otherwise resolved via
+  // `resolveNoteWorkspaceId`. The explicit id matters because note ids are not
+  // globally unique (every workspace holds a `spec` note) and the resolver's
+  // last-writer-wins cache can point a shared id at the wrong workspace.
 
   async add(noteId: string, params: CommentAddParams): Promise<MutationResult> {
-    return this.runCommentMutation(noteId, "comment.add", {
-      searchContext: params.searchContext,
-      commentTarget: params.commentTarget,
-      comment: params.comment,
-      ...(params.type !== undefined ? { type: params.type } : {}),
-      ...(params.author !== undefined ? { author: params.author } : {}),
-      ...(params.authorType !== undefined ? { authorType: params.authorType } : {}),
-      idempotencyKey: newIdempotencyKey(),
-    });
+    return this.runCommentMutation(
+      noteId,
+      "comment.add",
+      {
+        searchContext: params.searchContext,
+        commentTarget: params.commentTarget,
+        comment: params.comment,
+        ...(params.type !== undefined ? { type: params.type } : {}),
+        ...(params.author !== undefined ? { author: params.author } : {}),
+        ...(params.authorType !== undefined ? { authorType: params.authorType } : {}),
+        idempotencyKey: newIdempotencyKey(),
+      },
+      params.workspaceId,
+    );
   }
 
   async respond(noteId: string, params: CommentRespondParams): Promise<MutationResult> {
-    return this.runCommentMutation(noteId, "comment.respond", {
-      ...(params.threadId !== undefined ? { threadId: params.threadId } : {}),
-      ...(params.commentId !== undefined ? { commentId: params.commentId } : {}),
-      comment: params.comment,
-      ...(params.type !== undefined ? { type: params.type } : {}),
-      ...(params.suggestionOriginal !== undefined
-        ? { suggestionOriginal: params.suggestionOriginal }
-        : {}),
-      ...(params.suggestionProposed !== undefined
-        ? { suggestionProposed: params.suggestionProposed }
-        : {}),
-    });
+    return this.runCommentMutation(
+      noteId,
+      "comment.respond",
+      {
+        ...(params.threadId !== undefined ? { threadId: params.threadId } : {}),
+        ...(params.commentId !== undefined ? { commentId: params.commentId } : {}),
+        comment: params.comment,
+        ...(params.type !== undefined ? { type: params.type } : {}),
+        ...(params.suggestionOriginal !== undefined
+          ? { suggestionOriginal: params.suggestionOriginal }
+          : {}),
+        ...(params.suggestionProposed !== undefined
+          ? { suggestionProposed: params.suggestionProposed }
+          : {}),
+      },
+      params.workspaceId,
+    );
   }
 
-  async delete(noteId: string, commentId: string): Promise<MutationResult> {
-    return this.runCommentMutation(noteId, "comment.delete", { commentId });
+  async delete(noteId: string, commentId: string, workspaceId?: string): Promise<MutationResult> {
+    return this.runCommentMutation(noteId, "comment.delete", { commentId }, workspaceId);
   }
 
   /**
-   * Resolve a note's workspace, then issue a note-scoped comment mutation with
-   * `{ workspaceId, noteId, ...params }`. Returns a failed MutationResult
+   * Issue a note-scoped comment mutation with `{ workspaceId, noteId, ...params }`.
+   * Uses the caller's `explicitWorkspaceId` when supplied; otherwise resolves
+   * the note's workspace via the cache. Returns a failed MutationResult
    * (never throws, never faked success) when the workspace cannot be resolved.
    */
   private async runCommentMutation(
     noteId: string,
     method: string,
     params: Record<string, unknown>,
+    explicitWorkspaceId?: string,
   ): Promise<MutationResult> {
-    const workspaceId = await resolveNoteWorkspaceId(noteId);
+    const workspaceId = explicitWorkspaceId ?? (await resolveNoteWorkspaceId(noteId));
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
     }

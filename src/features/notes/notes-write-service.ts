@@ -301,11 +301,16 @@ async function flushContent(noteId: string): Promise<void> {
   await enqueueNoteMutation(noteId, async () => {
     // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
     // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
+    // The explicit workspaceId pins the save to THIS workspace's note — shared
+    // ids like `spec` exist in every workspace and the fallback resolver cache
+    // is last-writer-wins across them.
     const rev = readNoteById(pending.workspaceId, noteId)?.rev;
-    const result =
-      rev !== undefined
-        ? await appClient.notes.setContent(noteId, pending.content, rev)
-        : await appClient.notes.setContent(noteId, pending.content);
+    const result = await appClient.notes.setContent(
+      noteId,
+      pending.content,
+      rev,
+      pending.workspaceId,
+    );
     if (!result.success) {
       if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
       logger.error("Failed to save note content", result.error);
@@ -333,10 +338,7 @@ export async function updateNoteTitle(
 
   await enqueueNoteMutation(noteId, async () => {
     const rev = readNoteById(workspaceId, noteId)?.rev;
-    const result =
-      rev !== undefined
-        ? await appClient.notes.updateMetadata(noteId, { title }, rev)
-        : await appClient.notes.updateMetadata(noteId, { title });
+    const result = await appClient.notes.updateMetadata(noteId, { title }, rev, workspaceId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error("Failed to update note title", result.error);
@@ -366,10 +368,7 @@ export async function updateNoteMetadata(
 
   await enqueueNoteMutation(noteId, async () => {
     const rev = readNoteById(workspaceId, noteId)?.rev;
-    const result =
-      rev !== undefined
-        ? await appClient.notes.updateMetadata(noteId, metadata, rev)
-        : await appClient.notes.updateMetadata(noteId, metadata);
+    const result = await appClient.notes.updateMetadata(noteId, metadata, rev, workspaceId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error("Failed to update note metadata", result.error);
@@ -390,10 +389,7 @@ export async function deleteNote(workspaceId: string, noteId: string): Promise<v
 
   await enqueueNoteMutation(noteId, async () => {
     const rev = snapshot?.rev;
-    const result =
-      rev !== undefined
-        ? await appClient.notes.delete(noteId, rev)
-        : await appClient.notes.delete(noteId);
+    const result = await appClient.notes.delete(noteId, rev, workspaceId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error("Failed to delete note", result.error);

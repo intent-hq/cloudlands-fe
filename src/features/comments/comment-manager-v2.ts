@@ -922,9 +922,13 @@ export class CommentManagerV2 {
     // `comment.add` + rollback are owned there. `searchContext` wraps the target
     // text with its surrounding context so the daemon can re-anchor it.
     // `authorType: 'user'` marks the editor-driven add as user-authored (the
-    // daemon defaults to 'agent' when absent).
+    // daemon defaults to 'agent' when absent). `workspaceId` pins the mutation
+    // to THIS manager's workspace — note ids like `spec` exist in every
+    // workspace, and the fallback resolver cache is last-writer-wins across
+    // them (the round-5 wrong-workspace `comment.add` failure).
     const searchContext = `${beforeText}${selectedText}${afterText}`;
     const persisted = await commentsWrite.addComment(this.noteId, addedComment, {
+      workspaceId: this.workspaceId,
       searchContext,
       commentTarget: selectedText,
       comment: content,
@@ -983,7 +987,11 @@ export class CommentManagerV2 {
     // reflects daemon persistence. Anchors are only removed once the delete
     // persists so a rolled-back store entry does not desynchronise from the
     // document.
-    const { existed, success } = await commentsWrite.deleteComment(this.noteId, commentId);
+    const { existed, success } = await commentsWrite.deleteComment(
+      this.noteId,
+      commentId,
+      this.workspaceId,
+    );
 
     if (!success) {
       return false;
@@ -1052,6 +1060,7 @@ export class CommentManagerV2 {
     // Persist through the write service: optimistic store dispatch +
     // `comment.respond` + rollback are owned there.
     await commentsWrite.respondToComment(this.noteId, reply, {
+      workspaceId: this.workspaceId,
       commentId: parentId,
       comment: content,
       type: 'comment',
