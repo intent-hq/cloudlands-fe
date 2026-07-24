@@ -113,7 +113,7 @@ describe('UnifiedCommentThread', () => {
     const replyArea = container.querySelector('.px-3.py-1\\.5.border-t.border-border');
     expect(replyArea).toBeTruthy();
 
-    const composerAvatar = replyArea?.querySelector('[aria-hidden="true"]');
+    const composerAvatar = replyArea?.querySelector('div[aria-hidden="true"]');
     expect(composerAvatar).toBeTruthy();
     expect(composerAvatar?.textContent?.trim()).toBe('U');
   });
