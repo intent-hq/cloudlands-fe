@@ -56,6 +56,19 @@ export function shouldSkipCommit(parsed) {
 }
 
 /**
+ * Section rendering order shared by the repo and intentd renderers:
+ * display title per conventional-commit group key
+ */
+const SECTION_ORDER = [
+  { title: 'Features', type: 'feat' },
+  { title: 'Bug Fixes', type: 'fix' },
+  { title: 'Performance', type: 'perf' },
+  { title: 'Refactor', type: 'refactor' },
+  { title: 'Docs', type: 'docs' },
+  { title: 'Other', type: 'other' },
+];
+
+/**
  * Group commits by type
  * @param {Array<ReturnType<typeof parseCommitMessage>>} commits
  * @returns {Record<string, Array<ReturnType<typeof parseCommitMessage>>>}
@@ -135,27 +148,77 @@ export function renderSection(title, commits, repoOwner, repoName) {
  */
 export function renderRepoNotes(repoName, commits, repoOwner, repoSlug) {
   const groups = groupCommitsByType(commits);
-  
-  const sections = [
-    { title: 'Features', commits: groups.feat },
-    { title: 'Bug Fixes', commits: groups.fix },
-    { title: 'Performance', commits: groups.perf },
-    { title: 'Refactor', commits: groups.refactor },
-    { title: 'Docs', commits: groups.docs },
-    { title: 'Other', commits: groups.other },
-  ];
-  
+
   const hasChanges = commits.length > 0;
-  
+
   let output = `## ${repoName}\n\n`;
-  
+
   if (!hasChanges) {
     output += 'No changes.\n';
   } else {
-    for (const { title, commits: sectionCommits } of sections) {
-      output += renderSection(title, sectionCommits, repoOwner, repoSlug);
+    for (const { title, type } of SECTION_ORDER) {
+      output += renderSection(title, groups[type], repoOwner, repoSlug);
     }
   }
-  
+
   return output;
+}
+
+/**
+ * Render the intentd (backend daemon) section of the release notes
+ *
+ * Three shapes depending on what is known about the previous pin:
+ * - no baseVersion: pin line only (first release / previous pin unrecoverable)
+ * - baseVersion === version: "intentd unchanged" line
+ * - baseVersion !== version: pin line with previous version + compare link,
+ *   followed by the grouped commit sections (same style as the FE section)
+ *
+ * @param {{ version: string, baseVersion?: string | null, commits?: Array<ReturnType<typeof parseCommitMessage>> | null }} params
+ *   version/baseVersion are bare semvers (no leading `v`); commits are parsed
+ *   and pre-filtered conventional commits for the `v<base>...v<head>` range.
+ *   Pass commits: null when the delta could not be fetched — the pin line and
+ *   compare link are still rendered, without a commit list (or a misleading
+ *   "No changes." claim)
+ * @returns {string}
+ */
+export function renderIntentdSection({ version, baseVersion = null, commits = [] }) {
+  const tag = `v${version}`;
+  const tagUrl = `https://github.com/intent-hq/intentd/releases/tag/${tag}`;
+  const lines = ['## Backend daemon (intentd)', ''];
+
+  if (!baseVersion) {
+    lines.push(`Bundles the pinned [intentd ${tag}](${tagUrl}) release.`, '');
+    return lines.join('\n');
+  }
+
+  if (baseVersion === version) {
+    lines.push(`intentd unchanged ([${tag}](${tagUrl})).`, '');
+    return lines.join('\n');
+  }
+
+  const baseTag = `v${baseVersion}`;
+  const compareUrl = `https://github.com/intent-hq/intentd/compare/${baseTag}...${tag}`;
+  lines.push(
+    `Bundles [intentd ${tag}](${tagUrl}) (previously ${baseTag}) — [full changelog (${baseTag}...${tag})](${compareUrl}).`,
+    '',
+  );
+
+  if (commits === null) {
+    return lines.join('\n');
+  }
+
+  if (commits.length === 0) {
+    lines.push('No changes.', '');
+    return lines.join('\n');
+  }
+
+  const groups = groupCommitsByType(commits);
+  for (const { title, type } of SECTION_ORDER) {
+    const section = renderSection(title, groups[type], 'intent-hq', 'intentd');
+    if (section) {
+      lines.push(section);
+    }
+  }
+
+  return lines.join('\n');
 }
