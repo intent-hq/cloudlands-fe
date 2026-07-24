@@ -509,10 +509,45 @@ describe('GitService', () => {
         ['branch', '-r', '--contains', hostileHash],
         expect.objectContaining({ cwd: '/tmp/worktree', timeout: 5000 }),
       );
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['show', '--name-only', '--format=FILES_FOR:%H', hostileHash],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
       if (result.ok) {
         expect(result.data.commits).toHaveLength(1);
         expect(result.data.commits[0].hash).toBe(hostileHash);
         expect(result.data.boundarySha).toBe('boundary123');
+      }
+    });
+  });
+
+  describe('getFileHistory exec seams (shell-free argv for file paths)', () => {
+    const hostileFile = "evil-`touch pwned`-$(id)-'quote'.txt";
+
+    beforeEach(() => {
+      vi.mocked(execFileAsync).mockReset();
+    });
+
+    it('passes the file path to git log as argv after -- (no shell)', async () => {
+      const service = new GitService();
+      vi.spyOn(service as any, 'getWorktreePath').mockReturnValue('/tmp/worktree');
+      vi.mocked(execFileAsync).mockResolvedValue({
+        stdout: 'hash1|Author|author@example.com|2026-07-24T00:00:00Z|subject\n',
+        stderr: '',
+      });
+
+      const result = await service.getFileHistory('workspace-1' as any, hostileFile, 20);
+
+      expect(result.ok).toBe(true);
+      expect(execFileAsync).toHaveBeenCalledWith(
+        'git',
+        ['log', '-n', '20', '--format=%H|%an|%ae|%aI|%s', '--follow', '--', hostileFile],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
+      if (result.ok) {
+        expect(result.data).toHaveLength(1);
+        expect(result.data[0].hash).toBe('hash1');
       }
     });
   });

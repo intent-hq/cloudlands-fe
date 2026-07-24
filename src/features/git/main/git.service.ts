@@ -1595,8 +1595,9 @@ export class GitService {
       if (commits.length > 0) {
         try {
           const commitHashes = commits.map((c) => c.hash);
-          const { stdout: batchFilesOutput } = await execAsync(
-            `git show --name-only --format="FILES_FOR:%H" ${commitHashes.join(' ')}`,
+          const { stdout: batchFilesOutput } = await execFileAsync(
+            'git',
+            ['show', '--name-only', '--format=FILES_FOR:%H', ...commitHashes],
             { cwd: worktreePath },
           );
 
@@ -1658,13 +1659,21 @@ export class GitService {
     try {
       const worktreePath = this.getWorktreePath(workspaceId);
 
-      // Build git log command for specific file
+      // Build git log argv for specific file
       // Use --follow to track file through renames
-      const gitCommand = `git log -n ${limit} --format="%H|%an|%ae|%aI|%s" --follow -- "${filePath}"`;
+      const gitArgs = [
+        'log',
+        '-n',
+        String(limit),
+        '--format=%H|%an|%ae|%aI|%s',
+        '--follow',
+        '--',
+        filePath,
+      ];
 
-      logger.info('Getting file history', { gitCommand, cwd: worktreePath, filePath });
+      logger.info('Getting file history', { gitArgs, cwd: worktreePath, filePath });
 
-      const { stdout } = await execAsync(gitCommand, { cwd: worktreePath });
+      const { stdout } = await execFileAsync('git', gitArgs, { cwd: worktreePath });
 
       logger.info('File history output', {
         stdout: stdout.slice(0, 500),
