@@ -82,6 +82,14 @@ export interface MutationResult {
    */
   id?: string;
   /**
+   * Authoritative note revision echoed by the daemon after a mutation that
+   * rewrites a note's content (e.g. `comment.add`'s anchor insertion, #638).
+   * When present, callers MUST prefer it over inferring `rev + 1` locally.
+   * Additive and optional: older daemons omit it and callers fall back to the
+   * inference, so merge order across FE/BE does not matter.
+   */
+  noteRev?: number;
+  /**
    * Optimistic-concurrency conflict outcome (§11.4-D): present ONLY when the
    * daemon rejected the mutation with the conflict error (numeric `-32005` AND
    * `data.code === "conflict"`). Carries the authoritative server entity
@@ -884,7 +892,13 @@ export interface LineAttributionClient {
 
 export interface NotesClient {
   list(workspaceId: string): Promise<Note[]>;
-  get(noteId: string): Promise<Note | null>;
+  /**
+   * Fetch one note. Optional `workspaceId` pins the read to the note's owning
+   * workspace — note ids are not globally unique (every workspace has a `spec`
+   * note), so callers that know the workspace MUST pass it rather than relying
+   * on the live client's last-writer-wins resolver cache.
+   */
+  get(noteId: string, workspaceId?: string): Promise<Note | null>;
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe;
   /** Create a note (`note.create`); the live client attaches an idempotencyKey (§5.6). */
   create(request: CreateNoteRequest): Promise<MutationResult>;
@@ -903,27 +917,30 @@ export interface NotesClient {
     expectedVersion?: number,
     workspaceId?: string,
   ): Promise<MutationResult>;
-  /** Surgical, append-safe insert (`note.add`). `expectedVersion` is optional (§11.4-D). */
+  /** Surgical, append-safe insert (`note.add`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   add(
     noteId: string,
     content: string,
     options?: NoteAddOptions,
     expectedVersion?: number,
+    workspaceId?: string,
   ): Promise<MutationResult>;
-  /** Surgical search/replace of the first match (`note.edit`). `expectedVersion` is optional (§11.4-D). */
+  /** Surgical search/replace of the first match (`note.edit`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   edit(
     noteId: string,
     oldText: string,
     newText: string,
     expectedVersion?: number,
+    workspaceId?: string,
   ): Promise<MutationResult>;
-  /** Inclusive line-range replace (`note.editLines`). `expectedVersion` is optional (§11.4-D). */
+  /** Inclusive line-range replace (`note.editLines`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   editLines(
     noteId: string,
     start: number,
     end: number,
     content: string,
     expectedVersion?: number,
+    workspaceId?: string,
   ): Promise<MutationResult>;
   /** Delete a note (`note.delete`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   delete(noteId: string, expectedVersion?: number, workspaceId?: string): Promise<MutationResult>;
@@ -1101,7 +1118,16 @@ export interface CommentRespondParams {
 export interface CommentsClient {
   /** List a note's comments; pass `workspaceId` when known (note ids are not globally unique). */
   list(noteId: string, workspaceId?: string): Promise<CommentV2[]>;
-  subscribe(noteId: string, handler: SubscriptionHandler<CommentV2[]>): Unsubscribe;
+  /**
+   * Subscribe to a note's comments; pass `workspaceId` when known so refetches
+   * pin to the owning workspace instead of the last-writer-wins resolver cache
+   * (note ids are not globally unique — every workspace has a `spec` note).
+   */
+  subscribe(
+    noteId: string,
+    handler: SubscriptionHandler<CommentV2[]>,
+    workspaceId?: string,
+  ): Unsubscribe;
   /** Create a note-anchored comment (`comment.add`); the live client attaches an idempotencyKey (§5.6). */
   add(noteId: string, params: CommentAddParams): Promise<MutationResult>;
   /** Reply to a thread or comment (`comment.respond`). */
