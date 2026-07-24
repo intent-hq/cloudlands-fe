@@ -1,15 +1,27 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { ContentType, NoteVisibility } from "$shared/types";
+import type { Note } from "$shared/types";
+import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
 import type { CommentV2 } from "./comment-types-v2";
 
 // FAKE seam: appClient.comments.* are stubbed so no mutation reaches the daemon.
 // The service runs against the REAL configured store so optimistic dispatch and
-// rollback are exercised end to end.
+// rollback are exercised end to end. appClient.notes.* is stubbed too because
+// `addComment` routes workspace-scoped adds through the notes-write-service
+// mutation queue (rev bookkeeping) and the queue's neighbors call notes.*.
 vi.mock("$lib/client", () => ({
   appClient: {
     comments: {
       add: vi.fn(() => Promise.resolve({ success: true })),
       respond: vi.fn(() => Promise.resolve({ success: true })),
       delete: vi.fn(() => Promise.resolve({ success: true })),
+    },
+    notes: {
+      create: vi.fn(() => Promise.resolve({ success: true })),
+      setContent: vi.fn(() => Promise.resolve({ success: true })),
+      updateMetadata: vi.fn(() => Promise.resolve({ success: true })),
+      delete: vi.fn(() => Promise.resolve({ success: true })),
+      list: vi.fn(() => Promise.resolve([] as Note[])),
     },
   },
 }));
@@ -27,9 +39,16 @@ import {
   loadCommentsAction,
 } from "$store/renderer/slices/comments/comments-slice";
 import { selectCommentById } from "$store/renderer/slices/comments/comments-selectors";
+import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
+import { selectNoteById } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
+import {
+  NOTE_CONTENT_SAVE_DEBOUNCE_MS,
+  updateNoteContent,
+} from "../notes/notes-write-service";
 import { addComment, deleteComment, respondToComment } from "./comments-write-service";
 
 const commentsApi = appClient.comments as unknown as Record<string, ReturnType<typeof vi.fn>>;
+const notesApi = appClient.notes as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
 function makeComment(id: string, overrides: Partial<CommentV2> = {}): CommentV2 {
   const now = new Date().toISOString();
@@ -48,6 +67,28 @@ function makeComment(id: string, overrides: Partial<CommentV2> = {}): CommentV2 
   } as CommentV2;
 }
 
+function makeNote(workspaceId: string, id: string, overrides: Partial<Note> = {}): Note {
+  const now = new Date().toISOString();
+  return {
+    id: NoteId(id),
+    workspaceId: WorkspaceId(workspaceId),
+    title: "Title",
+    content: "body",
+    contentType: ContentType.Markdown,
+    tags: [],
+    isPinned: false,
+    isArchived: false,
+    visibility: NoteVisibility.Workspace,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function seedNote(workspaceId: string, note: Note): void {
+  appStore.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: [note] }));
+}
+
 describe("commentsWriteService (fake seam, real store)", () => {
   beforeAll(() => appStore.init());
   afterEach(() => {
@@ -56,6 +97,8 @@ describe("commentsWriteService (fake seam, real store)", () => {
     commentsApi.add.mockResolvedValue({ success: true } as never);
     commentsApi.respond.mockResolvedValue({ success: true } as never);
     commentsApi.delete.mockResolvedValue({ success: true } as never);
+    Object.values(notesApi).forEach((fn) => fn.mockResolvedValue({ success: true } as never));
+    notesApi.list.mockResolvedValue([] as never);
   });
 
   it("add applies optimistically and keeps the comment on success", async () => {
@@ -121,6 +164,154 @@ describe("commentsWriteService (fake seam, real store)", () => {
       comment: "body",
     });
     expect(ok).toBe(true);
+  });
+
+  // ---- Round 6b regression: comment.add rewrites the note markdown daemon-side
+  // (anchor markers) and bumps the note `rev` WITHOUT a `note:updated` event or
+  // a rev echo — so a workspace-scoped add must advance the stored rev through
+  // the §11.4-D note mutation queue, or the anchor-insertion's debounced
+  // content save sends a stale expectedVersion and trips the conflict toast.
+
+  it("advances the stored note rev after a successful workspace-scoped add", async () => {
+    const WS = "ws-rev-1";
+    seedNote(WS, makeNote(WS, "note-rev", { rev: 4 }));
+
+    const ok = await addComment("note-rev", makeComment("c-rev"), {
+      workspaceId: WS,
+      searchContext: "x y",
+      commentTarget: "x",
+      comment: "body",
+    });
+
+    expect(ok).toBe(true);
+    expect(selectNoteById.select(appStore.state, WS, "note-rev")?.rev).toBe(5);
+  });
+
+  it("leaves the stored note rev untouched when the add fails", async () => {
+    const WS = "ws-rev-2";
+    seedNote(WS, makeNote(WS, "note-rev", { rev: 4 }));
+    commentsApi.add.mockResolvedValueOnce({ success: false, error: "nope" } as never);
+
+    const ok = await addComment("note-rev", makeComment("c-rev-fail"), {
+      workspaceId: WS,
+      searchContext: "x y",
+      commentTarget: "x",
+      comment: "body",
+    });
+
+    expect(ok).toBe(false);
+    expect(selectNoteById.select(appStore.state, WS, "note-rev")?.rev).toBe(4);
+  });
+
+  it("add then debounced content save carries the post-add rev — no conflict toast", async () => {
+    vi.useFakeTimers();
+    try {
+      const WS = "ws-rev-3";
+      seedNote(WS, makeNote(WS, "note-rev", { rev: 3, content: "body" }));
+
+      // Stateful daemon-conditional mocks (§11.4-D): comment.add bumps the
+      // server rev (the daemon's anchor rewrite); setContent rejects with a
+      // -32005-shaped conflict when expectedVersion mismatches.
+      let serverRev = 3;
+      commentsApi.add.mockImplementation(() => {
+        serverRev += 1;
+        return Promise.resolve({ success: true });
+      });
+      notesApi.setContent.mockImplementation(
+        (_id: string, _c: string, expectedVersion?: number) => {
+          if (expectedVersion !== serverRev) {
+            return Promise.resolve({
+              success: false,
+              error: "conflict",
+              conflict: { current: makeNote(WS, "note-rev", { rev: serverRev }) },
+            });
+          }
+          serverRev += 1;
+          return Promise.resolve({ success: true });
+        },
+      );
+
+      // The editor's anchor insertion triggers the debounced save; the add is
+      // still in flight when the debounce is armed (the race window).
+      const adding = addComment("note-rev", makeComment("c-race"), {
+        workspaceId: WS,
+        searchContext: "bo dy",
+        commentTarget: "bo",
+        comment: "body",
+      });
+      updateNoteContent(WS, "note-rev", "body with anchors");
+      await adding;
+      await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+
+      // The save read the post-add rev (4), not the stale seeded rev (3).
+      expect(notesApi.setContent).toHaveBeenCalledWith("note-rev", "body with anchors", 4, WS);
+      expect(toast.warning).not.toHaveBeenCalled();
+      expect(selectNoteById.select(appStore.state, WS, "note-rev")?.rev).toBe(5);
+    } finally {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("debounced save flushed while the add is STILL in flight queues behind it and reads the post-add rev", async () => {
+    // Pins the queue-serialization mechanism itself: the add is a deferred
+    // promise that is still unresolved when the debounce fires, so
+    // `flushContent` enqueues behind it on the note's mutation queue instead
+    // of racing it with the stale rev.
+    vi.useFakeTimers();
+    try {
+      const WS = "ws-rev-4";
+      seedNote(WS, makeNote(WS, "note-rev", { rev: 3, content: "body" }));
+
+      let serverRev = 3;
+      let resolveAdd!: (r: { success: boolean }) => void;
+      commentsApi.add.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveAdd = (r) => {
+              serverRev += 1;
+              resolve(r);
+            };
+          }),
+      );
+      notesApi.setContent.mockImplementation(
+        (_id: string, _c: string, expectedVersion?: number) => {
+          if (expectedVersion !== serverRev) {
+            return Promise.resolve({
+              success: false,
+              error: "conflict",
+              conflict: { current: makeNote(WS, "note-rev", { rev: serverRev }) },
+            });
+          }
+          serverRev += 1;
+          return Promise.resolve({ success: true });
+        },
+      );
+
+      const adding = addComment("note-rev", makeComment("c-race-2"), {
+        workspaceId: WS,
+        searchContext: "bo dy",
+        commentTarget: "bo",
+        comment: "body",
+      });
+      updateNoteContent(WS, "note-rev", "body with anchors");
+      // The debounce fires while comment.add is still unresolved — the flush
+      // must wait on the queue rather than read the stale rev 3.
+      await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+      expect(notesApi.setContent).not.toHaveBeenCalled();
+
+      resolveAdd({ success: true });
+      await adding;
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(notesApi.setContent).toHaveBeenCalledTimes(1);
+      expect(notesApi.setContent).toHaveBeenCalledWith("note-rev", "body with anchors", 4, WS);
+      expect(toast.warning).not.toHaveBeenCalled();
+      expect(selectNoteById.select(appStore.state, WS, "note-rev")?.rev).toBe(5);
+    } finally {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("respond applies the reply optimistically and keeps it on success", async () => {
