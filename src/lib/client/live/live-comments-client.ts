@@ -1,10 +1,11 @@
 /**
  * Live comments domain backed by the intentd daemon.
  *
- * `comment.list` is workspace-scoped (`{ workspaceId, noteId }`) while the fixed
- * AppClient signature only carries `noteId`, so the note's workspace is resolved
- * first (see `resolveNoteWorkspaceId`). Results are normalized into the renderer
- * `CommentV2` shape. `subscribe` refetches on `comment:*` events.
+ * `comment.list` is workspace-scoped (`{ workspaceId, noteId }`). Callers that
+ * know the note's workspace pass an explicit `workspaceId` (which wins);
+ * otherwise it is resolved as a fallback (see `resolveNoteWorkspaceId`).
+ * Results are normalized into the renderer `CommentV2` shape. `subscribe`
+ * refetches on `comment:*` events.
  */
 import type {
   CommentAnchor,
