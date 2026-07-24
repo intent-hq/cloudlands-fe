@@ -226,7 +226,9 @@ describe('generate-stable-summary CLI', () => {
     ]);
 
     expect(fetchCalls.length).toBe(0);
-    expect(markdown).toContain('- Previous stable: none (first promotion)');
+    // An invalid --prev-stable is a data problem, not a first promotion
+    expect(markdown).toContain('- Previous stable: unknown');
+    expect(markdown).not.toContain('first promotion');
     expect(markdown).toContain(
       'Bundles the pinned [intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0) release.',
     );

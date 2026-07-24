@@ -26,11 +26,7 @@
  */
 
 import { writeFileSync } from 'fs';
-import {
-  parseCommitMessage,
-  shouldSkipCommit,
-  renderIntentdSection,
-} from './release-notes-lib.mjs';
+import { buildIntentdSectionWithDelta } from './release-notes-net.mjs';
 
 /**
  * Parse CLI arguments
@@ -72,105 +68,6 @@ function normalizeVersion(value, label) {
 }
 
 /**
- * Fetch commits from GitHub compare API
- * @param {string} owner
- * @param {string} repo
- * @param {string} base
- * @param {string} head
- * @param {string} token
- * @returns {Promise<Array<{ commit: { message: string }, sha: string }>>}
- */
-async function fetchCommits(owner, repo, base, head, token) {
-  const commits = [];
-  let page = 1;
-  const perPage = 100;
-
-  while (true) {
-    const url = `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}?per_page=${perPage}&page=${page}`;
-
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'intent-release-notes-generator',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    if (data.commits && data.commits.length > 0) {
-      commits.push(...data.commits);
-
-      // If we got fewer commits than requested, we've reached the end
-      if (data.commits.length < perPage) {
-        break;
-      }
-
-      page++;
-    } else {
-      break;
-    }
-  }
-
-  return commits;
-}
-
-/**
- * Build the consolidated intentd section for the stable range. Any failure
- * falls back to the pin line + compare link (no commit list) so a notes
- * problem never blocks a promotion (fail-soft).
- * @param {string} intentdVersion - promoted version's pin (bare semver)
- * @param {string | null} intentdBaseVersion - previous stable's pin (bare semver)
- * @returns {Promise<string>}
- */
-async function buildIntentdSection(intentdVersion, intentdBaseVersion) {
-  if (!intentdBaseVersion || intentdBaseVersion === intentdVersion) {
-    return renderIntentdSection({ version: intentdVersion, baseVersion: intentdBaseVersion });
-  }
-
-  const token = process.env.INTENTD_TOKEN || process.env.GITHUB_TOKEN;
-  if (!token) {
-    console.warn('⚠️ No INTENTD_TOKEN (or GITHUB_TOKEN fallback) available — skipping intentd delta fetch.');
-    return renderIntentdSection({
-      version: intentdVersion,
-      baseVersion: intentdBaseVersion,
-      commits: null,
-    });
-  }
-
-  const baseTag = `v${intentdBaseVersion}`;
-  const headTag = `v${intentdVersion}`;
-  try {
-    console.log(`Fetching intentd commits (${baseTag}...${headTag})...`);
-    const intentdCommits = await fetchCommits('intent-hq', 'intentd', baseTag, headTag, token);
-    console.log(`  Found ${intentdCommits.length} commits\n`);
-
-    const parsedIntentdCommits = intentdCommits
-      .map(c => parseCommitMessage(c.commit.message.split('\n')[0]))
-      .filter(c => c && !shouldSkipCommit(c));
-
-    return renderIntentdSection({
-      version: intentdVersion,
-      baseVersion: intentdBaseVersion,
-      commits: parsedIntentdCommits,
-    });
-  } catch (error) {
-    console.warn(`⚠️ Failed to fetch intentd delta (${baseTag}...${headTag}): ${error.message}`);
-    console.warn('   Falling back to the pin line + compare link (no commit list).');
-    return renderIntentdSection({
-      version: intentdVersion,
-      baseVersion: intentdBaseVersion,
-      commits: null,
-    });
-  }
-}
-
-/**
  * Main function
  */
 async function main() {
@@ -186,6 +83,9 @@ async function main() {
 
   const version = args.version.replace(/^v/, '');
   const prevStable = normalizeVersion(args['prev-stable'], '--prev-stable');
+  // Distinguish "argument absent" (first promotion) from "argument invalid"
+  // (a data problem — don't mislabel it as a first promotion)
+  const prevStableInvalid = !!args['prev-stable'] && !prevStable;
   const intentdVersion = normalizeVersion(args['intentd-version'], '--intentd-version');
   // A base pin without a head pin is unusable
   const intentdBaseVersion = intentdVersion
@@ -200,7 +100,9 @@ async function main() {
     `- Promoted version: v${version}`,
     prevStable
       ? `- Previous stable: v${prevStable}`
-      : '- Previous stable: none (first promotion)',
+      : prevStableInvalid
+        ? '- Previous stable: unknown'
+        : '- Previous stable: none (first promotion)',
   ];
 
   if (intentdVersion) {
@@ -217,7 +119,10 @@ async function main() {
   const parts = [summaryLines.join('\n')];
 
   if (intentdVersion) {
-    parts.push(await buildIntentdSection(intentdVersion, intentdBaseVersion));
+    parts.push(await buildIntentdSectionWithDelta({
+      version: intentdVersion,
+      baseVersion: intentdBaseVersion,
+    }));
   } else {
     console.warn('⚠️ No usable --intentd-version — omitting the consolidated intentd section.');
   }

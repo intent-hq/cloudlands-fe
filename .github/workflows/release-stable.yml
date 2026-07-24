@@ -222,6 +222,7 @@ jobs:
       # script version matches the promoted release. Non-fatal: a failed checkout
       # only skips the summary section (promotion never fails because of notes).
       - name: Checkout repo at promoted tag
+        id: checkout_tag
         uses: actions/checkout@v7
         continue-on-error: true
         with:
@@ -231,8 +232,11 @@ jobs:
       # version's manifest was downloaded with the release assets; the previous
       # stable's manifest comes from its versioned release. All fail-soft —
       # missing manifests just degrade the summary to pin line(s) or nothing.
+      # continue-on-error makes the "notes never fail the promotion" guarantee
+      # structural rather than relying on the shell guards staying exhaustive.
       - name: Resolve intentd pin range
         id: intentd_pins
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
@@ -264,17 +268,26 @@ jobs:
 
       # Renders the leading summary (promoted version, previous stable, and the
       # consolidated intentd delta across the whole stable range). Fail-soft: any
-      # failure just drops the summary from the aggregated notes.
+      # failure just drops the summary from the aggregated notes; continue-on-error
+      # makes that guarantee structural rather than relying on the shell guards.
       - name: Generate stable summary section
+        continue-on-error: true
         env:
           INTENTD_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           VERSION: ${{ inputs.version }}
           PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
           INTENTD_HEAD: ${{ steps.intentd_pins.outputs.head }}
           INTENTD_BASE: ${{ steps.intentd_pins.outputs.base }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout_tag.outcome }}
         run: |
+          # Gate on the actual checkout outcome; a bare -f check could pass against
+          # stale workspace contents that don't match the promoted tag
+          if [ "$CHECKOUT_OUTCOME" != "success" ]; then
+            echo "::warning::Checkout of promoted tag failed (outcome: $CHECKOUT_OUTCOME) - skipping summary section"
+            exit 0
+          fi
           if [ ! -f scripts/generate-stable-summary.mjs ]; then
-            echo "::warning::scripts/generate-stable-summary.mjs not found (checkout failed?) - skipping summary section"
+            echo "::warning::scripts/generate-stable-summary.mjs not found - skipping summary section"
             exit 0
           fi
 
