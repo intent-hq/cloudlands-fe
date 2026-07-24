@@ -321,6 +321,40 @@ describe("LiveSpecialistsClient (fake transport)", () => {
         expect(mockedUnsubscribe).toHaveBeenCalledWith("sub-2");
       });
 
+      it("cancels a pending debounced refetch on reconnect (exactly one refetch)", async () => {
+        vi.useFakeTimers();
+        let notify: NotificationCallback | undefined;
+        mockedOnNotification.mockImplementation((cb) => {
+          notify = cb;
+          return vi.fn();
+        });
+        let reconnect: (() => void) | undefined;
+        mockedOnReconnected.mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        mockedRequest.mockResolvedValue({ specialists: [COORDINATOR_DEF] });
+        const client = new LiveSpecialistsClient();
+
+        const handler = vi.fn();
+        const unsubscribe = client.subscribe(handler);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mockedRequest).toHaveBeenCalledTimes(1); // initial snapshot
+        mockedRequest.mockClear();
+
+        // A specialists:changed burst arms the debounce timer, then the
+        // reconnect lands before it fires: the pending timer is cancelled and
+        // the reconnect refetch is the ONLY specialist.list call.
+        notify?.({ method: "specialists:changed", params: { workspaceId: "ws-1" } });
+        reconnect?.();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mockedRequest).toHaveBeenCalledTimes(1); // immediate reconnect refetch
+
+        await vi.advanceTimersByTimeAsync(200); // past the debounce window
+        expect(mockedRequest).toHaveBeenCalledTimes(1); // no extra debounced refetch
+        unsubscribe();
+      });
+
       it("keeps the last known-good view when the reconnect refetch fails", async () => {
         let reconnect: (() => void) | undefined;
         mockedOnReconnected.mockImplementation((cb) => {

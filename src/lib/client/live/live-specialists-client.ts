@@ -125,6 +125,13 @@ export class LiveSpecialistsClient implements SpecialistsClient {
       if (disposed) return;
       subscriptionId = undefined;
       void doSubscribe();
+      // Cancel any pending debounced refetch so the reconnect refetch is the
+      // single one — otherwise a pre-outage burst's timer would fire later
+      // and issue a redundant second `specialist.list`.
+      if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+      }
       refetch();
     });
 
