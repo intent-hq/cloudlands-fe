@@ -103,7 +103,13 @@ describe('showErrorToast', () => {
         type: 'workspaceAgents/createAgentFromConfigRequested',
         payload: expect.arrayContaining([
           'ws-1',
-          expect.objectContaining({ model: 'selector-workspace-model' }),
+          // 'Debug Agent' is a generated placeholder — the session must stay
+          // self-renameable (nameExplicitlySet: false on the wire).
+          expect.objectContaining({
+            model: 'selector-workspace-model',
+            name: 'Debug Agent',
+            nameExplicitlySet: false,
+          }),
           expect.objectContaining({ openAgent: true }),
         ]),
       }),
