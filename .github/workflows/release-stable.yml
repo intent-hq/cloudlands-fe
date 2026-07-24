@@ -218,6 +218,95 @@ jobs:
             fi
           done
 
+      # The summary script ships with the repo; check out the promoted tag so the
+      # script version matches the promoted release. Non-fatal: a failed checkout
+      # only skips the summary section (promotion never fails because of notes).
+      - name: Checkout repo at promoted tag
+        id: checkout_tag
+        uses: actions/checkout@v7
+        continue-on-error: true
+        with:
+          ref: refs/tags/v${{ inputs.version }}
+
+      # Recover the intentd pins for the consolidated delta: the promoted
+      # version's manifest was downloaded with the release assets; the previous
+      # stable's manifest comes from its versioned release. All fail-soft —
+      # missing manifests just degrade the summary to pin line(s) or nothing.
+      # continue-on-error makes the "notes never fail the promotion" guarantee
+      # structural rather than relying on the shell guards staying exhaustive.
+      - name: Resolve intentd pin range
+        id: intentd_pins
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
+        run: |
+          HEAD_PIN=""
+          BASE_PIN=""
+
+          if [ -f /tmp/release-assets/release-manifest.json ]; then
+            HEAD_PIN=$(jq -r '.intentdVersion // empty' /tmp/release-assets/release-manifest.json 2>/dev/null || true)
+          fi
+          if [ -z "$HEAD_PIN" ]; then
+            echo "::warning::No intentdVersion in the promoted release's manifest - the consolidated intentd section will be omitted"
+          fi
+
+          if [ -n "$PREV_STABLE" ]; then
+            mkdir -p /tmp/prev-stable-manifest
+            if gh release download "v${PREV_STABLE}" --repo intent-hq/cloudlands-releases \
+                --pattern release-manifest.json --dir /tmp/prev-stable-manifest 2>/dev/null; then
+              BASE_PIN=$(jq -r '.intentdVersion // empty' /tmp/prev-stable-manifest/release-manifest.json 2>/dev/null || true)
+            fi
+            if [ -z "$BASE_PIN" ]; then
+              echo "::warning::No recoverable intentd pin for previous stable v${PREV_STABLE} - the summary degrades to the pin line"
+            fi
+          fi
+
+          echo "head=$HEAD_PIN" >> "$GITHUB_OUTPUT"
+          echo "base=$BASE_PIN" >> "$GITHUB_OUTPUT"
+          echo "intentd pin range: base='${BASE_PIN:-<none>}' head='${HEAD_PIN:-<none>}'"
+
+      # Renders the leading summary (promoted version, previous stable, and the
+      # consolidated intentd delta across the whole stable range). Fail-soft: any
+      # failure just drops the summary from the aggregated notes; continue-on-error
+      # makes that guarantee structural rather than relying on the shell guards.
+      - name: Generate stable summary section
+        continue-on-error: true
+        env:
+          INTENTD_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          VERSION: ${{ inputs.version }}
+          PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
+          INTENTD_HEAD: ${{ steps.intentd_pins.outputs.head }}
+          INTENTD_BASE: ${{ steps.intentd_pins.outputs.base }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout_tag.outcome }}
+        run: |
+          # Gate on the actual checkout outcome; a bare -f check could pass against
+          # stale workspace contents that don't match the promoted tag
+          if [ "$CHECKOUT_OUTCOME" != "success" ]; then
+            echo "::warning::Checkout of promoted tag failed (outcome: $CHECKOUT_OUTCOME) - skipping summary section"
+            exit 0
+          fi
+          if [ ! -f scripts/generate-stable-summary.mjs ]; then
+            echo "::warning::scripts/generate-stable-summary.mjs not found - skipping summary section"
+            exit 0
+          fi
+
+          ARGS=(--version "$VERSION" --out /tmp/stable-summary.md)
+          if [ -n "$PREV_STABLE" ]; then
+            ARGS+=(--prev-stable "$PREV_STABLE")
+          fi
+          if [ -n "$INTENTD_HEAD" ]; then
+            ARGS+=(--intentd-version "$INTENTD_HEAD")
+          fi
+          if [ -n "$INTENTD_BASE" ]; then
+            ARGS+=(--intentd-base "$INTENTD_BASE")
+          fi
+
+          if ! node scripts/generate-stable-summary.mjs "${ARGS[@]}"; then
+            echo "::warning::Stable summary generation failed - continuing without the summary section"
+            rm -f /tmp/stable-summary.md
+          fi
+
       - name: Build aggregated release notes
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -281,8 +370,14 @@ jobs:
           echo "Versions to include in aggregated notes:"
           cat /tmp/range-versions.txt
 
-          # Fetch body for each version and aggregate
+          # Prepend the summary section (if generated), then the per-version bodies
           {
+            if [ -f /tmp/stable-summary.md ]; then
+              cat /tmp/stable-summary.md
+              echo ""
+              echo "---"
+              echo ""
+            fi
             while IFS= read -r ver; do
               echo "## v${ver}"
               echo ""
