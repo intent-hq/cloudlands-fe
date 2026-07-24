@@ -53,6 +53,7 @@ export const AgentCreateRequestSchema = z.object({
   workspacePath: z.string().optional(),
   name: z.string().max(100, 'Agent name too long').optional(),
   agentId: AgentIdSchema.optional(),
+  nameExplicitlySet: z.boolean().optional(), // Strict boolean on the wire (PROTOCOL §5.5) — non-boolean values must fail validation
   model: z.string().optional(),
   provider: z.string().optional(), // Provider ID (e.g., 'auggie', 'claude-code', 'codex')
   agentType: z.string().optional(), // Agent type for specialization rules

@@ -62,6 +62,7 @@ export namespace AgentIpc {
     workspacePath: string;
     name: string;
     agentId?: AgentId; // Optional: if provided, backend will use this ID instead of generating a new one
+    nameExplicitlySet?: boolean; // Strict boolean on the wire (PROTOCOL §5.5): false marks a generated placeholder name; omitted keeps the daemon default
     model?: string;
     provider?: string; // Provider ID (e.g., 'auggie', 'claude-code', 'codex') - uses activeProviderStore.activeProviderId
     agentType?: string; // Agent type for specialization rules (debug, investigate, implement, etc.)
