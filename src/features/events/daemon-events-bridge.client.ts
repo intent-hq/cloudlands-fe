@@ -396,6 +396,47 @@ function collapsedOutputText(output: unknown): string | null {
 }
 
 /**
+ * WRAP REPAIR: strip raw control characters (U+0000–U+001F) that appear
+ * inside JSON string literals, leaving everything outside strings (including
+ * pretty-print newlines) untouched. Some providers hard-wrap the collapsed
+ * `{ok, proposal}` payload at 1000 columns, injecting raw newlines into
+ * string values (even mid-word / mid-escape); raw control characters are
+ * invalid inside JSON string literals, so JSON.parse throws and the lift
+ * silently skips. The scan is a state machine honoring escapes: a control
+ * character between a backslash and its escaped character is stripped
+ * without consuming the escape. Returns null when nothing was stripped
+ * (repair cannot help). Mirrors the daemon's wrap repair in
+ * `tool_block.rs::rebuild_collapsed_proposal_resource`.
+ */
+function stripRawControlsInJsonStrings(text: string): string | null {
+  let out = '';
+  let changed = false;
+  let inString = false;
+  let escapePending = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (text.charCodeAt(i) < 0x20) {
+        changed = true;
+        continue;
+      }
+      if (escapePending) {
+        escapePending = false;
+      } else if (ch === '\\') {
+        escapePending = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+    } else if (ch === '"') {
+      inString = true;
+      escapePending = false;
+    }
+    out += ch;
+  }
+  return changed ? out : null;
+}
+
+/**
  * §7.1 collapsed-output fallback — mirrors the daemon's
  * `rebuild_collapsed_proposal_resource` (tool_block.rs). Some providers (e.g.
  * auggie) flatten the daemon's dual text+resource MCP content items into a
@@ -427,7 +468,15 @@ function rebuildCollapsedProposalResourceItem(output: unknown): Record<string, u
   try {
     parsed = JSON.parse(text);
   } catch {
-    return null;
+    // Provider-wrapped payload: retry once with raw control characters
+    // stripped from inside string literals (see stripRawControlsInJsonStrings).
+    const repaired = stripRawControlsInJsonStrings(text);
+    if (repaired === null) return null;
+    try {
+      parsed = JSON.parse(repaired);
+    } catch {
+      return null;
+    }
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   const envelope = parsed as { ok?: unknown; proposal?: unknown };
