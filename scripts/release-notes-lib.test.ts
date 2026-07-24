@@ -6,6 +6,7 @@ import {
   renderCommitEntry,
   renderSection,
   renderRepoNotes,
+  renderIntentdSection,
 } from './release-notes-lib.mjs';
 
 describe('parseCommitMessage', () => {
@@ -165,6 +166,51 @@ describe('renderRepoNotes', () => {
   it('renders "No changes." for empty commits', () => {
     const result = renderRepoNotes('Backend daemon (intentd)', [], 'intent-hq', 'intentd');
     expect(result).toContain('## Backend daemon (intentd)');
+    expect(result).toContain('No changes.');
+  });
+});
+
+describe('renderIntentdSection', () => {
+  it('renders the pin line only when no base version is known', () => {
+    const result = renderIntentdSection({ version: '0.9.0' });
+    expect(result).toContain('## Backend daemon (intentd)');
+    expect(result).toContain(
+      'Bundles the pinned [intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0) release.',
+    );
+    expect(result).not.toContain('previously');
+  });
+
+  it('renders an unchanged line when base equals version', () => {
+    const result = renderIntentdSection({ version: '0.9.0', baseVersion: '0.9.0' });
+    expect(result).toContain('## Backend daemon (intentd)');
+    expect(result).toContain(
+      'intentd unchanged ([v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0)).',
+    );
+    expect(result).not.toContain('Bundles');
+  });
+
+  it('renders the pin line, compare link, and grouped commits for a delta', () => {
+    const commits = [
+      parseCommitMessage('feat: add daemon feature (#10)'),
+      parseCommitMessage('fix: fix daemon bug (#11)'),
+    ];
+    const result = renderIntentdSection({ version: '0.9.0', baseVersion: '0.8.0', commits });
+
+    expect(result).toContain('## Backend daemon (intentd)');
+    expect(result).toContain(
+      'Bundles [intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0) (previously v0.8.0)',
+    );
+    expect(result).toContain('https://github.com/intent-hq/intentd/compare/v0.8.0...v0.9.0');
+    expect(result).toContain('### Features');
+    expect(result).toContain('- add daemon feature ([#10](https://github.com/intent-hq/intentd/pull/10))');
+    expect(result).toContain('### Bug Fixes');
+    expect(result).toContain('- fix daemon bug ([#11](https://github.com/intent-hq/intentd/pull/11))');
+  });
+
+  it('renders "No changes." for a delta with no renderable commits', () => {
+    const result = renderIntentdSection({ version: '0.9.0', baseVersion: '0.8.0', commits: [] });
+    expect(result).toContain('(previously v0.8.0)');
+    expect(result).toContain('https://github.com/intent-hq/intentd/compare/v0.8.0...v0.9.0');
     expect(result).toContain('No changes.');
   });
 });
