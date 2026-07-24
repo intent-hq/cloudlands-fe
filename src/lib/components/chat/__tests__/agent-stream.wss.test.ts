@@ -277,6 +277,96 @@ describe("agent-stream.wss — chunk accumulation → transcript growth", () => 
     });
   });
 
+  it("lifts a proposal from a provider-collapsed tool output (§7.1 collapsed-output fallback)", async () => {
+    // Real-world regression shape (chief message 019f923d-d38a-…): auggie
+    // flattens the daemon's dual text+resource MCP content items into a single
+    // `{ "output": "<stringified {ok, proposal}>" }` object, dropping the
+    // resource item. PROTOCOL §7.1 documents the daemon-side fallback
+    // (tool_block.rs::rebuild_collapsed_proposal_resource); the bridge must
+    // mirror it so the live transcript matches the persisted one.
+    const proposal = {
+      kind: "workspace-create",
+      payload: { operation: "workspace.create", params: { repositoryPath: "/repo" } },
+      preview: { title: "Create workspace", summary: "Review before creating." },
+    };
+    const collapsedOutput = { output: JSON.stringify({ ok: true, proposal }) };
+
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        toolCallId: "tc-collapsed-1",
+        toolName: "ws-app-proposal-show",
+        toolKind: "other",
+        status: "completed",
+        input: {},
+        output: collapsedOutput,
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const messages = readAssistantMessages();
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result", "resource"]);
+    // Rebuilt exactly as the daemon's build_proposal_resource_item: uri from
+    // kind + encoded preview.title (no applyToolCallId), name from
+    // preview.title, compact proposal JSON as text.
+    expect(blocks[2]).toMatchObject({
+      type: "resource",
+      id: `${MESSAGE_ID}:2`,
+      resource: {
+        uri: "intent-proposal://workspace-create/Create%20workspace",
+        name: "Create workspace",
+        mimeType: "application/vnd.intent.proposal+json",
+      },
+    });
+    expect(
+      JSON.parse((blocks[2] as { resource: { text: string } }).resource.text),
+    ).toEqual(proposal);
+    // The tool_result keeps the collapsed output untouched.
+    expect(blocks[1]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "tc-collapsed-1",
+      output: collapsedOutput,
+    });
+  });
+
+  it("never lifts from a collapsed output that fails the §7.1 guards", async () => {
+    // Ordinary collapsed tool outputs (valid JSON but not an `{ok: true,
+    // proposal}` echo) must never surface a standalone proposal block.
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        toolCallId: "tc-plain-1",
+        toolName: "run_command",
+        toolKind: "execute",
+        status: "completed",
+        input: {},
+        output: { output: JSON.stringify({ ok: true, stdout: "done" }) },
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const messages = readAssistantMessages();
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result"]);
+  });
+
   it("never lifts a proposal block from a tool that ends in error (§7.1)", async () => {
     backend.pushEvent({
       type: "agent:tool:call",

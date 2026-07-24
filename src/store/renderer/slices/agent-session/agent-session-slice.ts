@@ -489,6 +489,7 @@ type SessionComparisonSnapshot = Pick<
 > & {
   messageCount: number;
   lastMessageId: AgentMessage['id'] | undefined;
+  lastMessageBlockCount: number;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
@@ -516,13 +517,20 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     stopReason: session.stopReason,
     messageCount: messages.length,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
+    // The daemon can append trailing blocks to an already-stored message
+    // (e.g. the §7.1 lifted proposal-resource block the live accumulator
+    // missed), leaving count/id unchanged — include the last message's block
+    // count so re-hydration is not swallowed as a no-op.
+    lastMessageBlockCount:
+      messages.length === 0 ? 0 : (messages[messages.length - 1]?.contentBlocks?.length ?? 0),
   };
 }
 
 /**
  * Shallow equivalence check for upsertSession no-op guard.
- * Compares key scalar fields and message count / last message ID
- * to avoid creating new state references when nothing changed.
+ * Compares key scalar fields and message count / last message ID / last
+ * message content-block count to avoid creating new state references when
+ * nothing changed.
  */
 function isSessionEquivalent(a: StoredAgentSession, b: StoredAgentSession): boolean {
   return shallowEqual(toSessionComparisonSnapshot(a), toSessionComparisonSnapshot(b));
