@@ -290,6 +290,12 @@ jobs:
               echo "gh release download said: ${DOWNLOAD_ERR}"
             fi
           fi
+          # The value comes from a downloaded asset; validate its shape before it
+          # reaches GITHUB_OUTPUT (guards against corrupt/multi-line values)
+          if [ -n "$INTENTD_BASE" ] && ! printf '%s' "$INTENTD_BASE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Ignoring malformed intentdVersion in ${PREV_FE_TAG} manifest; falling back to pin-only notes"
+            INTENTD_BASE=""
+          fi
           echo "version=${INTENTD_BASE}" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
@@ -330,7 +336,7 @@ jobs:
             --intentd-version "${INTENTD_VERSION}" \
             --out release-notes.md \
             --manifest-out release-manifest.json \
-            "${EXTRA_ARGS[@]}"
+            ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 
           echo "Generated release notes:"
           cat release-notes.md
