@@ -338,6 +338,30 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
     }));
   });
 
+  it('treats an empty-string cwd as absent — passes validation without workspaceId', async () => {
+    const donePromise = Promise.resolve({ ok: true, exitCode: 0 });
+    hostExecStreamMock.mockResolvedValue({ requestId: 'req-5', done: donePromise });
+
+    const send = vi.fn();
+    const event = { sender: { send } };
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING);
+    const result = (await handler(event, {
+      sessionId: 'sess-5',
+      command: 'echo hi',
+      cwd: '',
+    })) as { success: boolean };
+
+    // A blank cwd never arms the cwd⇒workspaceId guard (same `!params.cwd`
+    // blank-as-absent semantics as the non-streaming schema): validation
+    // passes and hostExecStream drops the empty cwd off the wire.
+    expect(result.success).toBe(true);
+    expect(hostExecStreamMock).toHaveBeenCalledWith(SHELL_CMD, expect.objectContaining({
+      args: [SHELL_FLAG, 'echo hi'],
+      cwd: '',
+      workspaceId: undefined,
+    }));
+  });
+
   it('surfaces host.execStream rejection as a stderr + null-code close frame', async () => {
     const rejected = Promise.reject(new Error('rpc down'));
     // Prevent unhandled-rejection warnings in test runner.
