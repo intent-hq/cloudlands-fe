@@ -275,10 +275,10 @@ jobs:
             echo "No previous versioned release; skipping previous intentd pin lookup"
           else
             MANIFEST_DIR=$(mktemp -d)
-            if gh release download "$PREV_FE_TAG" \
+            if DOWNLOAD_ERR=$(gh release download "$PREV_FE_TAG" \
                 --repo intent-hq/cloudlands-releases \
                 --pattern release-manifest.json \
-                --dir "$MANIFEST_DIR" 2>/dev/null; then
+                --dir "$MANIFEST_DIR" 2>&1); then
               INTENTD_BASE=$(jq -r '.intentdVersion // empty' "$MANIFEST_DIR/release-manifest.json" 2>/dev/null || echo "")
               if [ -n "$INTENTD_BASE" ]; then
                 echo "Previous intentd pin (from ${PREV_FE_TAG} manifest): ${INTENTD_BASE}"
@@ -286,7 +286,8 @@ jobs:
                 echo "release-manifest.json on ${PREV_FE_TAG} has no intentdVersion; falling back to pin-only notes"
               fi
             else
-              echo "No release-manifest.json asset on ${PREV_FE_TAG} (older release); falling back to pin-only notes"
+              echo "Could not download release-manifest.json from ${PREV_FE_TAG} (older release without the asset, or a transient error); falling back to pin-only notes"
+              echo "gh release download said: ${DOWNLOAD_ERR}"
             fi
           fi
           echo "version=${INTENTD_BASE}" >> "$GITHUB_OUTPUT"
