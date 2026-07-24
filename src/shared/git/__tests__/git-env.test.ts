@@ -43,7 +43,6 @@ type ShellFn = (
 const gitEnv = (await vi.importActual('../git-env')) as {
   execAsync: ShellFn;
   execFileAsync: ExecFn;
-  execFileAsyncWithRetry: ExecFn;
 };
 
 function lastCall(): { command: string; options: Record<string, unknown> } {
@@ -128,12 +127,5 @@ describe('git-env exec helpers (host.execStream)', () => {
     await expect(
       gitEnv.execFileAsync('git', ['fetch'], { timeout: 10 }),
     ).rejects.toMatchObject({ killed: true });
-  });
-
-  it('execFileAsyncWithRetry retries the RPC and resolves on success', async () => {
-    streamState.stdout = 'v1\n';
-    const result = await gitEnv.execFileAsyncWithRetry('git', ['--version']);
-    expect(result.stdout).toBe('v1\n');
-    expect(execStreamMock).toHaveBeenCalledTimes(1);
   });
 });
