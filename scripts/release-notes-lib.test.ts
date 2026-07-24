@@ -75,6 +75,7 @@ describe('shouldSkipCommit', () => {
   it('skips release-plz style chore bump commits', () => {
     expect(shouldSkipCommit(parseCommitMessage('chore: release v0.2.4'))).toBe(true);
     expect(shouldSkipCommit(parseCommitMessage('chore: release 0.2.4'))).toBe(true);
+    expect(shouldSkipCommit(parseCommitMessage('chore: release v0.2.4-beta.1'))).toBe(true);
   });
 
   it('does not skip non-chore commits mentioning release', () => {

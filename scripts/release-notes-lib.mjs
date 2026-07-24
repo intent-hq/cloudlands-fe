@@ -47,7 +47,8 @@ export function shouldSkipCommit(parsed) {
   }
 
   // Skip release-plz style bump commits, e.g. `chore: release v0.2.4`
-  if (parsed.type === 'chore' && /^release v?\d+\.\d+\.\d+$/i.test(parsed.subject)) {
+  // or `chore: release 0.2.4-beta.1`
+  if (parsed.type === 'chore' && /^release v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/i.test(parsed.subject)) {
     return true;
   }
 
