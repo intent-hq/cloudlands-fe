@@ -5,23 +5,31 @@
  * Generates release notes from the cloudlands-fe commit range plus the pinned intentd
  * release version (intentd.version). Uses the GitHub REST API to fetch fe commits and
  * parse conventional commit messages; the intentd section references the pinned release
- * instead of a commit SHA range (intentd ships on its own release cycle).
+ * (intentd ships on its own release cycle) and, when the previous pin is known via
+ * --intentd-base, lists the intentd commits in the `v<base>...v<head>` range.
  *
  * Usage:
  *   GITHUB_TOKEN=... node scripts/generate-release-notes.mjs \
  *     --version 2.0.6 \
  *     --fe-base v2.0.5 --fe-head v2.0.6 \
  *     --intentd-version 0.1.0 \
+ *     [--intentd-base 0.0.9] \
  *     --out release-notes.md \
  *     --manifest-out release-manifest.json
  *
  * Tokens:
  *   FE_TOKEN      — token for intent-hq/cloudlands-fe API calls
- *   GITHUB_TOKEN  — fallback when FE_TOKEN is unset
+ *   INTENTD_TOKEN — token for intent-hq/intentd API calls (compare API)
+ *   GITHUB_TOKEN  — fallback when FE_TOKEN / INTENTD_TOKEN are unset
  */
 
 import { writeFileSync } from 'fs';
-import { parseCommitMessage, shouldSkipCommit, renderRepoNotes } from './release-notes-lib.mjs';
+import {
+  parseCommitMessage,
+  shouldSkipCommit,
+  renderRepoNotes,
+  renderIntentdSection,
+} from './release-notes-lib.mjs';
 
 /**
  * Parse CLI arguments
@@ -153,6 +161,17 @@ async function main() {
   }
   const intentdTag = `v${intentdVersion}`;
 
+  // Optional previous pin; invalid values are ignored (notes enrichment is fail-soft)
+  let intentdBaseVersion = null;
+  if (args['intentd-base']) {
+    const base = args['intentd-base'].replace(/^v/, '');
+    if (/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(base)) {
+      intentdBaseVersion = base;
+    } else {
+      console.warn(`⚠️ Ignoring invalid --intentd-base "${args['intentd-base']}"`);
+    }
+  }
+
   console.log(`Generating release notes for Intent v${args.version}...\n`);
 
   console.log(`Fetching cloudlands-fe commits (${args['fe-base']}...${args['fe-head']})...`);
@@ -165,16 +184,56 @@ async function main() {
     .map(c => parseCommitMessage(c.commit.message.split('\n')[0]))
     .filter(c => c && !shouldSkipCommit(c));
 
-  // Generate markdown; the intentd section references the pinned release (see its
-  // release notes for backend changes) instead of rendering a commit range
+  // Build the intentd section. When the previous pin is known and moved, fetch the
+  // commit delta from the intentd compare API; any failure falls back to the pin
+  // line + compare link (no commit list) so a notes problem never blocks a release
+  // (fail-soft).
+  let intentdSection;
+  if (intentdBaseVersion && intentdBaseVersion !== intentdVersion) {
+    const intentdToken = process.env.INTENTD_TOKEN || process.env.GITHUB_TOKEN;
+    if (!intentdToken) {
+      console.warn('⚠️ No INTENTD_TOKEN (or GITHUB_TOKEN fallback) available — skipping intentd delta fetch.');
+      intentdSection = renderIntentdSection({
+        version: intentdVersion,
+        baseVersion: intentdBaseVersion,
+        commits: null,
+      });
+    } else {
+      try {
+        console.log(`Fetching intentd commits (v${intentdBaseVersion}...${intentdTag})...`);
+        const intentdCommits = await fetchCommits(
+          'intent-hq', 'intentd', `v${intentdBaseVersion}`, intentdTag, intentdToken,
+        );
+        console.log(`  Found ${intentdCommits.length} commits\n`);
+
+        const parsedIntentdCommits = intentdCommits
+          .map(c => parseCommitMessage(c.commit.message.split('\n')[0]))
+          .filter(c => c && !shouldSkipCommit(c));
+
+        intentdSection = renderIntentdSection({
+          version: intentdVersion,
+          baseVersion: intentdBaseVersion,
+          commits: parsedIntentdCommits,
+        });
+      } catch (error) {
+        console.warn(`⚠️ Failed to fetch intentd delta (v${intentdBaseVersion}...${intentdTag}): ${error.message}`);
+        console.warn('   Falling back to the pin line + compare link (no commit list).');
+        intentdSection = renderIntentdSection({
+          version: intentdVersion,
+          baseVersion: intentdBaseVersion,
+          commits: null,
+        });
+      }
+    }
+  } else {
+    intentdSection = renderIntentdSection({ version: intentdVersion, baseVersion: intentdBaseVersion });
+  }
+
   const markdown = [
     `Intent v${args.version}`,
     '',
     renderRepoNotes('Desktop app (cloudlands-fe)', parsedFeCommits, 'intent-hq', 'cloudlands-fe'),
-    '## Backend daemon (intentd)',
-    '',
-    `Bundles the pinned [intentd ${intentdTag}](https://github.com/intent-hq/intentd/releases/tag/${intentdTag}) release.`,
-    '',
+    intentdSection,
   ].join('\n');
 
   // Write output
@@ -194,6 +253,7 @@ async function main() {
       feTag: `v${args.version}`,
       feSha,
       intentdVersion,
+      ...(intentdBaseVersion ? { intentdBaseVersion } : {}),
       generatedAt: new Date().toISOString(),
     };
 
