@@ -450,6 +450,71 @@ describe("agent-stream.wss — chunk accumulation → transcript growth", () => 
       tool_use_id: "tc-wrapped-1",
       output: collapsedOutput,
     });
+
+    // Escape-split coverage: the subtlest repair case is a wrap boundary
+    // landing BETWEEN a backslash and its escaped character (`escapePending`
+    // must survive the stripped newline). Build a minified envelope where the
+    // `\` of an escaped newline sits exactly at column index 999, so the
+    // 1000-column wrap splits the two-character `\n` escape in half.
+    const makeEnvelope = (prompt: string) =>
+      JSON.stringify({
+        ok: true,
+        proposal: {
+          kind: "workspace-create",
+          payload: {
+            operation: "workspace.create",
+            params: { initialPrompt: prompt, repositoryPath: "/repo" },
+          },
+          preview: { title: "Create workspace", summary: "Review before creating." },
+        },
+      });
+    const promptStart = makeEnvelope("MARKER").indexOf("MARKER");
+    const escapeSplitPrompt =
+      "a".repeat(999 - promptStart) + "\n" + "tail after the split escape";
+    const serialized = makeEnvelope(escapeSplitPrompt);
+    // Fixture sanity: the escape's backslash is the last character of the
+    // first 1000-column chunk, so the injected newline lands between `\` and
+    // `n` — and the corrupted payload does not parse.
+    expect(serialized[999]).toBe("\\");
+    expect(serialized[1000]).toBe("n");
+    const escapeSplitWrapped = serialized.match(/.{1,1000}/g)?.join("\n") ?? serialized;
+    expect(() => JSON.parse(escapeSplitWrapped)).toThrow();
+
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 3,
+        blockId: `${MESSAGE_ID}:3`,
+        toolCallId: "tc-wrapped-2",
+        toolName: "ws-app-proposal-show",
+        toolKind: "other",
+        status: "completed",
+        input: {},
+        output: { output: escapeSplitWrapped },
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const blocksAfter = readAssistantMessages()[0].contentBlocks ?? [];
+    expect(blocksAfter.map((b) => b.type)).toEqual([
+      "tool_use",
+      "tool_result",
+      "resource",
+      "tool_use",
+      "tool_result",
+      "resource",
+    ]);
+    // The repaired round-trip preserves the escaped character: the recovered
+    // prompt still contains the `\n` the wrap boundary split in two.
+    const recovered = JSON.parse(
+      (blocksAfter[5] as { resource: { text: string } }).resource.text,
+    ) as { payload: { params: { initialPrompt: string } } };
+    expect(recovered.payload.params.initialPrompt).toBe(escapeSplitPrompt);
   });
 
   it("never lifts from a wrapped output that is invalid JSON even after repair (§7.1)", async () => {
