@@ -20,7 +20,7 @@ import { Logger } from '$lib/utils/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { z } from 'zod';
-import { execAsync } from '../../../shared/git/git-env';
+import { execFileAsync } from '../../../shared/git/git-env';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
 import { findBinary } from '../../../shared/main/find-binary';
 import { getBackendClient } from '../../backend/main/backend.ipc';
@@ -392,7 +392,10 @@ export async function openInJetBrains(
 
     const editors = await fetchHostInstalledEditors();
 
-    let command: string | null = null;
+    // Argv-style launch spec per install source — paths are appended as
+    // discrete argv entries and never interpolated into a shell string
+    // (monorepo#672).
+    let launch: { file: string; args: string[] } | null = null;
     let selectedIde: string | null = null;
     let selectedEntry: HostInstalledEditor | null = null;
 
@@ -402,11 +405,11 @@ export async function openInJetBrains(
         const entry = editors.find((e) => e.id === regId);
         if (!entry || entry.installed !== true) continue;
         if (entry.source === 'binary' && entry.path) {
-          command = entry.path;
+          launch = { file: entry.path, args: [] };
         } else if (entry.source === 'flatpak' && entry.flatpakId) {
-          command = `flatpak run ${entry.flatpakId}`;
+          launch = { file: 'flatpak', args: ['run', entry.flatpakId] };
         } else if (entry.source === 'macAppBundle' && ideAppNames[ide]) {
-          command = `open -a "${ideAppNames[ide]}"`;
+          launch = { file: 'open', args: ['-a', ideAppNames[ide]] };
         } else {
           continue;
         }
@@ -419,10 +422,10 @@ export async function openInJetBrains(
         });
         break;
       }
-      if (command) break;
+      if (launch) break;
     }
 
-    if (!command) {
+    if (!launch) {
       logger.error('[JetBrains] host.listInstalledEditors reports no JetBrains IDE installed');
       return {
         success: false,
@@ -430,66 +433,51 @@ export async function openInJetBrains(
       };
     }
 
-    logger.info('[JetBrains] Using command', { command });
+    logger.info('[JetBrains] Using command', { file: launch.file, args: launch.args });
 
-    // Prepare the path(s) to open
-    let execCommand: string;
+    // Prepare the path(s) to open as discrete argv entries
+    let pathArgs: string[];
     if (typeof pathOrPaths === 'string') {
       // Single path (file or folder)
-      execCommand = command.startsWith('open -a')
-        ? `${command} "${pathOrPaths}"`
-        : `${command} "${pathOrPaths}"`;
+      pathArgs = [pathOrPaths];
     } else if ('filePath' in pathOrPaths) {
       // Single file path
-      execCommand = command.startsWith('open -a')
-        ? `${command} "${pathOrPaths.filePath}"`
-        : `${command} "${pathOrPaths.filePath}"`;
-    } else {
-      // Folder with optional file
-      if (pathOrPaths.file) {
-        // Open folder as project, then open the file
-        if (command.startsWith('open -a')) {
-          // For 'open' command, open the folder first
-          execCommand = `${command} "${pathOrPaths.folder}"`;
-          // LOCAL-GUI: launches the user's JetBrains IDE on the client host; not workspace execution
-          await execAsync(execCommand);
-          // Wait a bit for the IDE to open, then try to open the file using the
-          // IDE's inner command-line tool. The `.app` bundle path comes from the
-          // daemon (host.listInstalledEditors) — no local `access()` probe.
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          if (
-            selectedEntry?.source === 'macAppBundle' &&
-            selectedEntry.path &&
-            selectedIde
-          ) {
-            const toolPath = `${selectedEntry.path}/Contents/MacOS/${selectedIde}`;
-            try {
-              // LOCAL-GUI: invokes the IDE's inner CLI to open the file on the client host; not workspace execution
-              await execAsync(`"${toolPath}" "${pathOrPaths.file}"`);
-            } catch {
-              logger.info('Opened folder in JetBrains, file should be opened manually', {
-                folder: pathOrPaths.folder,
-                file: pathOrPaths.file,
-              });
-            }
+      pathArgs = [pathOrPaths.filePath];
+    } else if (pathOrPaths.file) {
+      // Open folder as project, then open the file
+      if (selectedEntry?.source === 'macAppBundle') {
+        // For 'open' command, open the folder first
+        // LOCAL-GUI: launches the user's JetBrains IDE on the client host; not workspace execution
+        await execFileAsync(launch.file, [...launch.args, pathOrPaths.folder]);
+        // Wait a bit for the IDE to open, then try to open the file using the
+        // IDE's inner command-line tool. The `.app` bundle path comes from the
+        // daemon (host.listInstalledEditors) — no local `access()` probe.
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (selectedEntry.path && selectedIde) {
+          const toolPath = `${selectedEntry.path}/Contents/MacOS/${selectedIde}`;
+          try {
+            // LOCAL-GUI: invokes the IDE's inner CLI to open the file on the client host; not workspace execution
+            await execFileAsync(toolPath, [pathOrPaths.file]);
+          } catch {
+            logger.info('Opened folder in JetBrains, file should be opened manually', {
+              folder: pathOrPaths.folder,
+              file: pathOrPaths.file,
+            });
           }
-          logger.info('Opened in JetBrains IDE', { ide: command, folder: pathOrPaths.folder, file: pathOrPaths.file });
-          return { success: true };
-        } else {
-          execCommand = `${command} "${pathOrPaths.folder}" "${pathOrPaths.file}"`;
         }
-      } else {
-        // Just open the folder
-        execCommand = command.startsWith('open -a')
-          ? `${command} "${pathOrPaths.folder}"`
-          : `${command} "${pathOrPaths.folder}"`;
+        logger.info('Opened in JetBrains IDE', { ide: launch.file, folder: pathOrPaths.folder, file: pathOrPaths.file });
+        return { success: true };
       }
+      pathArgs = [pathOrPaths.folder, pathOrPaths.file];
+    } else {
+      // Just open the folder
+      pathArgs = [pathOrPaths.folder];
     }
 
-    logger.info('[JetBrains] Executing command', { execCommand });
+    logger.info('[JetBrains] Executing command', { file: launch.file, args: [...launch.args, ...pathArgs] });
     // LOCAL-GUI: launches the user's JetBrains IDE on the client host; not workspace execution
-    await execAsync(execCommand);
-    logger.info('[JetBrains] Successfully opened in JetBrains IDE', { ide: command, path: pathOrPaths });
+    await execFileAsync(launch.file, [...launch.args, ...pathArgs]);
+    logger.info('[JetBrains] Successfully opened in JetBrains IDE', { ide: launch.file, path: pathOrPaths });
 
     return { success: true };
   } catch (error) {
