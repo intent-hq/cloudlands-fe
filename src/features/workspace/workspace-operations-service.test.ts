@@ -641,6 +641,33 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith("No spaces selected to archive");
     });
 
+    it("treats a defined-but-empty selectedBulkItemIds as none-selected, never falling back to all ids", async () => {
+      seed(
+        makeWorkspace({ id: "ws-1", status: WorkspaceStatusEnum.Archived }),
+        makeWorkspace({ id: "ws-2", status: WorkspaceStatusEnum.Archived }),
+      );
+
+      // Through the real UI (BulkProposalItems bind:selectedIds), deselecting
+      // every item yields [] — Apply must NOT delete all payload.ids.
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkDelete", ["ws-1", "ws-2"]),
+          selectedBulkItemIds: [],
+        }),
+      );
+      await flush();
+
+      expect(ws.delete).not.toHaveBeenCalled();
+      expect(stored("ws-1")).toBeDefined();
+      expect(stored("ws-2")).toBeDefined();
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({
+        status: "failed",
+        error: "No spaces selected to delete",
+      });
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("No spaces selected to delete");
+    });
+
     it("marks the lifecycle failed and toasts with counts when an archive hard-fails", async () => {
       ws.archive.mockResolvedValueOnce({ ok: false, error: "daemon offline" } as never);
       seed(makeWorkspace({ id: "ws-1" }), makeWorkspace({ id: "ws-2" }));

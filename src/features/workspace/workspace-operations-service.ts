@@ -600,8 +600,11 @@ export async function applyWorkspaceCreateProposal(
  * timeouts reported as "still deleting" and left for the `workspace:deleted`
  * event to purge (like `performBulkDeleteArchived`).
  *
- * Target ids come from `selectedBulkItemIds` when the user narrowed the
- * checklist (non-empty), else the proposal's `payload.ids`.
+ * Target ids come from `selectedBulkItemIds` whenever the checklist provided
+ * one (the ProposalCard always binds it, so a defined-but-empty array means
+ * the user deselected everything — that fails loud rather than falling back
+ * to all `payload.ids`); only an absent `selectedBulkItemIds` falls back to
+ * the proposal's `payload.ids`.
  */
 export async function applyBulkOpProposal(
   payload: WorkspaceProposalApplyPayload,
@@ -624,10 +627,7 @@ export async function applyBulkOpProposal(
     (await getToast()).error(error);
   };
 
-  const ids =
-    selectedBulkItemIds && selectedBulkItemIds.length > 0
-      ? selectedBulkItemIds
-      : proposal.payload.ids;
+  const ids = selectedBulkItemIds ?? proposal.payload.ids;
   if (ids.length === 0) {
     await fail(`No spaces selected to ${isDelete ? "delete" : "archive"}`);
     return;
