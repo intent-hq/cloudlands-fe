@@ -148,8 +148,16 @@ function readNoteById(workspaceId: string, noteId: string): Note | undefined {
  * concurrent refetch that already landed a newer rev is never regressed.
  */
 function advanceNoteRev(workspaceId: string, noteId: string, sentRev: number): void {
+  setNoteRevIfNewer(workspaceId, noteId, sentRev + 1);
+}
+
+/**
+ * Set a note's stored `rev` to an authoritative value (an echoed daemon rev,
+ * #638, or an `advanceNoteRev` inference), guarded so a concurrent refetch
+ * that already landed a newer rev is never regressed.
+ */
+function setNoteRevIfNewer(workspaceId: string, noteId: string, nextRev: number): void {
   const current = readNoteById(workspaceId, noteId)?.rev;
-  const nextRev = sentRev + 1;
   if (current !== undefined && current >= nextRev) return;
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { rev: nextRev }));
 }
@@ -158,16 +166,16 @@ function advanceNoteRev(workspaceId: string, noteId: string, sentRev: number): v
  * Serialize an out-of-module mutation that rewrites the note's content
  * daemon-side (e.g. `comment.add`, which embeds anchor markers into the
  * markdown via an unconditional `update_note`) on this note's mutation queue,
- * and advance the stored `rev` by one on success. The daemon emits no
- * `note:updated` for these rewrites and its result doesn't echo the new rev.
- * Unlike `advanceNoteRev`'s conditional-write case, no rev is sent or
- * daemon-verified here — `rev + 1` is an inference that the FE was in sync
- * when `run()` executed, which holds because the queue excludes FE-originated
- * races; if another client bumped the note concurrently the stored rev stays
- * stale and the next conditional save conflicts legitimately. Queueing
- * guarantees ordering with any in-flight or debounced `setContent`, so the
- * next save reads the advanced rev instead of racing it with a stale
- * `expectedVersion`.
+ * and advance the stored `rev` on success. The daemon emits no `note:updated`
+ * for these rewrites; newer daemons echo the authoritative post-mutation rev
+ * on the result (`noteRev`, #638), which is applied verbatim (guarded against
+ * regressing a newer refetched rev). When the echo is absent (older daemons),
+ * fall back to the `rev + 1` inference — valid because the queue excludes
+ * FE-originated races; if another client bumped the note concurrently the
+ * stored rev stays stale and the next conditional save conflicts
+ * legitimately. Queueing guarantees ordering with any in-flight or debounced
+ * `setContent`, so the next save reads the advanced rev instead of racing it
+ * with a stale `expectedVersion`.
  */
 export function enqueueRevBumpingNoteMutation(
   workspaceId: string,
@@ -177,7 +185,10 @@ export function enqueueRevBumpingNoteMutation(
   return enqueueNoteMutation(noteKey(workspaceId, noteId), async () => {
     const rev = readNoteById(workspaceId, noteId)?.rev;
     const result = await run();
-    if (result.success && rev !== undefined) advanceNoteRev(workspaceId, noteId, rev);
+    if (result.success) {
+      if (result.noteRev !== undefined) setNoteRevIfNewer(workspaceId, noteId, result.noteRev);
+      else if (rev !== undefined) advanceNoteRev(workspaceId, noteId, rev);
+    }
     return result;
   });
 }

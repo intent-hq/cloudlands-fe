@@ -119,6 +119,74 @@ describe("LiveNotesClient mutations (fake transport)", () => {
     );
   });
 
+  // monorepo#621 (Round 7d): the remaining note-scoped call sites — get, add,
+  // edit, editLines — must also honor a caller-supplied workspaceId over the
+  // poisoned last-writer-wins resolver cache.
+  it("get uses the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValueOnce({ note: { id: "spec", title: "T" } });
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveNotesClient();
+
+    const note = await client.get("spec", "comment-add");
+
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenCalledWith("note.get", {
+      workspaceId: "comment-add",
+      noteId: "spec",
+    });
+    expect(note?.workspaceId).toBe("comment-add");
+  });
+
+  it("add uses the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "spec" });
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveNotesClient();
+
+    await client.add("spec", "body", { position: "end" }, 4, "comment-add");
+
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenCalledWith("note.add", {
+      workspaceId: "comment-add",
+      noteId: "spec",
+      content: "body",
+      position: "end",
+      expectedVersion: 4,
+    });
+  });
+
+  it("edit uses the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "spec" });
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveNotesClient();
+
+    await client.edit("spec", "foo", "bar", undefined, "comment-add");
+
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenCalledWith("note.edit", {
+      workspaceId: "comment-add",
+      noteId: "spec",
+      old: "foo",
+      new: "bar",
+    });
+  });
+
+  it("editLines uses the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "spec" });
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveNotesClient();
+
+    await client.editLines("spec", 2, 5, "x", undefined, "comment-add");
+
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(mockedRequest).toHaveBeenCalledWith("note.editLines", {
+      workspaceId: "comment-add",
+      noteId: "spec",
+      start: 2,
+      end: 5,
+      content: "x",
+    });
+  });
+
   it("add forwards note.add with heading/position only when provided", async () => {
     mockedRequest.mockResolvedValue({ id: "note-1" });
     const client = new LiveNotesClient();

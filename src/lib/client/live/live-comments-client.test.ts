@@ -10,6 +10,8 @@ vi.mock("./backend-transport", () => ({
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
+  detectLiveStateCapability: vi.fn(() => Promise.resolve(false)),
 }));
 
 vi.mock("./live-support", async (importActual) => {
@@ -126,6 +128,41 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
     );
   });
 
+  // monorepo#621 (Round 7d): `subscribe`'s refetch loop must pin to the
+  // caller's workspaceId too — otherwise a poisoned resolver cache routes the
+  // refetch at another workspace's same-id note (e.g. `spec`).
+  it("subscribe's refetch uses the caller's explicit workspaceId over the resolver cache", async () => {
+    mockedRequest.mockResolvedValue({ threads: [] });
+    mockedResolve.mockResolvedValue("other-workspace");
+    const client = new LiveCommentsClient();
+
+    const unsubscribe = client.subscribe("spec", () => {}, "comment-add");
+    // The initial one-shot refetch fires asynchronously on subscription setup.
+    await vi.waitFor(() => {
+      expect(mockedRequest).toHaveBeenCalledWith(
+        "comment.list",
+        expect.objectContaining({ workspaceId: "comment-add", noteId: "spec" }),
+      );
+    });
+    expect(mockedResolve).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it("subscribe falls back to the resolver when no workspaceId is supplied", async () => {
+    mockedRequest.mockResolvedValue({ threads: [] });
+    const client = new LiveCommentsClient();
+
+    const unsubscribe = client.subscribe("note-1", () => {});
+    await vi.waitFor(() => {
+      expect(mockedRequest).toHaveBeenCalledWith(
+        "comment.list",
+        expect.objectContaining({ workspaceId: "ws-1", noteId: "note-1" }),
+      );
+    });
+    expect(mockedResolve).toHaveBeenCalledWith("note-1");
+    unsubscribe();
+  });
+
   it("add omits authorType from the wire params when not provided", async () => {
     mockedRequest.mockResolvedValueOnce({ commentId: "c-1" });
     const client = new LiveCommentsClient();
@@ -133,6 +170,36 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
     await client.add("note-1", { searchContext: "a b", commentTarget: "a", comment: "hi" });
 
     expect(mockedRequest.mock.calls[0][1]).not.toHaveProperty("authorType");
+  });
+
+  // FE side of monorepo#638: the daemon echoes the authoritative post-add
+  // note rev (`noteRev`) after its anchor rewrite; the seam surfaces it on the
+  // MutationResult so rev bookkeeping can consume it instead of inferring +1.
+  it("add surfaces the daemon's echoed noteRev on the MutationResult", async () => {
+    mockedRequest.mockResolvedValueOnce({ commentId: "c-1", noteRev: 7 });
+    const client = new LiveCommentsClient();
+
+    const result = await client.add("note-1", {
+      searchContext: "a b",
+      commentTarget: "a",
+      comment: "hi",
+    });
+
+    expect(result).toEqual({ success: true, noteRev: 7 });
+  });
+
+  it("add omits noteRev when the daemon does not echo one (older daemons)", async () => {
+    mockedRequest.mockResolvedValueOnce({ commentId: "c-1" });
+    const client = new LiveCommentsClient();
+
+    const result = await client.add("note-1", {
+      searchContext: "a b",
+      commentTarget: "a",
+      comment: "hi",
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(result).not.toHaveProperty("noteRev");
   });
 
   it("add generates a distinct idempotencyKey per call", async () => {

@@ -1,9 +1,9 @@
 /**
  * Live notes domain backed by the intentd daemon.
  *
- * `list` resolves via `note.list({ workspaceId })`; `get` resolves the note's
- * workspace first (daemon `note.get` requires `workspaceId`, which the fixed
- * AppClient signature does not carry) then fetches it. Every listed note's
+ * `list` resolves via `note.list({ workspaceId })`; `get` uses the caller's
+ * `workspaceId` when supplied (daemon `note.get` requires one), falling back
+ * to resolving the note's workspace via the cache. Every listed note's
  * workspace is cached so note-scoped clients (tasks, comments) can resolve it.
  * `subscribe` aggregates notes across workspaces and refetches on `note:*`.
  */
@@ -145,8 +145,11 @@ export class LiveNotesClient implements NotesClient {
     });
   }
 
-  async get(noteId: string): Promise<Note | null> {
-    const workspaceId = await resolveNoteWorkspaceId(noteId);
+  async get(noteId: string, explicitWorkspaceId?: string): Promise<Note | null> {
+    // The caller's workspaceId wins over the resolver cache — note ids are not
+    // globally unique (every workspace has a `spec` note) and the cache is
+    // last-writer-wins across workspaces (monorepo#621).
+    const workspaceId = explicitWorkspaceId ?? (await resolveNoteWorkspaceId(noteId));
     if (!workspaceId) return null;
     try {
       const result = await backendRequest<{ note?: unknown } | unknown>("note.get", {
@@ -168,8 +171,9 @@ export class LiveNotesClient implements NotesClient {
   // Each forwards to the daemon (§7.8) and folds the outcome into a
   // MutationResult; the subscribe→refetch loop reconciles store state from the
   // resulting `note:*` events. `create` is workspace-scoped and carries an
-  // idempotencyKey (§5.6); the rest are note-scoped, so the workspace is
-  // resolved via `resolveNoteWorkspaceId` (the seam signature lacks it).
+  // idempotencyKey (§5.6); the rest are note-scoped — the caller-supplied
+  // `workspaceId` wins when provided, otherwise the workspace is resolved via
+  // `resolveNoteWorkspaceId` (fallback-only; the cache is last-writer-wins).
 
   async create(request: CreateNoteRequest): Promise<MutationResult> {
     return runMutation("note.create", { ...request, idempotencyKey: newIdempotencyKey() });
@@ -189,6 +193,7 @@ export class LiveNotesClient implements NotesClient {
     content: string,
     options?: NoteAddOptions,
     expectedVersion?: number,
+    workspaceId?: string,
   ): Promise<MutationResult> {
     return this.runNoteMutation(
       noteId,
@@ -199,6 +204,7 @@ export class LiveNotesClient implements NotesClient {
         ...(options?.position !== undefined ? { position: options.position } : {}),
       },
       expectedVersion,
+      workspaceId,
     );
   }
 
@@ -207,8 +213,15 @@ export class LiveNotesClient implements NotesClient {
     oldText: string,
     newText: string,
     expectedVersion?: number,
+    workspaceId?: string,
   ): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.edit", { old: oldText, new: newText }, expectedVersion);
+    return this.runNoteMutation(
+      noteId,
+      "note.edit",
+      { old: oldText, new: newText },
+      expectedVersion,
+      workspaceId,
+    );
   }
 
   async editLines(
@@ -217,8 +230,15 @@ export class LiveNotesClient implements NotesClient {
     end: number,
     content: string,
     expectedVersion?: number,
+    workspaceId?: string,
   ): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.editLines", { start, end, content }, expectedVersion);
+    return this.runNoteMutation(
+      noteId,
+      "note.editLines",
+      { start, end, content },
+      expectedVersion,
+      workspaceId,
+    );
   }
 
   async delete(
