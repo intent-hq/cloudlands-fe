@@ -45,7 +45,13 @@ export function shouldSkipCommit(parsed) {
   if (parsed.type === 'chore' && parsed.scope === 'release') {
     return true;
   }
-  
+
+  // Skip release-plz style bump commits, e.g. `chore: release v0.2.4`
+  // or `chore: release 0.2.4-beta.1`
+  if (parsed.type === 'chore' && /^release v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/i.test(parsed.subject)) {
+    return true;
+  }
+
   // Skip version bump commits (common patterns in subject line)
   const versionBumpPatterns = [
     /^bump version to/i,
@@ -156,9 +162,16 @@ export function renderRepoNotes(repoName, commits, repoOwner, repoSlug) {
   if (!hasChanges) {
     output += 'No changes.\n';
   } else {
+    const sections = [];
     for (const { title, type } of SECTION_ORDER) {
-      output += renderSection(title, groups[type], repoOwner, repoSlug);
+      const section = renderSection(title, groups[type], repoOwner, repoSlug);
+      if (section) {
+        sections.push(section);
+      }
     }
+    // Each section ends with a single trailing newline; joining with '\n'
+    // guarantees a blank line before each subsequent `### Heading`
+    output += sections.join('\n');
   }
 
   return output;
