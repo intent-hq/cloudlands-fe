@@ -38,7 +38,7 @@ function serializeData(data: unknown): string {
       return '[unserializable]';
     }
     if (json.length > MAX_SERIALIZED_DATA_LENGTH) {
-      return `${json.slice(0, MAX_SERIALIZED_DATA_LENGTH)}${TRUNCATION_MARKER}`;
+      return `${json.slice(0, MAX_SERIALIZED_DATA_LENGTH - TRUNCATION_MARKER.length)}${TRUNCATION_MARKER}`;
     }
     return json;
   } catch {

@@ -58,7 +58,10 @@ describe('ClientLogger data serialization', () => {
 
     const message = warnSpy.mock.calls[0][0] as string;
     expect(message).toContain('… [truncated]');
-    // prefix + message + 2000 chars of JSON + marker stays well under the 4096 line cap.
+    // Serialized payload (including the marker) is strictly capped at 2000 chars,
+    // so prefix + message + payload stays well under the 4096 line cap.
+    const serialized = message.slice(message.indexOf(' {'));
+    expect(serialized.trimStart().length).toBeLessThanOrEqual(2000);
     expect(message.length).toBeLessThan(2200);
   });
 
