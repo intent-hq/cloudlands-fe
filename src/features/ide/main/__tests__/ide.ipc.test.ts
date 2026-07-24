@@ -21,28 +21,21 @@ import {
  * `access()` fallbacks).
  */
 
-const {
-  mockRequest,
-  mockSpawn,
-  mockExecAsync,
-  mockExecFileAsync,
-  mockFindBinary,
-  mockFindVSCodeAsync,
-  loggerSpies,
-} = vi.hoisted(() => ({
-  mockRequest: vi.fn(),
-  mockSpawn: vi.fn(),
-  mockExecAsync: vi.fn(),
-  mockExecFileAsync: vi.fn(),
-  mockFindBinary: vi.fn(),
-  mockFindVSCodeAsync: vi.fn(),
-  loggerSpies: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+const { mockRequest, mockSpawn, mockExecAsync, mockExecFileAsync, mockFindBinary, mockFindVSCodeAsync, loggerSpies } =
+  vi.hoisted(() => ({
+    mockRequest: vi.fn(),
+    mockSpawn: vi.fn(),
+    mockExecAsync: vi.fn(),
+    mockExecFileAsync: vi.fn(),
+    mockFindBinary: vi.fn(),
+    mockFindVSCodeAsync: vi.fn(),
+    loggerSpies: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
+  }));
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockRequest }),
@@ -258,11 +251,10 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
     const result = await openInJetBrains({ folder: '/tmp/project' });
 
     expect(result).toEqual({ success: true });
-    expect(mockExecFileAsync).toHaveBeenCalledWith('flatpak', [
-      'run',
-      'com.jetbrains.IntelliJ-IDEA-Community',
-      '/tmp/project',
-    ]);
+    expect(mockExecFileAsync).toHaveBeenCalledWith(
+      'flatpak',
+      ['run', 'com.jetbrains.IntelliJ-IDEA-Community', '/tmp/project'],
+    );
   });
 
   it('consumes `source:"macAppBundle"` verbatim on macOS and launches via `open -a "AppName"`', async () => {
@@ -296,6 +288,48 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
       '/Applications/IntelliJ IDEA.app/Contents/MacOS/idea',
       ['/tmp/project/src/main.ts'],
     );
+  });
+
+  it('keeps hostile paths (backtick, $(), single quote) literal as a single argv entry — no shell string (monorepo#672)', async () => {
+    setPlatform('linux');
+    mockRequest.mockResolvedValue({
+      editors: [
+        { id: 'intellij', installed: true, source: 'binary', path: '/usr/bin/idea' },
+      ],
+    });
+
+    const hostilePath = "/tmp/it`s $(bad)'dir";
+    const { openInJetBrains } = await loadFreshModule();
+    const result = await openInJetBrains(hostilePath);
+
+    expect(result).toEqual({ success: true });
+    expect(mockExecFileAsync).toHaveBeenCalledTimes(1);
+    expect(mockExecFileAsync).toHaveBeenCalledWith('/usr/bin/idea', [hostilePath]);
+    expect(mockExecAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps hostile folder + file paths literal through the macOS open-then-inner-tool flow (monorepo#672)', async () => {
+    setPlatform('darwin');
+    mockRequest.mockResolvedValue({
+      editors: [
+        { id: 'intellij', installed: true, source: 'macAppBundle', path: '/Applications/IntelliJ IDEA.app' },
+      ],
+    });
+
+    const hostileFolder = "/tmp/it`s $(bad)'dir";
+    const hostileFile = "/tmp/it`s $(bad)'dir/src/$(main)'.ts";
+    const { openInJetBrains } = await loadFreshModule();
+    const result = await openInJetBrains({ folder: hostileFolder, file: hostileFile });
+
+    expect(result).toEqual({ success: true });
+    expect(mockExecFileAsync).toHaveBeenCalledTimes(2);
+    expect(mockExecFileAsync).toHaveBeenNthCalledWith(1, 'open', ['-a', 'IntelliJ IDEA', hostileFolder]);
+    expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+      2,
+      '/Applications/IntelliJ IDEA.app/Contents/MacOS/idea',
+      [hostileFile],
+    );
+    expect(mockExecAsync).not.toHaveBeenCalled();
   });
 
   it('returns a failure error when host reports every editor as `installed:false`, without any local probe', async () => {
@@ -346,77 +380,5 @@ describe('openInJetBrains (host.listInstalledEditors wire contract)', () => {
     // ideCommands starts with 'idea' -> intellij, so idea wins.
     expect(mockExecFileAsync).toHaveBeenCalledWith('/usr/bin/idea', ['/tmp/project']);
     expect(mockExecFileAsync).not.toHaveBeenCalledWith('/usr/bin/webstorm', ['/tmp/project']);
-  });
-});
-
-describe('openInJetBrains shell-metacharacter paths (monorepo#672 regression)', () => {
-  beforeEach(() => {
-    resetAllMocks();
-    mockExecAsync.mockResolvedValue({ stdout: '', stderr: '' });
-    mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
-  });
-
-  afterEach(() => {
-    restorePlatform();
-    vi.restoreAllMocks();
-  });
-
-  it('passes a backtick-containing path as a discrete argv entry for the binary-path shape (no shell string)', async () => {
-    setPlatform('linux');
-    const evilPath = '/tmp/pwn `touch /tmp/owned`/project';
-    mockRequest.mockResolvedValue({
-      editors: [{ id: 'intellij', installed: true, source: 'binary', path: '/usr/local/bin/idea' }],
-    });
-
-    const { openInJetBrains } = await loadFreshModule();
-    const result = await openInJetBrains(evilPath);
-
-    expect(result).toEqual({ success: true });
-    expect(mockExecFileAsync).toHaveBeenCalledWith('/usr/local/bin/idea', [evilPath]);
-    // The path must never be interpolated into a shell command string.
-    expect(mockExecAsync).not.toHaveBeenCalled();
-  });
-
-  it('passes backtick/$() folder+file as discrete argv entries for the macOS `open -a` shape, including the inner tool', async () => {
-    setPlatform('darwin');
-    const evilFolder = '/tmp/$(rm -rf ~)/project';
-    const evilFile = '/tmp/$(rm -rf ~)/project/src/`whoami`.ts';
-    mockRequest.mockResolvedValue({
-      editors: [
-        { id: 'intellij', installed: true, source: 'macAppBundle', path: '/Applications/IntelliJ IDEA.app' },
-      ],
-    });
-
-    const { openInJetBrains } = await loadFreshModule();
-    const result = await openInJetBrains({ folder: evilFolder, file: evilFile });
-
-    expect(result).toEqual({ success: true });
-    expect(mockExecFileAsync).toHaveBeenCalledWith('open', ['-a', 'IntelliJ IDEA', evilFolder]);
-    expect(mockExecFileAsync).toHaveBeenCalledWith(
-      '/Applications/IntelliJ IDEA.app/Contents/MacOS/idea',
-      [evilFile],
-    );
-    expect(mockExecAsync).not.toHaveBeenCalled();
-  });
-
-  it('passes a backtick-containing folder as a discrete argv entry for the flatpak shape', async () => {
-    setPlatform('linux');
-    const evilFolder = '/home/u/`id`/project';
-    mockRequest.mockResolvedValue({
-      editors: [
-        { id: 'intellij', installed: true, source: 'flatpak', flatpakId: 'com.jetbrains.IntelliJ-IDEA-Ultimate' },
-      ],
-    });
-
-    const { openInJetBrains } = await loadFreshModule();
-    const result = await openInJetBrains({ folder: evilFolder });
-
-    expect(result).toEqual({ success: true });
-    expect(mockExecFileAsync).toHaveBeenCalledWith('flatpak', [
-      'run',
-      'com.jetbrains.IntelliJ-IDEA-Ultimate',
-      evilFolder,
-    ]);
-    expect(mockExecAsync).not.toHaveBeenCalled();
   });
 });

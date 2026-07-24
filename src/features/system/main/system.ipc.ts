@@ -13,12 +13,12 @@ import {
   nativeTheme,
   shell,
 } from 'electron';
+import { spawn } from 'child_process';
 import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
 } from './window-workspace-tracking';
 import { createRequire } from 'module';
-import { spawn } from 'child_process';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -1309,13 +1309,13 @@ export function setupSystemIPC() {
           if (!codeCommand) {
             // If we can't find the code command, try using open command on macOS
             if (process.platform === 'darwin') {
+              // Argv form (no shell) so the file path stays literal.
               const openArgs = validated.line
                 ? ['-a', 'Visual Studio Code', '--args', '-n', '--skip-add-to-recently-opened', '--goto', `${validated.file}:${validated.line}`]
                 : ['-a', 'Visual Studio Code', '--args', '-n', '--skip-add-to-recently-opened', validated.file];
 
               // LOCAL-GUI: launches the user's VSCode via macOS `open` on the
-              // client host; not workspace execution. Argv-style — the file
-              // path must never be interpolated into a shell string (monorepo#672).
+              // client host; not workspace execution.
               await execFileAsync('open', openArgs);
               return { success: true };
             } else {
@@ -1330,8 +1330,8 @@ export function setupSystemIPC() {
             : ['-n', '--skip-add-to-recently-opened', validated.file];
 
           // LOCAL-GUI: launches the user's VSCode on the client host to open a
-          // file; not workspace execution. Argv-style — the file path must
-          // never be interpolated into a shell string (monorepo#672).
+          // file; not workspace execution. Argv form (no shell) so the file
+          // path stays literal.
           await execFileAsync(codeCommand, codeArgs);
           return { success: true };
         } catch (error) {
@@ -1411,15 +1411,14 @@ export function setupSystemIPC() {
             const pathToOpen = typeof validated === 'string' ? validated : validated.file;
 
             // Try common JetBrains IDE commands
-            const commands = ['idea', 'pycharm', 'webstorm', 'clion', 'goland'];
+            const ideBinaries = ['idea', 'pycharm', 'webstorm', 'clion', 'goland'];
 
-            for (const command of commands) {
+            for (const ideBinary of ideBinaries) {
               try {
                 // LOCAL-GUI: launches the user's JetBrains IDE on the client
-                // host as a fallback; not workspace execution. Argv-style —
-                // the path must never be interpolated into a shell string
-                // (monorepo#672).
-                await execFileAsync(command, [pathToOpen]);
+                // host as a fallback; not workspace execution. Argv form (no
+                // shell) so the path stays literal.
+                await execFileAsync(ideBinary, [pathToOpen]);
                 return { success: true };
               } catch  {
                 // Continue to next command
