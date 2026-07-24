@@ -10,7 +10,9 @@
  * on failure the optimistic change is rolled back.
  *
  * This module is dependency-light: it imports only the AppClient seam, the
- * configured store, slice actions, and selectors (per src/store AGENTS.md).
+ * configured store, slice actions, selectors (per src/store AGENTS.md), and
+ * the notes-write-service queue entry point (`comment.add` rewrites note
+ * content, so its rev bookkeeping lives with the note mutation queue).
  */
 import { appClient } from "$lib/client";
 import type { CommentAddParams, CommentRespondParams } from "$lib/client";
@@ -49,11 +51,22 @@ export async function addComment(
 ): Promise<boolean> {
   appStore.dispatch(addCommentAction(optimistic));
 
-  const result = params.workspaceId
-    ? await enqueueRevBumpingNoteMutation(params.workspaceId, noteId, () =>
-        appClient.comments.add(noteId, params),
-      )
-    : await appClient.comments.add(noteId, params);
+  let result;
+  if (params.workspaceId) {
+    result = await enqueueRevBumpingNoteMutation(params.workspaceId, noteId, () =>
+      appClient.comments.add(noteId, params),
+    );
+  } else {
+    // Without a workspace the rev bookkeeping above is impossible: a
+    // successful add still bumps the server rev, so the next conditional save
+    // will conflict (the Round 6b failure mode). Every production caller
+    // passes workspaceId; warn so a future caller that doesn't is visible.
+    logger.warn(
+      "addComment called without workspaceId; note rev bookkeeping skipped — the next save may conflict",
+      { noteId },
+    );
+    result = await appClient.comments.add(noteId, params);
+  }
   if (!result.success) {
     logger.error("Failed to add comment", result.error);
     toast.error("Failed to add comment", { description: result.error ?? "Unknown error" });

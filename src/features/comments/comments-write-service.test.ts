@@ -253,6 +253,67 @@ describe("commentsWriteService (fake seam, real store)", () => {
     }
   });
 
+  it("debounced save flushed while the add is STILL in flight queues behind it and reads the post-add rev", async () => {
+    // Pins the queue-serialization mechanism itself: the add is a deferred
+    // promise that is still unresolved when the debounce fires, so
+    // `flushContent` enqueues behind it on the note's mutation queue instead
+    // of racing it with the stale rev.
+    vi.useFakeTimers();
+    try {
+      const WS = "ws-rev-4";
+      seedNote(WS, makeNote(WS, "note-rev", { rev: 3, content: "body" }));
+
+      let serverRev = 3;
+      let resolveAdd!: (r: { success: boolean }) => void;
+      commentsApi.add.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveAdd = (r) => {
+              serverRev += 1;
+              resolve(r);
+            };
+          }),
+      );
+      notesApi.setContent.mockImplementation(
+        (_id: string, _c: string, expectedVersion?: number) => {
+          if (expectedVersion !== serverRev) {
+            return Promise.resolve({
+              success: false,
+              error: "conflict",
+              conflict: { current: makeNote(WS, "note-rev", { rev: serverRev }) },
+            });
+          }
+          serverRev += 1;
+          return Promise.resolve({ success: true });
+        },
+      );
+
+      const adding = addComment("note-rev", makeComment("c-race-2"), {
+        workspaceId: WS,
+        searchContext: "bo dy",
+        commentTarget: "bo",
+        comment: "body",
+      });
+      updateNoteContent(WS, "note-rev", "body with anchors");
+      // The debounce fires while comment.add is still unresolved — the flush
+      // must wait on the queue rather than read the stale rev 3.
+      await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+      expect(notesApi.setContent).not.toHaveBeenCalled();
+
+      resolveAdd({ success: true });
+      await adding;
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(notesApi.setContent).toHaveBeenCalledTimes(1);
+      expect(notesApi.setContent).toHaveBeenCalledWith("note-rev", "body with anchors", 4, WS);
+      expect(toast.warning).not.toHaveBeenCalled();
+      expect(selectNoteById.select(appStore.state, WS, "note-rev")?.rev).toBe(5);
+    } finally {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it("respond applies the reply optimistically and keeps it on success", async () => {
     const reply = makeComment("r-1", { parentId: "p-1", threadId: "thread-p" });
     await respondToComment("note-1", reply, {

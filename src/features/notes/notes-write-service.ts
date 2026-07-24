@@ -142,9 +142,12 @@ function advanceNoteRev(workspaceId: string, noteId: string, sentRev: number): v
  * daemon-side (e.g. `comment.add`, which embeds anchor markers into the
  * markdown via an unconditional `update_note`) on this note's mutation queue,
  * and advance the stored `rev` by one on success. The daemon emits no
- * `note:updated` for these rewrites and its result doesn't echo the new rev,
- * but the advancement is authoritative for the same §11.4-D reason as
- * `advanceNoteRev`: every note write bumps `rev` by exactly one. Queueing
+ * `note:updated` for these rewrites and its result doesn't echo the new rev.
+ * Unlike `advanceNoteRev`'s conditional-write case, no rev is sent or
+ * daemon-verified here — `rev + 1` is an inference that the FE was in sync
+ * when `run()` executed, which holds because the queue excludes FE-originated
+ * races; if another client bumped the note concurrently the stored rev stays
+ * stale and the next conditional save conflicts legitimately. Queueing
  * guarantees ordering with any in-flight or debounced `setContent`, so the
  * next save reads the advanced rev instead of racing it with a stale
  * `expectedVersion`.
