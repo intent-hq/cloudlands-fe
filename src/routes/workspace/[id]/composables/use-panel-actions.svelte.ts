@@ -136,6 +136,9 @@ export function usePanelActions(options: UsePanelActionsOptions) {
       // Create agent WITHOUT initial message - we'll pre-fill the input instead
       const launchAction = agentSessionLaunchAgentRequested(workspace.id, {
         name,
+        // Name comes from contextual-action callers (generated, not user-typed) —
+        // keep the session self-renameable.
+        nameExplicitlySet: false,
         agentType: createAgentTypeId('chat'),
         source: 'progress-card-action',
         metadata: {

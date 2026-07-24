@@ -234,6 +234,8 @@
         workspace.id,
         {
           name: 'Handle Selection Agent',
+          // Generated placeholder — keep the session self-renameable.
+          nameExplicitlySet: false,
           initialMessage: finalUserMessage, // User message (sent as initial message)
           agentType: createAgentTypeId('workspace'), // Backend loads instructions based on this
           contextReferences: context,
