@@ -9,7 +9,7 @@ Releases are built and published by the **Release Beta** workflow in GitHub Acti
 1. Reads the pinned intentd version from `intentd.version` and fetches the matching release asset via `scripts/fetch-sidecar.cjs` (sha256-verified, staged at `resources/sidecar/intentd`); it fails fast if the pinned release or its assets don't exist
 2. Builds the macOS app with the staged `intentd` sidecar
 3. Signs and notarizes the app using Apple Developer ID certificates
-4. Generates release notes from the `cloudlands-fe` commit range; the intentd section links to the pinned intentd release
+4. Generates release notes from the `cloudlands-fe` commit range; the intentd section lists the intentd commit delta between the previous release's pin (recovered from the previous release's `release-manifest.json` asset) and the current pin, falling back to a pin-only link when the previous manifest or the intentd compare is unavailable
 5. Publishes artifacts to `intent-hq/cloudlands-releases` on GitHub, including:
    - DMG installer, ZIP archive, blockmap files, and `latest-mac.yml` (auto-updater feed)
    - `release-manifest.json` — metadata capturing the fe tag/SHA and the pinned `intentdVersion`

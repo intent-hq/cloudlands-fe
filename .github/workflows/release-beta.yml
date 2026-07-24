@@ -259,12 +259,49 @@ jobs:
             echo "tag=${PREV_RELEASE}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Recovers the previous release's intentd pin from its release-manifest.json
+      # asset so release notes can render the intentd commit delta. Fails soft: older
+      # releases without the manifest asset (or without the field) leave the base
+      # empty, and the generator falls back to pin-only notes — a release is never
+      # blocked by notes enrichment.
+      - name: Read previous intentd pin
+        id: prev_intentd
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
+        run: |
+          INTENTD_BASE=""
+          if [ -z "$PREV_FE_TAG" ]; then
+            echo "No previous versioned release; skipping previous intentd pin lookup"
+          else
+            MANIFEST_DIR=$(mktemp -d)
+            if gh release download "$PREV_FE_TAG" \
+                --repo intent-hq/cloudlands-releases \
+                --pattern release-manifest.json \
+                --dir "$MANIFEST_DIR" 2>/dev/null; then
+              INTENTD_BASE=$(jq -r '.intentdVersion // empty' "$MANIFEST_DIR/release-manifest.json" 2>/dev/null || echo "")
+              if [ -n "$INTENTD_BASE" ]; then
+                echo "Previous intentd pin (from ${PREV_FE_TAG} manifest): ${INTENTD_BASE}"
+              else
+                echo "release-manifest.json on ${PREV_FE_TAG} has no intentdVersion; falling back to pin-only notes"
+              fi
+            else
+              echo "No release-manifest.json asset on ${PREV_FE_TAG} (older release); falling back to pin-only notes"
+            fi
+          fi
+          echo "version=${INTENTD_BASE}" >> "$GITHUB_OUTPUT"
+
       - name: Generate release notes
         env:
           FE_TOKEN: ${{ github.token }}
+          # Read-only PAT for the private intent-hq/intentd repo; the generator uses
+          # it for the compare API and fails soft (pin-only notes) if it is missing
+          # or the compare is unavailable.
+          INTENTD_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           VERSION: ${{ steps.release.outputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_VERSION: ${{ steps.intentd_pin.outputs.version }}
+          INTENTD_BASE: ${{ steps.prev_intentd.outputs.version }}
           FE_HEAD_SHA: ${{ steps.fe_info.outputs.sha }}
         run: |
           if [ -z "$PREV_FE_TAG" ]; then
@@ -279,13 +316,20 @@ jobs:
           echo "  FE: ${PREV_FE_TAG}...${FE_HEAD_SHA}"
           echo "  intentd pin: v${INTENTD_VERSION}"
 
+          EXTRA_ARGS=()
+          if [ -n "$INTENTD_BASE" ]; then
+            echo "  intentd delta: v${INTENTD_BASE}...v${INTENTD_VERSION}"
+            EXTRA_ARGS+=(--intentd-base "${INTENTD_BASE}")
+          fi
+
           node scripts/generate-release-notes.mjs \
             --version "${VERSION}" \
             --fe-base "${PREV_FE_TAG}" \
             --fe-head "${FE_HEAD_SHA}" \
             --intentd-version "${INTENTD_VERSION}" \
             --out release-notes.md \
-            --manifest-out release-manifest.json
+            --manifest-out release-manifest.json \
+            "${EXTRA_ARGS[@]}"
 
           echo "Generated release notes:"
           cat release-notes.md
