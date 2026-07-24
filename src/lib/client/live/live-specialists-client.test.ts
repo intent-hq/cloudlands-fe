@@ -17,6 +17,7 @@ vi.mock("./backend-transport", () => ({
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 import {
@@ -24,6 +25,7 @@ import {
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
+  onBackendReconnected,
 } from "./backend-transport";
 import { LiveSpecialistsClient } from "./live-specialists-client";
 import type { AppClient, SpecialistDef } from "../app-client";
@@ -41,6 +43,7 @@ const mockedRequest = vi.mocked(backendRequest);
 const mockedSubscribe = vi.mocked(backendSubscribe);
 const mockedUnsubscribe = vi.mocked(backendUnsubscribe);
 const mockedOnNotification = vi.mocked(onBackendNotification);
+const mockedOnReconnected = vi.mocked(onBackendReconnected);
 
 /** Callback shape `onBackendNotification` registers (BackendNotification sink). */
 type NotificationCallback = Parameters<typeof onBackendNotification>[0];
@@ -255,6 +258,179 @@ describe("LiveSpecialistsClient (fake transport)", () => {
       await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]));
       unsubscribe();
       expect(mockedUnsubscribe).not.toHaveBeenCalled();
+    });
+
+    it("keeps the last known-good view when the event-driven refetch fails (#610)", async () => {
+      vi.useFakeTimers();
+      let notify: NotificationCallback | undefined;
+      mockedOnNotification.mockImplementation((cb) => {
+        notify = cb;
+        return vi.fn();
+      });
+      mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF, USER_DEF] });
+      const client = new LiveSpecialistsClient();
+
+      const handler = vi.fn();
+      const unsubscribe = client.subscribe(handler);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]);
+      handler.mockClear();
+
+      // Transient transport failure on the refetch: NO emit — the handler
+      // (and thus the store) keeps the prior resolved view instead of [].
+      mockedRequest.mockRejectedValueOnce(new Error("uds boom"));
+      notify?.({ method: "specialists:changed", params: { workspaceId: "ws-1" } });
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(handler).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    describe("reconnect (RESUB-1, #609)", () => {
+      it("re-issues the subscribe and refetches the snapshot once on reconnect", async () => {
+        let reconnect: (() => void) | undefined;
+        mockedOnReconnected.mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        mockedSubscribe
+          .mockResolvedValueOnce({ subscriptionId: "sub-1" })
+          .mockResolvedValueOnce({ subscriptionId: "sub-2" });
+        mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+        const client = new LiveSpecialistsClient();
+
+        const handler = vi.fn();
+        const unsubscribe = client.subscribe(handler);
+        await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]));
+        expect(mockedSubscribe).toHaveBeenCalledTimes(1);
+        handler.mockClear();
+        mockedRequest.mockClear();
+
+        mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF, USER_DEF] });
+        reconnect?.();
+
+        // Re-subscribe with the same wire shape + exactly one snapshot refetch.
+        expect(mockedSubscribe).toHaveBeenCalledTimes(2);
+        expect(mockedSubscribe).toHaveBeenLastCalledWith({ eventTypes: ["specialists:changed"] });
+        await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]));
+        expect(mockedRequest).toHaveBeenCalledTimes(1);
+        expect(mockedRequest).toHaveBeenCalledWith("specialist.list");
+
+        // The refreshed id is released on dispose.
+        unsubscribe();
+        expect(mockedUnsubscribe).toHaveBeenCalledWith("sub-2");
+      });
+
+      it("cancels a pending debounced refetch on reconnect (exactly one refetch)", async () => {
+        vi.useFakeTimers();
+        let notify: NotificationCallback | undefined;
+        mockedOnNotification.mockImplementation((cb) => {
+          notify = cb;
+          return vi.fn();
+        });
+        let reconnect: (() => void) | undefined;
+        mockedOnReconnected.mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        mockedRequest.mockResolvedValue({ specialists: [COORDINATOR_DEF] });
+        const client = new LiveSpecialistsClient();
+
+        const handler = vi.fn();
+        const unsubscribe = client.subscribe(handler);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mockedRequest).toHaveBeenCalledTimes(1); // initial snapshot
+        mockedRequest.mockClear();
+
+        // A specialists:changed burst arms the debounce timer, then the
+        // reconnect lands before it fires: the pending timer is cancelled and
+        // the reconnect refetch is the ONLY specialist.list call.
+        notify?.({ method: "specialists:changed", params: { workspaceId: "ws-1" } });
+        reconnect?.();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mockedRequest).toHaveBeenCalledTimes(1); // immediate reconnect refetch
+
+        await vi.advanceTimersByTimeAsync(200); // past the debounce window
+        expect(mockedRequest).toHaveBeenCalledTimes(1); // no extra debounced refetch
+        unsubscribe();
+      });
+
+      it("keeps the last known-good view when the reconnect refetch fails", async () => {
+        let reconnect: (() => void) | undefined;
+        mockedOnReconnected.mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+        const client = new LiveSpecialistsClient();
+
+        const handler = vi.fn();
+        const unsubscribe = client.subscribe(handler);
+        await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]));
+        handler.mockClear();
+
+        mockedRequest.mockRejectedValueOnce(new Error("uds boom"));
+        reconnect?.();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(handler).not.toHaveBeenCalled();
+        unsubscribe();
+      });
+
+      it("does nothing when a reconnect races a dispose", async () => {
+        let reconnect: (() => void) | undefined;
+        mockedOnReconnected.mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+        const client = new LiveSpecialistsClient();
+
+        const handler = vi.fn();
+        const unsubscribe = client.subscribe(handler);
+        await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]));
+        expect(mockedSubscribe).toHaveBeenCalledTimes(1);
+        handler.mockClear();
+        mockedRequest.mockClear();
+
+        unsubscribe();
+        mockedUnsubscribe.mockClear();
+        reconnect?.();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // No re-subscribe, no refetch, no emit after dispose.
+        expect(mockedSubscribe).toHaveBeenCalledTimes(1);
+        expect(mockedRequest).not.toHaveBeenCalled();
+        expect(handler).not.toHaveBeenCalled();
+      });
+
+      it("releases a re-subscribe that resolves after a dispose (reconnect late-resolve guard)", async () => {
+        let reconnect: (() => void) | undefined;
+        mockedOnReconnected.mockImplementation((cb) => {
+          reconnect = cb;
+          return vi.fn();
+        });
+        mockedSubscribe.mockResolvedValueOnce({ subscriptionId: "sub-1" });
+        mockedRequest.mockResolvedValue({ specialists: [COORDINATOR_DEF] });
+        const client = new LiveSpecialistsClient();
+
+        const unsubscribe = client.subscribe(vi.fn());
+        await vi.waitFor(() => expect(mockedSubscribe).toHaveBeenCalledTimes(1));
+
+        // Reconnect: the re-subscribe stays in flight while the dispose lands.
+        let resolveSubscribe!: (value: { subscriptionId: string }) => void;
+        mockedSubscribe.mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveSubscribe = resolve;
+          }),
+        );
+        reconnect?.();
+        unsubscribe();
+        expect(mockedUnsubscribe).not.toHaveBeenCalled();
+
+        resolveSubscribe({ subscriptionId: "sub-late" });
+        await vi.waitFor(() => expect(mockedUnsubscribe).toHaveBeenCalledWith("sub-late"));
+      });
     });
   });
 
