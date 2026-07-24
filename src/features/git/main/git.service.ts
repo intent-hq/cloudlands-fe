@@ -773,7 +773,7 @@ export class GitService {
         // Check the status of each file first
         for (const filePath of diffablePaths) {
           try {
-            const { stdout: statusOutput } = await execFileAsync(
+            const { stdout: statusOutput } = await execFileAsyncWithRetry(
               'git',
               ['status', '--porcelain', '--', filePath],
               { cwd: worktreePath },
@@ -821,7 +821,7 @@ export class GitService {
                 if (isNewStagedFile) {
                   // For staged new files, read from the index
                   try {
-                    const { stdout } = await execFileAsync('git', ['show', `:${filePath}`], {
+                    const { stdout } = await execFileAsyncWithRetry('git', ['show', `:${filePath}`], {
                       cwd: worktreePath,
                     });
                     fileContent = stdout;
@@ -964,7 +964,7 @@ export class GitService {
             // For staged changes: compare index (staged) vs HEAD
             // oldContent = HEAD version, newContent = staged version
             try {
-              const { stdout: headFileContent } = await execFileAsync(
+              const { stdout: headFileContent } = await execFileAsyncWithRetry(
                 'git',
                 ['show', `HEAD:${chunk.file}`],
                 { cwd: worktreePath },
@@ -976,7 +976,7 @@ export class GitService {
             }
 
             try {
-              const { stdout: stagedFileContent } = await execFileAsync(
+              const { stdout: stagedFileContent } = await execFileAsyncWithRetry(
                 'git',
                 ['show', `:${chunk.file}`],
                 { cwd: worktreePath },
@@ -990,9 +990,13 @@ export class GitService {
             // For unstaged changes or all changes: use working tree
             // oldContent = HEAD (or index for unstaged), newContent = working tree
             try {
-              const { stdout: fileContent } = await execFileAsync('cat', [chunk.file], {
-                cwd: worktreePath,
-              });
+              // `--` ends option parsing so dash-prefixed filenames are not
+              // treated as cat options
+              const { stdout: fileContent } = await execFileAsyncWithRetry(
+                'cat',
+                ['--', chunk.file],
+                { cwd: worktreePath },
+              );
               newFileContent = fileContent;
             } catch  {
               // File might be deleted
@@ -1002,7 +1006,7 @@ export class GitService {
             if (staged === false) {
               // For unstaged changes: oldContent = index version
               try {
-                const { stdout: indexFileContent } = await execFileAsync(
+                const { stdout: indexFileContent } = await execFileAsyncWithRetry(
                   'git',
                   ['show', `:${chunk.file}`],
                   { cwd: worktreePath },
@@ -1015,7 +1019,7 @@ export class GitService {
             } else {
               // For all changes: oldContent = HEAD version
               try {
-                const { stdout: headFileContent } = await execFileAsync(
+                const { stdout: headFileContent } = await execFileAsyncWithRetry(
                   'git',
                   ['show', `HEAD:${chunk.file}`],
                   { cwd: worktreePath },
@@ -1671,7 +1675,7 @@ export class GitService {
 
       logger.info('Getting file history', { gitArgs, cwd: worktreePath, filePath });
 
-      const { stdout } = await execFileAsync('git', gitArgs, { cwd: worktreePath });
+      const { stdout } = await execFileAsyncWithRetry('git', gitArgs, { cwd: worktreePath });
 
       logger.info('File history output', {
         stdout: stdout.slice(0, 500),

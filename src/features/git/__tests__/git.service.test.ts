@@ -13,7 +13,6 @@ import {
 import { GitService } from '../main/git.service';
 import {
   execAsyncRobust,
-  execFileAsync,
   execFileAsyncWithRetry,
 } from '../../../shared/git/git-env';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
@@ -329,13 +328,13 @@ describe('GitService', () => {
       }
     };
 
-    it('getFileHistory passes the file path as a literal argv element', async () => {
-      vi.mocked(execFileAsync).mockResolvedValue({ stdout: '', stderr: '' });
+    it('getFileHistory passes the file path as a literal argv element with retry semantics', async () => {
+      vi.mocked(execFileAsyncWithRetry).mockResolvedValue({ stdout: '', stderr: '' });
 
       const result = await service.getFileHistory('workspace-1' as any, HOSTILE, 20);
 
       expect(result.ok).toBe(true);
-      expect(execFileAsync).toHaveBeenCalledWith(
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
         'git',
         ['log', '-n', '20', '--format=%H|%an|%ae|%aI|%s', '--follow', '--', HOSTILE],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
@@ -344,7 +343,7 @@ describe('GitService', () => {
     });
 
     it('getDiff reads staged new files from the index via argv git show', async () => {
-      vi.mocked(execFileAsync).mockImplementation(async (_file, args) => {
+      vi.mocked(execFileAsyncWithRetry).mockImplementation(async (_file, args) => {
         if (args[0] === 'status') {
           return { stdout: `A  ${HOSTILE}\n`, stderr: '' };
         }
@@ -358,12 +357,12 @@ describe('GitService', () => {
 
       expect(result.ok).toBe(true);
       expect(result.ok && result.data[0]?.newContent).toBe('staged content');
-      expect(execFileAsync).toHaveBeenCalledWith(
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
         'git',
         ['status', '--porcelain', '--', HOSTILE],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
-      expect(execFileAsync).toHaveBeenCalledWith(
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
         'git',
         ['show', `:${HOSTILE}`],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
@@ -383,7 +382,7 @@ describe('GitService', () => {
         '',
       ].join('\n');
 
-      vi.mocked(execFileAsync).mockImplementation(async (_file, args) => {
+      vi.mocked(execFileAsyncWithRetry).mockImplementation(async (_file, args) => {
         if (args[0] === 'status') {
           return { stdout: `M  ${HOSTILE_NOSPACE}\n`, stderr: '' };
         }
@@ -398,12 +397,12 @@ describe('GitService', () => {
         `git diff --cached -- ${posixSingleQuote(HOSTILE_NOSPACE)}`,
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
-      expect(execFileAsync).toHaveBeenCalledWith(
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
         'git',
         ['show', `HEAD:${HOSTILE_NOSPACE}`],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
-      expect(execFileAsync).toHaveBeenCalledWith(
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
         'git',
         ['show', `:${HOSTILE_NOSPACE}`],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
@@ -423,7 +422,7 @@ describe('GitService', () => {
         '',
       ].join('\n');
 
-      vi.mocked(execFileAsync).mockImplementation(async (_file, args) => {
+      vi.mocked(execFileAsyncWithRetry).mockImplementation(async (_file, args) => {
         if (args[0] === 'status') {
           return { stdout: ` M ${HOSTILE_NOSPACE}\n`, stderr: '' };
         }
@@ -438,12 +437,13 @@ describe('GitService', () => {
         `git diff -- ${posixSingleQuote(HOSTILE_NOSPACE)}`,
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
-      expect(execFileAsync).toHaveBeenCalledWith(
+      // `--` guards against dash-prefixed filenames being parsed as cat options
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
         'cat',
-        [HOSTILE_NOSPACE],
+        ['--', HOSTILE_NOSPACE],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
-      expect(execFileAsync).toHaveBeenCalledWith(
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
         'git',
         ['show', `:${HOSTILE_NOSPACE}`],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
