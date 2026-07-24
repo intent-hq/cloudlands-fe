@@ -141,6 +141,10 @@ export function isWorkspaceCreateProposal(proposal: Proposal): proposal is Works
   return proposal.kind === 'workspace-create';
 }
 
+export function isBulkOperationProposal(proposal: Proposal): proposal is BulkOperationProposal {
+  return proposal.kind === 'bulk-op';
+}
+
 export function isProposal(value: unknown): value is Proposal {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<Proposal>;
