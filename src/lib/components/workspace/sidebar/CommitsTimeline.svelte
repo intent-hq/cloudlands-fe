@@ -85,7 +85,7 @@
   canAmendCommit as canAmendCommitUtil,
 } from './sidebar-changes-utils';
   import { store as appStore } from '$store/renderer/store';
-  import { posixSingleQuote } from '$lib/utils/posix-single-quote';
+  import { posixSingleQuote } from '$shared/utils/posix-single-quote';
 
 
   interface Props {
