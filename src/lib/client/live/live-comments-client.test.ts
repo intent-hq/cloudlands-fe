@@ -170,6 +170,21 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
     });
   });
 
+  it("respond forwards authorType when provided and omits it when absent", async () => {
+    mockedRequest.mockResolvedValue({ success: true });
+    const client = new LiveCommentsClient();
+
+    await client.respond("note-1", {
+      commentId: "parent-1",
+      comment: "from the user",
+      authorType: "user",
+    });
+    await client.respond("note-1", { commentId: "parent-1", comment: "from an agent" });
+
+    expect(mockedRequest.mock.calls[0][1]).toMatchObject({ authorType: "user" });
+    expect(mockedRequest.mock.calls[1][1]).not.toHaveProperty("authorType");
+  });
+
   it("delete forwards comment.delete with the commentId", async () => {
     mockedRequest.mockResolvedValueOnce({ success: true });
     const client = new LiveCommentsClient();

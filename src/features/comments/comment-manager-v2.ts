@@ -1065,11 +1065,14 @@ export class CommentManagerV2 {
 
     // Persist through the write service: optimistic store dispatch +
     // `comment.respond` + rollback are owned there.
+    // `authorType: 'user'` marks the UI-driven reply as user-authored (the
+    // daemon defaults to 'agent' when absent).
     await commentsWrite.respondToComment(this.noteId, reply, {
       workspaceId: this.workspaceId,
       commentId: parentId,
       comment: content,
       type: 'comment',
+      authorType: 'user',
     });
 
     logger.info('Added reply', { replyId: reply.id, parentId });
