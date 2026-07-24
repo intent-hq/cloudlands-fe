@@ -308,6 +308,53 @@ describe('external-update-effect', () => {
     );
   });
 
+  it('re-queues via onPendingSaveSettled once the pending-save window closes (monorepo#533 dead-end guard)', async () => {
+    // If the resolved save leaves the Redux snapshot unchanged, no reactive dep
+    // changes and the safety-net dedupe blocks a re-fire — the deferred content
+    // would never apply. The scheduled recheck must re-queue exactly once.
+    vi.useFakeTimers();
+
+    const { editor } = createMockEditor({ initialHtml: '<p>saved</p>' });
+
+    let hasPending = true;
+    const onPendingSaveSettled = vi.fn();
+
+    runExternalContentUpdateEffect({
+      updateVersion: 7,
+      getEditor: () => editor as any,
+      getIsInitialized: () => true,
+      getIsUserTyping: () => false,
+      getHasPendingNoteContent: () => hasPending,
+      onPendingSaveSettled,
+      getCurrentNoteContent: () => 'stale-refetched-md',
+      getLastKnownContent: () => 'saved-md',
+      setLastKnownContent: vi.fn(),
+      getHasUserEditedSinceLastSave: () => false,
+      setHasUserEditedSinceLastSave: vi.fn(),
+      getIsUpdatingFromExternal: () => false,
+      setIsUpdatingFromExternal: vi.fn(),
+      getWorkspaceId: () => undefined,
+      getNoteId: () => 'note-recheck',
+      getCommentManager: () => null,
+      processMarkdownToHTML: async () => '<p>stale</p>',
+      processHTMLToMarkdown: () => 'saved-md',
+      createTextSelection: vi.fn(),
+      logger,
+    });
+
+    // Still pending: the poll keeps waiting without settling.
+    await vi.advanceTimersByTimeAsync(600);
+    expect(onPendingSaveSettled).not.toHaveBeenCalled();
+
+    // Save acked: the next poll tick fires the re-queue exactly once.
+    hasPending = false;
+    await vi.advanceTimersByTimeAsync(600);
+    expect(onPendingSaveSettled).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onPendingSaveSettled).toHaveBeenCalledTimes(1);
+  });
+
   it('defers at apply time when a pending save appears during the debounce window (monorepo#533)', async () => {
     vi.useFakeTimers();
 

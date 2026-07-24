@@ -758,6 +758,14 @@
       // re-runs the pipeline once typing stops — and the debounced save would
       // otherwise erase the divergence from Redux while the daemon still holds
       // the external change.
+      //
+      // ORDERING DEPENDENCY: this check must run before saveEditorContent()
+      // fires — the save updates lastKnownContent and optimistically
+      // overwrites Redux, erasing the divergence signal. It holds because
+      // userTypingTimeout is registered BEFORE saveDebounceTimer below with
+      // the same 1000ms delay, and same-delay timers fire in registration
+      // order. Do not reorder the timers or shorten the save debounce below
+      // the typing timeout.
       if (
         shouldRequeueExternalUpdateAfterTypingStops({
           reduxContent: currentNoteContent,
@@ -1496,6 +1504,13 @@
       getIsUserTyping: () => isUserTyping,
       getHasPendingNoteContent: () =>
         workspace?.id && noteId ? hasPendingNoteContent(workspace.id, noteId) : false,
+      onPendingSaveSettled: () => {
+        // Re-queue after a deferred apply's pending-save window closes. Reset
+        // the safety-net dedupe first: if the resolved save left the Redux
+        // snapshot unchanged, the dedupe would otherwise block the re-fire.
+        lastSafetyNetSyncedContent = undefined;
+        externalUpdateVersion = externalUpdateVersion + 1;
+      },
       getCurrentNoteContent: () => currentNoteContent,
       getLastKnownContent: () => lastKnownContent,
       setLastKnownContent: (value) => {
