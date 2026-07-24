@@ -113,7 +113,7 @@ The beta release workflow is defined in `.github/workflows/release-beta.yml`.
 11. Imports macOS code signing certificate into a temporary keychain
 12. Builds and packages the macOS app (`.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`)
 13. Signs and notarizes the app via `scripts/notarize.js` afterSign hook (the staged sidecar is signed by the `scripts/sign-sidecar.js` afterPack hook)
-14. Generates release notes from the fe commit range; the intentd section references the pinned intentd release
+14. Generates release notes from the fe commit range; the intentd section lists the intentd commit delta from the previous release's pin (recovered from the previous release's `release-manifest.json` asset) — falling back to a pin-only reference when the previous pin can't be recovered, or to the pin line + compare link without a commit list when the intentd compare API is unavailable
 15. Publishes artifacts to `intent-hq/cloudlands-releases`:
     - Creates immutable versioned release: `v{version}`
     - Updates rolling `beta` release tag (clobbers existing assets)
