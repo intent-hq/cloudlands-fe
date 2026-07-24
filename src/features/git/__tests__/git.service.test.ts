@@ -325,11 +325,11 @@ describe('GitService', () => {
     function makeService(statusOutput: string, diffOutput: string) {
       const service = new GitService();
       vi.spyOn(service as any, 'getWorktreePath').mockReturnValue('/tmp/worktree');
-      vi.mocked(execAsyncRobust).mockImplementation(async (command: string) => {
-        if (command.startsWith('git status --porcelain')) {
+      vi.mocked(execFileAsyncWithRetry).mockImplementation(async (_file, args) => {
+        if (args[0] === 'status') {
           return { stdout: statusOutput, stderr: '' };
         }
-        if (command.startsWith('git diff')) {
+        if (args[0] === 'diff') {
           return { stdout: diffOutput, stderr: '' };
         }
         return { stdout: '', stderr: '' };
@@ -340,6 +340,7 @@ describe('GitService', () => {
     beforeEach(() => {
       vi.mocked(execFileAsync).mockReset();
       vi.mocked(execAsyncRobust).mockReset();
+      vi.mocked(execFileAsyncWithRetry).mockReset();
     });
 
     it('reads a staged new file from the index via git show argv (no shell)', async () => {
@@ -349,6 +350,11 @@ describe('GitService', () => {
       const result = await service.getDiff('workspace-1' as any, [hostileFile], true);
 
       expect(result.ok).toBe(true);
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
+        'git',
+        ['status', '--porcelain', '--', hostileFile],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
       expect(execFileAsync).toHaveBeenCalledWith(
         'git',
         ['show', `:${hostileFile}`],
@@ -370,6 +376,11 @@ describe('GitService', () => {
       const result = await service.getDiff('workspace-1' as any, [hostileFile], true);
 
       expect(result.ok).toBe(true);
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
+        'git',
+        ['diff', '--cached', '--', hostileFile],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
       expect(execFileAsync).toHaveBeenCalledWith(
         'git',
         ['show', `HEAD:${hostileFile}`],
@@ -396,9 +407,14 @@ describe('GitService', () => {
       const result = await service.getDiff('workspace-1' as any, [hostileFile], false);
 
       expect(result.ok).toBe(true);
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
+        'git',
+        ['diff', '--', hostileFile],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
       expect(execFileAsync).toHaveBeenCalledWith(
         'cat',
-        [hostileFile],
+        ['--', hostileFile],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
       expect(execFileAsync).toHaveBeenCalledWith(
@@ -422,9 +438,14 @@ describe('GitService', () => {
       const result = await service.getDiff('workspace-1' as any, [hostileFile], undefined);
 
       expect(result.ok).toBe(true);
+      expect(execFileAsyncWithRetry).toHaveBeenCalledWith(
+        'git',
+        ['diff', 'HEAD', '--', hostileFile],
+        expect.objectContaining({ cwd: '/tmp/worktree' }),
+      );
       expect(execFileAsync).toHaveBeenCalledWith(
         'cat',
-        [hostileFile],
+        ['--', hostileFile],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
       expect(execFileAsync).toHaveBeenCalledWith(
@@ -475,12 +496,12 @@ describe('GitService', () => {
       expect(result.ok).toBe(true);
       expect(execFileAsync).toHaveBeenCalledWith(
         'git',
-        ['rev-parse', '--verify', `origin/${hostileRef}`],
+        ['rev-parse', '--verify', '--end-of-options', `origin/${hostileRef}`],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
       expect(execFileAsync).toHaveBeenCalledWith(
         'git',
-        ['merge-base', 'HEAD', `origin/${hostileRef}`],
+        ['merge-base', '--end-of-options', 'HEAD', `origin/${hostileRef}`],
         expect.objectContaining({ cwd: '/tmp/worktree' }),
       );
       expect(execFileAsync).toHaveBeenCalledWith(

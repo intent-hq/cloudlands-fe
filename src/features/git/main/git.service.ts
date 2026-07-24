@@ -772,8 +772,9 @@ export class GitService {
         // Check the status of each file first
         for (const filePath of diffablePaths) {
           try {
-            const { stdout: statusOutput } = await execAsync(
-              `git status --porcelain -- "${filePath}"`,
+            const { stdout: statusOutput } = await execFileAsyncWithRetry(
+              'git',
+              ['status', '--porcelain', '--', filePath],
               { cwd: worktreePath },
             );
 
@@ -903,31 +904,31 @@ export class GitService {
         return { ok: true, data: chunks };
       }
 
-      // Build command based on staged parameter for normal diff
-      let command = 'git diff';
+      // Build argv based on staged parameter for normal diff
+      const diffArgs = ['diff'];
       if (staged === true) {
         // Show staged changes (index vs HEAD)
-        command += ' --cached';
+        diffArgs.push('--cached');
       } else if (staged === false) {
         // Show unstaged changes (working tree vs index)
         // This is the default behavior of git diff
       } else {
         // Show all changes (working tree vs HEAD)
-        command += ' HEAD';
+        diffArgs.push('HEAD');
       }
 
       if (normalizedPaths && normalizedPaths.length > 0) {
-        command += ` -- ${normalizedPaths.map((p) => `"${p}"`).join(' ')}`;
+        diffArgs.push('--', ...normalizedPaths);
       }
 
       logger.info('Executing git diff command', {
-        command,
+        diffArgs,
         staged,
         normalizedPaths,
         worktreePath,
       });
 
-      const { stdout: diffOutput } = await execAsync(command, {
+      const { stdout: diffOutput } = await execFileAsyncWithRetry('git', diffArgs, {
         cwd: worktreePath,
         maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large diffs
       });
@@ -986,7 +987,7 @@ export class GitService {
             // For unstaged changes or all changes: use working tree
             // oldContent = HEAD (or index for unstaged), newContent = working tree
             try {
-              const { stdout: fileContent } = await execFileAsync('cat', [chunk.file], {
+              const { stdout: fileContent } = await execFileAsync('cat', ['--', chunk.file], {
                 cwd: worktreePath,
               });
               newFileContent = fileContent;
@@ -1366,10 +1367,12 @@ export class GitService {
             const refsToTry = [`origin/${baseRef}`, baseRef];
             for (const ref of refsToTry) {
               try {
-                await execFileAsync('git', ['rev-parse', '--verify', ref], { cwd: worktreePath });
+                await execFileAsync('git', ['rev-parse', '--verify', '--end-of-options', ref], {
+                  cwd: worktreePath,
+                });
                 const { stdout: mergeBaseOut } = await execFileAsync(
                   'git',
-                  ['merge-base', 'HEAD', ref],
+                  ['merge-base', '--end-of-options', 'HEAD', ref],
                   { cwd: worktreePath },
                 );
                 const result = mergeBaseOut.trim();
