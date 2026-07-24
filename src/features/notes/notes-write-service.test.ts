@@ -115,6 +115,28 @@ describe("notesWriteService (fake seam, real store)", () => {
     expect(notesApi.setContent).toHaveBeenCalledWith("n1", "now", undefined, WS);
   });
 
+  // Round-5 regression: debounce state is keyed by `${workspaceId}:${noteId}`,
+  // so pending saves for same-id notes in different workspaces (every
+  // workspace has a `spec` note) must not clobber each other.
+  it("keeps pending saves for same-id notes in different workspaces separate", async () => {
+    const WS2 = "ws-svc-2";
+    seed(makeNote("spec"));
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded(
+        [WS2],
+        { [WS2]: [makeNote("spec", { workspaceId: WorkspaceId(WS2) })] },
+      ),
+    );
+
+    updateNoteContent(WS, "spec", "ws1 edit");
+    updateNoteContent(WS2, "spec", "ws2 edit");
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+
+    expect(notesApi.setContent).toHaveBeenCalledTimes(2);
+    expect(notesApi.setContent).toHaveBeenCalledWith("spec", "ws1 edit", undefined, WS);
+    expect(notesApi.setContent).toHaveBeenCalledWith("spec", "ws2 edit", undefined, WS2);
+  });
+
   it("refetches to reconcile when a content save fails", async () => {
     seed(makeNote("n1"));
     notesApi.setContent.mockResolvedValueOnce({ success: false, error: "x" } as never);

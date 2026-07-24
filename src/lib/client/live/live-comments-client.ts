@@ -65,7 +65,11 @@ function normalizeSuggestionDiff(raw: unknown): { original: string; proposed: st
  * for every subtype and `suggestionDiff` for suggestions — rather than a raw
  * spread/cast that would leave those fields unset (Wave 6.1 §8.7 nit).
  */
-function normalizeComment(raw: Record<string, unknown>, noteId: string): CommentV2 {
+function normalizeComment(
+  raw: Record<string, unknown>,
+  noteId: string,
+  workspaceId?: string,
+): CommentV2 {
   const now = new Date().toISOString();
   const id = String(raw.id ?? "");
   const anchor =
@@ -79,6 +83,7 @@ function normalizeComment(raw: Record<string, unknown>, noteId: string): Comment
     id,
     threadId: String(raw.threadId ?? id),
     noteId: String(raw.noteId ?? noteId),
+    ...(workspaceId ? { workspaceId } : {}),
     content: String(raw.content ?? ""),
     author: String(raw.author ?? ""),
     authorType: (raw.authorType === "agent" ? "agent" : "user") as CommentAuthorType,
@@ -132,13 +137,13 @@ async function fetchComments(noteId: string, explicitWorkspaceId?: string): Prom
       const thread = t as { comments?: unknown[] };
       if (Array.isArray(thread.comments)) {
         for (const c of thread.comments) {
-          out.push(normalizeComment(c as Record<string, unknown>, noteId));
+          out.push(normalizeComment(c as Record<string, unknown>, noteId, workspaceId));
         }
       } else {
         // Trivial fallback when `includeComments` was not honored: the
         // thread summary itself becomes a head-comment proxy (threadId,
         // status, timestamps) so the renderer at least sees the thread.
-        out.push(normalizeComment(thread as Record<string, unknown>, noteId));
+        out.push(normalizeComment(thread as Record<string, unknown>, noteId, workspaceId));
       }
     }
     return out;

@@ -174,7 +174,7 @@ export class CommentManagerV2 {
 
         // Use type-safe conversion helper with runtime validation
         try {
-          return convertBackendCommentToV2(comment, anchor, this.noteId);
+          return convertBackendCommentToV2(comment, anchor, this.noteId, this.workspaceId);
         } catch (error) {
           // Log error but don't fail the entire load - just skip this comment
           logger.error('Failed to convert comment, skipping', {
@@ -195,6 +195,7 @@ export class CommentManagerV2 {
             updatedAt: comment.updatedAt || new Date().toISOString(),
             parentId: comment.parentId,
             noteId: this.noteId,
+            workspaceId: this.workspaceId,
             anchor,
             anchorText: comment.section,
             anchorContext: undefined, // NoteComment doesn't have anchorContext
@@ -872,6 +873,8 @@ export class CommentManagerV2 {
     const id = generateCommentId();
     const now = new Date().toISOString();
     const baseComment = {
+      noteId: this.noteId,
+      workspaceId: this.workspaceId,
       threadId: `thread-${Date.now()}`,
       content,
       author: 'User',
@@ -944,6 +947,7 @@ export class CommentManagerV2 {
       // args), landing this in console-output.log without a debugger.
       console.error(
         `[CommentDiag] comment.add failed ${JSON.stringify({
+          workspaceId: this.workspaceId,
           noteId: this.noteId,
           selection: { from, to },
           searchContextLength: searchContext.length,
@@ -1042,6 +1046,8 @@ export class CommentManagerV2 {
     const replyId = generateCommentId();
     const now = new Date().toISOString();
     const reply: CommentV2 = {
+      noteId: this.noteId,
+      workspaceId: this.workspaceId,
       threadId: parentComment.threadId,
       content,
       type: 'comment',

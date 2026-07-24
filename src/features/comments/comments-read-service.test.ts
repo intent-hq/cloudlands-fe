@@ -5,7 +5,7 @@ import type { CommentV2 } from "$features/comments/comment-types-v2";
 // exercises the refetch + per-comment diff/dispatch wire without a daemon
 // round-trip. Only the read the boot seeder uses is stubbed — READ-ONLY.
 const { commentsListMock } = vi.hoisted(() => ({
-  commentsListMock: vi.fn<(noteId: string) => Promise<CommentV2[]>>(),
+  commentsListMock: vi.fn<(noteId: string, workspaceId?: string) => Promise<CommentV2[]>>(),
 }));
 vi.mock("$lib/client", () => ({
   appClient: { comments: { list: commentsListMock } },
@@ -72,11 +72,29 @@ describe("commentsReadService (fake seam, real store)", () => {
     applyCommentFromEvent("ws-1", "note-a", "added");
     await flush();
 
-    expect(commentsListMock).toHaveBeenCalledWith("note-a");
+    expect(commentsListMock).toHaveBeenCalledWith("note-a", "ws-1");
     const noteA = readCommentsForNote("note-a").map((c) => c.id).sort();
     const noteB = readCommentsForNote("note-b").map((c) => c.id).sort();
     expect(noteA).toEqual(["c-a1", "c-a2"]);
     expect(noteB).toEqual(["c-b1"]);
+  });
+
+  // Round-5 regression: note ids repeat across workspaces (every workspace
+  // has a `spec` note), so the removal set must be scoped by workspaceId —
+  // another workspace's same-id note's comments must not be treated as
+  // "removed" when they are absent from this workspace's fresh fetch.
+  it("does not remove another workspace's comments on a same-id note", async () => {
+    const ws1Comment = makeComment("c-1", "spec", { workspaceId: "ws-1" });
+    const ws2Comment = makeComment("c-2", "spec", { workspaceId: "ws-2" });
+    appStore.dispatch(loadCommentsAction([ws1Comment, ws2Comment]));
+
+    // ws-1's fresh fetch returns only its own comment.
+    commentsListMock.mockResolvedValueOnce([ws1Comment]);
+
+    applyCommentFromEvent("ws-1", "spec", "added");
+    await flush();
+
+    expect(readCommentsForNote("spec").map((c) => c.id).sort()).toEqual(["c-1", "c-2"]);
   });
 
   it("updates the resolved status of an existing comment via a fresh fetch", async () => {

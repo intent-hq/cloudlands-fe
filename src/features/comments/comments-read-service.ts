@@ -71,8 +71,12 @@ export function applyCommentFromEvent(
   coalesce(`comment:${workspaceId}:${noteId}`, async () => {
     const fresh = await appClient.comments.list(noteId, workspaceId);
     const state = appStore.state.comments;
+    // Scope the removal set by workspace too: note ids repeat across
+    // workspaces, so a bare noteId filter would treat another workspace's
+    // same-id note's comments as "removed". Comments without a workspaceId
+    // (boot-seeded before the field existed) stay reconcilable by noteId.
     const currentForNote = getItems(state.commentsById).filter(
-      (c) => c.noteId === noteId,
+      (c) => c.noteId === noteId && (c.workspaceId === undefined || c.workspaceId === workspaceId),
     );
     const currentById = new Map(currentForNote.map((c) => [c.id, c]));
     const freshById = new Map(fresh.map((c) => [c.id, c]));
