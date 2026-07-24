@@ -85,10 +85,6 @@ vi.mock('../../../../shared/git/git-env', () => ({ execAsync: vi.fn() }));
 vi.mock('../../../notifications/main/notification.service', () => ({
   getNotificationService: vi.fn(() => ({ start: vi.fn() })),
 }));
-vi.mock('../../../git/main/git.service', () => ({ GitService: vi.fn() }));
-vi.mock('../../../git/main/git-router', () => ({
-  getWorkspaceGitInfo: vi.fn(),
-}));
 vi.mock('../../../metadata-fs/main/metadata-fs-factory', () => ({ clearMetadataFSCache: vi.fn() }));
 vi.mock('../../../notes/main/notes.service', () => ({ notesService: {} }));
 

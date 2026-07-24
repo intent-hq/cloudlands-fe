@@ -10,9 +10,6 @@ import {
   type BridgeCallContext,
 } from '../../main/bridge/mcp-bridge';
 import {
-  GitStatusSchema,
-  GitDiffSchema,
-  GitCommitSchema,
   GitBranchSchema,
   FsReadSchema,
   FsWriteSchema,
@@ -29,24 +26,6 @@ export class GitMcpServer extends BaseMcpServer {
 
   protected async initialize(): Promise<void> {
     // Register git tools
-    this.registerTool({
-      name: 'git.status',
-      description: 'Get git status for the workspace',
-      inputSchema: GitStatusSchema,
-    });
-
-    this.registerTool({
-      name: 'git.diff',
-      description: 'Get git diff',
-      inputSchema: GitDiffSchema,
-    });
-
-    this.registerTool({
-      name: 'git.commit',
-      description: 'Create a git commit',
-      inputSchema: GitCommitSchema,
-    });
-
     this.registerTool({
       name: 'git.branch',
       description: 'Manage git branches',

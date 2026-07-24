@@ -26,8 +26,6 @@ import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 import { InstructionService } from '../../agent/main/instruction-service';
 import { execFileAsync } from '../../../shared/git/git-env';
-import { GitService } from '../../git/main/git.service';
-import { getWorkspaceGitInfo } from '../../git/main/git-router';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
@@ -1160,37 +1158,11 @@ export function setupWorkspaceIPC(): void {
         try {
           const workspaceId = validated.workspaceId as WorkspaceId;
 
-          // Get git status for file changes - route to remote if needed
-          let changesStats = { uncommitted: 0, staged: 0, unstaged: 0 };
+          // Hover git-status stats retired with GitService; this handler is
+          // unreachable from the renderer (which routes through the mock IPC
+          // router), so return the zero-count defaults.
+          const changesStats = { uncommitted: 0, staged: 0, unstaged: 0 };
           const lineStats = { additions: 0, deletions: 0 };
-
-          const gitInfo = await getWorkspaceGitInfo(workspaceId);
-          if (gitInfo?.isRemote) {
-            // Remote hover git status retired in P3-5; leave the default zero
-            // counts so remote-configured workspaces don't attempt to route
-            // through the deleted remote stack.
-          } else {
-            // Local workspace: use GitService
-            const gitService = new GitService();
-            const gitResult = await gitService.getStatus(workspaceId);
-
-            if (gitResult.ok && gitResult.data) {
-              const gitStatus = gitResult.data;
-              // Count files by staged status
-              const files = gitStatus.files || [];
-              const stagedFiles = files.filter((f) => f.staged);
-              const unstagedFiles = files.filter((f) => !f.staged);
-
-              changesStats = {
-                uncommitted: files.length,
-                staged: stagedFiles.length,
-                unstaged: unstagedFiles.length,
-              };
-            }
-          }
-
-          // Line stats require a separate diff call - for now return 0
-          // as we don't have additions/deletions on GitStatus
 
           // Return the status summary
           const status = {

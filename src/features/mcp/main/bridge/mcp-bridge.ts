@@ -11,7 +11,6 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { protocolAdapter } from '../../../protocol/main/protocol-adapter';
 import { getBackendClient } from '../../../backend/main/backend.ipc';
-import { GitService } from '../../../git/main/git.service';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config.js';
 import {
@@ -22,7 +21,6 @@ import type { ToolName } from '../../types/schemas';
 import { createHash, randomUUID } from 'crypto';
 import { emitAgentFileChange } from '../mcp/workspace-file-tools';
 import { hostExec } from '../../../../shared/main/host-exec';
-import { assertAgentCommitAllowed } from '$features/workspace/main/workspace-settings.service';
 
 const logger = new Logger('McpBridge');
 
@@ -59,7 +57,6 @@ export interface BridgeResponse {
 }
 
 export class McpBridge extends EventEmitter {
-  private gitService: GitService;
   private idempotencyStore: Map<string, { response: BridgeResponse; timestamp: number }> =
     new Map();
   private versionStore: Map<string, string> = new Map();
@@ -68,10 +65,6 @@ export class McpBridge extends EventEmitter {
 
   constructor() {
     super();
-
-    // Initialize services
-    // Workspace and Notes services are accessed via protocolAdapter for unified event handling
-    this.gitService = new GitService();
 
     // Cleanup old idempotency entries periodically
     this.idempotencyCleanupInterval = setInterval(
@@ -161,15 +154,6 @@ export class McpBridge extends EventEmitter {
           break;
 
         // Git methods
-        case 'git.status':
-          response = await this.handleGitStatus(params, context);
-          break;
-        case 'git.diff':
-          response = await this.handleGitDiff(params, context);
-          break;
-        case 'git.commit':
-          response = await this.handleGitCommit(params, context);
-          break;
         case 'git.branch':
           response = await this.handleGitBranch(params, context);
           break;
@@ -937,76 +921,6 @@ export class McpBridge extends EventEmitter {
   // ============================================================================
   // Git Handlers
   // ============================================================================
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async handleGitStatus(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
-    const result = await this.gitService.getStatus(params.workspaceId);
-
-    if (!result.ok) {
-      throw new Error(result.error || 'Failed to get git status');
-    }
-
-    return {
-      success: true,
-      data: result.data,
-    };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async handleGitDiff(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
-    const result = await this.gitService.getDiff(params.workspaceId, params.paths || []);
-
-    if (!result.ok) {
-      throw new Error(result.error || 'Failed to get diff');
-    }
-
-    return {
-      success: true,
-      data: result.data,
-    };
-  }
-
-  private async handleGitCommit(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
-    // Check auto-commit setting using centralized guard
-    const workspaceId = params.workspaceId || context.workspaceId;
-    if (workspaceId) {
-      const commitCheck = assertAgentCommitAllowed(workspaceId);
-      if (!commitCheck.allowed) {
-        return {
-          success: false,
-          error: {
-            code: 'AUTO_COMMIT_DISABLED',
-            message: commitCheck.reason,
-          },
-        };
-      }
-    }
-
-    const result = await this.gitService.commit(
-      params.workspaceId,
-      params.message,
-      params.paths || [],
-    );
-
-    if (!result.ok) {
-      throw new Error(result.error || 'Failed to commit');
-    }
-
-    // Emit event (use 'update' for commit since it updates the git state)
-    const event = createWorkspaceUpdatedEvent(
-      params.workspaceId,
-      'git',
-      'update',
-      result.data.sha || '',
-      context.actor,
-    );
-    this.emit('event', event);
-
-    return {
-      success: true,
-      data: result.data,
-    };
-  }
 
   private async handleGitBranch(params: any, context: BridgeCallContext): Promise<BridgeResponse> {
     try {
