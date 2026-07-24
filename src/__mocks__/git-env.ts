@@ -15,7 +15,6 @@ export const execFileAsync = vi.fn().mockResolvedValue({ stdout: '', stderr: '' 
 export const execAsyncWithGitEnv = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
 export const execFileAsyncWithGitEnv = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
 export const execAsyncWithRetry = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
-export const execFileAsyncWithRetry = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
 export const execAsyncRobust = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
 
 export const getEnhancedPath = vi.fn(() => process.env.PATH || '');

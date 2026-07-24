@@ -180,7 +180,6 @@ export interface GitEnvPolicy {
   execAsync,
   execFileAsync,
   execAsyncWithRetry,
-  execFileAsyncWithRetry,
 } from '@/shared/git/git-env';
  *
  * spawn('git', ['status'], { env: gitEnv });
@@ -619,61 +618,6 @@ function execWithSpawnFallback(command: string, options?: ExecOptions): Promise<
   const timeout = options?.timeout ?? DEFAULT_EXEC_TIMEOUT_MS;
   const [shellCmd, shellFlag] = resolveShell(options);
   return runViaHostStream(shellCmd, [shellFlag, command], { ...options, timeout }, command);
-}
-
-/**
- * Execute a file directly (without shell) with retry logic for transient errors.
- *
- * This is more efficient and secure than execAsyncWithRetry because it doesn't
- * spawn a shell. Use this when you have the full path to an executable.
- *
- * @example
- * ```typescript
- *
- *
- * const { stdout } = await execFileAsyncWithRetry('/usr/local/bin/auggie', ['--version']);
- * ```
- */
-export async function execFileAsyncWithRetry(
-  file: string,
-  args: readonly string[],
-  options?: ExecOptions & RetryOptions,
-): Promise<ExecResult> {
-  const maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
-  const initialDelayMs = options?.initialDelayMs ?? DEFAULT_INITIAL_DELAY_MS;
-  const maxDelayMs = options?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
-  const timeout = options?.timeout ?? DEFAULT_EXEC_TIMEOUT_MS;
-
-  const execOptions: ExecOptions = {
-    ...options,
-    timeout,
-  };
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await execFileAsync(file, args, execOptions);
-    } catch (error) {
-      const errnoError = error as NodeJS.ErrnoException;
-      lastError = errnoError;
-
-      // If it's a transient error and we have retries left, wait and retry
-      if (isTransientError(errnoError) && attempt < maxRetries) {
-        const delay = calculateBackoffDelay(attempt, initialDelayMs, maxDelayMs);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
-      }
-
-      // Non-transient error or out of retries
-      throw error;
-    }
-  }
-
-  // Should not reach here, but just in case
-  throw (
-    lastError || new Error(`Command failed after ${maxRetries} retries: ${file} ${args.join(' ')}`)
-  );
 }
 
 /**
