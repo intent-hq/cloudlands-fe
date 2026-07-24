@@ -134,6 +134,27 @@ Key references under [`docs/`](./docs):
   safety conventions.
 - [EVENT_SYSTEM.md](./docs/EVENT_SYSTEM.md) — the unified event system.
 
+## Network & privacy
+
+The desktop app is local-first and ships **no telemetry or analytics** —
+Segment, Sentry, and download-attribution have all been removed. The app itself
+makes only two kinds of network calls, both against public GitHub Releases:
+
+- **Auto-updates** — the built app checks for and downloads updates from
+  GitHub Releases on
+  [intent-hq/cloudlands-releases](https://github.com/intent-hq/cloudlands-releases)
+  (`AUTO_UPDATE_URL` in `src/shared/constants.ts` and the `publish` URL in
+  `electron-builder.yml`).
+- **Auggie binary download (on demand)** — when you install the Auggie CLI from
+  the app, the pre-built binary is downloaded from the latest public release of
+  [augmentcode/auggie](https://github.com/augmentcode/auggie)
+  (`AUGGIE_BINARY_BASE_URL` in `src/shared/constants/auggie.ts`).
+
+Everything else goes through the local `intentd` daemon. Daemon-side network
+calls — provider OAuth sign-ins, user-configured integrations (GitHub, Linear,
+Sentry), and the sitter self-update — are documented in the
+[monorepo README's Network & privacy section](https://github.com/intent-hq/monorepo#network--privacy).
+
 ## History
 
 This repository is the frontend **ported from the prior Electron app** and
