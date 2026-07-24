@@ -137,6 +137,31 @@ function advanceNoteRev(workspaceId: string, noteId: string, sentRev: number): v
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { rev: nextRev }));
 }
 
+/**
+ * Serialize an out-of-module mutation that rewrites the note's content
+ * daemon-side (e.g. `comment.add`, which embeds anchor markers into the
+ * markdown via an unconditional `update_note`) on this note's mutation queue,
+ * and advance the stored `rev` by one on success. The daemon emits no
+ * `note:updated` for these rewrites and its result doesn't echo the new rev,
+ * but the advancement is authoritative for the same §11.4-D reason as
+ * `advanceNoteRev`: every note write bumps `rev` by exactly one. Queueing
+ * guarantees ordering with any in-flight or debounced `setContent`, so the
+ * next save reads the advanced rev instead of racing it with a stale
+ * `expectedVersion`.
+ */
+export function enqueueRevBumpingNoteMutation(
+  workspaceId: string,
+  noteId: string,
+  run: () => Promise<MutationResult>,
+): Promise<MutationResult> {
+  return enqueueNoteMutation(noteKey(workspaceId, noteId), async () => {
+    const rev = readNoteById(workspaceId, noteId)?.rev;
+    const result = await run();
+    if (result.success && rev !== undefined) advanceNoteRev(workspaceId, noteId, rev);
+    return result;
+  });
+}
+
 async function refetchWorkspaceNotes(workspaceId: string): Promise<void> {
   try {
     const notes = await appClient.notes.list(workspaceId);
