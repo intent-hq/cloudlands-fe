@@ -55,10 +55,10 @@ interface GitStatusResult {
 /** Path-based git reads still routed through the daemon-owned exec (§5.14). */
 const LOCAL_TIMEOUT_MS = 60_000;
 
-/** Legacy `git.service.push` timeout — network op can outrun the transport default. */
+/** Push timeout inherited from the legacy GitService — network op can outrun the transport default. */
 const PUSH_TIMEOUT_MS = 300_000;
 
-/** Legacy `git.service.fetch` timeout — network op can outrun the transport default. */
+/** Fetch timeout inherited from the legacy GitService — network op can outrun the transport default. */
 const FETCH_TIMEOUT_MS = 60_000;
 
 /** Coerce a possibly-unknown argument into a plain object record. */
