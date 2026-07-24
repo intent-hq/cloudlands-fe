@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Wire-contract tests for find-binary.ts.
@@ -47,6 +40,7 @@ import {
   getEnhancedPath,
   initializeHostEnv,
 } from '../find-binary';
+import { JsonRpcError } from '../../../features/backend/main/json-rpc-errors';
 
 const originalPlatform = process.platform;
 const originalEnv = { ...process.env };
@@ -194,6 +188,57 @@ describe('initializeHostEnv / getEnhancedPath (host.env wire contract)', () => {
     expect(result).toEqual(mockEnv);
     expect(getCachedHostEnv()).toEqual(mockEnv);
     expect(getEnhancedPath()).toBe(mockEnv.enhancedPath);
+  });
+
+  it('retries while the sidecar is starting', async () => {
+    const mockEnv = {
+      path: '/usr/bin:/bin',
+      pathEntries: ['/usr/bin', '/bin'],
+      enhancedPath: '/usr/bin:/bin:/Users/test/.local/bin',
+      shell: '/bin/zsh',
+      home: '/Users/test',
+      varNames: ['HOME', 'PATH'],
+    };
+    mockRequest.mockRejectedValueOnce(new Error('socket not ready')).mockResolvedValue(mockEnv);
+
+    const result = await initializeHostEnv({ retryForMs: 100, retryDelayMs: 0 });
+
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+    expect(result).toEqual(mockEnv);
+    expect(getEnhancedPath()).toBe(mockEnv.enhancedPath);
+  });
+
+  it('does not retry a JSON-RPC response error', async () => {
+    mockRequest.mockRejectedValue(new JsonRpcError({ code: -32601, message: 'Method not found' }));
+
+    const result = await initializeHostEnv({ retryForMs: 100, retryDelayMs: 0 });
+
+    expect(result).toBeNull();
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an in-flight response after startup aborts the request', async () => {
+    const baseline = {
+      path: '/usr/bin',
+      pathEntries: ['/usr/bin'],
+      enhancedPath: '/usr/bin:/baseline',
+      shell: '/bin/zsh',
+      home: '/Users/test',
+      varNames: ['PATH'],
+    };
+    const late = { ...baseline, enhancedPath: '/usr/bin:/late' };
+    mockRequest.mockResolvedValueOnce(baseline);
+    await initializeHostEnv();
+
+    let resolveLate!: (value: typeof late) => void;
+    mockRequest.mockReturnValueOnce(new Promise((resolve) => (resolveLate = resolve)));
+    const controller = new AbortController();
+    const pending = initializeHostEnv({ retryForMs: 100, signal: controller.signal });
+    controller.abort();
+    resolveLate(late);
+
+    expect(await pending).toBeNull();
+    expect(getCachedHostEnv()).toEqual(baseline);
   });
 
   it('falls back to process.env.PATH when host.env has not been seeded', async () => {

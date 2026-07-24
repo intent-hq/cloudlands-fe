@@ -148,37 +148,47 @@ if (process.platform !== 'win32') {
   process.env.PATH = Array.from(pathSet).join(':');
 }
 
-const hostEnvPromise = (async () => {
-  try {
-    const { initializeHostEnv } = await import('../shared/main/find-binary');
-    const result = await initializeHostEnv();
-    if (result) {
-      if (result.enhancedPath) {
-        process.env.PATH = result.enhancedPath;
-      } else if (result.path) {
-        process.env.PATH = result.path;
+async function seedPathFromHostEnv(): Promise<void> {
+  const abortController = new AbortController();
+  const hostEnvPromise = (async () => {
+    try {
+      const { initializeHostEnv } = await import('../shared/main/find-binary');
+      const result = await initializeHostEnv({
+        retryForMs: 2000,
+        retryDelayMs: 100,
+        signal: abortController.signal,
+      });
+      if (result) {
+        if (result.enhancedPath) {
+          process.env.PATH = result.enhancedPath;
+        } else if (result.path) {
+          process.env.PATH = result.path;
+        }
+        mainLogger.info('Seeded PATH from host.env', {
+          pathEntries: result.pathEntries.length,
+          shell: result.shell,
+        });
       }
-      mainLogger.info('Seeded PATH from host.env', {
-        pathEntries: result.pathEntries.length,
-        shell: result.shell,
+    } catch (error) {
+      mainLogger.warn('host.env seed failed; keeping pre-populated PATH', {
+        error: error instanceof Error ? error.message : String(error),
       });
     }
-  } catch (error) {
-    mainLogger.warn('host.env seed failed; keeping pre-populated PATH', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-})();
+  })();
 
-const hostEnvTimeout = new Promise<void>((resolve) => {
-  setTimeout(() => {
-    mainLogger.warn('host.env took too long, continuing without waiting');
-    resolve();
-  }, 2000);
-});
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const hostEnvTimeout = new Promise<void>((resolve) => {
+    timeoutHandle = setTimeout(() => {
+      abortController.abort();
+      mainLogger.warn('host.env took too long, continuing without waiting');
+      resolve();
+    }, 2000);
+  });
 
-await Promise.race([hostEnvPromise, hostEnvTimeout]);
-logStartupTiming('host.env seed complete');
+  await Promise.race([hostEnvPromise, hostEnvTimeout]);
+  if (timeoutHandle) clearTimeout(timeoutHandle);
+  logStartupTiming('host.env seed complete');
+}
 
 // Initialize warning suppression early
 initializeWarningSuppression();
@@ -1298,6 +1308,10 @@ app.whenReady().then(async () => {
   // JSON-RPC client connection attempt. Adoption logic (probe socket first)
   // ensures we don't spawn when an external daemon is already running.
   await startIntentdSidecar(process.env, app.isPackaged, process.resourcesPath, process.cwd());
+
+  // The daemon owns PATH discovery. Seed only after starting/adopting it, and
+  // retry briefly while a newly spawned sidecar creates its socket.
+  await seedPathFromHostEnv();
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   startupMetrics.end('criticalIPC');

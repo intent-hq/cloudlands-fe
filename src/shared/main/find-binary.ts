@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Logger } from '../logger';
 import { getBackendClient } from '../../features/backend/main/backend.ipc';
+import { JsonRpcError } from '../../features/backend/main/json-rpc-errors';
 
 const logger = new Logger('FindBinary');
 
@@ -58,6 +59,20 @@ interface HostEnvResult {
 
 let cachedHostEnv: HostEnvResult | null = null;
 
+interface HostEnvInitOptions {
+  /** Keep retrying transient connection failures while the sidecar starts. */
+  retryForMs?: number;
+  retryDelayMs?: number;
+  /** Stop retrying and ignore any in-flight response after startup moves on. */
+  signal?: AbortSignal;
+}
+
+function isRetryableHostEnvError(error: unknown): boolean {
+  // A JSON-RPC response proves the daemon is reachable; protocol/server errors
+  // will not be fixed by reconnecting. Transport failures remain retryable.
+  return !(error instanceof JsonRpcError);
+}
+
 function isWindows(): boolean {
   return process.platform === 'win32';
 }
@@ -75,18 +90,36 @@ function cacheKey(name: string, commonPaths: string[]): string {
  * startup so synchronous consumers of `getEnhancedPath()` see the BE's
  * authoritative PATH instead of the renderer process's local PATH.
  */
-export async function initializeHostEnv(): Promise<HostEnvResult | null> {
-  try {
-    const result = await getBackendClient().request<HostEnvResult>('host.env');
-    cachedHostEnv = result;
-    return result;
-  } catch (error) {
-    logger.warn('host.env request failed', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    cachedHostEnv = null;
-    return null;
-  }
+export async function initializeHostEnv(
+  options: HostEnvInitOptions = {},
+): Promise<HostEnvResult | null> {
+  const deadline = Date.now() + (options.retryForMs ?? 0);
+  const retryDelayMs = options.retryDelayMs ?? 100;
+  const signal = options.signal;
+  let lastError: unknown;
+
+  if (signal?.aborted) return null;
+
+  do {
+    try {
+      const result = await getBackendClient().request<HostEnvResult>('host.env');
+      if (signal?.aborted) return null;
+      cachedHostEnv = result;
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableHostEnvError(error)) break;
+    }
+    if (signal?.aborted) return null;
+    if (Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+  } while (true);
+
+  logger.warn('host.env request failed', {
+    error: lastError instanceof Error ? lastError.message : String(lastError),
+  });
+  cachedHostEnv = null;
+  return null;
 }
 
 /** Read-only access to the last cached host environment (or null if not yet seeded). */
