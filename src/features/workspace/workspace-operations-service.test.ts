@@ -73,7 +73,7 @@ import {
   requestUnarchiveWorkspace,
 } from "$store/renderer/slices/workspace-operations/workspace-operations-slice";
 import { hydrateProposalLifecycle } from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice";
-import type { WorkspaceCreateProposal } from "$shared/types/proposal";
+import type { BulkOperationProposal, WorkspaceCreateProposal } from "$shared/types/proposal";
 
 const ws = workspaceClient as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const agents = vi.mocked(hasRunningAgents);
@@ -379,6 +379,16 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     });
   });
 
+  function lifecycleEntry(proposalId: string) {
+    const state = appStore.state as {
+      proposalLifecycle?: Record<
+        string,
+        { status: string; error?: string; result?: { workspaceId?: string } }
+      >;
+    };
+    return state.proposalLifecycle?.[proposalId];
+  }
+
   describe("apply workspace-create proposal (ProposalCard Apply)", () => {
     function makeProposal(
       overrides?: Partial<WorkspaceCreateProposal>,
@@ -398,13 +408,6 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
         applyToolCallId: "tc-apply-1",
         ...overrides,
       };
-    }
-
-    function lifecycleEntry(proposalId: string) {
-      const state = appStore.state as {
-        proposalLifecycle?: Record<string, { status: string; result?: { workspaceId?: string } }>;
-      };
-      return state.proposalLifecycle?.[proposalId];
     }
 
     it("runs workspace.create with the proposal params and drives the lifecycle to applied", async () => {
@@ -470,7 +473,9 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith("clone failed");
     });
 
-    it("ignores non-workspace-create proposals", async () => {
+    it("routes bulk-op proposals to the bulk applier, not workspace.create", async () => {
+      seed(makeWorkspace({ id: "ws-1" }));
+
       appStore.dispatch(
         applyWorkspaceProposal({
           proposal: {
@@ -483,6 +488,259 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
       await flush();
 
       expect(ws.create).not.toHaveBeenCalled();
+      expect(ws.archive).toHaveBeenCalledWith("ws-1");
+    });
+  });
+
+  describe("apply bulk-op proposal (ProposalCard Apply)", () => {
+    function makeBulkProposal(
+      operation: BulkOperationProposal["payload"]["operation"],
+      ids: string[],
+      overrides?: Partial<BulkOperationProposal>,
+    ): BulkOperationProposal {
+      return {
+        kind: "bulk-op",
+        payload: { operation, ids },
+        preview: { title: "Bulk operation" },
+        applyToolCallId: "tc-bulk-1",
+        ...overrides,
+      };
+    }
+
+    it("archives every targeted id, converges the store, and drives the lifecycle to applied", async () => {
+      seed(makeWorkspace({ id: "ws-1" }), makeWorkspace({ id: "ws-2" }));
+
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkArchive", ["ws-1", "ws-2"]),
+        }),
+      );
+      await flush();
+
+      expect(ws.archive).toHaveBeenCalledTimes(2);
+      expect(ws.archive).toHaveBeenCalledWith("ws-1");
+      expect(ws.archive).toHaveBeenCalledWith("ws-2");
+      expect(stored("ws-1")?.status).toBe(WorkspaceStatusEnum.Archived);
+      expect(stored("ws-2")?.status).toBe(WorkspaceStatusEnum.Archived);
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({ status: "applied" });
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Archived 2 spaces");
+    });
+
+    it("sends the exact workspace.archive wire request (PROTOCOL §5.1) per targeted id", async () => {
+      // Route the seam-stubbed archive through the REAL WorkspaceClient so the
+      // apply exercises the genuine wire path against the mock daemon.
+      const actual = await vi.importActual<
+        typeof import("$store/renderer/slices/workspace/utils/workspace.client")
+      >("$store/renderer/slices/workspace/utils/workspace.client");
+      ws.archive.mockImplementation((id: WorkspaceId) => actual.workspaceClient.archive(id));
+      const backend = installMockBackend();
+      backend.onRequest("workspace.archive", (params) => ({
+        workspace: {
+          ...makeWorkspace({ id: (params as { workspaceId: string }).workspaceId }),
+          status: WorkspaceStatusEnum.Archived,
+          archived: true,
+          archivedAt: "2026-01-02T00:00:00Z",
+        },
+      }));
+
+      seed(makeWorkspace({ id: "ws-1" }), makeWorkspace({ id: "ws-2" }));
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkArchive", ["ws-1", "ws-2"]),
+        }),
+      );
+      await flush();
+
+      expect(backend.requests).toEqual([
+        { method: "workspace.archive", params: { workspaceId: "ws-1" } },
+        { method: "workspace.archive", params: { workspaceId: "ws-2" } },
+      ]);
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({ status: "applied" });
+    });
+
+    it("deletes every targeted id sequentially and drives the lifecycle to applied", async () => {
+      const order: string[] = [];
+      ws.delete.mockImplementation(async (id: string) => {
+        order.push(id);
+        return { ok: true };
+      });
+      seed(
+        makeWorkspace({ id: "ws-x", status: WorkspaceStatusEnum.Archived }),
+        makeWorkspace({ id: "ws-y", status: WorkspaceStatusEnum.Archived }),
+      );
+
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkDelete", ["ws-x", "ws-y"]),
+        }),
+      );
+      await flush();
+
+      expect(order).toEqual(["ws-x", "ws-y"]);
+      expect(stored("ws-x")).toBeUndefined();
+      expect(stored("ws-y")).toBeUndefined();
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({ status: "applied" });
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Deleted 2 spaces");
+    });
+
+    it("sends the exact workspace.delete wire request (PROTOCOL §5.1) per targeted id", async () => {
+      const actual = await vi.importActual<
+        typeof import("$store/renderer/slices/workspace/utils/workspace.client")
+      >("$store/renderer/slices/workspace/utils/workspace.client");
+      ws.delete.mockImplementation((id: WorkspaceId) => actual.workspaceClient.delete(id));
+      const backend = installMockBackend();
+      backend.onRequest("workspace.delete", () => ({ success: true }));
+
+      seed(makeWorkspace({ id: "ws-x", status: WorkspaceStatusEnum.Archived }));
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkDelete", ["ws-x"]),
+        }),
+      );
+      await flush();
+
+      expect(backend.requests).toEqual([
+        { method: "workspace.delete", params: { workspaceId: "ws-x" } },
+      ]);
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({ status: "applied" });
+    });
+
+    it("honors selectedBulkItemIds when the user narrowed the checklist", async () => {
+      seed(makeWorkspace({ id: "ws-1" }), makeWorkspace({ id: "ws-2" }));
+
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkArchive", ["ws-1", "ws-2"]),
+          selectedBulkItemIds: ["ws-2"],
+        }),
+      );
+      await flush();
+
+      expect(ws.archive).toHaveBeenCalledTimes(1);
+      expect(ws.archive).toHaveBeenCalledWith("ws-2");
+      expect(stored("ws-1")?.status).toBe(WorkspaceStatusEnum.Active);
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({ status: "applied" });
+    });
+
+    it("fails loud (no silent no-op) when the resolved id list is empty", async () => {
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkArchive", []),
+        }),
+      );
+      await flush();
+
+      expect(ws.archive).not.toHaveBeenCalled();
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({
+        status: "failed",
+        error: "No spaces selected to archive",
+      });
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("No spaces selected to archive");
+    });
+
+    it("treats a defined-but-empty selectedBulkItemIds as none-selected, never falling back to all ids", async () => {
+      seed(
+        makeWorkspace({ id: "ws-1", status: WorkspaceStatusEnum.Archived }),
+        makeWorkspace({ id: "ws-2", status: WorkspaceStatusEnum.Archived }),
+      );
+
+      // Through the real UI (BulkProposalItems bind:selectedIds), deselecting
+      // every item yields [] — Apply must NOT delete all payload.ids.
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkDelete", ["ws-1", "ws-2"]),
+          selectedBulkItemIds: [],
+        }),
+      );
+      await flush();
+
+      expect(ws.delete).not.toHaveBeenCalled();
+      expect(stored("ws-1")).toBeDefined();
+      expect(stored("ws-2")).toBeDefined();
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({
+        status: "failed",
+        error: "No spaces selected to delete",
+      });
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("No spaces selected to delete");
+    });
+
+    it("marks the lifecycle failed and toasts with counts when an archive hard-fails", async () => {
+      ws.archive.mockResolvedValueOnce({ ok: false, error: "daemon offline" } as never);
+      seed(makeWorkspace({ id: "ws-1" }), makeWorkspace({ id: "ws-2" }));
+
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkArchive", ["ws-1", "ws-2"]),
+        }),
+      );
+      await flush();
+
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({
+        status: "failed",
+        error: "Failed to archive 1 of 2 spaces",
+      });
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Failed to archive 1 of 2 spaces");
+      // The other archive still converged.
+      expect(stored("ws-2")?.status).toBe(WorkspaceStatusEnum.Archived);
+    });
+
+    it("marks the lifecycle failed and toasts with counts when a delete hard-fails", async () => {
+      ws.delete.mockResolvedValueOnce({ ok: false, error: "daemon offline" } as never);
+      seed(makeWorkspace({ id: "ws-x", status: WorkspaceStatusEnum.Archived }));
+
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkDelete", ["ws-x"]),
+        }),
+      );
+      await flush();
+
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({
+        status: "failed",
+        error: "Failed to delete 1 of 1 space",
+      });
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Failed to delete 1 of 1 space");
+      expect(stored("ws-x")).toBeDefined();
+    });
+
+    it("treats delete timeouts as still-deleting, keeps the entity, and still applies", async () => {
+      ws.delete.mockResolvedValueOnce({
+        ok: false,
+        error: "JSON-RPC request timed out: workspace.delete",
+      } as never);
+      seed(makeWorkspace({ id: "ws-slow", status: WorkspaceStatusEnum.Archived }));
+
+      appStore.dispatch(
+        applyWorkspaceProposal({
+          proposal: makeBulkProposal("workspace.bulkDelete", ["ws-slow"]),
+        }),
+      );
+      await flush();
+
+      // Entity is NOT removed on timeout — the workspace:deleted event will do it.
+      expect(stored("ws-slow")).toBeDefined();
+      expect(lifecycleEntry("tc-bulk-1")).toMatchObject({ status: "applied" });
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.info)).toHaveBeenCalledWith(
+        "1 space is still deleting (large checkout)",
+      );
+    });
+
+    it("dedupes rapid double-applies via the lifecycle slice", async () => {
+      seed(makeWorkspace({ id: "ws-1" }));
+
+      const proposal = makeBulkProposal("workspace.bulkArchive", ["ws-1"]);
+      appStore.dispatch(applyWorkspaceProposal({ proposal }));
+      appStore.dispatch(applyWorkspaceProposal({ proposal }));
+      await flush();
+
+      expect(ws.archive).toHaveBeenCalledTimes(1);
     });
   });
 });

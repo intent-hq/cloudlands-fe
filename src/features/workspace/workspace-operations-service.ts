@@ -66,7 +66,7 @@ import {
 import type { ProposalLifecycleState } from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-types";
 import { buildCreateWorkspaceRequestFromProposal } from "$store/renderer/slices/workspace-operations/utils/workspace-create-proposal";
 import { getProposalId } from "$lib/components/chat/proposals/proposal-id";
-import { isWorkspaceCreateProposal } from "$shared/types/proposal";
+import { isBulkOperationProposal, isWorkspaceCreateProposal } from "$shared/types/proposal";
 import type { WorkspaceProposalApplyPayload } from "$shared/app-workspace-operations";
 import { removeRepo } from "$store/renderer/slices/known-repos/known-repos-slice";
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
@@ -590,6 +590,119 @@ export async function applyWorkspaceCreateProposal(
 }
 
 /**
+ * Apply a `bulk-op` proposal (the ProposalCard "Archive"/"Delete" Apply button
+ * dispatches `applyWorkspaceProposal`). Drives the same lifecycle as
+ * `applyWorkspaceCreateProposal` (dedupe on `applying`/`applied`, applyStarted
+ * → applySucceeded or proposalFailed + a loud toast) and reuses the bulk
+ * mechanics of the confirm-modal flows: archives run in parallel with
+ * per-success store convergence (like `bulkArchive`); deletes run sequentially
+ * so the daemon's per-repo worktree lock doesn't stack timeout clocks, with
+ * timeouts reported as "still deleting" and left for the `workspace:deleted`
+ * event to purge (like `performBulkDeleteArchived`).
+ *
+ * Target ids come from `selectedBulkItemIds` whenever the checklist provided
+ * one (the ProposalCard always binds it, so a defined-but-empty array means
+ * the user deselected everything — that fails loud rather than falling back
+ * to all `payload.ids`); only an absent `selectedBulkItemIds` falls back to
+ * the proposal's `payload.ids`.
+ */
+export async function applyBulkOpProposal(
+  payload: WorkspaceProposalApplyPayload,
+): Promise<void> {
+  const { proposal, selectedBulkItemIds } = payload;
+  if (!isBulkOperationProposal(proposal)) return;
+
+  const proposalId = getProposalId(proposal);
+  const lifecycle = (
+    appStore.state as { proposalLifecycle?: ProposalLifecycleState }
+  ).proposalLifecycle?.[proposalId];
+  if (lifecycle?.status === "applying" || lifecycle?.status === "applied") return;
+
+  const isDelete = proposal.payload.operation === "workspace.bulkDelete";
+
+  const fail = async (error: string) => {
+    appStore.dispatch(
+      proposalFailed({ proposalId, error, completedAt: Date.now(), lastAction: "apply" }),
+    );
+    (await getToast()).error(error);
+  };
+
+  const ids = selectedBulkItemIds ?? proposal.payload.ids;
+  if (ids.length === 0) {
+    await fail(`No spaces selected to ${isDelete ? "delete" : "archive"}`);
+    return;
+  }
+
+  // Dispatched before the first await so a rapid double-apply short-circuits
+  // on the lifecycle check above (same ordering as applyWorkspaceCreateProposal).
+  appStore.dispatch(proposalApplyStarted({ proposalId, startedAt: Date.now() }));
+  const toast = await getToast();
+
+  if (!isDelete) {
+    const results = await Promise.allSettled(
+      ids.map((id) =>
+        workspaceClient.archive(id as WorkspaceId).then((result) => ({ id, result })),
+      ),
+    );
+
+    let archivedCount = 0;
+    for (const settled of results) {
+      if (settled.status === "fulfilled" && settled.value.result.ok) {
+        archivedCount++;
+        applyWorkspaceChanges(settled.value.id, {
+          status: WorkspaceStatusEnum.Archived,
+          archived: true,
+        });
+      }
+    }
+
+    const failCount = ids.length - archivedCount;
+    if (failCount > 0) {
+      await fail(
+        `Failed to archive ${failCount} of ${ids.length} space${ids.length === 1 ? "" : "s"}`,
+      );
+      return;
+    }
+
+    appStore.dispatch(proposalApplySucceeded({ proposalId, completedAt: Date.now() }));
+    toast.success(`Archived ${archivedCount} space${archivedCount === 1 ? "" : "s"}`);
+    return;
+  }
+
+  let deleteCount = 0;
+  let timeoutCount = 0;
+  let failCount = 0;
+  for (const id of ids) {
+    const result = await workspaceClient.delete(id as WorkspaceId);
+    if (result.ok) {
+      deleteCount++;
+      appStore.dispatch(removeWorkspaceEntity(id as WorkspaceId));
+    } else if (result.error?.includes("timed out")) {
+      timeoutCount++;
+      // Do NOT remove the entity — leave it for the workspace:deleted event to
+      // purge when the daemon finishes.
+    } else {
+      failCount++;
+    }
+  }
+
+  if (failCount > 0) {
+    await fail(`Failed to delete ${failCount} of ${ids.length} space${ids.length === 1 ? "" : "s"}`);
+    return;
+  }
+
+  appStore.dispatch(proposalApplySucceeded({ proposalId, completedAt: Date.now() }));
+  if (deleteCount > 0) {
+    toast.success(`Deleted ${deleteCount} space${deleteCount === 1 ? "" : "s"}`);
+  }
+  if (timeoutCount > 0) {
+    toast.info(
+      `${timeoutCount} space${timeoutCount === 1 ? " is" : "s are"} still deleting (large checkout${timeoutCount === 1 ? "" : "s"})`
+    );
+  }
+}
+
+/**
  * Middleware that gives the workspace-operation triggers a real handler: after
  * each action passes through the (no-op) reducer, it routes the trigger to the
  * matching seam-backed handler. Fire-and-forget — dispatch stays synchronous and
@@ -603,7 +716,12 @@ export function createWorkspaceOperationsMiddleware(): StoreMiddleware {
       switch (action.type) {
         case applyWorkspaceProposal.type:
           if (payload[0] && typeof payload[0] === "object") {
-            void applyWorkspaceCreateProposal(payload[0] as WorkspaceProposalApplyPayload);
+            const proposalPayload = payload[0] as WorkspaceProposalApplyPayload;
+            if (isBulkOperationProposal(proposalPayload.proposal)) {
+              void applyBulkOpProposal(proposalPayload);
+            } else {
+              void applyWorkspaceCreateProposal(proposalPayload);
+            }
           }
           break;
         case requestArchiveWorkspace.type:
