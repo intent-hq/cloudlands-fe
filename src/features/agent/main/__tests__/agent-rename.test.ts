@@ -2,9 +2,10 @@
  * Tests for the lightweight agent-rename helper.
  *
  * Covers both the user-driven rename path (no skipIfExplicitlySet) and the
- * MCP agent-driven path (skipIfExplicitlySet=true). Disk I/O is issued as
- * direct daemon RPCs (`agent.get` for the existence check, `agent.update`
- * for the whitelisted patch — PROTOCOL.md §5.5). These tests mock
+ * MCP agent-driven path (skipIfExplicitlySet=true). Renames are issued as a
+ * single `agent.rename` daemon RPC (PROTOCOL.md §5.5), which enforces the
+ * skip-if-explicitly-set guard natively and returns
+ * `{ success: true, name, skipped? }`. These tests mock
  * `getBackendClient().request` and assert the exact request-on-wire.
  */
 
@@ -59,8 +60,8 @@ describe('renameAgentOnDisk', () => {
     mockRequest.mockReset();
   });
 
-  it('sends agent.update with the whitelisted patch and broadcasts', async () => {
-    mockRequest.mockResolvedValueOnce({ success: true });
+  it('sends a single agent.rename (user path, no guard) and broadcasts', async () => {
+    mockRequest.mockResolvedValueOnce({ success: true, name: 'New Name' });
 
     const { renameAgentOnDisk } = await import('../agent-rename');
 
@@ -68,10 +69,10 @@ describe('renameAgentOnDisk', () => {
 
     expect(result).toEqual({ ok: true, name: 'New Name' });
     expect(mockRequest).toHaveBeenCalledTimes(1);
-    expect(mockRequest).toHaveBeenCalledWith('agent.update', {
+    expect(mockRequest).toHaveBeenCalledWith('agent.rename', {
       agentId,
-      workspaceId,
-      changes: { name: 'New Name', nameExplicitlySet: true },
+      name: 'New Name',
+      skipIfExplicitlySet: false,
     });
     expect(createWorkspaceEvent).toHaveBeenCalledWith('agent:renamed', workspaceId, {
       type: 'user',
@@ -92,9 +93,11 @@ describe('renameAgentOnDisk', () => {
     });
   });
 
-  it('honours skipIfExplicitlySet by consulting agent.get first', async () => {
+  it('maps a skipped agent.rename onto the existing name without broadcasting', async () => {
     mockRequest.mockResolvedValueOnce({
-      agent: { name: 'User Chosen', nameExplicitlySet: true },
+      success: true,
+      name: 'User Chosen',
+      skipped: true,
     });
 
     const { renameAgentOnDisk } = await import('../agent-rename');
@@ -108,14 +111,16 @@ describe('renameAgentOnDisk', () => {
 
     expect(result).toEqual({ ok: true, name: 'User Chosen', skipped: true });
     expect(mockRequest).toHaveBeenCalledTimes(1);
-    expect(mockRequest).toHaveBeenCalledWith('agent.get', { agentId, workspaceId });
+    expect(mockRequest).toHaveBeenCalledWith('agent.rename', {
+      agentId,
+      name: 'Agent Suggested',
+      skipIfExplicitlySet: true,
+    });
     expect(mainDispatch).not.toHaveBeenCalled();
   });
 
-  it('proceeds with agent.update when skipIfExplicitlySet and existing name is not locked', async () => {
-    mockRequest
-      .mockResolvedValueOnce({ agent: { name: 'Auto Name', nameExplicitlySet: false } })
-      .mockResolvedValueOnce({ success: true });
+  it('applies a guarded rename when the daemon does not skip', async () => {
+    mockRequest.mockResolvedValueOnce({ success: true, name: 'Agent Suggested' });
 
     const { renameAgentOnDisk } = await import('../agent-rename');
 
@@ -127,15 +132,16 @@ describe('renameAgentOnDisk', () => {
     });
 
     expect(result).toEqual({ ok: true, name: 'Agent Suggested' });
-    expect(mockRequest).toHaveBeenNthCalledWith(1, 'agent.get', { agentId, workspaceId });
-    expect(mockRequest).toHaveBeenNthCalledWith(2, 'agent.update', {
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(mockRequest).toHaveBeenCalledWith('agent.rename', {
       agentId,
-      workspaceId,
-      changes: { name: 'Agent Suggested', nameExplicitlySet: true },
+      name: 'Agent Suggested',
+      skipIfExplicitlySet: true,
     });
+    expect(mainDispatch).toHaveBeenCalledTimes(1);
   });
 
-  it('throws when the daemon rejects agent.update', async () => {
+  it('throws when the daemon rejects agent.rename', async () => {
     mockRequest.mockRejectedValueOnce(new Error('daemon offline'));
 
     const { renameAgentOnDisk } = await import('../agent-rename');
