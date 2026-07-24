@@ -271,6 +271,8 @@ describe('task menu actions provider model', () => {
           'ws-1',
           expect.objectContaining({
             name: 'Break down: Ship feature',
+            // Derived name — flagged as not user-chosen so the agent can rename itself.
+            nameExplicitlySet: false,
             agentType: 'task-breakdown',
             source: 'task-menu',
           }),

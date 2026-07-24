@@ -238,8 +238,10 @@ describe('buildWorkspaceApi – setAgentName', () => {
     });
   }
 
-  it('sends agent.update to the daemon and emits a workspace event', async () => {
-    const mockRequest = vi.fn().mockResolvedValue({ success: true });
+  it('sends agent.rename to the daemon and emits a workspace event', async () => {
+    const mockRequest = vi
+      .fn()
+      .mockResolvedValue({ success: true, name: 'My Custom Name' });
     vi.doMock('$features/backend/main/backend.ipc', () => ({
       getBackendClient: () => ({ request: mockRequest }),
     }));
@@ -257,11 +259,11 @@ describe('buildWorkspaceApi – setAgentName', () => {
     expect(result.ok).toBe(true);
     expect(result.name).toBe('My Custom Name');
 
-    // Direct daemon RPC: whitelisted agent.update patch (PROTOCOL.md §5.5)
-    expect(mockRequest).toHaveBeenCalledWith('agent.update', {
+    // Direct daemon RPC: guarded agent.rename (PROTOCOL.md §5.5)
+    expect(mockRequest).toHaveBeenCalledWith('agent.rename', {
       agentId,
-      workspaceId,
-      changes: { name: 'My Custom Name', nameExplicitlySet: true },
+      name: 'My Custom Name',
+      skipIfExplicitlySet: true,
     });
 
     // Verify workspace event is emitted (replaced direct IPC call)

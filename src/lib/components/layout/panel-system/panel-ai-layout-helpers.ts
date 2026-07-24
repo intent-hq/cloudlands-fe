@@ -88,6 +88,10 @@ export async function openTabFromConfig(
         try {
           appStore.dispatch(createAgentFromConfigRequested(workspaceId, {
             name: agentName,
+            // Every name on this path comes from the AI-generated layout
+            // config (newAgentName/title) or the `Agent N` fallback — none is
+            // user-chosen, so keep the session self-renameable.
+            nameExplicitlySet: false,
             workspaceId: WorkspaceId(workspaceId),
             source: 'panel-ai-layout',
             metadata: { source: 'panel-ai-layout' },

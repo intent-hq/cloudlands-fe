@@ -198,6 +198,8 @@
       CHIEF_WORKSPACE_ID,
       {
         name: formatChiefThreadName(new Date()),
+        // Generated timestamp name — keep the session self-renameable.
+        nameExplicitlySet: false,
         agentType: createAgentTypeId('workspace'),
         source: 'chief-card',
         behaviorPrompt: chiefBehaviorPrompt,

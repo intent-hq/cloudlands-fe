@@ -1033,6 +1033,9 @@ This allows you to create multiple agents in parallel and be notified as each fi
         workspaceId: this.workspaceId,
         workspacePath: this.workspacePath,
         name: agentName,
+        // No `nameExplicitlySet` here — intentional. The coordinator chose
+        // this name explicitly via `create_agent`, so the daemon default
+        // (name-present ⇒ explicitly set) is correct.
         model: config.model,
         provider: config.provider,
         agentType: config.defaultAgentType || 'task-loop',

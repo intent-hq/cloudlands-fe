@@ -229,6 +229,9 @@ describe('usePanelActions', () => {
             'ws-1',
             expect.objectContaining({
               name: 'Prompt Agent',
+              // Generated name from contextual actions — flagged as not
+              // user-chosen so the agent can rename itself.
+              nameExplicitlySet: false,
               agentType: 'chat',
               source: 'progress-card-action',
             }),

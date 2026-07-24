@@ -113,6 +113,68 @@ describe("agent-ipc-bridge-seeder", () => {
       });
     });
 
+    it("forwards nameExplicitlySet:false verbatim on the agent.create wire", async () => {
+      // PROTOCOL §5.5: `nameExplicitlySet` is a strict boolean — `false`
+      // marks a generated placeholder name and must survive the bridge
+      // verbatim (dropping it would make the daemon treat the placeholder as
+      // a user-chosen name).
+      mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-42", name: "anon" } });
+      const request = {
+        workspaceId: WORKSPACE_ID,
+        workspacePath: "/tmp/ws",
+        name: "anon",
+        nameExplicitlySet: false,
+      };
+      expect(() => validateIpcRequest("agent:create", request)).not.toThrow();
+
+      await mockInvoke(AGENT_CHANNELS.CREATE, request);
+
+      const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(params).toBeDefined();
+      expect(params.nameExplicitlySet).toBe(false);
+    });
+
+    it("rejects a non-boolean nameExplicitlySet with INVALID_REQUEST instead of silently dropping it", async () => {
+      // PROTOCOL §5.5: non-boolean is a -32602 on the daemon wire. Silently
+      // dropping the value would mask an upstream bug behind the daemon
+      // default, so the bridge fails fast before any wire call — and the FE
+      // request schema rejects the same payload.
+      const request = {
+        workspaceId: WORKSPACE_ID,
+        workspacePath: "/tmp/ws",
+        name: "anon",
+        nameExplicitlySet: "false",
+      };
+      expect(() => validateIpcRequest("agent:create", request)).toThrow();
+
+      const response = await mockInvoke(AGENT_CHANNELS.CREATE, request);
+
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(response).toEqual({
+        success: false,
+        error: {
+          code: "INVALID_REQUEST",
+          message: "nameExplicitlySet must be a boolean when present (PROTOCOL §5.5)",
+        },
+      });
+    });
+
+    it("omits nameExplicitlySet from the agent.create body when the request lacks it", async () => {
+      // PROTOCOL §5.5: omitted reads as absent and keeps the daemon default —
+      // the bridge must not default the flag on the caller's behalf.
+      mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-42", name: "anon" } });
+
+      await mockInvoke(AGENT_CHANNELS.CREATE, {
+        workspaceId: WORKSPACE_ID,
+        workspacePath: "/tmp/ws",
+        name: "anon",
+      });
+
+      const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(params).toBeDefined();
+      expect("nameExplicitlySet" in params).toBe(false);
+    });
+
     it("never forwards a client-supplied agentId to the daemon (daemon mints its own)", async () => {
       mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-be-99", name: "anon" } });
       const response = await mockInvoke(AGENT_CHANNELS.CREATE, {
