@@ -49,7 +49,7 @@ import {
 } from '../../../main/ipc-schemas';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
-import { execAsync, execFileAsync } from '../../../shared/git/git-env';
+import { execFileAsync } from '../../../shared/git/git-env';
 import { findBinary } from '../../../shared/main/find-binary';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { hostExec } from '../../../shared/main/host-exec';
