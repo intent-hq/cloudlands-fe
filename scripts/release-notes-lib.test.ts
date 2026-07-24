@@ -72,6 +72,17 @@ describe('shouldSkipCommit', () => {
     expect(shouldSkipCommit(parseCommitMessage('chore: version 2.0.6'))).toBe(true);
   });
 
+  it('skips release-plz style chore bump commits', () => {
+    expect(shouldSkipCommit(parseCommitMessage('chore: release v0.2.4'))).toBe(true);
+    expect(shouldSkipCommit(parseCommitMessage('chore: release 0.2.4'))).toBe(true);
+    expect(shouldSkipCommit(parseCommitMessage('chore: release v0.2.4-beta.1'))).toBe(true);
+  });
+
+  it('does not skip non-chore commits mentioning release', () => {
+    expect(shouldSkipCommit(parseCommitMessage('feat: release v0.2.4'))).toBe(false);
+    expect(shouldSkipCommit(parseCommitMessage('fix: release notes formatting (#12)'))).toBe(false);
+  });
+
   it('does not skip regular commits', () => {
     expect(shouldSkipCommit(parseCommitMessage('feat: add feature (#123)'))).toBe(false);
     expect(shouldSkipCommit(parseCommitMessage('fix: fix bug (#456)'))).toBe(false);
@@ -161,6 +172,21 @@ describe('renderRepoNotes', () => {
     expect(result).toContain('### Features');
     expect(result).toContain('### Bug Fixes');
     expect(result).toContain('### Performance');
+  });
+
+  it('separates each section heading from the previous list with a blank line', () => {
+    const commits = [
+      parseCommitMessage('feat: feature 1 (#1)'),
+      parseCommitMessage('fix: fix 1 (#2)'),
+      parseCommitMessage('perf: perf improvement (#3)'),
+    ];
+
+    const result = renderRepoNotes('Desktop app (cloudlands-fe)', commits, 'intent-hq', 'cloudlands-fe');
+
+    // Every `### Heading` must be preceded by a blank line
+    expect(result).not.toMatch(/[^\n]\n### /);
+    expect(result).toContain('\n\n### Bug Fixes');
+    expect(result).toContain('\n\n### Performance');
   });
 
   it('renders "No changes." for empty commits', () => {
