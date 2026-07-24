@@ -267,6 +267,18 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
     const workspaceState = getWorkspaceState(state, workspaceId);
     const existingNote = getItem(workspaceState.notes, noteId as Note["id"]);
 
+    // Rev gate (monorepo#533): a refetch triggered by an older `note:updated`
+    // event can land after a newer state was already applied (or after
+    // `advanceNoteRev` recorded a daemon ack). A strictly-lower rev is
+    // definitively stale — dropping it prevents reverting newer content.
+    if (
+      existingNote?.rev !== undefined &&
+      note.rev !== undefined &&
+      note.rev < existingNote.rev
+    ) {
+      return state;
+    }
+
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
       notes: upsertItem(workspaceState.notes, {

@@ -41,6 +41,7 @@ import {
   NOTE_CONTENT_SAVE_DEBOUNCE_MS,
   createNote,
   deleteNote,
+  hasPendingNoteContent,
   updateNoteContent,
   updateNoteTitle,
 } from "./notes-write-service";
@@ -135,6 +136,95 @@ describe("notesWriteService (fake seam, real store)", () => {
     expect(notesApi.setContent).toHaveBeenCalledTimes(2);
     expect(notesApi.setContent).toHaveBeenCalledWith("spec", "ws1 edit", undefined, WS);
     expect(notesApi.setContent).toHaveBeenCalledWith("spec", "ws2 edit", undefined, WS2);
+  });
+
+  // ---- monorepo#533: the unacknowledged-save window is observable -----------
+  // hasPendingNoteContent must span BOTH the 800ms debounce window and the
+  // in-flight daemon call, so external-update consumers can defer applying
+  // refetched content that predates the save.
+
+  it("hasPendingNoteContent is true through the debounce window and the in-flight save", async () => {
+    seed(makeNote("n1"));
+    let resolveSave!: (v: unknown) => void;
+    notesApi.setContent.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+
+    expect(hasPendingNoteContent(WS, "n1")).toBe(false);
+
+    updateNoteContent(WS, "n1", "edited");
+    expect(hasPendingNoteContent(WS, "n1")).toBe(true);
+
+    // Debounce elapses → flush starts, save still in flight
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    expect(notesApi.setContent).toHaveBeenCalledTimes(1);
+    expect(hasPendingNoteContent(WS, "n1")).toBe(true);
+
+    resolveSave({ success: true });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(hasPendingNoteContent(WS, "n1")).toBe(false);
+  });
+
+  it("hasPendingNoteContent clears after an immediate save resolves", async () => {
+    seed(makeNote("n1"));
+
+    updateNoteContent(WS, "n1", "now", { immediate: true });
+    expect(hasPendingNoteContent(WS, "n1")).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(hasPendingNoteContent(WS, "n1")).toBe(false);
+  });
+
+  it("hasPendingNoteContent stays true when a newer edit lands while a flush is in flight", async () => {
+    seed(makeNote("n1"));
+    let resolveSave!: (v: unknown) => void;
+    notesApi.setContent.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }) as never,
+    );
+
+    updateNoteContent(WS, "n1", "first", { immediate: true });
+    updateNoteContent(WS, "n1", "second");
+
+    resolveSave({ success: true });
+    await vi.advanceTimersByTimeAsync(1);
+    // First save acked, but the second edit is still debounced.
+    expect(hasPendingNoteContent(WS, "n1")).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    expect(hasPendingNoteContent(WS, "n1")).toBe(false);
+  });
+
+  it("hasPendingNoteContent is scoped per workspace", async () => {
+    const WS2 = "ws-svc-2";
+    seed(makeNote("spec"));
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded(
+        [WS2],
+        { [WS2]: [makeNote("spec", { workspaceId: WorkspaceId(WS2) })] },
+      ),
+    );
+
+    updateNoteContent(WS, "spec", "ws1 edit");
+    expect(hasPendingNoteContent(WS, "spec")).toBe(true);
+    expect(hasPendingNoteContent(WS2, "spec")).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);
+    expect(hasPendingNoteContent(WS, "spec")).toBe(false);
+  });
+
+  it("hasPendingNoteContent clears even when the save fails", async () => {
+    seed(makeNote("n1"));
+    notesApi.setContent.mockResolvedValueOnce({ success: false, error: "x" } as never);
+
+    updateNoteContent(WS, "n1", "edited", { immediate: true });
+    expect(hasPendingNoteContent(WS, "n1")).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(hasPendingNoteContent(WS, "n1")).toBe(false);
   });
 
   it("refetches to reconcile when a content save fails", async () => {

@@ -9,6 +9,8 @@ import {
 
 import {
   runExternalContentUpdateEffect,
+  shouldIgnoreLocalEditorUpdate,
+  shouldRequeueExternalUpdateAfterTypingStops,
   shouldSafetyNetTrigger,
 } from '../external-update-effect';
 
@@ -267,6 +269,200 @@ describe('external-update-effect', () => {
       '[NoteWithComments] Rejecting external update - user has unsaved edits',
       expect.objectContaining({ noteId: 'note-1', updateVersion: 4 }),
     );
+  });
+
+  it('defers at entry when a local save is unflushed (monorepo#533 flush-window revert)', () => {
+    // Regression: after saveEditorContent, the write-service holds the content
+    // for 800ms before flushing. A note:updated refetch landing in that window
+    // puts pre-save content in Redux; applying it would revert the editor.
+    const { editor } = createMockEditor({ initialHtml: '<p>saved</p>' });
+    const processMarkdownToHTML = vi.fn(async () => '<p>stale</p>');
+
+    const result = runExternalContentUpdateEffect({
+      updateVersion: 5,
+      getEditor: () => editor as any,
+      getIsInitialized: () => true,
+      getIsUserTyping: () => false,
+      getHasPendingNoteContent: () => true,
+      getCurrentNoteContent: () => 'stale-refetched-md',
+      getLastKnownContent: () => 'saved-md',
+      setLastKnownContent: vi.fn(),
+      getHasUserEditedSinceLastSave: () => false,
+      setHasUserEditedSinceLastSave: vi.fn(),
+      getIsUpdatingFromExternal: () => false,
+      setIsUpdatingFromExternal: vi.fn(),
+      getWorkspaceId: () => undefined,
+      getNoteId: () => 'note-1',
+      getCommentManager: () => null,
+      processMarkdownToHTML,
+      processHTMLToMarkdown: () => 'saved-md',
+      createTextSelection: vi.fn(),
+      logger,
+    });
+
+    expect(result).toBeUndefined();
+    expect(processMarkdownToHTML).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      '[NoteWithComments] Deferring external effect - pending local save unflushed',
+      expect.objectContaining({ noteId: 'note-1', updateVersion: 5 }),
+    );
+  });
+
+  it('re-queues via onPendingSaveSettled once the pending-save window closes (monorepo#533 dead-end guard)', async () => {
+    // If the resolved save leaves the Redux snapshot unchanged, no reactive dep
+    // changes and the safety-net dedupe blocks a re-fire — the deferred content
+    // would never apply. The scheduled recheck must re-queue exactly once.
+    vi.useFakeTimers();
+
+    const { editor } = createMockEditor({ initialHtml: '<p>saved</p>' });
+
+    let hasPending = true;
+    const onPendingSaveSettled = vi.fn();
+
+    runExternalContentUpdateEffect({
+      updateVersion: 7,
+      getEditor: () => editor as any,
+      getIsInitialized: () => true,
+      getIsUserTyping: () => false,
+      getHasPendingNoteContent: () => hasPending,
+      onPendingSaveSettled,
+      getCurrentNoteContent: () => 'stale-refetched-md',
+      getLastKnownContent: () => 'saved-md',
+      setLastKnownContent: vi.fn(),
+      getHasUserEditedSinceLastSave: () => false,
+      setHasUserEditedSinceLastSave: vi.fn(),
+      getIsUpdatingFromExternal: () => false,
+      setIsUpdatingFromExternal: vi.fn(),
+      getWorkspaceId: () => undefined,
+      getNoteId: () => 'note-recheck',
+      getCommentManager: () => null,
+      processMarkdownToHTML: async () => '<p>stale</p>',
+      processHTMLToMarkdown: () => 'saved-md',
+      createTextSelection: vi.fn(),
+      logger,
+    });
+
+    // Still pending: the poll keeps waiting without settling.
+    await vi.advanceTimersByTimeAsync(600);
+    expect(onPendingSaveSettled).not.toHaveBeenCalled();
+
+    // Save acked: the next poll tick fires the re-queue exactly once.
+    hasPending = false;
+    await vi.advanceTimersByTimeAsync(600);
+    expect(onPendingSaveSettled).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onPendingSaveSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers at apply time when a pending save appears during the debounce window (monorepo#533)', async () => {
+    vi.useFakeTimers();
+
+    const { editor, getSetContentHtml } = createMockEditor({ initialHtml: '<p>saved</p>' });
+
+    let hasPending = false;
+    const setLastKnownContent = vi.fn();
+
+    const result = runExternalContentUpdateEffect({
+      updateVersion: 6,
+      getEditor: () => editor as any,
+      getIsInitialized: () => true,
+      getIsUserTyping: () => false,
+      getHasPendingNoteContent: () => hasPending,
+      getCurrentNoteContent: () => 'stale-refetched-md',
+      getLastKnownContent: () => 'saved-md',
+      setLastKnownContent,
+      getHasUserEditedSinceLastSave: () => false,
+      setHasUserEditedSinceLastSave: vi.fn(),
+      getIsUpdatingFromExternal: () => false,
+      setIsUpdatingFromExternal: vi.fn(),
+      getWorkspaceId: () => undefined,
+      getNoteId: () => 'note-1',
+      getCommentManager: () => null,
+      processMarkdownToHTML: async () => '<p>stale</p>',
+      processHTMLToMarkdown: () => 'saved-md',
+      createTextSelection: vi.fn(),
+      logger,
+    });
+
+    // A keystroke lands inside the 150ms debounce and schedules a save.
+    hasPending = true;
+
+    await vi.advanceTimersByTimeAsync(200);
+    await result;
+
+    expect(getSetContentHtml()).toBeNull();
+    expect(setLastKnownContent).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      '[NoteWithComments] Deferring external apply - pending local save appeared during debounce',
+      expect.objectContaining({ noteId: 'note-1', updateVersion: 6 }),
+    );
+  });
+});
+
+describe('shouldRequeueExternalUpdateAfterTypingStops', () => {
+  // Regression (monorepo#534): external updates skipped while isUserTyping
+  // were never re-queued, and the debounced save then erased the divergence
+  // from Redux while the daemon still held the external change.
+  it('requeues when Redux content diverged from lastKnownContent', () => {
+    expect(
+      shouldRequeueExternalUpdateAfterTypingStops({
+        reduxContent: 'server grew this',
+        lastKnownContent: 'local snapshot',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not requeue when content matches', () => {
+    expect(
+      shouldRequeueExternalUpdateAfterTypingStops({
+        reduxContent: 'same',
+        lastKnownContent: 'same',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not requeue when Redux content is undefined (init race)', () => {
+    expect(
+      shouldRequeueExternalUpdateAfterTypingStops({
+        reduxContent: undefined,
+        lastKnownContent: '',
+      }),
+    ).toBe(false);
+  });
+
+  it('treats empty-string Redux content as a real divergence', () => {
+    expect(
+      shouldRequeueExternalUpdateAfterTypingStops({
+        reduxContent: '',
+        lastKnownContent: 'was not empty',
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('shouldIgnoreLocalEditorUpdate', () => {
+  // Regression (monorepo#535): debounceUpdate previously early-returned while
+  // isUpdatingFromExternal was true — including the fixed 200ms post-apply
+  // reset tail — so a real keystroke in that window set neither the edited
+  // flag nor a save timer and was lost. Programmatic applies are filtered
+  // upstream via the external-update transaction meta, so the only remaining
+  // suppression input is initialization.
+  it('ignores updates while initializing', () => {
+    expect(shouldIgnoreLocalEditorUpdate({ isInitializing: true })).toBe(true);
+  });
+
+  it('accepts updates once initialized', () => {
+    expect(shouldIgnoreLocalEditorUpdate({ isInitializing: false })).toBe(false);
+  });
+
+  it('does not accept isUpdatingFromExternal as an input (keystrokes during the reset tail must not be dropped)', () => {
+    expect(
+      shouldIgnoreLocalEditorUpdate({
+        isInitializing: false,
+        isUpdatingFromExternal: true,
+      } as Parameters<typeof shouldIgnoreLocalEditorUpdate>[0]),
+    ).toBe(false);
   });
 });
 

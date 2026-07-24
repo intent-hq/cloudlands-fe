@@ -77,9 +77,26 @@ interface PendingContent {
 // pending saves and share a mutation queue.
 const contentTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingContent = new Map<string, PendingContent>();
+// Content saves currently awaiting the daemon's response, as a per-key count
+// (overlapping flushes for the same key are possible). Together with
+// `pendingContent` this spans the whole unacknowledged-save window: debounced
+// (pre-flush) saves live in `pendingContent`, flushed-but-unacked saves here.
+const inFlightContentSaves = new Map<string, number>();
 
 function noteKey(workspaceId: string, noteId: string): string {
   return `${workspaceId}:${noteId}`;
+}
+
+/**
+ * Whether a content save for this note is still unacknowledged — either
+ * debounced (waiting out `NOTE_CONTENT_SAVE_DEBOUNCE_MS`) or in flight to the
+ * daemon. While true, a `note:updated` refetch can return content that
+ * predates the save, so external-update consumers must not treat Redux as
+ * authoritative for this note (monorepo#533).
+ */
+export function hasPendingNoteContent(workspaceId: string, noteId: string): boolean {
+  const key = noteKey(workspaceId, noteId);
+  return pendingContent.has(key) || (inFlightContentSaves.get(key) ?? 0) > 0;
 }
 
 // Per-note mutation queues (§11.4-D): chain each note's mutations so a rename
@@ -335,28 +352,35 @@ async function flushContent(key: string, noteId: string): Promise<void> {
     clearTimeout(timer);
     contentTimers.delete(key);
   }
-  await enqueueNoteMutation(key, async () => {
-    // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
-    // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
-    // The explicit workspaceId pins the save to THIS workspace's note — shared
-    // ids like `spec` exist in every workspace and the fallback resolver cache
-    // is last-writer-wins across them.
-    const rev = readNoteById(pending.workspaceId, noteId)?.rev;
-    const result = await appClient.notes.setContent(
-      noteId,
-      pending.content,
-      rev,
-      pending.workspaceId,
-    );
-    if (!result.success) {
-      if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
-      logger.error("Failed to save note content", result.error);
-      toast.error("Failed to save note", { description: result.error ?? "Unknown error" });
-      await refetchWorkspaceNotes(pending.workspaceId);
-      return;
-    }
-    if (rev !== undefined) advanceNoteRev(pending.workspaceId, noteId, rev);
-  });
+  inFlightContentSaves.set(key, (inFlightContentSaves.get(key) ?? 0) + 1);
+  try {
+    await enqueueNoteMutation(key, async () => {
+      // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
+      // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
+      // The explicit workspaceId pins the save to THIS workspace's note — shared
+      // ids like `spec` exist in every workspace and the fallback resolver cache
+      // is last-writer-wins across them.
+      const rev = readNoteById(pending.workspaceId, noteId)?.rev;
+      const result = await appClient.notes.setContent(
+        noteId,
+        pending.content,
+        rev,
+        pending.workspaceId,
+      );
+      if (!result.success) {
+        if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
+        logger.error("Failed to save note content", result.error);
+        toast.error("Failed to save note", { description: result.error ?? "Unknown error" });
+        await refetchWorkspaceNotes(pending.workspaceId);
+        return;
+      }
+      if (rev !== undefined) advanceNoteRev(pending.workspaceId, noteId, rev);
+    });
+  } finally {
+    const count = (inFlightContentSaves.get(key) ?? 1) - 1;
+    if (count <= 0) inFlightContentSaves.delete(key);
+    else inFlightContentSaves.set(key, count);
+  }
 }
 
 /** Flush a pending debounced content save immediately (e.g. on editor teardown). */

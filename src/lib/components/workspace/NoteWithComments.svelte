@@ -42,6 +42,8 @@
   import type { CommentManagerV2 } from '$features/comments/comment-manager-v2';
   import {
   runExternalContentUpdateEffect,
+  shouldIgnoreLocalEditorUpdate,
+  shouldRequeueExternalUpdateAfterTypingStops,
   shouldSafetyNetTrigger,
 } from './note-with-comments/external-update-effect';
   import { applyExternalUpdateHtmlToEditorPreservingCursor } from './note-with-comments/external-update-editor';
@@ -76,7 +78,7 @@
   restoreNoteVersion,
   clearNewlyCreatedNoteId,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { updateNoteContent } from '$features/notes/notes-write-service';
+  import { hasPendingNoteContent, updateNoteContent } from '$features/notes/notes-write-service';
   import {
   selectNoteById,
   selectNewlyCreatedNoteId,
@@ -732,7 +734,13 @@
 
   // Debounce content updates
   function debounceUpdate() {
-    if (isInitializing || isUpdatingFromExternal) {
+    // NOTE: intentionally NOT gated on isUpdatingFromExternal (monorepo#535).
+    // Programmatic applies never reach this handler — they carry the
+    // `external-update` transaction meta, which editor-config's onUpdate
+    // filters out — so gating on the flag's fixed 200ms reset tail only
+    // dropped real keystrokes (no edit flag, no save timer → the keystroke was
+    // overwritten by the next external apply and never persisted).
+    if (shouldIgnoreLocalEditorUpdate({ isInitializing })) {
       return;
     }
 
@@ -745,6 +753,30 @@
 
     userTypingTimeout = setTimeout(() => {
       isUserTyping = false;
+      // Re-queue external updates skipped during the typing window
+      // (monorepo#534): isUserTyping is a non-reactive `let`, so nothing else
+      // re-runs the pipeline once typing stops — and the debounced save would
+      // otherwise erase the divergence from Redux while the daemon still holds
+      // the external change.
+      //
+      // ORDERING DEPENDENCY: this check must run before saveEditorContent()
+      // fires — the save updates lastKnownContent and optimistically
+      // overwrites Redux, erasing the divergence signal. It holds because
+      // userTypingTimeout is registered BEFORE saveDebounceTimer below with
+      // the same 1000ms delay, and same-delay timers fire in registration
+      // order. Do not reorder the timers or shorten the save debounce below
+      // the typing timeout.
+      if (
+        shouldRequeueExternalUpdateAfterTypingStops({
+          reduxContent: currentNoteContent,
+          lastKnownContent,
+        })
+      ) {
+        logger.info('[NoteWithComments] Typing stopped with diverged content - requeueing external update', {
+          noteId,
+        });
+        externalUpdateVersion = externalUpdateVersion + 1;
+      }
     }, 1000);
 
     if (saveDebounceTimer) {
@@ -1470,6 +1502,15 @@
       getEditor: () => editor as any,
       getIsInitialized: () => isInitialized,
       getIsUserTyping: () => isUserTyping,
+      getHasPendingNoteContent: () =>
+        workspace?.id && noteId ? hasPendingNoteContent(workspace.id, noteId) : false,
+      onPendingSaveSettled: () => {
+        // Re-queue after a deferred apply's pending-save window closes. Reset
+        // the safety-net dedupe first: if the resolved save left the Redux
+        // snapshot unchanged, the dedupe would otherwise block the re-fire.
+        lastSafetyNetSyncedContent = undefined;
+        externalUpdateVersion = externalUpdateVersion + 1;
+      },
       getCurrentNoteContent: () => currentNoteContent,
       getLastKnownContent: () => lastKnownContent,
       setLastKnownContent: (value) => {

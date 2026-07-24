@@ -454,8 +454,14 @@ export class CommentManagerV2 {
             // Insert anchors at the positions directly
             try {
               // Insert end anchor first (so positions don't shift)
+              // Tag as external-update so the editor's onUpdate suppression
+              // (which relies solely on this meta) skips this programmatic write
               this.editor
                 .chain()
+                .command(({ tr }) => {
+                  tr.setMeta('external-update', true);
+                  return true;
+                })
                 .insertContentAt(to, {
                   type: 'commentAnchor',
                   attrs: {
@@ -501,7 +507,17 @@ export class CommentManagerV2 {
           }
 
           try {
-            this.editor.chain().setTextSelection(pos).insertCommentAnchors(comment.id).run();
+            // Tag as external-update so the editor's onUpdate suppression
+            // (which relies solely on this meta) skips this programmatic write
+            this.editor
+              .chain()
+              .command(({ tr }) => {
+                tr.setMeta('external-update', true);
+                return true;
+              })
+              .setTextSelection(pos)
+              .insertCommentAnchors(comment.id)
+              .run();
 
             logger.debug('Inserted point anchor for comment', {
               commentId: comment.id,
@@ -516,8 +532,14 @@ export class CommentManagerV2 {
             });
 
             try {
+              // Tag as external-update so the editor's onUpdate suppression
+              // (which relies solely on this meta) skips this programmatic write
               this.editor
                 .chain()
+                .command(({ tr }) => {
+                  tr.setMeta('external-update', true);
+                  return true;
+                })
                 .insertContentAt(pos, {
                   type: 'commentAnchor',
                   attrs: {

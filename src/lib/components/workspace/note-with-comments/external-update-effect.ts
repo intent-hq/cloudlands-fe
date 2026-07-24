@@ -56,6 +56,41 @@ export function shouldSafetyNetTrigger({
   return reduxContent !== lastKnownContent;
 }
 
+/**
+ * Decides whether the pipeline should be re-queued (externalUpdateVersion bump)
+ * when the user-typing timeout clears. External updates skipped because
+ * `isUserTyping === true` were never re-queued — `isUserTyping` is a plain
+ * non-reactive `let`, so nothing re-ran the pipeline once typing stopped and
+ * the debounced save then clobbered the divergence out of Redux (monorepo#534).
+ */
+export function shouldRequeueExternalUpdateAfterTypingStops({
+  reduxContent,
+  lastKnownContent,
+}: {
+  reduxContent: string | undefined;
+  lastKnownContent: string;
+}): boolean {
+  if (reduxContent === undefined) return false;
+  return reduxContent !== lastKnownContent;
+}
+
+/**
+ * Decides whether the editor's onUpdate callback should ignore a local editor
+ * update. Programmatic applies are filtered upstream by the `external-update`
+ * transaction meta (editor-config's onUpdate never forwards them), so this
+ * intentionally does NOT gate on `isUpdatingFromExternal`: suppressing all
+ * input for the fixed 200ms post-apply reset tail dropped real keystrokes —
+ * neither `hasUserEditedSinceLastSave` nor a save timer was set, so the next
+ * external apply overwrote and never persisted them (monorepo#535).
+ */
+export function shouldIgnoreLocalEditorUpdate({
+  isInitializing,
+}: {
+  isInitializing: boolean;
+}): boolean {
+  return isInitializing;
+}
+
 export type ProcessMarkdownToHTMLLike = (
   markdown: string,
   opts: {
@@ -91,6 +126,40 @@ interface DebounceState {
 }
 const debounceByNote = new Map<string, DebounceState>();
 
+// --- Deferred-recheck state for the pending-save deferral (monorepo#533) ---
+// When an external apply is deferred because a local save is unacknowledged,
+// relying solely on the daemon's note:updated refetch to re-queue is a
+// potential dead end: if the resolved save leaves the Redux snapshot unchanged
+// (e.g. a conflict reload matching an already-refetched value), no reactive
+// dep changes and the safety-net dedupe blocks a re-fire. This poll re-queues
+// the pipeline exactly once when the pending window closes.
+const PENDING_SAVE_RECHECK_INTERVAL_MS = 250;
+const pendingSaveRecheckByNote = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleDeferredRecheckWhenSaveSettles(
+  noteId: string | null | undefined,
+  getHasPendingNoteContent: () => boolean,
+  onPendingSaveSettled: (() => void) | undefined,
+  isDestroyed: (() => boolean) | undefined,
+): void {
+  if (!onPendingSaveSettled) return;
+  const key = noteId ?? '__no_note__';
+  if (pendingSaveRecheckByNote.has(key)) return;
+  const poll = () => {
+    pendingSaveRecheckByNote.delete(key);
+    if (isDestroyed?.()) return;
+    if (getHasPendingNoteContent()) {
+      pendingSaveRecheckByNote.set(
+        key,
+        setTimeout(poll, PENDING_SAVE_RECHECK_INTERVAL_MS),
+      );
+      return;
+    }
+    onPendingSaveSettled();
+  };
+  pendingSaveRecheckByNote.set(key, setTimeout(poll, PENDING_SAVE_RECHECK_INTERVAL_MS));
+}
+
 function getDebounceState(noteId: string | null | undefined): DebounceState {
   const key = noteId ?? '__no_note__';
   let state = debounceByNote.get(key);
@@ -107,6 +176,8 @@ export function runExternalContentUpdateEffect({
   getEditor,
   getIsInitialized,
   getIsUserTyping,
+  getHasPendingNoteContent,
+  onPendingSaveSettled,
   getCurrentNoteContent,
   getLastKnownContent,
   setLastKnownContent,
@@ -129,6 +200,23 @@ export function runExternalContentUpdateEffect({
   getEditor: () => ExternalUpdateEffectEditorLike | null | undefined;
   getIsInitialized: () => boolean;
   getIsUserTyping: () => boolean;
+  /**
+   * Whether the write-service still holds an unacknowledged content save for
+   * this note (debounced or in flight). While true, Redux may hold refetched
+   * content that predates the save, so applying it would visibly revert the
+   * editor — and typing on the reverted doc before the flush would silently
+   * drop the earlier edit (monorepo#533). The apply is deferred; once the save
+   * flushes, the daemon's `note:updated` refetch re-triggers the pipeline via
+   * the safety-net.
+   */
+  getHasPendingNoteContent?: () => boolean;
+  /**
+   * Called (once) when a deferral's pending-save window closes, so the caller
+   * can re-queue the pipeline (bump externalUpdateVersion). Needed because the
+   * daemon refetch may leave the Redux snapshot unchanged — no reactive dep
+   * changes and the safety-net dedupe would block a re-fire (dead end).
+   */
+  onPendingSaveSettled?: () => void;
   getCurrentNoteContent: () => string;
   getLastKnownContent: () => string;
   setLastKnownContent: (value: string) => void;
@@ -171,6 +259,25 @@ export function runExternalContentUpdateEffect({
       updateVersion,
       noteId,
     });
+    return;
+  }
+
+  // Defer while a local content save is unflushed/unacked (monorepo#533):
+  // Redux may hold a refetch that predates the pending save, and applying it
+  // would revert the editor. Once the save lands, the daemon's `note:updated`
+  // refetch usually re-queues the pipeline via the safety-net; the scheduled
+  // recheck covers the case where the resolved save leaves Redux unchanged.
+  if (getHasPendingNoteContent?.()) {
+    logger.info('[NoteWithComments] Deferring external effect - pending local save unflushed', {
+      updateVersion,
+      noteId,
+    });
+    scheduleDeferredRecheckWhenSaveSettles(
+      noteId,
+      getHasPendingNoteContent,
+      onPendingSaveSettled,
+      isDestroyed,
+    );
     return;
   }
 
@@ -231,6 +338,21 @@ export function runExternalContentUpdateEffect({
     }
     // Also re-check destruction / content in case things changed during the debounce window.
     if (isDestroyed?.()) return;
+    // Re-check the pending-save window: a keystroke during the debounce may
+    // have scheduled a new save whose flush hasn't been acknowledged yet.
+    if (getHasPendingNoteContent?.()) {
+      logger.info(
+        '[NoteWithComments] Deferring external apply - pending local save appeared during debounce',
+        { updateVersion, noteId },
+      );
+      scheduleDeferredRecheckWhenSaveSettles(
+        noteId,
+        getHasPendingNoteContent,
+        onPendingSaveSettled,
+        isDestroyed,
+      );
+      return;
+    }
     const freshContent = getCurrentNoteContent();
     const freshLastKnown = getLastKnownContent();
     if (freshContent === freshLastKnown) return;
