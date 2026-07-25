@@ -17,7 +17,7 @@ describe('ResourceNotFound', () => {
       },
     });
 
-    expect(screen.getByRole('heading').textContent).toBe('Workspace not found');
+    expect(screen.getByRole('heading').textContent?.trim()).toBe('Workspace not found');
     expect(screen.getByText('ws-missing-1')).toBeTruthy();
   });
 
@@ -32,7 +32,7 @@ describe('ResourceNotFound', () => {
       },
     });
 
-    expect(screen.getByRole('heading').textContent).toBe('Failed to load workspace');
+    expect(screen.getByRole('heading').textContent?.trim()).toBe('Failed to load workspace');
     expect(screen.getByText('ws-broken-1')).toBeTruthy();
     expect(screen.getByText('Failed to open space: Backend exploded')).toBeTruthy();
   });
@@ -46,7 +46,7 @@ describe('ResourceNotFound', () => {
       },
     });
 
-    expect(screen.getByRole('heading').textContent).toBe('Agent not found');
+    expect(screen.getByRole('heading').textContent?.trim()).toBe('Agent not found');
     expect(container.querySelectorAll('p').length).toBe(0);
   });
 
@@ -59,7 +59,41 @@ describe('ResourceNotFound', () => {
       },
     });
 
-    expect(screen.getByRole('heading').textContent).toBe('Failed to load note');
+    expect(screen.getByRole('heading').textContent?.trim()).toBe('Failed to load note');
+  });
+
+  it('renders as a polite status region with an h1 by default and a decorative icon', () => {
+    const { container } = render(ResourceNotFound, {
+      props: {
+        kind: 'not_found' as const,
+        resourceLabel: 'Workspace',
+        onGoHome: vi.fn(),
+      },
+    });
+
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('heading', { level: 1 }).textContent?.trim()).toBe(
+      'Workspace not found',
+    );
+    const iconWrapper = container.querySelector('[aria-hidden="true"]');
+    expect(iconWrapper).toBeTruthy();
+    expect(iconWrapper?.querySelector('svg')).toBeTruthy();
+  });
+
+  it('supports a configurable heading level', () => {
+    render(ResourceNotFound, {
+      props: {
+        kind: 'not_found' as const,
+        resourceLabel: 'Workspace',
+        headingLevel: 2 as const,
+        onGoHome: vi.fn(),
+      },
+    });
+
+    expect(screen.getByRole('heading', { level: 2 }).textContent?.trim()).toBe(
+      'Workspace not found',
+    );
   });
 
   it('invokes the onGoHome callback when the Home button is clicked', async () => {

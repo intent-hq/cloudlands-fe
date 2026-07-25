@@ -12,16 +12,14 @@ import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
 import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-import {
-  selectWorkspaceById,
-} from '$store/renderer/slices/workspace/workspace-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   setActiveWorkspaceId,
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
-  import { store as appStore } from '$store/renderer/store';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('workspace-loader');
 
@@ -38,7 +36,6 @@ export interface WorkspaceLoadError {
 }
 
 export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
-
   // Track loading state more robustly
   let loadingWorkspaceId: string | null = $state(null);
   let loadingPromise: Promise<void> | null = $state(null);
@@ -83,6 +80,16 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       }
     } catch (error) {
       logger.error('Failed to load workspace', { workspaceId, error });
+      // Staleness guard: if navigation superseded this load (e.g. the user
+      // clicked another workspace while a retry was pending), don't write
+      // error state for the old workspace over the new one's.
+      if (options.workspaceId !== workspaceId) {
+        logger.debug('Ignoring stale load failure after navigation', {
+          staleWorkspaceId: workspaceId,
+          currentWorkspaceId: options.workspaceId,
+        });
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       loadError = { kind: 'error', message };
       // Check if workspaceState exists before using it
@@ -218,6 +225,15 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // synthesize a workspace entity into Redux.
     if (!openResult.ok && openResult.error === 'Workspace not found' && !ws) {
       logger.error('Workspace not found after retry', { workspaceId });
+      // Staleness guard: navigation may have superseded this load while the
+      // 500ms retry was pending — don't write stale error state in that case.
+      if (options.workspaceId !== workspaceId) {
+        logger.debug('Ignoring stale not-found result after navigation', {
+          staleWorkspaceId: workspaceId,
+          currentWorkspaceId: options.workspaceId,
+        });
+        return;
+      }
       loadError = { kind: 'not_found', message: openResult.error };
       workspaceState.updateState({
         workspace: { id: workspaceId, status: 'error' },
