@@ -408,6 +408,64 @@ describe("LiveCommentsClient.list (PROTOCOL §5.3 {threads} envelope)", () => {
     });
   });
 
+  // monorepo#749: post-#729 replies carry no anchor/anchorText on the wire
+  // (PROTOCOL §5.3 "Reply anchoring") — normalizeComment must not synthesize
+  // a `{ type: "point" }` anchor for them, or downstream anchor-health checks
+  // treat the reply as a point comment with no anchor node and orphan it.
+  it("does not synthesize a point anchor for anchorless replies (monorepo#749)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      threads: [
+        {
+          threadId: "t-1",
+          comments: [
+            {
+              id: "root-1",
+              threadId: "t-1",
+              type: "comment",
+              content: "root",
+              anchor: { type: "range", startId: "root-1:start", endId: "root-1:end" },
+              anchorText: "hello",
+            },
+            {
+              id: "reply-1",
+              threadId: "t-1",
+              parentId: "root-1",
+              type: "comment",
+              content: "reply",
+            },
+          ],
+        },
+      ],
+      totalThreads: 1,
+      totalComments: 2,
+    });
+
+    const comments = await new LiveCommentsClient().list("note-1");
+
+    const root = comments.find((c) => c.id === "root-1")!;
+    expect(root.anchor).toEqual({ type: "range", startId: "root-1:start", endId: "root-1:end" });
+
+    const reply = comments.find((c) => c.id === "reply-1")!;
+    expect(reply.parentId).toBe("root-1");
+    expect(reply).not.toHaveProperty("anchor");
+  });
+
+  it("keeps the point-anchor fallback for anchorless roots (thread-summary proxies)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      threads: [
+        {
+          threadId: "t-1",
+          comments: [{ id: "root-1", threadId: "t-1", type: "comment", content: "root" }],
+        },
+      ],
+      totalThreads: 1,
+      totalComments: 1,
+    });
+
+    const comments = await new LiveCommentsClient().list("note-1");
+    expect(comments[0].anchor).toEqual({ type: "point" });
+  });
+
   it("falls back to the thread summary when comments are absent (no includeComments)", async () => {
     mockedRequest.mockResolvedValueOnce({
       threads: [

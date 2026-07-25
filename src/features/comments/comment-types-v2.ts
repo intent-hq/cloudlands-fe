@@ -36,7 +36,12 @@ interface BaseComment {
    * per note must scope by workspaceId too when it is present.
    */
   workspaceId?: string;
-  anchor: CommentAnchor;
+  /**
+   * Absent on post-#729 replies: only thread roots carry an authoritative
+   * anchor on the wire; replies anchor through their thread root
+   * (`threadId`/`parentId`, PROTOCOL §5.3 "Reply anchoring").
+   */
+  anchor?: CommentAnchor;
   anchorText?: string;
   anchorContext?: {
     before: string;
