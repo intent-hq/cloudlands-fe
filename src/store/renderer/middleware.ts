@@ -21,6 +21,7 @@ import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge.client";
+import { createAgentFailureToastMiddleware } from "$features/agent/agent-failure-toast-service";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
 import { createBackgroundAgentSettingsPersistenceMiddleware } from "$features/settings/background-agent-settings-persistence-service";
@@ -150,6 +151,11 @@ function buildMiddleware(): StoreMiddleware[] {
     // `isResponding` flags on `agent:idle` — without this the "Thinking"
     // spinner stays stuck after a turn ends.
     createDaemonEventsBridgeMiddleware(),
+    // Surface one persistent bottom-left toast per agent-failure group (from
+    // the cross-workspace failure registry the events bridge above feeds) with
+    // a Retry All action that redrives each failed agent via `agent.retry`.
+    // Toasts update in place per group and auto-dismiss when a group empties.
+    createAgentFailureToastMiddleware(),
     // Poll system.status periodically (~10s) and listen to backend:status
     // connection events to derive tri-state daemon health (healthy/degraded/down)
     // plus stats payload for the health indicator UI.

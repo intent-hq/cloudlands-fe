@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
   const chatSendMiddleware = createPassthroughMiddleware();
   const permissionResponseMiddleware = createPassthroughMiddleware();
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
+  const agentFailureToastMiddleware = createPassthroughMiddleware();
   const daemonHealthMiddleware = createPassthroughMiddleware();
   const activeStreamsReduxBridgeMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
@@ -88,6 +89,7 @@ const mocks = vi.hoisted(() => {
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
     createPermissionResponseMiddleware: vi.fn(() => permissionResponseMiddleware),
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
+    createAgentFailureToastMiddleware: vi.fn(() => agentFailureToastMiddleware),
     createDaemonHealthMiddleware: vi.fn(() => daemonHealthMiddleware),
     createActiveStreamsReduxBridge: vi.fn(() => activeStreamsReduxBridgeMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
@@ -160,6 +162,7 @@ const mocks = vi.hoisted(() => {
     chatSendMiddleware,
     permissionResponseMiddleware,
     daemonEventsBridgeMiddleware,
+    agentFailureToastMiddleware,
     daemonHealthMiddleware,
     activeStreamsReduxBridgeMiddleware,
     settingsHydrationMiddleware,
@@ -230,6 +233,9 @@ vi.mock("$features/permission/permission-response-service", () => ({
 }));
 vi.mock("$features/events/daemon-events-bridge.client", () => ({
   createDaemonEventsBridgeMiddleware: mocks.createDaemonEventsBridgeMiddleware,
+}));
+vi.mock("$features/agent/agent-failure-toast-service", () => ({
+  createAgentFailureToastMiddleware: mocks.createAgentFailureToastMiddleware,
 }));
 vi.mock("./middlewares/daemon-health-service", () => ({
   createDaemonHealthMiddleware: mocks.createDaemonHealthMiddleware,
@@ -449,6 +455,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
@@ -522,6 +529,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
@@ -595,6 +603,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
@@ -669,6 +678,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
@@ -760,6 +770,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
