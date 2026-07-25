@@ -485,10 +485,23 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       expect(selectCommentById.select(appStore.state, reply.id)?.isOrphaned).toBe(false);
     });
 
-    it('still flags a root comment with a genuinely missing anchor', async () => {
-      // Root (no parentId) whose anchors are absent from the doc — real
-      // orphan detection must survive the reply exemption.
+    it('still flags a root comment whose anchors are absent from the doc', async () => {
+      // Root (no parentId) with anchor metadata whose anchor nodes are
+      // absent from the doc — real orphan detection must survive the reply
+      // exemption.
       const root = createTestComment({ content: 'Rootless root' });
+      appStore.dispatch(loadCommentsAction([root]));
+
+      await manager.scanAnchorHealth();
+
+      expect(selectCommentById.select(appStore.state, root.id)?.isOrphaned).toBe(true);
+    });
+
+    it('still flags a root comment with no anchor metadata at all', async () => {
+      // Root without any anchor object — the `!comment.anchor` branch must
+      // keep orphaning roots now that `anchor` is optional on the type.
+      const root = createTestComment({ content: 'Anchorless root' });
+      delete (root as { anchor?: unknown }).anchor;
       appStore.dispatch(loadCommentsAction([root]));
 
       await manager.scanAnchorHealth();

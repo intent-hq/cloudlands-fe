@@ -1254,6 +1254,10 @@ export class CommentManagerV2 {
       // evaluation, mirroring the parentId guard in
       // insertAnchorsForLoadedComments (monorepo#749). Heal a stale flag left
       // by a pre-guard scan so exempt replies don't stay orphaned forever.
+      // Safe to heal unconditionally: the daemon's reanchor pass skips
+      // parent_id rows before orphan classification (replies never carry
+      // markers in the note body), so a true flag on a reply can only be
+      // renderer-local — never BE-owned wire state.
       if (comment.parentId) {
         if (comment.isOrphaned) {
           appStore.dispatch(updateCommentAction(comment.id, { isOrphaned: false }));
