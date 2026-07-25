@@ -209,7 +209,7 @@
   .grid-label {
     position: absolute;
     left: -40px;
-    font-size: 10px;
+    font-size: 10px; /* a11y-ignore: 10px grid label per design handoff */
     color: hsl(240 5% 40%);
   }
 

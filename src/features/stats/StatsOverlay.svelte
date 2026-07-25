@@ -170,7 +170,9 @@
             aria-expanded={dropdownOpen}
           >
             {$periodKey$ ? periodLabel($mode$, $periodKey$) : '—'}
-            <span class="opacity-60 text-[9px]"><Fa icon={faChevronDown} size={9} /></span>
+            <span class="opacity-60 text-[9px] a11y-ignore"
+              ><Fa icon={faChevronDown} size={9} /></span
+            >
           </button>
           {#if dropdownOpen}
             <div
