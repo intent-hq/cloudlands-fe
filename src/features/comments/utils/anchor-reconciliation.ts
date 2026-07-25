@@ -53,13 +53,28 @@ const LEADING_MARKER_RE =
   /^[ \t]*(?:#{1,6}[ \t]+|>[ \t]+|[-*+][ \t]+\[[ xX]\][ \t]+|[-*+][ \t]+|\d+[.)][ \t]+)/;
 
 /**
+ * Minimum projected-needle length accepted by the projection fallback.
+ * With whitespace and delimiters dropped, a very short needle would
+ * first-match anywhere and silently anchor onto unrelated text; mirrors the
+ * spirit of the daemon's `MIN_RESCUE_CONTEXT_OVERLAP` guard.
+ */
+export const MIN_PROJECTED_NEEDLE_LENGTH = 4;
+
+/**
  * Project a stored markdown `anchorText` to the same normalized plaintext
  * space as [`projectDocChar`]-filtered document text: HTML comments (including
  * `<!--anchor:…-->` markers) stripped, per-line block markers removed, link
  * urls dropped, [`isProjectionDroppedChar`] characters removed, lowercased.
  */
 export function projectAnchorNeedle(text: string): string {
-  const withoutComments = text.replace(HTML_COMMENT_RE, '');
+  // Strip repeatedly: removing one comment can concatenate `<!` + `--…` into
+  // a new `<!--…-->` sequence, so a single pass may leave markers behind.
+  let withoutComments = text;
+  let previous;
+  do {
+    previous = withoutComments;
+    withoutComments = withoutComments.replace(HTML_COMMENT_RE, '');
+  } while (withoutComments !== previous);
   const withoutUrls = withoutComments.replace(LINK_URL_RE, ']');
   const withoutMarkers = withoutUrls
     .split('\n')

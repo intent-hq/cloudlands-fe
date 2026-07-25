@@ -37,6 +37,7 @@ import {
   getAnchorOwnerCommentId,
   isProjectionDroppedChar,
   projectAnchorNeedle,
+  MIN_PROJECTED_NEEDLE_LENGTH,
 } from './utils/anchor-reconciliation';
 
 const logger = createLogger('CommentManagerV2');
@@ -307,7 +308,14 @@ export class CommentManagerV2 {
     // Set flag to prevent duplicate calls
     this.isInsertingAnchors = true;
 
-    for (const comment of comments) {
+    // Process thread roots before replies so a reply's shared-anchor lookup
+    // (and stale-orphan heal) sees anchors the root inserts in this same pass
+    // (monorepo#710).
+    const orderedComments = [...comments].sort(
+      (a, b) => Number(!!a.parentId) - Number(!!b.parentId),
+    );
+
+    for (const comment of orderedComments) {
       try {
         logger.info('Processing comment for anchor insertion', {
           commentId: comment.id,
@@ -797,7 +805,9 @@ export class CommentManagerV2 {
     if (!this.editor) return null;
 
     const needle = projectAnchorNeedle(searchText);
-    if (!needle) return null;
+    // Reject too-short needles: with whitespace/delimiters dropped they would
+    // first-match anywhere and anchor onto unrelated text.
+    if (needle.length < MIN_PROJECTED_NEEDLE_LENGTH) return null;
 
     const doc = this.editor.state.doc;
     let projection = '';
@@ -809,8 +819,13 @@ export class CommentManagerV2 {
         for (let i = 0; i < nodeText.length; i++) {
           const ch = nodeText[i];
           if (!isProjectionDroppedChar(ch)) {
-            projection += ch.toLowerCase();
-            positions.push(pos + i);
+            // toLowerCase can expand to multiple code units (e.g. İ → i̇);
+            // push one position per emitted unit to keep the map in sync.
+            const lower = ch.toLowerCase();
+            projection += lower;
+            for (let k = 0; k < lower.length; k++) {
+              positions.push(pos + i);
+            }
           }
         }
       }
@@ -872,9 +887,13 @@ export class CommentManagerV2 {
       (comment) => comment.noteId === this.noteId,
     );
 
-    // Only log if we actually find orphaned comments
+    // Only log if we actually find orphaned comments. Thread replies share
+    // the thread root's anchors, so also accept the anchor-owner id
+    // (monorepo#710).
     const orphanedComments = currentNoteComments.filter(
-      (comment) => !anchoredCommentIds.has(comment.id),
+      (comment) =>
+        !anchoredCommentIds.has(comment.id) &&
+        !anchoredCommentIds.has(getAnchorOwnerCommentId(comment)),
     );
 
     if (orphanedComments.length > 0) {
