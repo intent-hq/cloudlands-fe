@@ -1204,6 +1204,7 @@ export const WebSocketApiSetEnabledSchema = z.object({
 // USER_MCP_CHANNELS schemas
 export const UserMcpCheckAuthSchema = z.object({
   url: z.string().min(1, 'URL is required'),
+  name: z.string().optional(), // Server name for OAuth token lookup
 });
 
 export const UserMcpTestConnectionSchema = z.object({

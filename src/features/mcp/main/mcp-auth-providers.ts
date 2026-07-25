@@ -185,15 +185,19 @@ export interface AuthCheckResult {
 /**
  * Check if a URL requires authentication and whether we have it
  * Used by the UI to prompt users to authenticate before adding a server
+ * @param serverName - Optional server name for OAuth token lookup
  */
-export async function checkMcpAuthRequirement(url: string): Promise<AuthCheckResult> {
+export async function checkMcpAuthRequirement(
+  url: string,
+  serverName?: string,
+): Promise<AuthCheckResult> {
   const provider = findAuthProvider(url);
 
   if (!provider) {
     return { requiresAuth: false, hasAuth: false };
   }
 
-  const authHeaders = await provider.getAuthHeaders();
+  const authHeaders = await provider.getAuthHeaders(serverName);
 
   return {
     requiresAuth: true,
