@@ -130,6 +130,10 @@
       prBranchLookup?.status !== 'succeeded' &&
       !prBranchLookupFailed,
   );
+  // Matches the daemon's workspace.create error prose (intentd
+  // intent-services workspace creation: "cannot resolve base ref '<ref>'").
+  // If the daemon rewords this or gains a structured error code for it
+  // (monorepo#761), update this match accordingly.
   const isBaseRefFailure = $derived(
     isWorkspaceCreate && isFailed && /cannot resolve base ref/i.test($lifecycleError ?? ''),
   );
@@ -223,6 +227,9 @@
     if (!branch || prBranchUserEdited || workspaceBranch !== 'main') return;
 
     workspaceBranch = branch;
+    // The PR head branch replaces any default we preselected, so a
+    // missing-branch warning claiming "using default" would now be stale.
+    proposedBranchMissing = '';
   });
 
   function getFieldValue(field: ProposalEditableField): unknown {
@@ -765,6 +772,11 @@
                   data-testid="proposal-branch-picker"
                   data-branch-warning={branchNeedsAttention ? 'true' : undefined}
                   tabindex="-1"
+                  role="group"
+                  aria-label="Base branch"
+                  aria-describedby={proposedBranchMissing
+                    ? `${metadataIdPrefix}-branch-mismatch`
+                    : undefined}
                 >
                   <RepoAndBranchPicker
                     repoPath={workspaceRepoPath}
@@ -780,6 +792,7 @@
                 </div>
                 {#if proposedBranchMissing}
                   <p
+                    id={`${metadataIdPrefix}-branch-mismatch`}
                     class="px-2 text-xs text-amber-600 dark:text-amber-400"
                     data-testid="proposal-branch-mismatch-warning"
                   >

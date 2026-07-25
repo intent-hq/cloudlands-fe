@@ -1054,7 +1054,56 @@ describe('ProposalCard', () => {
     // The Base branch row is highlighted and receives focus instead of the status line.
     const branchRow = screen.getByTestId('proposal-branch-picker');
     expect(branchRow.getAttribute('data-branch-warning')).toBe('true');
+    // The focus target carries an accessible name so screen readers announce it.
+    expect(branchRow.getAttribute('role')).toBe('group');
+    expect(branchRow.getAttribute('aria-label')).toBe('Base branch');
     await waitFor(() => expect(document.activeElement).toBe(branchRow));
+  });
+
+  it('associates the mismatch warning with the branch row and clears it when a PR branch lookup resolves', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      success: true,
+      data: { sourceBranch: 'pr-head-branch' },
+    });
+    setElectronInvoke(invoke);
+
+    render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal(
+          {},
+          {
+            prUrl: 'https://github.com/example-org/example-repo/pull/648',
+            initialMessage: 'Review PR #648',
+            branch: 'feature/does-not-exist',
+          },
+        ),
+      },
+    });
+
+    // The missing proposed branch is preselected to the default ('main').
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock branches loaded' }));
+    const warning = screen.getByTestId('proposal-branch-mismatch-warning');
+    const branchRow = screen.getByTestId('proposal-branch-picker');
+    expect(branchRow.getAttribute('aria-describedby')).toBe(warning.getAttribute('id'));
+    expect(warning.getAttribute('id')).toBeTruthy();
+
+    // Preselecting 'main' arms the PR-branch lookup; once it resolves, the
+    // PR head branch replaces the default and the stale warning is cleared.
+    const expectedAction = requestPrBranchLookup({
+      owner: 'example-org',
+      repo: 'example-repo',
+      prNumber: 648,
+    });
+    await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
+    prBranchLookupState.lookupEntries[expectedAction.payload.key] = {
+      status: 'succeeded',
+      branch: 'pr-head-branch',
+    };
+    prBranchLookupState.emit();
+    await flushAsyncWork();
+
+    expect(getBranchPicker().textContent).toContain('pr-head-branch');
+    expect(screen.queryByTestId('proposal-branch-mismatch-warning')).toBeNull();
   });
 
   it('keeps generic workspace-create failures on the status line without a branch affordance', () => {

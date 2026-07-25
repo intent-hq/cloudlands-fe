@@ -622,7 +622,9 @@
         }
       }
 
-      if (fetchSucceeded) notifyBranchesLoaded();
+      // Don't export a superseded fetch's branch list to consumers — a newer
+      // fetch (e.g. after a repo change) owns the notification.
+      if (fetchSucceeded && !abortController.signal.aborted) notifyBranchesLoaded();
     } catch (err) {
       // Handle abort errors silently - they're expected when a new fetch starts
       if (err instanceof Error && err.name === 'AbortError') {
