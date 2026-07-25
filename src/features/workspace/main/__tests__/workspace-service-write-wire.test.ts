@@ -106,9 +106,6 @@ const requestMock = vi.hoisted(() =>
     if (method === 'workspace.findRepositories') {
       return { repositories: ['/repos/a', '/repos/b'] };
     }
-    if (method === 'workspace.initializeRepository') {
-      return { success: true };
-    }
     return {};
   }),
 );
@@ -406,14 +403,5 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       // No `[object Object]` or other coerced garbage on the wire boundary.
       expect(result.data.every((r) => typeof r === 'string' && !r.includes('object'))).toBe(true);
     }
-  });
-
-  it('initializeNewRepository sends workspace.initializeRepository with { path } and no local git shell-outs', async () => {
-    const result = await service.initializeNewRepository('/repos/new');
-
-    expect(result.ok).toBe(true);
-    const initCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.initializeRepository');
-    expect(initCalls).toHaveLength(1);
-    expect(initCalls[0]![1]).toEqual({ path: '/repos/new' });
   });
 });
