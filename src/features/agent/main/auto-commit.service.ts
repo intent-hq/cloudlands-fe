@@ -2,8 +2,9 @@
  * Auto-Commit Service
  *
  * The FE no longer drives auto-commit on agent idle — the daemon owns that path.
- * What remains here is the per-agent status history that the renderer queries
- * via the git.ipc `GET_AUTO_COMMIT_STATUS` channel on mount.
+ * What remains here is the per-agent auto-commit status history. Its former IPC
+ * consumer (`git.ipc.ts`, which served `GET_AUTO_COMMIT_STATUS`) was removed in
+ * the #696 dead-code sweep, so this service currently has no importers.
  */
 
 /**
