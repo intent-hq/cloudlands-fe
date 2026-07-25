@@ -517,6 +517,71 @@ registerMockIpcHandler(SENTRY_AUTH_CHANNELS.GET_AUTH_STATE, async (): Promise<Se
   };
 });
 
+// Settings catalog paths for the Sentry credential pair (PROTOCOL §5.12):
+// `accounts.sentry.token` is the sensitive API token consumed by the
+// `sentry.*` namespace (§5.29); `accounts.sentry.organization` is the
+// non-secret org-slug companion.
+const SENTRY_TOKEN_SETTING = 'accounts.sentry.token';
+const SENTRY_ORG_SETTING = 'accounts.sentry.organization';
+
+// `sentry-auth:save-config` → `settings.update` on the credential pair, then
+// a fresh `sentry.authStatus` probe as the validation step (there is no
+// `sentry.connect` wire method — §5.29). Only an authenticated probe maps to
+// `{ success: true }`; a failed probe clears both settings back to their
+// defaults via `settings.reset` so a bad token is never left configured, and
+// surfaces the probe's own `error` string. This is write-then-validate: the
+// raw token never round-trips from the daemon (§5.12), so a previously
+// working credential pair cannot be restored on failure — the user must
+// re-enter it — and between the update and the failed-probe cleanup the bad
+// credentials are briefly live in daemon settings. The token goes straight
+// onto the wire and is never held or logged FE-side.
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.SAVE_CONFIG, async (arg) => {
+  const { organization, apiToken } = asRecord(arg);
+  if (
+    typeof organization !== 'string' ||
+    !organization ||
+    typeof apiToken !== 'string' ||
+    !apiToken
+  ) {
+    return { success: false, error: 'Organization and API token are required' };
+  }
+  try {
+    await backendRequest('settings.update', {
+      changes: [
+        { path: SENTRY_TOKEN_SETTING, value: apiToken },
+        { path: SENTRY_ORG_SETTING, value: organization },
+      ],
+    });
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+  const status = await sentryAuthStatus();
+  if (status?.authenticated === true) {
+    return { success: true, organizationName: status.organization };
+  }
+  // Best-effort rollback — the probe failure is the error the user sees,
+  // regardless of whether the resets themselves succeed.
+  await Promise.allSettled([
+    backendRequest('settings.reset', { path: SENTRY_TOKEN_SETTING }),
+    backendRequest('settings.reset', { path: SENTRY_ORG_SETTING }),
+  ]);
+  return {
+    success: false,
+    error: status?.error ?? 'Sentry rejected the credentials.',
+  };
+});
+
+// `sentry-auth:logout` → `settings.reset` on both credential paths ("forget
+// token" is a local settings action — §5.29). A failed reset rejects the
+// invoke so the store service logs it and does not clear local auth state
+// while the daemon still holds a credential.
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.LOGOUT, async () => {
+  await Promise.all([
+    backendRequest('settings.reset', { path: SENTRY_TOKEN_SETTING }),
+    backendRequest('settings.reset', { path: SENTRY_ORG_SETTING }),
+  ]);
+});
+
 registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_PROJECTS, async () => {
   try {
     const projects = await backendRequest<SentryProject[]>('sentry.listProjects');

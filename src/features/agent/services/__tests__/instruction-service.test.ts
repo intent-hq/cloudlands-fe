@@ -38,11 +38,9 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 
-// Mock github-auth service
-vi.mock('../../../github-auth/main/github-auth.service', () => ({
-  githubAuthService: {
-    isAuthenticated: vi.fn().mockResolvedValue(false),
-  },
+// Mock the GitHub auth-status probe (pulled in via specialists.service)
+vi.mock('../../../../main/utils/github-auth-status', () => ({
+  isGitHubConfigured: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock('../../../workspace/main/app-settings.service', () => ({

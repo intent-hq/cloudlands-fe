@@ -35,7 +35,7 @@ import {
   mergeSpecialistsByPriority,
   type SpecialistFile,
 } from '../../../shared/specialist-file-types';
-import { githubAuthService } from '../../github-auth/main/github-auth.service';
+import { isGitHubConfigured } from '../../../main/utils/github-auth-status';
 import { createCache } from '../../../main/utils/cache';
 
 const logger = new Logger('SpecialistsService');
@@ -159,16 +159,12 @@ export async function initSpecialistsService(): Promise<void> {
 
 /**
  * Refresh the cached GitHub authentication status.
- * Called during init and can be called when auth state changes.
+ * Called during init and can be called when auth state changes. The probe
+ * hits the daemon's `github.authStatus` directly and folds errors to false.
  */
 export async function refreshGitHubAuthStatus(): Promise<void> {
-  try {
-    isGitHubAuthenticated = await githubAuthService.isAuthenticated();
-    logger.info('GitHub auth status refreshed', { isGitHubAuthenticated });
-  } catch (error) {
-    logger.warn('Failed to check GitHub auth status, defaulting to false', error as Error);
-    isGitHubAuthenticated = false;
-  }
+  isGitHubAuthenticated = await isGitHubConfigured();
+  logger.info('GitHub auth status refreshed', { isGitHubAuthenticated });
 }
 
 /**
