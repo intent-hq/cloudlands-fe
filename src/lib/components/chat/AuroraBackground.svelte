@@ -35,6 +35,7 @@
   let fragmentShader: WebGLShader | null = null;
   let positionBuffer: WebGLBuffer | null = null;
   let destroyed = false;
+  let initFailed = false;
   let startTime = $state<number>(0);
   let isPageVisible = $state<boolean>(true);
   let prefersReducedMotion = $state<boolean>(false);
@@ -391,25 +392,47 @@
     return prog;
   }
 
+  // Release partially created resources when initialization fails mid-way,
+  // and remember the failure so the $effect re-init path (which fires when
+  // gl goes null) doesn't retry a deterministic failure in a loop.
+  function abortInit() {
+    initFailed = true;
+    cleanup();
+  }
+
   function initWebGL() {
-    if (!canvas || !browser || destroyed) return;
+    // The gl check makes re-entry a no-op: init can be triggered from both
+    // onMount and the $effect-queued rAF, and running twice would overwrite
+    // (and leak) the live context and its resources.
+    if (!canvas || !browser || destroyed || initFailed || gl) return;
 
     gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true });
     if (!gl) {
       console.warn('AuroraBackground: WebGL not available');
+      initFailed = true;
       return;
     }
 
     vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
     fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-    if (!vertexShader || !fragmentShader) return;
+    if (!vertexShader || !fragmentShader) {
+      abortInit();
+      return;
+    }
 
     program = createProgram(gl, vertexShader, fragmentShader);
-    if (!program) return;
+    if (!program) {
+      abortInit();
+      return;
+    }
 
     // Create fullscreen quad
     const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
     positionBuffer = gl.createBuffer();
+    if (!positionBuffer) {
+      abortInit();
+      return;
+    }
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
 

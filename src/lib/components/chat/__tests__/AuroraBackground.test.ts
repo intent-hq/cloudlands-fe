@@ -120,6 +120,23 @@ describe('AuroraBackground cleanup', () => {
     expect(mockGL.loseContext).toHaveBeenCalledTimes(1);
   });
 
+  it('releases the context and does not retry when shader compilation fails', () => {
+    mockGL.gl.getShaderParameter.mockReturnValue(false);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(AuroraBackground, { props: { agentId: 'agent-1' } });
+
+    expect(getContextSpy).toHaveBeenCalledTimes(1);
+    // Partial init must not leave a live context behind
+    expect(mockGL.loseContext).toHaveBeenCalledTimes(1);
+
+    // The failure must not trigger an init retry loop via the $effect
+    flushRafCallbacks();
+    flushRafCallbacks();
+    expect(getContextSpy).toHaveBeenCalledTimes(1);
+    expect(mockGL.loseContext).toHaveBeenCalledTimes(1);
+  });
+
   it('does not re-initialize WebGL after destroy', () => {
     const { unmount } = render(AuroraBackground, { props: { agentId: 'agent-1' } });
     expect(getContextSpy).toHaveBeenCalledTimes(1);
