@@ -705,9 +705,11 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Chief first-message rename: the 0 → 1 user-message transition of a chief
-  // thread renames the daemon agent to the sidebar-derived title via the
-  // `agent.rename` seam with `skipIfExplicitlySet: true` (PROTOCOL §5.5).
+  // Chief first-message rename: when a chief thread has a user message and the
+  // daemon-side name is still the creation placeholder, the daemon agent is
+  // renamed to the sidebar-derived title via the `agent.rename` seam with
+  // `skipIfExplicitlySet: true` (PROTOCOL §5.5). Edge-case hardening tracked
+  // in monorepo#745.
   // -------------------------------------------------------------------------
 
   function seedChiefWorkspace(): void {
@@ -735,7 +737,10 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     } as AgentMessage;
   }
 
-  function seedChiefSession(messages: AgentMessage[] = []): void {
+  function seedChiefSession(
+    messages: AgentMessage[] = [],
+    overrides: Partial<AgentSession> = {},
+  ): void {
     appStore.dispatch(
       bulkUpsertSessions([
         {
@@ -749,6 +754,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
           messages,
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
+          ...overrides,
         } as AgentSession,
       ]),
     );
@@ -783,12 +789,123 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
   });
 
-  it("chief thread with an existing user message does NOT re-rename on subsequent sends", async () => {
+  it("chief thread does NOT re-rename on subsequent sends once the daemon-side name is real", async () => {
     seedChiefWorkspace();
-    seedChiefSession([userMessage("first message", "m-user-1")]);
+    // The first-message rename already landed: `agent:renamed` refreshed the
+    // session name to the real title.
+    seedChiefSession([userMessage("first message", "m-user-1")], { name: "first message" });
 
     appStore.dispatch(
       sendMessage(CHIEF_AGENT, { wsId: CHIEF_WORKSPACE_ID, text: "second message" }),
+    );
+    await flush();
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(agentsRename).not.toHaveBeenCalled();
+  });
+
+  it("queue-path first chief message still renames the daemon agent (monorepo#745 edge 1)", async () => {
+    // Regression (monorepo#745): when the very FIRST user message of a chief
+    // thread takes the queue path (agent busy), the rename must still fire —
+    // the queued text becomes the thread's first user message, so the daemon
+    // name is derived from it.
+    seedChiefWorkspace();
+    seedChiefSession([], { isStreaming: true, status: AgentStatus.Active });
+
+    appStore.dispatch(
+      sendMessage(CHIEF_AGENT, { wsId: CHIEF_WORKSPACE_ID, text: "plan my week" }),
+    );
+    await flush();
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
+    expect(agentsRename).toHaveBeenCalledTimes(1);
+    expect(agentsRename).toHaveBeenCalledWith(CHIEF_AGENT, "plan my week", undefined, {
+      skipIfExplicitlySet: true,
+    });
+  });
+
+  it("retroactively renames on a later send when the daemon-side name is still the placeholder (monorepo#745 edge 1)", async () => {
+    // Regression (monorepo#745): a thread that missed its first-message
+    // rename (e.g. the trigger never fired) is fixed on the next send — and
+    // the title comes from the thread's FIRST user message, not the one just
+    // sent.
+    seedChiefWorkspace();
+    seedChiefSession([userMessage("first message", "m-user-1")]);
+    lifecycleSendMessage.mockImplementation(() => {
+      seedChiefSession([
+        userMessage("first message", "m-user-1"),
+        userMessage("second message", "m-user-2"),
+      ]);
+      return Promise.resolve();
+    });
+
+    appStore.dispatch(
+      sendMessage(CHIEF_AGENT, { wsId: CHIEF_WORKSPACE_ID, text: "second message" }),
+    );
+    await flush();
+    await flush();
+    await flush();
+
+    expect(agentsRename).toHaveBeenCalledTimes(1);
+    expect(agentsRename).toHaveBeenCalledWith(CHIEF_AGENT, "first message", undefined, {
+      skipIfExplicitlySet: true,
+    });
+  });
+
+  it("degraded hydration cannot re-fire the rename with a later message's text (monorepo#745 edge 2)", async () => {
+    // Regression (monorepo#745): a swallowed hydration failure leaves the
+    // local transcript empty even though the thread was already renamed
+    // daemon-side (session.name refreshed by `agent:renamed`). The next send
+    // must NOT re-fire the rename with the later message's text.
+    seedChiefWorkspace();
+    seedChiefSession([], { name: "check my ~/intent/ workspaces" });
+    lifecycleSendMessage.mockImplementation(() => {
+      seedChiefSession([userMessage("a much later message", "m-user-9")], {
+        name: "check my ~/intent/ workspaces",
+      });
+      return Promise.resolve();
+    });
+
+    appStore.dispatch(
+      sendMessage(CHIEF_AGENT, { wsId: CHIEF_WORKSPACE_ID, text: "a much later message" }),
+    );
+    await flush();
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(agentsRename).not.toHaveBeenCalled();
+  });
+
+  it("image-only first chief message skips the same-name wire rename (monorepo#745 edge 3)", async () => {
+    // Regression (monorepo#745): an image-only first message derives the
+    // placeholder title ("New chat with Intent") — issuing a wire rename to
+    // the same placeholder is pointless and must be skipped.
+    seedChiefWorkspace();
+    seedChiefSession();
+    lifecycleSendMessage.mockImplementation(() => {
+      seedChiefSession([
+        {
+          id: "m-user-img",
+          role: "user",
+          contentBlocks: [{ type: "image", data: "aGVsbG8=", mimeType: "image/png" }],
+          timestamp: "2026-01-01T00:00:01.000Z",
+        } as unknown as AgentMessage,
+      ]);
+      return Promise.resolve();
+    });
+
+    appStore.dispatch(
+      sendMessage(CHIEF_AGENT, {
+        wsId: CHIEF_WORKSPACE_ID,
+        text: " ",
+        imageBlocks: [{ type: "image", data: "aGVsbG8=", mimeType: "image/png" }],
+      }),
     );
     await flush();
     await flush();
