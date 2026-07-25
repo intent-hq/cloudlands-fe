@@ -653,6 +653,154 @@ describe("agent-stream.wss — chunk accumulation → transcript growth", () => 
     expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result"]);
   });
 
+  it("attaches the daemon-claimed registeredAttachments batch instead of lifting (§7.1 deterministic attach)", async () => {
+    // The daemon stamps the registry nonce (`attachmentId`, tar- + 12 hex)
+    // into the canonical payload's JSON text and carries the claimed batch on
+    // the event as `registeredAttachments` (agent_session.rs b4599eba). The
+    // echoed output carries the same stamped resource item — the bridge must
+    // attach the batch (canonical) and NOT also lift from the output.
+    const stampedProposalJson = JSON.stringify({
+      kind: "workspace-create",
+      payload: { operation: "workspace.create", params: { repositoryPath: "/repo" } },
+      preview: { title: "Create workspace" },
+      applyToolCallId: "tc-att-1",
+      attachmentId: "tar-abc123def456",
+    });
+    const canonicalItem = {
+      type: "resource",
+      resource: {
+        uri: "intent-proposal://workspace-create/tc-att-1",
+        name: "Create workspace",
+        mimeType: "application/vnd.intent.proposal+json",
+        text: stampedProposalJson,
+      },
+    };
+
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        toolCallId: "tc-att-1",
+        toolName: "propose_workspace",
+        toolKind: "other",
+        status: "completed",
+        input: {},
+        output: [canonicalItem],
+        registeredAttachments: [canonicalItem],
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const messages = readAssistantMessages();
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].contentBlocks ?? [];
+    // Exactly ONE standalone resource block — the canonical attached one.
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result", "resource"]);
+    expect(blocks[2]).toMatchObject({
+      type: "resource",
+      id: `${MESSAGE_ID}:2`,
+      resource: { text: stampedProposalJson },
+    });
+  });
+
+  it("attaches every item of a multi-resource registeredAttachments batch with chained ids (§7.1)", async () => {
+    const items = [0, 1].map((i) => ({
+      type: "resource",
+      resource: {
+        uri: `intent-card://generic/${i}`,
+        name: `Card ${i}`,
+        mimeType: "application/vnd.intent.other+json",
+        text: JSON.stringify({ attachmentId: `tar-00000000000${i}`, n: i }),
+      },
+    }));
+
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        toolCallId: "tc-att-multi",
+        toolName: "workspace_api",
+        toolKind: "other",
+        status: "completed",
+        input: {},
+        output: [{ type: "text", text: "{}" }],
+        registeredAttachments: items,
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const messages = readAssistantMessages();
+    const blocks = messages[0].contentBlocks ?? [];
+    // tool_use, tool_result, then each attachment at index+2+N — matching the
+    // daemon's next_block_id chaining in subscriptions.rs.
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result", "resource", "resource"]);
+    expect(blocks[2]).toMatchObject({ id: `${MESSAGE_ID}:2` });
+    expect(blocks[3]).toMatchObject({ id: `${MESSAGE_ID}:3` });
+  });
+
+  it("falls back to the FE lift when the event carries no registeredAttachments (§7.1)", async () => {
+    // Un-attached results (legacy daemon, unwired registry) still surface a
+    // ProposalCard via the lift; malformed registeredAttachments entries are
+    // ignored rather than trusted.
+    const proposalJson = JSON.stringify({
+      kind: "workspace-create",
+      payload: { operation: "workspace.create", params: {} },
+      preview: { title: "Create workspace" },
+      applyToolCallId: "tc-fb-1",
+    });
+    const resourceItem = {
+      type: "resource",
+      resource: {
+        uri: "intent-proposal://workspace-create/tc-fb-1",
+        name: "Create workspace",
+        mimeType: "application/vnd.intent.proposal+json",
+        text: proposalJson,
+      },
+    };
+
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        toolCallId: "tc-fb-1",
+        toolName: "propose_workspace",
+        toolKind: "other",
+        status: "completed",
+        input: {},
+        output: [resourceItem],
+        // Malformed entries (no resource envelope) must not suppress the lift.
+        registeredAttachments: [{ type: "text", text: "junk" }],
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const messages = readAssistantMessages();
+    const blocks = messages[0].contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result", "resource"]);
+    expect(blocks[2]).toMatchObject({
+      id: `${MESSAGE_ID}:2`,
+      resource: { text: proposalJson },
+    });
+  });
+
   it("does not echo when the same chunk arrives on a foreign fan-out subscription", async () => {
     // Chunk-echo regression: with an overlapping `agent:*` subscription on the
     // same socket the daemon delivers ONE notification per matching sub. The

@@ -8,6 +8,8 @@
   } from '$shared/types';
   import { isProposal } from '$shared/types';
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
+  import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+  import { resolveCard, type ResolvedCard } from './cards/card-registry';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
@@ -65,7 +67,10 @@
   // (descriptive label) both exist with the same ID, keep only the last one.
   // Also strip suggested prompts before checking - they're rendered separately in ChatPanel
   const blocks = $derived.by(() => {
-    const filtered = (content || []).filter((block) => {
+    // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
+    // FE-lifted fallback for the same logical resource) so exactly one card
+    // renders per resource, preferring the daemon-canonical variant.
+    const filtered = dedupeResourceBlocks(content || []).filter((block) => {
       if (block.type === 'text') {
         const text = block.text || '';
         const { cleanedContent } = parseSuggestedPrompts(text);
@@ -323,6 +328,13 @@
     undoSettingsProposal(proposalId);
   }
 
+  // Handlers handed to the MIME-keyed card registry when resolving a §7.1
+  // resource block to its card component (ProposalCard et al.).
+  const cardHandlers = {
+    onProposalApply: handleProposalApply,
+    onProposalUndo: handleProposalUndo,
+  };
+
   /**
    * Generate a stable unique key for a render content block.
    * Handles both regular ContentBlocks and ContentBlockGroups.
@@ -418,11 +430,25 @@
   {/if}
 {/snippet}
 
+{#snippet renderCard(card: ResolvedCard)}
+  {@const Card = card.component}
+  <Card {...card.props} />
+{/snippet}
+
 {#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
   {#if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
       <NavLink target={block.target} label={block.label} />
     </div>
+  {:else if resolveCard(block, cardHandlers)}
+    <!-- §7.1 standalone resource block with a registered card (MIME-keyed
+         card registry): ProposalCard under the proposal MIME today. -->
+    {@const card = resolveCard(block, cardHandlers)}
+    {#if card}
+      <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+        {@render renderCard(card)}
+      </div>
+    {/if}
   {:else if getProposalFromBlock(block)}
     {@const proposal = getProposalFromBlock(block)}
     {#if proposal}
@@ -492,6 +518,11 @@
                 result={nestedResultContent}
                 {workspaceId}
               />
+            {:else if resolveCard(nestedBlock, cardHandlers)}
+              {@const nestedCard = resolveCard(nestedBlock, cardHandlers)}
+              {#if nestedCard}
+                {@render renderCard(nestedCard)}
+              {/if}
             {:else if getProposalFromBlock(nestedBlock)}
               {@const nestedProposal = getProposalFromBlock(nestedBlock)}
               {#if nestedProposal}

@@ -120,6 +120,7 @@ import {
   PROPOSAL_RESOURCE_MIME_TYPE,
   createProposalResource,
 } from '$shared/types/proposal-resource';
+import { dedupeResourceBlocks, getResourceContents } from '$shared/types/resource-block-identity';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
@@ -223,14 +224,16 @@ interface StreamState {
   blocksByIndex: Map<number, ContentBlock>;
   toolResultsByUseIndex: Map<number, ContentBlock>;
   /**
-   * `tool_use` index → standalone proposal-resource block (PROTOCOL §7.1).
-   * When a completed tool's output carries a proposal-MIME resource item the
-   * daemon appends the item as a standalone `resource` block right after the
-   * `tool_result` (see `crates/intent-services/src/tool_block.rs::
-   * find_proposal_resource`); mirror that lift here so the live transcript
-   * matches the persisted one and `ProposalCard` renders mid-stream.
+   * `tool_use` index → standalone resource blocks (PROTOCOL §7.1) appended
+   * right after that tool's `tool_result`. The daemon-claimed canonical batch
+   * carried on the `agent:tool:call` event (`registeredAttachments`,
+   * deterministic attach) wins; otherwise the FE lifts a proposal-MIME
+   * resource item out of the echoed output (`crates/intent-services/src/
+   * tool_block.rs::lift_proposal_resource`), mirroring the daemon's
+   * `subscriptions.rs` delta path so the live transcript matches the
+   * persisted one and the card renders mid-stream.
    */
-  proposalsByUseIndex: Map<number, ContentBlock>;
+  attachmentsByUseIndex: Map<number, ContentBlock[]>;
 }
 
 const streamsByAgent = new Map<string, StreamState>();
@@ -300,7 +303,7 @@ function ensureStream(agentId: string, messageId: string, workspaceId: string): 
     workspaceId,
     blocksByIndex: new Map(),
     toolResultsByUseIndex: new Map(),
-    proposalsByUseIndex: new Map(),
+    attachmentsByUseIndex: new Map(),
   };
   streamsByAgent.set(agentId, fresh);
   return fresh;
@@ -343,10 +346,13 @@ function buildContentBlocks(state: StreamState): ContentBlock[] {
     result.push(state.blocksByIndex.get(key)!);
     const toolResult = state.toolResultsByUseIndex.get(key);
     if (toolResult) result.push(toolResult);
-    const proposalBlock = state.proposalsByUseIndex.get(key);
-    if (proposalBlock) result.push(proposalBlock);
+    const attachments = state.attachmentsByUseIndex.get(key);
+    if (attachments) result.push(...attachments);
   }
-  return result;
+  // A rejoin snapshot (seedStreamFromSnapshot) can already contain the
+  // standalone resource block the attachment map re-appends; collapse to one
+  // card per logical resource, preferring the daemon-canonical variant.
+  return dedupeResourceBlocks(result);
 }
 
 /**
@@ -500,12 +506,17 @@ function liftProposalResourceItem(output: unknown): Record<string, unknown> | nu
 }
 
 /**
- * Predict the standalone proposal block's stable id from the `tool_use`
- * blockId: the daemon appends `tool_result` at index + 1 and the proposal
- * block at index + 2 (`{messageId}:{index}` scheme, §7.1 tool_delta).
- * Returns undefined when the blockId does not follow that scheme.
+ * Predict a standalone attachment block's stable id from the `tool_use`
+ * blockId: the daemon appends `tool_result` at index + 1 and the Nth
+ * attachment block at index + 2 + N (`{messageId}:{index}` scheme, §7.1
+ * tool_delta — each attachment chains off the previous block's id via
+ * `next_block_id`). Returns undefined when the blockId does not follow that
+ * scheme.
  */
-function predictProposalBlockId(toolUseBlockId: unknown): string | undefined {
+function predictAttachmentBlockId(
+  toolUseBlockId: unknown,
+  attachmentOrdinal: number,
+): string | undefined {
   if (typeof toolUseBlockId !== 'string') return undefined;
   const separator = toolUseBlockId.lastIndexOf(':');
   if (separator < 0) return undefined;
@@ -513,7 +524,7 @@ function predictProposalBlockId(toolUseBlockId: unknown): string | undefined {
   // `next_block_id` (subscriptions.rs), which rejects empty/hex/exponent forms.
   const suffix = toolUseBlockId.slice(separator + 1);
   if (!/^[0-9]+$/.test(suffix)) return undefined;
-  return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2}`;
+  return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2 + attachmentOrdinal}`;
 }
 
 function dispatchStreamUpdate(
@@ -585,6 +596,7 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
   const status = data.status;
   const input = data.input;
   const output = data.output;
+  const registeredAttachments = data.registeredAttachments;
   if (
     typeof agentId !== 'string' ||
     typeof messageId !== 'string' ||
@@ -658,21 +670,40 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
       is_error: status === 'error',
     } as ContentBlock);
 
-    // §7.1: lift a proposal-MIME resource item out of a COMPLETED tool's
-    // output into a standalone `resource` block right after the tool_result,
-    // mirroring the daemon's persisted transcript (`record_tool`) and live
-    // delta stream (`tool_delta`) so `ProposalCard` renders mid-stream —
-    // including the collapsed-output fallback for providers that flatten the
-    // MCP content-item array. A tool that ends in `error` never surfaces a
-    // standalone proposal block.
+    // §7.1: append the standalone resource block(s) right after the
+    // tool_result of a COMPLETED tool, mirroring the daemon's persisted
+    // transcript (`record_tool`) and live delta stream (subscriptions.rs) so
+    // the card renders mid-stream. The daemon-claimed canonical batch carried
+    // on the event (`registeredAttachments`, deterministic attach) wins;
+    // otherwise fall back to the FE lift of a proposal-MIME resource item out
+    // of the echoed output — including the collapsed-output/wrap-repair
+    // fallback for providers that flatten the MCP content-item array. A tool
+    // that ends in `error` never surfaces a standalone block.
     if (status === 'completed') {
-      const proposalItem = liftProposalResourceItem(output);
-      if (proposalItem) {
-        const proposalBlockId = predictProposalBlockId(blockId);
-        state.proposalsByUseIndex.set(blockIndex, {
-          ...proposalItem,
-          ...(proposalBlockId ? { id: proposalBlockId } : {}),
-        } as unknown as ContentBlock);
+      // Deliberate deviation from the daemon's own delta path
+      // (subscriptions.rs::tool_delta uses the array wholesale): items are
+      // validated through getResourceContents and the lift fallback fires
+      // when ALL are malformed. Defensive only — every item the daemon sends
+      // today is well-formed by construction (TurnAttachment::resource_item);
+      // revisit if the batch shape ever grows new item variants.
+      const registered = Array.isArray(registeredAttachments)
+        ? registeredAttachments.filter((item) => getResourceContents(item) !== null)
+        : [];
+      const items =
+        registered.length > 0
+          ? registered
+          : ([liftProposalResourceItem(output)].filter(Boolean) as Record<string, unknown>[]);
+      if (items.length > 0) {
+        state.attachmentsByUseIndex.set(
+          blockIndex,
+          items.map((item, ordinal) => {
+            const attachmentBlockId = predictAttachmentBlockId(blockId, ordinal);
+            return {
+              ...(item as Record<string, unknown>),
+              ...(attachmentBlockId ? { id: attachmentBlockId } : {}),
+            } as unknown as ContentBlock;
+          }),
+        );
       }
     }
   }
