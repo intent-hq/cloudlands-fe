@@ -8,6 +8,8 @@
   } from '$shared/types';
   import { isProposal } from '$shared/types';
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
+  import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+  import { resolveCard, type ResolvedCard } from './cards/card-registry';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
@@ -125,7 +127,10 @@
 
   // Use $derived.by for synchronous computation without side effects
   let blocks = $derived.by(() => {
-    const rawBlocks = content || [];
+    // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
+    // FE-lifted fallback for the same logical resource) so exactly one card
+    // renders per resource, preferring the daemon-canonical variant.
+    const rawBlocks = dedupeResourceBlocks(content || []);
 
     // DEBUG: Log content block types for tool call visibility debugging
     if (isStreaming) {
@@ -420,6 +425,13 @@
     undoSettingsProposal(proposalId);
   }
 
+  // Handlers handed to the MIME-keyed card registry when resolving a §7.1
+  // resource block to its card component (ProposalCard et al.).
+  const cardHandlers = {
+    onProposalApply: handleProposalApply,
+    onProposalUndo: handleProposalUndo,
+  };
+
   // Parse text blocks to extract augment_code_snippet blocks, digests, and setup scripts
   // PERFORMANCE: Memoize results to avoid re-parsing on every render
   type ParsedTextResult = {
@@ -688,11 +700,25 @@
     {/if}
   {/snippet}
 
+  {#snippet renderCard(card: ResolvedCard)}
+    {@const Card = card.component}
+    <Card {...card.props} />
+  {/snippet}
+
   {#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
     {#if isNavLinkBlock(block)}
       <div class="w-full">
         <NavLink target={block.target} label={block.label} />
       </div>
+    {:else if resolveCard(block, cardHandlers)}
+      <!-- §7.1 standalone resource block with a registered card (MIME-keyed
+           card registry): ProposalCard under the proposal MIME today. -->
+      {@const card = resolveCard(block, cardHandlers)}
+      {#if card}
+        <div class="w-full">
+          {@render renderCard(card)}
+        </div>
+      {/if}
     {:else if getProposalFromBlock(block)}
       {@const proposal = getProposalFromBlock(block)}
       {#if proposal}
@@ -798,11 +824,11 @@
             {/snippet}
           </ResponseGroup>
         </div>
-      {:else if isNavLinkBlock(block as ContentBlock) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking'].includes(block.type)}
+      {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking'].includes(block.type)}
         <div
           class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
             ? 'nav-link'
-            : getProposalFromBlock(block as ContentBlock)
+            : resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock)
               ? 'proposal'
               : block.type} my-1.25"
           use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
