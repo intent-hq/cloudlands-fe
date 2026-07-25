@@ -73,10 +73,17 @@ function normalizeComment(
 ): CommentV2 {
   const now = new Date().toISOString();
   const id = String(raw.id ?? "");
+  // Post-#729 replies carry no anchor on the wire — they anchor through their
+  // thread root (PROTOCOL §5.3 "Reply anchoring"), so no point anchor is
+  // synthesized for them (monorepo#749). Anchorless roots (thread-summary
+  // proxies, legacy rows) keep the point fallback.
+  const isReply = typeof raw.parentId === "string" && raw.parentId.length > 0;
   const anchor =
     raw.anchor && typeof raw.anchor === "object"
       ? (raw.anchor as CommentAnchor)
-      : ({ type: "point" } as CommentAnchor);
+      : isReply
+        ? undefined
+        : ({ type: "point" } as CommentAnchor);
   const anchorContext = normalizeAnchorContext(raw.anchorContext);
   const reactions = normalizeReactions(raw.reactions);
 
@@ -89,7 +96,7 @@ function normalizeComment(
     author: String(raw.author ?? ""),
     authorType: (raw.authorType === "agent" ? "agent" : "user") as CommentAuthorType,
     status: (typeof raw.status === "string" ? raw.status : "open") as CommentStatus,
-    anchor,
+    ...(anchor ? { anchor } : {}),
     createdAt: String(raw.createdAt ?? now),
     updatedAt: String(raw.updatedAt ?? now),
     ...(typeof raw.parentId === "string" ? { parentId: raw.parentId } : {}),

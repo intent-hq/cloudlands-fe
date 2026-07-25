@@ -10,11 +10,13 @@ import type { CommentAnchor } from '../comment-types-v2';
 /**
  * The comment id that owns a comment's in-document anchor nodes.
  *
- * Thread replies share the thread root's persistent anchors (the daemon's
- * `comment.respond` clones the parent's anchor), so a reply's anchor ids look
- * like `"<rootId>:start"` while its own `id` differs. Anchor lookups in the
- * document must use the id embedded in the anchor ids, not the comment's own
- * id — otherwise every reply falls through to text search and is orphaned.
+ * Thread replies share the thread root's persistent anchors, so a reply's
+ * anchor ids look like `"<rootId>:start"` while its own `id` differs. Anchor
+ * lookups in the document must use the id embedded in the anchor ids, not the
+ * comment's own id — otherwise every reply falls through to text search and
+ * is orphaned. Post-#729 replies carry no anchor at all (PROTOCOL §5.3
+ * "Reply anchoring"), so this fallback only fires for legacy replies that
+ * still hold a non-authoritative clone of the parent's anchor.
  */
 export function getAnchorOwnerCommentId(comment: {
   id: string;
