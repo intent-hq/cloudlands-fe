@@ -32,8 +32,9 @@
   import { requestPrBranchLookup } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice';
   import { selectPrBranchLookupEntries } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors';
   import type { PrBranchLookupRequest } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-types';
-  import { store as appStore } from "$store/renderer/store";
+  import { store as appStore } from '$store/renderer/store';
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
+  import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
 
   interface Props {
@@ -77,6 +78,9 @@
   let prBranchLookupKey = $state('');
   let prBranchLookupRequest = $state<PrBranchLookupRequest | undefined>();
   let prBranchUserEdited = $state(false);
+  let branchRowElement = $state<HTMLElement | undefined>();
+  let proposedBranchMissing = $state('');
+  let branchListDefault = $state('');
   const BEFORE_AFTER_STACK_THRESHOLD = 40;
 
   const prBranchLookupEntries = selectPrBranchLookupEntries();
@@ -126,13 +130,16 @@
       prBranchLookup?.status !== 'succeeded' &&
       !prBranchLookupFailed,
   );
+  // Matches the daemon's workspace.create error prose (intentd
+  // intent-services workspace creation: "cannot resolve base ref '<ref>'").
+  // If the daemon rewords this or gains a structured error code for it
+  // (monorepo#761), update this match accordingly.
+  const isBaseRefFailure = $derived(
+    isWorkspaceCreate && isFailed && /cannot resolve base ref/i.test($lifecycleError ?? ''),
+  );
+  const branchNeedsAttention = $derived(Boolean(proposedBranchMissing) || isBaseRefFailure);
   const actionDisabled = $derived(
-    disabled ||
-      isApplying ||
-      isUndoing ||
-      isApplied ||
-      isAwaitingPrBranchLookup ||
-      prBranchLoading,
+    disabled || isApplying || isUndoing || isApplied || isAwaitingPrBranchLookup || prBranchLoading,
   );
   const metadataIdPrefix = $derived(`proposal-${toDomId(proposalId)}`);
   const cardClass = $derived.by(() => {
@@ -156,8 +163,15 @@
   });
 
   $effect(() => {
-    if (!statusMessage) return;
+    if (!statusMessage || isBaseRefFailure) return;
     void tick().then(() => statusElement?.focus());
+  });
+
+  // On a base-ref apply failure, direct attention at the Base branch field
+  // instead of the status line — Retry alone can never succeed here.
+  $effect(() => {
+    if (!isBaseRefFailure) return;
+    void tick().then(() => branchRowElement?.focus());
   });
 
   $effect(() => {
@@ -177,6 +191,8 @@
     prBranchUserEdited = false;
     prBranchLookupKey = '';
     prBranchLookupRequest = undefined;
+    proposedBranchMissing = '';
+    branchListDefault = '';
   });
 
   $effect(() => {
@@ -211,6 +227,9 @@
     if (!branch || prBranchUserEdited || workspaceBranch !== 'main') return;
 
     workspaceBranch = branch;
+    // The PR head branch replaces any default we preselected, so a
+    // missing-branch warning claiming "using default" would now be stale.
+    proposedBranchMissing = '';
   });
 
   function getFieldValue(field: ProposalEditableField): unknown {
@@ -486,13 +505,32 @@
     workspaceIsValidPath = event.detail.isValidPath ?? false;
     workspaceScope = event.detail.scope ?? '';
     workspaceBranch = workspaceIsNewRepo ? 'main' : '';
+    proposedBranchMissing = '';
+    branchListDefault = '';
   }
 
   function handleBranchChange(event: CustomEvent<{ branch: string }>) {
     prBranchUserEdited = true;
     prBranchLookupKey = '';
     prBranchLookupRequest = undefined;
+    proposedBranchMissing = '';
     workspaceBranch = event.detail.branch;
+  }
+
+  function handleBranchesLoaded(info: BranchListInfo) {
+    if (!isWorkspaceCreate || workspaceIsNewRepo) return;
+    if (info.branches.length === 0 && info.remoteBranches.length === 0) return;
+    branchListDefault = info.defaultBranch;
+    const known = new Set([...info.branches, ...info.remoteBranches]);
+    if (workspaceBranch && !known.has(workspaceBranch)) {
+      // The proposed base branch doesn't exist in this repo: warn (keeping the
+      // proposed name visible) and preselect the repo's default branch. Apply
+      // is never blocked — the daemon stays the enforcement point.
+      proposedBranchMissing = workspaceBranch;
+      if (info.defaultBranch) workspaceBranch = info.defaultBranch;
+    } else {
+      proposedBranchMissing = '';
+    }
   }
 
   function addPopulatedField(
@@ -559,7 +597,10 @@
       if (isAwaitingPrBranchLookup) return 'Detecting PR branch…';
       if (isApplying) return 'Creating workspace…';
       if (isFailed) {
-        return `Workspace creation failed${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
+        const message = `Workspace creation failed${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
+        return isBaseRefFailure
+          ? `${message}. Choose a different base branch above, then retry.`
+          : message;
       }
       return '';
     }
@@ -723,7 +764,20 @@
                 Base branch
               </span>
               <div class="min-w-0 space-y-1">
-                <div class="min-w-0" data-testid="proposal-branch-picker">
+                <div
+                  bind:this={branchRowElement}
+                  class={branchNeedsAttention
+                    ? 'min-w-0 rounded-md ring-1 ring-amber-500/70 focus:outline-none'
+                    : 'min-w-0 focus:outline-none'}
+                  data-testid="proposal-branch-picker"
+                  data-branch-warning={branchNeedsAttention ? 'true' : undefined}
+                  tabindex="-1"
+                  role="group"
+                  aria-label="Base branch"
+                  aria-describedby={proposedBranchMissing
+                    ? `${metadataIdPrefix}-branch-mismatch`
+                    : undefined}
+                >
                   <RepoAndBranchPicker
                     repoPath={workspaceRepoPath}
                     branch={workspaceBranch}
@@ -733,8 +787,19 @@
                     field="branch"
                     isLoading={prBranchLoading}
                     onBranchChange={handleBranchChange}
+                    onBranchesLoaded={handleBranchesLoaded}
                   />
                 </div>
+                {#if proposedBranchMissing}
+                  <p
+                    id={`${metadataIdPrefix}-branch-mismatch`}
+                    class="px-2 text-xs text-amber-600 dark:text-amber-400"
+                    data-testid="proposal-branch-mismatch-warning"
+                  >
+                    Base branch '{proposedBranchMissing}' wasn't found in this repo{#if branchListDefault}&nbsp;—
+                      using default '{branchListDefault}'{/if}.
+                  </p>
+                {/if}
                 {#if prBranchLookupFailed}
                   <p class="px-2 text-xs text-subtle" data-testid="proposal-branch-lookup-failure">
                     Couldn't auto-detect base branch; using default
@@ -1015,7 +1080,11 @@
         {/if}
 
         {#if bulkItems.length > 0}
-          <BulkProposalItems items={bulkItems} bind:selectedIds={selectedBulkItemIds} disabled={actionDisabled} />
+          <BulkProposalItems
+            items={bulkItems}
+            bind:selectedIds={selectedBulkItemIds}
+            disabled={actionDisabled}
+          />
         {/if}
 
         {#if proposal.preview.warnings?.length}
@@ -1038,7 +1107,9 @@
           tabindex="-1"
         >
           {#if isApplied}
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-green-500/20 bg-green-500/10 px-2 py-1 font-medium">
+            <span
+              class="inline-flex items-center gap-1.5 rounded-full border border-green-500/20 bg-green-500/10 px-2 py-1 font-medium"
+            >
               <Fa icon={faCircleCheck} class="h-3 w-3" />
               <span>{statusMessage}</span>
             </span>
@@ -1053,8 +1124,17 @@
           <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleDiscard}
             >Discard</Button
           >
-          <Button size="sm" disabled={actionDisabled} onclick={handleApply} aria-keyshortcuts="Enter">
-            {isApplying ? 'Applying…' : isFailed ? 'Retry' : (proposal.preview.applyLabel ?? 'Apply')}
+          <Button
+            size="sm"
+            disabled={actionDisabled}
+            onclick={handleApply}
+            aria-keyshortcuts="Enter"
+          >
+            {isApplying
+              ? 'Applying…'
+              : isFailed
+                ? 'Retry'
+                : (proposal.preview.applyLabel ?? 'Apply')}
           </Button>
         </div>
       {/if}

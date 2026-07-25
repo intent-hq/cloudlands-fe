@@ -4,9 +4,13 @@
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { faPlus, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import BranchSelector, { type BranchStatus } from './BranchSelector.svelte';
+  import BranchSelector, { type BranchListInfo, type BranchStatus } from './BranchSelector.svelte';
   import RepoSelector from './RepoSelector.svelte';
-  import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
+  import {
+    isolationNoun,
+    resolveEffectiveIsolationMode,
+    type IsolationMode,
+  } from './isolation-mode';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   type RepoSelectorHandle = {
@@ -64,6 +68,8 @@
     onGitHubAuthNeededChange?: (value: 'none' | 'not-authenticated' | 'no-access') => void;
     /** Callback when branch status changes (behind count, uncommitted changes) */
     onBranchStatusChange?: (status: BranchStatus) => void;
+    /** Callback when the branch list has been fetched successfully */
+    onBranchesLoaded?: (info: BranchListInfo) => void;
     /** Visual presentation for embedding in quiet metadata rows */
     presentation?: 'default' | 'metadata';
     /** Which picker field to render */
@@ -88,6 +94,7 @@
     onSkipIsolationChange,
     onGitHubAuthNeededChange,
     onBranchStatusChange,
+    onBranchesLoaded,
     presentation = 'default',
     field = 'both',
     isLoading = false,
@@ -239,6 +246,7 @@
         onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
         onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
         {onBranchStatusChange}
+        {onBranchesLoaded}
         onchange={handleBranchChange}
       />
       {#if isMetadataBranchLoading}
@@ -330,6 +338,7 @@
       onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
       onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
       {onBranchStatusChange}
+      {onBranchesLoaded}
       onchange={handleBranchChange}
     />
   {:else if repoType === 'remote' && remoteSetup && isMetadataPresentation}
@@ -436,6 +445,7 @@
       onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
       onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
       {onBranchStatusChange}
+      {onBranchesLoaded}
       onchange={handleBranchChange}
     />
   {/if}
