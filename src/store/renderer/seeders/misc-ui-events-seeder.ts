@@ -15,9 +15,6 @@
  * now read the daemon directly via `file-tracking.getLineStats`, PROTOCOL
  * §5.19.)
  */
-import { SPECIALISTS, type Specialist } from "$lib/constants/specialists";
-import type { ModelTier, SpecialistFileScope } from "$shared/specialist-file-types";
-import type { SpecialistDef } from "$lib/client/app-client";
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { registerMockSeeder } from "../mock-bootstrap";
 import { setSystemStatus } from "../slices/system-status/system-status-slice";
@@ -31,57 +28,10 @@ import {
   setAvailableModels,
   setLoadingStateForProvider,
 } from "../slices/model/model-slice";
-import {
-  setBundledSpecialists,
-  setBundledSpecialistsLoaded,
-  setCustomSpecialistsLoaded,
-  setFileSpecialists,
-  setFileSpecialistsLoaded,
-  setOverridesLoaded,
-  type FileSpecialist,
-} from "../slices/specialists/specialists-slice";
+import { dispatchSpecialistList } from "$features/specialists/specialists-mutation-service";
 import { setSkills } from "../slices/skills/skills-slice";
 import { hydrateBrowserState } from "../slices/browser/browser-slice";
 import { eventsLoaded } from "../slices/workspace-events/workspace-events-slice";
-
-/** Wire `modelTier` is carried verbatim from frontmatter; only known tiers map. */
-const MODEL_TIERS: ReadonlySet<string> = new Set(["fast", "balanced", "smart"]);
-
-function toModelTier(value: string | undefined): ModelTier | undefined {
-  return value !== undefined && MODEL_TIERS.has(value) ? (value as ModelTier) : undefined;
-}
-
-/** Map a bundled-tier wire `SpecialistDef` (PROTOCOL §5.11) to the store's `Specialist`. */
-function toBundledSpecialist(def: SpecialistDef): Specialist {
-  return {
-    id: def.id,
-    name: def.name,
-    description: def.description,
-    codingAgent: def.codingAgent,
-    defaultModel: def.model,
-    defaultModelTier: toModelTier(def.modelTier),
-    defaultBehaviorPrompt: def.behaviorPrompt ?? def.prompt ?? "",
-    roleReminder: def.roleReminder,
-    source: "bundled",
-    defaultAgentType: def.agentType,
-  };
-}
-
-/** Map a user/project-tier wire `SpecialistDef` to the store's `FileSpecialist`. */
-function toFileSpecialist(def: SpecialistDef): FileSpecialist {
-  return {
-    id: def.id,
-    name: def.name,
-    description: def.description,
-    codingAgent: def.codingAgent,
-    model: def.model ?? "",
-    modelTier: toModelTier(def.modelTier),
-    behaviorPrompt: def.behaviorPrompt ?? def.prompt ?? "",
-    roleReminder: def.roleReminder,
-    filePath: def.path ?? "",
-    source: def.source as SpecialistFileScope,
-  };
-}
 
 /** Static "disabled" snapshot for the WebSocket API settings pane. */
 const DISABLED_WEBSOCKET_API: WebSocketApiStatusSnapshot = {
@@ -147,24 +97,14 @@ registerMockSeeder("misc-ui-events", async ({ store, client }) => {
 
   // ── Specialists: split the daemon's merged `specialist.list` view ──
   // (PROTOCOL §5.11: 3-tier resolution, project > user > bundled) into the
-  // bundled and file-backed slices. When no bundled entries arrive (daemon
-  // offline / empty resources) the hardcoded SPECIALISTS constant keeps the
-  // picker populated, matching the selector's last-resort fallback.
+  // bundled and file-backed slices via the shared `dispatchSpecialistList`
+  // mappers (same path as the live `specialists:changed` subscription and the
+  // post-write refetch), so wire fields (e.g. `hidden`) cannot diverge between
+  // the seeder ingest and later refetches. It reconstructs the bundled set
+  // from the SPECIALISTS constant overlaid with daemon entries, so an empty
+  // bundled tier (daemon offline / empty resources) still populates the picker.
   const specialistDefs = await client.specialists.list();
-  const bundledDefs = specialistDefs.filter((def) => def.source === "bundled");
-  const fileDefs = specialistDefs.filter(
-    (def) => def.source === "user" || def.source === "project",
-  );
-  store.dispatch(
-    setBundledSpecialists(
-      bundledDefs.length > 0 ? bundledDefs.map(toBundledSpecialist) : SPECIALISTS,
-    ),
-  );
-  store.dispatch(setBundledSpecialistsLoaded(true));
-  store.dispatch(setOverridesLoaded(true));
-  store.dispatch(setCustomSpecialistsLoaded(true));
-  store.dispatch(setFileSpecialists(fileDefs.map(toFileSpecialist)));
-  store.dispatch(setFileSpecialistsLoaded(true));
+  dispatchSpecialistList(specialistDefs);
 
   // ── Per-workspace: skills, browser recent URLs, workspace event stream ──
   const workspaces = await client.workspaces.list();
