@@ -71,6 +71,21 @@ function clearSessionStreaming(
   }
 }
 
+/**
+ * Interrupted-finalize metadata (PROTOCOL §7 `agent:stream:end` with
+ * `stopReason: "interrupted"`): mirror the daemon-persisted row's
+ * `metadata.interrupted` + `stopReason` onto the local message so
+ * `shouldShowStoppedIndicator` renders "Stopped" live, without waiting for a
+ * transcript rehydrate. Returns undefined for a normal completion.
+ */
+function interruptedMetadata(
+  payload: AgentStreamUpdatePayload,
+): { interrupted: true; stopReason: string } | undefined {
+  return payload.eventType === "complete" && payload.stopReason === "interrupted"
+    ? { interrupted: true, stopReason: payload.stopReason }
+    : undefined;
+}
+
 function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
   const {
     agentId,
@@ -110,6 +125,7 @@ function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
       return;
     }
     const placeholderBlocks = resolveStreamContentBlocks(undefined, contentBlocks, eventType) ?? [];
+    const interruptedMeta = interruptedMetadata(payload);
     const placeholder: AgentMessage = {
       id: assistantMessageId,
       ...(assistantAppMessageId ? { appMessageId: assistantAppMessageId } : {}),
@@ -118,6 +134,7 @@ function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
       timestamp: new Date(payload.timestamp ?? Date.now()).toISOString(),
       isStreaming: eventType !== "complete",
       streamingComplete: eventType === "complete",
+      ...(interruptedMeta ? { metadata: interruptedMeta } : {}),
     };
     appStore.dispatch(addMessage(agentId, placeholder));
     if (isFinalize) clearSessionStreaming(agentId, eventType);
@@ -133,6 +150,10 @@ function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
     };
     if (nextBlocks && nextBlocks !== existing.contentBlocks) {
       updates.contentBlocks = nextBlocks;
+    }
+    const interruptedMeta = interruptedMetadata(payload);
+    if (interruptedMeta) {
+      updates.metadata = { ...existing.metadata, ...interruptedMeta };
     }
     appStore.dispatch(updateMessage(agentId, existing.id, updates));
     clearSessionStreaming(agentId, eventType);

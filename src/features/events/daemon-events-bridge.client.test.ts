@@ -1323,9 +1323,17 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     expectPartialBlocksIntact(readAssistantMessages()[0]);
 
     // `interrupt_inner` emits the single terminal `agent:stream:end` (the
-    // aborted worker no longer reaches its own emit) followed by the STAB-28
-    // `agent:idle { reason: "interrupted" }`.
-    handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
+    // aborted worker no longer reaches its own emit) — now carrying
+    // `stopReason: "interrupted"` + the turn's `messageId` — followed by the
+    // STAB-28 `agent:idle { reason: "interrupted" }`.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        stopReason: 'interrupted',
+        messageId: MESSAGE_ID,
+      }),
+    );
     handler(
       notification('agent:idle', {
         agentId: AGENT,
@@ -1354,6 +1362,117 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    // The wire `stopReason: "interrupted"` applies the interrupted metadata at
+    // stream:end time — the Stopped indicator renders LIVE, no rehydrate needed.
+    expect(assistantMessages[0].metadata).toMatchObject({
+      interrupted: true,
+      stopReason: 'interrupted',
+    });
+    expect(
+      shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false }),
+    ).toBe(true);
+  });
+
+  it('normal agent:stream:end (no stopReason) finalizes WITHOUT interrupted metadata — no Stopped indicator', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamPartialTurn(handler);
+    handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expectPartialBlocksIntact(assistantMessages[0]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].metadata?.interrupted).toBeUndefined();
+    expect(
+      shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false }),
+    ).toBe(false);
+  });
+
+  it('thinking-only turn stopped: interrupted metadata lands and the Stopped indicator shows despite no visible content', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Only a thinking block streamed before the stop.
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: { type: 'thinking', id: `${MESSAGE_ID}:0`, thinking: 'planning…' },
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'thinking',
+        streamId: STREAM_ID,
+      }),
+    );
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        stopReason: 'interrupted',
+        messageId: MESSAGE_ID,
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['thinking']);
+    expect(assistantMessages[0].metadata).toMatchObject({
+      interrupted: true,
+      stopReason: 'interrupted',
+    });
+    expect(
+      shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false }),
+    ).toBe(true);
+  });
+
+  it('pre-first-token stop: interrupted stream:end with messageId and NO local stream state creates the empty interrupted placeholder', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Nothing streamed — the daemon persisted a synthetic empty interrupted
+    // row under the turn's minted messageId and emits the terminal stream:end
+    // with stopReason + messageId. The bridge must NOT early-return here.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        stopReason: 'interrupted',
+        messageId: MESSAGE_ID,
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].metadata).toMatchObject({
+      interrupted: true,
+      stopReason: 'interrupted',
+    });
+    expect(
+      shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false }),
+    ).toBe(true);
+  });
+
+  it('normal agent:stream:end with NO local stream state stays a no-op (no phantom placeholder)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+      }),
+    );
+
+    expect(readAssistantMessages()).toHaveLength(0);
   });
 
   it('persisted interrupted row reconciles in: blocks stay intact and the Stopped indicator shows', async () => {

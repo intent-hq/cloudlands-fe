@@ -207,4 +207,71 @@ describe("agentStreamService (real store)", () => {
     expect(message.isStreaming).toBe(false);
     expect(message.streamingComplete).toBe(true);
   });
+
+  // Interrupted finalize (PROTOCOL §7 `agent:stream:end` with
+  // `stopReason: "interrupted"`): the daemon persisted the partial row with
+  // `metadata.interrupted` + `stopReason`; mirror it locally so the Stopped
+  // indicator renders live.
+  it("merges interrupted metadata onto the in-flight message on complete with stopReason=interrupted", () => {
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "chunk", contentBlocks: textBlocks("partial") }),
+      ),
+    );
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({
+          eventType: "complete",
+          contentBlocks: textBlocks("partial"),
+          stopReason: "interrupted",
+        }),
+      ),
+    );
+
+    const [message] = getMessages();
+    expect(message.contentBlocks).toEqual(textBlocks("partial"));
+    expect(message.isStreaming).toBe(false);
+    expect(message.streamingComplete).toBe(true);
+    expect(message.metadata).toMatchObject({ interrupted: true, stopReason: "interrupted" });
+  });
+
+  it("does NOT add interrupted metadata on a normal complete (no stopReason)", () => {
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "chunk", contentBlocks: textBlocks("partial") }),
+      ),
+    );
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "complete", contentBlocks: textBlocks("partial done") }),
+      ),
+    );
+
+    const [message] = getMessages();
+    expect(message.metadata?.interrupted).toBeUndefined();
+    expect(message.metadata?.stopReason).toBeUndefined();
+  });
+
+  // Pre-first-token stop: complete arrives with stopReason=interrupted and a
+  // messageId but no prior stream events — create the finalized empty
+  // interrupted placeholder mirroring the daemon's synthetic persisted row.
+  it("creates a finalized interrupted placeholder when complete(stopReason=interrupted) arrives with no prior stream state", () => {
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({
+          eventType: "complete",
+          contentBlocks: [],
+          stopReason: "interrupted",
+        }),
+      ),
+    );
+
+    const [message] = getMessages();
+    expect(message.id).toBe(MSG_ID);
+    expect(message.role).toBe("assistant");
+    expect(message.contentBlocks).toEqual([]);
+    expect(message.isStreaming).toBe(false);
+    expect(message.streamingComplete).toBe(true);
+    expect(message.metadata).toMatchObject({ interrupted: true, stopReason: "interrupted" });
+  });
 });
