@@ -7,10 +7,10 @@ import type { StoreState } from "../../types";
 import { extractAllContent, type AgentMessage, type AgentSession } from "$shared/types";
 import {
   CHIEF_WORKSPACE_ID,
-  DEFAULT_CHIEF_THREAD_TITLE,
   type ChiefThreadPreview,
   type SidebarNavItem,
 } from "./sidebar-nav-types";
+import { getChiefThreadTitle } from "./chief-thread-title";
 
 function getMessageTimestamp(message: AgentMessage | undefined): number {
   const value = message?.timestamp;
@@ -31,17 +31,6 @@ function getMessagePreview(message: AgentMessage | undefined): string {
   if (text) return text;
   if (message.role === "assistant") return "Chief is working on a response.";
   return "Open Chief to continue the conversation.";
-}
-
-function getThreadTitle(session: AgentSession): string {
-  const firstUserMessage = session.messages.find((message) => message.role === "user");
-  const firstMessage = firstUserMessage ?? session.messages[0];
-  const text = firstMessage ? extractAllContent(firstMessage).trim() : "";
-  const fallbackName = session.name?.trim();
-  if (!fallbackName || fallbackName === "Chief of Staff" || fallbackName.startsWith("New thread ")) {
-    return text || DEFAULT_CHIEF_THREAD_TITLE;
-  }
-  return text || fallbackName;
 }
 
 function getChiefSessions(state: StoreState): AgentSession[] {
@@ -71,7 +60,7 @@ function toChiefThreadPreview(session: AgentSession): ChiefThreadPreview {
   const latestMessage = session.messages.at(-1);
   return {
     agentId: session.id,
-    title: getThreadTitle(session),
+    title: getChiefThreadTitle(session),
     preview: getMessagePreview(latestMessage),
     updatedAt: latestMessage?.timestamp
       ? new Date(latestMessage.timestamp).toISOString()

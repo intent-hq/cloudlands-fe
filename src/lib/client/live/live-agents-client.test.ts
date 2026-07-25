@@ -597,6 +597,25 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(backend.requests[0]?.params).not.toHaveProperty('workspaceId');
   });
 
+  it('rename forwards skipIfExplicitlySet: true when a caller opts into the §5.5 rename guard', async () => {
+    // Automated renames (e.g. the chief first-message rename in
+    // chat-send-service) pass options.skipIfExplicitlySet so the daemon
+    // leaves an explicitly-named session untouched and acks
+    // `{ success: true, name, skipped: true }`.
+    backend.onRequest('agent.rename', () => ({ success: true, name: 'Derived Title' }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.rename('agent-1', 'Derived Title', undefined, {
+      skipIfExplicitlySet: true,
+    });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.rename',
+      params: { agentId: 'agent-1', name: 'Derived Title', skipIfExplicitlySet: true },
+    });
+    expect(backend.requests[0]?.params).not.toHaveProperty('workspaceId');
+  });
+
   it('rename surfaces a daemon rejection as a non-success MutationResult (no throw)', async () => {
     backend.onRequest('agent.rename', () => {
       throw new BackendError(
