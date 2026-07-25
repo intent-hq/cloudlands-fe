@@ -8,6 +8,7 @@ import type { Proposal } from '$shared/types/proposal';
 const lifecycleSelectorState = vi.hoisted(() => ({
   status: 'idle' as 'idle' | 'applying' | 'applied' | 'undoing' | 'failed',
   error: null as string | null,
+  errorCode: null as string | null,
   result: null as { workspaceId?: string } | null,
 }));
 
@@ -89,6 +90,12 @@ vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors'
       return () => {};
     },
   })),
+  selectProposalErrorCode: vi.fn(() => ({
+    subscribe: (run: (value: typeof lifecycleSelectorState.errorCode) => void) => {
+      run(lifecycleSelectorState.errorCode);
+      return () => {};
+    },
+  })),
   selectProposalResult: vi.fn(() => ({
     subscribe: (run: (value: typeof lifecycleSelectorState.result) => void) => {
       run(lifecycleSelectorState.result);
@@ -157,6 +164,7 @@ async function flushAsyncWork() {
 beforeEach(() => {
   lifecycleSelectorState.status = 'idle';
   lifecycleSelectorState.error = null;
+  lifecycleSelectorState.errorCode = null;
   lifecycleSelectorState.result = null;
   navigationMocks.goto.mockReset();
   prBranchLookupState.reset();
@@ -1031,7 +1039,39 @@ describe('ProposalCard', () => {
     expect(screen.queryByTestId('proposal-branch-mismatch-warning')).toBeNull();
   });
 
-  it('directs the user to the Base branch field on a cannot-resolve-base-ref failure', async () => {
+  it('directs the user to the Base branch field on a structured base-ref-unresolvable failure', async () => {
+    // Primary detection path (monorepo#761): the daemon's structured
+    // error.data.code, threaded into the lifecycle slice as errorCode. The
+    // error prose deliberately does NOT match the legacy regex to prove the
+    // code alone triggers the affordance.
+    lifecycleSelectorState.status = 'failed';
+    lifecycleSelectorState.error = 'Invalid params';
+    lifecycleSelectorState.errorCode = 'base-ref-unresolvable';
+    const { container } = render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            initialPrompt: 'Fix the bug',
+            repoPath: '/repo/x',
+            repoType: 'local',
+            branch: 'nonexistent-branch',
+          },
+        }),
+      },
+    });
+
+    const status = container.querySelector('[role="status"]');
+    expect(status?.textContent).toContain('Workspace creation failed');
+    expect(status?.textContent).toContain('Choose a different base branch above, then retry.');
+
+    const branchRow = screen.getByTestId('proposal-branch-picker');
+    expect(branchRow.getAttribute('data-branch-warning')).toBe('true');
+    await waitFor(() => expect(document.activeElement).toBe(branchRow));
+  });
+
+  it('directs the user to the Base branch field on a cannot-resolve-base-ref prose failure (older daemons)', async () => {
+    // Fallback detection path: daemons that predate the structured code only
+    // send the "cannot resolve base ref '<ref>'" prose, with no errorCode.
     lifecycleSelectorState.status = 'failed';
     lifecycleSelectorState.error = "cannot resolve base ref 'nonexistent-branch'";
     const { container } = render(ProposalCard, {

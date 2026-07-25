@@ -26,6 +26,7 @@
   import { goto } from '$app/navigation';
   import {
     selectProposalError,
+    selectProposalErrorCode,
     selectProposalResult,
     selectProposalStatus,
   } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
@@ -92,6 +93,7 @@
   const proposalId = $derived(getProposalId(proposal));
   const lifecycleStatus = selectProposalStatus(untrack(() => proposalId));
   const lifecycleError = selectProposalError(untrack(() => proposalId));
+  const lifecycleErrorCode = selectProposalErrorCode(untrack(() => proposalId));
   const lifecycleResult = selectProposalResult(untrack(() => proposalId));
   const isWorkspaceCreate = $derived(proposal.kind === 'workspace-create');
   const settingsProposal = $derived(isSettingsChangeProposal(proposal) ? proposal : undefined);
@@ -130,12 +132,16 @@
       prBranchLookup?.status !== 'succeeded' &&
       !prBranchLookupFailed,
   );
-  // Matches the daemon's workspace.create error prose (intentd
-  // intent-services workspace creation: "cannot resolve base ref '<ref>'").
-  // If the daemon rewords this or gains a structured error code for it
-  // (monorepo#761), update this match accordingly.
+  // Structured detection first: the daemon marks unresolvable base refs with
+  // `error.data.code === "base-ref-unresolvable"` on workspace.create failures
+  // (monorepo#761), threaded into the lifecycle slice as `errorCode`. The prose
+  // match on "cannot resolve base ref '<ref>'" is kept as a fallback for older
+  // daemons that predate the structured code.
   const isBaseRefFailure = $derived(
-    isWorkspaceCreate && isFailed && /cannot resolve base ref/i.test($lifecycleError ?? ''),
+    isWorkspaceCreate &&
+      isFailed &&
+      ($lifecycleErrorCode === 'base-ref-unresolvable' ||
+        /cannot resolve base ref/i.test($lifecycleError ?? '')),
   );
   const branchNeedsAttention = $derived(Boolean(proposedBranchMissing) || isBaseRefFailure);
   const actionDisabled = $derived(

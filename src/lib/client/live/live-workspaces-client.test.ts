@@ -124,6 +124,58 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     expect(result).toEqual({ success: false, error: "worktree add failed" });
   });
 
+  it("create surfaces the daemon's structured error.data.code as errorCode", async () => {
+    // monorepo#761: workspace.create rejects an unresolvable base ref with
+    // JSON-RPC -32602 and error.data = { code: "base-ref-unresolvable",
+    // baseRef }. The transport mirrors data onto the thrown error; create
+    // surfaces the code so ProposalCard can key off it instead of the prose.
+    const error = Object.assign(new Error("cannot resolve base ref 'nope'"), {
+      data: { code: "base-ref-unresolvable", baseRef: "nope" },
+    });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: "Bad ref" } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({
+      success: false,
+      error: "cannot resolve base ref 'nope'",
+      errorCode: "base-ref-unresolvable",
+    });
+  });
+
+  it("create omits errorCode when the daemon error carries no string data.code", async () => {
+    const error = Object.assign(new Error("boom"), { data: { detail: "no code here" } });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: "No code" } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({ success: false, error: "boom" });
+    expect("errorCode" in result).toBe(false);
+  });
+
+  it("create surfaces the bridge-mapped code for an older daemon's bare -32602", async () => {
+    // Older daemons reject an unresolvable base ref with a bare -32602 and no
+    // structured data; the main-process bridge (json-rpc-errors.ts) then
+    // injects the mapped code, so errorCode arrives as "INVALID_PARAMS" — NOT
+    // absent. ProposalCard's prose regex is what carries those daemons; do not
+    // "simplify" the fallback away on the assumption errorCode is missing.
+    const error = Object.assign(new Error("cannot resolve base ref 'nope'"), {
+      data: { code: "INVALID_PARAMS" },
+    });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: "Old daemon" } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({
+      success: false,
+      error: "cannot resolve base ref 'nope'",
+      errorCode: "INVALID_PARAMS",
+    });
+  });
+
   it("create generates a distinct idempotencyKey per call", async () => {
     mockedRequest.mockResolvedValue({ id: "ws-x" });
     const client = new LiveWorkspacesClient();

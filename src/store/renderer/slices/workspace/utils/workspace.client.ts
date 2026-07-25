@@ -277,7 +277,21 @@ export class WorkspaceClient {
 
   async create(
     request: CreateWorkspaceRequest,
-  ): Promise<Result<{ workspace: Workspace; initialAgent?: { id: string } }, string>> {
+  ): Promise<
+    | { ok: true; data: { workspace: Workspace; initialAgent?: { id: string } } }
+    | {
+        ok: false;
+        error: string;
+        /**
+         * Machine-readable failure code from the transport error's
+         * `data.code`. Only daemon-authored codes (e.g.
+         * `"base-ref-unresolvable"`, monorepo#761) are a stable contract;
+         * the FE bridge fills in mapped codes (`"INVALID_PARAMS"`, ...) when
+         * the daemon sent none — consumers must exact-match daemon codes only.
+         */
+        errorCode?: string;
+      }
+  > {
     // Daemon-backed mutation (`workspace.create`, PROTOCOL §5.1) through the
     // AppClient seam; the legacy `workspace:create` main-process IPC path is
     // gone. The daemon owns the full orchestration inside one idempotent op
@@ -309,7 +323,10 @@ export class WorkspaceClient {
         },
       };
     }
-    return { ok: false, error: result.error || 'Failed to create workspace' };
+    const createError = result.error || 'Failed to create workspace';
+    return result.errorCode
+      ? { ok: false, error: createError, errorCode: result.errorCode }
+      : { ok: false, error: createError };
   }
 
   async open(id: WorkspaceId): Promise<Result<Workspace, string>> {
