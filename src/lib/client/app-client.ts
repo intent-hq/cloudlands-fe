@@ -256,6 +256,14 @@ export interface WorkspaceUpdateResult extends MutationResult {
 export interface WorkspaceCreateResult extends MutationResult {
   workspace?: Workspace;
   initialAgent?: { id: string } & Record<string, unknown>;
+  /**
+   * Stable machine-readable code for a failed create, surfaced from the
+   * daemon's JSON-RPC `error.data.code` when present (e.g.
+   * `"base-ref-unresolvable"` when the base ref cannot be resolved,
+   * monorepo#761). Callers should prefer this over matching `error` prose;
+   * absent for older daemons and non-JSON-RPC failures.
+   */
+  errorCode?: string;
 }
 
 export interface WorkspacesClient {

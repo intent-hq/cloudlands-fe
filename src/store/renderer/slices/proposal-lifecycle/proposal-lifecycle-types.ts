@@ -15,6 +15,13 @@ export interface ProposalApplyResult {
 export interface ProposalLifecycleEntry {
   status: ProposalLifecycleStatus;
   error?: string;
+  /**
+   * Stable machine-readable code for the failure, when the daemon provided one
+   * on `error.data.code` (e.g. `"base-ref-unresolvable"` for workspace.create
+   * base-ref failures, monorepo#761). Consumers should prefer this over
+   * matching `error` prose; absent for older daemons and transport failures.
+   */
+  errorCode?: string;
   startedAt?: number;
   completedAt?: number;
   lastAction?: ProposalLifecycleAction;

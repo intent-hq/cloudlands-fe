@@ -41,6 +41,8 @@ export const proposalFailed = createAction<
     payload: {
       proposalId: string;
       error: string;
+      /** Daemon-provided machine-readable code (`error.data.code`), when present. */
+      errorCode?: string;
       completedAt: number;
       lastAction: ProposalLifecycleAction;
     },
@@ -88,6 +90,7 @@ export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(in
       ...state[proposalId],
       status: 'applied',
       error: undefined,
+      errorCode: undefined,
       completedAt,
       lastAction: 'apply',
       ...(result !== undefined ? { result } : {}),
@@ -108,6 +111,7 @@ export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(in
         ...current,
         status: 'undoing',
         error: undefined,
+        errorCode: undefined,
         startedAt,
         lastAction: 'undo',
       },
@@ -119,20 +123,25 @@ export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(in
       ...state[proposalId],
       status: 'idle',
       error: undefined,
+      errorCode: undefined,
       completedAt,
       lastAction: 'undo',
     },
   }))
-  .with(proposalFailed, (state, { payload: [{ proposalId, error, completedAt, lastAction }] }) => ({
-    ...state,
-    [proposalId]: {
-      ...state[proposalId],
-      status: 'failed',
-      error,
-      completedAt,
-      lastAction,
-    },
-  }))
+  .with(
+    proposalFailed,
+    (state, { payload: [{ proposalId, error, errorCode, completedAt, lastAction }] }) => ({
+      ...state,
+      [proposalId]: {
+        ...state[proposalId],
+        status: 'failed',
+        error,
+        errorCode,
+        completedAt,
+        lastAction,
+      },
+    }),
+  )
   .with(clearProposalLifecycle, (state, { payload: [proposalId] }) => {
     if (!(proposalId in state)) return state;
     const { [proposalId]: _removed, ...rest } = state;
