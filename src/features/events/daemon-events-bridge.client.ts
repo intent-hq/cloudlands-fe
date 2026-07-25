@@ -88,7 +88,12 @@
  * dispatches `workspace-lifecycle/workspaceDeleted(wsId, agentIds)`, which
  * purges the agent-session slice, workspace-agents index, and per-agent
  * chat-state entries — preventing a recreated same-slug workspace from
- * surfacing ghost agents. `workspace:created` covers the recycled-ID case:
+ * surfacing ghost agents. It also calls `navigateAwayIfViewing` so a
+ * workspace deleted by another client while on screen closes its tab and
+ * routes away — this is the PRIMARY navigate-away path: the `events.event`
+ * firehose fires in both live and legacy modes, whereas the workspace-list
+ * snapshot diff is suppressed post-boot under live-state
+ * (intent-hq/monorepo#775). `workspace:created` covers the recycled-ID case:
  * if the created ID still has local agent/chat state (the delete event was
  * missed or never delivered), the bridge purges it the same way and then
  * dispatches `hydrateAgentsRequested` so the store converges on the daemon's
@@ -146,6 +151,7 @@ import {
   bulkUpdateWorkspaceEntities,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
@@ -1395,7 +1401,11 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
  * workspace from Redux so a recreated same-slug workspace does not surface
  * ghost agents. The chat-state slice is keyed by `agentId`, so we resolve the
  * agent-id list from the agent-session workspace index *before* dispatching
- * and pass it in the payload.
+ * and pass it in the payload. When the deleted workspace is the one on
+ * screen (deleted by another client), also close its tab and route away —
+ * this event path fires in both live and legacy modes, unlike the
+ * workspace-list snapshot diff, which live-state suppresses post-boot
+ * (intent-hq/monorepo#775; see workspace-list-subscription.ts).
  */
 function handleWorkspaceDeletedEvent(workspaceId: string): void {
   const state = appStore.state as {
@@ -1403,6 +1413,9 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
   };
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
   appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  navigateAwayIfViewing(workspaceId).catch((error) => {
+    logger.warn('navigateAwayIfViewing failed after workspace:deleted', error);
+  });
 }
 
 /**
