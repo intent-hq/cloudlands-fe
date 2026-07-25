@@ -498,6 +498,8 @@
     workspaceIsValidPath = event.detail.isValidPath ?? false;
     workspaceScope = event.detail.scope ?? '';
     workspaceBranch = workspaceIsNewRepo ? 'main' : '';
+    proposedBranchMissing = '';
+    branchListDefault = '';
   }
 
   function handleBranchChange(event: CustomEvent<{ branch: string }>) {

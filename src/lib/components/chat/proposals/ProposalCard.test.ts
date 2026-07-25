@@ -986,6 +986,30 @@ describe('ProposalCard', () => {
     expect(getBranchPicker().textContent).toContain('release/1.0');
   });
 
+  it('clears the missing-branch warning when the repository changes', async () => {
+    render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            initialPrompt: 'Fix the bug',
+            repoPath: '/repo/x',
+            repoType: 'local',
+            branch: 'feature/does-not-exist',
+          },
+        }),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock branches loaded' }));
+    expect(screen.getByTestId('proposal-branch-mismatch-warning')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock repo change' }));
+    expect(screen.queryByTestId('proposal-branch-mismatch-warning')).toBeNull();
+    expect(
+      screen.getByTestId('proposal-branch-picker').getAttribute('data-branch-warning'),
+    ).toBeNull();
+  });
+
   it('clears the missing-branch warning once the user picks a branch', async () => {
     render(ProposalCard, {
       props: {

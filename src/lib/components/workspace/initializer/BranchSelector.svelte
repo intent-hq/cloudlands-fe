@@ -393,12 +393,17 @@
   });
 
   function notifyBranchesLoaded() {
-    onBranchesLoaded?.({
-      branches: [...branches],
-      remoteBranches: [...remoteBranches],
-      defaultBranch,
-      currentBranch,
-    });
+    if (typeof onBranchesLoaded !== 'function') return;
+    try {
+      onBranchesLoaded({
+        branches: [...branches],
+        remoteBranches: [...remoteBranches],
+        defaultBranch,
+        currentBranch,
+      });
+    } catch (e) {
+      logger.error('Error in onBranchesLoaded callback', e);
+    }
   }
 
   async function fetchBranches() {
