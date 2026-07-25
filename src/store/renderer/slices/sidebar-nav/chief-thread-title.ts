@@ -11,6 +11,24 @@
 import { extractAllContent, type AgentSession } from "$shared/types";
 import { DEFAULT_CHIEF_THREAD_TITLE } from "./sidebar-nav-types";
 
+/**
+ * True when `name` is one of the creation placeholders a chief thread can
+ * carry before its first real rename: empty/blank, the ChiefCard placeholder
+ * (`DEFAULT_CHIEF_THREAD_TITLE`), the legacy "Chief of Staff" name, or a
+ * generated "New thread …" name. Shared by the title derivation below and
+ * the chat-send rename trigger's "daemon-side name is still the placeholder"
+ * guard (monorepo#745).
+ */
+export function isPlaceholderChiefThreadName(name: string | undefined | null): boolean {
+  const trimmed = name?.trim();
+  return (
+    !trimmed ||
+    trimmed === DEFAULT_CHIEF_THREAD_TITLE ||
+    trimmed === "Chief of Staff" ||
+    trimmed.startsWith("New thread ")
+  );
+}
+
 export function getChiefThreadTitle(
   session: Pick<AgentSession, "messages" | "name">,
 ): string {
@@ -18,7 +36,7 @@ export function getChiefThreadTitle(
   const firstMessage = firstUserMessage ?? session.messages[0];
   const text = firstMessage ? extractAllContent(firstMessage).trim() : "";
   const fallbackName = session.name?.trim();
-  if (!fallbackName || fallbackName === "Chief of Staff" || fallbackName.startsWith("New thread ")) {
+  if (!fallbackName || isPlaceholderChiefThreadName(fallbackName)) {
     return text || DEFAULT_CHIEF_THREAD_TITLE;
   }
   return text || fallbackName;

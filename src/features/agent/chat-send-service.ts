@@ -60,7 +60,10 @@ import {
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import type { SendMessagePayload } from "$store/renderer/slices/chat-state/chat-state-types";
 import { CHIEF_WORKSPACE_ID } from "$store/renderer/slices/sidebar-nav/sidebar-nav-types";
-import { getChiefThreadTitle } from "$store/renderer/slices/sidebar-nav/chief-thread-title";
+import {
+  getChiefThreadTitle,
+  isPlaceholderChiefThreadName,
+} from "$store/renderer/slices/sidebar-nav/chief-thread-title";
 import type { AgentSession } from "$shared/types";
 import { loadChatTranscript } from "$features/agent/chat-read-service";
 import { createLogger } from "$lib/utils/client-logger";
@@ -154,20 +157,6 @@ async function dispatchToLifecycle(
     }
   }
 
-  // Chief first-message rename: capture the 0 → 1 user-message transition
-  // BEFORE the send appends the optimistic user message (post-hydration, so a
-  // restored transcript counts). After a successful send, the daemon agent is
-  // renamed to the sidebar-derived thread title (see
-  // renameChiefThreadOnFirstUserMessage) so `agent:idle` notifications carry
-  // the real title instead of the creation placeholder.
-  const preSendState = appStore.state as {
-    agentSessions?: { byAgentId: Record<string, AgentSession | undefined> };
-  };
-  const preSendMessages = preSendState.agentSessions?.byAgentId[agentId]?.messages ?? [];
-  const isChiefFirstUserMessage =
-    wsId === CHIEF_WORKSPACE_ID &&
-    !preSendMessages.some((message) => message.role === "user");
-
   // Queue-on-send: derive in-flight status SOLELY from BE-returned session
   // state (selectAgentIsResponding reads `isResponding`/`isStreaming`/status
   // off the daemon snapshot). When the daemon reports the agent is busy,
@@ -211,6 +200,13 @@ async function dispatchToLifecycle(
           : [...existing, queuedMessage];
         appStore.dispatch(replaceAgentQueue(agentId, next));
       }
+      // Chief rename must also fire on the queue path (monorepo#745): when
+      // the very FIRST user message is queued, the transcript has no user
+      // message yet, so the queued content — which becomes that first user
+      // message — is passed as the title candidate.
+      if (wsId === CHIEF_WORKSPACE_ID) {
+        await renameChiefThreadIfPlaceholder(agentId, content);
+      }
     } catch (error) {
       // AUDIT-P0-2: a queue-on-send failure must surface to the UI; do not
       // silently drop the message.
@@ -234,8 +230,8 @@ async function dispatchToLifecycle(
       // The daemon will preempt the in-flight turn instead of queueing.
       priority: options.priority,
     });
-    if (isChiefFirstUserMessage) {
-      await renameChiefThreadOnFirstUserMessage(agentId);
+    if (wsId === CHIEF_WORKSPACE_ID) {
+      await renameChiefThreadIfPlaceholder(agentId);
     }
   } catch (error) {
     // AUDIT-P0-2: dispatch chatSendFailed so the error appears in the UI
@@ -247,22 +243,43 @@ async function dispatchToLifecycle(
 }
 
 /**
- * Chief first-message rename: after the first user message of a chief thread
- * is sent, rename the daemon-side agent to the sidebar-derived thread title
- * (shared derivation: `getChiefThreadTitle`) so `agent:idle` notifications
- * carry the real title instead of the creation placeholder. Sent with
+ * Chief first-message rename: after a chief-thread send (or queue-on-send),
+ * rename the daemon-side agent to the sidebar-derived thread title (shared
+ * derivation: `getChiefThreadTitle`) so `agent:idle` notifications carry the
+ * real title instead of the creation placeholder. Sent with
  * `skipIfExplicitlySet: true` (PROTOCOL §5.5) so a user-chosen name is never
  * clobbered — chief threads are created with `nameExplicitlySet: false`, so
  * the guard passes for them. Failures are logged, never surfaced: the rename
  * is cosmetic and must not fail the send.
+ *
+ * Hardened trigger (monorepo#745): instead of the strict 0 → 1 send
+ * transition, fire whenever the daemon-side name is still a creation
+ * placeholder — this covers a first message that took the queue path and
+ * retroactively fixes threads that missed the rename on an earlier send.
+ * Guards:
+ * - Re-fire guard: once renamed (`agent:renamed` refreshes `session.name`),
+ *   later sends bail out — even if a swallowed hydration failure left the
+ *   local transcript missing earlier messages.
+ * - The title always derives from the thread's FIRST user message; when the
+ *   transcript has none yet (first message queued while the agent was busy),
+ *   `fallbackText` — the content being queued, i.e. the future first user
+ *   message — is used instead.
+ * - Image-only/empty first message: a derived title that is itself a
+ *   placeholder never issues the (same-name) wire rename.
  */
-async function renameChiefThreadOnFirstUserMessage(agentId: string): Promise<void> {
+async function renameChiefThreadIfPlaceholder(
+  agentId: string,
+  fallbackText?: string,
+): Promise<void> {
   const state = appStore.state as {
     agentSessions?: { byAgentId: Record<string, AgentSession | undefined> };
   };
   const session = state.agentSessions?.byAgentId[agentId];
   if (!session) return;
-  const name = getChiefThreadTitle(session);
+  if (!isPlaceholderChiefThreadName(session.name)) return;
+  const hasUserMessage = session.messages.some((message) => message.role === "user");
+  const name = hasUserMessage ? getChiefThreadTitle(session) : (fallbackText?.trim() ?? "");
+  if (isPlaceholderChiefThreadName(name)) return;
   try {
     const result = await appClient.agents.rename(agentId, name, undefined, {
       skipIfExplicitlySet: true,
