@@ -61,6 +61,12 @@ describe('getResourceContents', () => {
     expect(getResourceContents({ type: 'resource', resource: { uri: 'x' } })).toBeNull();
     expect(getResourceContents(null)).toBeNull();
   });
+
+  it('rejects a present-but-non-string name', () => {
+    const block = proposalBlock() as { resource: Record<string, unknown> };
+    block.resource.name = 42;
+    expect(getResourceContents(block)).toBeNull();
+  });
 });
 
 describe('getResourceAttachmentId / isCanonicalResourceBlock', () => {
@@ -74,6 +80,15 @@ describe('getResourceAttachmentId / isCanonicalResourceBlock', () => {
     expect(getResourceAttachmentId(proposalBlock())).toBeNull();
     expect(isCanonicalResourceBlock(proposalBlock())).toBe(false);
     expect(getResourceAttachmentId(genericBlock({ text: 'not json' }))).toBeNull();
+  });
+
+  it('rejects attachmentId values that do not match the daemon nonce format', () => {
+    // A user/tool payload that happens to carry an `attachmentId` key must
+    // not be misclassified as canonical (tar- + 12 hex only).
+    expect(getResourceAttachmentId(proposalBlock({ nonce: 'my-custom-id' }))).toBeNull();
+    expect(getResourceAttachmentId(proposalBlock({ nonce: 'tar-SHOUTY12HEX' }))).toBeNull();
+    expect(getResourceAttachmentId(proposalBlock({ nonce: 'tar-abc' }))).toBeNull();
+    expect(isCanonicalResourceBlock(proposalBlock({ nonce: 'my-custom-id' }))).toBe(false);
   });
 });
 

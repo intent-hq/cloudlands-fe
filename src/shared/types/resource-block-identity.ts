@@ -21,6 +21,14 @@ import { PROPOSAL_RESOURCE_MIME_TYPE } from './proposal-resource';
  */
 export const ATTACHMENT_ID_KEY = 'attachmentId';
 
+/**
+ * Daemon nonce format: `tar-` + 12 hex chars (`intent_core::turn_attachments::
+ * new_attachment_id`). Only values matching this shape count as canonical —
+ * a user/tool payload that happens to carry an `attachmentId` key must not
+ * win dedupe replacement over another variant.
+ */
+const ATTACHMENT_NONCE_RE = /^tar-[0-9a-f]{12}$/;
+
 export interface ResourceBlockContents {
   uri: string;
   name?: string;
@@ -31,19 +39,21 @@ export interface ResourceBlockContents {
 /**
  * Extract the `resource` contents from a §7.1 standalone resource block or an
  * MCP resource content item — both share the `{ type: "resource", resource:
- * { uri, mimeType, text } }` shape. Returns null for anything malformed.
+ * { uri, mimeType, text } }` shape. Returns null for anything malformed
+ * (including a present-but-non-string `name`).
  */
 export function getResourceContents(block: unknown): ResourceBlockContents | null {
   if (!block || typeof block !== 'object') return null;
   const candidate = block as { type?: unknown; resource?: unknown };
   if (candidate.type !== 'resource') return null;
-  const resource = candidate.resource as Partial<ResourceBlockContents> | undefined;
+  const resource = candidate.resource as Partial<Record<keyof ResourceBlockContents, unknown>>;
   if (
     !resource ||
     typeof resource !== 'object' ||
     typeof resource.uri !== 'string' ||
     typeof resource.mimeType !== 'string' ||
-    typeof resource.text !== 'string'
+    typeof resource.text !== 'string' ||
+    (resource.name !== undefined && typeof resource.name !== 'string')
   ) {
     return null;
   }
@@ -52,8 +62,9 @@ export function getResourceContents(block: unknown): ResourceBlockContents | nul
 
 /**
  * The `attachmentId` nonce stamped into a registered resource's JSON-object
- * `text`, or null when the text is not a JSON object or carries no nonce
- * (e.g. an FE-rebuilt lift).
+ * `text`, or null when the text is not a JSON object, carries no nonce
+ * (e.g. an FE-rebuilt lift), or the value does not match the daemon's
+ * `tar-` + 12 hex nonce format.
  */
 export function getResourceAttachmentId(block: unknown): string | null {
   const contents = getResourceContents(block);
@@ -62,7 +73,7 @@ export function getResourceAttachmentId(block: unknown): string | null {
     const parsed: unknown = JSON.parse(contents.text);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const id = (parsed as Record<string, unknown>)[ATTACHMENT_ID_KEY];
-    return typeof id === 'string' && id.length > 0 ? id : null;
+    return typeof id === 'string' && ATTACHMENT_NONCE_RE.test(id) ? id : null;
   } catch {
     return null;
   }
