@@ -820,7 +820,6 @@ export const EVENT_CHANNELS = [
   'event:workspace:created',
   'event:workspace:updated',
   'event:workspace:deleted',
-  'workspace:clone-progress',
   'event:file:changed',
   'event:agent:started',
   'event:agent:stopped',

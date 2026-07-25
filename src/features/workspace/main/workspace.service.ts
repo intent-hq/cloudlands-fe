@@ -10,7 +10,6 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 
 
-import * as Errors from '../../../shared/errors';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import { getChangeHistoryForWorkspace } from './change-history-persistence';
@@ -47,9 +46,6 @@ import {
 } from '../../../main/utils/workspace-validation';
 import type { WorkspaceRepository } from './workspace.repository';
 import { DaemonWorkspaceRepository, getChiefWorkspace } from './workspace.repository';
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const { WorkspaceNotFoundError, WorkspaceValidationError } = Errors;
 
 const logger = new Logger('WorkspaceService');
 
