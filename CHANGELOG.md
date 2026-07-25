@@ -4,6 +4,46 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.4.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.3.0...v2.4.0) (2026-07-25)
+
+
+### 🚀 Features
+
+* add settings control for legacy workspace import ([#327](https://github.com/intent-hq/cloudlands-fe/issues/327)) ([2ddaa0c](https://github.com/intent-hq/cloudlands-fe/commit/2ddaa0cc28949f9af44b9aae6ed7b429d393554f))
+* agentic usage stats overlay with exportable bragging-rights cards ([#393](https://github.com/intent-hq/cloudlands-fe/issues/393)) ([8b85cda](https://github.com/intent-hq/cloudlands-fe/commit/8b85cda40f805e6bf6c73f96c0e3d50e226ffdcf))
+* aggregated agent-failure toast with grouped Retry All ([#385](https://github.com/intent-hq/cloudlands-fe/issues/385)) ([898cc91](https://github.com/intent-hq/cloudlands-fe/commit/898cc910d70ff84fd1e2571d94c7e082960d6142))
+* bundle iA Writer Mono and JetBrains Mono, drop Berkeley Mono ([#379](https://github.com/intent-hq/cloudlands-fe/issues/379)) ([cad67fb](https://github.com/intent-hq/cloudlands-fe/commit/cad67fbe3e8c9797671f6bc1bb9ebd93ad208462))
+* CoW toggle visibility, skipIsolation, and mode-aware creation copy ([#382](https://github.com/intent-hq/cloudlands-fe/issues/382)) ([3486076](https://github.com/intent-hq/cloudlands-fe/commit/3486076d6fa600b6d902c7633dd64ec79220e3dd))
+* hide hidden specialists from pickers ([#363](https://github.com/intent-hq/cloudlands-fe/issues/363)) ([f5a5ee1](https://github.com/intent-hq/cloudlands-fe/commit/f5a5ee12f7fda435f31d86615681648832a03b37))
+* MIME-keyed card registry + prefer daemon-attached blocks ([#376](https://github.com/intent-hq/cloudlands-fe/issues/376)) ([552bf9b](https://github.com/intent-hq/cloudlands-fe/commit/552bf9b54eee94f4224ab039cab0bb1fe21e25a2))
+* pass the optimistic comment id through comment.add ([#392](https://github.com/intent-hq/cloudlands-fe/issues/392)) ([9a9bf11](https://github.com/intent-hq/cloudlands-fe/commit/9a9bf11084503d96808f15debd7043decfe276a5))
+* remember last used context source and order providers dynamically ([cb2bd4c](https://github.com/intent-hq/cloudlands-fe/commit/cb2bd4c3b9d83738a4ec9fb76d8ff73d67c97a70))
+* rename chief thread on first user message ([#377](https://github.com/intent-hq/cloudlands-fe/issues/377)) ([682bb1c](https://github.com/intent-hq/cloudlands-fe/commit/682bb1c4eb1a2788c8a4a962927edb287adfb382))
+* render Stopped indicator live on interrupted agent:stream:end ([#375](https://github.com/intent-hq/cloudlands-fe/issues/375)) ([62d82d0](https://github.com/intent-hq/cloudlands-fe/commit/62d82d060f9bf5fd322ccd02efe248e1d92bc9e4))
+* warn and preselect default branch when proposed base branch is missing ([#761](https://github.com/intent-hq/cloudlands-fe/issues/761)) ([76ff994](https://github.com/intent-hq/cloudlands-fe/commit/76ff994cd57b740f76459434941d252cb9babd5c))
+
+
+### 🐛 Bug Fixes
+
+* apply archivedAt from workspace:updated delta in daemon events bridge ([#383](https://github.com/intent-hq/cloudlands-fe/issues/383)) ([6571085](https://github.com/intent-hq/cloudlands-fe/commit/65710852947a8ef6fc908b92a86d57aee5f10578))
+* cap vitest workers and raise test timeouts to stop full-suite flakiness ([#356](https://github.com/intent-hq/cloudlands-fe/issues/356)) ([0b0a605](https://github.com/intent-hq/cloudlands-fe/commit/0b0a605d88b34d18bc1dff699521e50dcc32a89f))
+* exempt replies from scanAnchorHealth orphan evaluation (monorepo[#749](https://github.com/intent-hq/cloudlands-fe/issues/749)) ([#380](https://github.com/intent-hq/cloudlands-fe/issues/380)) ([e259b84](https://github.com/intent-hq/cloudlands-fe/commit/e259b845caae09818fe300d559de06d19eb4b0e7))
+* harden chief thread rename trigger for queued and degraded-hydration edge cases (intent-hq/monorepo[#745](https://github.com/intent-hq/cloudlands-fe/issues/745)) ([#378](https://github.com/intent-hq/cloudlands-fe/issues/378)) ([bddec09](https://github.com/intent-hq/cloudlands-fe/commit/bddec091bfedde12bf3eaa245057fe1de640565c))
+* never render a stale cached workspace after deletion ([#390](https://github.com/intent-hq/cloudlands-fe/issues/390)) ([7f6bb84](https://github.com/intent-hq/cloudlands-fe/commit/7f6bb84a01bf61910b3fb9886110c22323c5f6dd))
+* orphan check understands bare anchor ids and thread-root anchoring ([#387](https://github.com/intent-hq/cloudlands-fe/issues/387)) ([15e7a67](https://github.com/intent-hq/cloudlands-fe/commit/15e7a673515a60c03fca7ca2ad2a88e255aeca00))
+* pass nameExplicitlySet:false on launch-path sites; forward it through the browser-mode bridge ([#675](https://github.com/intent-hq/cloudlands-fe/issues/675)) ([bbb4f90](https://github.com/intent-hq/cloudlands-fe/commit/bbb4f90341ce4583361472b65bc46212c3c34347))
+* persist stable clientId for client.hello and flush new-workspace draft saves on unload ([#372](https://github.com/intent-hq/cloudlands-fe/issues/372)) ([da78fd4](https://github.com/intent-hq/cloudlands-fe/commit/da78fd4dc2c212773f85342f19ed7caa5e525a55))
+* release WebGL context and GPU resources on AuroraBackground cleanup ([#389](https://github.com/intent-hq/cloudlands-fe/issues/389)) ([d09c34f](https://github.com/intent-hq/cloudlands-fe/commit/d09c34f1366fe5e569580c1dd672815801a8fbb9))
+* repair provider-wrapped JSON in the collapsed-output proposal lift ([#347](https://github.com/intent-hq/cloudlands-fe/issues/347)) ([a539f51](https://github.com/intent-hq/cloudlands-fe/commit/a539f5162948af5e784a24c5e481b686f4fd95e1))
+* restore legacy refetches until a subscription.push is observed (monorepo[#775](https://github.com/intent-hq/cloudlands-fe/issues/775)) ([232d0f7](https://github.com/intent-hq/cloudlands-fe/commit/232d0f7c28e049aac44eff15463d6b6d6f22d85b))
+* route bulk-op proposal Apply through real archive/delete handlers ([#353](https://github.com/intent-hq/cloudlands-fe/issues/353)) ([825b6bf](https://github.com/intent-hq/cloudlands-fe/commit/825b6bf78855273a1d6d1b62c60057107f341281))
+* shell-free argv for workspace preflightCloneCheck, drop escapeShellArg ([#360](https://github.com/intent-hq/cloudlands-fe/issues/360)) ([a4d1dce](https://github.com/intent-hq/cloudlands-fe/commit/a4d1dce4188fed8d3848d9785e2b6578e0a6754f))
+* show a not-found page when opening a deleted workspace ([#386](https://github.com/intent-hq/cloudlands-fe/issues/386)) ([a9b37fb](https://github.com/intent-hq/cloudlands-fe/commit/a9b37fb4ad566e4e66a5b26871814dc53e513a33))
+* stop falsely orphaning comments whose anchorText is markdown (monorepo[#710](https://github.com/intent-hq/cloudlands-fe/issues/710)) ([#371](https://github.com/intent-hq/cloudlands-fe/issues/371)) ([220e1f2](https://github.com/intent-hq/cloudlands-fe/commit/220e1f2cc20c10772ce79cad671ce8fcc4d91890))
+* stop shell-interpolating paths in main-process exec calls (monorepo[#672](https://github.com/intent-hq/cloudlands-fe/issues/672)) ([782d09c](https://github.com/intent-hq/cloudlands-fe/commit/782d09c8f352c14ee61b50a6b16f4c880b5b14c3))
+* stop synthesizing/cloning reply anchors in loadComments and replyToComment (monorepo[#754](https://github.com/intent-hq/cloudlands-fe/issues/754)) ([#381](https://github.com/intent-hq/cloudlands-fe/issues/381)) ([63891ca](https://github.com/intent-hq/cloudlands-fe/commit/63891cabf7100a710d872e50b3bdf09a7f49c9d4))
+* use execFile argv for IDE-launch exec sites ([#354](https://github.com/intent-hq/cloudlands-fe/issues/354)) ([272c946](https://github.com/intent-hq/cloudlands-fe/commit/272c946a2144d69ae28245ff837ff001ba17beeb))
+
 ## [2.3.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.2.0...v2.3.0) (2026-07-24)
 
 
