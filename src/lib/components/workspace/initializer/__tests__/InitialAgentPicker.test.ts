@@ -57,7 +57,7 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectUserOverrides: () => mocks.readable({ modelOverrides: {} }),
   selectEffectiveModel: { select: () => mocks.effectiveModel },
   selectEffectiveCodingAgent: { select: () => 'auggie' },
-  filterSpecialistsByGitHubAuth: (specialists: unknown[]) => specialists,
+  filterPickableSpecialists: (specialists: unknown[]) => specialists,
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({

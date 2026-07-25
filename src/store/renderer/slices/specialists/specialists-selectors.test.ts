@@ -5,6 +5,7 @@ import {
 } from "vitest";
 import {
   filterSpecialistsByGitHubAuth,
+  filterPickableSpecialists,
   selectProviderModelOverrides,
   selectSpecialists,
   selectUserOverrides,
@@ -105,6 +106,65 @@ describe("specialists selectors", () => {
 
       expect(ids).toContain("pr-reviewer");
       expect(ids).toContain("pr-shepherd");
+    });
+
+    it("filterSpecialistsByGitHubAuth should keep hidden specialists (Settings surface)", () => {
+      const ids = filterSpecialistsByGitHubAuth(SPECIALISTS, true).map((specialist) => specialist.id);
+
+      expect(ids).toContain("chief-of-staff");
+    });
+
+    it("filterPickableSpecialists should drop hidden specialists (chief-of-staff)", () => {
+      const ids = filterPickableSpecialists(SPECIALISTS, true).map((specialist) => specialist.id);
+
+      expect(ids).not.toContain("chief-of-staff");
+      expect(ids).toContain("spec-writer");
+    });
+
+    it("filterPickableSpecialists should also apply GitHub gating when not authenticated", () => {
+      const ids = filterPickableSpecialists(SPECIALISTS, false).map((specialist) => specialist.id);
+
+      expect(ids).not.toContain("chief-of-staff");
+      expect(ids).not.toContain("pr-reviewer");
+      expect(ids).not.toContain("pr-shepherd");
+    });
+
+    it("filterPickableSpecialists should drop file specialists flagged hidden", () => {
+      const specialists = [
+        { ...SPECIALISTS[0], id: "visible-custom", hidden: undefined },
+        { ...SPECIALISTS[0], id: "hidden-custom", hidden: true },
+      ];
+      const ids = filterPickableSpecialists(specialists, true).map((specialist) => specialist.id);
+
+      expect(ids).toContain("visible-custom");
+      expect(ids).not.toContain("hidden-custom");
+    });
+  });
+
+  describe("hidden flag propagation through selectSpecialists", () => {
+    it("should carry hidden from a file specialist into the merged list", () => {
+      const state = mockState({
+        bundledSpecialists: SPECIALISTS,
+        fileSpecialists: createCollection("id", [
+          {
+            id: "chief-of-staff",
+            name: "Chief of Staff",
+            description: "overridden",
+            model: "gpt-4",
+            behaviorPrompt: "custom prompt",
+            filePath: "/Users/test/.intent/specialists/chief-of-staff.md",
+            source: "user" as const,
+            hidden: true,
+          },
+        ]),
+      });
+
+      const merged = selectSpecialists.select(state);
+      const chief = merged.find((s) => s.id === "chief-of-staff");
+      expect(chief?.hidden).toBe(true);
+      // And the pickable filter drops it from the merged list too.
+      const pickableIds = filterPickableSpecialists(merged, true).map((s) => s.id);
+      expect(pickableIds).not.toContain("chief-of-staff");
     });
   });
 

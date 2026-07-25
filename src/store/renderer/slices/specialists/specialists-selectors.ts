@@ -48,6 +48,9 @@ const selectIsSpecialistVisible = store.createSelector((state, specialistId: str
 });
 /**
  * Helper to filter specialists based on GitHub auth status.
+ * Used by Settings (AI Behavior), which must keep showing `hidden`
+ * specialists for instructions editing — picker surfaces use
+ * `filterPickableSpecialists` instead.
  * @param specialists List of specialists to filter
  * @param isGitHubAuthenticated Whether user is authenticated with GitHub
  */
@@ -57,6 +60,18 @@ export function filterSpecialistsByGitHubAuth(specialists: Specialist[], isGitHu
     }
     // Hide GitHub-dependent specialists when not authenticated
     return specialists.filter((s) => !GITHUB_DEPENDENT_SPECIALIST_IDS.has(s.id));
+}
+/**
+ * Filter specialists down to the pickable set: drops GitHub-dependent
+ * specialists when not authenticated AND any specialist flagged `hidden`
+ * (e.g. chief-of-staff). Use this for every specialist picker surface;
+ * Settings uses `filterSpecialistsByGitHubAuth` so hidden specialists stay
+ * editable there.
+ * @param specialists List of specialists to filter
+ * @param isGitHubAuthenticated Whether user is authenticated with GitHub
+ */
+export function filterPickableSpecialists(specialists: Specialist[], isGitHubAuthenticated: boolean): Specialist[] {
+    return filterSpecialistsByGitHubAuth(specialists, isGitHubAuthenticated).filter((s) => !s.hidden);
 }
 // ============================================================================
 // Derived: merged specialists list
@@ -82,6 +97,7 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
                 defaultBehaviorPrompt: file.behaviorPrompt,
                 roleReminder: file.roleReminder,
                 source: file.source,
+                hidden: file.hidden,
             });
         }
     }

@@ -24,7 +24,7 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () => 
   const store = createAppStoreMock({ state: {} });
   return {
     selectSpecialists: store.createSelector(() => []),
-    filterSpecialistsByGitHubAuth: (specialists: unknown[]) => specialists,
+    filterPickableSpecialists: (specialists: unknown[]) => specialists,
   };
 });
 

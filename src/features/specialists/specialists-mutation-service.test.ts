@@ -139,6 +139,123 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       expect(list).toHaveBeenCalled();
     });
 
+    it("carries hidden from the bundled specialist when creating a user override (chief-of-staff)", async () => {
+      // PROTOCOL-shaped bundled def with `hidden: true` (mirrors the intentd
+      // SpecialistDef contract change landing in parallel).
+      const CHIEF_DEF: SpecialistDef = {
+        id: "chief-of-staff",
+        name: "Chief of Staff",
+        description: "App-level assistant",
+        modelTier: "smart",
+        prompt: "You assist.",
+        behaviorPrompt: "You assist.",
+        source: "bundled",
+        hidden: true,
+      };
+      list.mockResolvedValue([CHIEF_DEF]);
+      appStore.dispatch(loadFileSpecialists());
+      await flush();
+      create.mockResolvedValue({ ...CHIEF_DEF, source: "user" });
+      appStore.dispatch(setFileSpecialists([]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "chief-of-staff",
+          name: "Chief of Staff",
+          description: "App-level assistant",
+          behaviorPrompt: "You assist better.",
+        }),
+      );
+      await flush();
+
+      expect(create).toHaveBeenCalledWith(
+        "chief-of-staff",
+        expect.objectContaining({ id: "chief-of-staff", hidden: true, source: "user" }),
+        "user",
+        undefined,
+      );
+    });
+
+    it("falls back to the SPECIALISTS constant for hidden before the bundled list loads", async () => {
+      // Simulate the pre-load state: the store has no bundled specialists yet
+      // (specialist.list has not resolved), so readFileSpecialist must fall
+      // back to the static SPECIALISTS constant for built-in flags.
+      appStore.dispatch(setBundledSpecialists([]));
+      appStore.dispatch(setFileSpecialists([]));
+      create.mockResolvedValue({} as any);
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "chief-of-staff",
+          name: "Chief of Staff",
+          description: "App-level assistant",
+          behaviorPrompt: "You assist.",
+        }),
+      );
+      await flush();
+
+      expect(create).toHaveBeenCalledWith(
+        "chief-of-staff",
+        expect.objectContaining({ id: "chief-of-staff", hidden: true, source: "user" }),
+        "user",
+        undefined,
+      );
+    });
+
+    it("carries hidden from an existing file specialist when editing", async () => {
+      const existingHidden: FileSpecialist = {
+        id: "chief-of-staff",
+        name: "Chief of Staff",
+        description: "App-level assistant",
+        model: "",
+        behaviorPrompt: "You assist.",
+        filePath: "/home/u/.intent/specialists/chief-of-staff.md",
+        source: "user",
+        hidden: true,
+      };
+      edit.mockResolvedValue({} as any);
+      appStore.dispatch(setFileSpecialists([existingHidden]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "chief-of-staff",
+          name: "Chief of Staff v2",
+          description: "App-level assistant",
+          behaviorPrompt: "You assist v2.",
+        }),
+      );
+      await flush();
+
+      expect(edit).toHaveBeenCalledWith(
+        "chief-of-staff",
+        expect.objectContaining({ hidden: true }),
+        "user",
+        undefined,
+      );
+    });
+
+    it("leaves hidden undefined for a non-hidden specialist", async () => {
+      create.mockResolvedValue(USER_DEF);
+      appStore.dispatch(setFileSpecialists([]));
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "reviewer",
+          name: "Reviewer",
+          description: "Reviews",
+          behaviorPrompt: "You review.",
+        }),
+      );
+      await flush();
+
+      expect(create).toHaveBeenCalledWith(
+        "reviewer",
+        expect.objectContaining({ hidden: undefined }),
+        "user",
+        undefined,
+      );
+    });
+
     it("passes scope=project and workspacePath when provided", async () => {
       create.mockResolvedValue(USER_DEF);
       appStore.dispatch(setFileSpecialists([]));
@@ -212,6 +329,20 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
         "user",
       );
       expect(list).toHaveBeenCalled();
+    });
+
+    it("carries hidden when exporting a hidden built-in (chief-of-staff)", async () => {
+      appStore.dispatch(setBundledSpecialists(SPECIALISTS));
+      create.mockResolvedValue({} as any);
+
+      appStore.dispatch(exportBuiltinToFile("chief-of-staff"));
+      await flush();
+
+      expect(create).toHaveBeenCalledWith(
+        "chief-of-staff",
+        expect.objectContaining({ id: "chief-of-staff", hidden: true, source: "user" }),
+        "user",
+      );
     });
   });
 

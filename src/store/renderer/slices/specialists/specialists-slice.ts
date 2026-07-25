@@ -40,6 +40,8 @@ export interface FileSpecialist {
   roleReminder?: string;
   filePath: string;
   source: SpecialistFileScope;
+  /** When true, excluded from picker surfaces (Settings still shows it). */
+  hidden?: boolean;
 }
 
 export interface FileSpecialistWritePayload {
