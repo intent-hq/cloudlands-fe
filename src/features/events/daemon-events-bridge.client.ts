@@ -1368,6 +1368,15 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   if (typeof raw.prUrl === 'string') changes.prUrl = raw.prUrl;
   if (typeof raw.lastActivity === 'string') changes.lastActivity = raw.lastActivity;
   if (typeof raw.archived === 'boolean') changes.archived = raw.archived;
+  // `archivedAt` is nullable on the wire: archive sends the persisted ISO
+  // timestamp, unarchive sends an explicit JSON null. Keep the key present on
+  // null so the entity merge (`{ ...existing, ...changes }`) drops the stale
+  // timestamp instead of retaining it.
+  if (typeof raw.archivedAt === 'string') {
+    changes.archivedAt = raw.archivedAt;
+  } else if (raw.archivedAt === null) {
+    changes.archivedAt = undefined;
+  }
   if (Object.keys(changes).length === 0) return;
   // Same reducer path as `handlePrEvent` — `updateWorkspaceEntity` has no
   // standalone case; the slice folds it through `bulkUpdateWorkspaceEntities`.
