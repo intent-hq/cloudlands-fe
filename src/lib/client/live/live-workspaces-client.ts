@@ -2,8 +2,11 @@
  * Live workspaces domain backed by the intentd daemon.
  *
  * Reads resolve via `workspace.list` / `workspace.get` over the JSON-RPC bridge.
- * `subscribe` emits an initial snapshot, then refetches whenever a `workspace:*`
- * daemon event arrives (delivered as `events.event` notifications). Mutations
+ * `subscribe` emits an initial snapshot, then converges via the typed global
+ * `workspace.subscribe` channel (PROTOCOL §6.9) on liveState daemons —
+ * snapshot/delta `subscription.push` frames, archived-INCLUSIVE like the
+ * legacy fetch — and refetches on legacy `workspace:*` `events.event`
+ * notifications otherwise. Mutations
  * (`workspace.create/update/delete/archive/unarchive`, §5.1) forward to the
  * daemon and fold outcomes into `MutationResult`.
  */
@@ -285,6 +288,13 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {
     return createDeltaSubscription<Workspace>({
       eventTypes: ["workspace:created", "workspace:updated", "workspace:deleted"],
+      // Typed §6.9 channel — the one GLOBAL channel (no workspaceId). Its
+      // seq-0 snapshot includes archived workspaces (intentd#521), matching
+      // the legacy `includeArchived: true` fetch below.
+      channel: {
+        subscribeMethod: "workspace.subscribe",
+        unsubscribeMethod: "workspace.unsubscribe",
+      },
       matchLegacyEvent: (method, params) => isWorkspaceEvent(method, params),
       fetchAll: () => this.list({ includeArchived: true }),
       getId: (raw) => String(raw.id ?? raw.workspaceId ?? ""),

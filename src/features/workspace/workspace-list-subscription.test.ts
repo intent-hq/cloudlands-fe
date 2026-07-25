@@ -231,5 +231,137 @@ describe("workspace list subscription (mock backend, real store)", () => {
       expect(gotoMock).not.toHaveBeenCalled();
       expect(appStore.state.tabState.openTabs[WS_ID]).toBe(true);
     });
+
+    describe("typed workspace.subscribe pushes (liveState daemon, #775 wired)", () => {
+      const CHAN = "ws-chan-1";
+
+      /** Advertise liveState, script the §6.9 channel, start, and settle. */
+      async function seedTyped(list: () => unknown[]) {
+        backend.setLiveStateCapability(true);
+        backend.onRequest("workspace.subscribe", () => ({ subscriptionId: CHAN }));
+        backend.onRequest("workspace.unsubscribe", () => ({ success: true }));
+        await seedSnapshot(list);
+      }
+
+      it("deleting the viewed workspace via a delta removedIds navigates away", async () => {
+        await seedTyped(() => [wireWorkspace("Viewed"), wireWorkspace("Other", OTHER_WS_ID)]);
+        appStore.dispatch(openWorkspaceTab(OTHER_WS_ID));
+        viewWorkspace(WS_ID);
+
+        backend.pushSubscriptionPush({
+          subscriptionId: CHAN,
+          kind: "snapshot",
+          seq: 0,
+          snapshot: [wireWorkspace("Viewed"), wireWorkspace("Other", OTHER_WS_ID)],
+        });
+        await flush();
+        backend.pushSubscriptionPush({
+          subscriptionId: CHAN,
+          kind: "delta",
+          seq: 1,
+          delta: { removedIds: [WS_ID] },
+        });
+        await flush();
+
+        await vi.waitFor(() => expect(gotoMock).toHaveBeenCalledWith(`/workspace/${OTHER_WS_ID}`));
+        expect(appStore.state.tabState.openTabs[WS_ID]).toBeUndefined();
+      });
+
+      it("archiving the viewed workspace via a delta keeps it listed and does not navigate", async () => {
+        // intentd#521: the typed channel is archived-INCLUSIVE — archiving
+        // arrives as an `updated` delta (status: Archived), never a removal,
+        // so the snapshot diff must not treat it as a deletion.
+        await seedTyped(() => [wireWorkspace("Viewed")]);
+        viewWorkspace(WS_ID);
+
+        backend.pushSubscriptionPush({
+          subscriptionId: CHAN,
+          kind: "snapshot",
+          seq: 0,
+          snapshot: [wireWorkspace("Viewed")],
+        });
+        await flush();
+        backend.pushSubscriptionPush({
+          subscriptionId: CHAN,
+          kind: "delta",
+          seq: 1,
+          delta: { updated: [wireWorkspace("Viewed", WS_ID, "Archived")] },
+        });
+        await flush();
+        await flush();
+
+        expect(gotoMock).not.toHaveBeenCalled();
+        expect(appStore.state.tabState.openTabs[WS_ID]).toBe(true);
+        const items = selectWorkspaceItems.select(appStore.state);
+        expect(items.map((w) => String(w.id))).toContain(WS_ID);
+      });
+    });
+  });
+
+  describe("typed workspace.subscribe channel registration (liveState daemon)", () => {
+    const CHAN = "ws-chan-1";
+
+    async function startTyped(list: () => unknown[]) {
+      backend.setLiveStateCapability(true);
+      backend.onRequest("workspace.subscribe", () => ({ subscriptionId: CHAN }));
+      backend.onRequest("workspace.unsubscribe", () => ({ success: true }));
+      backend.onRequest("workspace.list", () => ({ workspaces: list() }));
+      stop = startWorkspaceListSubscription();
+      await flush();
+    }
+
+    it("registers workspace.subscribe on the wire, converges from pushes without refetching, and unsubscribes on dispose", async () => {
+      await startTyped(() => [wireWorkspace("Original")]);
+
+      // Global channel: registration carries no workspaceId (PROTOCOL §6.9).
+      expect(backend.requests).toContainEqual({ method: "workspace.subscribe", params: {} });
+
+      backend.pushSubscriptionPush({
+        subscriptionId: CHAN,
+        kind: "snapshot",
+        seq: 0,
+        snapshot: [wireWorkspace("Original"), wireWorkspace("Other", OTHER_WS_ID)],
+      });
+      await flush();
+      expect(selectWorkspaceItems.select(appStore.state).map((w) => String(w.id))).toEqual(
+        expect.arrayContaining([WS_ID, OTHER_WS_ID]),
+      );
+
+      const calls = listCalls(backend);
+      backend.pushSubscriptionPush({
+        subscriptionId: CHAN,
+        kind: "delta",
+        seq: 1,
+        delta: { updated: [wireWorkspace("Renamed")] },
+      });
+      await flush();
+      const items = selectWorkspaceItems.select(appStore.state);
+      expect(items.find((w) => String(w.id) === WS_ID)?.title).toBe("Renamed");
+
+      // Live: a legacy workspace:* event no longer triggers a refetch.
+      backend.pushEvent({
+        type: "workspace:updated",
+        data: { workspaceId: WS_ID },
+        workspaceId: WS_ID,
+      });
+      await flush();
+      expect(listCalls(backend)).toBe(calls);
+
+      stop!();
+      stop = undefined;
+      await flush();
+      expect(backend.requests).toContainEqual({
+        method: "workspace.unsubscribe",
+        params: { subscriptionId: CHAN },
+      });
+    });
+
+    it("legacy daemon (no liveState): never attempts the typed registration", async () => {
+      backend.onRequest("workspace.list", () => ({ workspaces: [wireWorkspace("Original")] }));
+      stop = startWorkspaceListSubscription();
+      await flush();
+
+      expect(backend.requests.some((r) => r.method === "workspace.subscribe")).toBe(false);
+    });
   });
 });

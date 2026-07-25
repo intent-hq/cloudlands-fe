@@ -17,18 +17,19 @@
  * tab and routes to the next tab or home, matching the user-initiated delete
  * UX. Initial hydration (no previous snapshot) never triggers it.
  *
- * The snapshot diff is a legacy-mode / reconnect belt-and-braces only. When
- * the daemon advertises `capabilities.liveState` (intentd does), the
- * delta-subscription layer suppresses the legacy `workspace:*` refetches but
- * never wires the typed `workspace.subscribe` channel
- * (intent-hq/monorepo#775), so post-boot snapshots only arrive here on
- * reconnect. The PRIMARY deleted-while-viewing path is the `workspace:deleted`
- * handler in daemon-events-bridge.client.ts, which fires in both modes.
- * Archived-but-listed workspaces never trip the diff today because every
- * emission path refetches via `workspace.list { includeArchived: true }`; if
- * the typed channel is ever wired (its snapshots EXCLUDE archived — see #775),
- * this diff needs a status-aware guard so archiving is not treated as
- * deletion.
+ * The snapshot diff runs in both modes. When the daemon advertises
+ * `capabilities.liveState` (intentd does), the delta-subscription layer
+ * registers the typed `workspace.subscribe` channel (PROTOCOL §6.9,
+ * intent-hq/monorepo#775) and post-boot emissions arrive as live
+ * `subscription.push` snapshots/deltas; on legacy daemons the `workspace:*`
+ * refetch path feeds it instead. The PRIMARY deleted-while-viewing path is
+ * the `workspace:deleted` handler in daemon-events-bridge.client.ts, which
+ * fires in both modes; this diff is the belt-and-braces. Archived-but-listed
+ * workspaces never trip it because BOTH feeds are archived-inclusive: the
+ * legacy refetch uses `workspace.list { includeArchived: true }` and the
+ * typed channel's snapshots/deltas INCLUDE archived workspaces too
+ * (intentd#521 — archiving arrives as an `updated` delta, never a removal),
+ * so only true deletion removes an id and triggers navigate-away.
  *
  * Mirrors `src/features/git/git-status-subscription.ts` and is mounted/disposed
  * alongside it in `src/routes/+layout.svelte`. Dependency-light per
