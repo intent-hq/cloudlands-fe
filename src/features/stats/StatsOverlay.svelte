@@ -13,6 +13,10 @@
   import { fade } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import { faChevronDown, faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import AgentPassportCard from './AgentPassportCard.svelte';
+  import ModelsCard from './ModelsCard.svelte';
+  import TokensByHourCard from './TokensByHourCard.svelte';
+  import TokensByMonthCard from './TokensByMonthCard.svelte';
   import {
     STATS_MODES,
     defaultPeriodKey,
@@ -46,6 +50,8 @@
   const available = $derived($data$?.availablePeriods ?? { months: [], years: [] });
   const options = $derived(periodOptions($mode$, available));
   const cardLabel = $derived(shortLabel($mode$, $periodKey$ ?? ''));
+  // "YYYY" of the selected period — the byMonth cells always span that year.
+  const yearKey = $derived(($periodKey$ ?? '').slice(0, 4));
 
   function load(mode: StatsMode, key: string | undefined) {
     appStore.dispatch(loadUsageStatsRequested(mode, key ?? null, localTzOffsetMinutes()));
@@ -144,7 +150,10 @@
             <span class="opacity-60 text-[9px]"><Fa icon={faChevronDown} size={9} /></span>
           </button>
           {#if dropdownOpen}
-            <div class="stats-dd absolute top-[38px] left-0 z-[4] w-40 rounded-lg p-1" role="listbox">
+            <div
+              class="stats-dd absolute top-[38px] left-0 z-[4] w-40 rounded-lg p-1"
+              role="listbox"
+            >
               {#each options as key (key)}
                 <button
                   class="stats-dd-opt flex w-full items-center justify-between rounded-[5px] px-[9px] py-1.5 text-xs cursor-pointer select-none {key ===
@@ -173,45 +182,20 @@
       <div class="stats-error pointer-events-auto mt-8 text-sm" role="alert">{$error$}</div>
     {/if}
 
-    <!-- Card slots (placeholders — cards land in follow-up tasks) -->
+    <!-- Card slots -->
     <div class="pointer-events-auto mt-[30px] flex flex-wrap justify-center gap-7">
-      <!-- Placeholder: Agent Passport card -->
-      <div class="stats-card" data-stats-card="passport" data-loading={$loading$}>
-        <div class="stats-card-head">
-          <span class="stats-card-title">AGENT PASSPORT</span>
-          <span class="stats-card-label">{cardLabel}</span>
-        </div>
-        <div class="stats-card-body stats-muted">Coming soon</div>
-      </div>
-      <!-- Placeholder: Models card -->
-      <div class="stats-card" data-stats-card="models" data-loading={$loading$}>
-        <div class="stats-card-head">
-          <span class="stats-card-title">MODELS</span>
-          <span class="stats-card-label">{cardLabel}</span>
-        </div>
-        <div class="stats-card-body stats-muted">Coming soon</div>
-      </div>
-      <!-- Placeholder: Tokens by Hour card -->
-      <div class="stats-card" data-stats-card="by-hour" data-loading={$loading$}>
-        <div class="stats-card-head">
-          <span class="stats-card-title">TOKENS BY HOUR</span>
-          <span class="stats-card-label">{cardLabel}</span>
-        </div>
-        <div class="stats-card-body stats-muted">Coming soon</div>
-      </div>
+      <AgentPassportCard data={$data$} label={cardLabel} />
+      <ModelsCard data={$data$} label={cardLabel} />
+      <TokensByHourCard data={$data$} mode={$mode$} label={cardLabel} loading={$loading$} />
       {#if $mode$ !== '24h'}
-        <!-- Placeholder: Tokens by Month card (hidden in 24H mode — Spec D11) -->
-        <div class="stats-card" data-stats-card="by-month" data-loading={$loading$}>
-          <div class="stats-card-head">
-            <span class="stats-card-title">TOKENS BY MONTH</span>
-            <span class="stats-card-label">{cardLabel}</span>
-          </div>
-          <div class="stats-card-body stats-muted">Coming soon</div>
-        </div>
+        <!-- Tokens by Month is hidden in 24H mode (Spec D11). -->
+        <TokensByMonthCard data={$data$} {yearKey} loading={$loading$} />
       {/if}
     </div>
 
-    <div class="stats-hint mt-[26px] text-xs">Hover a card to export it as a 1080×1920 PNG story.</div>
+    <div class="stats-hint mt-[26px] text-xs">
+      Hover a card to export it as a 1080×1920 PNG story.
+    </div>
   </div>
 {/if}
 
@@ -271,49 +255,6 @@
     border: 1px solid hsl(256 6% 24%);
     color: hsl(0 0% 97%);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  }
-
-  .stats-card {
-    width: 360px;
-    height: 640px;
-    background: hsl(250 11% 8%);
-    border: 1px solid hsl(256 6% 24%);
-    border-radius: 16px;
-    color: hsl(0 0% 97%);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-    box-sizing: border-box;
-  }
-
-  .stats-card-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 22px 24px 17px;
-    border-bottom: 1px dashed hsl(256 6% 26%);
-  }
-
-  .stats-card-title {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    color: hsl(240 5% 58%);
-  }
-
-  .stats-card-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: hsl(240 5% 40%);
-  }
-
-  .stats-card-body {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
   }
 
   .stats-muted {
