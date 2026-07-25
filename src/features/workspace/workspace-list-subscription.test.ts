@@ -199,6 +199,26 @@ describe("workspace list subscription (mock backend, real store)", () => {
       expect(appStore.state.tabState.openTabs[WS_ID]).toBe(true);
     });
 
+    it("live mode (liveState capability): the snapshot diff is inert post-boot — navigation is covered by the daemon-events-bridge workspace:deleted handler", async () => {
+      // Against the real daemon (capabilities.liveState: true) the
+      // delta-subscription layer suppresses the legacy `workspace:*` refetch
+      // but never wires the typed `workspace.subscribe` channel
+      // (intent-hq/monorepo#775), so no post-boot snapshot reaches the diff.
+      // The bridge-level navigate-away test in
+      // daemon-events-bridge.client.test.ts asserts the path that DOES fire
+      // in live mode.
+      backend.setLiveStateCapability(true);
+      let workspaces = [wireWorkspace("Viewed")];
+      await seedSnapshot(() => workspaces);
+      viewWorkspace(WS_ID);
+
+      workspaces = [];
+      await pushDeleted(WS_ID);
+
+      expect(gotoMock).not.toHaveBeenCalled();
+      expect(appStore.state.tabState.openTabs[WS_ID]).toBe(true);
+    });
+
     it("does not navigate when the viewed workspace is archived but still listed", async () => {
       let workspaces = [wireWorkspace("Viewed")];
       await seedSnapshot(() => workspaces);

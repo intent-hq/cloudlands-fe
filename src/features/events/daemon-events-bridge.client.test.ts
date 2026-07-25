@@ -70,6 +70,17 @@ vi.mock('$features/agent/agent-read-service', () => ({
   createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
+// Fake the navigate-away helper so the bridge's `workspace:deleted` navigation
+// routing is observable without jsdom location/tab-state choreography. This is
+// the live-mode path for #766: the `events.event` firehose fires in both live
+// and legacy modes, unlike the workspace-list snapshot diff (monorepo#775).
+const { navigateAwayIfViewingSpy } = vi.hoisted(() => ({
+  navigateAwayIfViewingSpy: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
+  navigateAwayIfViewing: navigateAwayIfViewingSpy,
+}));
+
 // Fake the agent-subscription read service so the bridge's completion-watch
 // refresh routing (agent:idle/failed/deleted/created →
 // refreshWorkspaceSubscriptionEntries) is observable without real
@@ -3127,11 +3138,37 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
     appStore.dispatch(chatReset(OTHER_AGENT));
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
+    navigateAwayIfViewingSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
   });
 
   afterEach(() => vi.clearAllMocks());
+
+  it('fires navigateAwayIfViewing for the deleted workspace (#766 live-mode navigation path)', async () => {
+    // Unlike the workspace-list snapshot diff (legacy-mode only — the
+    // delta-subscription layer suppresses legacy refetches under live-state,
+    // monorepo#775), this events.event route fires in BOTH modes, so it is the
+    // path that actually covers "deleted by another client" in production.
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-workspace-deleted-nav',
+          workspaceId: WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:deleted',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId: WS },
+        },
+      },
+    });
+
+    expect(navigateAwayIfViewingSpy).toHaveBeenCalledWith(WS);
+  });
 
   it('purges agent-session, workspace-agents, and chat-state for the deleted workspace', async () => {
     // Seed two sessions — one in WS and one in a sibling workspace — to prove
@@ -3243,6 +3280,7 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
 
     const state = appStore.state as { agentSessions: { byAgentId: Record<string, unknown> } };
     expect(state.agentSessions.byAgentId[AGENT]).toBeDefined();
+    expect(navigateAwayIfViewingSpy).not.toHaveBeenCalled();
   });
 });
 
