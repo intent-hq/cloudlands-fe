@@ -22,7 +22,6 @@ const dynamicImportEnforcedFiles = [
   'src/features/accept-changes/main/accept-changes.service.ts',
   'src/features/agent/agent-ipc-bridge.ts',
   'src/features/agent/main/agent-backend-handler.service.ts',
-  'src/features/mcp/main/mcp/ws-git-api.ts',
   'src/features/mcp/main/mcp/ws-misc-api.ts',
   'src/features/mcp/main/mcp/ws-note-api.ts',
   'src/features/mcp/main/mcp/ws-workspace-api.ts',

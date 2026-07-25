@@ -10,7 +10,6 @@ export type { IMCPTool } from './tool';
 export * from './server';
 export * from './workspace-file-tools';
 export * from './tool-call-extractor';
-export * from './agent-tool-executor';
 
 import { MCPServer } from './server';
 import { WorkspaceJsApiTool } from './workspace-js-api-tool';

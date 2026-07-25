@@ -2,13 +2,11 @@
  * GitHub Service
  *
  * Routes every GitHub data call through the intentd daemon's `github.*` JSON-RPC
- * namespace (PROTOCOL §5.27 — replaces the deleted Augment Cloud proxy). All
- * public method signatures are preserved verbatim so the call sites in
- * `git-tracking.ipc.ts`, `workspace.service.ts`, `accept-changes.service.ts`,
- * and `git-state-manager.ts` keep compiling unchanged. The wire DTOs are
- * camelCase (`headRef`, `htmlUrl`, …) and are mapped here into the FE's
- * snake-/camel-mixed `PullRequest` / `GitHubIssue` shapes consumed by the
- * renderer.
+ * namespace (PROTOCOL §5.27 — replaces the deleted Augment Cloud proxy). The
+ * live consumer is `workspace.service.ts`, which drives the periodic PR refresh.
+ * The wire DTOs are camelCase (`headRef`, `htmlUrl`, …) and are mapped here
+ * into the FE's snake-/camel-mixed `PullRequest` / `GitHubIssue` shapes
+ * consumed by the renderer.
  *
  * Surface gaps vs. the old Augment proxy: `github.*` does not expose
  * explicit-addressed equivalents of the old `agents/run-remote-tool` calls for

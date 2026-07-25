@@ -240,8 +240,6 @@ import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
-import { setupGitTrackingIPC } from '../features/git-tracking/main/git-tracking.ipc';
-import { setupGitIPC } from '../features/git/main/git.ipc';
 import { setupGitHubAuthIPC } from '../features/github-auth/main/github-auth.ipc';
 import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
 import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout-history.ipc';
@@ -279,10 +277,7 @@ import {
 import { cleanupTerminals, setupTerminalIPC } from '../features/terminal/main/terminal.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
 import { setupFirstVisitStateIPC } from '../features/workspace/main/first-visit-state.ipc';
-import {
-  initializeChangeDetectorManager,
-  setupWorkspaceIPC,
-} from '../features/workspace/main/workspace.ipc';
+import { setupWorkspaceIPC } from '../features/workspace/main/workspace.ipc';
 import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-summary.ipc';
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
@@ -1241,14 +1236,6 @@ app.whenReady().then(async () => {
     }, 5000);
   }
 
-  // PERFORMANCE OPTIMIZATION: Change detector is now lazily initialized
-  // The manager is lightweight at import time and initializes on first use
-  // This removes ~2 seconds from startup time
-  startupMetrics.start('changeDetectorInit');
-  // Just set up listeners - actual initialization happens on first workspace load
-  initializeChangeDetectorManager();
-  startupMetrics.end('changeDetectorInit');
-
   // Setup ONLY critical IPC handlers needed for initial render
   // This significantly improves startup time
   startupMetrics.start('criticalIPC');
@@ -1265,7 +1252,6 @@ app.whenReady().then(async () => {
   setupFileIPC();
   setupSystemIPC();
   await setupConfigIPC();
-  setupGitIPC(); // Needed for git operations
   setupGitHubAuthIPC(); // Needed for GitHub device flow auth
   setupLinearAuthIPC(); // Needed for Linear auth via the daemon
   setupSentryAuthIPC(); // Needed for Sentry auth via API token
@@ -1299,7 +1285,6 @@ app.whenReady().then(async () => {
   // Pass the shared ConfigManager to workspace rules service
   const configManager = getConfigManager();
   await setupWorkspaceRulesIPC(configManager || undefined); // Needed for initial agent system prompt
-  setupGitTrackingIPC(); // Needed for renderer git tracking on startup
   setupSpecialistsIPC(); // Needed for specialist selection on startup
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
 
@@ -1336,7 +1321,6 @@ app.whenReady().then(async () => {
     setupLogIPC();
     // setupAuggieIPC(); // Already called in critical IPC setup
     // setupEventsIPC(); // Already called in critical IPC setup
-    // setupGitTrackingIPC(); // Already called in critical IPC setup
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup
     setupRulesIPC();
     // setupSpecialistsIPC(); // Already called in critical IPC setup
@@ -1358,10 +1342,6 @@ app.whenReady().then(async () => {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-
-    // Setup keychain consent IPC handlers for git network operations
-    const { setupKeychainIPC } = await import('../features/git/main/keychain.ipc');
-    setupKeychainIPC();
 
     // Setup browser debugger IPC handlers for CDP access to embedded browser tabs
     const { registerBrowserHandlers } = await import('../features/browser/main/browser.ipc');

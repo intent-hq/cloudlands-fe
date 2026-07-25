@@ -10,18 +10,11 @@ import {
   ipcMain,
   BrowserWindow,
 } from 'electron';
-import {
-  sendToWorkspaceWindows,
-  getFocusedWindowWorkspaceId,
-} from '../../system/main/system.ipc';
+import { getFocusedWindowWorkspaceId } from '../../system/main/system.ipc';
 import type { Result, CommandResponse, WorkspaceId } from '../../../shared/types';
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
-import { changeDetectorManager as singletonChangeDetectorManager } from './change-detector-manager';
 
 import { Logger } from '../../../shared/logger';
-import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { workspaceFileChanges } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
-import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 import { InstructionService } from '../../agent/main/instruction-service';
@@ -104,78 +97,11 @@ import {
   EditorGetSelectionSchema,
   WorkspaceListFilesSchema,
   WorkspaceSearchInFilesSchema,
-  WorkspaceTriggerCheckSchema,
   WorkspaceUpdateSpecWatcherTimestampSchema,
   WorkspaceUpdateCurrentContextSchema,
 } from '../../../main/ipc-schemas';
 
 const logger = new Logger('WorkspaceIPC');
-
-// Use the singleton change detector manager instance
-const changeDetectorManager = singletonChangeDetectorManager;
-
-/**
- * Initialize the change detector manager
- * This should be called once when the app starts
- */
-let listenerSetUp = false;
-
-export function initializeChangeDetectorManager() {
-  // The change detector manager is already initialized as a singleton
-  if (!changeDetectorManager) {
-    logger.error('ChangeDetectorManager singleton not available!');
-    return changeDetectorManager;
-  }
-
-  // Set up listener only once
-  if (!listenerSetUp) {
-    listenerSetUp = true;
-    logger.info('Setting up workspace-changes listener');
-
-    // Set up listener to forward workspace:changes events to renderer
-    // Note: Activity log events are now created in change-detector.ts with proper provenance
-    // This listener just broadcasts the diffChunk for backward compatibility
-    changeDetectorManager.on('workspace-changes', (data: any) => {
-      // Add null check to prevent "Cannot read properties of undefined" error
-      if (!data) {
-        logger.warn('Received workspace-changes event with undefined data');
-        return;
-      }
-
-      const { workspaceId, diffChunk } = data;
-
-      // Broadcast workspace:file-changes
-      mainDispatch(
-        workspaceFileChanges({
-          workspaceId,
-          diffChunk,
-        }),
-      );
-
-      // Also send to renderer processes for this workspace
-      sendToWorkspaceWindows(workspaceId, 'workspace-changes', {
-        workspaceId,
-        diffChunk,
-      });
-    });
-
-    // Bridge activity-log-event from change detectors into Redux.
-    // EventCoordinator → ChangeDetectorRefactored → ChangeDetectorManager → here.
-    // We dispatch emitWorkspaceEvent to Redux (workspace-events slice).
-    changeDetectorManager.on('activity-log-event', (data: any) => {
-      if (!data?.event) {
-        logger.warn('Received activity-log-event with missing event data');
-        return;
-      }
-      mainDispatch(emitWorkspaceEvent(data.event));
-    });
-
-    // git:commit-created is now handled by domain-event-listener-sagas.ts
-    // (handleGitCommitCreatedForFileTracking)
-  }
-
-  return changeDetectorManager;
-}
 
 // ============================================================================
 // Helper Functions
@@ -409,18 +335,6 @@ export function setupWorkspaceIPC(): void {
         logger.info('[WorkspaceIPC] Closing workspace', { workspaceId: id });
 
         try {
-          // Stop change detector monitoring
-          if (changeDetectorManager) {
-            try {
-              await changeDetectorManager.stopMonitoring(id);
-              logger.info('[WorkspaceIPC] Stopped change detector monitoring', { workspaceId: id });
-            } catch (error) {
-              logger.warn('[WorkspaceIPC] Failed to stop change detector', error as Error, {
-                workspaceId: id,
-              });
-            }
-          }
-
           // Metadata watcher retired; nothing to stop here.
 
           // Clear MetadataFS cache so it's re-created on next open
@@ -473,20 +387,14 @@ export function setupWorkspaceIPC(): void {
     ),
   );
 
-  // Open workspace and start monitoring for changes
+  // Open workspace
   //
-  // ⚠️  IMPORTANT: This handler has critical side effects beyond just "opening" the workspace:
-  //    1. Starts ChangeDetectorManager monitoring (git polling for file changes)
-  //    2. Warms caches / starts scripts services
+  // ⚠️  IMPORTANT: This handler has side effects beyond just "opening" the workspace:
+  // it warms caches and starts scripts services. File-change monitoring is owned
+  // by the daemon; the FE-side change-detection stack has been removed.
   //
-  // Without these side effects, the UI will NOT receive file change updates,
-  // causing the activity log and changed files list to appear empty.
-  //
-  // The backend is IDEMPOTENT - it checks if monitoring is already running before starting,
-  // so it's safe to call this multiple times for the same workspace.
-  //
-  // DO NOT add optimizations that skip calling this handler - always call workspace:open
-  // when navigating to a workspace to ensure all listeners are properly initialized.
+  // The backend is IDEMPOTENT, so it's safe to call this multiple times for the
+  // same workspace.
   //
   ipcMain.handle(
     WORKSPACE_CHANNELS.OPEN,
@@ -512,54 +420,17 @@ export function setupWorkspaceIPC(): void {
         if (workspace) {
           // Attribution is owned by the daemon (§17.4 / §5.19); no FE-side
           // agent-writes cache to warm here.
-          const manager = initializeChangeDetectorManager();
-          logger.info('[WorkspaceIPC] Got change detector manager', { workspaceId: id });
-
-          // Convert workspace to WorkspaceInfo format for change detector
-          // Use worktreePath if available, otherwise use repositoryPath for both
-          const workspaceInfo = {
-            id: workspace.id,
-            worktreePath: workspace.worktreePath || workspace.repositoryPath,
-            repositoryPath: workspace.repositoryPath || workspace.worktreePath,
-            environmentConfig: workspace.environmentConfig,
-          };
 
           // PERFORMANCE OPTIMIZATION: Start all background initialization without blocking
-          // The workspace is usable immediately - monitoring, git integration, etc. initialize
+          // The workspace is usable immediately - caches and scripts initialize
           // in the background and will be ready by the time the user needs them.
 
           // Metadata watcher retired alongside the workspace disk-read path;
           // workspace metadata is served by the daemon (`workspace.get`).
 
-          // Start monitoring in background - DON'T WAIT for it
-          // This is the main performance optimization - monitoring can take several seconds
-          // but the workspace should be usable immediately
-          const monitoringAndGitPromise = (async () => {
+          const backgroundInitPromise = (async () => {
             try {
-              const monitoringStart = Date.now();
-              logger.info('[WorkspaceIPC] Starting background monitoring for workspace', {
-                workspaceId: id,
-                worktreePath: workspace.worktreePath,
-                repositoryPath: workspace.repositoryPath,
-              });
-              await manager.startMonitoring(workspaceInfo as any);
-              logger.info('[WorkspaceIPC] Background monitoring started for workspace', {
-                workspaceId: id,
-                durationMs: Date.now() - monitoringStart,
-              });
-
-              // Activity log promise (event service removed — Redux handles events now)
-              const activityLogPromise = (async () => {
-                try {
-                  logger.info('Activity log initialization skipped (Redux-based)', {
-                    workspaceId: id,
-                  });
-                } catch (error) {
-                  logger.error('Failed to initialize activity log', error as Error, {
-                    workspaceId: id,
-                  });
-                }
-              })();
+              const initStart = Date.now();
 
               // Cache warming promise - pre-warm system prompt cache for faster agent creation
               const cacheWarmingPromise = (async () => {
@@ -618,18 +489,17 @@ export function setupWorkspaceIPC(): void {
 
               // Wait for ALL to complete in parallel
               await Promise.all([
-                activityLogPromise,
                 cacheWarmingPromise,
                 scriptsInitPromise,
               ]);
 
               logger.info('[WorkspaceIPC] Background initialization complete', {
                 workspaceId: id,
-                totalDurationMs: Date.now() - monitoringStart,
+                totalDurationMs: Date.now() - initStart,
               });
             } catch (error) {
               logger.error(
-                '[WorkspaceIPC] Failed to start background monitoring for workspace',
+                '[WorkspaceIPC] Failed background initialization for workspace',
                 error as Error,
                 {
                   workspaceId: id,
@@ -646,7 +516,7 @@ export function setupWorkspaceIPC(): void {
 
           // Fire and forget the background initialization
           // Use void to explicitly indicate we're not awaiting this
-          void monitoringAndGitPromise;
+          void backgroundInitPromise;
 
           logger.info('[WorkspaceIPC] Workspace open returning immediately', {
             workspaceId: id,
@@ -686,23 +556,6 @@ export function setupWorkspaceIPC(): void {
       async (_, validated) => {
         const validatedId = validated.id;
         logger.info('Deleting workspace', { workspaceId: validatedId });
-
-        // Stop monitoring and clear history before deleting
-        const manager = changeDetectorManager;
-        if (manager) {
-          try {
-            await manager.stopMonitoring(validatedId);
-            // PERF: Clear change history for deleted workspace to prevent memory bloat
-            await manager.clearHistory(validatedId);
-            logger.debug('Stopped monitoring and cleared history for workspace', {
-              workspaceId: validatedId,
-            });
-          } catch (error) {
-            logger.error('Failed to stop monitoring for workspace', error as Error, {
-              workspaceId: validatedId,
-            });
-          }
-        }
 
         // Metadata watcher retired; nothing to stop here.
 
@@ -797,21 +650,6 @@ export function setupWorkspaceIPC(): void {
       async (_, validated) => {
         const validatedId = validated.id;
         logger.info('Archiving workspace', { workspaceId: validatedId });
-
-        // Stop monitoring for archived workspace to save resources
-        const manager = changeDetectorManager;
-        if (manager) {
-          try {
-            await manager.stopMonitoring(validatedId);
-            logger.debug('Stopped monitoring for archived workspace', {
-              workspaceId: validatedId,
-            });
-          } catch (error) {
-            logger.error('Failed to stop monitoring for workspace', error as Error, {
-              workspaceId: validatedId,
-            });
-          }
-        }
 
         // Clean up cached EventStore (flush pending writes, free events + indexes)
         try {
@@ -1998,65 +1836,6 @@ export function setupWorkspaceIPC(): void {
         }
       },
       WORKSPACE_CHANNELS.UPDATE_SPEC_WATCHER_TIMESTAMP,
-    ),
-  );
-
-  // Trigger immediate git check when workspace gains focus or files are edited
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.TRIGGER_CHECK,
-    createSafeValidatedHandler(
-      WorkspaceTriggerCheckSchema,
-      async (_, validated) => {
-        const { workspaceId, reason } = validated;
-        logger.info('[WorkspaceIPC] workspace:trigger-check called:', { workspaceId, reason });
-        try {
-          const manager = initializeChangeDetectorManager();
-          if (manager) {
-            // Check if detector exists for this workspace
-            const detector = manager.getChangeDetector(workspaceId);
-            if (!detector) {
-              // Detector doesn't exist - need to start monitoring first
-              logger.info('[WorkspaceIPC] No detector for workspace, starting monitoring', {
-                workspaceId,
-              });
-
-              // Get workspace info to start monitoring
-              const workspace = await protocolAdapter.getWorkspace(workspaceId);
-              if (workspace && (workspace.worktreePath || workspace.repositoryPath)) {
-                const workspaceInfo = {
-                  id: workspace.id,
-                  worktreePath: workspace.worktreePath || workspace.repositoryPath,
-                  repositoryPath: workspace.repositoryPath || workspace.worktreePath,
-                  environmentConfig: workspace.environmentConfig,
-                };
-
-                // Start monitoring (this will initialize the detector)
-                await manager.startMonitoring(workspaceInfo as any);
-                logger.info('[WorkspaceIPC] Started monitoring for workspace', { workspaceId });
-              } else {
-                logger.warn('[WorkspaceIPC] Cannot start monitoring - workspace has no path', {
-                  workspaceId,
-                  hasWorkspace: !!workspace,
-                });
-                return { ok: false, error: 'Workspace has no path' };
-              }
-            }
-
-            logger.info('[WorkspaceIPC] Calling manager.triggerImmediateCheck');
-            manager.triggerImmediateCheck(workspaceId, reason || 'manual');
-          } else {
-            logger.warn('[WorkspaceIPC] No change detector manager available');
-          }
-          return { ok: true };
-        } catch (error) {
-          logger.error('[WorkspaceIPC] Failed to trigger immediate check', error as Error, {
-            workspaceId,
-            reason,
-          });
-          return { ok: false, error: (error as Error).message };
-        }
-      },
-      WORKSPACE_CHANNELS.TRIGGER_CHECK,
     ),
   );
 

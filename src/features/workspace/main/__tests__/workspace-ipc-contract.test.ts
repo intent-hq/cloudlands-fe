@@ -41,15 +41,6 @@ vi.mock('../../../protocol/main/protocol-adapter', () => ({
   },
 }));
 
-vi.mock('../change-detector-manager', () => ({
-  changeDetectorManager: {
-    on: vi.fn(),
-    stopMonitoring: vi.fn(),
-    startMonitoring: vi.fn(),
-    getChangeDetector: vi.fn(),
-  },
-}));
-
 vi.mock('../repo-registry', () => ({
   initRepoRegistry: mocks.initRepoRegistry,
   getAllRepos: mocks.getAllRepos,
@@ -75,9 +66,6 @@ vi.mock('../../../../store/main/slices/workspace-events/sagas/persistence-saga',
 vi.mock('../../../terminal/main/terminal.ipc', () => ({ cleanupWorkspaceTerminals: vi.fn() }));
 vi.mock('../../../scripts/main/script-process-manager', () => ({ disposeScriptProcessManager: vi.fn() }));
 vi.mock('../../../scripts/main/scripts-persistence', () => ({ readScripts: vi.fn(() => []) }));
-vi.mock('../change-detection/detection.config', () => ({
-  CHANGE_DETECTION_CONFIG: {},
-}));
 vi.mock('../../../agent/main/instruction-service', () => ({
   InstructionService: { getInstance: vi.fn(() => ({ warmCache: vi.fn() })) },
 }));
