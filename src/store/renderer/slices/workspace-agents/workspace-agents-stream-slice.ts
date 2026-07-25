@@ -18,6 +18,12 @@ export interface AgentStreamUpdatePayload {
   error?: string;
   createInitialPlaceholder?: boolean;
   streamId?: string;
+  /**
+   * Why the stream ended (PROTOCOL §7 `agent:stream:end` optional field).
+   * `"interrupted"` when the user stopped the turn; absent on normal
+   * completion.
+   */
+  stopReason?: string;
 }
 
 /** Raw stream update from the thin lifecycle adapter; reducers/sagas derive serializable state. */

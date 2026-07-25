@@ -16,18 +16,6 @@ function getStopReason(message: AgentMessage): string | undefined {
   return typeof stopReason === 'string' ? stopReason : undefined;
 }
 
-function hasVisibleAssistantContent(message: AgentMessage): boolean {
-  const blocks = message.contentBlocks;
-  if (!Array.isArray(blocks) || blocks.length === 0) return false;
-
-  return blocks.some((block: any) => {
-    if (block.type === 'text') {
-      return String(block.text ?? block.content ?? '').trim().length > 0;
-    }
-    return block.type !== 'thinking';
-  });
-}
-
 export function shouldShowStoppedIndicator({
   message,
   isStreaming,
@@ -42,10 +30,6 @@ export function shouldShowStoppedIndicator({
   const stopReason = getStopReason(message);
   const isStoppedReason = stopReason ? stoppedStopReasons.has(stopReason) : true;
   if (!isStoppedReason) return false;
-
-  if (!hasVisibleAssistantContent(message) && (!stopReason || coordinationStopReasons.has(stopReason))) {
-    return false;
-  }
 
   if (suppressCoordinationStoppedIndicator && (!stopReason || coordinationStopReasons.has(stopReason))) {
     return false;
