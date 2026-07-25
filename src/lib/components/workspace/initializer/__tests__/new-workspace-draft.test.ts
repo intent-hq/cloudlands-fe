@@ -353,6 +353,14 @@ describe('createNewWorkspaceDraftSaver', () => {
 
     expect(drafts.set).toHaveBeenCalledWith('__new-workspace__', '__initializer__', '', undefined);
   });
+
+  it('flush() never throws when the save fails synchronously (regression: teardown with a partial appClient)', () => {
+    const saver = createNewWorkspaceDraftSaver(undefined as unknown as DraftsClient);
+
+    saver.schedule('typed before destroy', []);
+
+    expect(() => saver.flush()).not.toThrow();
+  });
 });
 
 describe('sentinel constants', () => {

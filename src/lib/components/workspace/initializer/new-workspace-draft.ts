@@ -191,7 +191,14 @@ export function createNewWorkspaceDraftSaver(
     const { text, contextItems } = pending;
     pending = null;
     if (options.skipEmptySave?.() && !text && contextItems.length === 0) return;
-    persistNewWorkspaceDraft(drafts, buildNewWorkspaceDraftPayload(text, contextItems));
+    // Best-effort like every other drafts.* call in this module: `flush()`
+    // runs inside beforeunload/onDestroy, so a synchronous throw (e.g. a
+    // partial appClient without `drafts`) must never break teardown.
+    try {
+      persistNewWorkspaceDraft(drafts, buildNewWorkspaceDraftPayload(text, contextItems));
+    } catch (err) {
+      logger.warn('draft save failed; draft kept in memory only', { error: String(err) });
+    }
   }
 
   return {
