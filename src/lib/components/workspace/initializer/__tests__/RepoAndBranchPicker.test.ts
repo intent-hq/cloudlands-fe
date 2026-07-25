@@ -12,6 +12,20 @@ vi.mock('../BranchSelector.svelte', async () => ({
   default: (await import('./mocks/MockBranchSelector.svelte')).default,
 }));
 
+vi.mock('$lib/client', () => ({
+  appClient: {
+    settings: { get: vi.fn(async () => ({ value: false })) },
+  },
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({ state: {} });
+  return {
+    selectWorkspaceItems: store.createSelector(() => []),
+  };
+});
+
 import RepoAndBranchPicker from '../RepoAndBranchPicker.svelte';
 
 describe('RepoAndBranchPicker', () => {

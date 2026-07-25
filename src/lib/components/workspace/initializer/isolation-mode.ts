@@ -25,14 +25,19 @@ export function isolationNoun(mode: IsolationMode): string {
  * (read off any loaded workspace's `cowSupported` aggregate — a machine
  * capability, so any workspace carrying it is authoritative). Defaults to
  * `worktree` when the setting is off, capability is unknown, or the read fails.
+ *
+ * Pass `workspaces` (e.g. a selector readable's current value) so callers can
+ * re-resolve when workspace items hydrate after mount; when omitted, falls
+ * back to a one-time snapshot of the store.
  */
-export async function resolveEffectiveIsolationMode(): Promise<IsolationMode> {
+export async function resolveEffectiveIsolationMode(
+  workspaces?: ReadonlyArray<{ cowSupported?: boolean }>,
+): Promise<IsolationMode> {
   try {
     const setting = await appClient.settings.get('workspace.cowIsolation');
     if (setting?.value !== true) return 'worktree';
-    const cowSupported = selectWorkspaceItems
-      .select(appStore.state)
-      .some((workspace) => workspace.cowSupported === true);
+    const items = workspaces ?? selectWorkspaceItems.select(appStore.state);
+    const cowSupported = items.some((workspace) => workspace.cowSupported === true);
     return cowSupported ? 'cow' : 'worktree';
   } catch {
     return 'worktree';

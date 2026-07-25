@@ -7,6 +7,7 @@
   import BranchSelector, { type BranchStatus } from './BranchSelector.svelte';
   import RepoSelector from './RepoSelector.svelte';
   import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   type RepoSelectorHandle = {
     focusInput: () => void;
@@ -94,10 +95,14 @@
 
   const isMetadataPresentation = $derived(presentation === 'metadata');
 
-  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy
+  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
+  // Re-resolves when workspace items hydrate (cowSupported is read off them).
+  const workspaceItemsForIsolation$ = selectWorkspaceItems();
   let isolationMode = $state<IsolationMode>('worktree');
   $effect(() => {
-    void resolveEffectiveIsolationMode().then((mode) => (isolationMode = mode));
+    void resolveEffectiveIsolationMode($workspaceItemsForIsolation$).then(
+      (mode) => (isolationMode = mode),
+    );
   });
   const isolationLabel = $derived(isolationNoun(isolationMode));
   const pickerClass = $derived(

@@ -14,6 +14,7 @@
 
   import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
   import {
@@ -127,10 +128,14 @@
   let githubAuthNeeded: GitHubAuthNeeded = $state('none');
   let isConnectingGitHub = $state(false);
 
-  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy
+  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
+  // Re-resolves when workspace items hydrate (cowSupported is read off them).
+  const workspaceItemsForIsolation$ = selectWorkspaceItems();
   let isolationMode = $state<IsolationMode>('worktree');
   $effect(() => {
-    void resolveEffectiveIsolationMode().then((mode) => (isolationMode = mode));
+    void resolveEffectiveIsolationMode($workspaceItemsForIsolation$).then(
+      (mode) => (isolationMode = mode),
+    );
   });
   const isolationLabel = $derived(isolationNoun(isolationMode));
 

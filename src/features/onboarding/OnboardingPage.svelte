@@ -940,7 +940,7 @@
               repoStatus={setupRepoStatus}
               branchStatus={setupBranchStatus}
               agentStatus={setupAgentStatus}
-              skipWorktree={onboardingSkipIsolation}
+              skipIsolation={onboardingSkipIsolation}
             />
           </div>
         </div>
