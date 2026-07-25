@@ -2036,7 +2036,7 @@ export function setupSystemIPC() {
       async (_event, validated) => {
         try {
           const { checkMcpAuthRequirement } = await import('../../mcp/main/mcp-auth-providers');
-          const result = await checkMcpAuthRequirement(validated.url);
+          const result = await checkMcpAuthRequirement(validated.url, validated.name);
           return { success: true, data: result };
         } catch (error) {
           logger.error('Error checking MCP auth requirement:', error);

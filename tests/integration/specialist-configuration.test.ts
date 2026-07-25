@@ -63,12 +63,11 @@ vi.mock('electron', () => ({
   },
 }));
 
-// Mock github-auth service — controls whether GitHub-dependent specialists are visible
+// Mock the GitHub auth-status probe — controls whether GitHub-dependent
+// specialists are visible
 const mockIsAuthenticated = vi.fn().mockResolvedValue(false);
-vi.mock('../../src/features/github-auth/main/github-auth.service', () => ({
-  githubAuthService: {
-    isAuthenticated: (...args: unknown[]) => mockIsAuthenticated(...args),
-  },
+vi.mock('../../src/main/utils/github-auth-status', () => ({
+  isGitHubConfigured: (...args: unknown[]) => mockIsAuthenticated(...args),
 }));
 describe('Specialist Configuration', () => {
   beforeAll(async () => {

@@ -139,22 +139,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // Chat-input context enrichment (context-api getWorkspaceInfo). The caller
   // folds an absent info payload to the Workspace object it already holds.
   ['workspace:get-info', undefined],
-  // Sentry credential writes. PROTOCOL §5.29: the daemon reads
-  // SENTRY_AUTH_TOKEN/SENTRY_ORG from its environment — there is deliberately
-  // no sentry.connect/revoke wire method, so in-app config/logout cannot be
-  // bridged. saveConfig surfaces the shaped failure in the settings form;
-  // logout resolves as a no-op and the auth-state UI re-probes the daemon
-  // (sentry.authStatus via integrations-bridge-seeder), so it stays truthful.
-  // (sentry-auth:get-issue IS bridged — sentry.getIssue, same seeder.)
-  [
-    'sentry-auth:save-config',
-    {
-      success: false,
-      error:
-        'Sentry credentials are read from SENTRY_AUTH_TOKEN / SENTRY_ORG on the daemon host — in-app configuration is not available',
-    },
-  ],
-  ['sentry-auth:logout', undefined],
 ]);
 
 /**

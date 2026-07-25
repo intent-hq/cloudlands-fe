@@ -181,6 +181,105 @@ describe('integrations-bridge-seeder', () => {
         nextToken: 'cursor-1',
       });
     });
+
+    it('save-config writes the credential pair via settings.update then confirms with a fresh authStatus probe (§5.12/§5.29)', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({
+          applied: [
+            { path: 'accounts.sentry.token', value: 'token-1' },
+            { path: 'accounts.sentry.organization', value: 'acme' },
+          ],
+        })
+        .mockResolvedValueOnce({ authenticated: true, organization: 'acme' });
+
+      const result = await mockInvoke(SENTRY_AUTH_CHANNELS.SAVE_CONFIG, {
+        organization: 'acme',
+        apiToken: 'token-1',
+      });
+
+      expect(mockedRequest).toHaveBeenNthCalledWith(1, 'settings.update', {
+        changes: [
+          { path: 'accounts.sentry.token', value: 'token-1' },
+          { path: 'accounts.sentry.organization', value: 'acme' },
+        ],
+      });
+      expect(mockedRequest).toHaveBeenNthCalledWith(2, 'sentry.authStatus');
+      expect(mockedRequest).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ success: true, organizationName: 'acme' });
+    });
+
+    it('save-config rolls back both settings and surfaces the probe error when the credentials fail validation', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({ applied: [] })
+        .mockResolvedValueOnce({ authenticated: false, error: 'Invalid API token' })
+        .mockResolvedValueOnce({ path: 'accounts.sentry.token', value: '' })
+        .mockResolvedValueOnce({ path: 'accounts.sentry.organization', value: '' });
+
+      const result = await mockInvoke(SENTRY_AUTH_CHANNELS.SAVE_CONFIG, {
+        organization: 'acme',
+        apiToken: 'bad-token',
+      });
+
+      expect(mockedRequest).toHaveBeenNthCalledWith(2, 'sentry.authStatus');
+      expect(mockedRequest).toHaveBeenNthCalledWith(3, 'settings.reset', {
+        path: 'accounts.sentry.token',
+      });
+      expect(mockedRequest).toHaveBeenNthCalledWith(4, 'settings.reset', {
+        path: 'accounts.sentry.organization',
+      });
+      expect(result).toEqual({ success: false, error: 'Invalid API token' });
+    });
+
+    it('save-config maps a rejected settings.update to the failure envelope without probing or rolling back', async () => {
+      mockedRequest.mockRejectedValueOnce(new Error('Invalid params: value must be a string'));
+
+      const result = await mockInvoke(SENTRY_AUTH_CHANNELS.SAVE_CONFIG, {
+        organization: 'acme',
+        apiToken: 'token-1',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        success: false,
+        error: 'Invalid params: value must be a string',
+      });
+    });
+
+    it('save-config rejects missing organization/apiToken client-side without touching the wire', async () => {
+      const result = await mockInvoke(SENTRY_AUTH_CHANNELS.SAVE_CONFIG, { organization: 'acme' });
+
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        success: false,
+        error: 'Organization and API token are required',
+      });
+    });
+
+    it('logout resets both settings paths (§5.12 "forget token")', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({ path: 'accounts.sentry.token', value: '' })
+        .mockResolvedValueOnce({ path: 'accounts.sentry.organization', value: '' });
+
+      await mockInvoke(SENTRY_AUTH_CHANNELS.LOGOUT);
+
+      expect(mockedRequest).toHaveBeenCalledWith('settings.reset', {
+        path: 'accounts.sentry.token',
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('settings.reset', {
+        path: 'accounts.sentry.organization',
+      });
+      expect(mockedRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('logout rejects when a reset fails so local auth state is not cleared', async () => {
+      mockedRequest
+        .mockRejectedValueOnce(new Error('settings store unavailable'))
+        .mockResolvedValueOnce({ path: 'accounts.sentry.organization', value: '' });
+
+      await expect(mockInvoke(SENTRY_AUTH_CHANNELS.LOGOUT)).rejects.toThrow(
+        'settings store unavailable',
+      );
+    });
   });
 
   describe('github-auth:* → daemon github.* (PROTOCOL §5.27 auth & identity)', () => {
