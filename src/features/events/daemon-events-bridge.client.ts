@@ -520,6 +520,7 @@ function dispatchStreamUpdate(
   agentId: string,
   state: StreamState,
   eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
+  stopReason?: string,
 ): void {
   appStore.dispatch(
     agentStreamUpdateReceived({
@@ -530,6 +531,7 @@ function dispatchStreamUpdate(
       eventType,
       assistantMessageId: state.messageId,
       contentBlocks: buildContentBlocks(state),
+      ...(stopReason ? { stopReason } : {}),
     }),
   );
 }
@@ -761,13 +763,37 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
   appStore.dispatch(streamStatusReceived(agentId, { phase, message, level, timestamp }, false));
 }
 
-function handleStreamEndEvent(event: WorkspaceEvent): void {
+function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   const agentId = data?.agentId;
   if (typeof agentId !== 'string') return;
+  // Optional interrupt marker (PROTOCOL §7): `agent.stop` mid-turn emits the
+  // terminal `agent:stream:end` with `stopReason: "interrupted"` (+ the turn's
+  // `messageId`); absence means a normal turn end.
+  const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
   const state = streamsByAgent.get(agentId);
-  if (!state) return;
-  dispatchStreamUpdate(agentId, state, 'complete');
+  if (!state) {
+    // Pre-first-token stop: nothing streamed locally, but the daemon persisted
+    // a synthetic empty interrupted assistant row under `messageId`. Finalize a
+    // matching placeholder so the Stopped indicator appears live.
+    const messageId = data?.messageId;
+    if (stopReason === 'interrupted' && typeof messageId === 'string') {
+      appStore.dispatch(
+        agentStreamUpdateReceived({
+          workspaceId,
+          agentId,
+          handlerSessionId: agentId,
+          source: 'sendMessage',
+          eventType: 'complete',
+          assistantMessageId: messageId,
+          contentBlocks: [],
+          stopReason,
+        }),
+      );
+    }
+    return;
+  }
+  dispatchStreamUpdate(agentId, state, 'complete', stopReason);
   streamsByAgent.delete(agentId);
 }
 
@@ -1920,7 +1946,7 @@ function handleNotification(method: string, params: unknown): void {
     return;
   }
   if (type === 'agent:stream:end') {
-    handleStreamEndEvent(event);
+    handleStreamEndEvent(event, workspaceId);
     return;
   }
   if (type === 'agent:queue:updated') {
