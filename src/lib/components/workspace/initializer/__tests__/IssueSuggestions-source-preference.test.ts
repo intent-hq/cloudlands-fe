@@ -122,6 +122,10 @@ describe('IssueSuggestions source preference + provider ordering', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    // Restore the global test-setup behavior so mocked storage does not leak
+    // into other test files.
+    vi.mocked(localStorage.getItem).mockImplementation(() => null);
+    vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
   });
 
   async function settle(ms = 200): Promise<void> {
