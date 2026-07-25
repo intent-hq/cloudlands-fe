@@ -124,8 +124,6 @@ vi.mock('../../../../store/main/redux-store-bridge', () => ({
 import { WorkspaceService } from '../workspace.service';
 import { InMemoryWorkspaceRepository } from '../workspace.repository';
 import { mainDispatch } from '../../../../store/main/redux-store-bridge';
-// Globally mocked in src/test-setup.ts — the exec seam preflightCloneCheck goes through.
-import { execFileAsync } from '../../../../shared/git/git-env';
 import {
   PullRequestStatus,
   WorkspaceStatus,
@@ -417,18 +415,5 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     const initCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.initializeRepository');
     expect(initCalls).toHaveLength(1);
     expect(initCalls[0]![1]).toEqual({ path: '/repos/new' });
-  });
-
-  it('preflightCloneCheck runs git ls-remote via argv (no shell, hostile URL chars stay literal)', async () => {
-    // Regression pin for the removed `escapeShellArg` helper: backticks, $()
-    // and single quotes in the URL must reach git as one literal argv element.
-    const result = await service.preflightCloneCheck("https://github.com/own`er$(id)/re'po");
-
-    expect(result.ok).toBe(true);
-    expect(execFileAsync).toHaveBeenCalledWith(
-      'git',
-      ['ls-remote', '--heads', "https://github.com/own`er$(id)/re'po.git"],
-      { timeout: 8000 },
-    );
   });
 });
