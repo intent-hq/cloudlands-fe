@@ -6,6 +6,8 @@
   import Fa from 'svelte-fa';
   import BranchSelector, { type BranchStatus } from './BranchSelector.svelte';
   import RepoSelector from './RepoSelector.svelte';
+  import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   type RepoSelectorHandle = {
     focusInput: () => void;
@@ -48,7 +50,7 @@
     branch?: string;
     repoType?: 'local' | 'github' | 'remote';
     githubUrl?: string;
-    skipWorktree?: boolean;
+    skipIsolation?: boolean;
     isNewRepo?: boolean;
     /** Suggested branch (e.g. from a PR) - highlights picker when different from selected */
     suggestedBranch?: string;
@@ -58,7 +60,7 @@
     onRemoteSetupChange?: (setup: RemoteSetup | null) => void;
     onRepoChange?: (event: CustomEvent<RepoChangeDetail>) => void;
     onBranchChange?: (event: CustomEvent<BranchChangeDetail>) => void;
-    onSkipWorktreeChange?: (value: boolean) => void;
+    onSkipIsolationChange?: (value: boolean) => void;
     onGitHubAuthNeededChange?: (value: 'none' | 'not-authenticated' | 'no-access') => void;
     /** Callback when branch status changes (behind count, uncommitted changes) */
     onBranchStatusChange?: (status: BranchStatus) => void;
@@ -75,7 +77,7 @@
     branch = '',
     repoType = 'local',
     githubUrl = '',
-    skipWorktree = false,
+    skipIsolation = false,
     isNewRepo = false,
     suggestedBranch,
     remoteSetup = null,
@@ -83,7 +85,7 @@
     onRemoteSetupChange,
     onRepoChange,
     onBranchChange,
-    onSkipWorktreeChange,
+    onSkipIsolationChange,
     onGitHubAuthNeededChange,
     onBranchStatusChange,
     presentation = 'default',
@@ -92,6 +94,17 @@
   }: Props = $props();
 
   const isMetadataPresentation = $derived(presentation === 'metadata');
+
+  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
+  // Re-resolves when workspace items hydrate (cowSupported is read off them).
+  const workspaceItemsForIsolation$ = selectWorkspaceItems();
+  let isolationMode = $state<IsolationMode>('worktree');
+  $effect(() => {
+    void resolveEffectiveIsolationMode($workspaceItemsForIsolation$).then(
+      (mode) => (isolationMode = mode),
+    );
+  });
+  const isolationLabel = $derived(isolationNoun(isolationMode));
   const pickerClass = $derived(
     isMetadataPresentation
       ? 'block w-full min-w-0 text-sm text-foreground'
@@ -213,7 +226,7 @@
         repoPath={branchRepoPath}
         repoType={repoType as 'local' | 'github'}
         {githubUrl}
-        {skipWorktree}
+        {skipIsolation}
         {suggestedBranch}
         hasTriggerIcon={false}
         disabled={false}
@@ -223,7 +236,7 @@
         triggerContentClass={isMetadataPresentation
           ? `w-full gap-1.5 ${isMetadataBranchLoading ? 'pr-5' : ''}`
           : undefined}
-        onSkipWorktreeChange={(value) => onSkipWorktreeChange?.(value)}
+        onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
         onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
         {onBranchStatusChange}
         onchange={handleBranchChange}
@@ -297,7 +310,7 @@
       triggerChevronClass={metadataChevronClass}
     />
     <span class="text-sm text-subtle whitespace-nowrap shrink-0 ml-1">
-      {isMetadataPresentation ? 'off' : 'and create worktree off'}
+      {isMetadataPresentation ? 'off' : `and create ${isolationLabel} off`}
     </span>
     <BranchSelector
       variant="ghost"
@@ -306,7 +319,7 @@
       repoPath={repoPath || ''}
       repoType={repoType as 'local' | 'github'}
       {githubUrl}
-      {skipWorktree}
+      {skipIsolation}
       {suggestedBranch}
       hasTriggerIcon={false}
       disabled={!repoPath}
@@ -314,7 +327,7 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
       triggerContentClass={isMetadataPresentation ? 'w-full gap-1.5' : undefined}
-      onSkipWorktreeChange={(value) => onSkipWorktreeChange?.(value)}
+      onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
       onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
       {onBranchStatusChange}
       onchange={handleBranchChange}
@@ -353,7 +366,7 @@
     >
       {remoteDisplayPath}
     </span>
-    {#if skipWorktree}
+    {#if skipIsolation}
       <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">on</span>
     {:else}
       <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
@@ -361,17 +374,17 @@
     <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono"
       >{remoteSetup.branch || 'main'}</span
     >
-    <!-- Skip worktree toggle for remote -->
-    {#if typeof onSkipWorktreeChange === 'function'}
+    <!-- Skip isolation toggle for remote -->
+    {#if typeof onSkipIsolationChange === 'function'}
       <button
         type="button"
-        onclick={() => onSkipWorktreeChange?.(!skipWorktree)}
+        onclick={() => onSkipIsolationChange?.(!skipIsolation)}
         class="flex items-center gap-1.5 ml-3 shrink-0 cursor-pointer"
       >
         <Checkbox
-          checked={skipWorktree}
+          checked={skipIsolation}
           class="-mb-0.5"
-          onCheckedChange={(value) => onSkipWorktreeChange?.(value)}
+          onCheckedChange={(value) => onSkipIsolationChange?.(value)}
         />
         <span class="text-ui text-subtle whitespace-nowrap"> Work directly in your folder </span>
       </button>
@@ -412,7 +425,7 @@
       repoPath={repoPath || ''}
       repoType={repoType as 'local' | 'github'}
       {githubUrl}
-      {skipWorktree}
+      {skipIsolation}
       {suggestedBranch}
       hasTriggerIcon={false}
       disabled={!repoPath}
@@ -420,7 +433,7 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
       triggerContentClass={isMetadataPresentation ? 'w-full gap-1.5' : undefined}
-      onSkipWorktreeChange={(value) => onSkipWorktreeChange?.(value)}
+      onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
       onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
       {onBranchStatusChange}
       onchange={handleBranchChange}

@@ -486,8 +486,21 @@
     isCustomSetupScript = false;
   }
 
-  // Skip worktree toggle
-  let skipWorktree = $state(savedState?.skipWorktree ?? false);
+  /**
+   * Read skipIsolation from persisted form state, falling back to the legacy
+   * `skipWorktree` key so pre-rename persisted state keeps the user's choice.
+   */
+  function readSkipIsolation(
+    formState: CompactWorkspaceInitializerFormState | null | undefined,
+  ): boolean | undefined {
+    return (
+      formState?.skipIsolation ??
+      (formState as { skipWorktree?: boolean } | null | undefined)?.skipWorktree
+    );
+  }
+
+  // Skip isolation toggle (work directly in the repo folder, no isolated checkout)
+  let skipIsolation = $state(readSkipIsolation(savedState) ?? false);
 
   // Git availability state: null = checking, true = found, false = not found
   let gitAvailable: boolean | null = $state(null);
@@ -538,7 +551,7 @@
     setupScript = formState.setupScript ?? setupScript;
     setupScriptName = formState.setupScriptName ?? setupScriptName;
     isCustomSetupScript = formState.isCustomSetupScript ?? isCustomSetupScript;
-    skipWorktree = formState.skipWorktree ?? skipWorktree;
+    skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
     stayOnHomePage = formState.stayOnHomePage ?? stayOnHomePage;
     applyAgentSettings(formState);
   }
@@ -677,7 +690,7 @@
         showSetupScript,
         setupScriptName,
         isCustomSetupScript,
-        skipWorktree,
+        skipIsolation,
         stayOnHomePage,
       };
       // Snapshot to strip $state proxies (e.g. remoteSetup) — Redux state must be
@@ -1313,9 +1326,9 @@
       remoteSetup = null;
     }
 
-    // GitHub repos require a worktree - reset skipWorktree if switching to github type
+    // GitHub repos require an isolated checkout - reset skipIsolation if switching to github type
     if (event.detail.type === 'github') {
-      skipWorktree = false;
+      skipIsolation = false;
     }
 
     // Reset GitHub auth state when repo changes - will be updated by BranchSelector
@@ -1844,7 +1857,7 @@
         setupScript: setupScript.trim() || undefined,
         environmentConfig,
         isNewRepo: Boolean(isNewRepo),
-        skipWorktree: skipWorktree || undefined,
+        skipIsolation: skipIsolation || undefined,
         scope: scope || undefined, // Scope for subdirectories of git repos
         initialAgent,
       });
@@ -2057,7 +2070,7 @@
       isTeamMode,
       selectedProvider,
       stayOnHomePage,
-      skipWorktree,
+      skipIsolation,
       remoteSetup, // null at this point, but keeps parity with $effect's formState
       // Setup script fields — already cleared above (or restored via restoreLastUsedSetupScript)
       setupScript,
@@ -2647,13 +2660,13 @@
                 {branch}
                 {repoType}
                 {githubUrl}
-                {skipWorktree}
+                {skipIsolation}
                 {isNewRepo}
                 {remoteSetup}
                 suggestedBranch={selectedPRBranch}
                 onRepoChange={handleRepoChange}
                 onBranchChange={handleBranchChange}
-                onSkipWorktreeChange={(value) => (skipWorktree = value)}
+                onSkipIsolationChange={(value) => (skipIsolation = value)}
                 onGitHubAuthNeededChange={(value) => (githubAuthNeeded = value)}
                 onBranchStatusChange={handleBranchStatusChange}
               />

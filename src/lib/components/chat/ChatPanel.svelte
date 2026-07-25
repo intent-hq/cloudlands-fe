@@ -2926,7 +2926,7 @@
             onFocusSetupTerminal={onboardingContext.setupScript
               ? handleFocusSetupTerminal
               : undefined}
-            skipWorktree={onboardingContext.skipWorktree}
+            skipIsolation={onboardingContext.skipWorktree}
           />
         </div>
       {:else if (!$agentSession$ || $transcriptHydration$ !== 'settled' || $agentSession$.backendSessionId !== null) && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
@@ -2952,7 +2952,7 @@
               onFocusSetupTerminal={onboardingContext.setupScript
                 ? handleFocusSetupTerminal
                 : undefined}
-              skipWorktree={onboardingContext.skipWorktree}
+              skipIsolation={onboardingContext.skipWorktree}
             />
           </div>
         {/if}
@@ -3025,7 +3025,7 @@
                     onFocusSetupTerminal={onboardingContext.setupScript
                       ? handleFocusSetupTerminal
                       : undefined}
-                    skipWorktree={onboardingContext.skipWorktree}
+                    skipIsolation={onboardingContext.skipWorktree}
                   />
                 </div>
               {/if}
@@ -3130,7 +3130,7 @@
                     onFocusSetupTerminal={onboardingContext.setupScript
                       ? handleFocusSetupTerminal
                       : undefined}
-                    skipWorktree={onboardingContext.skipWorktree}
+                    skipIsolation={onboardingContext.skipWorktree}
                   />
                 </div>
               {/if}
@@ -3265,7 +3265,7 @@
                   onFocusSetupTerminal={onboardingContext.setupScript
                     ? handleFocusSetupTerminal
                     : undefined}
-                  skipWorktree={onboardingContext.skipWorktree}
+                  skipIsolation={onboardingContext.skipWorktree}
                 />
               </div>
             {/if}

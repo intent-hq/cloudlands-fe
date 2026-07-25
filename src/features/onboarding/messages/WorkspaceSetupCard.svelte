@@ -66,8 +66,8 @@
     repoStatus?: StepStatus;
     branchStatus?: StepStatus;
     agentStatus?: StepStatus;
-    /** If true, the workspace works directly on the branch without an isolated worktree copy */
-    skipWorktree?: boolean;
+    /** If true, the workspace works directly on the branch without an isolated checkout (worktree or CoW clone) */
+    skipIsolation?: boolean;
   }
 
   let {
@@ -86,10 +86,10 @@
     repoStatus = 'pending',
     branchStatus = 'pending',
     agentStatus = 'pending',
-    skipWorktree = false,
+    skipIsolation = false,
   }: Props = $props();
 
-  /** For skipWorktree mode, strip the remote prefix (e.g. "origin/main" → "main") */
+  /** For skipIsolation mode, strip the remote prefix (e.g. "origin/main" → "main") */
   const displayBranch = $derived(baseRef.replace(/^[^/]+\//, ''));
 
   const specialist = $derived(specialistId ? getSpecialistById(specialistId) : undefined);
@@ -220,14 +220,14 @@
       {/if}
     {/snippet}
     {#snippet repoActive()}
-      {#if skipWorktree}
+      {#if skipIsolation}
         Opening {@render repoNameCopyable()}…
       {:else}
         Creating an isolated copy of {@render repoNameCopyable()}
       {/if}
     {/snippet}
     {#snippet repoDone()}
-      {#if skipWorktree}
+      {#if skipIsolation}
         Working directly on <code class="text-sm bg-secondary py-1 px-1.5">{displayBranch}</code> {#if worktreePath}{' '}at
           <OpenComboButton
             filePath={worktreePath}
@@ -260,11 +260,11 @@
     {/snippet}
 
     <!-- Step 2: Branch -->
-    {#if branchStatus !== 'pending' && !skipWorktree}
+    {#if branchStatus !== 'pending' && !skipIsolation}
       {@render stepRow(branchStatus, faCodeBranch, '', branchActive, branchDone)}
     {/if}
     {#snippet branchActive()}
-      {#if skipWorktree}
+      {#if skipIsolation}
         {#if branch}
           Working directly on branch <span class="">{branch}</span>…
         {:else}
@@ -292,7 +292,7 @@
       </button>
     {/snippet}
     {#snippet branchDone()}
-      {#if skipWorktree}
+      {#if skipIsolation}
         {#if branch}
           Working directly on branch {@render copyableRef(branch, 'branch name')}.
         {:else}

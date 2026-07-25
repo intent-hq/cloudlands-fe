@@ -66,14 +66,14 @@ describe("workspaceInitializerReducer", () => {
 
   it("sets form state, repo selection, branch, default parent, and agent settings", () => {
     let state = workspaceInitializerReducer(initialState, setCompactWorkspaceInitializerFormState({ repoPath: "/repo" }));
-    state = workspaceInitializerReducer(state, setWorkspaceInitializerOnboardingFormState({ projectSelection: null, skipWorktree: true }));
+    state = workspaceInitializerReducer(state, setWorkspaceInitializerOnboardingFormState({ projectSelection: null, skipIsolation: true }));
     state = workspaceInitializerReducer(state, setWorkspaceInitializerLastSelectedRepo({ path: "/repo", type: "local", isValidPath: true }));
     state = workspaceInitializerReducer(state, setWorkspaceInitializerBranchForRepo("/repo", "feature"));
     state = workspaceInitializerReducer(state, setWorkspaceInitializerDefaultParentPath("~/Projects"));
     state = workspaceInitializerReducer(state, setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: "builder", isTeamMode: false }));
 
     expect(state.compactFormState?.repoPath).toBe("/repo");
-    expect(state.onboardingFormState?.skipWorktree).toBe(true);
+    expect(state.onboardingFormState?.skipIsolation).toBe(true);
     expect(state.lastSelectedRepo?.isValidPath).toBe(true);
     expect(state.branchByRepo["/repo"]).toBe("feature");
     expect(state.defaultParentPath).toBe("~/Projects");
