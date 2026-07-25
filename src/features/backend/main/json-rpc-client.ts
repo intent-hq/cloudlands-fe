@@ -97,6 +97,13 @@ const DEFAULT_MAX_RECONNECT_MS = 5_000;
 /** §5.17 global handshake method — carries the stable client identity. */
 const HELLO_METHOD = 'client.hello';
 
+// The connect-time handshake holds the connection at `connecting` (queueing
+// all scoped work behind it), so it gets a much tighter bound than ordinary
+// requests: a daemon that accepted the socket but never answers the hello
+// degrades to an anonymous connection after 5s instead of stalling every
+// queued request for the full request timeout.
+const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
+
 /**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
  * `reconnected` (void — fires when a successful connect follows an earlier
@@ -332,7 +339,11 @@ export class JsonRpcClient extends EventEmitter {
     try {
       const params = await this.mergedHelloParams();
       if (this.disposed || this.socket !== socket) return;
-      const result = await this.sendNow(HELLO_METHOD, params, this.requestTimeoutMs);
+      const result = await this.sendNow(
+        HELLO_METHOD,
+        params,
+        Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS),
+      );
       if (this.disposed || this.socket !== socket) return;
       this.onHelloResult?.(result);
     } catch (error) {

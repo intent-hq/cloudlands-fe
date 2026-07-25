@@ -730,6 +730,40 @@ describe("JsonRpcClient client.hello identity handshake (§5.17)", () => {
     client.dispose();
   });
 
+  it("bounds the connect-time handshake at 5s: an unanswered hello degrades to anonymous instead of stalling queued work for the full request timeout", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeSocket[] = [];
+    const onHelloResult = vi.fn();
+    const client = new JsonRpcClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as Duplex;
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 30_000,
+      helloParams: () => ({ clientId: "cli-7f3a" }),
+      onHelloResult,
+    });
+    client.on("error", () => {});
+    client.start();
+    sockets[0].open();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(JSON.parse(sockets[0].writes[0]).method).toBe("client.hello");
+    expect(client.getStatus()).toBe("connecting");
+
+    // The daemon never answers the hello. Well before the 30s request
+    // timeout the handshake bound (5s) trips and the connection is reported
+    // connected anyway — identity degrades, transport survives.
+    await vi.advanceTimersByTimeAsync(4_998);
+    expect(client.getStatus()).toBe("connecting");
+    await vi.advanceTimersByTimeAsync(2);
+    expect(client.getStatus()).toBe("connected");
+    expect(onHelloResult).not.toHaveBeenCalled();
+    client.dispose();
+  });
+
   it("hands a daemon-minted clientId to onHelloResult when the provider has none (first-run)", async () => {
     const sockets: FakeSocket[] = [];
     const onHelloResult = vi.fn();

@@ -45,6 +45,12 @@ export function getOrCreateClientId(): Promise<string> {
 /**
  * Persist a daemon-returned clientId (the daemon mints one when the client
  * presented none, §5.17) so it is re-presented on every later hello.
+ *
+ * The in-memory cache is updated regardless of whether the disk write
+ * succeeds (`setLocalPref` logs-and-swallows failures): this session must
+ * keep presenting the id the daemon just confirmed. If the write did fail,
+ * the only consequence is that the NEXT launch re-runs first-run minting —
+ * a degraded-but-safe outcome; connects are never blocked on prefs I/O.
  */
 export async function persistClientId(clientId: string): Promise<void> {
   cached = Promise.resolve(clientId);
