@@ -1038,7 +1038,6 @@
   // UI state
   let isCreating = $state(false);
   let creationStage = $state(0); // 0-3 for progress stages
-  let cloneProgress = $state<{ phase: string; percent: number; message: string } | null>(null);
   let error: string | null = $state(null);
   let controlsContainer: HTMLDivElement | null = $state(null);
   let richTextarea: RichTextarea | null = $state(null);
@@ -1055,41 +1054,10 @@
     'Almost ready...',
   ];
 
-  // Clone progress listener cleanup
-  let cloneProgressListenerId: string | null = null;
-
-  // Set up clone progress listener
-  onMount(() => {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      cloneProgressListenerId = window.electronAPI.on(
-        'workspace:clone-progress',
-        (data: { phase: string; percent: number; message: string }) => {
-          // Only update during creation and when cloning a GitHub repo
-          if (isCreating && repoType === 'github') {
-            cloneProgress = data;
-          }
-        },
-      );
-    }
-  });
-
-  // Clean up listener on destroy
-  onDestroy(() => {
-    if (cloneProgressListenerId && window.electronAPI?.offById) {
-      window.electronAPI.offById('workspace:clone-progress', cloneProgressListenerId);
-    }
-  });
-
-  // Cycle through creation stages while creating (fallback for non-clone operations)
+  // Cycle through creation stages while creating
   $effect(() => {
     if (!isCreating) {
       creationStage = 0;
-      cloneProgress = null;
-      return;
-    }
-
-    // Only use fake stages if we're not getting clone progress
-    if (cloneProgress) {
       return;
     }
 
@@ -2701,8 +2669,6 @@
               <span class="min-w-[160px] text-left">
                 {#if isPulling}
                   Pulling latest changes...
-                {:else if cloneProgress}
-                  {cloneProgress.message}
                 {:else}
                   {CREATION_STAGES[creationStage]}
                 {/if}
