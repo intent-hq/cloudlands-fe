@@ -108,6 +108,14 @@ const modernReply: CommentV2 = {
   parentId: ROOT_ID,
 };
 
+/** Nested reply (reply to a reply): root only reachable via the parentId chain. */
+const nestedReply: CommentV2 = {
+  ...base,
+  id: 'nested-reply-1',
+  threadId: 'thread-1',
+  parentId: 'modern-reply-1',
+};
+
 /** Root with no markers anywhere in the document — genuinely orphaned. */
 const orphanRoot: CommentV2 = {
   ...base,
@@ -166,6 +174,13 @@ describe('performOrphanCheck thread-root anchoring (PROTOCOL §5.3)', () => {
 
   it('does not orphan a modern anchorless reply when its thread root is anchored', () => {
     appStore.dispatch(loadCommentsAction([rootComment, modernReply]));
+
+    const orphaned = runOrphanCheck();
+    expect(orphaned.map((c) => c.id)).toEqual([]);
+  });
+
+  it('does not orphan a nested reply whose root is only reachable via the parentId chain', () => {
+    appStore.dispatch(loadCommentsAction([rootComment, modernReply, nestedReply]));
 
     const orphaned = runOrphanCheck();
     expect(orphaned.map((c) => c.id)).toEqual([]);
