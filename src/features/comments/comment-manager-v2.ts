@@ -33,6 +33,11 @@ import {
   selectCommentById,
 } from '$store/renderer/slices/comments/comments-selectors';
 import { store as appStore } from '$store/renderer/store';
+import {
+  getAnchorOwnerCommentId,
+  isProjectionDroppedChar,
+  projectAnchorNeedle,
+} from './utils/anchor-reconciliation';
 
 const logger = createLogger('CommentManagerV2');
 
@@ -312,8 +317,11 @@ export class CommentManagerV2 {
           fullComment: comment,
         });
 
-        // Skip if anchors already exist in document
-        const existingAnchors = findCommentAnchors(this.editor.state.doc, comment.id);
+        // Skip if anchors already exist in document. Thread replies share the
+        // thread root's anchors (their anchor ids embed the ROOT's comment
+        // id), so fall back to the anchor-owner id when the comment's own id
+        // has no anchors (monorepo#710).
+        const existingAnchors = this.findAnchorsForComment(comment);
         if (
           existingAnchors.start !== undefined ||
           existingAnchors.end !== undefined ||
@@ -323,6 +331,19 @@ export class CommentManagerV2 {
             commentId: comment.id,
             existingAnchors,
           });
+          // Heal a stale orphan flag: the anchors are present, so the comment
+          // is not orphaned regardless of what a previous failed text search
+          // concluded (monorepo#710).
+          if (comment.isOrphaned) {
+            appStore.dispatch(updateCommentAction(comment.id, { isOrphaned: false }));
+          }
+          continue;
+        }
+
+        // Replies never anchor independently — without the shared thread
+        // anchors in the doc they follow the root comment's fate, so skip the
+        // text search instead of orphaning them on their own.
+        if (comment.parentId) {
           continue;
         }
 
@@ -643,10 +664,24 @@ export class CommentManagerV2 {
     }
 
     if (index === -1) {
+      // Plaintext-projection fallback (monorepo#710): the stored anchorText
+      // is raw markdown (bold syntax, heading-split fragments, backticks)
+      // while doc.textContent is the editor's plaintext projection — a plain
+      // indexOf can never match. Mirror the daemon's tolerant anchoring:
+      // normalize both sides by dropping whitespace and markdown delimiters,
+      // then map the match back to ProseMirror positions.
+      const projected = this.findTextByPlaintextProjection(searchText);
+      if (projected) {
+        logger.debug('findTextInDocument: Found via plaintext projection', {
+          searchText: searchLower.substring(0, 50),
+          from: projected.from,
+          to: projected.to,
+        });
+        return projected;
+      }
+
       logger.debug('findTextInDocument: Text not found', {
         searchText: searchLower.substring(0, 50),
-        docContainsFooter: textContent.includes('footer'),
-        docContainsWattenberger: textContent.includes('wattenberger'),
       });
       return null;
     }
@@ -721,6 +756,73 @@ export class CommentManagerV2 {
       from: fromPos,
       to: toPos,
     };
+  }
+
+  /**
+   * Find a comment's anchors in the document, checking the comment's own id
+   * first and falling back to the anchor-owner id derived from its anchor
+   * ids. Thread replies share the thread root's persistent anchors (the
+   * daemon's comment.respond clones the parent's anchor), so their in-doc
+   * anchor nodes carry the ROOT's comment id (monorepo#710).
+   */
+  private findAnchorsForComment(comment: CommentV2): {
+    start?: number;
+    end?: number;
+    point?: number;
+  } {
+    if (!this.editor) return {};
+    const own = findCommentAnchors(this.editor.state.doc, comment.id);
+    if (own.start !== undefined || own.end !== undefined || own.point !== undefined) {
+      return own;
+    }
+    const ownerId = getAnchorOwnerCommentId(comment);
+    if (ownerId !== comment.id) {
+      return findCommentAnchors(this.editor.state.doc, ownerId);
+    }
+    return own;
+  }
+
+  /**
+   * Tolerant text search over a normalized plaintext projection of the doc
+   * (monorepo#710). Builds a projection of the document's text nodes with
+   * whitespace and markdown delimiter characters dropped (see
+   * `isProjectionDroppedChar`) alongside a per-character map back to
+   * ProseMirror positions, normalizes the markdown `searchText` the same way
+   * (also stripping anchor markers, block markers, and link urls), and maps
+   * the first match back to document positions.
+   */
+  private findTextByPlaintextProjection(
+    searchText: string,
+  ): { from: number; to: number } | null {
+    if (!this.editor) return null;
+
+    const needle = projectAnchorNeedle(searchText);
+    if (!needle) return null;
+
+    const doc = this.editor.state.doc;
+    let projection = '';
+    const positions: number[] = [];
+
+    doc.descendants((node, pos) => {
+      if (node.isText) {
+        const nodeText = node.text || '';
+        for (let i = 0; i < nodeText.length; i++) {
+          const ch = nodeText[i];
+          if (!isProjectionDroppedChar(ch)) {
+            projection += ch.toLowerCase();
+            positions.push(pos + i);
+          }
+        }
+      }
+      return true;
+    });
+
+    const index = projection.indexOf(needle);
+    if (index === -1) return null;
+
+    const from = positions[index];
+    const to = positions[index + needle.length - 1] + 1;
+    return { from, to };
   }
 
   /**
@@ -1136,8 +1238,11 @@ export class CommentManagerV2 {
         continue;
       }
 
-      // Find anchors in the editor
-      const anchors = findCommentAnchors(this.editor.state.doc, comment.id);
+      // Find anchors in the editor. Thread replies share the thread root's
+      // anchors (their anchor ids embed the root's comment id), so fall back
+      // to the anchor-owner id when the comment's own id has no anchors
+      // (monorepo#710).
+      const anchors = this.findAnchorsForComment(comment);
 
       // Check if anchors are complete
       let isOrphaned = false;
