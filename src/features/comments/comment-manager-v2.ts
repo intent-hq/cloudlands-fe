@@ -1102,7 +1102,11 @@ export class CommentManagerV2 {
     // daemon defaults to 'agent' when absent). `workspaceId` pins the mutation
     // to THIS manager's workspace — note ids like `spec` exist in every
     // workspace, and the fallback resolver cache is last-writer-wins across
-    // them (the round-5 wrong-workspace `comment.add` failure).
+    // them (the round-5 wrong-workspace `comment.add` failure). `commentId`
+    // hands the daemon the optimistic id (PROTOCOL §5.3 / intentd#514) so the
+    // persisted row, threadId, and note markers share the id the anchors above
+    // were inserted under — the post-add refetch converges instead of ghosting
+    // the editor anchors behind a daemon-minted id.
     const searchContext = `${beforeText}${selectedText}${afterText}`;
     const persisted = await commentsWrite.addComment(this.noteId, addedComment, {
       workspaceId: this.workspaceId,
@@ -1112,6 +1116,7 @@ export class CommentManagerV2 {
       type,
       author: 'User',
       authorType: 'user',
+      commentId: addedComment.id,
     });
     if (!persisted) {
       // Reconstruction evidence for a failed comment.add: param lengths plus
