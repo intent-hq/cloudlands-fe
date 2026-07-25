@@ -40,12 +40,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../../src/features/github-auth/main/github-auth.service', () => ({
-  githubAuthService: {
-    isAuthenticated: vi.fn().mockResolvedValue(false),
-  },
-}));
-
 describe('Specialist Prompts Verification', () => {
   // Initialize the specialists service to populate the file cache with bundled specialists
   beforeAll(async () => {
