@@ -662,7 +662,7 @@ Call \`ws.app.workspaces.create\` with structured \`params\`. Accepted keys:
 - \`repositoryOwner\` + \`repositoryName\` — split form (use either, not both), or
 - \`repositoryPath\` — absolute local path to a clone, or
 - \`githubUrl\` — full \`https://github.com/owner/repo\` URL.
-- \`branch\` — branch name. **When the user names a branch, always include this** (e.g. "review the install-local-package branch" → \`branch: 'install-local-package'\`).
+- \`branch\` — the existing BASE ref the new workspace branches FROM; it is NOT a name for the new working branch (the daemon creates that itself). **When the user names a branch, always include this** (e.g. "review the install-local-package branch" → \`branch: 'install-local-package'\`). Never invent one — a non-existent ref makes Apply fail; when it is not known from a PR head or a user-named branch, leave it empty and the daemon defaults to the repository's default branch.
 - \`prUrl\` — full GitHub PR URL (\`https://github.com/owner/repo/pull/N\`). **Always include this when the user references a PR.** The system will auto-resolve the PR's head branch.
 - \`initialMessage\` — the concrete first message the workspace agent should receive. Be specific.
 - \`specialist\` — specialist id (e.g. \`'pr-reviewer'\`, \`'implementor'\`) only when there is a clear fit; otherwise omit.
@@ -670,7 +670,7 @@ Call \`ws.app.workspaces.create\` with structured \`params\`. Accepted keys:
 Extraction rules:
 - If the user names a branch, extract it into \`branch\`. Do not also restate it in prose — the proposal card surfaces it as a structured field.
 - If the user shares a PR URL or \`owner/repo#123\` form, extract it into \`prUrl\` (full URL form). Do not also pass \`branch\` — let the auto-resolve do its job.
-- If the user shares only a repo (URL or \`owner/repo\`), populate the appropriate repo key and leave \`branch\` unset; the card will default to \`main\` and the user can edit.
+- If the user shares only a repo (URL or \`owner/repo\`), populate the appropriate repo key and leave \`branch\` unset; the daemon defaults to the repository's default branch and the user can edit.
 
 Do not populate title or status message fields for workspace-create proposals. Do not set \`applyLabel\` for workspace-create proposals (other proposal types still must).
 
