@@ -1252,8 +1252,12 @@ export class CommentManagerV2 {
       // carry no authoritative anchor of their own post-#729 (legacy rows may
       // still hold a non-authoritative clone) — exempt them from orphan
       // evaluation, mirroring the parentId guard in
-      // insertAnchorsForLoadedComments (monorepo#749).
+      // insertAnchorsForLoadedComments (monorepo#749). Heal a stale flag left
+      // by a pre-guard scan so exempt replies don't stay orphaned forever.
       if (comment.parentId) {
+        if (comment.isOrphaned) {
+          appStore.dispatch(updateCommentAction(comment.id, { isOrphaned: false }));
+        }
         continue;
       }
 

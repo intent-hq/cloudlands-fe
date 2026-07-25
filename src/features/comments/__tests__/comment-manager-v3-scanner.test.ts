@@ -469,6 +469,22 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
       expect(selectCommentById.select(appStore.state, reply.id)?.isOrphaned).toBe(false);
     });
 
+    it('heals a stale isOrphaned flag on a reply left by a pre-guard scan', async () => {
+      // A reply wrongly flagged before the exemption existed (or by an older
+      // renderer) must be healed, not left permanently orphaned by the skip.
+      const reply = createTestComment({
+        content: 'Previously flagged reply',
+        parentId: 'root-1',
+        isOrphaned: true,
+      });
+      delete (reply as { anchor?: unknown }).anchor;
+      appStore.dispatch(loadCommentsAction([reply]));
+
+      await manager.scanAnchorHealth();
+
+      expect(selectCommentById.select(appStore.state, reply.id)?.isOrphaned).toBe(false);
+    });
+
     it('still flags a root comment with a genuinely missing anchor', async () => {
       // Root (no parentId) whose anchors are absent from the doc — real
       // orphan detection must survive the reply exemption.
