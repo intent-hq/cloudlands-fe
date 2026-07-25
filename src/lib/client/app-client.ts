@@ -1103,6 +1103,16 @@ export interface CommentAddParams {
    * comment to persist with the right attribution.
    */
   authorType?: AuthorType;
+  /**
+   * Optional client-supplied comment id (a UUID, PROTOCOL §5.3 / intentd#514).
+   * When present the daemon uses it as the canonical id — comment row,
+   * `threadId`, anchor ids, and the embedded `<!--anchor:{id}:start/end-->`
+   * markers — instead of minting a fresh UUID, so optimistic editor anchors
+   * inserted under this id converge with the daemon's note rewrite. Non-UUID
+   * values and collisions are rejected with `-32602`; omitting it keeps the
+   * daemon's mint-a-UUID behavior.
+   */
+  commentId?: string;
 }
 
 /** Parameters for replying to a thread or comment (`comment.respond`). */
