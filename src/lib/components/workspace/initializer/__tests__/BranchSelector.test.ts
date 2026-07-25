@@ -31,14 +31,21 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock(
   '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
   async () => {
-    const { createAppStoreMock } =
-      await import('$store/renderer/utils/test-helpers/store-mock');
+    const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
     const store = createAppStoreMock({ state: {} });
     return {
       selectWorkspaceInitializerBranchByRepo: store.createSelector(() => ({})),
     };
   },
 );
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({ state: {} });
+  return {
+    selectWorkspaceItems: store.createSelector(() => []),
+  };
+});
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
   setWorkspaceInitializerBranchForRepo: (repoPath: string, branch: string) => ({

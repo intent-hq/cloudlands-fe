@@ -338,14 +338,14 @@
 
   $effect(() => {
     const selection = projectSelection;
-    const skipWt = onboardingSkipWorktree;
+    const skipIso = onboardingSkipIsolation;
     const step = $onboardingStep$;
     const script = setupScript;
     const scriptName = setupScriptName;
     const customScript = isCustomSetupScript;
 
     if (!isOnboarding || !$workspaceInitializerHydrated$) return;
-    if (!(selection || skipWt || script || step !== 'welcome')) return;
+    if (!(selection || skipIso || script || step !== 'welcome')) return;
     appStore.dispatch(
       debounceWorkspaceInitializerOnboardingFormState({
         projectSelection: selection
@@ -360,7 +360,7 @@
               isValid: selection.isValid,
             }
           : null,
-        skipWorktree: skipWt,
+        skipIsolation: skipIso,
         setupScript: script,
         setupScriptName: scriptName,
         isCustomSetupScript: customScript,
@@ -370,7 +370,7 @@
   });
 
   let hasConnectedProvider = $state(false);
-  let onboardingSkipWorktree = $state(false);
+  let onboardingSkipIsolation = $state(false);
 
   // Pull conflict state
   let onboardingBranchBehind = $state(0);
@@ -746,7 +746,7 @@
         clonePath: projectSelection.clonePath,
         baseRef: effectiveBranch,
         isNewRepo,
-        skipWorktree: onboardingSkipWorktree || undefined,
+        skipIsolation: onboardingSkipIsolation || undefined,
         scope: projectSelection.scope || undefined,
         setupScript: setupScript.trim() || undefined,
         linearIssue,
@@ -940,7 +940,7 @@
               repoStatus={setupRepoStatus}
               branchStatus={setupBranchStatus}
               agentStatus={setupAgentStatus}
-              skipWorktree={onboardingSkipWorktree}
+              skipIsolation={onboardingSkipIsolation}
             />
           </div>
         </div>
@@ -1125,7 +1125,7 @@
                           {projectSelection}
                           {onboardingGithubRepoInfo}
                           {selectedPRBranch}
-                          bind:onboardingSkipWorktree
+                          bind:onboardingSkipIsolation
                           bind:setupScript
                           bind:showSetupScript
                           bind:setupScriptName
@@ -1145,7 +1145,7 @@
                           onBranchSet={handleOnboardingBranchSet}
                           onProjectChange={handleOnboardingProjectChange}
                           onShuffleSuggestions={shuffleSuggestions}
-                          onSkipWorktreeChange={(val) => (onboardingSkipWorktree = val)}
+                          onSkipIsolationChange={(val) => (onboardingSkipIsolation = val)}
                           onBranchBehindChange={(behind) => (onboardingBranchBehind = behind)}
                           onShowSetupScriptChange={(show) => (showSetupScript = show)}
                         />

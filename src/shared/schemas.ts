@@ -170,7 +170,7 @@ export const CreateWorkspaceRequestSchema = z.object({
   setupScript: z.string().optional(),
   environmentConfig: EnvironmentConfigSchema.optional(),
   isNewRepo: z.boolean().optional(),
-  skipWorktree: z.boolean().optional(),
+  skipIsolation: z.boolean().optional(), // Canonical wire name; the daemon still accepts the deprecated skipWorktree alias
 });
 
 export const UpdateWorkspaceRequestSchema = z.object({

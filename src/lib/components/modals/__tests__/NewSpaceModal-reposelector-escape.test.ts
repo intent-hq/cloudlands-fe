@@ -7,13 +7,7 @@
  * the dropdown (topmost layer) and Escape #2 closes the dialog.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 
 // Stub the heavy initializer (Redux store, navigation, etc.) — the real app
 // renders RepoSelector inside it; here RepoSelector is rendered alongside the
@@ -32,8 +26,7 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock(
   '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
   async () => {
-    const { createAppStoreMock } =
-      await import('$store/renderer/utils/test-helpers/store-mock');
+    const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
     const store = createAppStoreMock({ state: {} });
     return {
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
@@ -73,15 +66,19 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { list: vi.fn(async () => ({ ok: true, data: [] })) },
 }));
 
-vi.mock(
-  '$store/renderer/slices/feature-codes/feature-codes-selectors',
-  async () => {
-    const { createAppStoreMock } =
-      await import('$store/renderer/utils/test-helpers/store-mock');
-    const store = createAppStoreMock({ state: {} });
-    return { selectIsFeatureEnabled: store.createSelector(() => false) };
-  },
-);
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({ state: {} });
+  return {
+    selectWorkspaceItems: store.createSelector(() => []),
+  };
+});
+
+vi.mock('$store/renderer/slices/feature-codes/feature-codes-selectors', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({ state: {} });
+  return { selectIsFeatureEnabled: store.createSelector(() => false) };
+});
 
 vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(async () => ({ success: true, data: [] })),

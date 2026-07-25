@@ -62,7 +62,7 @@ export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializ
   showSetupScript?: boolean;
   setupScriptName?: string;
   isCustomSetupScript?: boolean;
-  skipWorktree?: boolean;
+  skipIsolation?: boolean;
   stayOnHomePage?: boolean;
 }
 
@@ -77,7 +77,7 @@ export interface WorkspaceInitializerOnboardingFormState {
     projectName?: string;
     isValid?: boolean;
   } | null;
-  skipWorktree?: boolean;
+  skipIsolation?: boolean;
   setupScript?: string;
   setupScriptName?: string;
   isCustomSetupScript?: boolean;

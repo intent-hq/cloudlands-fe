@@ -269,7 +269,7 @@ export interface Workspace {
   taskStats?: WorkspaceTaskStats; // Task progress for list views (like flame graph)
   /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_GIT_SUMMARY. Excluded from WorkspaceMetadata payloads. */
   gitSummary?: WorkspaceGitSummary; // Git status for list views (commits ahead/behind)
-  /** Copy-on-Write filesystem support for agent isolation. True when repositoryPath and workspaces root are on same CoW-capable volume. */
+  /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
   cowSupported?: boolean;
 }
 
@@ -1320,7 +1320,7 @@ export interface CreateWorkspaceRequest {
   setupScript?: string; // Shell script to run in worktree after creation
   environmentConfig?: EnvironmentConfig; // Remote environment configuration
   isNewRepo?: boolean; // If true, initialize a new git repository at repositoryPath
-  skipWorktree?: boolean; // If true, create workspace without a git worktree
+  skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
   initialAgent?: {
     /**
      * DEPRECATED: the daemon assigns the initial agent's id and returns it on

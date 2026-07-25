@@ -42,7 +42,7 @@
 
     // Branch state
     selectedPRBranch: string;
-    onboardingSkipWorktree: boolean;
+    onboardingSkipIsolation: boolean;
 
     // Setup script
     setupScript: string;
@@ -68,7 +68,7 @@
     onBranchSet: (branch: string) => void;
     onProjectChange: (selection: ProjectSelection) => void;
     onShuffleSuggestions: () => void;
-    onSkipWorktreeChange: (val: boolean) => void;
+    onSkipIsolationChange: (val: boolean) => void;
     onBranchBehindChange: (behind: number) => void;
     onShowSetupScriptChange: (show: boolean) => void;
   }
@@ -81,7 +81,7 @@
     projectSelection,
     onboardingGithubRepoInfo,
     selectedPRBranch,
-    onboardingSkipWorktree = $bindable(),
+    onboardingSkipIsolation = $bindable(),
 
     setupScript = $bindable(),
     showSetupScript = $bindable(),
@@ -101,7 +101,7 @@
     onBranchSet,
     onProjectChange,
     onShuffleSuggestions,
-    onSkipWorktreeChange,
+    onSkipIsolationChange,
     onBranchBehindChange,
     onShowSetupScriptChange,
   }: Props = $props();
@@ -383,8 +383,8 @@
             repoType="local"
             hasTriggerIcon={false}
             showUncommittedIndicator={true}
-            skipWorktree={onboardingSkipWorktree}
-            onSkipWorktreeChange={onSkipWorktreeChange}
+            skipIsolation={onboardingSkipIsolation}
+            onSkipIsolationChange={onSkipIsolationChange}
             onBranchStatusChange={(status) => {
               onBranchBehindChange(status.behind);
             }}
@@ -424,8 +424,8 @@
             repoType="github"
             githubUrl={projectSelection.githubUrl}
             hasTriggerIcon={false}
-            skipWorktree={onboardingSkipWorktree}
-            onSkipWorktreeChange={onSkipWorktreeChange}
+            skipIsolation={onboardingSkipIsolation}
+            onSkipIsolationChange={onSkipIsolationChange}
             onBranchStatusChange={(status) => {
               onBranchBehindChange(status.behind);
             }}
