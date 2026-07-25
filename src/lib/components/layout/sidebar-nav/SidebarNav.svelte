@@ -26,6 +26,7 @@
   faLayerGroup,
   faCog,
   faBell,
+  faChartColumn,
   faWandMagicSparkles,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -44,6 +45,7 @@
   selectExpandedItem,
   selectIsCardPinned,
   selectContextMenuOpen,
+  selectStatsOverlayOpen,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
   closeAll,
@@ -53,6 +55,7 @@
   setDeferredLeave,
   clearDeferredLeave,
   setShowCreateModal,
+  toggleStatsOverlay,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
   import {
@@ -71,6 +74,7 @@
   const expandedItem$ = selectExpandedItem();
   const isCardPinned$ = selectIsCardPinned();
   const contextMenuOpen$ = selectContextMenuOpen();
+  const statsOverlayOpen$ = selectStatsOverlayOpen();
 
   // Count unread workspaces only (within 24h)
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -108,12 +112,14 @@
     { id: 'active', icon: faBell, label: 'Active', badge: () => unreadCount },
     { id: 'all-workspaces', icon: faLayerGroup, label: 'All' },
     { id: 'chief', icon: faWandMagicSparkles, label: 'Assistant' },
+    { id: 'stats', icon: faChartColumn, label: 'Stats' },
     { id: 'settings', icon: faCog, label: 'Settings' },
   ];
 
   function isItemActive(id: SidebarNavItem): boolean {
     if (id === 'home' && isHomePage) return true;
     if (id === 'settings' && isSettingsPage) return true;
+    if (id === 'stats' && $statsOverlayOpen$) return true;
     // Highlight when panel is open for this item
     if ($panelItem$ === id) return true;
     return false;
@@ -162,8 +168,8 @@
       return;
     }
 
-    // Home and settings don't have hover cards — skip
-    if (item === 'home' || item === 'settings') return;
+    // Home, stats, and settings don't have hover cards — skip
+    if (item === 'home' || item === 'stats' || item === 'settings') return;
 
     // Otherwise delay hover card appearance
     hoverTimeout = setTimeout(() => {
@@ -213,6 +219,9 @@
       } else {
         navigateToSettings();
       }
+    } else if (id === 'stats') {
+      appStore.dispatch(closeAll(false));
+      appStore.dispatch(toggleStatsOverlay());
     } else if (id === 'new-workspace') {
       appStore.dispatch(closeAll(false));
       // Command-click (or Ctrl-click on non-Mac) opens in new window

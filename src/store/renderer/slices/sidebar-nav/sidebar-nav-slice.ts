@@ -42,6 +42,7 @@ export const initialState: SidebarNavState = {
   chiefActiveAgentId: null,
   contextMenuOpenCount: 0,
   deferredLeave: null,
+  statsOverlayOpen: false,
 };
 
 // ── Actions ──
@@ -115,6 +116,10 @@ export const incrementContextMenuOpen = createAction("sidebarNav/incrementContex
 export const decrementContextMenuOpen = createAction("sidebarNav/decrementContextMenuOpen");
 export const setDeferredLeave = createAction<[leaveType: 'card' | 'nav']>("sidebarNav/setDeferredLeave");
 export const clearDeferredLeave = createAction("sidebarNav/clearDeferredLeave");
+
+// Usage-stats overlay
+export const setStatsOverlayOpen = createAction<[open: boolean]>("sidebarNav/setStatsOverlayOpen");
+export const toggleStatsOverlay = createAction("sidebarNav/toggleStatsOverlay");
 
 // Composite actions (handled by reducer for pure state, sagas for side effects)
 export const closeHoverCards = createAction("sidebarNav/closeHoverCards");
@@ -316,6 +321,14 @@ export const sidebarNavReducer = cardPinnedPreference.register(
   .with(clearDeferredLeave, (state) => ({
     ...state,
     deferredLeave: null,
+  }))
+  .with(setStatsOverlayOpen, (state, { payload: [open] }) => ({
+    ...state,
+    statsOverlayOpen: open,
+  }))
+  .with(toggleStatsOverlay, (state) => ({
+    ...state,
+    statsOverlayOpen: !state.statsOverlayOpen,
   }))
   .with(hydrateSidebarNav, (state, { payload }) => ({
     ...state,

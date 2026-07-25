@@ -137,6 +137,10 @@ export const selectChiefActiveAgentId = store.createSelector(
   (state): string | null => state.sidebarNav.chiefActiveAgentId,
 );
 
+export const selectStatsOverlayOpen = store.createSelector(
+  (state): boolean => state.sidebarNav.statsOverlayOpen,
+);
+
 // ── Derived selectors ──
 
 /** The active visible card (either hovered or expanded) */
