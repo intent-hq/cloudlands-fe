@@ -285,7 +285,7 @@
             class="cursor-pointer"
           />
           <span>Use Copy-on-Write isolation</span>
-          <span class="text-subtle hover:text-foreground transition-colors" title="CoW workspaces + per-agent sandboxes; falls back to worktrees when unsupported. New workspaces are provisioned as instant copy-on-write clones of the repository, and each delegated agent runs in its own CoW sandbox whose changes are merged back automatically when it finishes. Requires filesystem CoW support (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).">
+          <span class="text-subtle hover:text-foreground transition-colors" title="CoW workspaces + per-agent sandboxes. New workspaces are provisioned as instant copy-on-write clones of the repository, and each delegated agent runs in its own CoW sandbox whose changes are merged back automatically when it finishes. Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).">
             <Fa icon={faInfoCircle} size="sm" />
           </span>
         </label>

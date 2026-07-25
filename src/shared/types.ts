@@ -269,7 +269,7 @@ export interface Workspace {
   taskStats?: WorkspaceTaskStats; // Task progress for list views (like flame graph)
   /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_GIT_SUMMARY. Excluded from WorkspaceMetadata payloads. */
   gitSummary?: WorkspaceGitSummary; // Git status for list views (commits ahead/behind)
-  /** Copy-on-Write filesystem capability (independent of checkout mode). True when repositoryPath and workspaces root are on same CoW-capable volume. */
+  /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
   cowSupported?: boolean;
 }
 
