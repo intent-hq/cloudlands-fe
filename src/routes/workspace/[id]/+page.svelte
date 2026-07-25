@@ -1,5 +1,4 @@
 <script lang="ts">
-   
   /**
    * Workspace Detail Page - Unified State Version
    *
@@ -9,11 +8,7 @@
 
   import { page } from '$app/state';
 
-  import {
-  onMount,
-  onDestroy,
-  untrack,
-} from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -21,19 +16,18 @@
 
   import { createWorkspacePageState } from './composables/workspace-page-state.svelte';
   import {
-  useCloseHandlers,
-  usePanelShortcuts,
-  useTabManagement,
-  useWorkspaceLoader,
-} from './composables';
+    useCloseHandlers,
+    usePanelShortcuts,
+    useTabManagement,
+    useWorkspaceLoader,
+  } from './composables';
   import {
-  dispatchCreateFileRequest,
-  handleCommandPaletteCreateFile,
-} from './composables/create-file-command';
+    dispatchCreateFileRequest,
+    handleCommandPaletteCreateFile,
+  } from './composables/create-file-command';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { commandPaletteActionConsumed } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCommandPaletteAction } from '$store/renderer/slices/app-layout/app-layout-selectors';
-
 
   // Performance optimization
   import { CleanupManager } from '$features/optimization/memory-manager';
@@ -41,25 +35,25 @@
   import { selectMainPanelView } from '$store/renderer/slices/changes/changes-selectors';
   import { clearMainPanelView as ftClearMainPanelView } from '$store/renderer/slices/changes/changes-slice';
   import {
-  selectActiveWorkspaceId,
-  selectWorkspaceById,
-  selectWorkspaceIsEmpty,
-  selectIsNewWorkspaceSession,
-} from '$store/renderer/slices/workspace/workspace-selectors';
+    selectActiveWorkspaceId,
+    selectWorkspaceById,
+    selectWorkspaceIsEmpty,
+    selectIsNewWorkspaceSession,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
-  selectPanelVisibilityFlag,
-  selectSidebarSide,
-} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+    selectPanelVisibilityFlag,
+    selectSidebarSide,
+  } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
-  clearActiveWorkspace,
-  loadWorkspacesRequested,
-  setActiveWorkspaceId,
-  setWorkspaceEntity,
-} from '$store/renderer/slices/workspace/workspace-slice';
+    clearActiveWorkspace,
+    loadWorkspacesRequested,
+    setActiveWorkspaceId,
+    setWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
   import {
-  setPanelVisibility,
-  type PanelVisibilityState,
-} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+    setPanelVisibility,
+    type PanelVisibilityState,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
@@ -71,6 +65,7 @@
   import WorkspaceModals from '$lib/components/workspace/WorkspaceModals.svelte';
   import SidebarSkeleton from '$lib/components/workspace/SidebarSkeleton.svelte';
   import ContentSkeleton from '$lib/components/workspace/ContentSkeleton.svelte';
+  import ResourceNotFound from '$lib/components/common/ResourceNotFound.svelte';
   import InputDialog from '$lib/components/modals/InputDialog.svelte';
   import QuakeTerminalOverlay from '$lib/components/terminal/QuakeTerminalOverlay.svelte';
   import { PanelLayout } from '$lib/components/layout/panel-system';
@@ -81,15 +76,16 @@
 
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
+  import { navigateToRoute } from '$lib/utils/navigation.client';
 
   import { setSidebarActiveTab } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import {
-  createAgentRequested,
-  createAgentWithSpecialistRequested,
-  setAgents,
-  setAgentsLoaded,
-  flushPendingAgentDeletionsRequested,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+    createAgentRequested,
+    createAgentWithSpecialistRequested,
+    setAgents,
+    setAgentsLoaded,
+    flushPendingAgentDeletionsRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -350,10 +346,7 @@
         // Hydrate Redux so the selector-backed $workspace picks up the
         // workspace entity immediately during the optimistic→real transition.
         {
-          const cachedWorkspace = selectWorkspaceById.select(
-            appStore.state,
-            currentWorkspaceId,
-          );
+          const cachedWorkspace = selectWorkspaceById.select(appStore.state, currentWorkspaceId);
           if (cachedWorkspace) {
             appStore.dispatch(setWorkspaceEntity(cachedWorkspace));
           }
@@ -754,7 +747,6 @@
     },
   });
 
-
   // ============================================================================
   // Cleanup
   // ============================================================================
@@ -809,6 +801,9 @@
     {#if isCreatingWorkspace || isInTransition}
       <!-- Blank panel while creating new workspace or during transition -->
       <div class="w-full h-full"></div>
+    {:else if workspaceLoader.loadError}
+      <!-- Terminal load failure — blank panel; main content shows the not-found state -->
+      <div class="w-full h-full"></div>
     {:else}
       <!-- Show skeleton for normal loading -->
       <SidebarSkeleton />
@@ -847,7 +842,19 @@
     {/if}
     {#if !showOnboarding || onboardingFadingOut}
       {#if !$workspace || isCreatingWorkspace}
-        <ContentSkeleton />
+        {#if workspaceLoader.loadError && !isCreatingWorkspace}
+          <ResourceNotFound
+            kind={workspaceLoader.loadError.kind}
+            resourceLabel="Workspace"
+            resourceId={workspaceId}
+            detail={workspaceLoader.loadError.kind === 'error'
+              ? workspaceLoader.loadError.message
+              : undefined}
+            onGoHome={() => navigateToRoute('/')}
+          />
+        {:else}
+          <ContentSkeleton />
+        {/if}
       {:else}
         <div
           class="h-full w-full absolute inset-0"
@@ -875,10 +882,7 @@
 
 <!-- Modals Snippet -->
 {#snippet modalsContent()}
-  <WorkspaceModals
-    workspace={$workspace ?? null}
-    showPRCreator={false}
-  />
+  <WorkspaceModals workspace={$workspace ?? null} showPRCreator={false} />
   <InputDialog
     bind:open={createFileDialogOpen}
     title="Create new file"
@@ -900,8 +904,6 @@
     startCollapsed={isOnboarding}
   />
 </div>
-
-
 
 <style>
   :global {

@@ -13,7 +13,22 @@
     previousWorkspaceId?: string | null;
   } = $props();
 
-  const loader = useWorkspaceLoader({ workspaceId, workspaceState, state, previousWorkspaceId });
+  const loader = useWorkspaceLoader({
+    get workspaceId() {
+      return workspaceId;
+    },
+    get workspaceState() {
+      return workspaceState;
+    },
+    get state() {
+      return state;
+    },
+    get previousWorkspaceId() {
+      return previousWorkspaceId;
+    },
+  });
 </script>
 
 <div data-testid="loading-workspace-id">{loader.loadingWorkspaceId ?? ''}</div>
+<div data-testid="load-error-kind">{loader.loadError?.kind ?? ''}</div>
+<div data-testid="load-error-message">{loader.loadError?.message ?? ''}</div>
