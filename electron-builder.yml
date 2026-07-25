@@ -33,13 +33,11 @@ extraResources:
     to: intentd.version
 
 # Unpack renderer files from asar to avoid MIME type issues
-# Also unpack MCP server files since Node.js can't execute scripts from within asar
 # Unpack Express and related modules for HTTP MCP Bridge
 # Unpack native modules to ensure prebuilds are accessible
 asarUnpack:
   - dist/renderer/**/*
   - resources/**/*
-  - dist/features/mcp/servers/**/*
   - node_modules/express/**/*
   - node_modules/body-parser/**/*
   - node_modules/mime/**/*
