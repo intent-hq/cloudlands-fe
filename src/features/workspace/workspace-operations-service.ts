@@ -18,10 +18,11 @@
  * Dependency-light per src/store AGENTS.md: top-level imports are limited to the
  * workspace IPC client, the configured store, slice actions, collection utils,
  * shared types, and the logger. Modules that transitively import selectors
- * (`delete-warning-utils`, tab-state) and the toast library are dynamically
- * imported inside handlers so `store.createSelector` is never evaluated while the
- * store is still initializing through the middleware chain, and so this
- * middleware-reachable module never statically pulls in `$app/*` navigation.
+ * (`delete-warning-utils`) and the toast library are dynamically imported inside
+ * handlers so `store.createSelector` is never evaluated while the store is still
+ * initializing through the middleware chain, and so this middleware-reachable
+ * module never statically pulls in `$app/*` navigation. The tab-closing
+ * navigate-away flow lives in `./navigate-away-if-viewing` (same discipline).
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import {
@@ -70,6 +71,7 @@ import { isBulkOperationProposal, isWorkspaceCreateProposal } from "$shared/type
 import type { WorkspaceProposalApplyPayload } from "$shared/app-workspace-operations";
 import { removeRepo } from "$store/renderer/slices/known-repos/known-repos-slice";
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
+import { navigateAwayIfViewing } from "./navigate-away-if-viewing";
 import { invoke } from "$lib/electron-bridge";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { createLogger } from "$lib/utils/client-logger";
@@ -98,39 +100,6 @@ function readWorkspaceById(workspaceId: string): Workspace | undefined {
  */
 function applyWorkspaceChanges(workspaceId: string, changes: Partial<Workspace>): void {
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
-}
-
-function isViewingWorkspace(workspaceId: string): boolean {
-  if (typeof window === "undefined") return false;
-  const prefix = `/workspace/${workspaceId}`;
-  const path = window.location.pathname;
-  return path === prefix || path.startsWith(prefix + "/");
-}
-
-/**
- * When the removed workspace is the one on screen, close its tab and route to
- * the next tab (or home). Uses the global SvelteKit `goto` that `+layout.svelte`
- * exposes on `window.__app_goto` so this module never imports `$app/*` — which
- * the (pre-existing) main-process typecheck graph cannot resolve.
- */
-async function navigateAwayIfViewing(workspaceId: string): Promise<void> {
-  if (!isViewingWorkspace(workspaceId)) return;
-  const { closeWorkspaceTab } = await import(
-    "$store/renderer/slices/tab-state/tab-state-slice"
-  );
-  const { selectCurrentWorkspaceTabId } = await import(
-    "$store/renderer/slices/tab-state/tab-state-selectors"
-  );
-
-  appStore.dispatch(closeWorkspaceTab(workspaceId));
-  const nextTabId = selectCurrentWorkspaceTabId.select(appStore.state);
-  const target =
-    typeof nextTabId === "string" && nextTabId.length > 0 && nextTabId !== workspaceId
-      ? `/workspace/${nextTabId}`
-      : "/";
-
-  const goto = (window as unknown as { __app_goto?: (route: string) => unknown }).__app_goto;
-  if (goto) await goto(target);
 }
 
 function workspaceMatchesRepoKey(workspace: Workspace, repoKey: string): boolean {
