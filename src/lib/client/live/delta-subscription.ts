@@ -16,11 +16,21 @@
  * A sequence gap (or an unseeded delta) triggers reconnect-to-resnapshot: the
  * reconciler resets and the subscription re-registers to obtain a fresh seq-0
  * snapshot, with a one-shot refetch bridging the stale-UI window.
+ *
+ * Item 4 (typed channel): when the config carries a `channel` descriptor AND
+ * the daemon advertises `capabilities.liveState`, the matching snapshot+delta
+ * channel of PROTOCOL §6.9 (e.g. `workspace.subscribe`) is registered via a
+ * plain `backendRequest` — the `chat.subscribe` precedent — alongside the
+ * firehose. Its `subscription.push` frames are what actually flip a
+ * subscription live; the capability flag alone never suppresses refetches
+ * (intent-hq/monorepo#775).
  */
 import type { SubscriptionHandler, Unsubscribe } from "../app-client";
 import {
+  backendRequest,
   backendSubscribe,
   backendUnsubscribe,
+  detectLiveStateCapability,
   onBackendNotification,
   onBackendReconnected,
 } from "./backend-transport";
@@ -128,10 +138,31 @@ export class DeltaReconciler<T> {
   }
 }
 
+/**
+ * Descriptor for a typed snapshot+delta channel (PROTOCOL §6.9). Registered
+ * via plain `backendRequest` (not `backendSubscribe`) when the daemon
+ * advertises `capabilities.liveState`; its `subscription.push` frames drive
+ * the reconciler.
+ */
+export interface TypedChannelDescriptor {
+  /** Channel registration method, e.g. `"workspace.subscribe"`. */
+  subscribeMethod: string;
+  /** Channel teardown method, e.g. `"workspace.unsubscribe"`. */
+  unsubscribeMethod: string;
+  /** Registration params (scope), e.g. `{ workspaceId }`; `{}` when global. */
+  params?: Record<string, unknown>;
+}
+
 /** Configuration for {@link createDeltaSubscription}. */
 export interface DeltaSubscriptionConfig<T> {
   /** Daemon event types for the coexisting legacy `events.subscribe` firehose. */
   eventTypes: string[];
+  /**
+   * Optional typed §6.9 channel to register when the daemon advertises
+   * liveState. Without it (or on legacy daemons) only the firehose +
+   * refetch path runs, exactly as today.
+   */
+  channel?: TypedChannelDescriptor;
   /** One-shot refetch: initial snapshot, legacy refresh, and gap-recovery bridge. */
   fetchAll: () => Promise<T[]>;
   /** Stable id for an entity from its raw daemon shape. */
@@ -154,13 +185,23 @@ export interface DeltaSubscriptionConfig<T> {
  * live, snapshots/deltas reconcile incrementally. Returns the disposer.
  */
 export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): Unsubscribe {
-  const { eventTypes, fetchAll, getId, normalize, matchLegacyEvent, handler } = config;
+  const { eventTypes, channel, fetchAll, getId, normalize, matchLegacyEvent, handler } = config;
   const reconciler = new DeltaReconciler<T>(getId, normalize);
 
   let disposed = false;
   let live = false;
   let awaitingResnapshot = false;
   let subscriptionId: string | undefined;
+  // Typed §6.9 channel state: registered only after the hello handshake
+  // confirms liveState; its pushes are what actually flip `live`.
+  let channelCapable = false;
+  let channelSubscriptionId: string | undefined;
+  // Registration-generation token: bumped whenever a new registration or a
+  // teardown (unregister, reconnect, resnapshot, dispose) supersedes prior
+  // in-flight `subscribeMethod` requests, so a slow stale resolve can neither
+  // overwrite `channelSubscriptionId` from a newer registration nor leak a
+  // daemon-side subscription — the stale id is best-effort unsubscribed.
+  let channelGeneration = 0;
   // Stale-refetch guard: bumped whenever the live/legacy regime changes (a
   // push entering live mode, reconnect, resnapshot) so an in-flight
   // refetchEmit() started under an older regime is dropped at resolve-time
@@ -193,6 +234,49 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
       });
   };
 
+  // Typed channel registration goes through plain `backendRequest` (the
+  // `chat.subscribe` precedent) — NOT `backendSubscribe`, which is the
+  // `events.subscribe` firehose surface.
+  const registerChannel = () => {
+    if (!channel || !channelCapable) return;
+    channelGeneration += 1;
+    const generation = channelGeneration;
+    backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, channel.params ?? {})
+      .then((result) => {
+        const id = result?.subscriptionId;
+        if (generation !== channelGeneration || disposed) {
+          // Stale resolve: a newer registration or a teardown superseded this
+          // attempt while it was in flight. Never store the id — pushes for
+          // the newer id must keep matching — and best-effort release the
+          // daemon-side subscription this reply just created.
+          if (id) {
+            void backendRequest(channel.unsubscribeMethod, { subscriptionId: id }).catch(() => {
+              // Unsubscribe is best-effort.
+            });
+          }
+          return;
+        }
+        channelSubscriptionId = id;
+      })
+      .catch(() => {
+        // Registration failure leaves `live` false, so legacy refetches keep
+        // serving — the #775 safety net is never regressed.
+      });
+  };
+
+  const unregisterChannel = () => {
+    if (!channel) return;
+    // Invalidate any in-flight registration so its late resolve cleans up
+    // after itself instead of resurrecting a subscription past teardown.
+    channelGeneration += 1;
+    if (!channelSubscriptionId) return;
+    const id = channelSubscriptionId;
+    channelSubscriptionId = undefined;
+    void backendRequest(channel.unsubscribeMethod, { subscriptionId: id }).catch(() => {
+      // Unsubscribe is best-effort.
+    });
+  };
+
   // Reconnect-to-resnapshot: drop local state, re-register for a fresh seq-0
   // snapshot, and bridge the stale-UI window with a one-shot refetch.
   const resnapshot = () => {
@@ -207,7 +291,9 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     reconciler.reset();
     if (subscriptionId) void backendUnsubscribe(subscriptionId);
     subscriptionId = undefined;
+    unregisterChannel();
     register();
+    registerChannel();
     refetchEmit();
   };
 
@@ -217,8 +303,13 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   const off = onBackendNotification((n) => {
     const push = parseSubscriptionPush(n.method, n.params);
     if (push) {
-      // Ignore pushes for other channels (or before our id resolves).
-      if (!subscriptionId || push.subscriptionId !== subscriptionId) return;
+      // Ignore pushes for other channels (or before our ids resolve). Ours is
+      // the typed channel's id when registered; the legacy id is kept as a
+      // match target so runtime first-push detection stays intact.
+      const isOurs =
+        (channelSubscriptionId !== undefined && push.subscriptionId === channelSubscriptionId) ||
+        (subscriptionId !== undefined && push.subscriptionId === subscriptionId);
+      if (!isOurs) return;
       if (!live) {
         live = true;
         refetchEpoch += 1;
@@ -253,16 +344,38 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     awaitingResnapshot = false;
     reconciler.reset();
     subscriptionId = undefined;
+    // The restarted daemon dropped its registry, so the stale channel id
+    // points at nothing — no unsubscribe frame; just re-register. Bump the
+    // generation so an in-flight pre-restart registration cannot land.
+    channelGeneration += 1;
+    channelSubscriptionId = undefined;
     register();
+    registerChannel();
     refetchEmit();
   });
 
   register();
+
+  // Typed channel (opt-in): register only when the hello handshake confirms
+  // liveState. The gate is registration-only — `live` still flips solely on
+  // an observed push (PR #391 runtime-flip semantics stay intact).
+  if (channel) {
+    detectLiveStateCapability()
+      .then((capable) => {
+        if (!capable || disposed) return;
+        channelCapable = true;
+        registerChannel();
+      })
+      .catch(() => {
+        // Treated as a legacy daemon; refetches keep serving.
+      });
+  }
 
   return () => {
     disposed = true;
     off();
     offReconnect();
     if (subscriptionId) void backendUnsubscribe(subscriptionId);
+    unregisterChannel();
   };
 }
