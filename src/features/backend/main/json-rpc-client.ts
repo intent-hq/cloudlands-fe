@@ -69,6 +69,21 @@ export interface JsonRpcClientOptions {
   heartbeatIntervalMs?: number;
   /** Optional async liveness probe invoked on each heartbeat tick. */
   healthCheck?: () => Promise<void>;
+  /**
+   * §5.17 stable client identity. When set, the client performs a
+   * `client.hello` handshake with these params (the persisted clientId) on
+   * EVERY successful (re)connect, BEFORE the connection is reported
+   * `connected` — so queued scoped work (`drafts.*`, `events.subscribe`) never
+   * runs against an anonymous identity. The same params are also merged into
+   * any caller-issued `client.hello` (e.g. the renderer capability probe), so
+   * a re-hello on the connection can never mint a fresh identity.
+   */
+  helloParams?: () => Promise<Record<string, unknown>> | Record<string, unknown>;
+  /**
+   * Observer for every `client.hello` result (handshake and caller-issued) —
+   * used to persist a daemon-minted clientId when ours was omitted (§5.17).
+   */
+  onHelloResult?: (result: unknown) => void;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -78,6 +93,9 @@ const DEFAULT_RECONNECT_MS = 1_000;
 // a prompt automatic reconnect once the daemon comes back. Retries continue
 // indefinitely (there is no give-up).
 const DEFAULT_MAX_RECONNECT_MS = 5_000;
+
+/** §5.17 global handshake method — carries the stable client identity. */
+const HELLO_METHOD = 'client.hello';
 
 /**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
@@ -94,6 +112,8 @@ export class JsonRpcClient extends EventEmitter {
   private readonly maxReconnectDelayMs: number;
   private readonly heartbeatIntervalMs: number;
   private readonly healthCheck?: () => Promise<void>;
+  private readonly helloParams?: () => Promise<Record<string, unknown>> | Record<string, unknown>;
+  private readonly onHelloResult?: (result: unknown) => void;
 
   private socket: Duplex | null = null;
   // Decoded text awaiting a newline. Raw bytes are run through `decoder` first so
@@ -123,6 +143,8 @@ export class JsonRpcClient extends EventEmitter {
     this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? DEFAULT_MAX_RECONNECT_MS;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 0;
     this.healthCheck = options.healthCheck;
+    this.helloParams = options.helloParams;
+    this.onHelloResult = options.onHelloResult;
     this.currentReconnectDelay = this.reconnectDelayMs;
   }
 
@@ -198,41 +220,71 @@ export class JsonRpcClient extends EventEmitter {
     options?: { timeoutMs?: number },
   ): Promise<T> {
     if (this.disposed) return Promise.reject(new Error('JSON-RPC client disposed'));
-    const id = ++this.requestId;
     const override = options?.timeoutMs;
     const timeoutMs =
       typeof override === 'number' && Number.isFinite(override) && override > 0
         ? override
         : this.requestTimeoutMs;
+    // §5.17: a caller-issued `client.hello` (e.g. the renderer capability
+    // probe) must present the SAME persisted identity as the connect-time
+    // handshake — an anonymous re-hello would mint a fresh clientId and
+    // orphan the previous identity's scoped state (`drafts.*`, §5.16).
+    if (method === HELLO_METHOD && (this.helloParams || this.onHelloResult)) {
+      return this.requestHello(params, timeoutMs) as Promise<T>;
+    }
+    if (this.status === 'connected') {
+      return this.sendNow<T>(method, params, timeoutMs);
+    }
+    return this.ensureConnected().then(() => this.sendNow<T>(method, params, timeoutMs));
+  }
+
+  /**
+   * Register the pending entry and write synchronously (the request id is
+   * allocated here, in write order), so a response that arrives immediately
+   * after the call is correlated correctly. Callers must ensure the socket is
+   * usable: either `status === 'connected'` or the §5.17 handshake window.
+   */
+  private sendNow<T = unknown>(method: string, params: unknown, timeoutMs: number): Promise<T> {
+    const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
-      // Register the pending entry and write synchronously once connected, so a
-      // response that arrives immediately after the call is correlated correctly.
-      const send = () => {
-        const payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
-        const timeout = setTimeout(() => {
-          this.pending.delete(id);
-          reject(new Error(`JSON-RPC request timed out: ${method}`));
-        }, timeoutMs);
-        this.pending.set(id, {
-          method,
-          timeout,
-          resolve: (result) => resolve(result as T),
-          reject,
-        });
-        try {
-          this.socket?.write(payload);
-        } catch (error) {
-          clearTimeout(timeout);
-          this.pending.delete(id);
-          reject(error instanceof Error ? error : new Error(String(error)));
-        }
-      };
-      if (this.status === 'connected') {
-        send();
-      } else {
-        this.ensureConnected().then(send).catch(reject);
+      const payload = `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`JSON-RPC request timed out: ${method}`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        method,
+        timeout,
+        resolve: (result) => resolve(result as T),
+        reject,
+      });
+      try {
+        this.socket?.write(payload);
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pending.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
+  }
+
+  /** Caller-issued `client.hello`: merge in the persisted identity and observe the result. */
+  private async requestHello(params: unknown, timeoutMs: number): Promise<unknown> {
+    const merged = await this.mergedHelloParams(params);
+    if (this.status !== 'connected') await this.ensureConnected();
+    const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
+    this.onHelloResult?.(result);
+    return result;
+  }
+
+  /** Caller-supplied hello fields survive; the persisted identity wins on `clientId`. */
+  private async mergedHelloParams(callerParams?: unknown): Promise<Record<string, unknown>> {
+    const base =
+      callerParams && typeof callerParams === 'object' && !Array.isArray(callerParams)
+        ? (callerParams as Record<string, unknown>)
+        : {};
+    const identity = this.helloParams ? await this.helloParams() : {};
+    return { ...base, ...identity };
   }
 
   private ensureConnected(): Promise<void> {
@@ -264,6 +316,40 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private onConnected(): void {
+    // §5.17: when a hello provider is configured, present the persisted
+    // identity as the FIRST frame on the fresh socket and hold the status at
+    // `connecting` until the daemon answers — queued scoped work (`drafts.*`,
+    // `events.subscribe`) and the `reconnected` replay signal must never run
+    // against an anonymous connection.
+    if (this.helloParams || this.onHelloResult) {
+      void this.performHelloHandshake(this.socket);
+      return;
+    }
+    this.finishConnect();
+  }
+
+  private async performHelloHandshake(socket: Duplex | null): Promise<void> {
+    try {
+      const params = await this.mergedHelloParams();
+      if (this.disposed || this.socket !== socket) return;
+      const result = await this.sendNow(HELLO_METHOD, params, this.requestTimeoutMs);
+      if (this.disposed || this.socket !== socket) return;
+      this.onHelloResult?.(result);
+    } catch (error) {
+      // The socket died mid-handshake: onConnectionFailure already tore it
+      // down and scheduled a reconnect — do not report this socket connected.
+      if (this.disposed || this.socket !== socket) return;
+      // Identity degrades, transport survives: the daemon treats a failed
+      // hello as an anonymous connection, so scoped features (§5.16 drafts)
+      // may not restore, but everything else keeps working.
+      logger.warn('client.hello handshake failed; continuing without confirmed identity', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    this.finishConnect();
+  }
+
+  private finishConnect(): void {
     this.currentReconnectDelay = this.reconnectDelayMs;
     const wasReconnect = this.hasBeenConnected;
     this.hasBeenConnected = true;
