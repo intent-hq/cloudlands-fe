@@ -1,6 +1,19 @@
 <script lang="ts">
   import '../app.css';
 
+  // Bundled monospace fonts (SIL OFL 1.1, embedded in the Fontsource packages)
+  // so the editor/code font stacks resolve without relying on system installs.
+  import '@fontsource/ia-writer-mono/400.css';
+  import '@fontsource/ia-writer-mono/400-italic.css';
+  import '@fontsource/ia-writer-mono/700.css';
+  import '@fontsource/ia-writer-mono/700-italic.css';
+  import '@fontsource/jetbrains-mono/400.css';
+  import '@fontsource/jetbrains-mono/400-italic.css';
+  import '@fontsource/jetbrains-mono/500.css';
+  import '@fontsource/jetbrains-mono/500-italic.css';
+  import '@fontsource/jetbrains-mono/700.css';
+  import '@fontsource/jetbrains-mono/700-italic.css';
+
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';

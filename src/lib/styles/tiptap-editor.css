@@ -125,11 +125,9 @@
 }
 
 .note-font-monospace .tiptap-editor {
-  /* Berkeley Mono is the designer's choice - used by Linear, Raycast, Arc */
-  /* iA Writer Mono/Duo/Quattro are beautiful writing-focused monospace fonts */
+  /* iA Writer Mono and JetBrains Mono are bundled via @fontsource (see +layout.svelte) */
   font-family:
-    'Berkeley Mono', 'iA Writer Mono', 'Commit Mono', 'Monaspace Neon', 'JetBrains Mono', 'SF Mono',
-    ui-monospace, monospace;
+    'iA Writer Mono', 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
   letter-spacing: -0.011em;
   font-feature-settings:
     'calt' 1,
