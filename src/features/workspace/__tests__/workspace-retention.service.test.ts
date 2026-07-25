@@ -64,15 +64,6 @@ vi.mock('child_process', () => {
   };
 });
 
-vi.mock('../../git-tracking/main/github.service', () => ({
-  GitHubService: class {},
-  githubService: {
-    getPullRequest: vi.fn(),
-    getCheckRuns: vi.fn(),
-    getReviews: vi.fn(),
-  },
-}));
-
 describe('WorkspaceService retention cleanup', () => {
   let service: WorkspaceService;
   let repository: InMemoryWorkspaceRepository;
