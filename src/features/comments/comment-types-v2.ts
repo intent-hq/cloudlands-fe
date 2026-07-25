@@ -181,8 +181,10 @@ export function convertBackendCommentToV2(
     noteId,
     ...(workspaceId ? { workspaceId } : {}),
     ...(anchor ? { anchor } : {}),
-    anchorText: backendComment.section,
-    anchorContext: backendComment.anchorContext,
+    ...(backendComment.section !== undefined ? { anchorText: backendComment.section } : {}),
+    ...(backendComment.anchorContext !== undefined
+      ? { anchorContext: backendComment.anchorContext }
+      : {}),
     isOrphaned: backendComment.isOrphaned,
     reactions,
   };

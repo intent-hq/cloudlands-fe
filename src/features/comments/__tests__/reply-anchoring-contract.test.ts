@@ -42,7 +42,11 @@ vi.mock('$store/renderer/store', async () => {
         (...args: any[]) => readable(() => selectorFunc(mockStore.state, ...args)),
         {
           select: selectorFunc,
-          effect: (...args: any[]) => selectorFunc(mockStore.state, ...args),
+          effect: () => {
+            // Mirrors the real store shim: sagas were removed, so any
+            // accidental `.effect` usage must crash in tests too.
+            throw new Error('selector.effect is not supported (sagas removed)');
+          },
           withStore:
             (storeSource: { state?: unknown }) =>
             (...args: any[]) =>
@@ -136,6 +140,8 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
       expect(reply!.parentId).toBe('root-1');
       expect(reply!.threadId).toBe('thread-1');
       expect(reply).not.toHaveProperty('anchor');
+      expect(reply).not.toHaveProperty('anchorText');
+      expect(reply).not.toHaveProperty('anchorContext');
     });
 
     it('keeps the synthesized point-anchor fallback for anchorless roots', async () => {

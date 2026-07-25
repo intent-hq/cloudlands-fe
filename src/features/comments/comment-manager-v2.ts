@@ -209,8 +209,8 @@ export class CommentManagerV2 {
             noteId: this.noteId,
             workspaceId: this.workspaceId,
             ...(anchor ? { anchor } : {}),
-            anchorText: comment.section,
-            anchorContext: undefined, // NoteComment doesn't have anchorContext
+            ...(comment.section !== undefined ? { anchorText: comment.section } : {}),
+            // NoteComment doesn't have anchorContext, so the key is never set
             reactions: comment.reactions
               ? Object.fromEntries(
                 Object.entries(comment.reactions).map(([k, v]) => [
