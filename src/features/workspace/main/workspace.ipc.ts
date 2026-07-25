@@ -79,7 +79,6 @@ import {
   WorkspaceGetStatsSchema,
   WorkspaceGetHoverStatusSchema,
   WorkspaceValidateSchema,
-  WorkspacePreflightCloneCheckSchema,
   WorkspaceRepairSchema,
   WorkspaceBackupSchema,
   WorkspaceRestoreSchema,
@@ -169,10 +168,6 @@ export function setupWorkspaceIPC(): void {
   registerValidationSchema(WORKSPACE_CHANNELS.GET_STATS, WorkspaceGetStatsSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_HOVER_STATUS, WorkspaceGetHoverStatusSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.VALIDATE, WorkspaceValidateSchema);
-  registerValidationSchema(
-    WORKSPACE_CHANNELS.PREFLIGHT_CLONE_CHECK,
-    WorkspacePreflightCloneCheckSchema,
-  );
   registerValidationSchema(WORKSPACE_CHANNELS.REPAIR, WorkspaceRepairSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.BACKUP, WorkspaceBackupSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.RESTORE, WorkspaceRestoreSchema);
@@ -224,19 +219,6 @@ export function setupWorkspaceIPC(): void {
   // Workspace creation is owned by the daemon: the FE routes `workspace.create`
   // through `appClient.workspaces.create` (PROTOCOL §5.1); the legacy
   // `workspace:create` IPC arm was retired with the daemon-direct cut-over.
-
-  // Preflight: verify a GitHub URL is reachable and authenticated before clone
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.PREFLIGHT_CLONE_CHECK,
-    createSafeValidatedHandler(
-      WorkspacePreflightCloneCheckSchema,
-      async (_, validated) => {
-        const result = await protocolAdapter.preflightCloneCheck(validated);
-        return resultToCommandResponse(result);
-      },
-      WORKSPACE_CHANNELS.PREFLIGHT_CLONE_CHECK,
-    ),
-  );
 
   // Get workspace
   ipcMain.handle(

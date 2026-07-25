@@ -78,11 +78,6 @@ export class ProtocolAdapter {
   // protocol-adapter `createWorkspace` arm was retired with the daemon-direct
   // cut-over.
 
-  async preflightCloneCheck(params: { githubUrl: string }): Promise<Result<null, string>> {
-    logger.info('Protocol: preflightCloneCheck', { githubUrl: params.githubUrl });
-    return await this.workspaceService.preflightCloneCheck(params.githubUrl);
-  }
-
   async listWorkspaces(): Promise<Result<any[], string>> {
     // Default to lite mode for bulk workspace listings to avoid expensive eager enrichment.
     // Callers that truly need synchronous summaries should use listAllWorkspaces({ lite: false }).
