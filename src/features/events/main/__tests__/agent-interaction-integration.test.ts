@@ -31,9 +31,9 @@ vi.mock('$shared/logger', () => ({
 import {
   agentSubscriptionsReducer,
   initialState as sliceInitialState,
-} from '../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
+} from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
 let _state = { agentSubscriptions: { ...sliceInitialState } } as any;
-vi.mock('../../../../../store/main/redux-store-bridge', () => ({
+vi.mock('../../../../store/main/redux-store-bridge', () => ({
   getMainState: () => _state,
   mainDispatch: (action: any) => {
     _state = {
@@ -52,8 +52,8 @@ import {
 import {
   selectAgentQueueLength,
   selectAgentStatus,
-} from '../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
-import { getMainState } from '../../../../../store/main/redux-store-bridge';
+} from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
+import { getMainState } from '../../../../store/main/redux-store-bridge';
 
 describe('Agent Interaction Integration', () => {
   const workspaceId = 'test-workspace-id';
