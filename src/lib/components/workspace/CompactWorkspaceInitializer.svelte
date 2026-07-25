@@ -113,9 +113,8 @@
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
-  buildNewWorkspaceDraftPayload,
   clearNewWorkspaceDraft,
-  persistNewWorkspaceDraft,
+  createNewWorkspaceDraftSaver,
   restoreNewWorkspaceDraft,
 } from './initializer/new-workspace-draft';
 
@@ -621,23 +620,26 @@
 
   // Save the draft to the daemon (debounced) so it survives app restarts.
   // Empty text with no attachments is the documented clear (PROTOCOL §5.16).
-  // Only the cheap dependency reads run per keystroke; payload serialization
-  // (incl. the size-guard stringify) is deferred into the debounce timeout.
-  // `contextItems` is only ever reassigned wholesale, so the reference read
-  // is sufficient for reactivity.
-  let promptSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  // Only the cheap dependency reads run per keystroke. `contextItems` is only
+  // ever reassigned wholesale, so the reference read is sufficient for
+  // reactivity. If the restore failed, the saver skips an empty save so it
+  // can't clear a daemon draft we never got to read.
+  const draftSaver = createNewWorkspaceDraftSaver(appClient.drafts, {
+    skipEmptySave: () => draftRestoreFailed,
+  });
   $effect(() => {
     if (!draftRestored) return;
-    const text = initialPrompt;
-    const items = contextItems;
-    if (promptSaveTimer) clearTimeout(promptSaveTimer);
-    promptSaveTimer = setTimeout(() => {
-      // If the restore failed, an empty save could clear a daemon draft we
-      // never got to read — skip it. Non-empty saves still persist.
-      if (draftRestoreFailed && !text && items.length === 0) return;
-      persistNewWorkspaceDraft(appClient.drafts, buildNewWorkspaceDraftPayload(text, items));
-    }, 300);
+    draftSaver.schedule(initialPrompt, contextItems);
   });
+
+  // A reload (cmd+R) or window close inside the debounce window would drop
+  // the newest keystrokes — flush the pending save on unload and destroy.
+  const flushDraftSave = () => draftSaver.flush();
+  onMount(() => {
+    window.addEventListener('beforeunload', flushDraftSave);
+    return () => window.removeEventListener('beforeunload', flushDraftSave);
+  });
+  onDestroy(flushDraftSave);
 
   // Notify context mention pills when the branch changes (for switch-to-pr-branch feature)
   $effect(() => {
