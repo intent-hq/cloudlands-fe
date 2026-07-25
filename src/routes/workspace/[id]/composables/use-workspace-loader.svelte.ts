@@ -32,11 +32,20 @@ export interface UseWorkspaceLoaderOptions {
   previousWorkspaceId: string | null;
 }
 
+export interface WorkspaceLoadError {
+  kind: 'not_found' | 'error';
+  message: string;
+}
+
 export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
   // Track loading state more robustly
   let loadingWorkspaceId: string | null = $state(null);
   let loadingPromise: Promise<void> | null = $state(null);
+  // Terminal load failure for the current workspace, if any. Distinguishes
+  // "Workspace not found" from generic load errors so the page can render a
+  // dedicated not-found state. Reset whenever a new workspace load starts.
+  let loadError: WorkspaceLoadError | null = $state(null);
 
   // Track the last workspace ID for which workspaceMounted was dispatched.
   // This prevents the isAlreadyActive guard from short-circuiting during
@@ -63,6 +72,8 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
 
     logger.debug('Loading workspace', { workspaceId, isOptimistic: isOptimisticValue });
 
+    loadError = null;
+
     try {
       // Check if optimistic
       if (isOptimisticValue) {
@@ -72,6 +83,8 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       }
     } catch (error) {
       logger.error('Failed to load workspace', { workspaceId, error });
+      const message = error instanceof Error ? error.message : String(error);
+      loadError = { kind: 'error', message };
       // Check if workspaceState exists before using it
       if (workspaceState) {
         // Set workspaceData to a minimal error object to prevent infinite retry loops
@@ -82,7 +95,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
             id: workspaceId,
             title: 'Error loading space',
             status: 'error',
-            error: error instanceof Error ? error.message : String(error),
+            error: message,
           } as any,
         });
       } else {
@@ -199,6 +212,24 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       openResult = await workspaceClient.open(WorkspaceId(workspaceId));
     }
 
+    // Distinct not-found outcome: the backend definitively doesn't know this
+    // workspace (after the retry above) and we have no cached entity to fall
+    // back on. Record it as page-local/navigation state only — we do NOT
+    // synthesize a workspace entity into Redux.
+    if (!openResult.ok && openResult.error === 'Workspace not found' && !ws) {
+      logger.error('Workspace not found after retry', { workspaceId });
+      loadError = { kind: 'not_found', message: openResult.error };
+      workspaceState.updateState({
+        workspace: { id: workspaceId, status: 'error' },
+        workspaceData: {
+          id: workspaceId,
+          title: 'Space not found',
+          status: 'not_found',
+        } as any,
+      });
+      return;
+    }
+
     if (openResult.ok && openResult.data) {
       ws = openResult.data;
       appStore.dispatch(setActiveWorkspaceId(ws.id));
@@ -297,6 +328,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       if (workspaceId !== previousWorkspaceId) {
         loadingWorkspaceId = null;
         loadingPromise = null;
+        loadError = null;
       }
     };
   });
@@ -312,12 +344,16 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     get isLoading() {
       return loadingPromise !== null;
     },
+    get loadError(): WorkspaceLoadError | null {
+      return loadError;
+    },
 
     // Methods
     loadWorkspace,
     clearLoadingState() {
       loadingWorkspaceId = null;
       loadingPromise = null;
+      loadError = null;
     },
   };
 }

@@ -7,6 +7,7 @@ import {
 } from 'vitest';
 import {
   render,
+  screen,
   waitFor,
 } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
@@ -170,5 +171,100 @@ describe('useWorkspaceLoader', () => {
       setWorkspaceEntity(cachedWorkspace),
       workspaceMounted(cachedWorkspace.id),
     ]);
+  });
+
+  it('exposes a not_found loadError when open fails twice with "Workspace not found" and no cached entity exists', async () => {
+    selectWorkspaceByIdMock.mockReturnValue(null);
+    openMock.mockResolvedValue({ ok: false, error: 'Workspace not found' });
+
+    const workspaceState = createWorkspaceState();
+    render(TestUseWorkspaceLoader, {
+      props: {
+        workspaceId: 'loader-missing-1',
+        workspaceState,
+        state: null,
+        previousWorkspaceId: null,
+      },
+    });
+
+    // The loader retries once after a 500ms delay before giving up.
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await waitFor(() =>
+      expect(screen.getByTestId('load-error-kind').textContent).toBe('not_found'),
+    );
+    expect(screen.getByTestId('load-error-message').textContent).toBe('Workspace not found');
+
+    expect(workspaceState.updateState).toHaveBeenCalledWith({
+      workspace: { id: 'loader-missing-1', status: 'error' },
+      workspaceData: {
+        id: 'loader-missing-1',
+        title: 'Space not found',
+        status: 'not_found',
+      },
+    });
+  });
+
+  it('exposes a generic loadError for non-not-found failures', async () => {
+    selectWorkspaceByIdMock.mockReturnValue(null);
+    openMock.mockResolvedValue({ ok: false, error: 'Backend exploded' });
+
+    const workspaceState = createWorkspaceState();
+    render(TestUseWorkspaceLoader, {
+      props: {
+        workspaceId: 'loader-broken-1',
+        workspaceState,
+        state: null,
+        previousWorkspaceId: null,
+      },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('load-error-kind').textContent).toBe('error'));
+    expect(screen.getByTestId('load-error-message').textContent).toBe(
+      'Failed to open space: Backend exploded',
+    );
+
+    expect(workspaceState.updateState).toHaveBeenCalledWith({
+      workspace: { id: 'loader-broken-1', status: 'error' },
+      workspaceData: {
+        id: 'loader-broken-1',
+        title: 'Error loading space',
+        status: 'error',
+        error: 'Failed to open space: Backend exploded',
+      },
+    });
+  });
+
+  it('clears loadError when navigating to another workspace', async () => {
+    const goodWorkspace = makeWorkspace({ id: 'loader-good-1', title: 'Good Workspace' });
+    selectWorkspaceByIdMock.mockReturnValue(null);
+    openMock.mockImplementation(async (id: string) =>
+      id === goodWorkspace.id
+        ? { ok: true, data: goodWorkspace }
+        : { ok: false, error: 'Workspace not found' },
+    );
+
+    const { rerender } = render(TestUseWorkspaceLoader, {
+      props: {
+        workspaceId: 'loader-missing-2',
+        workspaceState: createWorkspaceState(),
+        state: null,
+        previousWorkspaceId: null,
+      },
+    });
+
+    await waitFor(
+      () => expect(screen.getByTestId('load-error-kind').textContent).toBe('not_found'),
+      { timeout: 3000 },
+    );
+
+    await rerender({
+      workspaceId: goodWorkspace.id,
+      workspaceState: createWorkspaceState(),
+      state: null,
+      previousWorkspaceId: 'loader-missing-2',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('load-error-kind').textContent).toBe(''));
+    expect(screen.getByTestId('load-error-message').textContent).toBe('');
   });
 });
