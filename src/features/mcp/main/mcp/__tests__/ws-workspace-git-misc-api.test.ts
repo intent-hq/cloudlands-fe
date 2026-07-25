@@ -1,7 +1,7 @@
 /**
- * Tests for workspace, git, and cross-workspace JS API functions.
- * Ported from deleted workspace-management-tools.test.ts, git-tools.test.ts,
- * and cross-workspace-tools.test.ts.
+ * Tests for workspace and cross-workspace JS API functions.
+ * Ported from deleted workspace-management-tools.test.ts and
+ * cross-workspace-tools.test.ts.
  */
 
 import {
@@ -46,19 +46,6 @@ vi.mock('../../../../../store/main/slices/workspace-events/workspace-events-slic
 
 vi.mock('$lib/utils/workspace-validation', () => ({
   sanitizeBranchName: (name: string) => name.toLowerCase().replace(/\s+/g, '-'),
-}));
-
-// --- Mocks for git API dependencies ---
-vi.mock('$shared/git/git-env', () => ({
-  execFileAsync: vi.fn(),
-}));
-
-vi.mock('$features/workspace/main/workspace-settings.service', () => ({
-  assertAgentCommitAllowed: vi.fn().mockReturnValue({ allowed: true }),
-}));
-
-vi.mock('$features/git/main/background-git-ops.service', () => ({
-  backgroundGitOpsService: { agentCommit: vi.fn() },
 }));
 
 // --- Mocks for cross-workspace API dependencies ---
@@ -292,83 +279,6 @@ describe('buildWorkspaceApi – setAgentName', () => {
   });
 
 
-});
-
-// =====================================================================
-// Git API tests – checkMergeConflicts wire contract
-// =====================================================================
-describe('buildWsGitApi – checkMergeConflicts', () => {
-  // After Wave B FE cut-over, the FE just forwards to the daemon RPC
-  // `git.checkMergeConflicts` (PROTOCOL.md §5.6); all merge-conflict detection
-  // logic lives on the daemon side. We pin the wire contract here.
-
-  const workspaceId = 'ws-git-1';
-  const call = { context: { agentId: 'agent-1' }, name: 'workspace_api', arguments: {} } as any;
-
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
-  it('forwards workspaceId + targetBranch to git.checkMergeConflicts and returns the daemon envelope', async () => {
-    const daemonResult = {
-      hasConflicts: false,
-      conflictedFiles: [],
-      targetBranch: 'main',
-      currentBranch: 'feature-branch',
-    };
-    const mockRequest = vi.fn().mockResolvedValue(daemonResult);
-    vi.doMock('$features/backend/main/backend.ipc', () => ({
-      getBackendClient: () => ({ request: mockRequest }),
-    }));
-
-    const { buildWsGitApi } = await import('../ws-git-api');
-    const api = buildWsGitApi({ workspaceId, call });
-    const result = await api.checkMergeConflicts('main');
-
-    expect(mockRequest).toHaveBeenCalledWith('git.checkMergeConflicts', {
-      workspaceId,
-      targetBranch: 'main',
-    });
-    expect(result).toEqual(daemonResult);
-
-    vi.doUnmock('$features/backend/main/backend.ipc');
-  });
-
-  it('omits targetBranch when the caller did not supply one', async () => {
-    const daemonResult = {
-      hasConflicts: true,
-      conflictedFiles: ['src/a.ts'],
-      targetBranch: 'main',
-      currentBranch: 'feature',
-    };
-    const mockRequest = vi.fn().mockResolvedValue(daemonResult);
-    vi.doMock('$features/backend/main/backend.ipc', () => ({
-      getBackendClient: () => ({ request: mockRequest }),
-    }));
-
-    const { buildWsGitApi } = await import('../ws-git-api');
-    const api = buildWsGitApi({ workspaceId, call });
-    const result = await api.checkMergeConflicts();
-
-    expect(mockRequest).toHaveBeenCalledWith('git.checkMergeConflicts', { workspaceId });
-    expect(result).toEqual(daemonResult);
-
-    vi.doUnmock('$features/backend/main/backend.ipc');
-  });
-
-  it('propagates daemon rejections as a thrown Error', async () => {
-    const mockRequest = vi.fn().mockRejectedValue(new Error('not a git repo'));
-    vi.doMock('$features/backend/main/backend.ipc', () => ({
-      getBackendClient: () => ({ request: mockRequest }),
-    }));
-
-    const { buildWsGitApi } = await import('../ws-git-api');
-    const api = buildWsGitApi({ workspaceId, call });
-
-    await expect(api.checkMergeConflicts('main')).rejects.toThrow('not a git repo');
-
-    vi.doUnmock('$features/backend/main/backend.ipc');
-  });
 });
 
 // =====================================================================

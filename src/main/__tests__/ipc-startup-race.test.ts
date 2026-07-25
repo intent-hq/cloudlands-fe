@@ -44,9 +44,6 @@ const RENDERER_STARTUP_CHANNELS = [
 
   // Auto-update — get-state called during +layout.svelte init
   'auto-update:get-state',
-
-  // Git tracking — called by git tracking init
-  'git-tracking:get-state',
 ];
 
 describe('IPC Startup Race Condition', () => {
@@ -108,7 +105,6 @@ describe('IPC Startup Race Condition', () => {
     // Verify known critical functions (moved from secondary to fix race conditions)
     expect(criticalFunctions.has('setupSpecialistsIPC')).toBe(true);
     expect(criticalFunctions.has('setupAutoUpdateIPC')).toBe(true);
-    expect(criticalFunctions.has('setupGitTrackingIPC')).toBe(true);
   });
 
   it('should find IPC channels registered by secondary setup functions', () => {

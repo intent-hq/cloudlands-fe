@@ -242,8 +242,6 @@ class IPCDebugTracker {
       } else if (channel.startsWith('agent:')) {
         suggestions[channel] =
           'Agent flows route through the intentd daemon (agent.* RPCs); check the BackendTransport seam';
-      } else if (channel.startsWith('git:')) {
-        suggestions[channel] = 'Check src/features/git/git.ipc.ts';
       } else if (channel.startsWith('file:')) {
         suggestions[channel] = 'Check src/features/file-tracking/main/file-tracking.ipc.ts';
       } else if (channel.startsWith('terminal:')) {

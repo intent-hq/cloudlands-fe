@@ -1,16 +1,13 @@
 import { runInNewContext } from 'node:vm';
 
-import { Logger } from '$shared/logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 import { BaseMCPTool, createInputSchema, stringProperty } from './tool';
 import type { ToolCall, ToolResult } from './protocol';
-import type { PRContext } from './ws-pr-api';
 import { AVAILABLE_TOPICS } from './reference-docs';
 import { buildAgentApi } from './ws-agent-api';
 import { buildAppUiApi } from './ws-app-ui-api';
 import { buildWsEventApi } from './ws-event-api';
-import { buildWsGitApi } from './ws-git-api';
 import {
   buildBrowserApi,
   buildCrossWorkspaceApi,
@@ -18,7 +15,6 @@ import {
   buildTerminalApi,
 } from './ws-misc-api';
 import { buildNoteApi } from './ws-note-api';
-import { buildWsPrApi } from './ws-pr-api';
 import { buildScriptApi } from './ws-script-api';
 import { buildWorkspaceApi } from './ws-workspace-api';
 import { buildWsAppAgentsApi } from './ws-app-agents-api';
@@ -27,7 +23,6 @@ import { buildWsAppSettingsApi } from './ws-app-settings-api';
 import { buildWsAppProposalApi, buildWsAppWorkspacesApi } from './ws-app-workspaces-api';
 
 const TIMEOUT_MS = 30_000;
-const logger = new Logger('WorkspaceJsApiTool');
 
 const TOOL_DESCRIPTION = [
   'Execute JavaScript against the workspace API. Your code runs as an async function — use `return` to send results back.',
@@ -133,13 +128,6 @@ const TOOL_DESCRIPTION = [
   '  ws.agent.summary(agentId) → summary  // Quick summary of what another agent did.',
   '  ws.agent.reportToParent(report) → { ok, ... }  // Send a concise completion/update report to the parent agent. Only works for delegated agents; user-created agents will get an error.',
   '',
-  '  ws.git.status() → { modified, staged, untracked, deleted, ... }  // Working tree summary with file lists grouped by status.',
-  '  ws.git.stage(paths) → { ok, paths }  // `paths` may be a CSV string or array. Staging all files (`.`, `*`, `--all`) is intentionally blocked; stage only specific files you changed.',
-  '  ws.git.commit(message) → { ok, hash?, files? }  // DEPRECATED. Prefer `ws.git.agentCommit()`. This commits already-staged files and still obeys workspace auto-commit policy.',
-  '  ws.git.agentCommit(message, { files?, userRequested? }) → { ok, hash, files, fileCount }  // Preferred commit helper. Auto-stages only your changes and is mainly for explicit user-requested checkpoint commits.',
-  '    If workspace auto-commit is disabled, set `userRequested=true` to confirm the user asked for the commit.',
-  '  ws.git.checkMergeConflicts(targetBranch?) → { hasConflicts, conflictedFiles, targetBranch, currentBranch, ... }  // Checks whether merging into target would conflict.',
-  '',
   '  ws.event.recentFiles(limit?) → [files]  // Recently modified files. Default limit is 10.',
   '  ws.event.agentActivity(agentId?, minutesAgo?) → [events]  // With `agentId`, narrows to that agent; otherwise returns recent activity window.',
   '  ws.event.workspaceSummary(minutesAgo?) → summary  // Aggregated workspace activity summary.',
@@ -177,16 +165,6 @@ const TOOL_DESCRIPTION = [
   '  ws.file.delete(path) → { ok, path, deleted }  // Deletes a file. Directories must use other tooling.',
   '  ws.file.mkdir(path) → { ok, path, created?|existed? }  // Creates a directory inside the workspace.',
   '  ws.file.rename(oldPath, newPath) → { ok, oldPath, newPath }  // Renames/moves a file or directory inside the workspace.',
-  '',
-  '  ws.pr.merge({ mergeMethod?, commitTitle?, commitMessage? }?) → { merged, sha, mergeMethod, message, prNumber }  // Requires an active PR. `mergeMethod`: `"merge"`, `"squash"`, or `"rebase"`.',
-  '  ws.pr.status() → { prNumber, title, url, state, mergeable, mergeableState, hasConflicts, isDraft, isMerged, isClosed, summary }  // Requires an active PR.',
-  '  ws.pr.updateBranch() → { ... }  // Updates the PR branch from its base branch when supported.',
-  '  ws.pr.waitForChanges({ timeoutSeconds?, pollIntervalSeconds?, watch? }?) → { ... }  // Waits for PR changes. `watch`: `"any"`, `"checks"`, `"state"`, or `"commits"`.',
-  '  ws.pr.listReviewComments({ path?, status? }?) → reviewComments  // Inline code review comments (attached to specific lines in a diff). `status`: `"unresolved"`, `"resolved"`, or `"all"`.',
-  '  ws.pr.replyToReviewComment(commentId, body) → { ... }  // Reply to an inline review comment by numeric ID.',
-  '  ws.pr.resolveThread(threadId, action?) → { ... }  // `action`: `"resolve"` or `"unresolve"`.',
-  '  ws.pr.listComments({ count? }?) → comments  // Lists conversation-level PR comments (not inline code comments).',
-  '  ws.pr.postComment(body) → { ... }  // Posts a conversation-level PR comment.',
   '',
   'Examples:',
   '  return await ws.workspace.info()',
@@ -302,7 +280,7 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
         const match = msg.match(/\(reading '([^']+)'\)/);
         const prop = match?.[1];
         errorText = prop
-          ? `TypeError: Attempted to call '${prop}' on an undefined object. Check that the namespace exists on the \`ws\` object (e.g. ws.note, ws.agent, ws.git, etc.).`
+          ? `TypeError: Attempted to call '${prop}' on an undefined object. Check that the namespace exists on the \`ws\` object (e.g. ws.note, ws.agent, ws.event, etc.).`
           : `TypeError: ${msg}`;
       } else {
         errorText = `Error: ${msg}`;
@@ -322,7 +300,6 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
   }
 
   private async buildWs(call: ToolCall) {
-    const prContext = await this.resolvePrContext();
     const app =
       this.workspaceId === CHIEF_WORKSPACE_ID
         ? {
@@ -345,7 +322,6 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
       ...(app ? { app } : {}),
       ...buildNoteApi(this.workspaceManager, this.workspaceId, call),
       agent: buildAgentApi(this.workspaceId, this.workspacePath, call),
-      git: buildWsGitApi({ workspaceId: this.workspaceId, call }),
       event: buildWsEventApi(this.workspaceId, call),
       script: buildScriptApi(this.workspaceId),
       browser: buildBrowserApi(call),
@@ -359,35 +335,6 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
         workspacePath: this.workspacePath,
         call,
       }),
-      pr: buildWsPrApi(prContext),
     };
-  }
-
-  private async resolvePrContext(): Promise<PRContext | undefined> {
-    if (!this.workspaceManager) {
-      return undefined;
-    }
-
-    try {
-      const workspace = await this.workspaceManager.getWorkspace(this.workspaceId);
-
-      if (
-        workspace?.activePullRequest &&
-        workspace.repositoryOwner &&
-        workspace.repositoryName &&
-        (workspace.activePullRequest.status === 'Open' ||
-          workspace.activePullRequest.status === 'Draft')
-      ) {
-        return {
-          owner: workspace.repositoryOwner,
-          repo: workspace.repositoryName,
-          prNumber: workspace.activePullRequest.number,
-        };
-      }
-    } catch (error) {
-      logger.warn('Failed to resolve active PR context for workspace_api', error as Error);
-    }
-
-    return undefined;
   }
 }

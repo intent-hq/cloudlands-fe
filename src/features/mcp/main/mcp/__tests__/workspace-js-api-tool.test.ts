@@ -228,7 +228,6 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(definition.description).toContain('tasks.filter(t => t.taskNoteId).map(t => t.taskNoteId)');
     expect(definition.description).toContain('ws.agent.delegate({');
     expect(definition.description).toContain('ws.agent.diagnostics({');
-    expect(definition.description).toContain('ws.pr.status()');
     expect(definition.description).toContain('ws.app.ui.navigate(route');
     expect(definition.description).toContain('ws.app.ui.targets()');
     expect(definition.description).toContain('ws.app.agents.list({');
