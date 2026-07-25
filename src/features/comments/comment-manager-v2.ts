@@ -884,24 +884,46 @@ export class CommentManagerV2 {
   }
 
   /**
-   * Actually perform the orphan check (called after debounce)
+   * Actually perform the orphan check (called after debounce).
+   * Returns the comments classified as orphaned (also used by tests).
    */
-  private performOrphanCheck() {
-    if (!this.editor) return;
+  private performOrphanCheck(): CommentV2[] {
+    if (!this.editor) return [];
 
     const anchoredCommentIds = getAllAnchoredCommentIds(this.editor.state.doc);
     // Only check comments for the current note
     const currentNoteComments = selectComments.select(appStore.state).filter(
       (comment) => comment.noteId === this.noteId,
     );
+    const commentById = new Map(currentNoteComments.map((c) => [c.id, c]));
 
-    // Only log if we actually find orphaned comments. Thread replies share
-    // the thread root's anchors, so also accept the anchor-owner id
-    // (monorepo#710).
+    // Thread replies share the thread root's anchors, so also accept the
+    // anchor-owner id (monorepo#710).
+    const isDocAnchored = (comment: CommentV2) =>
+      anchoredCommentIds.has(comment.id) ||
+      anchoredCommentIds.has(getAnchorOwnerCommentId(comment));
+
+    // Replies anchor through their thread root and never independently
+    // (PROTOCOL §5.3 "Reply anchoring") — accept a reply when its root
+    // (addressed directly via parentId/threadId, or reached by walking the
+    // parentId chain) is anchored in the document. Covers both legacy
+    // replies with cloned anchors and modern anchorless replies.
+    const isAnchoredViaThreadRoot = (comment: CommentV2): boolean => {
+      if (!comment.parentId) return false;
+      if (anchoredCommentIds.has(comment.parentId)) return true;
+      if (anchoredCommentIds.has(comment.threadId)) return true;
+      let root: CommentV2 | undefined = comment;
+      const seen = new Set<string>();
+      while (root?.parentId && !seen.has(root.id)) {
+        seen.add(root.id);
+        root = commentById.get(root.parentId);
+      }
+      return !!root && root !== comment && isDocAnchored(root);
+    };
+
+    // Only log if we actually find orphaned comments.
     const orphanedComments = currentNoteComments.filter(
-      (comment) =>
-        !anchoredCommentIds.has(comment.id) &&
-        !anchoredCommentIds.has(getAnchorOwnerCommentId(comment)),
+      (comment) => !isDocAnchored(comment) && !isAnchoredViaThreadRoot(comment),
     );
 
     if (orphanedComments.length > 0) {
@@ -912,6 +934,7 @@ export class CommentManagerV2 {
       });
       // Could mark as orphaned or try to recover
     }
+    return orphanedComments;
   }
 
   async reapplyAnchorsForCurrentComments(options?: { reason?: string; updateVersion?: number }) {

@@ -14,9 +14,11 @@ import type { CommentAnchor } from '../comment-types-v2';
  * anchor ids look like `"<rootId>:start"` while its own `id` differs. Anchor
  * lookups in the document must use the id embedded in the anchor ids, not the
  * comment's own id — otherwise every reply falls through to text search and
- * is orphaned. Post-#729 replies carry no anchor at all (PROTOCOL §5.3
- * "Reply anchoring"), so this fallback only fires for legacy replies that
- * still hold a non-authoritative clone of the parent's anchor.
+ * is orphaned. Daemon-format anchor ids carry no `:suffix` at all
+ * (`start_id = comment_id`), so a bare id IS the owning comment id.
+ * Post-#729 replies carry no anchor at all (PROTOCOL §5.3 "Reply
+ * anchoring"), so this fallback only fires for legacy replies that still
+ * hold a non-authoritative clone of the parent's anchor.
  */
 export function getAnchorOwnerCommentId(comment: {
   id: string;
@@ -25,7 +27,7 @@ export function getAnchorOwnerCommentId(comment: {
   const anchorId = comment.anchor?.pointId ?? comment.anchor?.startId ?? comment.anchor?.endId;
   if (!anchorId) return comment.id;
   const sep = anchorId.lastIndexOf(':');
-  return sep > 0 ? anchorId.slice(0, sep) : comment.id;
+  return sep > 0 ? anchorId.slice(0, sep) : anchorId;
 }
 
 /**
