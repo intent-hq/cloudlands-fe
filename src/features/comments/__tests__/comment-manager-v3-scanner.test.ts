@@ -417,6 +417,70 @@ describe('CommentManagerV3 - Anchor Health Scanner', () => {
     });
   });
 
+  describe('Reply Anchoring Contract (monorepo#749)', () => {
+    // Post-#729 replies carry no anchor/anchorText on the wire — they anchor
+    // through their thread root (threadId/parentId, PROTOCOL §5.3 "Reply
+    // anchoring"). The scanner must exempt replies from orphan evaluation,
+    // mirroring the parentId guard in insertAnchorsForLoadedComments (#371).
+    it('does not orphan a contract-compliant anchorless reply (parentId set, no anchor)', async () => {
+      // Arrange: root with healthy anchors in the doc
+      const root = createTestComment({
+        content: 'Root comment',
+        anchorText: 'Root text',
+      });
+      editor.commands.insertContentAt(1, 'Root text');
+      insertAnchorsAtPosition(editor, root.id, 1, 1 + 'Root text'.length);
+
+      // Contract-compliant reply: parentId set, no anchor at all
+      const reply = createTestComment({
+        content: 'Reply comment',
+        threadId: root.threadId,
+        parentId: root.id,
+      });
+      delete (reply as { anchor?: unknown }).anchor;
+
+      appStore.dispatch(loadCommentsAction([root, reply]));
+
+      // Act
+      await manager.scanAnchorHealth();
+
+      // Assert: neither the root nor the anchorless reply is orphaned
+      expect(selectCommentById.select(appStore.state, root.id)?.isOrphaned).toBe(false);
+      expect(selectCommentById.select(appStore.state, reply.id)?.isOrphaned).toBe(false);
+    });
+
+    it('exempts legacy pre-#729 replies with cloned anchors (parentId is the discriminator)', async () => {
+      // Legacy reply row: parentId set AND a non-authoritative clone of the
+      // root's anchor, whose anchor nodes are absent from the doc. It must
+      // still be exempt — the parentId, not anchor presence, decides.
+      const reply = createTestComment({
+        content: 'Legacy reply',
+        parentId: 'root-1',
+        anchor: {
+          type: 'range',
+          startId: 'root-1:start',
+          endId: 'root-1:end',
+        },
+      });
+      appStore.dispatch(loadCommentsAction([reply]));
+
+      await manager.scanAnchorHealth();
+
+      expect(selectCommentById.select(appStore.state, reply.id)?.isOrphaned).toBe(false);
+    });
+
+    it('still flags a root comment with a genuinely missing anchor', async () => {
+      // Root (no parentId) whose anchors are absent from the doc — real
+      // orphan detection must survive the reply exemption.
+      const root = createTestComment({ content: 'Rootless root' });
+      appStore.dispatch(loadCommentsAction([root]));
+
+      await manager.scanAnchorHealth();
+
+      expect(selectCommentById.select(appStore.state, root.id)?.isOrphaned).toBe(true);
+    });
+  });
+
   describe('Integration with Debounced Save', () => {
     it('should be called automatically on debounced save', async () => {
       // This test verifies the integration point where the scanner

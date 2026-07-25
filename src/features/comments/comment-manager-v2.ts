@@ -425,7 +425,7 @@ export class CommentManagerV2 {
         });
 
         // Insert anchors at the found position
-        if (comment.anchor.type === 'range') {
+        if (comment.anchor?.type === 'range') {
           // For range comments, insert start and end anchors
           const { from, to } = searchResult;
 
@@ -769,9 +769,11 @@ export class CommentManagerV2 {
   /**
    * Find a comment's anchors in the document, checking the comment's own id
    * first and falling back to the anchor-owner id derived from its anchor
-   * ids. Thread replies share the thread root's persistent anchors (the
-   * daemon's comment.respond clones the parent's anchor), so their in-doc
-   * anchor nodes carry the ROOT's comment id (monorepo#710).
+   * ids. Thread replies share the thread root's persistent anchors, so their
+   * in-doc anchor nodes carry the ROOT's comment id (monorepo#710). Post-#729
+   * replies carry no anchor at all (PROTOCOL §5.3 "Reply anchoring"), so the
+   * owner fallback only applies to legacy replies that still hold a
+   * non-authoritative clone of the parent's anchor.
    */
   private findAnchorsForComment(comment: CommentV2): {
     start?: number;
@@ -1246,6 +1248,15 @@ export class CommentManagerV2 {
 
     // Check each comment
     for (const comment of comments) {
+      // Replies anchor through their thread root (threadId/parentId) and
+      // carry no authoritative anchor of their own post-#729 (legacy rows may
+      // still hold a non-authoritative clone) — exempt them from orphan
+      // evaluation, mirroring the parentId guard in
+      // insertAnchorsForLoadedComments (monorepo#749).
+      if (comment.parentId) {
+        continue;
+      }
+
       // If comment has no anchor metadata, mark as orphaned
       if (!comment.anchor) {
         if (!comment.isOrphaned) {
