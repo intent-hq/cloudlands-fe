@@ -77,6 +77,21 @@ function normalizeWorkspace(raw: Record<string, unknown>): Workspace {
   } as Workspace;
 }
 
+/**
+ * Extract the daemon's structured string error code from a transport error
+ * (`error.data.code`, mirrored onto the thrown error by the main-process
+ * bridge's `json-rpc-errors.ts`). Duck-typed like `extractConflict` so it
+ * works regardless of how the transport layer is mocked in tests. Used by
+ * `create` to surface codes such as `"base-ref-unresolvable"` (monorepo#761).
+ */
+function extractErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const data = (error as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return undefined;
+  const code = (data as { code?: unknown }).code;
+  return typeof code === "string" && code.length > 0 ? code : undefined;
+}
+
 function isWorkspaceEvent(method: string, params: unknown): boolean {
   if (method !== "events.event") return false;
   const type = (params as { type?: unknown } | undefined)?.type;
@@ -187,7 +202,10 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       const message = error instanceof Error ? error.message : String(error);
       const conflict = extractConflict(error);
       if (conflict) return { success: false, error: message, conflict };
-      return { success: false, error: message };
+      const errorCode = extractErrorCode(error);
+      return errorCode
+        ? { success: false, error: message, errorCode }
+        : { success: false, error: message };
     }
   }
 

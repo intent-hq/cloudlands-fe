@@ -256,6 +256,17 @@ export interface WorkspaceUpdateResult extends MutationResult {
 export interface WorkspaceCreateResult extends MutationResult {
   workspace?: Workspace;
   initialAgent?: { id: string } & Record<string, unknown>;
+  /**
+   * Machine-readable code for a failed create, surfaced from the transport
+   * error's `data.code`. Only daemon-authored codes (e.g.
+   * `"base-ref-unresolvable"` when the base ref cannot be resolved,
+   * monorepo#761) are a stable contract (PROTOCOL §9); when the daemon sends
+   * no explicit code, the FE transport bridge fills in a mapped string code
+   * (`"INVALID_PARAMS"`, `"TRANSPORT_ERROR"`, ...) instead. Consumers must
+   * exact-match the daemon codes they understand and never key behavior off
+   * the bridge-mapped values.
+   */
+  errorCode?: string;
 }
 
 export interface WorkspacesClient {

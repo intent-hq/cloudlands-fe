@@ -527,11 +527,31 @@ export async function applyWorkspaceCreateProposal(
 
   appStore.dispatch(proposalApplyStarted({ proposalId, startedAt: Date.now() }));
 
+  // Dispatched on any failure; `errorCode` is the daemon's structured
+  // `error.data.code` (e.g. "base-ref-unresolvable", monorepo#761) so
+  // ProposalCard can key affordances off it instead of matching error prose.
+  const fail = async (errorMessage: string, errorCode?: string) => {
+    const message = errorMessage || "Failed to create space";
+    appStore.dispatch(
+      proposalFailed({
+        proposalId,
+        error: message,
+        errorCode,
+        completedAt: Date.now(),
+        lastAction: "apply",
+      }),
+    );
+    const toast = await getToast();
+    toast.error(message);
+  };
+
   try {
     const request = buildCreateWorkspaceRequestFromProposal(proposal, editedFields);
     const result = await workspaceClient.create(request);
     if (!result.ok) {
-      throw new Error(result.error || "Failed to create space");
+      logger.error("Failed to apply workspace-create proposal", result.error);
+      await fail(result.error, result.errorCode);
+      return;
     }
 
     appStore.dispatch(setWorkspaceEntity(result.data.workspace));
@@ -545,16 +565,7 @@ export async function applyWorkspaceCreateProposal(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error("Failed to apply workspace-create proposal", error);
-    appStore.dispatch(
-      proposalFailed({
-        proposalId,
-        error: errorMessage,
-        completedAt: Date.now(),
-        lastAction: "apply",
-      }),
-    );
-    const toast = await getToast();
-    toast.error(errorMessage || "Failed to create space");
+    await fail(errorMessage);
   }
 }
 

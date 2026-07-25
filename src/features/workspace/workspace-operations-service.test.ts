@@ -383,7 +383,12 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     const state = appStore.state as {
       proposalLifecycle?: Record<
         string,
-        { status: string; error?: string; result?: { workspaceId?: string } }
+        {
+          status: string;
+          error?: string;
+          errorCode?: string;
+          result?: { workspaceId?: string };
+        }
       >;
     };
     return state.proposalLifecycle?.[proposalId];
@@ -471,6 +476,27 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
       });
       const { toast } = await import("svelte-sonner");
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith("clone failed");
+    });
+
+    it("threads the structured errorCode from the client result onto the failed lifecycle entry", async () => {
+      // Regression guard for monorepo#761: the old `throw new Error(...)`
+      // round-trip dropped everything but the message, so reintroducing it
+      // would silently sever the structured base-ref path while the prose
+      // fallback masks the break for current daemon wording.
+      ws.create.mockResolvedValueOnce({
+        ok: false,
+        error: "cannot resolve base ref 'nope'",
+        errorCode: "base-ref-unresolvable",
+      } as never);
+
+      appStore.dispatch(applyWorkspaceProposal({ proposal: makeProposal() }));
+      await flush();
+
+      expect(lifecycleEntry("tc-apply-1")).toMatchObject({
+        status: "failed",
+        error: "cannot resolve base ref 'nope'",
+        errorCode: "base-ref-unresolvable",
+      });
     });
 
     it("routes bulk-op proposals to the bulk applier, not workspace.create", async () => {

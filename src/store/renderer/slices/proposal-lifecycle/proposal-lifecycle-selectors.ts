@@ -23,6 +23,11 @@ export const selectProposalError = store.createSelector(
   (state, proposalId: string): string | null => state.proposalLifecycle[proposalId]?.error ?? null,
 );
 
+export const selectProposalErrorCode = store.createSelector(
+  (state, proposalId: string): string | null =>
+    state.proposalLifecycle[proposalId]?.errorCode ?? null,
+);
+
 export const selectProposalResult = store.createSelector(
   (state, proposalId: string): ProposalApplyResult | null =>
     state.proposalLifecycle[proposalId]?.result ?? null,
