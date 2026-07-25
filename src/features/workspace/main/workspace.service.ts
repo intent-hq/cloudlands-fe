@@ -2251,7 +2251,6 @@ export class WorkspaceService {
         return;
       }
 
-      let updatedWorkspace = workspace;
       const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {};
 
       if (workspace.repositoryPath && (!workspace.repositoryOwner || !workspace.repositoryName)) {
@@ -2264,21 +2263,9 @@ export class WorkspaceService {
         const name = workspace.repositoryName ?? gitInfo.name;
 
         if (owner !== workspace.repositoryOwner || name !== workspace.repositoryName) {
-          updatedWorkspace = {
-            ...updatedWorkspace,
-            repositoryOwner: owner,
-            repositoryName: name,
-          };
           rendererUpdates.repositoryOwner = owner;
           rendererUpdates.repositoryName = name;
         }
-      }
-
-      if (Array.isArray(updatedWorkspace.diffs) && updatedWorkspace.diffs.length > 0) {
-        updatedWorkspace = {
-          ...updatedWorkspace,
-          diffs: undefined,
-        };
       }
 
       // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
