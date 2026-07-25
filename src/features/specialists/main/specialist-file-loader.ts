@@ -487,6 +487,7 @@ export async function writeSpecialistFile(specialist: {
   model?: string;
   modelTier?: ModelTier;
   roleReminder?: string;
+  hidden?: boolean;
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
@@ -528,6 +529,10 @@ export async function writeSpecialistFile(specialist: {
 
     if (specialist.roleReminder) {
       frontmatterParts.push(`roleReminder: "${escapeYamlValue(specialist.roleReminder)}"`);
+    }
+
+    if (specialist.hidden) {
+      frontmatterParts.push('hidden: true');
     }
 
     const content = `---\n${frontmatterParts.join('\n')}\n---\n\n${specialist.behaviorPrompt}`;

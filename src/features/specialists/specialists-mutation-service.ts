@@ -72,7 +72,10 @@ function readFileSpecialist(id: string): FileSpecialist | undefined {
 /** Direct one-time read of bundledSpecialists state (dependency-light, no selector import). */
 function readBundledSpecialist(id: string): typeof SPECIALISTS[number] | undefined {
   const state = appStore.state as { specialists?: { bundledSpecialists: typeof SPECIALISTS } };
-  return state.specialists?.bundledSpecialists.find((s) => s.id === id);
+  const bundled = state.specialists?.bundledSpecialists;
+  // Before the initial specialist.list load populates the store, fall back to
+  // the static constant so built-in flags (e.g. `hidden`) are never dropped.
+  return (bundled?.length ? bundled : SPECIALISTS).find((s) => s.id === id);
 }
 
 const MODEL_TIERS = new Set<ModelTier>(["fast", "balanced", "smart"]);

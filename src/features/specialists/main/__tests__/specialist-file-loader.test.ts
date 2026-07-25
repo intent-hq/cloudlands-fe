@@ -472,6 +472,36 @@ Body`;
       expect(loaded?.behaviorPrompt).toBe('Round-trip prompt');
     });
 
+    it('should round-trip hidden when writing and loading a specialist file', async () => {
+      await writeSpecialistFile({
+        id: 'hidden-round-trip',
+        name: 'Hidden Round Trip',
+        description: 'Hidden round-trip test specialist',
+        hidden: true,
+        behaviorPrompt: 'Hidden prompt',
+      });
+
+      const loaded = await loadSpecialistFile('hidden-round-trip');
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.frontmatter.hidden).toBe(true);
+    });
+
+    it('should omit hidden frontmatter when hidden is not set', async () => {
+      await writeSpecialistFile({
+        id: 'visible-round-trip',
+        name: 'Visible Round Trip',
+        description: 'Visible round-trip test specialist',
+        behaviorPrompt: 'Visible prompt',
+      });
+
+      const loaded = await loadSpecialistFile('visible-round-trip');
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.rawContent).not.toContain('hidden:');
+      expect(loaded?.frontmatter.hidden).toBeUndefined();
+    });
+
     it('should write and load project-level specialists from the workspace path', async () => {
       const workspacePath = path.join(TEST_HOME, 'repo-a');
 

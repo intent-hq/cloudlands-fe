@@ -176,6 +176,32 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       );
     });
 
+    it("falls back to the SPECIALISTS constant for hidden before the bundled list loads", async () => {
+      // Simulate the pre-load state: the store has no bundled specialists yet
+      // (specialist.list has not resolved), so readFileSpecialist must fall
+      // back to the static SPECIALISTS constant for built-in flags.
+      appStore.dispatch(setBundledSpecialists([]));
+      appStore.dispatch(setFileSpecialists([]));
+      create.mockResolvedValue({} as any);
+
+      appStore.dispatch(
+        saveFileSpecialist({
+          id: "chief-of-staff",
+          name: "Chief of Staff",
+          description: "App-level assistant",
+          behaviorPrompt: "You assist.",
+        }),
+      );
+      await flush();
+
+      expect(create).toHaveBeenCalledWith(
+        "chief-of-staff",
+        expect.objectContaining({ id: "chief-of-staff", hidden: true, source: "user" }),
+        "user",
+        undefined,
+      );
+    });
+
     it("carries hidden from an existing file specialist when editing", async () => {
       const existingHidden: FileSpecialist = {
         id: "chief-of-staff",
