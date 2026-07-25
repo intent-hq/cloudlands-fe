@@ -36,7 +36,6 @@ import {
   unifiedIdService,
   type UnifiedIdService,
 } from '../../../shared/services/unified-id.service';
-import { matchesBaseRef } from '../../../shared/services/baseref-matching';
 import type {
   CreateWorkspaceRequest,
   DiffChunk,
@@ -91,7 +90,6 @@ import {
   getBranchPrefix,
   getWorktreesLocation,
 } from './app-settings.service';
-import { githubService } from '../../git-tracking/main/github.service';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { WorkspaceNotFoundError, WorkspaceValidationError, GitWorktreeError } = Errors;
@@ -111,14 +109,6 @@ function expandHomePath(inputPath: string): string {
   }
   return inputPath;
 }
-
-/** Map a PullRequest.state string to PullRequestStatus enum */
-const PR_STATE_TO_STATUS: Record<string, PullRequestStatus> = {
-  open: PullRequestStatus.Open,
-  closed: PullRequestStatus.Closed,
-  merged: PullRequestStatus.Merged,
-  draft: PullRequestStatus.Draft,
-};
 
 type BackgroundEnrichmentWorkspaceUpdates = Partial<
   Pick<
@@ -160,11 +150,7 @@ export class WorkspaceService {
   private readonly pendingSummaryInvalidations = new Map<WorkspaceId, string>();
   private summaryInvalidationTimer: NodeJS.Timeout | null = null;
   private readonly SUMMARY_INVALIDATION_DEBOUNCE_MS = 100;
-  private periodicPRRefreshTimer: NodeJS.Timeout | null = null;
-  private periodicPRRefreshInitialTimeout: NodeJS.Timeout | null = null;
-  private periodicPRStaggeredTimeouts: NodeJS.Timeout[] = [];
   private disposed = false;
-  private readonly PR_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
   private readonly LIST_ENRICHMENT_CONCURRENCY = 3;
   private readonly BACKGROUND_ENRICHMENT_CONCURRENCY = 3;
   // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)
@@ -196,9 +182,6 @@ export class WorkspaceService {
   ) {
     // Domain event listeners (including task:status-changed) are now handled
     // by sagas in domain-event-listener-sagas.ts.
-
-    // Start periodic PR refresh for non-active workspaces with open PRs
-    this.startPeriodicPRRefresh();
   }
 
   /**
@@ -2194,16 +2177,7 @@ export class WorkspaceService {
 
     const hasPersistedDiffs = false;
 
-    // Check if workspace has an open PR that's missing ciStatus or reviewDecision
-    const needsPREnrichment = Boolean(
-      workspace.activePullRequest?.status === PullRequestStatus.Open &&
-      workspace.repositoryOwner &&
-      workspace.repositoryName &&
-      (workspace.activePullRequest.ciStatus == null ||
-        workspace.activePullRequest.reviewDecision === undefined),
-    );
-
-    return missingGitInfo || hasPersistedDiffs || needsPREnrichment;
+    return missingGitInfo || hasPersistedDiffs;
   }
 
   private processBackgroundEnrichmentQueue(): void {
@@ -2277,7 +2251,6 @@ export class WorkspaceService {
         return;
       }
 
-      let updatedWorkspace = workspace;
       const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {};
 
       if (workspace.repositoryPath && (!workspace.repositoryOwner || !workspace.repositoryName)) {
@@ -2290,432 +2263,17 @@ export class WorkspaceService {
         const name = workspace.repositoryName ?? gitInfo.name;
 
         if (owner !== workspace.repositoryOwner || name !== workspace.repositoryName) {
-          updatedWorkspace = {
-            ...updatedWorkspace,
-            repositoryOwner: owner,
-            repositoryName: name,
-          };
           rendererUpdates.repositoryOwner = owner;
           rendererUpdates.repositoryName = name;
         }
       }
 
-      if (Array.isArray(updatedWorkspace.diffs) && updatedWorkspace.diffs.length > 0) {
-        updatedWorkspace = {
-          ...updatedWorkspace,
-          diffs: undefined,
-        };
-      }
-
-      // Enrich PR status (ciStatus and reviewDecision) for open PRs
-      if (
-        updatedWorkspace.activePullRequest?.status === PullRequestStatus.Open &&
-        updatedWorkspace.repositoryOwner &&
-        updatedWorkspace.repositoryName &&
-        (updatedWorkspace.activePullRequest.ciStatus == null ||
-          updatedWorkspace.activePullRequest.reviewDecision === undefined)
-      ) {
-        const owner = updatedWorkspace.repositoryOwner;
-        const repo = updatedWorkspace.repositoryName;
-        const pr = updatedWorkspace.activePullRequest;
-
-        try {
-          // Fetch single PR details to get headSha and mergeableState
-          // These are only available from the single PR endpoint
-          const currentPR = { ...pr };
-          try {
-            const prDetail = await githubService.getPullRequest(owner, repo, pr.number);
-            if (prDetail) {
-              // Validate source branch matches workspace branch or baseRef before enriching.
-              // Accept if PR source branch matches either:
-              // - workspace.branch (workspace owns the PR)
-              // - workspace.baseRef (workspace was created to review the PR)
-              // Only clear on POSITIVE MISMATCH against both. If sourceBranch is empty
-              // (YAML parsing issue), skip validation to avoid incorrectly clearing legitimate PR links.
-              const branchMatches =
-                !prDetail.sourceBranch ||
-                !updatedWorkspace.branch ||
-                prDetail.sourceBranch === updatedWorkspace.branch;
-              // Also accept a baseRef match. baseRef may be plain ("main")
-              // or remote-qualified ("origin/main"); only a conservative
-              // remote-name allowlist is stripped so slashed local branches
-              // aren't over-stripped.
-              const baseRefMatches = matchesBaseRef(prDetail.sourceBranch, updatedWorkspace.baseRef);
-              if (!branchMatches && !baseRefMatches) {
-                logger.info(
-                  'Background enrichment: PR source branch does not match workspace, clearing stale link',
-                  {
-                    workspaceId,
-                    prNumber: pr.number,
-                    prSourceBranch: prDetail.sourceBranch,
-                    workspaceBranch: updatedWorkspace.branch,
-                  },
-                );
-                const updatedPullRequests = (updatedWorkspace.pullRequests || []).filter(
-                  (p) => p.number !== pr.number,
-                );
-                updatedWorkspace = {
-                  ...updatedWorkspace,
-                  prNumber: undefined,
-                  prUrl: undefined,
-                  prStatus: undefined,
-                  activePullRequest: undefined,
-                  pullRequests: updatedPullRequests,
-                };
-                // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE
-                // no longer writes stale-PR-link clears back to disk. Daemon
-                // gap: daemon should validate PR source-branch and clear stale
-                // links itself. Broadcast keeps renderer state in sync until
-                // the next daemon refresh.
-                await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
-                  ...rendererUpdates,
-                  activePullRequest: undefined,
-                  prNumber: undefined,
-                  prUrl: undefined,
-                  prStatus: undefined,
-                  pullRequests: updatedPullRequests,
-                });
-                return;
-              }
-
-              if (prDetail.headSha) currentPR.headSha = prDetail.headSha;
-              if (prDetail.mergeableState !== undefined)
-                currentPR.mergeableState = prDetail.mergeableState;
-              if (prDetail.mergeable !== undefined) currentPR.mergeable = prDetail.mergeable;
-              // Sync PR status (merged/closed) from remote
-              if (prDetail.state) {
-                const mappedStatus = PR_STATE_TO_STATUS[prDetail.state];
-                if (mappedStatus) currentPR.status = mappedStatus;
-              }
-            }
-          } catch (err) {
-            logger.warn('Background enrichment: failed to fetch PR details', {
-              workspaceId,
-              prNumber: pr.number,
-              error: (err as Error).message,
-            });
-          }
-
-          // Fetch check runs and reviews in parallel
-          const [checkRunsResult, reviewsResult] = await Promise.all([
-            currentPR.headSha
-              ? githubService.getCheckRuns(owner, repo, currentPR.headSha)
-              : Promise.resolve(null),
-            githubService.getReviews(owner, repo, pr.number),
-          ]);
-
-          // Only update if we got new data
-          // Note: We persist ciStatus even when total === 0 (no CI checks configured)
-          // to ensure ciStatus != null after enrichment, preventing infinite enrichment loops
-          const enrichedPR = {
-            ...currentPR,
-            ...(checkRunsResult &&
-              currentPR.ciStatus == null && {
-                ciStatus: checkRunsResult,
-              }),
-            // Always set reviewDecision if not already set, even when null.
-            // This ensures "fetched but null" (explicit null) is distinguishable from
-            // "never fetched" (undefined), preventing infinite enrichment loops.
-            ...(currentPR.reviewDecision == null && {
-              reviewDecision: reviewsResult.reviewDecision ?? null,
-              approvedBy: reviewsResult.approvedBy,
-              approvalCount: reviewsResult.approvalCount,
-            }),
-          };
-
-          // Check if anything actually changed
-          if (
-            enrichedPR.ciStatus !== pr.ciStatus ||
-            enrichedPR.reviewDecision !== pr.reviewDecision ||
-            enrichedPR.headSha !== pr.headSha ||
-            enrichedPR.mergeableState !== pr.mergeableState ||
-            enrichedPR.status !== pr.status
-          ) {
-            // Update activePullRequest
-            updatedWorkspace = {
-              ...updatedWorkspace,
-              activePullRequest: enrichedPR,
-              ...(enrichedPR.status !== pr.status && { prStatus: enrichedPR.status }),
-            };
-
-            // Also update the matching entry in pullRequests[] if it exists
-            if (updatedWorkspace.pullRequests) {
-              updatedWorkspace = {
-                ...updatedWorkspace,
-                pullRequests: updatedWorkspace.pullRequests.map((existingPR) =>
-                  existingPR.number === enrichedPR.number ? enrichedPR : existingPR,
-                ),
-              };
-            }
-
-            rendererUpdates.activePullRequest = enrichedPR;
-            if (enrichedPR.status !== pr.status) {
-              rendererUpdates.prStatus = enrichedPR.status;
-            }
-            if (updatedWorkspace.pullRequests) {
-              rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
-            }
-            logger.debug('Enriched PR status for workspace', {
-              workspaceId,
-              prNumber: pr.number,
-              ciStatus: enrichedPR.ciStatus,
-              reviewDecision: enrichedPR.reviewDecision,
-            });
-          }
-        } catch (prError) {
-          // Log but don't fail the entire enrichment
-          logger.warn('Failed to enrich PR status', {
-            workspaceId,
-            prNumber: pr.number,
-            error: (prError as Error).message,
-          });
-        }
-      }
-
       // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
-      // longer writes background enrichment (git repo info / PR CI + review /
-      // stale-link clears) back to disk. Daemon gap: daemon should own PR
-      // enrichment and stamp the workspace itself. Broadcast keeps renderer
-      // state in sync until the next daemon refresh.
+      // longer writes background enrichment (git repo info) back to disk.
+      // Broadcast keeps renderer state in sync until the next daemon refresh.
       await this.broadcastBackgroundEnrichmentUpdate(workspaceId, rendererUpdates);
     } catch (error) {
       logger.error('Background workspace enrichment failed', error as Error, { workspaceId });
-    }
-  }
-
-  /**
-   * Start periodic refresh of PR status for all workspaces with open PRs.
-   * This ensures CI status and review data stay fresh for workspaces that aren't actively being viewed.
-   */
-  private startPeriodicPRRefresh(): void {
-    // Randomize initial start to avoid all instances starting at the same time
-    const initialDelay = Math.random() * 60_000; // 0-60 seconds
-
-    this.periodicPRRefreshInitialTimeout = setTimeout(() => {
-      if (this.disposed) return;
-
-      // Run immediately on first tick, then every 5 minutes
-      this.refreshAllOpenPRs();
-
-      this.periodicPRRefreshTimer = setInterval(() => {
-        if (this.disposed) return;
-        this.refreshAllOpenPRs();
-      }, this.PR_REFRESH_INTERVAL);
-    }, initialDelay);
-  }
-
-  /**
-   * Refresh CI and review status for all workspaces with open PRs.
-   * Staggers fetches to avoid burst API calls.
-   */
-  private async refreshAllOpenPRs(): Promise<void> {
-    try {
-      const allWorkspaces = await this.repository.findAll();
-      const candidates = allWorkspaces.filter(
-        (ws) =>
-          ws.activePullRequest &&
-          (ws.activePullRequest.status === PullRequestStatus.Open ||
-            ws.activePullRequest.status === PullRequestStatus.Draft) &&
-          ws.repositoryOwner &&
-          ws.repositoryName &&
-          !this.pendingBackgroundEnrichment.has(ws.id),
-      );
-
-      if (candidates.length === 0) return;
-
-      logger.debug('Periodic PR refresh: refreshing open PRs', { count: candidates.length });
-
-      // Clear any previously scheduled staggered timeouts before scheduling new ones
-      for (const timeout of this.periodicPRStaggeredTimeouts) {
-        clearTimeout(timeout);
-      }
-      this.periodicPRStaggeredTimeouts = [];
-
-      // Stagger fetches with random delays to avoid burst API calls
-      for (let i = 0; i < candidates.length; i++) {
-        const ws = candidates[i];
-        const staggerDelay = i * 2000 + Math.random() * 1000; // 2-3 seconds between each
-
-        const timeout = setTimeout(() => {
-          if (this.disposed) return;
-          this.performPRRefreshEnrichment(ws.id).catch((error) => {
-            logger.warn('Periodic PR refresh failed', {
-              workspaceId: ws.id,
-              error: (error as Error).message,
-            });
-          });
-        }, staggerDelay);
-        this.periodicPRStaggeredTimeouts.push(timeout);
-      }
-    } catch (error) {
-      logger.error('Failed to run periodic PR refresh', error as Error);
-    }
-  }
-
-  /**
-   * Perform PR status refresh for a single workspace.
-   * Unlike performBackgroundEnrichment, this ALWAYS re-fetches CI and review data
-   * (no guards on existing values) to ensure data stays fresh.
-   */
-  private async performPRRefreshEnrichment(workspaceId: WorkspaceId): Promise<void> {
-    if (this.pendingBackgroundEnrichment.has(workspaceId)) return;
-    this.pendingBackgroundEnrichment.add(workspaceId);
-
-    try {
-      const workspace = await this.repository.findById(workspaceId);
-      if (
-        !workspace?.activePullRequest ||
-        !workspace.repositoryOwner ||
-        !workspace.repositoryName
-      ) {
-        return;
-      }
-
-      const pr = workspace.activePullRequest;
-      if (pr.status !== PullRequestStatus.Open && pr.status !== PullRequestStatus.Draft) {
-        return;
-      }
-
-      const owner = workspace.repositoryOwner;
-      const repo = workspace.repositoryName;
-
-      // Validate: PR's source branch should match the workspace's own branch.
-      // Previously, baseRef matching could incorrectly link a parent branch's PR.
-      // Check headRef on stored PR, or fetch and validate.
-      const currentPR = { ...pr };
-      try {
-        const prDetail = await githubService.getPullRequest(owner, repo, pr.number);
-        if (prDetail) {
-          // Validate source branch matches workspace branch or baseRef before using this PR.
-          // Accept if PR source branch matches either:
-          // - workspace.branch (workspace owns the PR)
-          // - workspace.baseRef (workspace was created to review the PR)
-          // Only clear on POSITIVE MISMATCH against both. If sourceBranch is empty
-          // (YAML parsing issue), we can't validate, so we keep the PR.
-          const branchMatches =
-            !prDetail.sourceBranch ||
-            !workspace.branch ||
-            prDetail.sourceBranch === workspace.branch;
-          // Also accept a baseRef match. baseRef may be plain ("main") or
-          // remote-qualified ("origin/main"); only a conservative remote-name
-          // allowlist is stripped so slashed local branches aren't over-stripped.
-          const baseRefMatches = matchesBaseRef(prDetail.sourceBranch, workspace.baseRef);
-          if (!branchMatches && !baseRefMatches) {
-            logger.info(
-              'Periodic PR refresh: PR source branch does not match workspace, clearing stale link',
-              {
-                workspaceId,
-                prNumber: pr.number,
-                prSourceBranch: prDetail.sourceBranch,
-                workspaceBranch: workspace.branch,
-              },
-            );
-            // Clear the stale PR association
-            const updatedPullRequests = (workspace.pullRequests || []).filter(
-              (p) => p.number !== pr.number,
-            );
-            // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
-            // longer writes stale-PR-link clears back to disk during periodic
-            // refresh. Daemon gap: daemon should validate PR source-branch and
-            // clear stale links itself. Broadcast keeps renderer state in sync
-            // until the next daemon refresh.
-            await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
-              activePullRequest: undefined,
-              prNumber: undefined,
-              prUrl: undefined,
-              prStatus: undefined,
-              pullRequests: updatedPullRequests,
-            });
-            return;
-          }
-
-          // Fetch single PR details to get headSha and mergeableState
-          if (prDetail.headSha) currentPR.headSha = prDetail.headSha;
-          if (prDetail.mergeableState !== undefined)
-            currentPR.mergeableState = prDetail.mergeableState;
-          if (prDetail.mergeable !== undefined) currentPR.mergeable = prDetail.mergeable;
-          // Sync PR status (merged/closed) from remote
-          if (prDetail.state) {
-            const mappedStatus = PR_STATE_TO_STATUS[prDetail.state];
-            if (mappedStatus) currentPR.status = mappedStatus;
-          }
-        }
-      } catch (err) {
-        logger.warn('Periodic PR refresh: failed to fetch PR details', {
-          workspaceId,
-          prNumber: pr.number,
-          error: (err as Error).message,
-        });
-      }
-
-      const [checkRunsResult, reviewsResult] = await Promise.all([
-        currentPR.headSha
-          ? githubService.getCheckRuns(owner, repo, currentPR.headSha)
-          : Promise.resolve(null),
-        githubService.getReviews(owner, repo, pr.number),
-      ]);
-
-      // Always update with fresh data (no guards on existing values - this is the key difference
-      // from performBackgroundEnrichment which only fills in missing data)
-      const enrichedPR = {
-        ...currentPR,
-        ...(checkRunsResult && { ciStatus: checkRunsResult }),
-        ...(reviewsResult && {
-          reviewDecision: reviewsResult.reviewDecision ?? null,
-          approvedBy: reviewsResult.approvedBy,
-          approvalCount: reviewsResult.approvalCount,
-        }),
-      };
-
-      // Only save and broadcast if something changed (use JSON.stringify for ciStatus comparison)
-      if (
-        JSON.stringify(enrichedPR.ciStatus) !== JSON.stringify(pr.ciStatus) ||
-        enrichedPR.reviewDecision !== pr.reviewDecision ||
-        enrichedPR.headSha !== pr.headSha ||
-        enrichedPR.mergeableState !== pr.mergeableState ||
-        enrichedPR.status !== pr.status
-      ) {
-        let updatedWorkspace: Workspace = {
-          ...workspace,
-          activePullRequest: enrichedPR,
-          ...(enrichedPR.status !== pr.status && { prStatus: enrichedPR.status }),
-        };
-
-        // Also update the matching entry in pullRequests[] if it exists
-        if (updatedWorkspace.pullRequests) {
-          updatedWorkspace = {
-            ...updatedWorkspace,
-            pullRequests: updatedWorkspace.pullRequests.map((existingPR) =>
-              existingPR.number === enrichedPR.number ? enrichedPR : existingPR,
-            ),
-          };
-        }
-
-        // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
-        // longer writes periodic-PR-refresh enrichment (CI status / reviews /
-        // headSha) back to disk. Daemon gap: daemon should own PR enrichment
-        // and stamp the workspace itself. Broadcast keeps renderer state in
-        // sync until the next daemon refresh.
-        const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {
-          activePullRequest: enrichedPR,
-        };
-        if (enrichedPR.status !== pr.status) {
-          rendererUpdates.prStatus = enrichedPR.status;
-        }
-        if (updatedWorkspace.pullRequests) {
-          rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
-        }
-
-        await this.broadcastBackgroundEnrichmentUpdate(workspaceId, rendererUpdates);
-
-        logger.info('Periodic PR refresh: updated workspace', {
-          workspaceId,
-          ciStatus: enrichedPR.ciStatus,
-          reviewDecision: enrichedPR.reviewDecision,
-        });
-      }
-    } finally {
-      this.pendingBackgroundEnrichment.delete(workspaceId);
     }
   }
 
@@ -3546,24 +3104,6 @@ export class WorkspaceService {
       this.summaryInvalidationTimer = null;
     }
     this.pendingSummaryInvalidations.clear();
-
-    // Clear periodic PR refresh initial timeout
-    if (this.periodicPRRefreshInitialTimeout) {
-      clearTimeout(this.periodicPRRefreshInitialTimeout);
-      this.periodicPRRefreshInitialTimeout = null;
-    }
-
-    // Clear periodic PR refresh timer
-    if (this.periodicPRRefreshTimer) {
-      clearInterval(this.periodicPRRefreshTimer);
-      this.periodicPRRefreshTimer = null;
-    }
-
-    // Clear all staggered PR refresh timeouts
-    for (const timeout of this.periodicPRStaggeredTimeouts) {
-      clearTimeout(timeout);
-    }
-    this.periodicPRStaggeredTimeouts = [];
 
     // Clear all pending background enrichments
     this.pendingBackgroundEnrichment.clear();

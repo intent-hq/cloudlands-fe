@@ -9,7 +9,7 @@ import {
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import type { Workspace, WorkspaceId } from '../../../shared/types';
-import { PullRequestStatus, WorkspaceStatus } from '../../../shared/types';
+import { WorkspaceStatus } from '../../../shared/types';
 
 vi.mock('../../../store/main/redux-store-bridge', () => ({
   mainDispatch: vi.fn((action: any) => action),
@@ -31,12 +31,6 @@ vi.mock('child_process', () => {
     ChildProcess: class {},
   };
 });
-
-const githubServiceMocks = vi.hoisted(() => ({
-  getPullRequest: vi.fn(),
-  getCheckRuns: vi.fn(),
-  getReviews: vi.fn(),
-}));
 
 // Notes and agents now come from the daemon (PROTOCOL.md §5.4 `note.list`,
 // §5.5 `agent.list`). Workspaces themselves now come from `workspace.list` /
@@ -102,15 +96,6 @@ vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: backendMocks.request }),
 }));
 
-vi.mock('../../git-tracking/main/github.service', () => ({
-  GitHubService: class {},
-  githubService: {
-    getPullRequest: githubServiceMocks.getPullRequest,
-    getCheckRuns: githubServiceMocks.getCheckRuns,
-    getReviews: githubServiceMocks.getReviews,
-  },
-}));
-
 describe('workspace activity timestamps', () => {
   let service: WorkspaceService;
   let repository: InMemoryWorkspaceRepository;
@@ -132,16 +117,6 @@ describe('workspace activity timestamps', () => {
     };
   };
 
-  const createOpenPullRequest = (timestamp: string) => ({
-    id: 'pr-1',
-    number: 1,
-    url: 'https://github.com/test/repo/pull/1',
-    title: 'Test PR',
-    status: PullRequestStatus.Open,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  });
-
   beforeEach(() => {
     repository = new InMemoryWorkspaceRepository();
     // Mirror every `repository.save` into the daemon-read stub so
@@ -156,9 +131,6 @@ describe('workspace activity timestamps', () => {
       backendMocks.workspacesById.set(ws.id, { ...ws });
     };
     service = new WorkspaceService(repository);
-    githubServiceMocks.getPullRequest.mockReset();
-    githubServiceMocks.getCheckRuns.mockReset();
-    githubServiceMocks.getReviews.mockReset();
     backendMocks.notesByWorkspace.clear();
     backendMocks.agentsByWorkspace.clear();
     backendMocks.workspacesById.clear();
@@ -186,58 +158,9 @@ describe('workspace activity timestamps', () => {
     }
   });
 
-  it('does not persist a stale-PR-link clear during background enrichment (daemon owns persistence)', async () => {
-    const oldTimestamp = '2023-06-01T10:00:00.000Z';
-    const pullRequest = createOpenPullRequest(oldTimestamp);
-    const workspace = createWorkspace({
-      id: 'stale-link' as WorkspaceId,
-      repositoryPath: '/path/to/repo',
-      repositoryOwner: 'test',
-      repositoryName: 'repo',
-      activePullRequest: pullRequest,
-      pullRequests: [pullRequest],
-    });
-    await repository.save(workspace);
-    githubServiceMocks.getPullRequest.mockResolvedValue({ sourceBranch: 'other-branch' });
-
-    await (service as any).performBackgroundEnrichment(workspace.id);
-
-    // Enrichment is broadcast-only after the Wave A write-path collapse; the
-    // repository row must be untouched and `workspace.update` must not fire.
-    const saved = await repository.findById(workspace.id);
-    expect(saved?.activePullRequest).toEqual(pullRequest);
-    expect(saved?.pullRequests).toEqual([pullRequest]);
-    expect(saved?.updatedAt).toBe(oldTimestamp);
-    expect(
-      backendMocks.request.mock.calls.some(([method]) => method === 'workspace.update'),
-    ).toBe(false);
-  });
-
-  it('does not persist a stale-PR-link clear during periodic refresh (daemon owns persistence)', async () => {
-    const oldTimestamp = '2023-07-01T10:00:00.000Z';
-    const pullRequest = createOpenPullRequest(oldTimestamp);
-    const workspace = createWorkspace({
-      id: 'stale-refresh' as WorkspaceId,
-      createdAt: oldTimestamp,
-      updatedAt: oldTimestamp,
-      repositoryOwner: 'test',
-      repositoryName: 'repo',
-      activePullRequest: pullRequest,
-      pullRequests: [pullRequest],
-    });
-    await repository.save(workspace);
-    githubServiceMocks.getPullRequest.mockResolvedValue({ sourceBranch: 'other-branch' });
-
-    await (service as any).performPRRefreshEnrichment(workspace.id);
-
-    const saved = await repository.findById(workspace.id);
-    expect(saved?.activePullRequest).toEqual(pullRequest);
-    expect(saved?.pullRequests).toEqual([pullRequest]);
-    expect(saved?.updatedAt).toBe(oldTimestamp);
-    expect(
-      backendMocks.request.mock.calls.some(([method]) => method === 'workspace.update'),
-    ).toBe(false);
-  });
+  // NOTE: The stale-PR-link enrichment tests were deleted alongside the FE
+  // periodic PR refresh path and github.service (monorepo #699); PR data is
+  // daemon-authoritative and the FE no longer fetches or clears PR links.
 
   // NOTE: FE-side compensation tests (repairWorkspaceActivityTimestamp,
   // deriveWorkspaceLastActivity, list/get fallback) were removed alongside the
