@@ -3852,6 +3852,52 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     // Original seeded status ("Active") is preserved.
     expect(ws.status).toBe('Active');
   });
+
+  it('merges the full archive delta (archived, status, archivedAt) onto the entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      updatedNotification({
+        archived: true,
+        status: 'Archived',
+        archivedAt: '2026-07-25T12:00:00.000Z',
+      }),
+    );
+
+    const ws = await readWorkspace();
+    expect(ws.archived).toBe(true);
+    expect(ws.status).toBe('Archived');
+    expect(ws.archivedAt).toBe('2026-07-25T12:00:00.000Z');
+  });
+
+  it('clears archivedAt on an explicit null in the unarchive delta and restores Active', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      updatedNotification({
+        archived: true,
+        status: 'Archived',
+        archivedAt: '2026-07-25T12:00:00.000Z',
+      }),
+    );
+    handler(
+      updatedNotification({
+        archived: false,
+        status: 'Active',
+        archivedAt: null,
+      }),
+    );
+
+    const ws = await readWorkspace();
+    expect(ws.archived).toBe(false);
+    expect(ws.status).toBe('Active');
+    // The wire null must drop the stale timestamp rather than retain it.
+    expect(ws.archivedAt).toBeUndefined();
+  });
 });
 
 describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', () => {
