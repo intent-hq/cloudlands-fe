@@ -531,17 +531,18 @@ export async function applyWorkspaceCreateProposal(
   // `error.data.code` (e.g. "base-ref-unresolvable", monorepo#761) so
   // ProposalCard can key affordances off it instead of matching error prose.
   const fail = async (errorMessage: string, errorCode?: string) => {
+    const message = errorMessage || "Failed to create space";
     appStore.dispatch(
       proposalFailed({
         proposalId,
-        error: errorMessage,
+        error: message,
         errorCode,
         completedAt: Date.now(),
         lastAction: "apply",
       }),
     );
     const toast = await getToast();
-    toast.error(errorMessage || "Failed to create space");
+    toast.error(message);
   };
 
   try {
@@ -549,7 +550,7 @@ export async function applyWorkspaceCreateProposal(
     const result = await workspaceClient.create(request);
     if (!result.ok) {
       logger.error("Failed to apply workspace-create proposal", result.error);
-      await fail(result.error || "Failed to create space", result.errorCode);
+      await fail(result.error, result.errorCode);
       return;
     }
 
