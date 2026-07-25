@@ -330,10 +330,6 @@ export const WorkspaceValidateSchema = z.object({
   id: WorkspaceIdSchema,
 });
 
-export const WorkspacePreflightCloneCheckSchema = z.object({
-  githubUrl: z.string().min(1, 'GitHub URL is required'),
-});
-
 export const WorkspaceRepairSchema = z.object({
   id: WorkspaceIdSchema,
 });

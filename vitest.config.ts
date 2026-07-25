@@ -67,7 +67,6 @@ export default defineConfig(async () => {
         '**/features/file-tracking/__tests__/file-tracking-integration.test.ts',
         '**/features/protocol/__tests__/protocol-adapter-context.test.ts',
         '**/features/workspace/__tests__/remote-change-detector.test.ts',
-        '**/features/workspace/__tests__/workspace.service.test.ts',
         '**/features/agent/main/__tests__/edge-cases.test.ts',
         '**/features/agent/main/__tests__/migration.test.ts',
         '**/features/agent/main/__tests__/streaming.test.ts',
