@@ -172,6 +172,37 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
     expect(mockedRequest.mock.calls[0][1]).not.toHaveProperty("authorType");
   });
 
+  // intentd#514 / PROTOCOL §5.3: `comment.add` accepts an optional client
+  // `commentId` (a UUID) used as the canonical id — comment row, threadId,
+  // anchor ids, and the embedded note markers — so the FE's optimistic editor
+  // anchors converge with the daemon's rewrite instead of ghosting under a
+  // daemon-minted id (root cause A of the clobber/ghosting race).
+  it("add forwards the caller's commentId on the wire when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ commentId: "550e8400-e29b-41d4-a716-446655440000" });
+    const client = new LiveCommentsClient();
+
+    await client.add("note-1", {
+      searchContext: "a b",
+      commentTarget: "a",
+      comment: "hi",
+      commentId: "550e8400-e29b-41d4-a716-446655440000",
+    });
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      "comment.add",
+      expect.objectContaining({ commentId: "550e8400-e29b-41d4-a716-446655440000" }),
+    );
+  });
+
+  it("add omits commentId from the wire params when not provided (older-daemon mint path)", async () => {
+    mockedRequest.mockResolvedValueOnce({ commentId: "c-1" });
+    const client = new LiveCommentsClient();
+
+    await client.add("note-1", { searchContext: "a b", commentTarget: "a", comment: "hi" });
+
+    expect(mockedRequest.mock.calls[0][1]).not.toHaveProperty("commentId");
+  });
+
   // FE side of monorepo#638: the daemon echoes the authoritative post-add
   // note rev (`noteRev`) after its anchor rewrite; the seam surfaces it on the
   // MutationResult so rev bookkeeping can consume it instead of inferring +1.

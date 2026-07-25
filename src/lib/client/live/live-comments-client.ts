@@ -185,6 +185,7 @@ export class LiveCommentsClient implements CommentsClient {
         ...(params.type !== undefined ? { type: params.type } : {}),
         ...(params.author !== undefined ? { author: params.author } : {}),
         ...(params.authorType !== undefined ? { authorType: params.authorType } : {}),
+        ...(params.commentId !== undefined ? { commentId: params.commentId } : {}),
         idempotencyKey: newIdempotencyKey(),
       },
       params.workspaceId,
