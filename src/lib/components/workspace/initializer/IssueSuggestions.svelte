@@ -2158,28 +2158,21 @@
           </div>
         {/if}
         <!-- Show repository hint when authenticated but no repo selected -->
-        {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && isGitHubAuthenticated && !repositoryOwner}
+        {#snippet repositoryHint()}
           <div class="px-3 py-1.5 text-xs text-subtle bg-muted/20">
             Select a GitHub repository to see {activeSource === 'github-prs'
               ? 'pull requests'
               : 'issues'}
           </div>
+        {/snippet}
+        {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && isGitHubAuthenticated && !repositoryOwner}
+          {@render repositoryHint()}
         {/if}
-        <!-- Show repository hint when authenticated but no repo selected -->
         {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && isGitHubAuthenticated && !repositoryOwner}
-          <div class="px-3 py-1.5 text-xs text-subtle bg-muted/20">
-            Select a GitHub repository to see {activeSource === 'github-prs'
-              ? 'pull requests'
-              : 'issues'}
-          </div>
+          {@render repositoryHint()}
         {/if}
-        <!-- Show repository hint when authenticated but no repo selected -->
         {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && isGitHubAuthenticated && !repositoryOwner}
-          <div class="px-3 py-1.5 text-xs text-subtle bg-muted/20">
-            Select a GitHub repository to see {activeSource === 'github-prs'
-              ? 'pull requests'
-              : 'issues'}
-          </div>
+          {@render repositoryHint()}
         {/if}
 
         <!-- Sentry auth status - only show when not authenticated -->
