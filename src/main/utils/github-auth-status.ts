@@ -11,8 +11,15 @@
 
 import { Logger } from '../../shared/logger';
 import { getBackendClient } from '../../features/backend/main/backend.ipc';
+import { createCache } from './cache';
 
 const logger = new Logger('GitHubAuthStatus');
+
+// 30s TTL matching the deleted broker's CACHE_TTL — callers like
+// git-tracking gate every poll on this probe, so successful results are
+// cached to avoid a github.authStatus round-trip per poll. Failures are
+// not cached so recovery is immediate.
+const statusCache = createCache<'status', boolean>({ name: 'github-auth-status', ttlMs: 30_000 });
 
 /** Wire shape of `github.authStatus` (PROTOCOL §5.27). */
 interface WireAuthStatus {
@@ -26,6 +33,10 @@ interface WireAuthStatus {
  * Probe the daemon for GitHub auth state (`isConfigured` ⇒ authenticated).
  */
 export async function isGitHubConfigured(): Promise<boolean> {
+  const cached = statusCache.get('status');
+  if (cached !== undefined) {
+    return cached;
+  }
   try {
     const status = await getBackendClient().request<WireAuthStatus>('github.authStatus');
     if (status?.isConfigured && status.configuredButNeedsUpdate) {
@@ -33,7 +44,9 @@ export async function isGitHubConfigured(): Promise<boolean> {
         updatedScopes: status.updatedScopes,
       });
     }
-    return status?.isConfigured ?? false;
+    const isConfigured = status?.isConfigured ?? false;
+    statusCache.set('status', isConfigured);
+    return isConfigured;
   } catch (error) {
     logger.error('Failed to get GitHub auth status from daemon', error as Error);
     return false;

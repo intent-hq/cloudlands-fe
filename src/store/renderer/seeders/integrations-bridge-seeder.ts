@@ -527,10 +527,14 @@ const SENTRY_ORG_SETTING = 'accounts.sentry.organization';
 // `sentry-auth:save-config` → `settings.update` on the credential pair, then
 // a fresh `sentry.authStatus` probe as the validation step (there is no
 // `sentry.connect` wire method — §5.29). Only an authenticated probe maps to
-// `{ success: true }`; a failed probe rolls the two settings back via
-// `settings.reset` so a bad token is never left configured, and surfaces the
-// probe's own `error` string. The token goes straight onto the wire and is
-// never held or logged FE-side.
+// `{ success: true }`; a failed probe clears both settings back to their
+// defaults via `settings.reset` so a bad token is never left configured, and
+// surfaces the probe's own `error` string. This is write-then-validate: the
+// raw token never round-trips from the daemon (§5.12), so a previously
+// working credential pair cannot be restored on failure — the user must
+// re-enter it — and between the update and the failed-probe cleanup the bad
+// credentials are briefly live in daemon settings. The token goes straight
+// onto the wire and is never held or logged FE-side.
 registerMockIpcHandler(SENTRY_AUTH_CHANNELS.SAVE_CONFIG, async (arg) => {
   const { organization, apiToken } = asRecord(arg);
   if (
