@@ -8,7 +8,7 @@
   selectFileSpecialistsLoaded,
   selectEffectiveModel,
   selectEffectiveCodingAgent,
-  filterSpecialistsByGitHubAuth,
+  filterPickableSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
 
   import {
@@ -43,7 +43,7 @@
   const specialists$ = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($specialists$, $isGitHubAuth$),
+    filterPickableSpecialists($specialists$, $isGitHubAuth$),
   );
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
   const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();

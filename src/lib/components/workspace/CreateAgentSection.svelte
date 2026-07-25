@@ -10,7 +10,7 @@
   faGear,
 } from '@fortawesome/free-solid-svg-icons';
   import {
-  filterSpecialistsByGitHubAuth,
+  filterPickableSpecialists,
   selectSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -36,7 +36,7 @@
   const specialists$ = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($specialists$, $isGitHubAuth$)
+    filterPickableSpecialists($specialists$, $isGitHubAuth$)
   );
   const coordinator = $derived(visibleSpecialists.find((s) => s.id === 'spec-writer'));
   const otherSpecialists = $derived(

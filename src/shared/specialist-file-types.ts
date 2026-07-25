@@ -81,6 +81,11 @@ export interface SpecialistFileFrontmatter {
    * If not set, defaults to 'task-loop'.
    */
   agentType?: string;
+  /**
+   * When true, this specialist is excluded from picker surfaces
+   * (it remains visible on Settings → AI Behavior for editing).
+   */
+  hidden?: boolean;
 }
 
 /**

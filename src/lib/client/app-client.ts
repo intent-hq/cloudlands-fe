@@ -1218,8 +1218,9 @@ export interface SkillsClient {
  * of one definition. `source` is the winning tier (project > user > bundled)
  * and `path` the file it resolved from (omitted for `bundled`). The optional
  * frontmatter scalars (`codingAgent`/`model`/`modelTier`/`roleReminder`/
- * `agentType`) are carried through verbatim when present; `behaviorPrompt`
- * mirrors `prompt` (the markdown body).
+ * `agentType`/`hidden`) are carried through verbatim when present;
+ * `behaviorPrompt` mirrors `prompt` (the markdown body). `hidden: true`
+ * excludes the specialist from picker surfaces (absent ⇒ not hidden).
  */
 export interface SpecialistDef {
   id: string;
@@ -1230,6 +1231,7 @@ export interface SpecialistDef {
   modelTier?: string;
   roleReminder?: string;
   agentType?: string;
+  hidden?: boolean;
   prompt?: string;
   behaviorPrompt?: string;
   source: "project" | "user" | "bundled";

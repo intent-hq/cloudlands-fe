@@ -8,7 +8,7 @@
  * seeder splits the merged list into the bundled/file store slices so the
  * Coordinator option is populated.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // FAKE transport only: the backend bridge is mocked so no request ever
 // reaches the user's real daemon.
@@ -33,10 +33,8 @@ import type { AppClient, SpecialistDef } from "../app-client";
 // registry so `seedMockStore` below drives the real seeder end-to-end.
 import "$store/renderer/seeders/misc-ui-events-seeder";
 import { seedMockStore } from "$store/renderer/mock-bootstrap";
-import {
-  setBundledSpecialists,
-  setFileSpecialists,
-} from "$store/renderer/slices/specialists/specialists-slice";
+import { store as appStore } from "$store/renderer/store";
+import type { FileSpecialist } from "$store/renderer/slices/specialists/specialists-slice";
 import { SPECIALISTS } from "$lib/constants/specialists";
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -608,57 +606,69 @@ describe("LiveSpecialistsClient (fake transport)", () => {
 });
 
 describe("misc-ui-events seeder splits specialist.list into the store slices", () => {
+  beforeAll(() => appStore.init());
   afterEach(() => vi.clearAllMocks());
 
   it("dispatches daemon bundled defs (Coordinator) and user/project defs to their slices", async () => {
-    const dispatch = vi.fn();
-    await runSeeder(dispatch, [COORDINATOR_DEF, USER_DEF]);
+    await runSeeder([COORDINATOR_DEF, USER_DEF]);
 
-    expect(payloadOf(dispatch, setBundledSpecialists.type)).toEqual([
-      {
-        id: "spec-writer",
-        name: "Coordinator",
-        description: "Plans work, breaks down tasks, coordinates sub-agents",
-        codingAgent: undefined,
-        defaultModel: undefined,
-        defaultModelTier: "smart",
-        defaultBehaviorPrompt: "You plan, delegate, and verify.",
-        roleReminder: undefined,
-        source: "bundled",
-        defaultAgentType: undefined,
-      },
-    ]);
-    expect(payloadOf(dispatch, setFileSpecialists.type)).toEqual([
-      {
-        id: "reviewer",
-        name: "Reviewer",
-        description: "Reviews diffs",
-        codingAgent: undefined,
-        model: "opus4.5",
-        modelTier: undefined,
-        behaviorPrompt: "You review code changes…",
-        roleReminder: undefined,
-        filePath: "/home/u/.intent/specialists/reviewer.md",
-        source: "user",
-      },
-    ]);
+    // The shared dispatchSpecialistList reconstructs the bundled set from the
+    // SPECIALISTS constant overlaid with daemon entries by id, so the daemon's
+    // Coordinator def replaces the constant's spec-writer entry.
+    const state = appStore.state as SeederSpecialistsState;
+    const coordinator = state.specialists?.bundledSpecialists?.find(
+      (s) => s.id === "spec-writer",
+    );
+    expect(coordinator).toEqual({
+      id: "spec-writer",
+      name: "Coordinator",
+      description: "Plans work, breaks down tasks, coordinates sub-agents",
+      codingAgent: undefined,
+      defaultModel: undefined,
+      defaultModelTier: "smart",
+      defaultBehaviorPrompt: "You plan, delegate, and verify.",
+      roleReminder: undefined,
+      source: "bundled",
+      defaultAgentType: undefined,
+      hidden: undefined,
+    });
+    expect(state.specialists?.fileSpecialists?.map["reviewer"]).toEqual({
+      id: "reviewer",
+      name: "Reviewer",
+      description: "Reviews diffs",
+      codingAgent: undefined,
+      model: "opus4.5",
+      modelTier: undefined,
+      behaviorPrompt: "You review code changes…",
+      roleReminder: undefined,
+      filePath: "/home/u/.intent/specialists/reviewer.md",
+      source: "user",
+      hidden: undefined,
+    });
   });
 
   it("falls back to the hardcoded SPECIALISTS (incl. Coordinator) when no bundled defs arrive", async () => {
-    const dispatch = vi.fn();
-    await runSeeder(dispatch, [USER_DEF]);
+    await runSeeder([USER_DEF]);
 
-    const bundled = payloadOf(dispatch, setBundledSpecialists.type) as { id: string }[];
-    expect(bundled).toBe(SPECIALISTS);
-    expect(bundled.some((s) => s.id === "spec-writer")).toBe(true);
+    const state = appStore.state as SeederSpecialistsState;
+    const bundledIds = new Set(state.specialists?.bundledSpecialists?.map((s) => s.id));
+    for (const builtin of SPECIALISTS) {
+      expect(bundledIds.has(builtin.id), `bundled set missing ${builtin.id}`).toBe(true);
+    }
+    expect(bundledIds.has("spec-writer")).toBe(true);
   });
 });
 
-/** Run the registered misc-ui-events seeder against a stub client + recording store. */
-async function runSeeder(
-  dispatch: ReturnType<typeof vi.fn>,
-  specialists: SpecialistDef[],
-): Promise<void> {
+/** Shape of the specialists slice the seeder assertions read off the store. */
+type SeederSpecialistsState = {
+  specialists?: {
+    bundledSpecialists?: typeof SPECIALISTS;
+    fileSpecialists?: { map: Record<string, FileSpecialist> };
+  };
+};
+
+/** Run the registered misc-ui-events seeder against a stub client + the real store. */
+async function runSeeder(specialists: SpecialistDef[]): Promise<void> {
   const client = {
     system: {
       status: async () => ({
@@ -673,13 +683,5 @@ async function runSeeder(
     specialists: { list: async () => specialists, subscribe: () => () => {} },
     workspaces: { list: async () => [] },
   } as unknown as AppClient;
-  await seedMockStore({ state: {}, dispatch } as never, client);
-}
-
-/** First payload argument of the first dispatched action with the given type. */
-function payloadOf(dispatch: ReturnType<typeof vi.fn>, type: string): unknown {
-  const action = dispatch.mock.calls
-    .map((call) => call[0] as { type?: string; payload?: unknown[] })
-    .find((a) => a?.type === type);
-  return action?.payload?.[0];
+  await seedMockStore(appStore, client);
 }

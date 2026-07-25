@@ -10,7 +10,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import {
     selectSpecialists,
-    filterSpecialistsByGitHubAuth,
+    filterPickableSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
@@ -33,7 +33,7 @@
   const allSpecialists = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($allSpecialists, $isGitHubAuth$),
+    filterPickableSpecialists($allSpecialists, $isGitHubAuth$),
   );
 
   // Get current specialist info
