@@ -240,10 +240,8 @@ import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
-import { setupGitHubAuthIPC } from '../features/github-auth/main/github-auth.ipc';
 import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
 import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout-history.ipc';
-import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
 import { getNotificationService } from '../features/notifications/main/notification.service';
@@ -260,7 +258,6 @@ import { getConnectionMode } from '../features/backend/main/connection-mode';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 
-import { setupSentryAuthIPC } from '../features/sentry-auth/main/sentry-auth.ipc';
 import { registerScriptsHandlers } from '../features/scripts/main/scripts.ipc';
 import { disposeAllScriptProcessManagers } from '../features/scripts/main/script-process-manager';
 import { registerSetupScriptsHandlers } from '../features/setup-scripts/main/setup-scripts.ipc';
@@ -1252,10 +1249,6 @@ app.whenReady().then(async () => {
   setupFileIPC();
   setupSystemIPC();
   await setupConfigIPC();
-  setupGitHubAuthIPC(); // Needed for GitHub device flow auth
-  setupLinearAuthIPC(); // Needed for Linear auth via the daemon
-  setupSentryAuthIPC(); // Needed for Sentry auth via API token
-
   registerIDEHandlers(); // Needed for IDE integration
   registerExternalEditorsHandlers(); // Needed for external editor detection and opening
   registerWorkspacePRHandlers(); // Needed for PR operations

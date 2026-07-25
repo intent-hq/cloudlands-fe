@@ -52,11 +52,7 @@ export interface McpAuthProvider {
 
 /**
  * Sentry MCP authentication provider
- * First checks for OAuth tokens from the MCP OAuth flow,
- * then falls back to the in-process API token held by `sentryAuthService`
- * (persisted daemon-side via `accounts.sentry.token`; per PROTOCOL.md §5.12
- * the raw secret never round-trips from the daemon so the fallback only works
- * for the current process lifetime).
+ * Uses OAuth tokens from the MCP OAuth flow.
  */
 const sentryProvider: McpAuthProvider = {
   name: 'sentry',
@@ -69,7 +65,7 @@ const sentryProvider: McpAuthProvider = {
   async getAuthHeaders(serverName?: string): Promise<Record<string, string> | null> {
     logger.info('Getting auth headers for Sentry MCP', { serverName });
 
-    // 1. First try OAuth tokens from MCP OAuth flow (preferred for MCP servers)
+    // OAuth tokens from the MCP OAuth flow (the only source for MCP servers)
     if (serverName) {
       try {
         logger.info('Checking for OAuth tokens...', { serverName });
@@ -78,7 +74,7 @@ const sentryProvider: McpAuthProvider = {
           logger.info('Using OAuth token for Sentry MCP', { serverName });
           return { Authorization: oauthHeader };
         }
-        logger.info('No OAuth tokens found, falling back to API token', { serverName });
+        logger.info('No OAuth tokens found', { serverName });
       } catch (error) {
         logger.warn('Failed to get OAuth token for Sentry MCP', {
           serverName,
@@ -87,29 +83,11 @@ const sentryProvider: McpAuthProvider = {
       }
     }
 
-    // 2. Fall back to Sentry API token from the sentry-auth service's
-    //    in-process config. Persistence is daemon-owned (`accounts.sentry.*`)
-    //    but the raw secret is never echoed back, so this fallback only
-    //    resolves when the user has entered credentials this session.
-    try {
-      const { sentryAuthService } = await import('../../sentry-auth/main/sentry-auth.service');
-      const apiToken = sentryAuthService.getApiToken();
-      if (apiToken) {
-        logger.debug('Using Sentry API token (fallback)', { serverName });
-        return { Authorization: `Bearer ${apiToken}` };
-      }
-    } catch (error) {
-      logger.debug('Failed to read Sentry auth', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
     return null;
   },
 
   getAuthHint(): string {
-    return 'Click "Authenticate" to sign in with Sentry, or configure Sentry in Settings > Integrations';
-    
+    return 'Click "Authenticate" to sign in with Sentry';
   },
 };
 
