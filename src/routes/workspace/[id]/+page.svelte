@@ -71,6 +71,7 @@
   import WorkspaceModals from '$lib/components/workspace/WorkspaceModals.svelte';
   import SidebarSkeleton from '$lib/components/workspace/SidebarSkeleton.svelte';
   import ContentSkeleton from '$lib/components/workspace/ContentSkeleton.svelte';
+  import ResourceNotFound from '$lib/components/workspace/ResourceNotFound.svelte';
   import InputDialog from '$lib/components/modals/InputDialog.svelte';
   import QuakeTerminalOverlay from '$lib/components/terminal/QuakeTerminalOverlay.svelte';
   import { PanelLayout } from '$lib/components/layout/panel-system';
@@ -81,6 +82,7 @@
 
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
+  import { navigateToRoute } from '$lib/utils/navigation.client';
 
   import { setSidebarActiveTab } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import {
@@ -809,6 +811,9 @@
     {#if isCreatingWorkspace || isInTransition}
       <!-- Blank panel while creating new workspace or during transition -->
       <div class="w-full h-full"></div>
+    {:else if workspaceLoader.loadError}
+      <!-- Terminal load failure — blank panel; main content shows the not-found state -->
+      <div class="w-full h-full"></div>
     {:else}
       <!-- Show skeleton for normal loading -->
       <SidebarSkeleton />
@@ -847,7 +852,19 @@
     {/if}
     {#if !showOnboarding || onboardingFadingOut}
       {#if !$workspace || isCreatingWorkspace}
-        <ContentSkeleton />
+        {#if workspaceLoader.loadError && !isCreatingWorkspace}
+          <ResourceNotFound
+            kind={workspaceLoader.loadError.kind}
+            resourceLabel="Workspace"
+            resourceId={workspaceId}
+            detail={workspaceLoader.loadError.kind === 'error'
+              ? workspaceLoader.loadError.message
+              : undefined}
+            onGoHome={() => navigateToRoute('/')}
+          />
+        {:else}
+          <ContentSkeleton />
+        {/if}
       {:else}
         <div
           class="h-full w-full absolute inset-0"
