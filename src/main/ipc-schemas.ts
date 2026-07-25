@@ -180,7 +180,7 @@ export const WorkspaceCreateSchema = z.object({
   setupScript: z.string().optional(), // Shell script to run in worktree after creation
   environmentConfig: EnvironmentConfigSchema.optional(), // Remote environment configuration
   isNewRepo: z.boolean().optional(), // If true, initialize a new git repository at repositoryPath
-  skipWorktree: z.boolean().optional(), // If true, skip creating a git worktree and use repositoryPath directly
+  skipIsolation: z.boolean().optional(), // If true, skip the isolated checkout (worktree or CoW clone) and use repositoryPath directly
   initialAgent: z
     .object({
       // DEPRECATED: the daemon assigns the initial agent's id; clients must

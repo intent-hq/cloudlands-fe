@@ -46,8 +46,16 @@
   import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
 
   const logger = createLogger('RepoSelector');
+
+  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy
+  let isolationMode = $state<IsolationMode>('worktree');
+  $effect(() => {
+    void resolveEffectiveIsolationMode().then((mode) => (isolationMode = mode));
+  });
+  const isolationLabel = $derived(isolationNoun(isolationMode));
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const workspaceInitializerRecentRepos$ = selectWorkspaceInitializerRecentRepos();
   const workspaceInitializerRemoteSetups$ = selectWorkspaceInitializerRemoteSetups();
@@ -1356,10 +1364,10 @@
                   <span>Checking...</span>
                 </div>
               {:else if newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo}
-                <!-- Existing git repo - will create worktree -->
+                <!-- Existing git repo - will create an isolated checkout -->
                 <div class="flex items-center justify-between gap-2">
                   <span class="text-sm text-subtle">
-                    Repo exists — we'll create a worktree off it
+                    Repo exists — we'll create a {isolationLabel} off it
                   </span>
                   <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0">Select</Button>
                 </div>

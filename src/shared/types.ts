@@ -1320,7 +1320,7 @@ export interface CreateWorkspaceRequest {
   setupScript?: string; // Shell script to run in worktree after creation
   environmentConfig?: EnvironmentConfig; // Remote environment configuration
   isNewRepo?: boolean; // If true, initialize a new git repository at repositoryPath
-  skipWorktree?: boolean; // If true, create workspace without a git worktree
+  skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
   initialAgent?: {
     /**
      * DEPRECATED: the daemon assigns the initial agent's id and returns it on

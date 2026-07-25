@@ -14,6 +14,7 @@
 
   import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
   import {
     faCheck,
@@ -58,12 +59,12 @@
     triggerClass?: string;
     hasTriggerIcon?: boolean;
     description?: string;
-    /** Whether to skip worktree creation and work directly on current branch */
-    skipWorktree?: boolean;
+    /** Whether to skip the isolated checkout (worktree or CoW clone) and work directly on current branch */
+    skipIsolation?: boolean;
     /** Suggested branch (e.g. from a PR) - highlights picker when different from selected */
     suggestedBranch?: string;
-    /** Callback when skip worktree option is toggled */
-    onSkipWorktreeChange?: (skipWorktree: boolean) => void;
+    /** Callback when the skip-isolation option is toggled */
+    onSkipIsolationChange?: (skipIsolation: boolean) => void;
     /** Callback when GitHub auth state changes (for private repos) */
     onGitHubAuthNeededChange?: (authNeeded: 'none' | 'not-authenticated' | 'no-access') => void;
     /** Callback when branch status changes (behind count and unstaged changes) */
@@ -88,9 +89,9 @@
     triggerClass,
     hasTriggerIcon = true,
     description,
-    skipWorktree = false,
+    skipIsolation = false,
     suggestedBranch,
-    onSkipWorktreeChange,
+    onSkipIsolationChange,
     onGitHubAuthNeededChange,
     onBranchStatusChange,
     onchange,
@@ -125,6 +126,13 @@
   type GitHubAuthNeeded = 'none' | 'not-authenticated' | 'no-access';
   let githubAuthNeeded: GitHubAuthNeeded = $state('none');
   let isConnectingGitHub = $state(false);
+
+  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy
+  let isolationMode = $state<IsolationMode>('worktree');
+  $effect(() => {
+    void resolveEffectiveIsolationMode().then((mode) => (isolationMode = mode));
+  });
+  const isolationLabel = $derived(isolationNoun(isolationMode));
 
   // Branch status state - managed internally and exposed via callback
   let branchStatusBehind = $state(0);
@@ -828,10 +836,10 @@
   /**
    * Select a branch - called when user explicitly picks a branch.
    * This triggers onchange to notify parent components.
-   * Also turns off skipWorktree since selecting a branch implies creating a worktree.
+   * Also turns off skipIsolation since selecting a branch implies creating an isolated checkout.
    * Fetches branch status for the selected branch.
    */
-  function selectBranch(branch: string, keepSkipWorktree = false) {
+  function selectBranch(branch: string, keepSkipIsolation = false) {
     internalSelectedBranch = branch;
     searchValue = '';
     try {
@@ -842,13 +850,13 @@
       logger.error('Error in onchange callback', e);
     }
 
-    // Turn off skipWorktree when explicitly selecting a branch (unless keepSkipWorktree is true)
-    // Selecting a branch from the list means user wants to create a worktree from that branch
-    if (!keepSkipWorktree && skipWorktree && typeof onSkipWorktreeChange === 'function') {
+    // Turn off skipIsolation when explicitly selecting a branch (unless keepSkipIsolation is true)
+    // Selecting a branch from the list means user wants an isolated checkout off that branch
+    if (!keepSkipIsolation && skipIsolation && typeof onSkipIsolationChange === 'function') {
       try {
-        onSkipWorktreeChange(false);
+        onSkipIsolationChange(false);
       } catch (e) {
-        logger.error('Error in onSkipWorktreeChange callback', e);
+        logger.error('Error in onSkipIsolationChange callback', e);
       }
     }
 
@@ -1183,9 +1191,9 @@
           <span class="flex-1 text-left truncate min-w-0">
             {#if githubAuthNeeded === 'not-authenticated'}
               <span class="text-orange-500">Connect GitHub</span>
-            {:else if skipWorktree && selectedBranch}
+            {:else if skipIsolation && selectedBranch}
               <span>{selectedBranch}</span>
-              <span class="text-sm opacity-75 ml-1">(no worktree)</span>
+              <span class="text-sm opacity-75 ml-1">(no {isolationLabel})</span>
             {:else if selectedBranch}
               <span>{selectedBranch}</span>
             {:else if !repoPath}
@@ -1539,19 +1547,19 @@
           {/if}
         </div>
 
-        <!-- Use current branch option (no worktree) -->
-        {#if typeof onSkipWorktreeChange === 'function' && currentBranch}
+        <!-- Use current branch option (no isolated checkout) -->
+        {#if typeof onSkipIsolationChange === 'function' && currentBranch}
           <div class="px-2 pt-2 pb-3 border-t border-border sticky -bottom-1 bg-background">
             <button
               onclick={() => {
-                const enabling = !skipWorktree;
+                const enabling = !skipIsolation;
                 try {
-                  onSkipWorktreeChange(enabling);
+                  onSkipIsolationChange(enabling);
                 } catch (e) {
-                  logger.error('Error in onSkipWorktreeChange callback', e);
+                  logger.error('Error in onSkipIsolationChange callback', e);
                 }
                 if (enabling) {
-                  // When enabling skip worktree, select current branch (keep skipWorktree on)
+                  // When enabling skip isolation, select current branch (keep skipIsolation on)
                   selectBranch(currentBranch, true);
                 }
                 isOpen = false;
@@ -1559,14 +1567,14 @@
               class="w-full flex items-start gap-3 px-2 py-1 rounded-md text-left cursor-pointer"
             >
               <Checkbox
-                checked={skipWorktree}
+                checked={skipIsolation}
                 class="-mb-1"
                 onCheckedChange={() => {
-                  const enabling = !skipWorktree;
+                  const enabling = !skipIsolation;
                   try {
-                    onSkipWorktreeChange(enabling);
+                    onSkipIsolationChange(enabling);
                   } catch (e) {
-                    logger.error('Error in onSkipWorktreeChange callback', e);
+                    logger.error('Error in onSkipIsolationChange callback', e);
                   }
                   if (enabling) {
                     selectBranch(currentBranch, true);
@@ -1581,8 +1589,8 @@
               </div>
             </button>
             <div class="ml-9 text-sm text-subtle">
-              Stay in your working directory (no git worktree). Make sure to stay on one branch
-              while agents are running.
+              Stay in your repo folder (no isolated {isolationLabel}). Make sure to stay on one
+              branch while agents are running.
             </div>
           </div>
         {/if}
