@@ -149,6 +149,10 @@ import {
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
+import {
+  recordAgentFailure,
+  removeAgentFailure,
+} from '$features/agent/agent-failure-registry';
 import { refreshWorkspaceSubscriptionEntries } from '$features/agent/agent-subscription-read-service';
 import {
   permissionRequestReceived,
@@ -828,7 +832,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   streamsByAgent.delete(agentId);
 }
 
-function handleAgentFailedStream(event: WorkspaceEvent): void {
+function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   const agentId = data?.agentId;
   const error = data?.error;
@@ -843,7 +847,10 @@ function handleAgentFailedStream(event: WorkspaceEvent): void {
   // Set chat error when agent:failed arrives so the StreamingStatus component
   // displays the failure message and Retry button. Dispatch this even when no
   // stream state exists (e.g., agent spawn failed before streaming started).
+  // The failure also lands in the cross-workspace aggregation registry so the
+  // grouped-failure toast layer can surface it.
   if (typeof error === 'string' && error.length > 0) {
+    recordAgentFailure({ agentId, workspaceId, error });
     appStore.dispatch(chatSendFailed(agentId, error));
   }
 }
@@ -1894,6 +1901,31 @@ function handleNotification(method: string, params: unknown): void {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
   }
 
+  // Failure-registry lifecycle: drop an agent from the failure aggregation
+  // registry when its status leaves error/failed (recovered or retried) or
+  // when it is deleted, so the grouped-failure toast reflects live failures
+  // only. Side effects, never early returns — both events fall through to the
+  // timeline dispatch below.
+  if (type === 'agent:status-changed') {
+    const data = (event as { data?: Record<string, unknown> }).data;
+    const agentId = data?.agentId;
+    const status = data?.status;
+    if (
+      typeof agentId === 'string' &&
+      typeof status === 'string' &&
+      status !== 'error' &&
+      status !== 'failed'
+    ) {
+      removeAgentFailure(agentId);
+    }
+  }
+  if (type === 'agent:deleted') {
+    const data = (event as { data?: Record<string, unknown> }).data;
+    if (typeof data?.agentId === 'string') {
+      removeAgentFailure(data.agentId);
+    }
+  }
+
   // Activity reconciliation: busy-implying agent events may indicate a missed
   // `workspace:activity-changed` edge (coordinator-only workspace starting
   // before the bridge subscribed). On busy signals (status-changed with
@@ -2010,7 +2042,7 @@ function handleNotification(method: string, params: unknown): void {
     // fall through to the lifecycle dispatch below
   }
   if (type === 'agent:failed') {
-    handleAgentFailedStream(event);
+    handleAgentFailedStream(event, workspaceId);
     // fall through to the lifecycle dispatch below
   }
   // Session-mutation lifecycle (§5.5): keep the sidebar/agents index in sync
