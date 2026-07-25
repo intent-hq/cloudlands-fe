@@ -192,6 +192,7 @@ describe('comment.add carries the optimistic comment id (clobber/ghosting root c
     const added = await manager.addComment('needs follow-up');
     expect(added).not.toBeNull();
     const params = addMock.mock.calls[0][1] as CommentAddParams;
+    expect(params.commentId).toBeDefined();
 
     // The daemon persists the row under the wire `commentId` when supplied
     // (§5.3); without one it mints its own UUID — the pre-#514 ghosting bug.
