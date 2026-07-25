@@ -32,6 +32,7 @@ import { LiveSettingsClient } from "./live-settings-client";
 import { LiveSetupScriptsClient } from "./live-setup-scripts-client";
 import { LiveSkillsClient } from "./live-skills-client";
 import { LiveSpecialistsClient } from "./live-specialists-client";
+import { LiveStatsClient } from "./live-stats-client";
 import { LiveSystemClient } from "./live-system-client";
 import { LiveServerClient } from "./live-server-client";
 import { LiveTasksClient } from "./live-tasks-client";
@@ -55,6 +56,7 @@ export class LiveAppClient implements AppClient {
   readonly setupScripts = new LiveSetupScriptsClient();
   readonly events = new LiveEventsClient();
   readonly models = new LiveModelsClient();
+  readonly stats = new LiveStatsClient();
 
   readonly chat = new LiveChatClient();
   readonly skills = new LiveSkillsClient();

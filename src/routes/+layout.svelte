@@ -39,6 +39,7 @@
     selectPaletteQuery,
   } from '$store/renderer/slices/palette/palette-selectors';
   import SpacesSwitcherOverlay from '$features/workspace/SpacesSwitcherOverlay.svelte';
+  import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -1057,6 +1058,9 @@
 
   <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
   <SpacesSwitcherOverlay />
+
+  <!-- Usage Stats Overlay (sidebar Stats button) -->
+  <StatsOverlay />
 
   <!-- Full-screen blocking overlay when the intentd daemon connection is lost (#439) -->
   <DaemonStoppedOverlay />

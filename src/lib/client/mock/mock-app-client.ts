@@ -127,6 +127,22 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     subscribe: (handler) => emitOnce(handler, fx.mockModels),
   };
 
+  readonly stats: AppClient["stats"] = {
+    // Zeroed shapes mirror the daemon's empty-period contract: never an error.
+    getUsage: async () => ({
+      totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      runs: 0,
+      sessions: 0,
+      longestRunMs: 0,
+      linesAdded: 0,
+      linesDeleted: 0,
+      byModel: [],
+      byHourOfDay: [],
+      byMonth: [],
+      availablePeriods: { months: [], years: [] },
+    }),
+  };
+
   readonly browser: AppClient["browser"] = {
     recentUrls: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockRecentUrls : [],

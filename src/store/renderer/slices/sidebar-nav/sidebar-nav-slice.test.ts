@@ -10,10 +10,12 @@ import {
   openPanel,
   setMultiSelectSidebarSelectedTabs,
   setMultiSelectSidebarTabOrder,
+  setStatsOverlayOpen,
   setWorkspaceCollapsedNoteIds,
   setWorkspaceNoteOrder,
   sidebarNavReducer,
   togglePanel,
+  toggleStatsOverlay,
   toggleWorkspaceCollapsedNote,
 } from "./sidebar-nav-slice";
 
@@ -110,5 +112,27 @@ describe("sidebarNavReducer workspace sidebar UI persistence", () => {
     );
 
     expect(next.multiSelectTabOrder).toEqual(["files", "changes", "context"]);
+  });
+});
+
+describe("sidebarNavReducer usage-stats overlay", () => {
+  it("is closed by default", () => {
+    expect(initialState.statsOverlayOpen).toBe(false);
+  });
+
+  it("opens and closes via setStatsOverlayOpen", () => {
+    const opened = sidebarNavReducer(initialState, setStatsOverlayOpen(true));
+    const closed = sidebarNavReducer(opened, setStatsOverlayOpen(false));
+
+    expect(opened.statsOverlayOpen).toBe(true);
+    expect(closed.statsOverlayOpen).toBe(false);
+  });
+
+  it("toggles via toggleStatsOverlay", () => {
+    const opened = sidebarNavReducer(initialState, toggleStatsOverlay());
+    const closed = sidebarNavReducer(opened, toggleStatsOverlay());
+
+    expect(opened.statsOverlayOpen).toBe(true);
+    expect(closed.statsOverlayOpen).toBe(false);
   });
 });

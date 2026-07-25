@@ -1284,6 +1284,63 @@ export interface ModelsClient {
   subscribe(handler: SubscriptionHandler<AuggieModel[]>): Unsubscribe;
 }
 
+/** Wire `period` mode for `stats.getUsage`. */
+export type UsageStatsPeriod = "24h" | "month" | "year";
+
+/** The 4 separate token counters for one `stats.getUsage` aggregation cell. */
+export interface UsageTokenTotals {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
+/** Per-model rollup row (sorted desc by total tokens by the daemon). */
+export interface UsageModelStats extends UsageTokenTotals {
+  model: string;
+  runs: number;
+}
+
+/** One of the 24 `byHourOfDay` cells (`hour` is the local-time hour label). */
+export interface UsageHourStats extends UsageTokenTotals {
+  hour: number;
+}
+
+/** One of the 12 `byMonth` cells (`month` is 1-based). */
+export interface UsageMonthStats extends UsageTokenTotals {
+  month: number;
+}
+
+/** `stats.getUsage` result — aggregated usage for one period. */
+export interface UsageStatsResult {
+  totals: UsageTokenTotals;
+  runs: number;
+  sessions: number;
+  longestRunMs: number;
+  linesAdded: number;
+  linesDeleted: number;
+  byModel: UsageModelStats[];
+  byHourOfDay: UsageHourStats[];
+  byMonth: UsageMonthStats[];
+  /** Periods with any data at all (computed over ALL rows, not the request). */
+  availablePeriods: { months: string[]; years: string[] };
+}
+
+export interface StatsClient {
+  /**
+   * Global usage-stats read (`stats.getUsage`) behind the agentic usage-stats
+   * cards; no `workspaceId`. `key` ("YYYY-MM" / "YYYY") is required for
+   * month/year and omitted for 24h; `tzOffsetMinutes` (minutes east of UTC)
+   * shifts buckets into the client's local time before grouping. THROWS on
+   * transport/daemon errors so the overlay can render an explicit error state.
+   */
+  getUsage(
+    period: UsageStatsPeriod,
+    key: string | undefined,
+    tzOffsetMinutes: number,
+  ): Promise<UsageStatsResult>;
+}
+
 export interface BrowserClient {
   recentUrls(workspaceId: string): Promise<RecentUrl[]>;
   subscribe(handler: SubscriptionHandler<RecentUrl[]>): Unsubscribe;
@@ -1411,6 +1468,7 @@ export interface AppClient {
   skills: SkillsClient;
   specialists: SpecialistsClient;
   models: ModelsClient;
+  stats: StatsClient;
   browser: BrowserClient;
   integrations: IntegrationsClient;
   system: SystemClient;
