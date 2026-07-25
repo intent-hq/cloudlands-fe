@@ -54,14 +54,17 @@ vi.mock('$lib/components/chat/SpecialistDropdown.svelte', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockSpecialistDropdown.svelte'))
     .default,
 }));
-vi.mock('$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors', () => ({
-  selectProposalAppliedState: vi.fn(() => ({
-    subscribe: (run: (value: null) => void) => {
-      run(null);
-      return () => {};
-    },
-  })),
-}));
+vi.mock(
+  '$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors',
+  () => ({
+    selectProposalAppliedState: vi.fn(() => ({
+      subscribe: (run: (value: null) => void) => {
+        run(null);
+        return () => {};
+      },
+    })),
+  }),
+);
 vi.mock(
   '$store/renderer/slices/specialist-proposal-history/specialist-proposal-history-selectors',
   () => ({
@@ -673,7 +676,9 @@ describe('ProposalCard', () => {
     };
     prBranchLookupState.emit();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /Create workspace/ })).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Create workspace/ })).toBeTruthy(),
+    );
   });
 
   it('does not overwrite a user-edited branch when the PR branch lookup resolves late', async () => {
@@ -916,5 +921,212 @@ describe('ProposalCard', () => {
     expect(screen.getByTestId('proposal-workspace-created').textContent).toBe('Workspace created.');
     expect(screen.queryByTestId('proposal-open-created-workspace')).toBeNull();
     expect(screen.queryByText(/proposal/i)).toBeNull();
+  });
+
+  it('warns and preselects the default branch when the proposed base branch is missing, without blocking apply', async () => {
+    // The mock picker reports branches [main, develop] + remote [release/1.0], default 'main'.
+    const { container } = render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            initialPrompt: 'Fix the bug',
+            repoPath: '/repo/x',
+            repoType: 'local',
+            branch: 'feature/does-not-exist',
+          },
+        }),
+      },
+    });
+    const applyListener = vi.fn();
+    container
+      .querySelector('[data-proposal-kind]')
+      ?.addEventListener('proposalapply', applyListener as EventListener);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock branches loaded' }));
+
+    // Warning keeps the proposed value visible and names the default fallback.
+    const warning = screen.getByTestId('proposal-branch-mismatch-warning');
+    expect(warning.textContent).toContain('feature/does-not-exist');
+    expect(warning.textContent).toContain("'main'");
+    // The picker was preselected to the default branch.
+    expect(getBranchPicker().textContent).toContain('main');
+    // The branch row is visually flagged.
+    expect(screen.getByTestId('proposal-branch-picker').getAttribute('data-branch-warning')).toBe(
+      'true',
+    );
+
+    // Apply is never blocked: Create workspace stays enabled and sends the default branch.
+    const createButton = screen.getByRole('button', { name: /Create workspace/ });
+    expect(createButton.hasAttribute('disabled')).toBe(false);
+    await fireEvent.click(createButton);
+    const event = applyListener.mock.calls[0]?.[0] as CustomEvent | undefined;
+    expect(event?.detail.editedFields.branch).toBe('main');
+  });
+
+  it('does not warn when the proposed base branch exists locally or remotely', async () => {
+    render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            initialPrompt: 'Fix the bug',
+            repoPath: '/repo/x',
+            repoType: 'local',
+            branch: 'release/1.0',
+          },
+        }),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock branches loaded' }));
+
+    expect(screen.queryByTestId('proposal-branch-mismatch-warning')).toBeNull();
+    expect(
+      screen.getByTestId('proposal-branch-picker').getAttribute('data-branch-warning'),
+    ).toBeNull();
+    expect(getBranchPicker().textContent).toContain('release/1.0');
+  });
+
+  it('clears the missing-branch warning when the repository changes', async () => {
+    render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            initialPrompt: 'Fix the bug',
+            repoPath: '/repo/x',
+            repoType: 'local',
+            branch: 'feature/does-not-exist',
+          },
+        }),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock branches loaded' }));
+    expect(screen.getByTestId('proposal-branch-mismatch-warning')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock repo change' }));
+    expect(screen.queryByTestId('proposal-branch-mismatch-warning')).toBeNull();
+    expect(
+      screen.getByTestId('proposal-branch-picker').getAttribute('data-branch-warning'),
+    ).toBeNull();
+  });
+
+  it('clears the missing-branch warning once the user picks a branch', async () => {
+    render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            initialPrompt: 'Fix the bug',
+            repoPath: '/repo/x',
+            repoType: 'local',
+            branch: 'feature/does-not-exist',
+          },
+        }),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock branches loaded' }));
+    expect(screen.getByTestId('proposal-branch-mismatch-warning')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock branch change' }));
+    expect(screen.queryByTestId('proposal-branch-mismatch-warning')).toBeNull();
+  });
+
+  it('directs the user to the Base branch field on a cannot-resolve-base-ref failure', async () => {
+    lifecycleSelectorState.status = 'failed';
+    lifecycleSelectorState.error = "cannot resolve base ref 'nonexistent-branch'";
+    const { container } = render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            initialPrompt: 'Fix the bug',
+            repoPath: '/repo/x',
+            repoType: 'local',
+            branch: 'nonexistent-branch',
+          },
+        }),
+      },
+    });
+
+    const status = container.querySelector('[role="status"]');
+    expect(status?.textContent).toContain('Workspace creation failed');
+    expect(status?.textContent).toContain('Choose a different base branch above, then retry.');
+
+    // The Base branch row is highlighted and receives focus instead of the status line.
+    const branchRow = screen.getByTestId('proposal-branch-picker');
+    expect(branchRow.getAttribute('data-branch-warning')).toBe('true');
+    // The focus target carries an accessible name so screen readers announce it.
+    expect(branchRow.getAttribute('role')).toBe('group');
+    expect(branchRow.getAttribute('aria-label')).toBe('Base branch');
+    await waitFor(() => expect(document.activeElement).toBe(branchRow));
+  });
+
+  it('associates the mismatch warning with the branch row and clears it when a PR branch lookup resolves', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      success: true,
+      data: { sourceBranch: 'pr-head-branch' },
+    });
+    setElectronInvoke(invoke);
+
+    render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal(
+          {},
+          {
+            prUrl: 'https://github.com/example-org/example-repo/pull/648',
+            initialMessage: 'Review PR #648',
+            branch: 'feature/does-not-exist',
+          },
+        ),
+      },
+    });
+
+    // The missing proposed branch is preselected to the default ('main').
+    await fireEvent.click(screen.getByRole('button', { name: 'Mock branches loaded' }));
+    const warning = screen.getByTestId('proposal-branch-mismatch-warning');
+    const branchRow = screen.getByTestId('proposal-branch-picker');
+    expect(branchRow.getAttribute('aria-describedby')).toBe(warning.getAttribute('id'));
+    expect(warning.getAttribute('id')).toBeTruthy();
+
+    // Preselecting 'main' arms the PR-branch lookup; once it resolves, the
+    // PR head branch replaces the default and the stale warning is cleared.
+    const expectedAction = requestPrBranchLookup({
+      owner: 'example-org',
+      repo: 'example-repo',
+      prNumber: 648,
+    });
+    await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
+    prBranchLookupState.lookupEntries[expectedAction.payload.key] = {
+      status: 'succeeded',
+      branch: 'pr-head-branch',
+    };
+    prBranchLookupState.emit();
+    await flushAsyncWork();
+
+    expect(getBranchPicker().textContent).toContain('pr-head-branch');
+    expect(screen.queryByTestId('proposal-branch-mismatch-warning')).toBeNull();
+  });
+
+  it('keeps generic workspace-create failures on the status line without a branch affordance', () => {
+    lifecycleSelectorState.status = 'failed';
+    lifecycleSelectorState.error = 'daemon unavailable';
+    const { container } = render(ProposalCard, {
+      props: {
+        proposal: makeWorkspaceProposal({
+          workspaceCreate: {
+            initialPrompt: 'Fix the bug',
+            repoPath: '/repo/x',
+            repoType: 'local',
+            branch: 'main',
+          },
+        }),
+      },
+    });
+
+    const status = container.querySelector('[role="status"]');
+    expect(status?.textContent).toContain('Workspace creation failed: daemon unavailable');
+    expect(status?.textContent).not.toContain('Choose a different base branch');
+    expect(
+      screen.getByTestId('proposal-branch-picker').getAttribute('data-branch-warning'),
+    ).toBeNull();
   });
 });

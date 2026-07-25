@@ -10,6 +10,12 @@
     isLoading?: boolean;
     onRepoChange?: (event: CustomEvent<any>) => void;
     onBranchChange?: (event: CustomEvent<{ branch: string }>) => void;
+    onBranchesLoaded?: (info: {
+      branches: string[];
+      remoteBranches: string[];
+      defaultBranch: string;
+      currentBranch: string;
+    }) => void;
   }
 
   let {
@@ -23,6 +29,7 @@
     isLoading = false,
     onRepoChange,
     onBranchChange,
+    onBranchesLoaded,
   }: Props = $props();
 </script>
 
@@ -57,6 +64,18 @@
         onBranchChange?.(new CustomEvent('change', { detail: { branch: 'mock-branch' } }))}
     >
       Mock branch change
+    </button>
+    <button
+      type="button"
+      onclick={() =>
+        onBranchesLoaded?.({
+          branches: ['main', 'develop'],
+          remoteBranches: ['release/1.0'],
+          defaultBranch: 'main',
+          currentBranch: 'main',
+        })}
+    >
+      Mock branches loaded
     </button>
   {/if}
 </div>
