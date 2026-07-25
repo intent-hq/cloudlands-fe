@@ -48,6 +48,7 @@ import { taskAgentAssociationsReducer } from "./slices/task-agent-associations/t
 import { autoUpdateReducer } from "./slices/auto-update/auto-update-slice";
 import { sidebarNavReducer } from "./slices/sidebar-nav/sidebar-nav-slice";
 import { scriptsReducer } from "./slices/scripts/scripts-slice";
+import { statsReducer } from "./slices/stats/stats-slice";
 import { agentFollowReducer } from "./slices/agent-follow/agent-follow-slice";
 import { gitReducer } from "./slices/git/git-slice";
 import { fileTrackingReducer } from "./slices/changes/changes-slice";
@@ -129,6 +130,7 @@ export const reducers = {
   autoUpdate: autoUpdateReducer,
   sidebarNav: sidebarNavReducer,
   scripts: scriptsReducer,
+  stats: statsReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   changes: fileTrackingReducer,

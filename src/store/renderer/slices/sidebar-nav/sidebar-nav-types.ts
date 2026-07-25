@@ -14,6 +14,7 @@ export type SidebarNavItem =
   | 'active'
   | 'chief'
   | 'all-workspaces'
+  | 'stats'
   | 'settings';
 export type AllSpacesViewMode = 'recent' | 'repo' | 'status';
 
@@ -65,4 +66,6 @@ export type SidebarNavState = {
   contextMenuOpenCount: number;
   /** Deferred leave type when context menu prevented auto-close */
   deferredLeave: 'card' | 'nav' | null;
+  /** Whether the full-screen usage-stats overlay is open */
+  statsOverlayOpen: boolean;
 };
