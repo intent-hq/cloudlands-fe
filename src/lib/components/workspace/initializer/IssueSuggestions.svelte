@@ -257,6 +257,15 @@
   createTrailingDebouncer,
   type PagedSourceState,
 } from './issue-paging';
+  import {
+  loadLastUsedSource,
+  orderProviders,
+  orderSources,
+  resolveActiveSource,
+  saveLastUsedSource,
+  type ContextSource,
+  type ContextSourceProvider,
+} from './context-source-preference';
 
   const logger = createLogger('ContextPicker');
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
@@ -269,8 +278,6 @@
   let sentryShowForm = $state(false);
   let sentryOrg = $state('');
   let sentryToken = $state('');
-
-  type ContextSource = 'linear' | 'github-issues' | 'github-prs' | 'sentry';
 
   /** Metadata for hover cards - contains author, assignee, labels, etc. */
   export interface IssueMetadata {
@@ -338,7 +345,19 @@
   // Panel state
   let isOpen = $state(initiallyExpanded);
   let searchQuery = $state('');
-  let activeSource = $state<ContextSource>(initialSource ?? 'linear');
+  // Last source the user actually selected an item from (persisted preference)
+  let lastUsedSource = $state(loadLastUsedSource());
+  let activeSource = $state<ContextSource>(
+    initialSource ??
+      resolveActiveSource({ github: false, linear: false, sentry: false }, lastUsedSource),
+  );
+  // Once the user explicitly picks a tab, auth resolution must not override it
+  let userSelectedTab = $state(false);
+
+  function markSourceUsed(source: ContextSource) {
+    lastUsedSource = source;
+    saveLastUsedSource(source);
+  }
 
   function emptyPage<T>(): PagedSourceState<T> {
     return { items: [], nextToken: null, isFetching: false, isLoadingMore: false };
@@ -1189,6 +1208,7 @@
   });
 
   function handleLinearIssueClick(issue: LinearIssueResult) {
+    markSourceUsed('linear');
     const issueText = `[${issue.identifier}] ${issue.title}`;
     const teamKey = issue.identifier.split('-')[0];
     // Map priority number to readable string
@@ -1225,6 +1245,7 @@
   }
 
   function handleSentryIssueClick(issue: SentryIssueResult) {
+    markSourceUsed('sentry');
     const issueText = `[${issue.shortId}] ${issue.title}`;
     // For Sentry, build a description from available fields
     const description = [issue.culprit, issue.value].filter(Boolean).join('\n');
@@ -1251,6 +1272,7 @@
   }
 
   function handleGitHubIssueClick(issue: GitHubIssueLocal) {
+    markSourceUsed('github-issues');
     const issueText = `#${issue.number} ${issue.title}`;
     onSelect?.(issueText, {
       type: 'github',
@@ -1272,6 +1294,7 @@
   }
 
   async function handleGitHubPRClick(pr: GitHubPRLocal) {
+    markSourceUsed('github-prs');
     // If we don't have branch info, fetch full PR details (single API call)
     // The search API doesn't return head_ref/base_ref, so we fetch on selection
     let sourceBranch = pr.sourceBranch;
@@ -1387,13 +1410,51 @@
     }
   });
 
-  // Provider sources (not including browser - that's a separate section)
-  const sources: { id: ContextSource; label: string; icon: typeof LinearIcon | null }[] = [
-    { id: 'linear', label: 'Linear', icon: LinearIcon },
-    { id: 'sentry', label: 'Sentry', icon: SentryIcon },
-    { id: 'github-issues', label: 'GH Issues', icon: GitHubIcon },
-    { id: 'github-prs', label: 'GH PRs', icon: GitHubIcon },
-  ];
+  // Provider sources (not including browser - that's a separate section),
+  // ordered by last-used provider first, then connected, then alphabetical
+  const SOURCE_TAB_META: Record<ContextSource, { label: string; icon: typeof LinearIcon | null }> =
+    {
+      linear: { label: 'Linear', icon: LinearIcon },
+      sentry: { label: 'Sentry', icon: SentryIcon },
+      'github-issues': { label: 'GH Issues', icon: GitHubIcon },
+      'github-prs': { label: 'GH PRs', icon: GitHubIcon },
+    };
+  const PROVIDER_ICONS: Record<ContextSourceProvider, typeof LinearIcon> = {
+    github: GitHubIcon,
+    linear: LinearIcon,
+    sentry: SentryIcon,
+  };
+  const PROVIDER_ICON_CLASSES: Record<ContextSourceProvider, string> = {
+    github: 'opacity-80',
+    linear: 'opacity-40',
+    sentry: 'opacity-80',
+  };
+  const providerConnections = $derived({
+    github: isGitHubAuthenticated,
+    linear: isLinearAuthenticated,
+    sentry: isSentryAuthenticated,
+  });
+  const orderedProviders = $derived(orderProviders(providerConnections, lastUsedSource));
+  const sources = $derived(
+    orderSources(providerConnections, lastUsedSource).map((id) => ({ id, ...SOURCE_TAB_META[id] })),
+  );
+
+  // Once auth state resolves, fall back to the first connected provider's source
+  // when the persisted source's provider is not connected. Skipped when the
+  // source is locked via initialSource, the user explicitly picked a tab, or a
+  // search is in progress (a non-empty query pins the pane so it can't jump
+  // out from under the user mid-search; untracked so typing doesn't re-run
+  // this effect).
+  $effect(() => {
+    const connections = providerConnections;
+    const last = lastUsedSource;
+    if (initialSource || userSelectedTab) return;
+    if (untrack(() => searchQuery.trim() !== '')) return;
+    const desired = resolveActiveSource(connections, last);
+    if (desired !== untrack(() => activeSource)) {
+      activeSource = desired;
+    }
+  });
 
   // Issue counts for each source
   const linearCount = $derived(linearAssignedIssues.length + linearCreatedIssues.length);
@@ -1442,9 +1503,10 @@
       <!-- Show all provider icons when collapsed -->
       <!-- {#if !isOpen} -->
       <div class="flex items-end gap-2 ml-1 -mb-0.5">
-        <LinearIcon size={12} class="opacity-40" />
-        <GitHubIcon size={12} class="opacity-80" />
-        <SentryIcon size={12} class="opacity-80" />
+        {#each orderedProviders as provider (provider)}
+          {@const ProviderIcon = PROVIDER_ICONS[provider]}
+          <ProviderIcon size={12} class={PROVIDER_ICON_CLASSES[provider]} />
+        {/each}
       </div>
       <!-- {/if} -->
     </button>
@@ -1474,11 +1536,14 @@
         <!-- Source tabs with issue count (hidden when controlled externally) -->
         {#if !hideSourceTabs}
           <div class="flex items-center gap-1 ml-auto">
-            {#each sources as source}
+            {#each sources as source (source.id)}
               {@const count = getSourceCount(source.id)}
               <button
                 type="button"
-                onclick={() => (activeSource = source.id)}
+                onclick={() => {
+                  userSelectedTab = true;
+                  activeSource = source.id;
+                }}
                 class="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full transition-colors cursor-pointer {activeSource ===
                 source.id
                   ? 'bg-muted text-foreground'
