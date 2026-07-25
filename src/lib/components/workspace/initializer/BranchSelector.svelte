@@ -15,7 +15,11 @@
   import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
+  import {
+    isolationNoun,
+    resolveEffectiveIsolationMode,
+    type IsolationMode,
+  } from './isolation-mode';
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
   import {
     faCheck,
@@ -48,6 +52,14 @@
     isLoading: boolean;
   }
 
+  /** Snapshot of a successfully loaded branch list */
+  export interface BranchListInfo {
+    branches: string[];
+    remoteBranches: string[];
+    defaultBranch: string;
+    currentBranch: string;
+  }
+
   interface Props {
     variant?: 'default' | 'ghost' | 'underline';
     value?: string;
@@ -70,6 +82,8 @@
     onGitHubAuthNeededChange?: (authNeeded: 'none' | 'not-authenticated' | 'no-access') => void;
     /** Callback when branch status changes (behind count and unstaged changes) */
     onBranchStatusChange?: (status: BranchStatus) => void;
+    /** Callback when the branch list has been fetched successfully */
+    onBranchesLoaded?: (info: BranchListInfo) => void;
     onchange?: (event: CustomEvent<{ branch: string }>) => void;
     /** Whether to show the uncommitted changes indicator (default: false) */
     showUncommittedIndicator?: boolean;
@@ -95,6 +109,7 @@
     onSkipIsolationChange,
     onGitHubAuthNeededChange,
     onBranchStatusChange,
+    onBranchesLoaded,
     onchange,
     showUncommittedIndicator = false,
     showTriggerChevron = false,
@@ -377,6 +392,15 @@
     }
   });
 
+  function notifyBranchesLoaded() {
+    onBranchesLoaded?.({
+      branches: [...branches],
+      remoteBranches: [...remoteBranches],
+      defaultBranch,
+      currentBranch,
+    });
+  }
+
   async function fetchBranches() {
     if (!repoPath) return;
 
@@ -422,6 +446,7 @@
             setInternalBranch(branches[0]);
           }
         }
+        notifyBranchesLoaded();
         return;
       }
     }
@@ -458,6 +483,8 @@
         });
       }
     }
+
+    let fetchSucceeded = false;
 
     try {
       // Simulate network delay if enabled
@@ -502,6 +529,7 @@
               setInternalBranch(branches[0]);
             }
           }
+          fetchSucceeded = true;
         } else {
           throw new Error('Failed to fetch branches');
         }
@@ -528,14 +556,14 @@
           branches = listing.branches;
           defaultBranch = listing.defaultBranch || '';
           githubAuthNeeded = 'none';
+          fetchSucceeded = true;
           logger.debug('Fetched branches via daemon github.branches.list', {
             owner,
             repo,
             count: branches.length,
           });
         } catch (githubError) {
-          const message =
-            githubError instanceof Error ? githubError.message : String(githubError);
+          const message = githubError instanceof Error ? githubError.message : String(githubError);
           // The daemon reports a missing/failed GitHub token as
           // "GitHub is not configured." (§5.27 error conventions).
           if (/not configured|not authenticated/i.test(message)) {
@@ -588,6 +616,8 @@
           }
         }
       }
+
+      if (fetchSucceeded) notifyBranchesLoaded();
     } catch (err) {
       // Handle abort errors silently - they're expected when a new fetch starts
       if (err instanceof Error && err.name === 'AbortError') {
