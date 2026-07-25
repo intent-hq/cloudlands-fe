@@ -364,12 +364,8 @@ describe('useWorkspaceLoader', () => {
     expect(actions).toContainEqual(removeWorkspaceEntity(cachedWorkspace.id));
 
     // workspaceMounted (pre-population) must be paired with workspaceUnmounted.
-    const mountedIndex = actions.findIndex(
-      (action) => action.type === workspaceMounted.type,
-    );
-    const unmountedIndex = actions.findIndex(
-      (action) => action.type === workspaceUnmounted.type,
-    );
+    const mountedIndex = actions.findIndex((action) => action.type === workspaceMounted.type);
+    const unmountedIndex = actions.findIndex((action) => action.type === workspaceUnmounted.type);
     expect(actions[mountedIndex]).toEqual(workspaceMounted(cachedWorkspace.id));
     expect(actions[unmountedIndex]).toEqual(workspaceUnmounted(cachedWorkspace.id));
     expect(unmountedIndex).toBeGreaterThan(mountedIndex);
@@ -454,8 +450,7 @@ describe('useWorkspaceLoader', () => {
 
     // Let the stale load's retry complete (second call for the old id).
     await waitFor(
-      () =>
-        expect(openMock.mock.calls.filter(([id]) => id === staleWorkspace.id).length).toBe(2),
+      () => expect(openMock.mock.calls.filter(([id]) => id === staleWorkspace.id).length).toBe(2),
       { timeout: 3000 },
     );
 
