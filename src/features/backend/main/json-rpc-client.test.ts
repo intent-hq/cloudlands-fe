@@ -548,6 +548,256 @@ describe("JsonRpcClient reconnect + heartbeat", () => {
   });
 });
 
+describe("JsonRpcClient client.hello identity handshake (§5.17)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Await the microtask queue so async handshake chains settle before asserting. */
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+  /** PROTOCOL §5.17-shaped hello result (server block confirmed on the wire). */
+  const helloResult = (clientId: string) => ({
+    clientId,
+    protocolVersion: "2.2",
+    server: {
+      locality: "local",
+      hasDisplay: true,
+      osArch: "darwin/arm64",
+      version: "0.1.0",
+      protocolVersion: "2.2",
+      capabilities: { liveState: true },
+    },
+  });
+
+  function makeHelloClient(clientId = "cli-7f3a"): {
+    client: JsonRpcClient;
+    sockets: FakeSocket[];
+    onHelloResult: ReturnType<typeof vi.fn>;
+  } {
+    const sockets: FakeSocket[] = [];
+    const onHelloResult = vi.fn();
+    const client = new JsonRpcClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as Duplex;
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 1000,
+      reconnectDelayMs: 100,
+      maxReconnectDelayMs: 1000,
+      helloParams: () => ({ clientId }),
+      onHelloResult,
+    });
+    client.on("error", () => {});
+    return { client, sockets, onHelloResult };
+  }
+
+  it("sends client.hello with the persisted clientId as the FIRST frame on connect, before scoped work", async () => {
+    const { client, sockets, onHelloResult } = makeHelloClient();
+    client.start();
+    const socket = sockets[0];
+
+    // Scoped work issued before the handshake completes must queue behind it.
+    const draftsPromise = client.request("drafts.get", {
+      workspaceId: "ws-1",
+      agentId: "agent-1",
+    });
+    socket.open();
+    await flush();
+
+    // Exactly one frame on the wire: the identity hello. drafts.get is queued.
+    expect(socket.writes).toHaveLength(1);
+    expect(JSON.parse(socket.writes[0])).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "client.hello",
+      params: { clientId: "cli-7f3a" },
+    });
+    expect(client.getStatus()).toBe("connecting");
+
+    socket.receive(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: helloResult("cli-7f3a") })}\n`,
+    );
+    await flush();
+
+    expect(client.getStatus()).toBe("connected");
+    expect(onHelloResult).toHaveBeenCalledWith(helloResult("cli-7f3a"));
+    expect(socket.writes).toHaveLength(2);
+    expect(JSON.parse(socket.writes[1])).toMatchObject({ method: "drafts.get" });
+
+    socket.receive(`${JSON.stringify({ jsonrpc: "2.0", id: 2, result: null })}\n`);
+    await expect(draftsPromise).resolves.toBeNull();
+    client.dispose();
+  });
+
+  it("re-presents the SAME clientId on every reconnect, before emitting `reconnected`", async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeHelloClient();
+    const reconnected = vi.fn();
+    client.on("reconnected", reconnected);
+    client.start();
+    sockets[0].open();
+    await vi.advanceTimersByTimeAsync(1);
+
+    const firstHello = JSON.parse(sockets[0].writes[0]);
+    expect(firstHello.method).toBe("client.hello");
+    sockets[0].receive(
+      `${JSON.stringify({ jsonrpc: "2.0", id: firstHello.id, result: helloResult("cli-7f3a") })}\n`,
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    expect(client.getStatus()).toBe("connected");
+
+    // Drop the connection; the backoff reconnect opens a fresh socket, which
+    // starts anonymous on the daemon side — the hello MUST be replayed with
+    // the same persisted identity before consumers resubscribe.
+    sockets[0].emit("close");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(2);
+    sockets[1].open();
+    await vi.advanceTimersByTimeAsync(1);
+
+    const secondHello = JSON.parse(sockets[1].writes[0]);
+    expect(secondHello.method).toBe("client.hello");
+    expect(secondHello.params).toEqual({ clientId: "cli-7f3a" });
+    expect(secondHello.params).toEqual(firstHello.params);
+    expect(reconnected).not.toHaveBeenCalled();
+
+    sockets[1].receive(
+      `${JSON.stringify({ jsonrpc: "2.0", id: secondHello.id, result: helloResult("cli-7f3a") })}\n`,
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    expect(client.getStatus()).toBe("connected");
+    expect(reconnected).toHaveBeenCalledTimes(1);
+    client.dispose();
+  });
+
+  it("merges the persisted clientId into a caller-supplied client.hello (renderer capability probe)", async () => {
+    const { client, sockets, onHelloResult } = makeHelloClient();
+    client.start();
+    sockets[0].open();
+    await flush();
+    sockets[0].receive(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: helloResult("cli-7f3a") })}\n`,
+    );
+    await flush();
+
+    // The renderer probe forwards `client.hello {}` over backend:request; the
+    // shared client must present the SAME persisted identity — an anonymous
+    // re-hello would mint a fresh clientId and orphan its drafts (§5.16).
+    const probe = client.request("client.hello", {});
+    await flush();
+    expect(JSON.parse(sockets[0].writes[1])).toEqual({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "client.hello",
+      params: { clientId: "cli-7f3a" },
+    });
+    sockets[0].receive(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 2, result: helloResult("cli-7f3a") })}\n`,
+    );
+    await expect(probe).resolves.toEqual(helloResult("cli-7f3a"));
+    expect(onHelloResult).toHaveBeenLastCalledWith(helloResult("cli-7f3a"));
+
+    // Caller-supplied fields survive; the persisted identity wins on clientId.
+    const named = client.request("client.hello", { name: "Intent Desktop", clientId: "cli-rogue" });
+    await flush();
+    expect(JSON.parse(sockets[0].writes[2]).params).toEqual({
+      name: "Intent Desktop",
+      clientId: "cli-7f3a",
+    });
+    sockets[0].receive(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 3, result: helloResult("cli-7f3a") })}\n`,
+    );
+    await named;
+    client.dispose();
+  });
+
+  it("still flips to connected when the hello handshake errors (identity degrades, transport survives)", async () => {
+    const { client, sockets, onHelloResult } = makeHelloClient();
+    client.start();
+    sockets[0].open();
+    await flush();
+
+    sockets[0].receive(
+      `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no such method"}}\n`,
+    );
+    await flush();
+
+    expect(client.getStatus()).toBe("connected");
+    expect(onHelloResult).not.toHaveBeenCalled();
+    client.dispose();
+  });
+
+  it("bounds the connect-time handshake at 5s: an unanswered hello degrades to anonymous instead of stalling queued work for the full request timeout", async () => {
+    vi.useFakeTimers();
+    const sockets: FakeSocket[] = [];
+    const onHelloResult = vi.fn();
+    const client = new JsonRpcClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as Duplex;
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 30_000,
+      helloParams: () => ({ clientId: "cli-7f3a" }),
+      onHelloResult,
+    });
+    client.on("error", () => {});
+    client.start();
+    sockets[0].open();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(JSON.parse(sockets[0].writes[0]).method).toBe("client.hello");
+    expect(client.getStatus()).toBe("connecting");
+
+    // The daemon never answers the hello. Well before the 30s request
+    // timeout the handshake bound (5s) trips and the connection is reported
+    // connected anyway — identity degrades, transport survives.
+    await vi.advanceTimersByTimeAsync(4_998);
+    expect(client.getStatus()).toBe("connecting");
+    await vi.advanceTimersByTimeAsync(2);
+    expect(client.getStatus()).toBe("connected");
+    expect(onHelloResult).not.toHaveBeenCalled();
+    client.dispose();
+  });
+
+  it("hands a daemon-minted clientId to onHelloResult when the provider has none (first-run)", async () => {
+    const sockets: FakeSocket[] = [];
+    const onHelloResult = vi.fn();
+    const client = new JsonRpcClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as Duplex;
+      },
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 1000,
+      helloParams: () => ({}),
+      onHelloResult,
+    });
+    client.on("error", () => {});
+    client.start();
+    sockets[0].open();
+    await flush();
+
+    expect(JSON.parse(sockets[0].writes[0])).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "client.hello",
+      params: {},
+    });
+    sockets[0].receive(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: helloResult("cli-9b21") })}\n`,
+    );
+    await flush();
+    expect(onHelloResult).toHaveBeenCalledWith(helloResult("cli-9b21"));
+    client.dispose();
+  });
+});
+
 describe("mapErrorCode", () => {
   it("maps reserved codes and falls back to ranges", () => {
     expect(mapErrorCode(-32700)).toBe("PARSE_ERROR");

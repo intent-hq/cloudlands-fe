@@ -33,6 +33,7 @@ import {
   type JsonRpcNotification,
 } from './json-rpc-client';
 import { JsonRpcError } from './json-rpc-errors';
+import { getOrCreateClientId, persistClientId } from './client-identity';
 import { formatTransportInfo } from './transport-info';
 import { onSidecarGaveUp, spawnSidecarOnDemand } from './intentd-sidecar';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
@@ -64,6 +65,19 @@ export function getBackendClient(): JsonRpcClient {
     heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     healthCheck: async () => {
       await instance.request('host.status');
+    },
+    // §5.17 stable identity: present the persisted clientId on every
+    // (re)connect so daemon-side client-scoped state (`drafts.*`, §5.16)
+    // survives app restarts and renderer reloads.
+    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+    onHelloResult: (result) => {
+      const clientId =
+        result && typeof result === 'object'
+          ? (result as { clientId?: unknown }).clientId
+          : undefined;
+      if (typeof clientId === 'string' && clientId.length > 0) {
+        void persistClientId(clientId);
+      }
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) =>

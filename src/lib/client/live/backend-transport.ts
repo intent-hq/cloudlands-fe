@@ -72,6 +72,12 @@ let liveStateCapabilityPromise: Promise<boolean> | null = null;
  * and is shared across all subscriptions. Resolves `false` on any error so
  * callers fall back to runtime first-push detection (the safety net is never
  * regressed when the flag is absent or hello fails).
+ *
+ * Identity note (§5.17): the empty params here are safe — the main-process
+ * JsonRpcClient merges the persisted stable `clientId` into EVERY
+ * `client.hello` it forwards, so this probe re-presents the same identity
+ * rather than minting a fresh one (which would orphan `drafts.*` state,
+ * §5.16).
  */
 export function detectLiveStateCapability(): Promise<boolean> {
   if (!liveStateCapabilityPromise) {
