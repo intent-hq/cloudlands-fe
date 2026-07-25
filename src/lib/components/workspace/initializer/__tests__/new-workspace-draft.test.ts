@@ -18,6 +18,7 @@ import {
   NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
   buildNewWorkspaceDraftPayload,
   clearNewWorkspaceDraft,
+  createNewWorkspaceDraftSaver,
   persistNewWorkspaceDraft,
   restoreNewWorkspaceDraft,
 } from '../new-workspace-draft';
@@ -255,6 +256,102 @@ describe('clearNewWorkspaceDraft', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(drafts.clear).toHaveBeenCalledOnce();
+  });
+});
+
+describe('createNewWorkspaceDraftSaver', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('debounces schedule() and issues drafts.set with the exact §5.16 wire params', () => {
+    const drafts = createMockDrafts();
+    const saver = createNewWorkspaceDraftSaver(drafts);
+
+    saver.schedule('hel', []);
+    saver.schedule('hello', [imageItem]);
+    expect(drafts.set).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(300);
+
+    expect(drafts.set).toHaveBeenCalledOnce();
+    expect(drafts.set).toHaveBeenCalledWith('__new-workspace__', '__initializer__', 'hello', [
+      {
+        id: 'image-1721650000000-0',
+        type: 'file',
+        label: 'screenshot.png',
+        imageData: 'iVBORw0KGgoAAAANSUhEUg==',
+        imageMimeType: 'image/png',
+      },
+    ]);
+  });
+
+  it('flush() persists a pending debounced save immediately (regression: cmd+R inside the debounce window)', () => {
+    const drafts = createMockDrafts();
+    const saver = createNewWorkspaceDraftSaver(drafts);
+
+    saver.schedule('typed then reloaded', []);
+    saver.flush();
+
+    expect(drafts.set).toHaveBeenCalledOnce();
+    expect(drafts.set).toHaveBeenCalledWith(
+      '__new-workspace__',
+      '__initializer__',
+      'typed then reloaded',
+      undefined,
+    );
+
+    // The cancelled timer must not fire a duplicate save.
+    vi.advanceTimersByTime(300);
+    expect(drafts.set).toHaveBeenCalledOnce();
+  });
+
+  it('flush() is a no-op when nothing is pending', () => {
+    const drafts = createMockDrafts();
+    const saver = createNewWorkspaceDraftSaver(drafts);
+
+    saver.flush();
+    expect(drafts.set).not.toHaveBeenCalled();
+
+    saver.schedule('sent by the timer', []);
+    vi.advanceTimersByTime(300);
+    expect(drafts.set).toHaveBeenCalledOnce();
+
+    saver.flush();
+    expect(drafts.set).toHaveBeenCalledOnce();
+  });
+
+  it('skips an empty save when skipEmptySave reports a failed restore (guard preserved on flush)', () => {
+    const drafts = createMockDrafts();
+    const saver = createNewWorkspaceDraftSaver(drafts, { skipEmptySave: () => true });
+
+    saver.schedule('', []);
+    saver.flush();
+    expect(drafts.set).not.toHaveBeenCalled();
+
+    saver.schedule('', []);
+    vi.advanceTimersByTime(300);
+    expect(drafts.set).not.toHaveBeenCalled();
+
+    // Non-empty saves still persist despite the failed restore.
+    saver.schedule('recovered text', []);
+    saver.flush();
+    expect(drafts.set).toHaveBeenCalledOnce();
+    expect(drafts.set).toHaveBeenCalledWith(
+      '__new-workspace__',
+      '__initializer__',
+      'recovered text',
+      undefined,
+    );
+  });
+
+  it('persists the empty clear when skipEmptySave reports a successful restore', () => {
+    const drafts = createMockDrafts();
+    const saver = createNewWorkspaceDraftSaver(drafts, { skipEmptySave: () => false });
+
+    saver.schedule('', []);
+    saver.flush();
+
+    expect(drafts.set).toHaveBeenCalledWith('__new-workspace__', '__initializer__', '', undefined);
   });
 });
 

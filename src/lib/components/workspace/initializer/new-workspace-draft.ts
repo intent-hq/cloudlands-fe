@@ -159,6 +159,60 @@ export function persistNewWorkspaceDraft(
     });
 }
 
+/** Debounce window for the modal draft save (`drafts.set`, PROTOCOL §5.16). */
+export const NEW_WORKSPACE_DRAFT_DEBOUNCE_MS = 300;
+
+/** Debounced draft saver with an explicit flush for unload/destroy. */
+export interface NewWorkspaceDraftSaver {
+  /** (Re)start the debounce timer with the latest text + context items. */
+  schedule(text: string, contextItems: ContextItem[]): void;
+  /** Persist a pending debounced save immediately; no-op when none is pending. */
+  flush(): void;
+}
+
+/**
+ * Create the debounced saver for the modal draft. Payload serialization
+ * (incl. the size-guard stringify) is deferred to save time — `schedule` only
+ * stores references, so it stays cheap per keystroke. `flush` closes the loss
+ * window when the renderer unloads (cmd+R / window close) or the component is
+ * destroyed inside the debounce window. `skipEmptySave` is consulted at save
+ * time: when it returns true, an empty save (no text, no items) is dropped so
+ * a failed restore can't clear a daemon draft that was never read.
+ */
+export function createNewWorkspaceDraftSaver(
+  drafts: DraftsClient,
+  options: { skipEmptySave?: () => boolean } = {},
+): NewWorkspaceDraftSaver {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pending: { text: string; contextItems: ContextItem[] } | null = null;
+
+  function save(): void {
+    if (!pending) return;
+    const { text, contextItems } = pending;
+    pending = null;
+    if (options.skipEmptySave?.() && !text && contextItems.length === 0) return;
+    persistNewWorkspaceDraft(drafts, buildNewWorkspaceDraftPayload(text, contextItems));
+  }
+
+  return {
+    schedule(text, contextItems) {
+      pending = { text, contextItems };
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        save();
+      }, NEW_WORKSPACE_DRAFT_DEBOUNCE_MS);
+    },
+    flush() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      save();
+    },
+  };
+}
+
 /**
  * Fire-and-forget `drafts.clear` under the sentinel keys (called after a
  * successful workspace create); also removes the legacy sessionStorage key.
