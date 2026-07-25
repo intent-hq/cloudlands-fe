@@ -10,6 +10,11 @@ const unsubscribeCalls: string[] = [];
 // `chat.subscribe` precedent) — recorded separately from the firehose calls.
 const requestCalls: Array<{ method: string; params?: unknown }> = [];
 let channelIdSeq = 0;
+// When true, channel `.subscribe` replies are held pending so tests can
+// resolve them out of order (registration-generation race coverage). Each
+// resolver settles its request with the id assigned at request time.
+let deferChannelSubscribe = false;
+const channelSubscribeResolvers: Array<() => void> = [];
 // Drives the simulated `client.hello` `server.capabilities.liveState` result.
 // The module must NOT consume this to flip live up-front
 // (intent-hq/monorepo#775) — it gates typed-channel REGISTRATION only; the
@@ -21,7 +26,13 @@ vi.mock("./backend-transport", () => ({
     requestCalls.push({ method, params });
     if (method.endsWith(".subscribe")) {
       channelIdSeq += 1;
-      return Promise.resolve({ subscriptionId: `chan-${channelIdSeq}` });
+      const subscriptionId = `chan-${channelIdSeq}`;
+      if (deferChannelSubscribe) {
+        return new Promise((resolve) => {
+          channelSubscribeResolvers.push(() => resolve({ subscriptionId }));
+        });
+      }
+      return Promise.resolve({ subscriptionId });
     }
     return Promise.resolve({ success: true });
   }),
@@ -79,6 +90,8 @@ afterEach(() => {
   unsubscribeCalls.length = 0;
   requestCalls.length = 0;
   channelIdSeq = 0;
+  deferChannelSubscribe = false;
+  channelSubscribeResolvers.length = 0;
   liveStateCapability = false;
   vi.clearAllMocks();
 });
@@ -492,6 +505,46 @@ describe("createDeltaSubscription", () => {
       const calls = handler.mock.calls.length;
 
       chanSnapshot("someone-else", 0, [{ id: "z" }]);
+      expect(handler.mock.calls.length).toBe(calls);
+      dispose();
+    });
+
+    it("a stale slow registration resolve cannot overwrite a newer registration's id", async () => {
+      // Registration-generation regression: the first `ws.subscribe` reply is
+      // held pending, a reconnect re-registers, and the NEWER reply resolves
+      // first. When the stale first reply finally lands it must not overwrite
+      // the newer id — pushes for the newer id stay honored — and the stale
+      // daemon-side subscription is best-effort unsubscribed.
+      liveStateCapability = true;
+      deferChannelSubscribe = true;
+      const { handler, fetchAll, dispose } = setupChannel([{ id: "a" }]);
+      await flush();
+      expect(channelSubscribes().length).toBe(1); // chan-1 pending
+
+      reconnectHandler?.();
+      await flush();
+      expect(channelSubscribes().length).toBe(2); // chan-2 pending
+
+      // Newer registration resolves first.
+      channelSubscribeResolvers[1]!();
+      await flush();
+      // Stale first reply lands late: dropped + unsubscribed, not stored.
+      channelSubscribeResolvers[0]!();
+      await flush();
+      expect(channelUnsubscribes()).toEqual([
+        { method: "ws.unsubscribe", params: { subscriptionId: "chan-1" } },
+      ]);
+
+      // Pushes for the newer id are honored (subscription goes live)...
+      chanSnapshot("chan-2", 0, [{ id: "a" }, { id: "b" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+      const calls = handler.mock.calls.length;
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(2); // initial + reconnect bridge only
+
+      // ...while pushes for the stale id stay ignored.
+      chanSnapshot("chan-1", 0, [{ id: "stale" }]);
       expect(handler.mock.calls.length).toBe(calls);
       dispose();
     });

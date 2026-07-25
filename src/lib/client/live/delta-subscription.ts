@@ -196,6 +196,12 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   // confirms liveState; its pushes are what actually flip `live`.
   let channelCapable = false;
   let channelSubscriptionId: string | undefined;
+  // Registration-generation token: bumped whenever a new registration or a
+  // teardown (unregister, reconnect, resnapshot, dispose) supersedes prior
+  // in-flight `subscribeMethod` requests, so a slow stale resolve can neither
+  // overwrite `channelSubscriptionId` from a newer registration nor leak a
+  // daemon-side subscription — the stale id is best-effort unsubscribed.
+  let channelGeneration = 0;
   // Stale-refetch guard: bumped whenever the live/legacy regime changes (a
   // push entering live mode, reconnect, resnapshot) so an in-flight
   // refetchEmit() started under an older regime is dropped at resolve-time
@@ -233,10 +239,24 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   // `events.subscribe` firehose surface.
   const registerChannel = () => {
     if (!channel || !channelCapable) return;
+    channelGeneration += 1;
+    const generation = channelGeneration;
     backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, channel.params ?? {})
       .then((result) => {
-        channelSubscriptionId = result?.subscriptionId;
-        if (disposed) unregisterChannel();
+        const id = result?.subscriptionId;
+        if (generation !== channelGeneration || disposed) {
+          // Stale resolve: a newer registration or a teardown superseded this
+          // attempt while it was in flight. Never store the id — pushes for
+          // the newer id must keep matching — and best-effort release the
+          // daemon-side subscription this reply just created.
+          if (id) {
+            void backendRequest(channel.unsubscribeMethod, { subscriptionId: id }).catch(() => {
+              // Unsubscribe is best-effort.
+            });
+          }
+          return;
+        }
+        channelSubscriptionId = id;
       })
       .catch(() => {
         // Registration failure leaves `live` false, so legacy refetches keep
@@ -245,7 +265,11 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   };
 
   const unregisterChannel = () => {
-    if (!channel || !channelSubscriptionId) return;
+    if (!channel) return;
+    // Invalidate any in-flight registration so its late resolve cleans up
+    // after itself instead of resurrecting a subscription past teardown.
+    channelGeneration += 1;
+    if (!channelSubscriptionId) return;
     const id = channelSubscriptionId;
     channelSubscriptionId = undefined;
     void backendRequest(channel.unsubscribeMethod, { subscriptionId: id }).catch(() => {
@@ -321,7 +345,9 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     reconciler.reset();
     subscriptionId = undefined;
     // The restarted daemon dropped its registry, so the stale channel id
-    // points at nothing — no unsubscribe frame; just re-register.
+    // points at nothing — no unsubscribe frame; just re-register. Bump the
+    // generation so an in-flight pre-restart registration cannot land.
+    channelGeneration += 1;
     channelSubscriptionId = undefined;
     register();
     registerChannel();
