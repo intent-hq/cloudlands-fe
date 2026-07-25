@@ -662,7 +662,7 @@ Call \`ws.app.workspaces.create\` with structured \`params\`. Accepted keys:
 - \`repositoryOwner\` + \`repositoryName\` — split form (use either, not both), or
 - \`repositoryPath\` — absolute local path to a clone, or
 - \`githubUrl\` — full \`https://github.com/owner/repo\` URL.
-- \`branch\` — the existing BASE ref the new workspace branches FROM; it is NOT a name for the new working branch (the daemon creates that itself). **When the user names a branch, always include this** (e.g. "review the install-local-package branch" → \`branch: 'install-local-package'\`). Never invent one — a non-existent ref makes Apply fail; when it is not known from a PR head or a user-named branch, leave it empty and the daemon defaults to the repository's default branch.
+- \`branch\` — the existing BASE ref the new workspace branches FROM; it is NOT a name for the new working branch (the daemon creates that itself). **When the user names a branch, always include this** (e.g. "review the install-local-package branch" → \`branch: 'install-local-package'\`). Never invent one — a non-existent ref makes Apply fail; when it is not known from a PR head or a user-named branch, omit \`branch\` entirely (do not pass an empty string) and the daemon defaults to the repository's default branch.
 - \`prUrl\` — full GitHub PR URL (\`https://github.com/owner/repo/pull/N\`). **Always include this when the user references a PR.** The system will auto-resolve the PR's head branch.
 - \`initialMessage\` — the concrete first message the workspace agent should receive. Be specific.
 - \`specialist\` — specialist id (e.g. \`'pr-reviewer'\`, \`'implementor'\`) only when there is a clear fit; otherwise omit.
