@@ -31,6 +31,11 @@
   let gl = $state<WebGLRenderingContext | null>(null);
   let animationFrame = $state<number>(0);
   let program = $state<WebGLProgram | null>(null);
+  let vertexShader: WebGLShader | null = null;
+  let fragmentShader: WebGLShader | null = null;
+  let positionBuffer: WebGLBuffer | null = null;
+  let destroyed = false;
+  let initFailed = false;
   let startTime = $state<number>(0);
   let isPageVisible = $state<boolean>(true);
   let prefersReducedMotion = $state<boolean>(false);
@@ -387,26 +392,48 @@
     return prog;
   }
 
+  // Release partially created resources when initialization fails mid-way,
+  // and remember the failure so the $effect re-init path (which fires when
+  // gl goes null) doesn't retry a deterministic failure in a loop.
+  function abortInit() {
+    initFailed = true;
+    cleanup();
+  }
+
   function initWebGL() {
-    if (!canvas || !browser) return;
+    // The gl check makes re-entry a no-op: init can be triggered from both
+    // onMount and the $effect-queued rAF, and running twice would overwrite
+    // (and leak) the live context and its resources.
+    if (!canvas || !browser || destroyed || initFailed || gl) return;
 
     gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true });
     if (!gl) {
       console.warn('AuroraBackground: WebGL not available');
+      initFailed = true;
       return;
     }
 
-    const vs = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-    const fs = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-    if (!vs || !fs) return;
+    vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+    if (!vertexShader || !fragmentShader) {
+      abortInit();
+      return;
+    }
 
-    program = createProgram(gl, vs, fs);
-    if (!program) return;
+    program = createProgram(gl, vertexShader, fragmentShader);
+    if (!program) {
+      abortInit();
+      return;
+    }
 
     // Create fullscreen quad
     const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-    const buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    positionBuffer = gl.createBuffer();
+    if (!positionBuffer) {
+      abortInit();
+      return;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
 
     const posLoc = gl.getAttribLocation(program, 'a_position');
@@ -501,15 +528,31 @@
       cancelAnimationFrame(animationFrame);
       animationFrame = 0;
     }
-    if (gl && program) {
-      gl.deleteProgram(program);
-      program = null;
+    if (gl) {
+      if (positionBuffer) {
+        gl.deleteBuffer(positionBuffer);
+      }
+      if (vertexShader) {
+        gl.deleteShader(vertexShader);
+      }
+      if (fragmentShader) {
+        gl.deleteShader(fragmentShader);
+      }
+      if (program) {
+        gl.deleteProgram(program);
+      }
+      // Explicitly release the GPU context so repeated mount/unmount cycles
+      // don't accumulate zombie contexts ("Too many active WebGL contexts")
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
     }
+    positionBuffer = null;
+    vertexShader = null;
+    fragmentShader = null;
+    program = null;
     gl = null;
     uniformLocations = null;
     cachedRgbColors = null;
     cachedColorKey = '';
-
   }
 
   // Handle page visibility changes
@@ -566,6 +609,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     cleanup();
   });
 
