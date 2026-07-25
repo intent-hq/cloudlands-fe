@@ -277,6 +277,7 @@
     "font-list": "^2.0.2",
     "fs-extra": "^11.3.2",
     "highlight.js": "^11.11.1",
+    "html-to-image": "^1.11.13",
     "ignore": "^7.0.5",
     "lowlight": "^3.3.0",
     "marked": "^16.4.1",

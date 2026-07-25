@@ -12,7 +12,7 @@
    */
   import { fade } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faCheck, faDownload, faXmark } from '@fortawesome/free-solid-svg-icons';
   import AgentPassportCard from './AgentPassportCard.svelte';
   import ModelsCard from './ModelsCard.svelte';
   import TokensByHourCard from './TokensByHourCard.svelte';
@@ -37,6 +37,12 @@
   } from '$store/renderer/slices/stats/stats-selectors';
   import { loadUsageStatsRequested } from '$store/renderer/slices/stats/stats-slice';
   import { store as appStore } from '$store/renderer/store';
+  import {
+    exportCardPng,
+    exportFileName,
+    exportPeriodKey,
+    type StatsCardName,
+  } from './stats-export';
 
   const isOpen$ = selectStatsOverlayOpen();
   const mode$ = selectStatsMode();
@@ -91,6 +97,23 @@
       } else {
         close();
       }
+    }
+  }
+
+  // Hover-to-export PNG (1080×1920). Failure is surfaced non-fatally via a
+  // toast + console — the overlay never crashes on a render error.
+  async function exportCard(button: HTMLElement, card: StatsCardName) {
+    const node = button.parentElement?.querySelector<HTMLElement>('[data-stats-card]');
+    if (!node) return;
+    const fileName = exportFileName(card, exportPeriodKey($mode$, $periodKey$));
+    try {
+      await exportCardPng(node, fileName);
+    } catch (error) {
+      console.error('stats PNG export failed', error);
+      const { toast } = await import('svelte-sonner');
+      toast.error('PNG export failed', {
+        description: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 </script>
@@ -182,14 +205,26 @@
       <div class="stats-error pointer-events-auto mt-8 text-sm" role="alert">{$error$}</div>
     {/if}
 
-    <!-- Card slots -->
+    <!-- Card slots (each wrapped for the hover-reveal PNG export button) -->
     <div class="pointer-events-auto mt-[30px] flex flex-wrap justify-center gap-7">
-      <AgentPassportCard data={$data$} label={cardLabel} />
-      <ModelsCard data={$data$} label={cardLabel} />
-      <TokensByHourCard data={$data$} mode={$mode$} label={cardLabel} loading={$loading$} />
+      <div class="stats-card-wrap relative">
+        {@render exportBtn('passport')}
+        <AgentPassportCard data={$data$} label={cardLabel} />
+      </div>
+      <div class="stats-card-wrap relative">
+        {@render exportBtn('models')}
+        <ModelsCard data={$data$} label={cardLabel} />
+      </div>
+      <div class="stats-card-wrap relative">
+        {@render exportBtn('by-hour')}
+        <TokensByHourCard data={$data$} mode={$mode$} label={cardLabel} loading={$loading$} />
+      </div>
       {#if $mode$ !== '24h'}
         <!-- Tokens by Month is hidden in 24H mode (Spec D11). -->
-        <TokensByMonthCard data={$data$} {yearKey} loading={$loading$} />
+        <div class="stats-card-wrap relative">
+          {@render exportBtn('by-month')}
+          <TokensByMonthCard data={$data$} {yearKey} loading={$loading$} />
+        </div>
       {/if}
     </div>
 
@@ -198,6 +233,16 @@
     </div>
   </div>
 {/if}
+
+{#snippet exportBtn(card: StatsCardName)}
+  <button
+    class="stats-export-btn absolute top-3.5 right-3.5 z-[2] flex h-[30px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium cursor-pointer"
+    onclick={(event) => exportCard(event.currentTarget, card)}
+    aria-label="Export {card} card as PNG"
+  >
+    <Fa icon={faDownload} size={11} /> PNG
+  </button>
+{/snippet}
 
 <style>
   .stats-backdrop {
@@ -267,5 +312,21 @@
 
   .stats-error {
     color: hsl(0 84% 60%);
+  }
+
+  /* Design btn(): hover-only, top-right, semi-opaque dark chip. */
+  .stats-export-btn {
+    background: rgba(22, 22, 30, 0.9);
+    border: 1px solid hsl(256 6% 32%);
+    color: hsl(0 0% 97%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+
+  .stats-card-wrap:hover .stats-export-btn,
+  .stats-export-btn:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
   }
 </style>
