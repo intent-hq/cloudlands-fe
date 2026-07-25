@@ -678,6 +678,12 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
     // fallback for providers that flatten the MCP content-item array. A tool
     // that ends in `error` never surfaces a standalone block.
     if (status === 'completed') {
+      // Deliberate deviation from the daemon's own delta path
+      // (subscriptions.rs::tool_delta uses the array wholesale): items are
+      // validated through getResourceContents and the lift fallback fires
+      // when ALL are malformed. Defensive only — every item the daemon sends
+      // today is well-formed by construction (TurnAttachment::resource_item);
+      // revisit if the batch shape ever grows new item variants.
       const registered = Array.isArray(registeredAttachments)
         ? registeredAttachments.filter((item) => getResourceContents(item) !== null)
         : [];

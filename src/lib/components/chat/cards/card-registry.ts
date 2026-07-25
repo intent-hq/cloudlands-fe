@@ -71,16 +71,35 @@ register<Proposal>(PROPOSAL_RESOURCE_MIME_TYPE, {
 });
 
 /**
+ * Per-block memo of the extract + parse work (the expensive part —
+ * JSON.parse of the resource text). Keyed by block object identity: blocks
+ * are replaced, never mutated, on store updates, and streaming re-renders
+ * re-evaluate `resolveCard` several times per block per chunk. Props are
+ * rebuilt on every call (cheap) so handlers stay per-component.
+ */
+const parseCache = new WeakMap<object, { entry: CardRegistryEntry<never>; data: never } | null>();
+
+/**
  * Resolve a content block to a registered card. Null when the block is not a
  * §7.1 resource block, its MIME type has no registered card, or its payload
  * fails the card's parse — callers fall through to their legacy branches.
  */
 export function resolveCard(block: unknown, handlers: CardHandlers): ResolvedCard | null {
-  const contents = getResourceContents(block);
-  if (!contents) return null;
-  const entry = registry.get(contents.mimeType);
-  if (!entry) return null;
-  const data = entry.parse(contents);
-  if (data === null) return null;
-  return { component: entry.component, props: entry.props(data as never, handlers) };
+  if (!block || typeof block !== 'object') return null;
+  let parsed = parseCache.get(block);
+  if (parsed === undefined) {
+    parsed = null;
+    const contents = getResourceContents(block);
+    const entry = contents ? registry.get(contents.mimeType) : undefined;
+    if (contents && entry) {
+      const data = entry.parse(contents);
+      if (data !== null) parsed = { entry, data: data as never };
+    }
+    parseCache.set(block, parsed);
+  }
+  if (parsed === null) return null;
+  return {
+    component: parsed.entry.component,
+    props: parsed.entry.props(parsed.data, handlers),
+  };
 }

@@ -124,11 +124,17 @@ describe('resourceDedupeKey', () => {
     expect(resourceDedupeKey(a)).toBe(resourceDedupeKey(b));
   });
 
-  it('keys non-proposal resources on nonce when stamped, else uri', () => {
+  it('keys non-proposal resources on nonce when stamped, else uri + text fingerprint', () => {
     expect(resourceDedupeKey(genericBlock({ nonce: 'tar-000000000001' }))).toBe(
       'nonce:tar-000000000001',
     );
-    expect(resourceDedupeKey(genericBlock())).toBe('uri:intent-card://generic/1');
+    const unstamped = genericBlock();
+    expect(resourceDedupeKey(unstamped)).toBe(
+      `uri:intent-card://generic/1:${unstamped.resource.text}`,
+    );
+    // Two distinct unstamped attachments sharing a URI must NOT collide.
+    const updated = genericBlock({ text: JSON.stringify({ a: 2 }) });
+    expect(resourceDedupeKey(updated)).not.toBe(resourceDedupeKey(unstamped));
   });
 
   it('returns null for non-resource blocks', () => {

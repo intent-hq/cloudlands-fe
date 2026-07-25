@@ -828,9 +828,11 @@
         <div
           class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
             ? 'nav-link'
-            : resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock)
-              ? 'proposal'
-              : block.type} my-1.25"
+            : resolveCard(block, cardHandlers)
+              ? 'card'
+              : getProposalFromBlock(block as ContentBlock)
+                ? 'proposal'
+                : block.type} my-1.25"
           use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
         >
           {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}

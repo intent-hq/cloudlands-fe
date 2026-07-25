@@ -108,7 +108,11 @@ function stableStringify(value: unknown): string {
  * superficially (percent-encoding set, key order), yet they are the same
  * card. The payload fingerprint keeps two genuinely distinct proposals that
  * happen to share kind + title apart. Other MIME types key on the nonce when
- * stamped, else the URI.
+ * stamped, else URI + a raw-text fingerprint — the text (not URI alone) so
+ * two distinct attachments that happen to share a URI (same tool invoked
+ * twice in one turn, re-attached updated content) never collapse; unstamped
+ * duplicates only ever come from the daemon verbatim (rejoin-snapshot seed vs
+ * live re-attach), so their texts match byte-for-byte.
  */
 export function resourceDedupeKey(block: unknown): string | null {
   const contents = getResourceContents(block);
@@ -125,7 +129,7 @@ export function resourceDedupeKey(block: unknown): string | null {
   }
   const nonce = getResourceAttachmentId(block);
   if (nonce) return `nonce:${nonce}`;
-  return contents.uri.length > 0 ? `uri:${contents.uri}` : null;
+  return contents.uri.length > 0 ? `uri:${contents.uri}:${contents.text}` : null;
 }
 
 /**
