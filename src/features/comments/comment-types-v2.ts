@@ -147,10 +147,14 @@ export function createSuggestionComment(
 /**
  * Conversion helper that ensures all fields are properly mapped
  * This function will cause TypeScript errors if required fields are missing
+ *
+ * `anchor` is optional: post-#729 replies carry no anchor (PROTOCOL §5.3
+ * "Reply anchoring") — callers pass `undefined` for them so no anchor key is
+ * set, keeping the stored shape identical to the wire shape.
  */
 export function convertBackendCommentToV2(
   backendComment: any,
-  anchor: CommentAnchor,
+  anchor: CommentAnchor | undefined,
   noteId: string,
   workspaceId?: string,
 ): CommentV2 {
@@ -176,9 +180,11 @@ export function convertBackendCommentToV2(
     parentId: backendComment.parentId,
     noteId,
     ...(workspaceId ? { workspaceId } : {}),
-    anchor,
-    anchorText: backendComment.section,
-    anchorContext: backendComment.anchorContext,
+    ...(anchor ? { anchor } : {}),
+    ...(backendComment.section !== undefined ? { anchorText: backendComment.section } : {}),
+    ...(backendComment.anchorContext !== undefined
+      ? { anchorContext: backendComment.anchorContext }
+      : {}),
     isOrphaned: backendComment.isOrphaned,
     reactions,
   };

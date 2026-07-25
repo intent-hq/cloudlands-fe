@@ -132,7 +132,7 @@ export class CommentManagerV2 {
       // Convert backend comments to V2 format using type-safe helper
       const v2Comments: CommentV2[] = backendComments.map((comment) => {
         // Determine anchor type based on comment data
-        let anchor: CommentAnchor;
+        let anchor: CommentAnchor | undefined;
 
         logger.debug('Processing comment', {
           id: comment.id,
@@ -141,7 +141,13 @@ export class CommentManagerV2 {
           to: comment.to,
         });
 
-        if (comment.markId) {
+        if (comment.parentId) {
+          // Post-#729 replies carry no anchor on the wire — they anchor
+          // through their thread root (PROTOCOL §5.3 "Reply anchoring"), so
+          // no anchor is synthesized for them, mirroring normalizeComment in
+          // live-comments-client (monorepo#749/#754).
+          anchor = undefined;
+        } else if (comment.markId) {
           // Parse existing anchor IDs from markId
           // Format is either "id:start|id:end" for range or "id:point" for point
           if (comment.markId.includes('|')) {
@@ -202,9 +208,9 @@ export class CommentManagerV2 {
             parentId: comment.parentId,
             noteId: this.noteId,
             workspaceId: this.workspaceId,
-            anchor,
-            anchorText: comment.section,
-            anchorContext: undefined, // NoteComment doesn't have anchorContext
+            ...(anchor ? { anchor } : {}),
+            ...(comment.section !== undefined ? { anchorText: comment.section } : {}),
+            // NoteComment doesn't have anchorContext, so the key is never set
             reactions: comment.reactions
               ? Object.fromEntries(
                 Object.entries(comment.reactions).map(([k, v]) => [
@@ -1187,7 +1193,11 @@ export class CommentManagerV2 {
       return null;
     }
 
-    // Build the reply with generated id and timestamps
+    // Build the reply with generated id and timestamps. No anchor fields are
+    // cloned from the parent: post-#729 replies anchor through their thread
+    // root via threadId/parentId (PROTOCOL §5.3 "Reply anchoring"), so the
+    // optimistic shape matches the anchorless reply the daemon refetch
+    // returns (monorepo#754).
     const replyId = generateCommentId();
     const now = new Date().toISOString();
     const reply: CommentV2 = {
@@ -1200,9 +1210,6 @@ export class CommentManagerV2 {
       authorType: 'user',
       status: 'open',
       parentId,
-      anchor: parentComment.anchor,
-      anchorText: parentComment.anchorText,
-      anchorContext: parentComment.anchorContext,
       id: replyId,
       createdAt: now,
       updatedAt: now,
