@@ -6,13 +6,36 @@ let notifyHandler: ((n: { method: string; params?: unknown }) => void) | null = 
 let reconnectHandler: (() => void) | null = null;
 const subscribeCalls: unknown[] = [];
 const unsubscribeCalls: string[] = [];
+// Typed §6.9 channel traffic goes through plain `backendRequest` (the
+// `chat.subscribe` precedent) — recorded separately from the firehose calls.
+const requestCalls: Array<{ method: string; params?: unknown }> = [];
+let channelIdSeq = 0;
+// When true, channel `.subscribe` replies are held pending so tests can
+// resolve them out of order (registration-generation race coverage). Each
+// resolver settles its request with the id assigned at request time.
+let deferChannelSubscribe = false;
+const channelSubscribeResolvers: Array<() => void> = [];
 // Drives the simulated `client.hello` `server.capabilities.liveState` result.
-// The module must NOT consume this up-front (intent-hq/monorepo#775) — it is
-// kept in the mock so the regression test can advertise the flag and prove it
-// no longer suppresses legacy refetches.
+// The module must NOT consume this to flip live up-front
+// (intent-hq/monorepo#775) — it gates typed-channel REGISTRATION only; the
+// regression tests below prove it never suppresses legacy refetches.
 let liveStateCapability = false;
 
 vi.mock("./backend-transport", () => ({
+  backendRequest: vi.fn((method: string, params?: unknown) => {
+    requestCalls.push({ method, params });
+    if (method.endsWith(".subscribe")) {
+      channelIdSeq += 1;
+      const subscriptionId = `chan-${channelIdSeq}`;
+      if (deferChannelSubscribe) {
+        return new Promise((resolve) => {
+          channelSubscribeResolvers.push(() => resolve({ subscriptionId }));
+        });
+      }
+      return Promise.resolve({ subscriptionId });
+    }
+    return Promise.resolve({ success: true });
+  }),
   backendSubscribe: vi.fn((params: unknown) => {
     subscribeCalls.push(params);
     return Promise.resolve({ subscriptionId: "sub-1" });
@@ -65,6 +88,10 @@ afterEach(() => {
   reconnectHandler = null;
   subscribeCalls.length = 0;
   unsubscribeCalls.length = 0;
+  requestCalls.length = 0;
+  channelIdSeq = 0;
+  deferChannelSubscribe = false;
+  channelSubscribeResolvers.length = 0;
   liveStateCapability = false;
   vi.clearAllMocks();
 });
@@ -76,7 +103,9 @@ describe("parseSubscriptionPush", () => {
 
   it("returns null when required fields are missing", () => {
     expect(parseSubscriptionPush("subscription.push", { kind: "snapshot", seq: 0 })).toBeNull();
-    expect(parseSubscriptionPush("subscription.push", { subscriptionId: "s", kind: "x" })).toBeNull();
+    expect(
+      parseSubscriptionPush("subscription.push", { subscriptionId: "s", kind: "x" }),
+    ).toBeNull();
   });
 
   it("parses a snapshot envelope (defaults snapshot to [])", () => {
@@ -86,7 +115,12 @@ describe("parseSubscriptionPush", () => {
       seq: 0,
       snapshot: [{ id: "a" }],
     });
-    expect(parsed).toEqual({ subscriptionId: "s", kind: "snapshot", seq: 0, snapshot: [{ id: "a" }] });
+    expect(parsed).toEqual({
+      subscriptionId: "s",
+      kind: "snapshot",
+      seq: 0,
+      snapshot: [{ id: "a" }],
+    });
   });
 
   it("parses a delta envelope (normalizing missing arrays + removedIds to strings)", () => {
@@ -177,7 +211,12 @@ describe("createDeltaSubscription", () => {
     const calls = handler.mock.calls.length;
 
     push("events.event", { type: "x:changed" });
-    push("subscription.push", { subscriptionId: "other", kind: "snapshot", seq: 0, snapshot: [{ id: "z" }] });
+    push("subscription.push", {
+      subscriptionId: "other",
+      kind: "snapshot",
+      seq: 0,
+      snapshot: [{ id: "z" }],
+    });
     await flush();
     expect(handler.mock.calls.length).toBe(calls);
   });
@@ -328,6 +367,186 @@ describe("createDeltaSubscription", () => {
       push("events.event", { type: "x:changed" });
       await flush();
       expect(fetchAll).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("typed §6.9 channel (workspace.subscribe pattern, monorepo#775)", () => {
+    const CHANNEL = {
+      subscribeMethod: "ws.subscribe",
+      unsubscribeMethod: "ws.unsubscribe",
+    };
+
+    function setupChannel(initial: Row[]) {
+      const handler = vi.fn();
+      const fetchAll = vi.fn(async () => initial);
+      const dispose = createDeltaSubscription<Row>({
+        eventTypes: ["x:changed"],
+        channel: CHANNEL,
+        matchLegacyEvent: (method) => method === "events.event",
+        fetchAll,
+        getId,
+        normalize,
+        handler,
+      });
+      return { handler, fetchAll, dispose };
+    }
+
+    const channelSubscribes = () => requestCalls.filter((c) => c.method === "ws.subscribe");
+    const channelUnsubscribes = () => requestCalls.filter((c) => c.method === "ws.unsubscribe");
+    const chanSnapshot = (id: string, seq: number, snap: Row[]) =>
+      push("subscription.push", { subscriptionId: id, kind: "snapshot", seq, snapshot: snap });
+    const chanDelta = (id: string, seq: number, d: Record<string, unknown>) =>
+      push("subscription.push", { subscriptionId: id, kind: "delta", seq, delta: d });
+
+    it("registers the channel via backendRequest when liveState is advertised", async () => {
+      liveStateCapability = true;
+      const { dispose } = setupChannel([]);
+      await flush();
+      expect(channelSubscribes()).toEqual([{ method: "ws.subscribe", params: {} }]);
+      dispose();
+    });
+
+    it("does not register the channel on a legacy daemon (no liveState)", async () => {
+      liveStateCapability = false;
+      const { dispose } = setupChannel([]);
+      await flush();
+      expect(channelSubscribes()).toEqual([]);
+      dispose();
+    });
+
+    it("does not touch backendRequest when no channel descriptor is configured", async () => {
+      liveStateCapability = true;
+      const { dispose } = setup([]);
+      await flush();
+      expect(requestCalls).toEqual([]);
+      dispose();
+    });
+
+    it("reconciles seq-0 snapshot + deltas from the channel id and goes live", async () => {
+      liveStateCapability = true;
+      const { handler, fetchAll, dispose } = setupChannel([{ id: "a" }]);
+      await flush();
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+
+      chanSnapshot("chan-1", 0, [{ id: "a" }, { id: "b" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+
+      chanDelta("chan-1", 1, { added: [{ id: "c" }] });
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }, { id: "c" }]);
+
+      chanDelta("chan-1", 2, { updated: [{ id: "b", v: 7 }], removedIds: ["a"] });
+      expect(handler).toHaveBeenLastCalledWith([{ id: "b", v: 7 }, { id: "c" }]);
+
+      // Live: legacy events no longer refetch.
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(1);
+      dispose();
+    });
+
+    it("unsubscribes the channel on dispose", async () => {
+      liveStateCapability = true;
+      const { dispose } = setupChannel([]);
+      await flush();
+      dispose();
+      expect(channelUnsubscribes()).toEqual([
+        { method: "ws.unsubscribe", params: { subscriptionId: "chan-1" } },
+      ]);
+    });
+
+    it("re-registers the channel on reconnect without unsubscribing the dead id", async () => {
+      liveStateCapability = true;
+      const { handler, fetchAll, dispose } = setupChannel([{ id: "a" }]);
+      await flush();
+      chanSnapshot("chan-1", 0, [{ id: "a" }]);
+
+      reconnectHandler?.();
+      await flush();
+      // The restarted daemon dropped its registry: no unsubscribe frame, one
+      // fresh registration, and the bridge refetch fired.
+      expect(channelUnsubscribes()).toEqual([]);
+      expect(channelSubscribes().length).toBe(2);
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+
+      // The recovery seq-0 snapshot on the NEW id re-enters live mode.
+      chanSnapshot("chan-2", 0, [{ id: "a" }, { id: "b" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+      dispose();
+    });
+
+    it("resnapshots on a seq gap: unsubscribes, re-registers, and rebuilds from the fresh snapshot", async () => {
+      liveStateCapability = true;
+      const { handler, fetchAll, dispose } = setupChannel([{ id: "a" }]);
+      await flush();
+      chanSnapshot("chan-1", 0, [{ id: "a" }]);
+
+      // Gap: seq 5 while 1 is expected → resnapshot re-registers the channel
+      // and bridges with a refetch.
+      chanDelta("chan-1", 5, { added: [{ id: "b" }] });
+      await flush();
+      expect(channelUnsubscribes()).toEqual([
+        { method: "ws.unsubscribe", params: { subscriptionId: "chan-1" } },
+      ]);
+      expect(channelSubscribes().length).toBe(2);
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+
+      chanSnapshot("chan-2", 0, [{ id: "a" }, { id: "b" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+      dispose();
+    });
+
+    it("ignores pushes for unrelated subscription ids", async () => {
+      liveStateCapability = true;
+      const { handler, dispose } = setupChannel([{ id: "a" }]);
+      await flush();
+      const calls = handler.mock.calls.length;
+
+      chanSnapshot("someone-else", 0, [{ id: "z" }]);
+      expect(handler.mock.calls.length).toBe(calls);
+      dispose();
+    });
+
+    it("a stale slow registration resolve cannot overwrite a newer registration's id", async () => {
+      // Registration-generation regression: the first `ws.subscribe` reply is
+      // held pending, a reconnect re-registers, and the NEWER reply resolves
+      // first. When the stale first reply finally lands it must not overwrite
+      // the newer id — pushes for the newer id stay honored — and the stale
+      // daemon-side subscription is best-effort unsubscribed.
+      liveStateCapability = true;
+      deferChannelSubscribe = true;
+      const { handler, fetchAll, dispose } = setupChannel([{ id: "a" }]);
+      await flush();
+      expect(channelSubscribes().length).toBe(1); // chan-1 pending
+
+      reconnectHandler?.();
+      await flush();
+      expect(channelSubscribes().length).toBe(2); // chan-2 pending
+
+      // Newer registration resolves first.
+      channelSubscribeResolvers[1]!();
+      await flush();
+      // Stale first reply lands late: dropped + unsubscribed, not stored.
+      channelSubscribeResolvers[0]!();
+      await flush();
+      expect(channelUnsubscribes()).toEqual([
+        { method: "ws.unsubscribe", params: { subscriptionId: "chan-1" } },
+      ]);
+
+      // Pushes for the newer id are honored (subscription goes live)...
+      chanSnapshot("chan-2", 0, [{ id: "a" }, { id: "b" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+      const calls = handler.mock.calls.length;
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(2); // initial + reconnect bridge only
+
+      // ...while pushes for the stale id stay ignored.
+      chanSnapshot("chan-1", 0, [{ id: "stale" }]);
+      expect(handler.mock.calls.length).toBe(calls);
+      dispose();
     });
   });
 });
