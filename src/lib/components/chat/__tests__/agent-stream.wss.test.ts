@@ -374,6 +374,192 @@ describe("agent-stream.wss — chunk accumulation → transcript growth", () => 
     expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result", "resource"]);
   });
 
+  it("lifts a proposal from a provider-wrapped collapsed output (§7.1 wrap repair)", async () => {
+    // Real-world regression shape (chief message agent-b8eb9a95… seq 1 block
+    // 5): the provider hard-wraps the pretty-printed `{ok, proposal}` string
+    // at 1000 columns, injecting RAW newlines into JSON string literals —
+    // including one mid-word — so a plain JSON.parse throws and the lift
+    // silently skips. The bridge must repair the wrap (strip raw control
+    // characters inside string literals) and lift the proposal.
+    const longPrompt =
+      "Fix these open bugs from intent-hq/monorepo in parallel and create one task per issue. ".repeat(
+        20,
+      );
+    const proposal = {
+      kind: "workspace-create",
+      payload: {
+        operation: "workspace.create",
+        params: { initialPrompt: longPrompt, repositoryPath: "/repo" },
+      },
+      preview: { title: "Create workspace", summary: "Review before creating." },
+    };
+    const pretty = JSON.stringify({ ok: true, proposal }, null, 2);
+    // Hard-wrap every pretty-printed line at 1000 columns with raw newlines,
+    // mirroring the provider's observed line-length signature (1000, remainder).
+    const wrapped = pretty
+      .split("\n")
+      .map((line) => line.match(/.{1,1000}/g)?.join("\n") ?? line)
+      .join("\n");
+    // Fixture sanity: the wrap corrupted the payload (raw newline inside a
+    // string literal, breaking a word in two) and plain parsing fails.
+    expect(wrapped).not.toBe(pretty);
+    expect(() => JSON.parse(wrapped)).toThrow();
+    const collapsedOutput = { output: wrapped };
+
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        toolCallId: "tc-wrapped-1",
+        toolName: "ws-app-proposal-show",
+        toolKind: "other",
+        status: "completed",
+        input: {},
+        output: collapsedOutput,
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const messages = readAssistantMessages();
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result", "resource"]);
+    expect(blocks[2]).toMatchObject({
+      type: "resource",
+      id: `${MESSAGE_ID}:2`,
+      resource: {
+        uri: "intent-proposal://workspace-create/Create%20workspace",
+        name: "Create workspace",
+        mimeType: "application/vnd.intent.proposal+json",
+      },
+    });
+    // The repair strips exactly the wrap-injected newlines: the recovered
+    // proposal round-trips to the original, long prompt intact.
+    expect(
+      JSON.parse((blocks[2] as { resource: { text: string } }).resource.text),
+    ).toEqual(proposal);
+    // The tool_result keeps the wrapped output untouched.
+    expect(blocks[1]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "tc-wrapped-1",
+      output: collapsedOutput,
+    });
+
+    // Escape-split coverage: the subtlest repair case is a wrap boundary
+    // landing BETWEEN a backslash and its escaped character (`escapePending`
+    // must survive the stripped newline). Build a minified envelope where the
+    // `\` of an escaped newline sits exactly at column index 999, so the
+    // 1000-column wrap splits the two-character `\n` escape in half.
+    const makeEnvelope = (prompt: string) =>
+      JSON.stringify({
+        ok: true,
+        proposal: {
+          kind: "workspace-create",
+          payload: {
+            operation: "workspace.create",
+            params: { initialPrompt: prompt, repositoryPath: "/repo" },
+          },
+          preview: { title: "Create workspace", summary: "Review before creating." },
+        },
+      });
+    const promptStart = makeEnvelope("MARKER").indexOf("MARKER");
+    const escapeSplitPrompt =
+      "a".repeat(999 - promptStart) + "\n" + "tail after the split escape";
+    const serialized = makeEnvelope(escapeSplitPrompt);
+    // Fixture sanity: the escape's backslash is the last character of the
+    // first 1000-column chunk, so the injected newline lands between `\` and
+    // `n` — and the corrupted payload does not parse.
+    expect(serialized[999]).toBe("\\");
+    expect(serialized[1000]).toBe("n");
+    const escapeSplitWrapped = serialized.match(/.{1,1000}/g)?.join("\n") ?? serialized;
+    expect(() => JSON.parse(escapeSplitWrapped)).toThrow();
+
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 3,
+        blockId: `${MESSAGE_ID}:3`,
+        toolCallId: "tc-wrapped-2",
+        toolName: "ws-app-proposal-show",
+        toolKind: "other",
+        status: "completed",
+        input: {},
+        output: { output: escapeSplitWrapped },
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const blocksAfter = readAssistantMessages()[0].contentBlocks ?? [];
+    expect(blocksAfter.map((b) => b.type)).toEqual([
+      "tool_use",
+      "tool_result",
+      "resource",
+      "tool_use",
+      "tool_result",
+      "resource",
+    ]);
+    // The repaired round-trip preserves the escaped character: the recovered
+    // prompt still contains the `\n` the wrap boundary split in two.
+    const recovered = JSON.parse(
+      (blocksAfter[5] as { resource: { text: string } }).resource.text,
+    ) as { payload: { params: { initialPrompt: string } } };
+    expect(recovered.payload.params.initialPrompt).toBe(escapeSplitPrompt);
+  });
+
+  it("never lifts from a wrapped output that is invalid JSON even after repair (§7.1)", async () => {
+    // Truncated pretty-printed envelope with the same 1000-column raw-newline
+    // wrap: stripping control characters inside string literals cannot make
+    // it parse, so the lift must stay silent.
+    const longPrompt = "word ".repeat(400);
+    const pretty = JSON.stringify(
+      { ok: true, proposal: { kind: "workspace-create", payload: { p: longPrompt } } },
+      null,
+      2,
+    );
+    const truncated = pretty.slice(0, Math.floor(pretty.length * 0.8));
+    const wrapped = truncated
+      .split("\n")
+      .map((line) => line.match(/.{1,1000}/g)?.join("\n") ?? line)
+      .join("\n");
+    expect(() => JSON.parse(wrapped)).toThrow();
+
+    backend.pushEvent({
+      type: "agent:tool:call",
+      data: {
+        agentId: AGENT_ID,
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        toolCallId: "tc-wrapped-bad-1",
+        toolName: "ws-app-proposal-show",
+        toolKind: "other",
+        status: "completed",
+        input: {},
+        output: { output: wrapped },
+        streamId: STREAM_ID,
+      },
+      workspaceId: WORKSPACE_ID,
+      actor: { type: "agent", id: AGENT_ID },
+      subscriptionId: SUBSCRIPTION_ID,
+    });
+
+    const messages = readAssistantMessages();
+    expect(messages).toHaveLength(1);
+    const blocks = messages[0].contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result"]);
+  });
+
   it("never lifts from a collapsed output that fails the §7.1 guards", async () => {
     // Each collapsed output is valid JSON but must be rejected by a specific
     // guard: not a proposal echo, daemon's non-empty-title requirement, and
