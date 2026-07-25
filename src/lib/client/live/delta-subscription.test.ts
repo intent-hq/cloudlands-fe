@@ -209,6 +209,67 @@ describe("createDeltaSubscription", () => {
     expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }, { id: "c" }]);
   });
 
+  it("drops a stale in-flight refetch that resolves after a push re-enters live mode", async () => {
+    // Epoch guard (PR #391 review): a refetch started while not live must not
+    // overwrite newer reconciled state if it resolves after a push flips
+    // `live` back on.
+    const handler = vi.fn();
+    const resolvers: Array<(items: Row[]) => void> = [];
+    const fetchAll = vi.fn(() => new Promise<Row[]>((resolve) => resolvers.push(resolve)));
+    const dispose = createDeltaSubscription<Row>({
+      eventTypes: ["x:changed"],
+      matchLegacyEvent: (method) => method === "events.event",
+      fetchAll,
+      getId,
+      normalize,
+      handler,
+    });
+    await flush();
+    resolvers[0]!([{ id: "a" }]);
+    await flush();
+    snapshot(0, [{ id: "a" }]);
+    expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+
+    // Daemon restart: `live` drops and the bridge refetch is left pending.
+    reconnectHandler?.();
+    await flush();
+    expect(resolvers.length).toBe(2);
+
+    // A push flips live=true and emits reconciled state...
+    snapshot(0, [{ id: "fresh" }]);
+    expect(handler).toHaveBeenLastCalledWith([{ id: "fresh" }]);
+    const calls = handler.mock.calls.length;
+
+    // ...then the stale bridge refetch resolves late: it must be dropped.
+    resolvers[1]!([{ id: "stale" }]);
+    await flush();
+    expect(handler.mock.calls.length).toBe(calls);
+    expect(handler).toHaveBeenLastCalledWith([{ id: "fresh" }]);
+    dispose();
+  });
+
+  it("seq-gap resnapshot drops live mode so legacy events refetch until the recovery snapshot", async () => {
+    const { fetchAll } = setup([{ id: "a" }]);
+    await flush();
+    snapshot(0, [{ id: "a" }]);
+
+    // Gap → resnapshot: bridge refetch fires and `live` drops, so legacy
+    // events keep driving refetches while recovery is pending.
+    delta(5, { added: [{ id: "b" }] });
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(2);
+
+    push("events.event", { type: "x:changed" });
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(3);
+
+    // The recovery seq-0 snapshot re-enters live mode.
+    snapshot(0, [{ id: "a" }, { id: "b" }]);
+    push("events.event", { type: "x:changed" });
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(3);
+  });
+
   it("unsubscribes on dispose", async () => {
     const { dispose } = setup([]);
     await flush();

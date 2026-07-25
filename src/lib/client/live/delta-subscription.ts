@@ -161,15 +161,21 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   let live = false;
   let awaitingResnapshot = false;
   let subscriptionId: string | undefined;
+  // Stale-refetch guard: bumped whenever the live/legacy regime changes (a
+  // push entering live mode, reconnect, resnapshot) so an in-flight
+  // refetchEmit() started under an older regime is dropped at resolve-time
+  // instead of overwriting newer reconciled state.
+  let refetchEpoch = 0;
 
   const emitLive = () => {
     if (!disposed) handler(reconciler.values());
   };
 
   const refetchEmit = () => {
+    const epoch = refetchEpoch;
     fetchAll()
       .then((items) => {
-        if (!disposed) handler(items);
+        if (!disposed && !live && epoch === refetchEpoch) handler(items);
       })
       .catch(() => {
         // Refresh failures are non-fatal for the subscription.
@@ -192,6 +198,12 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   const resnapshot = () => {
     if (awaitingResnapshot) return;
     awaitingResnapshot = true;
+    // Drop back to legacy mode until the recovery seq-0 snapshot arrives —
+    // symmetric with the reconnect reset — so a failed re-register cannot
+    // leave legacy refetches suppressed; interim refetches are harmless
+    // one-shots and the recovery push immediately re-enters live mode.
+    live = false;
+    refetchEpoch += 1;
     reconciler.reset();
     if (subscriptionId) void backendUnsubscribe(subscriptionId);
     subscriptionId = undefined;
@@ -207,7 +219,10 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (push) {
       // Ignore pushes for other channels (or before our id resolves).
       if (!subscriptionId || push.subscriptionId !== subscriptionId) return;
-      live = true;
+      if (!live) {
+        live = true;
+        refetchEpoch += 1;
+      }
       if (push.kind === "snapshot") {
         awaitingResnapshot = false;
         reconciler.applySnapshot(push.seq, push.snapshot ?? []);
@@ -234,6 +249,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   const offReconnect = onBackendReconnected(() => {
     if (disposed) return;
     live = false;
+    refetchEpoch += 1;
     awaitingResnapshot = false;
     reconciler.reset();
     subscriptionId = undefined;
