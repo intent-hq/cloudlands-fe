@@ -3,9 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // FAKE transport: capture the notification handler so tests can drive
 // `subscription.push` envelopes deterministically; no real socket is touched.
 let notifyHandler: ((n: { method: string; params?: unknown }) => void) | null = null;
+let reconnectHandler: (() => void) | null = null;
 const subscribeCalls: unknown[] = [];
 const unsubscribeCalls: string[] = [];
 // Drives the simulated `client.hello` `server.capabilities.liveState` result.
+// The module must NOT consume this up-front (intent-hq/monorepo#775) — it is
+// kept in the mock so the regression test can advertise the flag and prove it
+// no longer suppresses legacy refetches.
 let liveStateCapability = false;
 
 vi.mock("./backend-transport", () => ({
@@ -24,9 +28,14 @@ vi.mock("./backend-transport", () => ({
       notifyHandler = null;
     };
   }),
-  // RESUB-1: the delta subscription installs a reconnect listener; tests
-  // here do not exercise reconnect so the mock is a no-op disposer.
-  onBackendReconnected: vi.fn(() => () => {}),
+  // RESUB-1: capture the reconnect listener so tests can simulate a daemon
+  // restart deterministically.
+  onBackendReconnected: vi.fn((handler: () => void) => {
+    reconnectHandler = handler;
+    return () => {
+      reconnectHandler = null;
+    };
+  }),
 }));
 
 import {
@@ -53,6 +62,7 @@ function push(method: string, params: unknown) {
 
 afterEach(() => {
   notifyHandler = null;
+  reconnectHandler = null;
   subscribeCalls.length = 0;
   unsubscribeCalls.length = 0;
   liveStateCapability = false;
@@ -199,6 +209,67 @@ describe("createDeltaSubscription", () => {
     expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }, { id: "c" }]);
   });
 
+  it("drops a stale in-flight refetch that resolves after a push re-enters live mode", async () => {
+    // Epoch guard (PR #391 review): a refetch started while not live must not
+    // overwrite newer reconciled state if it resolves after a push flips
+    // `live` back on.
+    const handler = vi.fn();
+    const resolvers: Array<(items: Row[]) => void> = [];
+    const fetchAll = vi.fn(() => new Promise<Row[]>((resolve) => resolvers.push(resolve)));
+    const dispose = createDeltaSubscription<Row>({
+      eventTypes: ["x:changed"],
+      matchLegacyEvent: (method) => method === "events.event",
+      fetchAll,
+      getId,
+      normalize,
+      handler,
+    });
+    await flush();
+    resolvers[0]!([{ id: "a" }]);
+    await flush();
+    snapshot(0, [{ id: "a" }]);
+    expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+
+    // Daemon restart: `live` drops and the bridge refetch is left pending.
+    reconnectHandler?.();
+    await flush();
+    expect(resolvers.length).toBe(2);
+
+    // A push flips live=true and emits reconciled state...
+    snapshot(0, [{ id: "fresh" }]);
+    expect(handler).toHaveBeenLastCalledWith([{ id: "fresh" }]);
+    const calls = handler.mock.calls.length;
+
+    // ...then the stale bridge refetch resolves late: it must be dropped.
+    resolvers[1]!([{ id: "stale" }]);
+    await flush();
+    expect(handler.mock.calls.length).toBe(calls);
+    expect(handler).toHaveBeenLastCalledWith([{ id: "fresh" }]);
+    dispose();
+  });
+
+  it("seq-gap resnapshot drops live mode so legacy events refetch until the recovery snapshot", async () => {
+    const { fetchAll } = setup([{ id: "a" }]);
+    await flush();
+    snapshot(0, [{ id: "a" }]);
+
+    // Gap → resnapshot: bridge refetch fires and `live` drops, so legacy
+    // events keep driving refetches while recovery is pending.
+    delta(5, { added: [{ id: "b" }] });
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(2);
+
+    push("events.event", { type: "x:changed" });
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(3);
+
+    // The recovery seq-0 snapshot re-enters live mode.
+    snapshot(0, [{ id: "a" }, { id: "b" }]);
+    push("events.event", { type: "x:changed" });
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(3);
+  });
+
   it("unsubscribes on dispose", async () => {
     const { dispose } = setup([]);
     await flush();
@@ -206,18 +277,46 @@ describe("createDeltaSubscription", () => {
     expect(unsubscribeCalls).toContain("sub-1");
   });
 
-  describe("client.hello capabilities.liveState (explicit up-front detection)", () => {
-    it("enters live mode up-front when hello advertises liveState — no first push needed", async () => {
+  it("reconnect resets live mode so legacy events refetch until pushes resume", async () => {
+    const { fetchAll } = setup([{ id: "a" }]);
+    await flush();
+    snapshot(0, [{ id: "a" }]);
+
+    // Live: legacy events are ignored.
+    push("events.event", { type: "x:changed" });
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(1);
+
+    // Daemon restart: the bridge refetch fires and `live` drops, so a
+    // restarted daemon that never pushes again cannot suppress refetches.
+    reconnectHandler?.();
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(2);
+
+    push("events.event", { type: "x:changed" });
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(3);
+
+    // The first push after reconnect re-enters live mode.
+    snapshot(0, [{ id: "a" }]);
+    push("events.event", { type: "x:changed" });
+    await flush();
+    expect(fetchAll).toHaveBeenCalledTimes(3);
+  });
+
+  describe("client.hello capabilities.liveState (must not gate legacy refetch)", () => {
+    it("regression #775: liveState advertised but no push seen — legacy events still refetch", async () => {
+      // A hello-time capability flag alone must never silence refetches: when
+      // the typed channel is not actually wired, no `subscription.push` ever
+      // arrives and the UI would go permanently stale (intent-hq/monorepo#775).
       liveStateCapability = true;
       const { fetchAll } = setup([{ id: "a" }]);
       await flush();
-      // Only the initial bridge refetch; live mode is already chosen.
       expect(fetchAll).toHaveBeenCalledTimes(1);
 
-      // A legacy firehose event must NOT trigger a refetch once live up-front.
       push("events.event", { type: "x:changed" });
       await flush();
-      expect(fetchAll).toHaveBeenCalledTimes(1);
+      expect(fetchAll).toHaveBeenCalledTimes(2);
     });
 
     it("without the hello flag, legacy events drive refetch exactly as today", async () => {
