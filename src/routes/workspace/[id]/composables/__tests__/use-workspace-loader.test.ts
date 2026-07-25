@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
-import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { emptyWorkspaceAgentState } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import TestUseWorkspaceLoader from './TestUseWorkspaceLoader.test.svelte';
 
 const {
@@ -328,6 +334,137 @@ describe('useWorkspaceLoader', () => {
     expect(staleWorkspaceState.updateState).not.toHaveBeenCalledWith(
       expect.objectContaining({
         workspaceData: expect.objectContaining({ status: 'error' }),
+      }),
+    );
+  });
+
+  it('evicts the cached entity and reports not_found when open fails twice with "Workspace not found" (#766)', async () => {
+    const cachedWorkspace = makeWorkspace({ id: 'loader-zombie-1', title: 'Deleted Workspace' });
+    selectWorkspaceByIdMock.mockReturnValue(cachedWorkspace);
+    openMock.mockResolvedValue({ ok: false, error: 'Workspace not found' });
+
+    const workspaceState = createWorkspaceState();
+    render(TestUseWorkspaceLoader, {
+      props: {
+        workspaceId: cachedWorkspace.id,
+        workspaceState,
+        state: null,
+        previousWorkspaceId: null,
+      },
+    });
+
+    // The loader retries once after a 500ms delay before giving up.
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await waitFor(() =>
+      expect(screen.getByTestId('load-error-kind').textContent).toBe('not_found'),
+    );
+    expect(screen.getByTestId('load-error-message').textContent).toBe('Workspace not found');
+
+    const actions = dispatchMock.mock.calls.map(([action]) => action);
+    expect(actions).toContainEqual(removeWorkspaceEntity(cachedWorkspace.id));
+
+    // workspaceMounted (pre-population) must be paired with workspaceUnmounted.
+    const mountedIndex = actions.findIndex(
+      (action) => action.type === workspaceMounted.type,
+    );
+    const unmountedIndex = actions.findIndex(
+      (action) => action.type === workspaceUnmounted.type,
+    );
+    expect(actions[mountedIndex]).toEqual(workspaceMounted(cachedWorkspace.id));
+    expect(actions[unmountedIndex]).toEqual(workspaceUnmounted(cachedWorkspace.id));
+    expect(unmountedIndex).toBeGreaterThan(mountedIndex);
+
+    expect(workspaceState.updateState).toHaveBeenCalledWith({
+      workspace: { id: cachedWorkspace.id, status: 'error' },
+      workspaceData: {
+        id: cachedWorkspace.id,
+        title: 'Space not found',
+        status: 'not_found',
+      },
+    });
+  });
+
+  it('retains the cached entity on generic (non-not-found) open failures', async () => {
+    const cachedWorkspace = makeWorkspace({ id: 'loader-flaky-1', title: 'Flaky Workspace' });
+    selectWorkspaceByIdMock.mockReturnValue(cachedWorkspace);
+    openMock.mockResolvedValue({ ok: false, error: 'Backend exploded' });
+
+    const workspaceState = createWorkspaceState();
+    render(TestUseWorkspaceLoader, {
+      props: {
+        workspaceId: cachedWorkspace.id,
+        workspaceState,
+        state: null,
+        previousWorkspaceId: null,
+      },
+    });
+
+    await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
+    // Let the load settle: the cached entity is written again (as ready)
+    // after the failed open resolves — pre-population is the first call.
+    await waitFor(() => expect(workspaceState.updateState).toHaveBeenCalledTimes(2));
+    expect(workspaceState.updateState).toHaveBeenLastCalledWith({
+      workspaceData: cachedWorkspace,
+      workspace: { id: cachedWorkspace.id, status: 'ready' },
+    });
+
+    const actions = dispatchMock.mock.calls.map(([action]) => action);
+    expect(actions.filter((action) => action.type === removeWorkspaceEntity.type)).toEqual([]);
+    expect(actions.filter((action) => action.type === workspaceUnmounted.type)).toEqual([]);
+    expect(screen.getByTestId('load-error-kind').textContent).toBe('');
+    expect(workspaceState.updateState).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceData: expect.objectContaining({ status: 'not_found' }),
+      }),
+    );
+  });
+
+  it('does not evict a cached entity from a stale not-found failure after navigating away within the retry window', async () => {
+    const staleWorkspace = makeWorkspace({ id: 'loader-stale-cache-1', title: 'Stale Workspace' });
+    const goodWorkspace = makeWorkspace({ id: 'loader-good-4', title: 'Good Workspace' });
+    selectWorkspaceByIdMock.mockImplementation((id: string) =>
+      id === staleWorkspace.id ? staleWorkspace : null,
+    );
+    openMock.mockImplementation(async (id: string) =>
+      id === goodWorkspace.id
+        ? { ok: true, data: goodWorkspace }
+        : { ok: false, error: 'Workspace not found' },
+    );
+
+    const staleWorkspaceState = createWorkspaceState();
+    const { rerender } = render(TestUseWorkspaceLoader, {
+      props: {
+        workspaceId: staleWorkspace.id,
+        workspaceState: staleWorkspaceState,
+        state: null,
+        previousWorkspaceId: null,
+      },
+    });
+
+    // Wait for the first not-found attempt, then navigate away while the
+    // loader is still inside its 500ms retry window.
+    await waitFor(() => expect(openMock).toHaveBeenCalledWith(staleWorkspace.id));
+
+    await rerender({
+      workspaceId: goodWorkspace.id,
+      workspaceState: createWorkspaceState(),
+      state: null,
+      previousWorkspaceId: staleWorkspace.id,
+    });
+
+    // Let the stale load's retry complete (second call for the old id).
+    await waitFor(
+      () =>
+        expect(openMock.mock.calls.filter(([id]) => id === staleWorkspace.id).length).toBe(2),
+      { timeout: 3000 },
+    );
+
+    const actions = dispatchMock.mock.calls.map(([action]) => action);
+    expect(actions.filter((action) => action.type === removeWorkspaceEntity.type)).toEqual([]);
+    expect(screen.getByTestId('load-error-kind').textContent).toBe('');
+    expect(staleWorkspaceState.updateState).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceData: expect.objectContaining({ status: 'not_found' }),
       }),
     );
   });

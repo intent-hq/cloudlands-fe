@@ -11,9 +11,13 @@ import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspac
 import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
-import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
+  removeWorkspaceEntity,
   setActiveWorkspaceId,
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
@@ -220,10 +224,11 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     }
 
     // Distinct not-found outcome: the backend definitively doesn't know this
-    // workspace (after the retry above) and we have no cached entity to fall
-    // back on. Record it as page-local/navigation state only — we do NOT
-    // synthesize a workspace entity into Redux.
-    if (!openResult.ok && openResult.error === 'Workspace not found' && !ws) {
+    // workspace (after the retry above). BE truth wins over any cached Redux
+    // entity: evict the stale entity so the page renders the not-found state
+    // instead of a zombie view (#766). We do NOT synthesize a workspace
+    // entity into Redux.
+    if (!openResult.ok && openResult.error === 'Workspace not found') {
       logger.error('Workspace not found after retry', { workspaceId });
       // Staleness guard: navigation may have superseded this load while the
       // 500ms retry was pending — don't write stale error state in that case.
@@ -233,6 +238,22 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
           currentWorkspaceId: options.workspaceId,
         });
         return;
+      }
+      if (ws) {
+        // Evict the stale cached entity before surfacing loadError so no
+        // frame renders the zombie workspace after the failure resolves.
+        // The removeWorkspaceEntity reducer also clears activeWorkspaceId
+        // when it points at this workspace, matching deletion flows.
+        logger.warn('Evicting stale cached workspace entity after definitive not-found', {
+          workspaceId,
+        });
+        appStore.dispatch(removeWorkspaceEntity(workspaceId));
+        // Undo the pre-population mount side effect (this run or an earlier
+        // visit) so workspace-scoped state is torn down like a normal unmount.
+        if (lastMountedWorkspaceId === workspaceId) {
+          appStore.dispatch(workspaceUnmounted(workspaceId));
+          lastMountedWorkspaceId = null;
+        }
       }
       loadError = { kind: 'not_found', message: openResult.error };
       workspaceState.updateState({
