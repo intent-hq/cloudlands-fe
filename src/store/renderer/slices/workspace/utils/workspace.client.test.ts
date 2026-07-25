@@ -111,6 +111,23 @@ describe("WorkspaceClient.create (AppClient seam, PROTOCOL §5.1)", () => {
     expect(result).toEqual({ ok: false, error: "worktree add failed" });
   });
 
+  it("forwards the structured errorCode on a failed Result (monorepo#761)", async () => {
+    workspaces.create.mockResolvedValueOnce({
+      success: false,
+      error: "cannot resolve base ref 'nope'",
+      errorCode: "base-ref-unresolvable",
+    });
+    const client = new WorkspaceClient();
+
+    const result = await client.create({ title: "Bad ref" } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "cannot resolve base ref 'nope'",
+      errorCode: "base-ref-unresolvable",
+    });
+  });
+
   it("does not invoke the legacy main-process IPC handler on create", async () => {
     // Regression guard for the create-orchestration cut-over: the wrapper
     // MUST route creation through the AppClient seam so nothing double-fires

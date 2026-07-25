@@ -155,6 +155,27 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     expect("errorCode" in result).toBe(false);
   });
 
+  it("create surfaces the bridge-mapped code for an older daemon's bare -32602", async () => {
+    // Older daemons reject an unresolvable base ref with a bare -32602 and no
+    // structured data; the main-process bridge (json-rpc-errors.ts) then
+    // injects the mapped code, so errorCode arrives as "INVALID_PARAMS" — NOT
+    // absent. ProposalCard's prose regex is what carries those daemons; do not
+    // "simplify" the fallback away on the assumption errorCode is missing.
+    const error = Object.assign(new Error("cannot resolve base ref 'nope'"), {
+      data: { code: "INVALID_PARAMS" },
+    });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: "Old daemon" } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({
+      success: false,
+      error: "cannot resolve base ref 'nope'",
+      errorCode: "INVALID_PARAMS",
+    });
+  });
+
   it("create generates a distinct idempotencyKey per call", async () => {
     mockedRequest.mockResolvedValue({ id: "ws-x" });
     const client = new LiveWorkspacesClient();

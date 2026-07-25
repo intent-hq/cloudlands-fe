@@ -16,10 +16,13 @@ export interface ProposalLifecycleEntry {
   status: ProposalLifecycleStatus;
   error?: string;
   /**
-   * Stable machine-readable code for the failure, when the daemon provided one
-   * on `error.data.code` (e.g. `"base-ref-unresolvable"` for workspace.create
-   * base-ref failures, monorepo#761). Consumers should prefer this over
-   * matching `error` prose; absent for older daemons and transport failures.
+   * Machine-readable code for the failure, from the transport error's
+   * `data.code`. Only daemon-authored codes (e.g. `"base-ref-unresolvable"`
+   * for workspace.create base-ref failures, monorepo#761) are a stable
+   * contract; the FE bridge fills in mapped codes (`"INVALID_PARAMS"`,
+   * `"TRANSPORT_ERROR"`, ...) when the daemon sent none. Consumers must
+   * exact-match the daemon codes they understand — prefer that over matching
+   * `error` prose, but never key behavior off the bridge-mapped values.
    */
   errorCode?: string;
   startedAt?: number;

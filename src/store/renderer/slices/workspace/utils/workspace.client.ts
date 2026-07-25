@@ -283,9 +283,11 @@ export class WorkspaceClient {
         ok: false;
         error: string;
         /**
-         * Stable machine-readable failure code from the daemon's JSON-RPC
-         * `error.data.code` (e.g. `"base-ref-unresolvable"`, monorepo#761),
-         * when present. Absent for older daemons and non-JSON-RPC failures.
+         * Machine-readable failure code from the transport error's
+         * `data.code`. Only daemon-authored codes (e.g.
+         * `"base-ref-unresolvable"`, monorepo#761) are a stable contract;
+         * the FE bridge fills in mapped codes (`"INVALID_PARAMS"`, ...) when
+         * the daemon sent none — consumers must exact-match daemon codes only.
          */
         errorCode?: string;
       }
