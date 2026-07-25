@@ -374,6 +374,7 @@ export function parseSpecialistFile(
     modelTier: modelTier as ModelTier | undefined,
     roleReminder: frontmatter.roleReminder,
     agentType: frontmatter.agentType,
+    hidden: frontmatter.hidden === 'true' ? true : undefined,
   };
 
   return {

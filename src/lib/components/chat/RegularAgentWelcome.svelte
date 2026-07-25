@@ -11,7 +11,9 @@
   import {
   selectSpecialists,
   selectUserOverrides,
+  filterPickableSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import type { AgentSession } from '$shared/types/agent-session';
   import { isPendingAgentSession } from '$shared/types/agent-session';
   import AuggieAvatar from '../ui/auggie-avatar/AuggieAvatar.svelte';
@@ -52,8 +54,11 @@
 
   // Only hide the core team-mode specialists from the picker
   const builtInSpecialists = ['spec-writer', 'implementor', 'verifier'];
+  const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const customSpecialists = $derived(
-    $specialists$.filter((s) => !builtInSpecialists.includes(s.id)),
+    filterPickableSpecialists($specialists$, $isGitHubAuth$).filter(
+      (s) => !builtInSpecialists.includes(s.id),
+    ),
   );
 
   // Dropdown state for the specialist picker

@@ -51,7 +51,7 @@
 
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
-  filterSpecialistsByGitHubAuth,
+  filterPickableSpecialists,
   selectSpecialistName,
   selectSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
@@ -200,7 +200,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   const specialists$ = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($specialists$, $isGitHubAuth$)
+    filterPickableSpecialists($specialists$, $isGitHubAuth$)
   );
   $effect(() => {
     void $specialists$;

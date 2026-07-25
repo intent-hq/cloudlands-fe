@@ -94,6 +94,7 @@ function toBundledSpecialist(def: SpecialistDef): typeof SPECIALISTS[number] {
     roleReminder: def.roleReminder,
     source: "bundled" as const,
     defaultAgentType: def.agentType,
+    hidden: def.hidden,
   };
 }
 
@@ -110,6 +111,7 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     roleReminder: def.roleReminder,
     filePath: def.path ?? "",
     source: def.source as SpecialistFileScope,
+    hidden: def.hidden,
   };
 }
 
@@ -182,6 +184,11 @@ async function handleSaveFileSpecialist(
 ): Promise<void> {
   const [payload] = action.payload;
   try {
+    const existing = readFileSpecialist(payload.id);
+    // Carry `hidden` from the current resolved specialist (file override →
+    // bundled) so a user-tier override of a hidden specialist (e.g.
+    // chief-of-staff) does not resurface it in pickers.
+    const hidden = existing?.hidden ?? readBundledSpecialist(payload.id)?.hidden;
     const spec: SpecialistDef = {
       id: payload.id,
       name: payload.name,
@@ -192,9 +199,9 @@ async function handleSaveFileSpecialist(
       roleReminder: payload.roleReminder,
       behaviorPrompt: payload.behaviorPrompt,
       source: (payload.scope ?? "user") as "user" | "project",
+      hidden,
     };
     const scope = payload.scope ?? "user";
-    const existing = readFileSpecialist(payload.id);
     if (existing) {
       await appClient.specialists.edit(payload.id, spec, scope, payload.workspacePath);
     } else {
@@ -242,6 +249,7 @@ async function handleExportBuiltinToFile(
       roleReminder: bundled.roleReminder,
       behaviorPrompt: bundled.defaultBehaviorPrompt,
       source: "user",
+      hidden: bundled.hidden,
     };
     await appClient.specialists.create(bundled.id, spec, "user");
     await refetchAndDispatch();

@@ -55,6 +55,11 @@ export interface Specialist {
    * If not set, defaults to 'task-loop'.
    */
   defaultAgentType?: string;
+  /**
+   * When true, this specialist is excluded from picker surfaces
+   * (it remains visible on Settings → AI Behavior for editing).
+   */
+  hidden?: boolean;
 }
 
 export const SPECIALISTS: Specialist[] = [
@@ -600,6 +605,7 @@ Then: Commands Run, Risk Notes, Follow-ups.`,
     id: 'chief-of-staff',
     name: 'Chief of Staff',
     description: 'App-level assistant for workspaces, settings, specialists, and learning Intent',
+    hidden: true,
     defaultBehaviorPrompt: `## Output Rule You Must Follow
 
 **When the answer mentions any workspace, output the workspace IDs inside a fenced \`workspace\` block — one ID per line.** Never list, bullet, number, or describe workspace IDs in prose. The block renders as live cards; the user does NOT see the raw IDs. Even a one-workspace answer uses a one-line \`workspace\` fence.
