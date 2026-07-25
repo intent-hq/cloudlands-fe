@@ -284,8 +284,8 @@
             onchange={handleSave}
             class="cursor-pointer"
           />
-          <span>Use Copy-on-Write for Agent Isolation</span>
-          <span class="text-subtle hover:text-foreground transition-colors" title="Runs each delegated agent in an instant copy-on-write clone of this directory so parallel agents never interfere with each other or your working copy; each agent's changes are merged back automatically when it finishes. Only available when this workspace works directly on your directory (no worktree) and the filesystem supports CoW (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).">
+          <span>Use Copy-on-Write isolation</span>
+          <span class="text-subtle hover:text-foreground transition-colors" title="CoW workspaces + per-agent sandboxes; falls back to worktrees when unsupported. New workspaces are provisioned as instant copy-on-write clones of the repository, and each delegated agent runs in its own CoW sandbox whose changes are merged back automatically when it finishes. Requires filesystem CoW support (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).">
             <Fa icon={faInfoCircle} size="sm" />
           </span>
         </label>
