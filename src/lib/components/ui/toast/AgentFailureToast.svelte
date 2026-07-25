@@ -8,8 +8,10 @@
     title: string;
     /** Truncated representative error message for the group. */
     errorSummary: string;
-    /** Resolved "Agent — Workspace" lines (may be empty when unresolvable). */
-    detailLines: string[];
+    /** Resolved "Agent — Workspace" lines (may be empty when unresolvable),
+     *  keyed by agentId — labels can collide (same-named agents in one
+     *  workspace), so the each block must not key by the label text. */
+    detailLines: Array<{ key: string; label: string }>;
     /** "Retry All N Agents" (N>1) or "Retry <name>" (N=1). */
     retryLabel: string;
     /** Disables the retry button while retries are in flight. */
@@ -39,8 +41,8 @@
 
     {#if detailLines.length > 0}
       <ul class="mt-1.5 space-y-0.5">
-        {#each detailLines as line (line)}
-          <li class="text-xs text-muted-foreground truncate">{line}</li>
+        {#each detailLines as line (line.key)}
+          <li class="text-xs text-muted-foreground truncate">{line.label}</li>
         {/each}
       </ul>
     {/if}

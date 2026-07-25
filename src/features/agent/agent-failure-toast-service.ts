@@ -28,6 +28,7 @@ import type { AgentSession, Workspace } from '$shared/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import {
+  getAgentFailureEntry,
   listAgentFailureGroups,
   removeAgentFailure,
   subscribeToAgentFailures,
@@ -133,15 +134,22 @@ function buildToastProps(group: AgentFailureGroup, state: GroupToastState) {
         : 'Retry'
       : `Retry All ${count} Agents`;
 
-  const detailLines: string[] = [];
+  // Lines are keyed by agentId — labels can collide (same-named agents in one
+  // workspace) and duplicate keys crash Svelte 5 keyed each blocks.
+  const detailLines: Array<{ key: string; label: string }> = [];
   for (const entry of group.entries.slice(0, MAX_DETAIL_LINES)) {
     const agentName = resolveAgentName(entry.agentId);
     if (!agentName) continue;
     const workspaceName = resolveWorkspaceName(entry.workspaceId);
-    detailLines.push(workspaceName ? `${agentName} — ${workspaceName}` : agentName);
+    detailLines.push({
+      key: entry.agentId,
+      label: workspaceName ? `${agentName} — ${workspaceName}` : agentName,
+    });
   }
-  if (detailLines.length > 0 && count > MAX_DETAIL_LINES) {
-    detailLines.push(`+${count - MAX_DETAIL_LINES} more`);
+  // Unlisted = beyond the cap PLUS skipped-unresolvable entries above.
+  const unlistedCount = count - detailLines.length;
+  if (detailLines.length > 0 && unlistedCount > 0) {
+    detailLines.push({ key: '__more__', label: `+${unlistedCount} more` });
   }
 
   return {
@@ -232,6 +240,8 @@ export async function retryGroup(groupKey: string): Promise<void> {
   const entries = [...group.entries];
   const results = await Promise.all(
     entries.map(async (entry) => {
+      // Defensive only: LiveAgentsClient.retry already maps transport errors
+      // to `{ ok: false }`, so this catch is a guard against future clients.
       try {
         const result = await appClient.agents.retry(entry.agentId, entry.workspaceId);
         return { entry, ok: result.ok === true };
@@ -250,10 +260,15 @@ export async function retryGroup(groupKey: string): Promise<void> {
   }
 
   // Removing entries notifies the subscription, which re-renders (or
-  // dismisses) the toast with the surviving entries + retryNote.
+  // dismisses) the toast with the surviving entries + retryNote. Only remove
+  // when the registry still holds the entry snapshotted at retry start — if
+  // the agent re-failed while its retry was in flight, `recordAgentFailure`
+  // stored a fresh entry that this stale ok:true must not erase.
   let removedAny = false;
   for (const result of results) {
-    if (result.ok) removedAny = removeAgentFailure(result.entry.agentId) || removedAny;
+    if (!result.ok) continue;
+    if (getAgentFailureEntry(result.entry.agentId) !== result.entry) continue;
+    removedAny = removeAgentFailure(result.entry.agentId) || removedAny;
   }
   if (!removedAny) rerenderGroup(groupKey);
 }

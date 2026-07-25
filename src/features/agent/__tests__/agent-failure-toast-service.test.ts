@@ -115,7 +115,9 @@ describe('agent-failure-toast-service', () => {
     expect(call!.componentProps.title).toBe('Implementor failed');
     expect(call!.componentProps.retryLabel).toBe('Retry Implementor');
     expect(call!.componentProps.errorSummary).toBe('spawn failed: EPERM');
-    expect(call!.componentProps.detailLines).toEqual(['Implementor — Fix login']);
+    expect(call!.componentProps.detailLines).toEqual([
+      { key: 'agent-1', label: 'Implementor — Fix login' },
+    ]);
   });
 
   it('updates the same toast in place when another agent joins the group', async () => {
@@ -131,7 +133,55 @@ describe('agent-failure-toast-service', () => {
     const props = lastCustomCallFor(id)!.componentProps;
     expect(props.title).toBe('2 agents failed');
     expect(props.retryLabel).toBe('Retry All 2 Agents');
-    expect(props.detailLines).toEqual(['Implementor — Fix login', 'Verifier — Add dark mode']);
+    expect(props.detailLines).toEqual([
+      { key: 'agent-1', label: 'Implementor — Fix login' },
+      { key: 'agent-2', label: 'Verifier — Add dark mode' },
+    ]);
+  });
+
+  it('keys detail lines by agentId so identically-named agents in one workspace stay distinct', async () => {
+    mockState = {
+      agentSessions: {
+        byAgentId: {
+          'agent-1': { id: 'agent-1', name: 'Implementor' },
+          'agent-2': { id: 'agent-2', name: 'Implementor' },
+        },
+      },
+      workspace: {
+        workspaces: { map: { 'ws-1': { id: 'ws-1', title: 'Fix login' } } },
+      },
+    };
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+    recordAgentFailure({ agentId: 'agent-2', workspaceId: 'ws-1', error: 'boom' });
+    await flush();
+
+    const groupKey = listAgentFailureGroups()[0].groupKey;
+    const props = lastCustomCallFor(agentFailureToastId(groupKey))!.componentProps;
+    expect(props.detailLines).toEqual([
+      { key: 'agent-1', label: 'Implementor — Fix login' },
+      { key: 'agent-2', label: 'Implementor — Fix login' },
+    ]);
+    const keys = props.detailLines.map((line: { key: string }) => line.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('counts skipped unresolvable entries in the "+N more" line', async () => {
+    // 7 entries, but only agent-1/agent-2 resolve to names — the other 5 are
+    // unlisted, so the summary line must say "+5 more", not "+2 more".
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+    recordAgentFailure({ agentId: 'agent-2', workspaceId: 'ws-2', error: 'boom' });
+    for (let i = 3; i <= 7; i++) {
+      recordAgentFailure({ agentId: `agent-${i}`, workspaceId: 'ws-1', error: 'boom' });
+    }
+    await flush();
+
+    const groupKey = listAgentFailureGroups()[0].groupKey;
+    const props = lastCustomCallFor(agentFailureToastId(groupKey))!.componentProps;
+    expect(props.detailLines).toEqual([
+      { key: 'agent-1', label: 'Implementor — Fix login' },
+      { key: 'agent-2', label: 'Verifier — Add dark mode' },
+      { key: '__more__', label: '+5 more' },
+    ]);
   });
 
   it('falls back to counts when names are unresolvable', async () => {
@@ -243,6 +293,36 @@ describe('agent-failure-toast-service', () => {
       // ok:true empties the group → toast dismissed.
       expect(toastDismissMock).toHaveBeenCalledWith(id);
       expect(listAgentFailureGroups()).toHaveLength(0);
+    });
+
+    it('does not remove a failure re-recorded while its retry was in flight', async () => {
+      let releaseRetry: (value: unknown) => void = () => {};
+      registerMockIpcHandler(BACKEND.REQUEST, async () => {
+        await new Promise((resolve) => {
+          releaseRetry = resolve;
+        });
+        return { ok: true, result: { ok: true, redriven: true } };
+      });
+
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom', at: 1000 });
+      await flush();
+
+      const groupKey = listAgentFailureGroups()[0].groupKey;
+      const id = agentFailureToastId(groupKey);
+      lastCustomCallFor(id)!.componentProps.onRetry();
+      await flush();
+
+      // The agent fails AGAIN while its retry is still in flight — the
+      // registry now holds a fresh entry that must survive the stale ok:true.
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom', at: 2000 });
+
+      releaseRetry(undefined);
+      await flush();
+
+      const groups = listAgentFailureGroups();
+      expect(groups).toHaveLength(1);
+      expect(groups[0].entries.map((entry) => entry.agentId)).toEqual(['agent-1']);
+      expect(groups[0].entries[0].at).toBe(2000);
     });
 
     it('transport errors keep the entry and surface the failure note', async () => {

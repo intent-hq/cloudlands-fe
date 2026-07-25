@@ -92,6 +92,15 @@ export function removeAgentFailure(agentId: string): boolean {
 }
 
 /**
+ * Current failure entry for an agent, if any. Entry objects are never mutated
+ * in place — `recordAgentFailure` always stores a fresh object — so callers
+ * can compare identity against an earlier snapshot to detect re-failures.
+ */
+export function getAgentFailureEntry(agentId: string): AgentFailureEntry | undefined {
+  return failuresByAgent.get(agentId);
+}
+
+/**
  * Snapshot of current failure groups. Groups are ordered by their oldest
  * entry's `at`; entries within a group are ordered oldest-first.
  */
