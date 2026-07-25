@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentStatus } from "$shared/types/agent.types";
-import type { AgentSession, QueuedMessage, Workspace } from "$shared/types";
+import type { AgentMessage, AgentSession, QueuedMessage, Workspace } from "$shared/types";
 
 // FAKE seams: agent-stream-lifecycle.sendMessage, appClient.agents.queue, and
 // appClient.agents.removeQueued are all spied so no IPC/daemon call (and never
@@ -9,20 +9,29 @@ import type { AgentSession, QueuedMessage, Workspace } from "$shared/types";
 // BE-state in-flight read, the chatSendStarted dispatch, the queue-on-send
 // branch, and the queue-removal optimistic-delete branch are exercised end to
 // end. vi.hoisted() keeps the spies in scope of the hoisted vi.mock factories.
-const { lifecycleSendMessage, agentsQueue, agentsRemoveQueued, agentsStop, loadChatTranscriptSpy } =
-  vi.hoisted(() => ({
-    lifecycleSendMessage: vi.fn(() => Promise.resolve()),
-    agentsQueue: vi.fn(() =>
-      Promise.resolve({ success: true } as { success: boolean; queuedMessage?: unknown }),
-    ),
-    agentsRemoveQueued: vi.fn(() =>
-      Promise.resolve({ success: true } as { success: boolean; error?: string }),
-    ),
-    agentsStop: vi.fn(() =>
-      Promise.resolve({ success: true } as { success: boolean; error?: string }),
-    ),
-    loadChatTranscriptSpy: vi.fn(() => Promise.resolve()),
-  }));
+const {
+  lifecycleSendMessage,
+  agentsQueue,
+  agentsRemoveQueued,
+  agentsStop,
+  agentsRename,
+  loadChatTranscriptSpy,
+} = vi.hoisted(() => ({
+  lifecycleSendMessage: vi.fn(() => Promise.resolve()),
+  agentsQueue: vi.fn(() =>
+    Promise.resolve({ success: true } as { success: boolean; queuedMessage?: unknown }),
+  ),
+  agentsRemoveQueued: vi.fn(() =>
+    Promise.resolve({ success: true } as { success: boolean; error?: string }),
+  ),
+  agentsStop: vi.fn(() =>
+    Promise.resolve({ success: true } as { success: boolean; error?: string }),
+  ),
+  agentsRename: vi.fn(() =>
+    Promise.resolve({ success: true } as { success: boolean; error?: string }),
+  ),
+  loadChatTranscriptSpy: vi.fn(() => Promise.resolve()),
+}));
 vi.mock("$features/agent/agent-stream-lifecycle", () => ({
   sendMessage: lifecycleSendMessage,
 }));
@@ -36,7 +45,12 @@ vi.mock("$features/agent/chat-read-service", async (importOriginal) => {
 });
 vi.mock("$lib/client", () => ({
   appClient: {
-    agents: { queue: agentsQueue, removeQueued: agentsRemoveQueued, stop: agentsStop },
+    agents: {
+      queue: agentsQueue,
+      removeQueued: agentsRemoveQueued,
+      stop: agentsStop,
+      rename: agentsRename,
+    },
   },
 }));
 
@@ -55,9 +69,12 @@ import {
 import { sendMessage } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
+import { CHIEF_WORKSPACE_ID } from "$store/renderer/slices/sidebar-nav/sidebar-nav-types";
+import { selectChiefThreads } from "$store/renderer/slices/sidebar-nav/sidebar-nav-selectors";
 
 const WS = "ws-chat-send-1";
 const AGENT = "agent-chat-send-1";
+const CHIEF_AGENT = "agent-chief-send-1";
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function seedWorkspace(): void {
@@ -118,6 +135,8 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     agentsRemoveQueued.mockImplementation(() => Promise.resolve({ success: true }));
     agentsStop.mockReset();
     agentsStop.mockImplementation(() => Promise.resolve({ success: true }));
+    agentsRename.mockReset();
+    agentsRename.mockImplementation(() => Promise.resolve({ success: true }));
     loadChatTranscriptSpy.mockReset();
     loadChatTranscriptSpy.mockImplementation(() => Promise.resolve());
     appStore.dispatch(clearAllSessions());
@@ -683,5 +702,126 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(agentsRemoveQueued).toHaveBeenCalledWith(AGENT, "q-throw");
     expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
     expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("throw and send");
+  });
+
+  // -------------------------------------------------------------------------
+  // Chief first-message rename: the 0 → 1 user-message transition of a chief
+  // thread renames the daemon agent to the sidebar-derived title via the
+  // `agent.rename` seam with `skipIfExplicitlySet: true` (PROTOCOL §5.5).
+  // -------------------------------------------------------------------------
+
+  function seedChiefWorkspace(): void {
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: CHIEF_WORKSPACE_ID,
+        title: "Chief of Staff",
+        branch: "",
+        status: "active",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+      } as unknown as Workspace),
+    );
+  }
+
+  function userMessage(text: string, id: string): AgentMessage {
+    return {
+      id,
+      role: "user",
+      contentBlocks: [{ type: "text", text }],
+      timestamp: "2026-01-01T00:00:01.000Z",
+    } as AgentMessage;
+  }
+
+  function seedChiefSession(messages: AgentMessage[] = []): void {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: CHIEF_AGENT,
+          backendSessionId: "backend-chief-1",
+          workspaceId: CHIEF_WORKSPACE_ID,
+          // Creation placeholder (ChiefCard: formatChiefThreadName, with
+          // nameExplicitlySet: false on the daemon side).
+          name: "New chat with Intent",
+          status: AgentStatus.Idle,
+          messages,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } as AgentSession,
+      ]),
+    );
+  }
+
+  it("chief first user message renames the agent to the sidebar-derived title with skipIfExplicitlySet", async () => {
+    seedChiefWorkspace();
+    seedChiefSession();
+    // Mirror the real lifecycle send: the optimistic user message lands in the
+    // session store before sendMessage resolves.
+    lifecycleSendMessage.mockImplementation(() => {
+      seedChiefSession([userMessage("check my ~/intent/ workspaces", "m-user-1")]);
+      return Promise.resolve();
+    });
+
+    appStore.dispatch(
+      sendMessage(CHIEF_AGENT, { wsId: CHIEF_WORKSPACE_ID, text: "check my ~/intent/ workspaces" }),
+    );
+    await flush();
+    await flush();
+    await flush();
+
+    // Regression: the rename must carry exactly the title the sidebar shows
+    // (same shared derivation — getChiefThreadTitle).
+    const sidebarTitle = selectChiefThreads
+      .select(appStore.state)
+      .find((thread) => thread.agentId === CHIEF_AGENT)?.title;
+    expect(sidebarTitle).toBe("check my ~/intent/ workspaces");
+    expect(agentsRename).toHaveBeenCalledTimes(1);
+    expect(agentsRename).toHaveBeenCalledWith(CHIEF_AGENT, sidebarTitle, undefined, {
+      skipIfExplicitlySet: true,
+    });
+  });
+
+  it("chief thread with an existing user message does NOT re-rename on subsequent sends", async () => {
+    seedChiefWorkspace();
+    seedChiefSession([userMessage("first message", "m-user-1")]);
+
+    appStore.dispatch(
+      sendMessage(CHIEF_AGENT, { wsId: CHIEF_WORKSPACE_ID, text: "second message" }),
+    );
+    await flush();
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(agentsRename).not.toHaveBeenCalled();
+  });
+
+  it("non-chief workspaces never trigger the first-message rename", async () => {
+    // Default seeded session (WS/AGENT) has zero user messages — the 0 → 1
+    // transition happens, but the workspace is not the chief workspace.
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello non-chief" }));
+    await flush();
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(agentsRename).not.toHaveBeenCalled();
+  });
+
+  it("chief rename is skipped when the lifecycle send fails", async () => {
+    seedChiefWorkspace();
+    seedChiefSession();
+    lifecycleSendMessage.mockImplementation(() => Promise.reject(new Error("send boom")));
+
+    appStore.dispatch(
+      sendMessage(CHIEF_AGENT, { wsId: CHIEF_WORKSPACE_ID, text: "will not deliver" }),
+    );
+    await flush();
+    await flush();
+    await flush();
+
+    expect(agentsRename).not.toHaveBeenCalled();
   });
 });

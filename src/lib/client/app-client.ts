@@ -450,9 +450,17 @@ export interface AgentsClient {
    * `AGENT_LIFECYCLE_EVENTS`), so the reactive `subscribe` refetch reconciles
    * other windows. `workspaceId` is accepted for caller parity with `delete`
    * but is not part of the wire contract — the daemon resolves the workspace
-   * itself.
+   * itself. `options.skipIfExplicitlySet` forwards the §5.5 rename guard for
+   * automated renames (e.g. the chief first-message rename): the daemon
+   * leaves a session whose name was explicitly set by the user untouched and
+   * acks `{ success: true, skipped: true }`. User-initiated renames omit it.
    */
-  rename(agentId: string, name: string, workspaceId?: string): Promise<MutationResult>;
+  rename(
+    agentId: string,
+    name: string,
+    workspaceId?: string,
+    options?: { skipIfExplicitlySet?: boolean },
+  ): Promise<MutationResult>;
   /**
    * Permanently delete an agent session (`agent.delete`, §5.5). The daemon is
    * **idempotent** — it returns `{ success: true }` even when the agent is

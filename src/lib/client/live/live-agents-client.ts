@@ -314,15 +314,23 @@ export class LiveAgentsClient implements AgentsClient {
     // `agent:stream:end` (§7), which converges the FE streaming state.
     return runMutation("agent.stop", { agentId });
   }
-  async rename(agentId: string, name: string, _workspaceId?: string): Promise<MutationResult> {
+  async rename(
+    agentId: string,
+    name: string,
+    _workspaceId?: string,
+    options?: { skipIfExplicitlySet?: boolean },
+  ): Promise<MutationResult> {
     // `agent.rename` (§5.5) takes `{ agentId, name }` (name non-empty) and
     // returns `{ success: true, name }`; an applied rename emits
     // `agent:renamed` (in AGENT_LIFECYCLE_EVENTS), which reconciles the list.
-    // The optional `skipIfExplicitlySet` guard is never sent from this seam —
-    // a user-initiated rename always wins — and workspaceId is not part of
-    // the wire contract, so the seam's optional third argument (kept for
-    // AgentsClient contract parity) stays off the wire.
-    return runMutation("agent.rename", { agentId, name });
+    // The optional `skipIfExplicitlySet` guard only rides along when a caller
+    // opts in (automated renames such as the chief first-message rename); a
+    // user-initiated rename omits it — a user rename always wins. workspaceId
+    // is not part of the wire contract, so the seam's optional third argument
+    // (kept for AgentsClient contract parity) stays off the wire.
+    const params: Record<string, unknown> = { agentId, name };
+    if (options?.skipIfExplicitlySet === true) params.skipIfExplicitlySet = true;
+    return runMutation("agent.rename", params);
   }
   async delete(agentId: string): Promise<MutationResult> {
     // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;

@@ -59,6 +59,9 @@ import {
   replaceAgentQueue,
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import type { SendMessagePayload } from "$store/renderer/slices/chat-state/chat-state-types";
+import { CHIEF_WORKSPACE_ID } from "$store/renderer/slices/sidebar-nav/sidebar-nav-types";
+import { getChiefThreadTitle } from "$store/renderer/slices/sidebar-nav/chief-thread-title";
+import type { AgentSession } from "$shared/types";
 import { loadChatTranscript } from "$features/agent/chat-read-service";
 import { createLogger } from "$lib/utils/client-logger";
 
@@ -151,6 +154,20 @@ async function dispatchToLifecycle(
     }
   }
 
+  // Chief first-message rename: capture the 0 → 1 user-message transition
+  // BEFORE the send appends the optimistic user message (post-hydration, so a
+  // restored transcript counts). After a successful send, the daemon agent is
+  // renamed to the sidebar-derived thread title (see
+  // renameChiefThreadOnFirstUserMessage) so `agent:idle` notifications carry
+  // the real title instead of the creation placeholder.
+  const preSendState = appStore.state as {
+    agentSessions?: { byAgentId: Record<string, AgentSession | undefined> };
+  };
+  const preSendMessages = preSendState.agentSessions?.byAgentId[agentId]?.messages ?? [];
+  const isChiefFirstUserMessage =
+    wsId === CHIEF_WORKSPACE_ID &&
+    !preSendMessages.some((message) => message.role === "user");
+
   // Queue-on-send: derive in-flight status SOLELY from BE-returned session
   // state (selectAgentIsResponding reads `isResponding`/`isStreaming`/status
   // off the daemon snapshot). When the daemon reports the agent is busy,
@@ -217,12 +234,47 @@ async function dispatchToLifecycle(
       // The daemon will preempt the in-flight turn instead of queueing.
       priority: options.priority,
     });
+    if (isChiefFirstUserMessage) {
+      await renameChiefThreadOnFirstUserMessage(agentId);
+    }
   } catch (error) {
     // AUDIT-P0-2: dispatch chatSendFailed so the error appears in the UI
     // instead of being swallowed in a fire-and-forget background promise.
     const message = error instanceof Error ? error.message : String(error);
     logger.error("lifecycle.sendMessage threw", error);
     appStore.dispatch(chatSendFailed(agentId, message));
+  }
+}
+
+/**
+ * Chief first-message rename: after the first user message of a chief thread
+ * is sent, rename the daemon-side agent to the sidebar-derived thread title
+ * (shared derivation: `getChiefThreadTitle`) so `agent:idle` notifications
+ * carry the real title instead of the creation placeholder. Sent with
+ * `skipIfExplicitlySet: true` (PROTOCOL §5.5) so a user-chosen name is never
+ * clobbered — chief threads are created with `nameExplicitlySet: false`, so
+ * the guard passes for them. Failures are logged, never surfaced: the rename
+ * is cosmetic and must not fail the send.
+ */
+async function renameChiefThreadOnFirstUserMessage(agentId: string): Promise<void> {
+  const state = appStore.state as {
+    agentSessions?: { byAgentId: Record<string, AgentSession | undefined> };
+  };
+  const session = state.agentSessions?.byAgentId[agentId];
+  if (!session) return;
+  const name = getChiefThreadTitle(session);
+  try {
+    const result = await appClient.agents.rename(agentId, name, undefined, {
+      skipIfExplicitlySet: true,
+    });
+    if (!result.success) {
+      logger.warn("agent.rename (chief first-message) reported a non-success result", {
+        agentId,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    logger.warn("agent.rename (chief first-message) threw", { agentId, error });
   }
 }
 
