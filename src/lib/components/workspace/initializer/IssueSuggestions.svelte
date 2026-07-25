@@ -1441,11 +1441,15 @@
 
   // Once auth state resolves, fall back to the first connected provider's source
   // when the persisted source's provider is not connected. Skipped when the
-  // source is locked via initialSource or the user explicitly picked a tab.
+  // source is locked via initialSource, the user explicitly picked a tab, or a
+  // search is in progress (a non-empty query pins the pane so it can't jump
+  // out from under the user mid-search; untracked so typing doesn't re-run
+  // this effect).
   $effect(() => {
     const connections = providerConnections;
     const last = lastUsedSource;
     if (initialSource || userSelectedTab) return;
+    if (untrack(() => searchQuery.trim() !== '')) return;
     const desired = resolveActiveSource(connections, last);
     if (desired !== untrack(() => activeSource)) {
       activeSource = desired;

@@ -103,6 +103,15 @@ function tabOrder(): string[] {
     .filter((t): t is string => Boolean(t));
 }
 
+function tabButton(label: string): HTMLButtonElement {
+  const button = screen.getAllByRole('button').find((b) => {
+    const text = (b.textContent ?? '').trim().replace(/\s+/g, ' ');
+    return text === label || text.startsWith(`${label} `);
+  });
+  if (!button) throw new Error(`Tab button "${label}" not found`);
+  return button as HTMLButtonElement;
+}
+
 describe('IssueSuggestions source preference + provider ordering', () => {
   // The global test setup replaces window.localStorage with a non-storing
   // vi.fn mock; back it with an in-memory store so persistence is observable.
@@ -170,5 +179,45 @@ describe('IssueSuggestions source preference + provider ordering', () => {
 
     expect(tabOrder()[0]).toBe('Linear');
     expect(screen.getByPlaceholderText('Search Linear issues...')).toBeTruthy();
+  });
+
+  it('does not persist the source when merely switching tabs', async () => {
+    render(IssueSuggestions, { props: { initiallyExpanded: true } });
+    await settle();
+
+    await fireEvent.click(tabButton('Linear'));
+    await settle();
+
+    expect(screen.getByPlaceholderText('Search Linear issues...')).toBeTruthy();
+    expect(storage.has(LAST_SOURCE_STORAGE_KEY)).toBe(false);
+  });
+
+  it('initialSource overrides a different persisted value and stays locked through auth resolution', async () => {
+    storage.set(LAST_SOURCE_STORAGE_KEY, 'linear');
+    linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: true });
+
+    render(IssueSuggestions, { props: { initiallyExpanded: true, initialSource: 'sentry' } });
+    await settle();
+
+    expect(screen.getByPlaceholderText('Search Sentry issues...')).toBeTruthy();
+  });
+
+  it('does not switch panes mid-search when auth resolves', async () => {
+    linearMocks.getAuthState.mockImplementation(
+      () =>
+        new Promise((resolve) => setTimeout(() => resolve({ isAuthenticated: true }), 400)),
+    );
+
+    render(IssueSuggestions, { props: { initiallyExpanded: true } });
+    await settle(200);
+
+    const input = screen.getByPlaceholderText('Search GitHub issues...');
+    await fireEvent.input(input, { target: { value: 'crash' } });
+    await settle(600);
+
+    // Auth resolved: Linear moves first in the tab order, but the active pane
+    // stays pinned to the in-progress search.
+    expect(tabOrder()[0]).toBe('Linear');
+    expect(screen.getByPlaceholderText('Search GitHub issues...')).toBeTruthy();
   });
 });

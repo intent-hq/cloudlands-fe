@@ -92,7 +92,12 @@ export function orderSources(
 /**
  * Resolve which source should be active given current auth state:
  * - the persisted last-used source, when its provider is connected
- * - the persisted last-used source, while nothing is connected yet
+ * - the persisted last-used source, while nothing is connected yet — with no
+ *   provider connected every pane is a connect prompt, so we show the prompt
+ *   for the provider the user actually uses (e.g. after a token expires)
+ *   rather than the first tab in the bar. This intentionally diverges from
+ *   the fresh-install default (first tab active), which only applies when no
+ *   last-used preference exists.
  * - otherwise the first source in the computed provider order ('linear' as a
  *   final safety net)
  */
