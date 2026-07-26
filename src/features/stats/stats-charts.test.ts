@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { UsageHourStats, UsageMonthStats } from '$lib/client/app-client';
-import { gridLines, hourAmPm, hourCardModel, monthCardModel } from './stats-charts';
+import {
+  DEFAULT_WORKING_HOURS,
+  gridLines,
+  hourAmPm,
+  hourCardModel,
+  monthCardModel,
+  stepHourWindow,
+} from './stats-charts';
 
 function hourCell(
   hour: number,
@@ -81,8 +88,24 @@ describe('hourCardModel (hour-of-day)', () => {
     expect(m.bars[0]).toEqual({ heightPct: 0, outPct: 0, peak: false });
     // total 1750; hours 09–18 hold 1500 (86%), hours 00–06 hold 250 (14%).
     expect(m.workingHours).toBe('09–18 · 86%');
+    expect(m.workingHoursPct).toBe(86);
     expect(m.overnight).toBe('14%');
     expect(m.axis).toEqual(['00', '06', '12', '18', '23']);
+  });
+
+  it('defaults the working-hours window to 09–18 (regression)', () => {
+    expect(DEFAULT_WORKING_HOURS).toEqual({ start: 9, end: 18 });
+    const explicit = hourCardModel(byHour, 'hour-of-day', { start: 9, end: 18 });
+    expect(hourCardModel(byHour, 'hour-of-day')).toEqual(explicit);
+  });
+
+  it('derives label and percentage from a custom working-hours window', () => {
+    // Hours 11–23 hold only the 14h peak: 1000 of 1750 → 57%.
+    const m = hourCardModel(byHour, 'hour-of-day', { start: 11, end: 24 });
+    expect(m.workingHours).toBe('11–24 · 57%');
+    expect(m.workingHoursPct).toBe(57);
+    // OVERNIGHT stays fixed at 00–06 regardless of the window.
+    expect(m.overnight).toBe('14%');
   });
 
   it('renders an empty-but-valid chart for a zero-data period', () => {
@@ -93,6 +116,7 @@ describe('hourCardModel (hour-of-day)', () => {
     expect(m.bars).toHaveLength(24);
     for (const b of m.bars) expect(b).toEqual({ heightPct: 0, outPct: 0, peak: false });
     expect(m.workingHours).toBe('09–18 · 0%');
+    expect(m.workingHoursPct).toBe(0);
     expect(m.overnight).toBe('0%');
   });
 });
@@ -118,7 +142,36 @@ describe('hourCardModel (trailing-24h)', () => {
     // Total 1230. Local hours 9–17: buckets for 15,16,17 (30) + 9..14 (with
     // the 1000-token 14h bucket) → 1080 → 88%. Hours 0–5: 60 → 5%.
     expect(m.workingHours).toBe('09–18 · 88%');
+    expect(m.workingHoursPct).toBe(88);
     expect(m.overnight).toBe('5%');
+  });
+
+  it('applies a custom working-hours window by local hour of each bucket', () => {
+    // Local hours 14–15: the 1000-token 14h bucket + the 15h bucket (10)
+    // → 1010 of 1230 → 82%.
+    const m = hourCardModel(byHour, 'trailing-24h', { start: 14, end: 16 });
+    expect(m.workingHours).toBe('14–16 · 82%');
+    expect(m.workingHoursPct).toBe(82);
+    expect(m.overnight).toBe('5%');
+  });
+});
+
+describe('stepHourWindow', () => {
+  it('steps a bound by the given delta', () => {
+    expect(stepHourWindow({ start: 9, end: 18 }, 'start', 1)).toEqual({ start: 10, end: 18 });
+    expect(stepHourWindow({ start: 9, end: 18 }, 'start', -1)).toEqual({ start: 8, end: 18 });
+    expect(stepHourWindow({ start: 9, end: 18 }, 'end', 1)).toEqual({ start: 9, end: 19 });
+    expect(stepHourWindow({ start: 9, end: 18 }, 'end', -1)).toEqual({ start: 9, end: 17 });
+  });
+
+  it('clamps start to [0, end-1]', () => {
+    expect(stepHourWindow({ start: 0, end: 18 }, 'start', -1)).toEqual({ start: 0, end: 18 });
+    expect(stepHourWindow({ start: 17, end: 18 }, 'start', 1)).toEqual({ start: 17, end: 18 });
+  });
+
+  it('clamps end to [start+1, 24]', () => {
+    expect(stepHourWindow({ start: 9, end: 24 }, 'end', 1)).toEqual({ start: 9, end: 24 });
+    expect(stepHourWindow({ start: 9, end: 10 }, 'end', -1)).toEqual({ start: 9, end: 10 });
   });
 });
 
