@@ -10,17 +10,11 @@
 -->
 <script lang="ts" module>
   import type { Question } from '$shared/types/question-resource';
+  // Canonical QuestionAnswer shape lives with the flattening utility
+  // (answer-message.ts); re-exported here for existing importers.
+  import type { QuestionAnswer } from './answer-message';
 
-  /** One entry per question, in transcript order, handed to `onComplete`. */
-  export interface QuestionAnswer {
-    question: Question;
-    /** Labels of the selected options (selection order). */
-    selectedLabels: string[];
-    /** Trimmed free-form "Other" text ('' when none). */
-    freeText: string;
-    /** True when the question was explicitly skipped. */
-    skipped: boolean;
-  }
+  export type { QuestionAnswer };
 </script>
 
 <script lang="ts">

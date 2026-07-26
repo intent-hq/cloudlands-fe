@@ -136,6 +136,7 @@
   type QuestionAnswer,
 } from './questions/QuestionWizard.svelte';
   import { derivePendingQuestions } from './questions/pending-questions';
+  import { flattenAnswersToMessage } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
   followBottom,
@@ -483,10 +484,25 @@
     }
   });
 
-  // Seam for the answer-submission flow (separate task): receives the
-  // wizard's full answers array when the user hits Send on the last question.
+  // Completing the wizard flattens all answers into ONE plain-text user
+  // message of `Q:`/`A:` pairs (wire contract — no messageMetadata) sent
+  // through the ordinary send path. The resulting user message supersedes
+  // the questions, so the wizard unmounts, the composer restores, and the
+  // in-transcript cards render resolved.
   function handleQuestionWizardComplete(answers: QuestionAnswer[]) {
+    if (!workspace || !isActive) return;
+    const text = flattenAnswersToMessage(answers);
     logger.info('Question wizard completed', { answerCount: answers.length });
+    appStore.dispatch(
+      sendMessage(agentId, {
+        wsId: workspace.id,
+        text,
+        agentName,
+        agentModel,
+        isInitialWorkspaceAgent,
+      }),
+    );
+    void performLocalSendCleanup({ followBottom: true });
   }
 
   // Search state
