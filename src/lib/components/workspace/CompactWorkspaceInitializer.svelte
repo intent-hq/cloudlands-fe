@@ -2798,7 +2798,8 @@
             >
               <span>Set up dev environment with</span>
               {#if isRepoConfigLoading}
-                <Fa icon={faSpinner} class="animate-spin" size="sm" />
+                <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
+                <span class="sr-only">Detecting setup script…</span>
               {:else}
                 <div class="bg-background px-2 py-0.5 font-medium">{setupScriptName}</div>
                 <p class="text-sm text-subtle">script</p>

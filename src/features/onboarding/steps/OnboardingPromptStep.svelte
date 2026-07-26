@@ -459,6 +459,7 @@
             <span>Set up environment with</span>
             {#if isRepoConfigLoading}
               <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
+              <span class="sr-only">Detecting setup script…</span>
             {:else}
               <span class="bg-card/50 px-1.5 py-0.5 font-medium"
                 >{setupScriptName}</span
