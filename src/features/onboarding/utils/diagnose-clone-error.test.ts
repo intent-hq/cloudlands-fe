@@ -79,11 +79,18 @@ describe('diagnoseCloneError', () => {
     it('maps each stable daemon code to its kind, ignoring the prose', () => {
       const detail = 'workspace.create clone failed (x): some unrecognizable detail';
       expect(diagnoseCloneError(detail, 'auth-required').kind).toBe('auth-required');
+      expect(diagnoseCloneError(detail, 'repo-not-found').kind).toBe('repo-not-found');
+      expect(diagnoseCloneError(detail, 'access-denied').kind).toBe('access-denied');
       expect(diagnoseCloneError(detail, 'network').kind).toBe('network');
       expect(diagnoseCloneError(detail, 'destination-exists-non-empty').kind).toBe(
         'destination-exists',
       );
       expect(diagnoseCloneError(detail, 'path-invalid').kind).toBe('path-invalid');
+    });
+
+    it('classifies repo-not-found and access-denied by code even with an empty message', () => {
+      expect(diagnoseCloneError('', 'repo-not-found').kind).toBe('repo-not-found');
+      expect(diagnoseCloneError('', 'access-denied').kind).toBe('access-denied');
     });
 
     it('daemon code wins over a conflicting prose match', () => {
