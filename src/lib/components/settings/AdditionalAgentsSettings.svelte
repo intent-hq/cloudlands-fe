@@ -55,6 +55,7 @@
           onclick={() => handleToggle(provider.id)}
           variant="indicator"
           size="xs"
+          ariaLabel={`Enable ${provider.displayName}`}
         />
       </div>
     {/each}

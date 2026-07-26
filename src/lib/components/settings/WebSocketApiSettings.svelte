@@ -247,6 +247,7 @@
         size="xs"
         class="mb-auto"
         disabled={loading}
+        ariaLabel="Enable WebSocket API"
       />
     </div>
   </section>

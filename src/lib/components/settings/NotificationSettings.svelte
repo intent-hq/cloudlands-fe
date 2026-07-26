@@ -71,6 +71,7 @@
       variant="indicator"
       size="xs"
       class="mb-auto"
+      ariaLabel="Desktop notifications"
     />
   </div>
 
@@ -86,6 +87,7 @@
       variant="indicator"
       size="xs"
       class="mb-auto"
+      ariaLabel="Sound"
     />
   </div>
 
@@ -101,6 +103,7 @@
       variant="indicator"
       size="xs"
       class="mb-auto"
+      ariaLabel="Only when unfocused"
     />
   </div>
 
