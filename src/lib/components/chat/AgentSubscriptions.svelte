@@ -12,6 +12,7 @@
   fade,
   slide,
 } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import {
   faHourglass,
@@ -314,11 +315,13 @@
       {#if isCollapsed}
         <div class="flex items-center -space-x-1.5">
           {#each watchedAgentIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
-            <InlineAgentAvatar
-              agentId={watchedAgentId}
-              workspace={resolvedWorkspace}
-              isCompleted={completedAgentIdSet.has(watchedAgentId)}
-            />
+            <div animate:flip={{ duration: 200 }}>
+              <InlineAgentAvatar
+                agentId={watchedAgentId}
+                workspace={resolvedWorkspace}
+                isCompleted={completedAgentIdSet.has(watchedAgentId)}
+              />
+            </div>
           {/each}
           {#if watchedAgentIds.length > 5}
             <span class="text-ui text-subtle pl-2">
@@ -378,7 +381,11 @@
       transition:slide={{ duration: 150 }}
     >
       {#each watchedAgentIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
-        <div class="w-full" transition:slide={{ axis: 'y', duration: 200 }}>
+        <div
+          class="w-full"
+          animate:flip={{ duration: 200 }}
+          transition:slide={{ axis: 'y', duration: 200 }}
+        >
           <AgentCard
             agentId={watchedAgentId}
             workspace={resolvedWorkspace}
