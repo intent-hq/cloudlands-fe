@@ -4,8 +4,11 @@
  * `list()` calls `task.list` (PROTOCOL §5.4) which returns the canonical
  * `WorkspaceTask[]` projection AND the workspace-wide `taskStats` aggregate the
  * BE owns. The FE renders `stats` verbatim — it never re-derives task progress
- * from the task list (or from `note.list`). `subscribe` refetches on `task:*`
- * and `note:*` events (task status lives in note metadata).
+ * from the task list (or from `note.list`). `subscribe` aggregates tasks
+ * across workspaces — converging via one typed per-workspace `task.subscribe`
+ * channel per workspace (PROTOCOL §6.9) on liveState daemons, and refetching
+ * on legacy `task:*`/`note:*` events otherwise (task status lives in note
+ * metadata).
  */
 import type { TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import type {
@@ -22,7 +25,11 @@ import type {
   TaskAgentAssociation,
   TaskAgentAssociationsByTaskKey,
 } from "$store/renderer/slices/task-agent-associations/task-agent-associations-types";
-import { backendRequest } from "./backend-transport";
+import {
+  backendRequest,
+  onBackendNotification,
+  onBackendReconnected,
+} from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import {
   isEventInFamily,
@@ -101,6 +108,39 @@ function conflictToTask(raw: Record<string, unknown>): WorkspaceTask | null {
 
 /** Zero-aggregate fallback for the synthesized `subscribe` snapshot (workspace not loaded). */
 const EMPTY_STATS: WorkspaceTaskStats = { total: 0, completed: 0, inProgress: 0 };
+
+/**
+ * Dynamic workspace-id source for the per-workspace typed task channel:
+ * yields the FULL desired workspace-id set from `listWorkspaceIds()` — the
+ * same enumeration `subscribe`'s `fetchAll` flattens over, so typed coverage
+ * matches legacy coverage — re-enumerating on legacy `workspace:*` events
+ * (workspace add/delete) and on reconnect (the set may have changed during
+ * the outage; a stale channel for a deleted workspace would otherwise fail
+ * re-registration and pin the subscription in legacy mode). A generation
+ * guard drops out-of-order enumerations so an older set can never overwrite
+ * a newer one.
+ */
+function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void): Unsubscribe {
+  let cancelled = false;
+  let generation = 0;
+  const refresh = () => {
+    generation += 1;
+    const current = generation;
+    void listWorkspaceIds().then((ids) => {
+      if (!cancelled && current === generation) listener(ids);
+    });
+  };
+  refresh();
+  const offNotify = onBackendNotification((n) => {
+    if (isEventInFamily(n.method, n.params, "workspace")) refresh();
+  });
+  const offReconnect = onBackendReconnected(refresh);
+  return () => {
+    cancelled = true;
+    offNotify();
+    offReconnect();
+  };
+}
 
 /**
  * Normalize a daemon `TaskAgentLink` row into the renderer
@@ -381,9 +421,31 @@ export class LiveTasksClient implements TasksClient {
     return result;
   }
 
+  /**
+   * Subscribe to tasks across every workspace.
+   *
+   * Typed §6.9 channel: on liveState daemons one per-workspace
+   * `task.subscribe` (`{ workspaceId }`) is registered per id yielded by
+   * `subscribeWorkspaceIds` — the same enumeration `fetchAll` flattens over.
+   * The channel carries task notes; the BE emits `removedIds` when a note is
+   * deleted OR demoted (its task metadata removed), which the reconciler
+   * drops. Workspace add → a new channel registers and its snapshot merges
+   * in; workspace delete → the channel unsubscribes and its tasks are
+   * evicted. While ANY workspace channel lacks a push-confirmed registration
+   * the subscription stays legacy and refetches keep serving (the #775
+   * safety net); daemons without liveState never register channels at all.
+   */
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe {
     return createDeltaSubscription<WorkspaceTask>({
       eventTypes: ["task:status-changed", "task:ready-tasks-changed", "note:updated"],
+      channel: {
+        subscribeMethod: "task.subscribe",
+        unsubscribeMethod: "task.unsubscribe",
+        dynamic: {
+          subscribeIds: subscribeWorkspaceIds,
+          paramsForId: (id) => ({ workspaceId: id }),
+        },
+      },
       matchLegacyEvent: (method, params) =>
         isEventInFamily(method, params, "task") || isEventInFamily(method, params, "note"),
       fetchAll: async () => {
@@ -392,7 +454,16 @@ export class LiveTasksClient implements TasksClient {
         return perWorkspace.flatMap((entry) => entry.tasks);
       },
       getId: (raw) => String(raw.id ?? ""),
-      normalize: (raw) => normalizeTaskEntity(raw),
+      // Push-path entities are the daemon's task-filtered wire `Note` (§6.9),
+      // which always carries `workspaceId` (camelCase serde) — remembered so
+      // note-scoped task mutations can resolve their owning workspace.
+      normalize: (raw) => {
+        const task = normalizeTaskEntity(raw);
+        if (task?.id && typeof raw.workspaceId === "string" && raw.workspaceId) {
+          rememberNoteWorkspace(task.id, raw.workspaceId);
+        }
+        return task;
+      },
       handler,
     });
   }
