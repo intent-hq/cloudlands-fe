@@ -388,7 +388,9 @@ function isNotePath(filePath: string): boolean {
  * Extract file change from a tool_use content block
  */
 function extractFileChangeFromBlock(block: ContentBlock): ChatFileChange | null {
-  const toolName = block.name || block.toolName || '';
+  const rawToolName = block.name || block.toolName || '';
+  // Tool names are not guaranteed to be strings; treat non-strings as missing
+  const toolName = typeof rawToolName === 'string' ? rawToolName : '';
   // Input can be in block.input or block.metadata?.toolInput (from auggie parser)
   const input = block.input || (block.metadata as Record<string, any>)?.toolInput || {};
   const id = block.id || block.tool_use_id || (block.metadata as Record<string, any>)?.toolId || '';
@@ -454,15 +456,41 @@ function unescapeContent(content: unknown): string {
   return str.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r');
 }
 
+/**
+ * Validate a path-type tool input value: return the trimmed value only if it
+ * is a non-empty string, else null. Tool inputs are not guaranteed to be
+ * strings (agents may emit numbers, objects, arrays, etc.).
+ */
+function asPathString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+/**
+ * Pick the first valid path from a path-list tool input, which may be an
+ * array (possibly containing non-string elements) or a single value.
+ */
+function pickFirstValidPath(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const path = asPathString(item);
+      if (path) return path;
+    }
+    return null;
+  }
+  return asPathString(value);
+}
+
 function extractFromStrReplace(
   id: string,
   toolName: string,
   input: Record<string, any>,
 ): ChatFileChange | null {
   // Get path from input or extract from tool name like "Edit spec" or "Edit src/foo.ts"
-  let path = input.path;
-  if (!path && toolName.toLowerCase().startsWith('edit ')) {
-    path = toolName.substring(5).trim();
+  let path = asPathString(input.path);
+  if (!path && typeof toolName === 'string' && toolName.toLowerCase().startsWith('edit ')) {
+    path = asPathString(toolName.substring(5));
   }
   if (!path) return null;
 
@@ -598,14 +626,15 @@ function extractFromSaveFile(
   input: Record<string, any>,
 ): ChatFileChange | null {
   // Get path from input or extract from tool name like "Save ThemeToggle.svelte" or "Create src/foo.ts"
-  let path = input.path || input.file_path || input.filePath;
-  const toolNameLower = toolName.toLowerCase();
+  let path =
+    asPathString(input.path) ?? asPathString(input.file_path) ?? asPathString(input.filePath);
 
-  if (!path) {
+  if (!path && typeof toolName === 'string') {
+    const toolNameLower = toolName.toLowerCase();
     if (toolNameLower.startsWith('save ')) {
-      path = toolName.substring(5).trim();
+      path = asPathString(toolName.substring(5));
     } else if (toolNameLower.startsWith('create ')) {
-      path = toolName.substring(7).trim();
+      path = asPathString(toolName.substring(7));
     }
   }
 
@@ -644,8 +673,7 @@ function extractFromRemoveFiles(
   toolName: string,
   input: Record<string, any>,
 ): ChatFileChange | null {
-  const paths = input.file_paths || input.paths || [];
-  const firstPath = Array.isArray(paths) ? paths[0] : paths;
+  const firstPath = pickFirstValidPath(input.file_paths) ?? pickFirstValidPath(input.paths);
 
   if (!firstPath) return null;
 
