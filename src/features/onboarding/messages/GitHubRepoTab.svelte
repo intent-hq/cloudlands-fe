@@ -191,6 +191,18 @@
   /** Default base directory for cloned repos, hydrated through Redux persistence. */
   const defaultCloneBase = $derived($defaultParentPath$ || '~/Developer');
 
+  /**
+   * Whether the user explicitly chose a clone destination (#823). Repo
+   * selection and owner/repo typing only auto-fill the default base while
+   * the path is untouched, so a user-picked parent directory survives
+   * selecting or switching repos. Initialized from the prop because this
+   * component remounts on tab switches ({#key activeTab} in the parent)
+   * while the clonePath state lives in ProjectPickerMessage. Capturing the
+   * initial values only is intentional, hence the svelte-ignore.
+   */
+  // svelte-ignore state_referenced_locally
+  let clonePathDirty = $state(!!clonePath && clonePath !== defaultCloneBase);
+
   function handleInputChange(value: string) {
     // Strip full URL prefix if user pastes a full URL
     let cleaned = value.replace(/^https?:\/\/github\.com\//, '');
@@ -205,7 +217,7 @@
       const parts = cleaned.split('/');
       if (parts.length >= 2 && parts[0] && parts[1]) {
         const repoName = parts[1].split(/[?#]/)[0]; // strip query/hash
-        if (repoName) {
+        if (repoName && !clonePathDirty) {
           onClonePathChange(defaultCloneBase);
         }
       }
@@ -257,6 +269,7 @@
   function handlePickerSelect(pickedPath: string) {
     pickerOpen = false;
     try {
+      clonePathDirty = true;
       onClonePathChange(pickedPath);
     } catch (err) {
       logger.error('Failed to select clone folder', err);
@@ -265,11 +278,14 @@
 
   /** Click-to-select from the repo list. Notifies the parent of the
    *  selection without changing the search input so the user can keep
-   *  browsing. Also auto-fills the clone path with a sensible default. */
+   *  browsing. Also auto-fills the clone path with a sensible default —
+   *  unless the user already chose a destination (#823). */
   function handleSelectRepo(repo: GithubRepoItem) {
     const path = `${repo.owner}/${repo.name}`;
     onGithubUrlChange(`https://github.com/${path}`);
-    onClonePathChange(defaultCloneBase);
+    if (!clonePathDirty) {
+      onClonePathChange(defaultCloneBase);
+    }
   }
 
   /** User-initiated refresh (also drives the error "Try again" action). The
