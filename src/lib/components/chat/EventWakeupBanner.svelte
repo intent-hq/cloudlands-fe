@@ -6,17 +6,13 @@
    * Displays the event types in a compact, centered divider format (similar to DateSeparator).
    * Can optionally show full event details in an expandable format.
    */
-  import {
-  faBell,
-  faRotate,
-  faArrowUp,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faBell, faRotate, faArrowUp } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
   import AgentCard from './AgentCard.svelte';
-  import { categorizeEventTypes } from './event-wake-summary';
+  import { categorizeEventTypes, firstNonEmptyString } from './event-wake-summary';
   import type { Workspace } from '$shared/types';
 
   interface EventData {
@@ -68,9 +64,9 @@
     const types = metadata?.eventTypes || [];
     if (types.length === 0) return 'Subscription update';
 
-    // Get agent names from parsed events for agent:idle events
+    // Get agent names from parsed events for completion events
     const idleAgentNames = parsedEvents
-      .filter((e) => e.type === 'agent:idle' && e.agentName)
+      .filter((e) => (e.type === 'agent:idle' || e.type === 'agent:reportToParent') && e.agentName)
       .map((e) => e.agentName!);
 
     const createdAgentNames = parsedEvents
@@ -78,7 +74,9 @@
       .map((e) => e.agentName!);
 
     // Count agent events from metadata types (fallback when parsing fails)
-    const agentIdleCount = types.filter((t) => t === 'agent:idle').length;
+    const agentIdleCount = types.filter(
+      (t) => t === 'agent:idle' || t === 'agent:reportToParent',
+    ).length;
     const agentCreatedCount = types.filter((t) => t === 'agent:created').length;
 
     // Build summary with agent names when available
@@ -134,7 +132,7 @@
           type: event.type,
           agentId: data.agentId as string | undefined,
           agentName: data.agentName as string | undefined,
-          completionReport: data.completionReport as string | undefined,
+          completionReport: firstNonEmptyString(data.completionReport, data.report),
           lastResponseSummary: data.lastResponseSummary as string | undefined,
         };
       });
@@ -193,7 +191,10 @@
     >();
 
     for (const e of parsedEvents) {
-      if (e.agentId && (e.type === 'agent:idle' || e.type === 'agent:created')) {
+      if (
+        e.agentId &&
+        (e.type === 'agent:idle' || e.type === 'agent:reportToParent' || e.type === 'agent:created')
+      ) {
         // Later events override earlier ones for the same agent
         agentMap.set(e.agentId, {
           type: e.type,
