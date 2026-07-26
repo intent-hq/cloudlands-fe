@@ -270,7 +270,7 @@
               class="h-9 text-sm"
             />
           </div>
-          {#if editedPort !== String(persistedPort)}
+          {#if Number(editedPort) !== persistedPort}
             <button
               type="button"
               onclick={handlePortSave}
