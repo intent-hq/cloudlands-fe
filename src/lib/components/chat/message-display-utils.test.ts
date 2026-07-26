@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentMessage } from '$shared/types';
-import { shouldShowStoppedIndicator } from './message-display-utils';
+import type { AgentMessage, ContentBlock } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { isQuestionOnlyContent, shouldShowStoppedIndicator } from './message-display-utils';
 
 function assistant(overrides: Partial<AgentMessage> = {}): AgentMessage {
   return {
@@ -89,5 +90,83 @@ describe('message display utils', () => {
         isStreaming: false,
       }),
     ).toBe(false);
+  });
+});
+
+// Agent Q&A wizard-only rendering: a turn whose only content is question
+// blocks renders NO transcript bubble (ChatMessage suppresses the whole
+// assistant row via this predicate).
+describe('isQuestionOnlyContent', () => {
+  const question = (text = '{"attachmentId":"tar-aaa111bbb222"}'): ContentBlock =>
+    ({
+      type: 'resource',
+      resource: {
+        uri: 'intent-question://tar-aaa111bbb222',
+        mimeType: QUESTION_RESOURCE_MIME_TYPE,
+        text,
+      },
+    }) as unknown as ContentBlock;
+
+  it('true for a single question block', () => {
+    expect(isQuestionOnlyContent([question()])).toBe(true);
+  });
+
+  it('true for multiple question blocks plus empty/whitespace text', () => {
+    expect(
+      isQuestionOnlyContent([
+        { type: 'text', text: '   ' } as ContentBlock,
+        question(),
+        question('{"attachmentId":"tar-ccc333ddd444"}'),
+      ]),
+    ).toBe(true);
+  });
+
+  it('true when the only text is a suggested-prompts payload (renders nothing itself)', () => {
+    expect(
+      isQuestionOnlyContent([
+        {
+          type: 'text',
+          text: '<!-- suggested-prompts\nRun the tests\n-->',
+        } as ContentBlock,
+        question(),
+      ]),
+    ).toBe(true);
+  });
+
+  it('false when visible text accompanies the question', () => {
+    expect(
+      isQuestionOnlyContent([{ type: 'text', text: 'Some answer' } as ContentBlock, question()]),
+    ).toBe(false);
+  });
+
+  it('false when a non-question resource block (e.g. proposal) is present', () => {
+    expect(
+      isQuestionOnlyContent([
+        question(),
+        {
+          type: 'resource',
+          resource: {
+            uri: 'intent-proposal://x',
+            mimeType: 'application/vnd.intent.proposal+json',
+            text: '{}',
+          },
+        } as unknown as ContentBlock,
+      ]),
+    ).toBe(false);
+  });
+
+  it('false for empty content and for content with no question blocks', () => {
+    expect(isQuestionOnlyContent([])).toBe(false);
+    expect(isQuestionOnlyContent([{ type: 'text', text: 'hello' } as ContentBlock])).toBe(false);
+  });
+
+  it('true for a malformed question-MIME block (missing uri/text) — the MIME-only strip must still suppress it', () => {
+    // isQuestionResourceBlock is deliberately tolerant: even a question block
+    // that fails full §7.1 shape validation must never surface a bubble.
+    const malformed = {
+      type: 'resource',
+      resource: { mimeType: QUESTION_RESOURCE_MIME_TYPE },
+    } as unknown as ContentBlock;
+    expect(isQuestionOnlyContent([malformed])).toBe(true);
   });
 });

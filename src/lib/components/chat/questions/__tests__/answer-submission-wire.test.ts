@@ -7,10 +7,10 @@
  *    NO messageMetadata, driven through the REAL store + chat-send
  *    middleware + agent-stream-lifecycle with only the BackendTransport seam
  *    mocked (PROTOCOL.md §5.5 payloads).
- * 2. PROTOCOL-shaped transcripts drive the wizard/card transitions: pending
+ * 2. PROTOCOL-shaped transcripts drive the wizard transitions: pending
  *    before the answer message exists, superseded (wizard closed, composer
- *    restored, cards resolved) once it does — including session-restore
- *    rehydration in both states.
+ *    restored) once it does — including session-restore rehydration in both
+ *    states. Questions are wizard-only: they never render in the transcript.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,7 +37,6 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 import QuestionWizard from '../QuestionWizard.svelte';
-import QuestionCard from '../QuestionCard.svelte';
 import { flattenAnswersToMessage, type QuestionAnswer } from '../answer-message';
 import { derivePendingQuestions } from '../pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
@@ -289,7 +288,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
   }, 30000);
 });
 
-describe('transcript-driven wizard/card transitions', () => {
+describe('transcript-driven wizard transitions', () => {
   const questionMsg = assistantMessage([questionBlock(SINGLE), questionBlock(MULTI)]);
   const answerText = flattenAnswersToMessage([
     answer(SINGLE, { selectedLabels: ['OS keychain'] }),
@@ -301,16 +300,6 @@ describe('transcript-driven wizard/card transitions', () => {
     // The flattened answer message arrives as an ordinary user message —
     // wizard closes and the composer restores (derivation goes null).
     expect(derivePendingQuestions([questionMsg, userMessage(answerText)], false)).toBeNull();
-  });
-
-  it('QuestionCard renders active vs. resolved once a later user message exists', async () => {
-    const { rerender } = render(QuestionCard, {
-      props: { question: SINGLE, resolved: false },
-    });
-    expect(screen.getByText('Agent Has Questions')).toBeTruthy();
-    await rerender({ question: SINGLE, resolved: true });
-    expect(screen.getByText('Agent asked')).toBeTruthy();
-    expect(screen.queryByText('Agent Has Questions')).toBeNull();
   });
 
   it('session restore re-presents unanswered questions but not answered ones', () => {

@@ -274,4 +274,42 @@ describe("agentStreamService (real store)", () => {
     expect(message.streamingComplete).toBe(true);
     expect(message.metadata).toMatchObject({ interrupted: true, stopReason: "interrupted" });
   });
+
+  // Q&A live delivery hardening: a bridge-dispatched complete carries only the
+  // canonical assistantMessageId (no assistantAppMessageId). A stale in-flight
+  // assistant already bound to a DIFFERENT canonical id must not absorb the
+  // payload's blocks — the payload gets its own placeholder under its own id
+  // so the later getConversation reconcile dedupes by message id.
+  it("does not merge a canonical-id-only complete onto a stale in-flight assistant of a different canonical id", () => {
+    const staleId = "msg_stale_turn";
+    const canonicalId = "msg_new_turn";
+    const stale: AgentMessage = {
+      id: staleId,
+      role: "assistant",
+      contentBlocks: textBlocks("abandoned partial"),
+      timestamp: "2026-01-01T00:00:00.000Z",
+      isStreaming: true,
+      streamingComplete: false,
+    };
+    appStore.dispatch(bulkUpsertSessions([makeSession([stale])]));
+
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({
+          eventType: "complete",
+          assistantMessageId: canonicalId,
+          assistantAppMessageId: undefined,
+          contentBlocks: [{ type: "resource", resource: { uri: "q://1" } } as ContentBlock],
+        }),
+      ),
+    );
+
+    const messages = getMessages();
+    expect(messages.map((m) => m.id)).toEqual([staleId, canonicalId]);
+    const fresh = messages.find((m) => m.id === canonicalId)!;
+    expect(fresh.contentBlocks).toEqual([{ type: "resource", resource: { uri: "q://1" } }]);
+    expect(fresh.streamingComplete).toBe(true);
+    const untouched = messages.find((m) => m.id === staleId)!;
+    expect(untouched.contentBlocks).toEqual(textBlocks("abandoned partial"));
+  });
 });

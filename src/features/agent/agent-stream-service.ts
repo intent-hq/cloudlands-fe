@@ -36,7 +36,7 @@ import {
 } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
 import { resolveStreamContentBlocks } from "$store/renderer/slices/agent-session/utils/stream-content-blocks";
 import {
-  findInFlightAssistantMessage,
+  findStreamTargetAssistantMessage,
   isStaleFinalizedAssistantStream,
 } from "$store/renderer/slices/agent-session/utils/stream-target-state";
 import { createLogger } from "$lib/utils/client-logger";
@@ -100,7 +100,11 @@ function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
     eventType === "complete" || eventType === "error" || eventType === "timeout";
 
   const session = readSession(agentId);
-  const existing = findInFlightAssistantMessage(session, assistantAppMessageId);
+  const existing = findStreamTargetAssistantMessage(
+    session,
+    assistantAppMessageId,
+    assistantMessageId,
+  );
 
   if (eventType === "error" || eventType === "timeout") {
     if (existing) {

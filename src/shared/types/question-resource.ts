@@ -4,8 +4,12 @@
  * trailing block on the turn's final assistant message. There is NO
  * questionId — pending vs. answered is derived purely from whether a later
  * user message exists after the question-bearing assistant message.
+ *
+ * Questions are WIZARD-ONLY on the FE: they never render in the conversation
+ * transcript (pending or resolved) — the composer-slot QuestionWizard is the
+ * sole rendering surface (see `derivePendingQuestions`). Transcript renderers
+ * use `isQuestionResourceBlock` to strip them.
  */
-
 export const QUESTION_RESOURCE_MIME_TYPE = 'application/vnd.intent.question+json';
 
 export const QUESTION_RESOURCE_URI_SCHEME = 'intent-question';
@@ -52,6 +56,25 @@ export function isQuestion(value: unknown): value is Question {
     candidate.options.length >= 2 &&
     candidate.options.every(isQuestionOption) &&
     (candidate.multiSelect === undefined || typeof candidate.multiSelect === 'boolean')
+  );
+}
+
+/**
+ * Whether a content block is a §7.1 standalone question resource block
+ * (question MIME). Payload validity is irrelevant here: even a malformed
+ * question payload must not surface in the transcript, so the check is
+ * MIME-only. Used by MessageContent / StreamingMessageContent to strip
+ * question blocks from transcript rendering (wizard-only surface).
+ */
+export function isQuestionResourceBlock(block: unknown): boolean {
+  if (!block || typeof block !== 'object') return false;
+  const candidate = block as { type?: unknown; resource?: unknown };
+  if (candidate.type !== 'resource') return false;
+  const resource = candidate.resource as { mimeType?: unknown } | null | undefined;
+  return (
+    typeof resource === 'object' &&
+    resource !== null &&
+    resource.mimeType === QUESTION_RESOURCE_MIME_TYPE
   );
 }
 
