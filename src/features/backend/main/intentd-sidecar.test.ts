@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   __resetIntentdSidecarForTesting,
   getSidecarRunLog,
+  getSidecarStartupFailure,
   onSidecarStartupFailed,
   probeDaemonVersion,
   resolveIntentdBinaryPath,
@@ -471,5 +472,59 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
     const log = getSidecarRunLog();
     expect(log.spawnError).toBe('spawn ENOENT');
     expect(log.endedAt).not.toBeNull();
+  });
+
+  it('redacts the absolute binary path from spawn-time error reasons', async () => {
+    const failed = vi.fn();
+    onSidecarStartupFailed(failed);
+
+    const proc = await startWithFakeProc();
+    proc.pid = undefined;
+    proc.emit('error', new Error('spawn /fake/intentd ENOENT'));
+
+    expect(failed).toHaveBeenCalledWith('spawn intentd binary ENOENT');
+    const log = getSidecarRunLog();
+    expect(log.spawnError).toBe('spawn intentd binary ENOENT');
+    expect(log.spawnError).not.toContain('/fake/intentd');
+  });
+
+  it('does not split a line straddling two data chunks (no double-count toward the cap)', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('first-'));
+    proc.stdout.emit('data', Buffer.from('half\nsecond\n'));
+
+    expect(getSidecarRunLog().lines).toEqual(['first-half', 'second']);
+  });
+
+  it('includes a buffered trailing partial line in the snapshot without duplicating it', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('complete\npartial'));
+
+    expect(getSidecarRunLog().lines).toEqual(['complete', 'partial']);
+
+    proc.stdout.emit('data', Buffer.from('-rest\n'));
+    expect(getSidecarRunLog().lines).toEqual(['complete', 'partial-rest']);
+  });
+
+  it('flushes a trailing partial line when the process exits', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('done\ntail-without-newline'));
+    proc.emit('exit', 0, null);
+
+    expect(getSidecarRunLog().lines).toEqual(['done', 'tail-without-newline']);
+  });
+
+  it('latches the startup failure for late consumers and clears it on the next spawn attempt', async () => {
+    expect(getSidecarStartupFailure()).toBeNull();
+
+    // Fail with ZERO listeners registered (real boot ordering).
+    mockExistsSync.mockReturnValue(false);
+    await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');
+    expect(getSidecarStartupFailure()).toEqual({ reason: 'intentd binary not found' });
+
+    // A new spawn attempt supersedes the latched failure.
+    mockExistsSync.mockImplementation((p) => !String(p).endsWith('.sock'));
+    await startWithFakeProc();
+    expect(getSidecarStartupFailure()).toBeNull();
   });
 });

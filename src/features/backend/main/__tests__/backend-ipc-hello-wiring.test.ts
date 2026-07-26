@@ -18,6 +18,7 @@ const {
   mockPersistClientId,
   mockRunLog,
   startupFailedListeners,
+  mockStartupFailure,
 } = vi.hoisted(() => ({
   ctorOptions: [] as Array<Record<string, unknown>>,
   mockGetOrCreateClientId: vi.fn(async () => 'cli-persisted'),
@@ -32,6 +33,7 @@ const {
     lines: ['line one', 'line two'],
   },
   startupFailedListeners: [] as Array<(reason: string) => void>,
+  mockStartupFailure: { current: null as { reason: string } | null },
 }));
 
 vi.mock('../json-rpc-client', () => ({
@@ -69,6 +71,7 @@ vi.mock('../intentd-sidecar', () => ({
     return () => {};
   }),
   getSidecarRunLog: vi.fn(() => mockRunLog),
+  getSidecarStartupFailure: vi.fn(() => mockStartupFailure.current),
   spawnSidecarOnDemand: vi.fn(),
 }));
 
@@ -149,5 +152,31 @@ describe('backend.ipc sidecar run-log bridge', () => {
         reason: 'intentd binary not found',
       }),
     );
+  });
+
+  it('exposes a latched startup failure on the backend:get-status response', async () => {
+    const { registerBackendHandlers } = await import('../backend.ipc');
+    registerBackendHandlers();
+
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([channel]) => channel === 'backend:get-status');
+    expect(call).toBeDefined();
+    const handler = call![1] as () => Promise<Record<string, unknown>>;
+
+    mockStartupFailure.current = null;
+    const clean = await handler();
+    expect(clean.sidecarStartupFailed).toBeUndefined();
+    expect(clean.sidecarStartupFailedReason).toBeUndefined();
+
+    mockStartupFailure.current = { reason: 'intentd binary not found' };
+    await expect(handler()).resolves.toEqual(
+      expect.objectContaining({
+        status: 'disconnected',
+        sidecarStartupFailed: true,
+        sidecarStartupFailedReason: 'intentd binary not found',
+      }),
+    );
+    mockStartupFailure.current = null;
   });
 });

@@ -37,6 +37,7 @@ import { getOrCreateClientId, persistClientId } from './client-identity';
 import { formatTransportInfo } from './transport-info';
 import {
   getSidecarRunLog,
+  getSidecarStartupFailure,
   onSidecarGaveUp,
   onSidecarStartupFailed,
   spawnSidecarOnDemand,
@@ -204,6 +205,20 @@ export function registerBackendHandlers(): void {
   ipcMain.handle(BACKEND.GET_STATUS, async () => {
     const client = getBackendClient();
     const transport = formatTransportInfo(client.getConfig());
+    // Boot-time startup failures fire before this module registers its
+    // `onSidecarStartupFailed` listener and before any window exists, so the
+    // broadcast alone is lossy. Expose the latched failure here so the
+    // renderer's boot-time get-status fetch learns about it regardless of
+    // ordering (PR #402 review; spec addendum under "Pinned IPC contract").
+    const startupFailure = getSidecarStartupFailure();
+    if (startupFailure) {
+      return {
+        status: client.getStatus(),
+        transport,
+        sidecarStartupFailed: true as const,
+        sidecarStartupFailedReason: startupFailure.reason,
+      };
+    }
     return { status: client.getStatus(), transport };
   });
 

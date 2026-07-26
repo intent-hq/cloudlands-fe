@@ -86,7 +86,26 @@ export function onSidecarStartupFailed(listener: SidecarStartupFailedListener): 
   };
 }
 
+/**
+ * Latched most-recent startup failure. Boot-time failures fire before
+ * backend.ipc.ts registers its listener and before any window exists, so the
+ * notify/broadcast path alone is lossy; late consumers (the
+ * `backend:get-status` handler) query this instead. Cleared when a new spawn
+ * attempt begins.
+ */
+let sidecarStartupFailure: { reason: string } | null = null;
+
+/**
+ * Latched startup failure (spawn could not happen at all), or null. Exposed
+ * on the `backend:get-status` response so delivery is ordering-independent
+ * (see PR #402 review).
+ */
+export function getSidecarStartupFailure(): { reason: string } | null {
+  return sidecarStartupFailure;
+}
+
 function notifySidecarStartupFailed(reason: string): void {
+  sidecarStartupFailure = { reason };
   for (const listener of sidecarStartupFailedListeners) {
     try {
       listener(reason);
@@ -125,6 +144,8 @@ interface SidecarRunRecord {
   signal: string | null;
   spawnError: string | null;
   lines: string[];
+  /** Trailing partial line awaiting its newline (data chunks are not line-aligned). */
+  pendingPartial: string;
 }
 
 /**
@@ -134,6 +155,8 @@ interface SidecarRunRecord {
 let currentRunRecord: SidecarRunRecord | null = null;
 
 function beginSidecarRunRecord(): SidecarRunRecord {
+  // A new attempt supersedes any latched startup failure from a prior one.
+  sidecarStartupFailure = null;
   currentRunRecord = {
     startedAt: new Date().toISOString(),
     endedAt: null,
@@ -141,19 +164,38 @@ function beginSidecarRunRecord(): SidecarRunRecord {
     signal: null,
     spawnError: null,
     lines: [],
+    pendingPartial: '',
   };
   return currentRunRecord;
 }
 
-/** Append output lines to a run record, keeping only the last N lines. */
-function appendRunLogLines(record: SidecarRunRecord, text: string): void {
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.trimEnd();
-    if (line.length === 0) continue;
-    record.lines.push(line);
-  }
+function pushRunLogLine(record: SidecarRunRecord, rawLine: string): void {
+  const line = rawLine.trimEnd();
+  if (line.length === 0) return;
+  record.lines.push(line);
   if (record.lines.length > SIDECAR_RUN_LOG_MAX_LINES) {
     record.lines.splice(0, record.lines.length - SIDECAR_RUN_LOG_MAX_LINES);
+  }
+}
+
+/**
+ * Append output to a run record, keeping only the last N complete lines. A
+ * line straddling two data chunks is buffered until its newline arrives so it
+ * is recorded once, not split into two entries.
+ */
+function appendRunLogLines(record: SidecarRunRecord, text: string): void {
+  const segments = (record.pendingPartial + text).split('\n');
+  record.pendingPartial = segments.pop() ?? '';
+  for (const segment of segments) {
+    pushRunLogLine(record, segment);
+  }
+}
+
+/** Flush any buffered partial line (no newline will ever arrive). */
+function flushRunLogPartial(record: SidecarRunRecord): void {
+  if (record.pendingPartial.length > 0) {
+    pushRunLogLine(record, record.pendingPartial);
+    record.pendingPartial = '';
   }
 }
 
@@ -170,6 +212,16 @@ export function getSidecarRunLog(): SidecarRunLog {
       lines: [],
     };
   }
+  // Include a buffered partial trailing line in the snapshot (without
+  // mutating the record) so a live view is not missing the newest output.
+  const lines = [...currentRunRecord.lines];
+  const partial = currentRunRecord.pendingPartial.trimEnd();
+  if (partial.length > 0) {
+    lines.push(partial);
+    if (lines.length > SIDECAR_RUN_LOG_MAX_LINES) {
+      lines.splice(0, lines.length - SIDECAR_RUN_LOG_MAX_LINES);
+    }
+  }
   return {
     available: true,
     startedAt: currentRunRecord.startedAt,
@@ -177,7 +229,7 @@ export function getSidecarRunLog(): SidecarRunLog {
     exitCode: currentRunRecord.exitCode,
     signal: currentRunRecord.signal,
     spawnError: currentRunRecord.spawnError,
-    lines: [...currentRunRecord.lines],
+    lines,
   };
 }
 
@@ -205,6 +257,7 @@ export function __resetIntentdSidecarForTesting(): void {
   sidecarGaveUpListeners.clear();
   sidecarStartupFailedListeners.clear();
   currentRunRecord = null;
+  sidecarStartupFailure = null;
   spawnOnDemandInFlight = null;
 }
 
@@ -590,6 +643,7 @@ async function spawnSidecarProcess(
   proc.on('exit', (code, signal) => {
     logger.info('Sidecar exited', { code, signal });
 
+    flushRunLogPartial(runRecord);
     runRecord.endedAt = new Date().toISOString();
     runRecord.exitCode = code;
     runRecord.signal = signal;
@@ -640,12 +694,17 @@ async function spawnSidecarProcess(
 
   proc.on('error', (err: Error) => {
     logger.error('Sidecar process error', err);
-    runRecord.spawnError = err.message;
+    // Node embeds the absolute binary path in spawn errors (e.g.
+    // "spawn /path/to/intentd ENOENT"); the run-log/status payloads are
+    // renderer-facing and the pinned contract allows no absolute paths except
+    // logFilePath — redact the path (full detail stays in the main log above).
+    const reason = err.message.split(binaryPath).join('intentd binary');
+    runRecord.spawnError = reason;
     // A spawn-time failure (e.g. ENOENT) never assigns a pid and fires no
     // 'exit': close out the record and surface it as a startup failure.
     if (proc.pid === undefined) {
       if (!runRecord.endedAt) runRecord.endedAt = new Date().toISOString();
-      notifySidecarStartupFailed(err.message);
+      notifySidecarStartupFailed(reason);
     }
   });
 
