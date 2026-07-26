@@ -232,13 +232,15 @@
             class="flex items-center gap-2 pl-2.5 pr-1.5 py-1 rounded-(--radius) bg-background/70 dark:bg-background/50"
           >
             <Fa icon={faPen} class="text-[10px] text-ghost a11y-ignore" />
+            <!-- Typography matches the composer editor (TipTapEditor's
+                 .tiptap-editor: 1rem / 1.5 with the inherited app font stack) -->
             <input
               bind:value={draft.text}
               oninput={() => (draft.skipped = false)}
               onkeydown={handleKeydown}
               aria-label="Type your own answer"
               placeholder="Or type your own answer…"
-              class="flex-1 border-none outline-none bg-transparent text-[0.8125rem] font-[inherit] text-foreground py-1"
+              class="flex-1 border-none outline-none bg-transparent text-[1rem] leading-normal font-[inherit] text-foreground py-1"
             />
             <span class="text-[0.7rem] text-ghost pr-1.5">↵</span>
           </div>
