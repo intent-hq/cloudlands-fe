@@ -24,7 +24,9 @@ import {
   safeValidateContentBlock,
   safeValidateToolCall,
   workspaceIdSchema,
+  WorkspaceSchema,
 } from '../../schemas';
+import { WorkspaceStatus } from '../../types';
 
 describe('Zod Schemas', () => {
   describe('ID Schemas', () => {
@@ -294,6 +296,61 @@ describe('Zod Schemas', () => {
       expect(() =>
         workspaceIdSchema.parse('550e8400-e29b-41d4-a716-446655440000'),
       ).not.toThrow();
+    });
+  });
+
+  describe('WorkspaceSchema', () => {
+    const baseWorkspace = {
+      id: 'amber-forest',
+      title: 'Test Workspace',
+      branch: 'feature/test',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      status: WorkspaceStatus.Active,
+      createdAt: '2026-07-26T00:00:00.000Z',
+      updatedAt: '2026-07-26T00:00:00.000Z',
+    };
+
+    it('passes cowSupported and checkoutMode through validation (regression: fields were stripped, hiding the CoW toggle)', () => {
+      const workspace = {
+        ...baseWorkspace,
+        cowSupported: true,
+        checkoutMode: 'cow',
+      };
+      const parsed = WorkspaceSchema.parse(workspace);
+      expect(parsed.cowSupported).toBe(true);
+      expect(parsed.checkoutMode).toBe('cow');
+    });
+
+    it('accepts all checkoutMode values and rejects unknown ones', () => {
+      for (const mode of ['cow', 'worktree', 'direct']) {
+        expect(WorkspaceSchema.parse({ ...baseWorkspace, checkoutMode: mode }).checkoutMode).toBe(
+          mode,
+        );
+      }
+      expect(() => WorkspaceSchema.parse({ ...baseWorkspace, checkoutMode: 'bogus' })).toThrow();
+    });
+
+    it('does not strip any populated Workspace-type fields', () => {
+      const workspace = {
+        ...baseWorkspace,
+        name: 'compat-name',
+        statusMessage: 'Working on it',
+        activity: 'agent_running',
+        skipWorktree: false,
+        setupScript: 'pnpm install',
+        isRemote: false,
+        defaultModel: 'claude',
+        agentSummary: { agentIds: ['agent-1'] },
+        taskStats: { total: 1, completed: 0, inProgress: 1 },
+        gitSummary: { ahead: 1, behind: 0, hasUnpushed: true },
+        cowSupported: true,
+        checkoutMode: 'worktree',
+      };
+      const parsed = WorkspaceSchema.parse(workspace);
+      const strippedKeys = Object.keys(workspace).filter((key) => !(key in parsed));
+      expect(strippedKeys).toEqual([]);
     });
   });
 
