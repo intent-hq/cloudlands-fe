@@ -1137,7 +1137,9 @@
   $effect(() => {
     const path = repoPath;
     const type = repoType;
-    const identity = { path, type, githubUrl };
+    // Only read githubUrl for GitHub selections so the effect doesn't track
+    // it (and re-run) while a local repo is selected.
+    const identity = { path, type, githubUrl: type === 'github' ? githubUrl : null };
     const repoKey = repoIdentityKey(identity);
     // Only run when the selected repo actually changes
     if (repoKey === previousSetupScriptRepoKey) return;

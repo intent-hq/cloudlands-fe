@@ -22,7 +22,11 @@ import { fetchGitHubRepoConfigSetupScript, fetchRepoConfigSetupScript } from './
  */
 export interface RepoIdentity {
   path: string | null;
-  type: string | null | undefined;
+  /**
+   * Only `'local'` and `'github'` are meaningful to the probe; other values
+   * (e.g. the initializers' `'remote'` / `'new'`) pass through and disable it.
+   */
+  type: 'local' | 'github' | (string & {}) | null | undefined;
   githubUrl?: string | null;
 }
 
