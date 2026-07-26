@@ -1332,26 +1332,6 @@
   // We'll handle the streaming state when rendering
   let groupedMessages = $derived(groupMessagesByDate($agentMessages$));
 
-  // Agent Q&A: assistant messages whose question cards are superseded by ANY
-  // later user message render resolved (wire contract — resolution is
-  // derivational, not id-keyed). Precomputed as a Set of assistant message ids
-  // preceding the last user message.
-  let resolvedQuestionMessageIds = $derived.by(() => {
-    const ids = new Set<string>();
-    let lastUserIndex = -1;
-    for (let i = $agentMessages$.length - 1; i >= 0; i--) {
-      if ($agentMessages$[i].role === 'user') {
-        lastUserIndex = i;
-        break;
-      }
-    }
-    for (let i = 0; i < lastUserIndex; i++) {
-      const msg = $agentMessages$[i];
-      if (msg.role === 'assistant' && msg.id) ids.add(msg.id);
-    }
-    return ids;
-  });
-
   // Get the auggie session ID from the most recent assistant message's metadata
   // This is the raw UUID format that auggie uses, needed for debugging/support
   let auggieSessionId = $derived.by(() => {
@@ -3130,7 +3110,6 @@
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
-                      questionsResolved={resolvedQuestionMessageIds.has(message.id)}
                     />
                   </div>
                   {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$))}
@@ -3235,7 +3214,6 @@
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
-                      questionsResolved={resolvedQuestionMessageIds.has(message.id)}
                     />
                   </div>
                   {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && ($chatError$ || $chatModelUnavailable$))}
@@ -3538,7 +3516,6 @@
                             suppressCoordinationStoppedIndicator={turn.userMessage
                               ? isAutomatedMessage(turn.userMessage)
                               : false}
-                            questionsResolved={resolvedQuestionMessageIds.has(message.id)}
                           />
                         </div>
                         <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->

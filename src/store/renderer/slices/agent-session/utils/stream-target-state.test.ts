@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import {
   findInFlightAssistantMessage,
+  findStreamTargetAssistantMessage,
   isStaleFinalizedAssistantStream,
 } from './stream-target-state';
 
@@ -42,5 +43,36 @@ describe('stream target state utilities', () => {
       streamingComplete: true,
     });
     expect(isStaleFinalizedAssistantStream(session([completed]), 'app-new')).toBe(false);
+  });
+
+  describe('findStreamTargetAssistantMessage', () => {
+    it('prefers the exact in-flight match on the canonical assistantMessageId', () => {
+      const stale = assistant({ id: 'msg_stale', appMessageId: undefined, isStreaming: true });
+      const target = assistant({ id: 'msg_live', appMessageId: undefined, isStreaming: true });
+      expect(findStreamTargetAssistantMessage(session([stale, target]), undefined, 'msg_live')).toBe(
+        target,
+      );
+    });
+
+    it('refuses a stale in-flight row bound to a DIFFERENT canonical id when only assistantMessageId is known', () => {
+      const stale = assistant({ id: 'msg_stale', appMessageId: undefined, isStreaming: true });
+      expect(
+        findStreamTargetAssistantMessage(session([stale]), undefined, 'msg_new'),
+      ).toBeUndefined();
+    });
+
+    it('still binds a local optimistic placeholder (non-canonical id) via the first-in-flight fallback', () => {
+      const optimistic = assistant({ id: 'local-uuid', appMessageId: undefined, isStreaming: true });
+      expect(findStreamTargetAssistantMessage(session([optimistic]), undefined, 'msg_new')).toBe(
+        optimistic,
+      );
+    });
+
+    it('keeps the appMessageId lookup path when assistantAppMessageId is provided', () => {
+      const target = assistant({ id: 'msg_other', appMessageId: 'app-live', isStreaming: true });
+      expect(findStreamTargetAssistantMessage(session([target]), 'app-live', 'msg_new')).toBe(
+        target,
+      );
+    });
   });
 });

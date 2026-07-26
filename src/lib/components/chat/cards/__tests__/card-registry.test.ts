@@ -1,16 +1,16 @@
 /**
  * MIME-keyed card registry (§7.1 standalone resource blocks → card
- * components): ProposalCard is registered under the proposal MIME and
- * QuestionCard under the Agent Q&A question MIME; unknown MIME types and
- * malformed payloads resolve to null so the rendering components fall
- * through to their legacy branches.
+ * components): ProposalCard is registered under the proposal MIME; unknown
+ * MIME types and malformed payloads resolve to null so the rendering
+ * components fall through to their legacy branches. Agent Q&A question
+ * blocks are deliberately unregistered (wizard-only rendering) and must
+ * resolve to null.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { resolveCard, type CardHandlers } from '../card-registry';
 import { PROPOSAL_RESOURCE_MIME_TYPE } from '$shared/types/proposal-resource';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import ProposalCard from '../../proposals/ProposalCard.svelte';
-import QuestionCard from '../../questions/QuestionCard.svelte';
 
 const PROPOSAL = {
   kind: 'workspace-create',
@@ -100,42 +100,12 @@ describe('resolveCard', () => {
     expect(resolveCard(null, handlers())).toBeNull();
   });
 
-  it('resolves a question-MIME resource block to QuestionCard with parsed props', () => {
-    const card = resolveCard(questionBlock(JSON.stringify(QUESTION)), handlers());
-    expect(card).not.toBeNull();
-    expect(card!.component).toBe(QuestionCard);
-    expect(card!.props.question).toEqual(QUESTION);
-    expect(card!.props.resolved).toBe(false);
-  });
-
-  it('passes questionsResolved through as the resolved prop', () => {
-    const card = resolveCard(
-      questionBlock(JSON.stringify(QUESTION)),
-      handlers({ questionsResolved: true }),
-    );
-    expect(card).not.toBeNull();
-    expect(card!.props.resolved).toBe(true);
-  });
-
-  it('returns null for malformed question payloads', () => {
+  it('resolves question-MIME resource blocks to null (wizard-only rendering — no transcript card)', () => {
+    // A perfectly well-formed question payload still resolves to null: the
+    // composer-slot QuestionWizard is the sole rendering surface, and the
+    // transcript renderers additionally strip question blocks entirely via
+    // isQuestionResourceBlock before consulting the registry.
+    expect(resolveCard(questionBlock(JSON.stringify(QUESTION)), handlers())).toBeNull();
     expect(resolveCard(questionBlock('not json'), handlers())).toBeNull();
-    // Missing attachmentId
-    expect(
-      resolveCard(questionBlock(JSON.stringify({ ...QUESTION, attachmentId: undefined })), handlers()),
-    ).toBeNull();
-    // Fewer than 2 options
-    expect(
-      resolveCard(
-        questionBlock(JSON.stringify({ ...QUESTION, options: [{ label: 'Only one' }] })),
-        handlers(),
-      ),
-    ).toBeNull();
-    // Option with empty label
-    expect(
-      resolveCard(
-        questionBlock(JSON.stringify({ ...QUESTION, options: [{ label: '' }, { label: 'B' }] })),
-        handlers(),
-      ),
-    ).toBeNull();
   });
 });
