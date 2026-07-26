@@ -65,7 +65,7 @@
       >
         <Fa
           icon={explanationExpanded ? faChevronUp : faChevronDown}
-          class="text-[9px] mt-1 shrink-0"
+          class="text-[9px] mt-1 shrink-0 a11y-ignore"
         />
         {#if explanationExpanded}
           <span class="leading-relaxed whitespace-pre-wrap">{question.explanation}</span>

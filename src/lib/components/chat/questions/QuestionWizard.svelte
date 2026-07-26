@@ -208,7 +208,7 @@
                       : 'border border-ghost'}"
                   >
                     {#if selected}
-                      <Fa icon={faCheck} class="text-[9px] text-primary-foreground" />
+                      <Fa icon={faCheck} class="text-[9px] text-primary-foreground a11y-ignore" />
                     {/if}
                   </span>
                 {/if}
@@ -219,7 +219,7 @@
                   {/if}
                 </span>
                 {#if !isMulti}
-                  <Fa icon={faArrowRight} class="ml-auto self-center text-[10px] text-ghost" />
+                  <Fa icon={faArrowRight} class="ml-auto self-center text-[10px] text-ghost a11y-ignore" />
                 {/if}
               </button>
             {/each}
@@ -229,7 +229,7 @@
           <div
             class="flex items-center gap-2 pl-2.5 pr-1.5 py-1 rounded-(--radius) bg-background/70 dark:bg-background/50"
           >
-            <Fa icon={faPen} class="text-[10px] text-ghost" />
+            <Fa icon={faPen} class="text-[10px] text-ghost a11y-ignore" />
             <input
               bind:value={draft.text}
               onkeydown={handleKeydown}
@@ -251,7 +251,7 @@
             disabled={idx === 0}
             onclick={handleBack}
           >
-            <Fa icon={faChevronLeft} class="text-[9px]" />
+            <Fa icon={faChevronLeft} class="text-[9px] a11y-ignore" />
             Back
           </button>
           {#if !isMulti && !isLast}
@@ -270,7 +270,7 @@
             {#if showNext}
               <Button size="sm" disabled={nextDisabled} onclick={handleNext}>
                 {isLast ? 'Send' : 'Next'}
-                <Fa icon={isLast ? faArrowUp : faArrowRight} class="text-[10px]" />
+                <Fa icon={isLast ? faArrowUp : faArrowRight} class="text-[10px] a11y-ignore" />
               </Button>
             {/if}
           </span>
