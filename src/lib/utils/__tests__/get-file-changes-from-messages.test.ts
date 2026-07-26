@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   getFileChangesFromMessage,
+  getFileChangesFromMessages,
   getFileChangesFromMessageMemoKey,
 } from '../get-file-changes-from-messages';
 import type { AgentMessage } from '$shared/types';
@@ -230,6 +231,254 @@ describe('getFileChangesFromMessage', () => {
       expect(result.changes).toHaveLength(1);
       expect(result.changes[0].action).toBe('modify');
       expect(result.changes[0].additions).toBe(1);
+    });
+  });
+
+  describe('non-string tool input values (regression: content.replace is not a function)', () => {
+    it('does not throw when flat old_str/new_str are numbers', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-num',
+          name: 'str_replace_editor',
+          input: {
+            command: 'str_replace',
+            path: 'src/nums.ts',
+            old_str: 42,
+            new_str: 43,
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].oldContent).toBe('42');
+      expect(result.changes[0].newContent).toBe('43');
+    });
+
+    it('does not throw when flat old_str/new_str are booleans', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-bool',
+          name: 'str_replace_editor',
+          input: {
+            command: 'str_replace',
+            path: 'src/bools.ts',
+            old_str: false,
+            new_str: true,
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].oldContent).toBe('false');
+      expect(result.changes[0].newContent).toBe('true');
+    });
+
+    it('does not throw when flat old_str/new_str are objects or arrays', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-obj',
+          name: 'str_replace_editor',
+          input: {
+            command: 'str_replace',
+            path: 'src/objs.ts',
+            old_str: { nested: 'value' },
+            new_str: ['a', 'b'],
+          },
+        },
+      ]);
+
+      // Objects/arrays render as empty strings; both empty means the change
+      // is filtered as a no-op, but nothing should throw.
+      expect(() => getFileChangesFromMessage(message)).not.toThrow();
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('does not throw when str_replace_entries contain non-string values', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-nested',
+          name: 'str_replace_editor',
+          input: {
+            command: 'str_replace',
+            path: 'src/nested.ts',
+            str_replace_entries: [
+              { old_str: 1, new_str: { foo: 'bar' } },
+              { old_str: 'real old', new_str: 'real new' },
+            ],
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].oldContent).toContain('real old');
+      expect(result.changes[0].newContent).toContain('real new');
+    });
+
+    it('does not throw when insert_entries contain non-string values', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-ins-nested',
+          name: 'str_replace_editor',
+          input: {
+            command: 'insert',
+            path: 'src/ins.ts',
+            insert_entries: [{ new_str: 7, insert_line: 3 }],
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].newContent).toBe('7');
+    });
+
+    it('does not throw when save_file content is a number', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-save-num',
+          name: 'save_file',
+          input: {
+            path: 'src/save-num.ts',
+            file_content: 123,
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].newContent).toBe('123');
+    });
+
+    it('does not throw when save_file content is an object', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-save-obj',
+          name: 'save_file',
+          input: {
+            path: 'src/save-obj.ts',
+            file_text: { some: 'object' },
+          },
+        },
+      ]);
+
+      expect(() => getFileChangesFromMessage(message)).not.toThrow();
+    });
+
+    it('does not throw when create command file_text is an object', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-create-obj',
+          name: 'str_replace_editor',
+          input: {
+            command: 'create',
+            path: 'src/create-obj.ts',
+            file_text: { some: 'object' },
+          },
+        },
+      ]);
+
+      expect(() => getFileChangesFromMessage(message)).not.toThrow();
+    });
+
+    it('handles null and undefined string fields without throwing', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-null',
+          name: 'str_replace_editor',
+          input: {
+            command: 'str_replace',
+            path: 'src/nulls.ts',
+            old_str: null,
+            new_str: 'new value',
+          },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-create-null',
+          name: 'str_replace_editor',
+          input: {
+            command: 'create',
+            path: 'src/create-null.ts',
+            file_text: null,
+          },
+        },
+      ]);
+
+      expect(() => getFileChangesFromMessage(message)).not.toThrow();
+      const result = getFileChangesFromMessage(message);
+      const nullsChange = result.changes.find((c) => c.filePath === 'src/nulls.ts');
+      expect(nullsChange?.oldContent).toBe('');
+      expect(nullsChange?.newContent).toBe('new value');
+    });
+
+    it('does not count empty unescaped content as a changed line', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-empty-counts',
+          name: 'str_replace_editor',
+          input: {
+            command: 'str_replace',
+            path: 'src/empty-counts.ts',
+            old_str: null,
+            new_str: 'new value',
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].deletions).toBe(0);
+      expect(result.changes[0].additions).toBe(1);
+      expect(result.totalDeletions).toBe(0);
+      expect(result.totalAdditions).toBe(1);
+    });
+
+    it('getFileChangesFromMessages does not throw on non-string inputs', () => {
+      const messages = [
+        makeAssistantMessage([
+          {
+            type: 'tool_use',
+            id: 'tool-multi-1',
+            name: 'str_replace_editor',
+            input: {
+              command: 'str_replace',
+              path: 'src/multi.ts',
+              old_str: 10,
+              new_str: { bad: 'input' },
+            },
+          },
+        ]),
+        makeAssistantMessage([
+          {
+            type: 'tool_use',
+            id: 'tool-multi-2',
+            name: 'save_file',
+            input: {
+              path: 'src/multi-save.ts',
+              content: 456,
+            },
+          },
+        ]),
+      ];
+
+      expect(() => getFileChangesFromMessages(messages)).not.toThrow();
+      const result = getFileChangesFromMessages(messages);
+      const saveChange = result.changes.find((c) => c.filePath === 'src/multi-save.ts');
+      expect(saveChange?.newContent).toBe('456');
     });
   });
 });
