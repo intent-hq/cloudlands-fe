@@ -18,6 +18,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Input } from '$lib/components/ui/input';
   import Fa from 'svelte-fa';
   import {
     faCopy,
@@ -258,15 +259,17 @@
       <div class="flex items-center justify-between gap-3">
         <span class="text-sm text-muted-foreground">Port</span>
         <div class="flex items-center gap-2">
-          <input
-            type="number"
-            min="1024"
-            max="65535"
-            bind:value={editedPort}
-            disabled={portSaving}
-            aria-label="WebSocket API port"
-            class="w-24 text-sm font-mono text-foreground bg-muted px-2 py-0.5 rounded border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
-          />
+          <div class="shrink-0 w-32">
+            <Input
+              type="number"
+              min="1024"
+              max="65535"
+              bind:value={editedPort}
+              disabled={portSaving}
+              aria-label="WebSocket API port"
+              class="h-9 text-sm"
+            />
+          </div>
           {#if editedPort !== String(persistedPort)}
             <button
               type="button"
