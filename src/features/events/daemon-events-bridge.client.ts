@@ -820,21 +820,37 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
  * message row — `chatSendStarted` only flips flags; the user row is added by
  * the lifecycle send path, which never runs for a wake turn.
  *
- * The accumulator is primed under the wake turn's `messageId` (dropping any
- * stale prior-turn state) and a `started` stream update creates the in-flight
- * assistant placeholder, mirroring the user-initiated flow in
- * `agent-stream-lifecycle.sendMessage`. Subsequent `agent:stream:chunk` /
- * `agent:tool:call` events carry the same `messageId` and grow that message
- * in place; `agent:stream:end` + `agent:idle` finalize and clear the flags
- * through the existing paths.
+ * The accumulator is primed under the wake turn's `messageId` and a `started`
+ * stream update creates the in-flight assistant placeholder, mirroring the
+ * user-initiated flow in `agent-stream-lifecycle.sendMessage`. A stale
+ * prior-turn accumulator is finalized as-is first (mirroring
+ * `handleStreamEndEvent`) so the old in-flight assistant message does not stay
+ * `isStreaming` until the next `agents.getConversation` reconcile. A duplicate
+ * delivery for the same `messageId` (at-least-once, e.g. across a reconnect)
+ * is a no-op: re-dispatching `chatSendStarted` mid-turn would wipe
+ * `statusEvents`/`receivedFirstChunk` and restart the Thinking elapsed timer.
+ * Subsequent `agent:stream:chunk` / `agent:tool:call` events carry the same
+ * `messageId` and grow that message in place; `agent:stream:end` +
+ * `agent:idle` finalize and clear the flags through the existing paths.
  */
 function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
   const messageId = data.messageId;
-  if (typeof agentId !== 'string' || agentId.length === 0 || typeof messageId !== 'string') {
+  if (
+    typeof agentId !== 'string' ||
+    agentId.length === 0 ||
+    typeof messageId !== 'string' ||
+    messageId.length === 0
+  ) {
     return;
+  }
+  const prior = streamsByAgent.get(agentId);
+  if (prior && prior.messageId === messageId) return;
+  if (prior) {
+    dispatchStreamUpdate(agentId, prior, 'complete');
+    streamsByAgent.delete(agentId);
   }
   ensureStream(agentId, messageId, workspaceId);
   appStore.dispatch(chatSendStarted(agentId, workspaceId));

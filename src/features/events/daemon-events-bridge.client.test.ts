@@ -1412,7 +1412,7 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     ).toBe(true);
   });
 
-  it('drops a stale prior-turn accumulator: the wake turn primes a fresh slot under its own messageId', async () => {
+  it('finalizes a stale prior-turn accumulator (old message stops streaming) and primes a fresh slot under the wake messageId', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -1445,15 +1445,69 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     const wakeMessage = readAssistantMessages().find((m) => m.id === WAKE_MESSAGE_ID);
     expect(wakeMessage).toBeDefined();
     expect(wakeMessage!.contentBlocks?.[0]).toMatchObject({ type: 'text', text: 'fresh wake' });
+
+    // The stale prior-turn message is finalized as-is (mirrors stream:end's
+    // different-turn path) instead of staying isStreaming until reconcile.
+    const oldMessage = readAssistantMessages().find((m) => m.id === MESSAGE_ID);
+    expect(oldMessage).toBeDefined();
+    expect(oldMessage!.isStreaming).toBe(false);
+    expect(oldMessage!.streamingComplete).toBe(true);
+    expect(oldMessage!.contentBlocks?.[0]).toMatchObject({ type: 'text', text: 'old turn' });
   });
 
-  it('ignores malformed agent:stream:start payloads (missing agentId or messageId)', async () => {
+  it('a duplicate agent:stream:start for the same messageId is a no-op (no mid-turn statusEvents/timer reset)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamStart(handler);
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        phase: 'prompt',
+        message: 'Sent prompt…',
+        timestamp: 1000,
+      }),
+    );
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Waking…',
+        messageId: WAKE_MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${WAKE_MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+    const statusEventsBefore = readStatusEvents();
+    expect(statusEventsBefore.length).toBeGreaterThan(0);
+
+    // At-least-once delivery (e.g. across a reconnect) replays the start event.
+    streamStart(handler);
+
+    // Busy state stays open, streamed content survives, and the mid-turn
+    // status/timer state is NOT wiped by a second chatSendStarted.
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    expect(readStatusEvents()).toEqual(statusEventsBefore);
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(WAKE_MESSAGE_ID);
+    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
+      type: 'text',
+      text: 'Waking…',
+    });
+  });
+
+  it('ignores malformed agent:stream:start payloads (missing agentId or missing/empty messageId)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     handler(notification('agent:stream:start', { agentId: AGENT, reason: 'harness-wake' }));
     handler(
       notification('agent:stream:start', { messageId: WAKE_MESSAGE_ID, reason: 'harness-wake' }),
+    );
+    handler(
+      notification('agent:stream:start', { agentId: AGENT, messageId: '', reason: 'harness-wake' }),
     );
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
