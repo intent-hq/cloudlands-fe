@@ -548,5 +548,288 @@ describe("createDeltaSubscription", () => {
       expect(handler.mock.calls.length).toBe(calls);
       dispose();
     });
+
+    it("buffers a pre-ack push that races the subscribe reply and replays it on resolve", async () => {
+      // PR #397 carry-over: the daemon may emit the seq-0 snapshot before the
+      // `ws.subscribe` reply (carrying the subscriptionId) is processed. The
+      // push must be buffered and replayed — not dropped.
+      liveStateCapability = true;
+      deferChannelSubscribe = true;
+      const { handler, fetchAll, dispose } = setupChannel([{ id: "a" }]);
+      await flush();
+      expect(channelSubscribes().length).toBe(1); // chan-1 reply held pending
+
+      // The push races ahead of its subscribe reply.
+      chanSnapshot("chan-1", 0, [{ id: "a" }, { id: "b" }]);
+      expect(handler).not.toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+
+      // The reply lands: the buffered push replays and flips live.
+      channelSubscribeResolvers[0]!();
+      await flush();
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(1);
+      dispose();
+    });
+  });
+
+  describe("dynamic per-id channels (per-workspace note/task/agent.subscribe, monorepo#775)", () => {
+    function makeIdSource(initial: readonly string[]) {
+      let listener: ((ids: readonly string[]) => void) | null = null;
+      return {
+        scope: {
+          subscribeIds: (l: (ids: readonly string[]) => void) => {
+            listener = l;
+            l(initial);
+            return () => {
+              listener = null;
+            };
+          },
+          paramsForId: (id: string) => ({ workspaceId: id }),
+        },
+        emit(ids: readonly string[]) {
+          listener?.(ids);
+        },
+      };
+    }
+
+    function setupDynamic(initial: Row[], ids: readonly string[]) {
+      const source = makeIdSource(ids);
+      const handler = vi.fn();
+      const fetchAll = vi.fn(async () => initial);
+      const dispose = createDeltaSubscription<Row>({
+        eventTypes: ["x:changed"],
+        channel: {
+          subscribeMethod: "ws.subscribe",
+          unsubscribeMethod: "ws.unsubscribe",
+          dynamic: source.scope,
+        },
+        matchLegacyEvent: (method) => method === "events.event",
+        fetchAll,
+        getId,
+        normalize,
+        handler,
+      });
+      return { source, handler, fetchAll, dispose };
+    }
+
+    const channelSubscribes = () => requestCalls.filter((c) => c.method === "ws.subscribe");
+    const channelUnsubscribes = () => requestCalls.filter((c) => c.method === "ws.unsubscribe");
+    const chanSnapshot = (id: string, seq: number, snap: Row[]) =>
+      push("subscription.push", { subscriptionId: id, kind: "snapshot", seq, snapshot: snap });
+    const chanDelta = (id: string, seq: number, d: Record<string, unknown>) =>
+      push("subscription.push", { subscriptionId: id, kind: "delta", seq, delta: d });
+
+    it("registers one channel per id with per-id params", async () => {
+      liveStateCapability = true;
+      const { dispose } = setupDynamic([], ["w1", "w2"]);
+      await flush();
+      expect(channelSubscribes()).toEqual([
+        { method: "ws.subscribe", params: { workspaceId: "w1" } },
+        { method: "ws.subscribe", params: { workspaceId: "w2" } },
+      ]);
+      dispose();
+    });
+
+    it("does not register channels on a legacy daemon (no liveState)", async () => {
+      liveStateCapability = false;
+      const { dispose } = setupDynamic([], ["w1"]);
+      await flush();
+      expect(channelSubscribes()).toEqual([]);
+      dispose();
+    });
+
+    it("goes live only when EVERY channel is snapshot-confirmed, merging their collections", async () => {
+      liveStateCapability = true;
+      const { handler, fetchAll, dispose } = setupDynamic([{ id: "a" }], ["w1", "w2"]);
+      await flush(); // chan-1 = w1, chan-2 = w2
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+
+      // One of two channels confirmed: still legacy — no merged emit, and
+      // legacy events keep refetching (all-channels live-flip rule).
+      chanSnapshot("chan-1", 0, [{ id: "a" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+
+      // Second snapshot: all confirmed → live, merged emit, refetches stop.
+      chanSnapshot("chan-2", 0, [{ id: "b" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+
+      // Deltas reconcile per channel into the merged collection.
+      chanDelta("chan-1", 1, { added: [{ id: "c" }] });
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "c" }, { id: "b" }]);
+      chanDelta("chan-2", 1, { removedIds: ["b"] });
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "c" }]);
+      dispose();
+    });
+
+    it("an added id registers a new channel and drops live until its snapshot lands", async () => {
+      liveStateCapability = true;
+      const { source, handler, fetchAll, dispose } = setupDynamic([{ id: "a" }], ["w1"]);
+      await flush();
+      chanSnapshot("chan-1", 0, [{ id: "a" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+
+      source.emit(["w1", "w2"]);
+      await flush(); // chan-2 = w2 registered
+      expect(channelSubscribes().length).toBe(2);
+      // Unconfirmed new channel → back to legacy bridging.
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(3);
+
+      // Its seq-0 snapshot re-enters live with the merged collection.
+      chanSnapshot("chan-2", 0, [{ id: "b" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(3);
+      dispose();
+    });
+
+    it("a removed id unsubscribes its channel and evicts its entities while staying live", async () => {
+      liveStateCapability = true;
+      const { source, handler, fetchAll, dispose } = setupDynamic([], ["w1", "w2"]);
+      await flush(); // chan-1 = w1, chan-2 = w2
+      chanSnapshot("chan-1", 0, [{ id: "a" }]);
+      chanSnapshot("chan-2", 0, [{ id: "b" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+
+      source.emit(["w1"]);
+      await flush();
+      expect(channelUnsubscribes()).toEqual([
+        { method: "ws.unsubscribe", params: { subscriptionId: "chan-2" } },
+      ]);
+      // Every remaining channel is confirmed: still live — entities evicted
+      // via emit, no refetch.
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+      expect(fetchAll).toHaveBeenCalledTimes(1);
+      dispose();
+    });
+
+    it("an empty desired id set stays in legacy mode (refetches keep serving)", async () => {
+      liveStateCapability = true;
+      const { fetchAll, dispose } = setupDynamic([{ id: "a" }], []);
+      await flush();
+      expect(channelSubscribes()).toEqual([]);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+      dispose();
+    });
+
+    it("a seq gap resnapshots only the affected channel; siblings keep their state", async () => {
+      liveStateCapability = true;
+      const { handler, fetchAll, dispose } = setupDynamic([], ["w1", "w2"]);
+      await flush(); // chan-1, chan-2
+      chanSnapshot("chan-1", 0, [{ id: "a" }]);
+      chanSnapshot("chan-2", 0, [{ id: "b" }]);
+
+      // Gap on w2 only: its channel re-registers; w1 is untouched.
+      chanDelta("chan-2", 5, { added: [{ id: "x" }] });
+      await flush(); // chan-3 = w2 re-registration
+      expect(channelUnsubscribes()).toEqual([
+        { method: "ws.unsubscribe", params: { subscriptionId: "chan-2" } },
+      ]);
+      expect(channelSubscribes().length).toBe(3);
+      // One channel unconfirmed → legacy bridging until recovery.
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+
+      // Recovery snapshot restores live with w1's state intact.
+      chanSnapshot("chan-3", 0, [{ id: "b" }, { id: "c" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }, { id: "c" }]);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+      dispose();
+    });
+
+    it("reconnect re-registers every channel without unsubscribing dead ids", async () => {
+      liveStateCapability = true;
+      const { handler, fetchAll, dispose } = setupDynamic([{ id: "a" }], ["w1", "w2"]);
+      await flush(); // chan-1, chan-2
+      chanSnapshot("chan-1", 0, [{ id: "a" }]);
+      chanSnapshot("chan-2", 0, [{ id: "b" }]);
+
+      reconnectHandler?.();
+      await flush(); // chan-3, chan-4
+      expect(channelUnsubscribes()).toEqual([]);
+      expect(channelSubscribes().length).toBe(4);
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+
+      // Fresh seq-0 snapshots on the NEW ids re-enter live mode.
+      chanSnapshot("chan-3", 0, [{ id: "a" }]);
+      chanSnapshot("chan-4", 0, [{ id: "b" }, { id: "c" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }, { id: "c" }]);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+      dispose();
+    });
+
+    it("buffers a pre-ack push that races its subscribe reply and replays it on resolve", async () => {
+      liveStateCapability = true;
+      deferChannelSubscribe = true;
+      const { handler, fetchAll, dispose } = setupDynamic([{ id: "a" }], ["w1"]);
+      await flush();
+      expect(channelSubscribes().length).toBe(1); // chan-1 reply held pending
+
+      // The seq-0 snapshot races ahead of the subscribe reply.
+      chanSnapshot("chan-1", 0, [{ id: "a" }, { id: "b" }]);
+      expect(handler).not.toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+
+      channelSubscribeResolvers[0]!();
+      await flush();
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(1);
+      dispose();
+    });
+
+    it("a subscribe reply for an id removed while in flight is dropped and unsubscribed", async () => {
+      liveStateCapability = true;
+      deferChannelSubscribe = true;
+      const { source, handler, dispose } = setupDynamic([], ["w1", "w2"]);
+      await flush();
+      expect(channelSubscribes().length).toBe(2); // chan-1 (w1), chan-2 (w2) pending
+
+      // w2 disappears while its registration is in flight.
+      source.emit(["w1"]);
+      channelSubscribeResolvers[0]!();
+      channelSubscribeResolvers[1]!();
+      await flush();
+      // The stale w2 reply releases its daemon-side subscription.
+      expect(channelUnsubscribes()).toEqual([
+        { method: "ws.unsubscribe", params: { subscriptionId: "chan-2" } },
+      ]);
+
+      // w1 alone confirms → live with only w1's entities.
+      chanSnapshot("chan-1", 0, [{ id: "a" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+      // Pushes for the dead w2 id stay ignored.
+      const calls = handler.mock.calls.length;
+      chanSnapshot("chan-2", 0, [{ id: "stale" }]);
+      expect(handler.mock.calls.length).toBe(calls);
+      dispose();
+    });
+
+    it("unsubscribes every channel on dispose", async () => {
+      liveStateCapability = true;
+      const { dispose } = setupDynamic([], ["w1", "w2"]);
+      await flush();
+      dispose();
+      expect(channelUnsubscribes()).toEqual([
+        { method: "ws.unsubscribe", params: { subscriptionId: "chan-1" } },
+        { method: "ws.unsubscribe", params: { subscriptionId: "chan-2" } },
+      ]);
+    });
   });
 });
