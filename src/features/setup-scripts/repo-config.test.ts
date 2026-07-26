@@ -10,9 +10,15 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(),
 }));
 
+const githubRepoConfig = vi.hoisted(() => vi.fn());
+vi.mock('$lib/client', () => ({
+  appClient: { integrations: { githubRepoConfig } },
+}));
+
 import { invoke } from '$lib/electron-bridge';
 import {
   chooseDefaultSetupScript,
+  fetchGitHubRepoConfigSetupScript,
   fetchRepoConfigSetupScript,
   parseRepoConfigSetupScript,
   REPO_CONFIG_SCRIPT_NAME,
@@ -91,6 +97,55 @@ describe('fetchRepoConfigSetupScript', () => {
   it('resolves null without invoking for an empty repoPath', async () => {
     expect(await fetchRepoConfigSetupScript('')).toBeNull();
     expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
+describe('fetchGitHubRepoConfigSetupScript', () => {
+  it('reads the setupScript through appClient.integrations.githubRepoConfig', async () => {
+    githubRepoConfig.mockResolvedValueOnce({
+      config: { setupScript: 'pnpm install' },
+      exists: true,
+    });
+
+    const script = await fetchGitHubRepoConfigSetupScript('octo', 'intent');
+
+    expect(githubRepoConfig).toHaveBeenCalledWith('octo', 'intent', undefined);
+    expect(script).toBe('pnpm install');
+  });
+
+  it('forwards the ref when provided', async () => {
+    githubRepoConfig.mockResolvedValueOnce({ config: null, exists: false });
+
+    await fetchGitHubRepoConfigSetupScript('octo', 'intent', 'release-1.x');
+
+    expect(githubRepoConfig).toHaveBeenCalledWith('octo', 'intent', 'release-1.x');
+  });
+
+  it('resolves null when the file is missing (config null)', async () => {
+    githubRepoConfig.mockResolvedValueOnce({ config: null, exists: false });
+    expect(await fetchGitHubRepoConfigSetupScript('octo', 'intent')).toBeNull();
+  });
+
+  it('resolves null for a config without a usable setupScript', async () => {
+    githubRepoConfig.mockResolvedValueOnce({ config: {}, exists: true });
+    expect(await fetchGitHubRepoConfigSetupScript('octo', 'intent')).toBeNull();
+
+    githubRepoConfig.mockResolvedValueOnce({ config: { setupScript: '   ' }, exists: true });
+    expect(await fetchGitHubRepoConfigSetupScript('octo', 'intent')).toBeNull();
+
+    githubRepoConfig.mockResolvedValueOnce({ config: { setupScript: 7 }, exists: true });
+    expect(await fetchGitHubRepoConfigSetupScript('octo', 'intent')).toBeNull();
+  });
+
+  it('resolves null when the RPC rejects (never throws)', async () => {
+    githubRepoConfig.mockRejectedValueOnce(new Error('GitHub is not configured.'));
+    await expect(fetchGitHubRepoConfigSetupScript('octo', 'intent')).resolves.toBeNull();
+  });
+
+  it('resolves null without calling the daemon for missing owner/repo', async () => {
+    expect(await fetchGitHubRepoConfigSetupScript('', 'intent')).toBeNull();
+    expect(await fetchGitHubRepoConfigSetupScript('octo', '')).toBeNull();
+    expect(githubRepoConfig).not.toHaveBeenCalled();
   });
 });
 

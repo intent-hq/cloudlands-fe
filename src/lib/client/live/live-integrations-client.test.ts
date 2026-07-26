@@ -208,6 +208,62 @@ describe("LiveIntegrationsClient.githubBranches (github.branches.list + github.r
   });
 });
 
+describe("LiveIntegrationsClient.githubRepoConfig (github.repoConfig.get, §5.27 v2.4)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("sends owner/repo (no ref) and surfaces the committed config", async () => {
+    // PROTOCOL §5.27 v2.4: { config: RepoConfig | null, exists: boolean }.
+    mockedRequest.mockResolvedValueOnce({
+      config: { setupScript: "pnpm install", branchPrefix: "feat" },
+      exists: true,
+    });
+    const client = new LiveIntegrationsClient();
+
+    const result = await client.githubRepoConfig("octo", "intent");
+
+    expect(mockedRequest).toHaveBeenCalledWith("github.repoConfig.get", {
+      owner: "octo",
+      repo: "intent",
+    });
+    expect(result).toEqual({
+      config: { setupScript: "pnpm install", branchPrefix: "feat" },
+      exists: true,
+    });
+  });
+
+  it("forwards ref on the wire when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ config: {}, exists: true });
+    const client = new LiveIntegrationsClient();
+
+    await client.githubRepoConfig("octo", "intent", "release-1.x");
+
+    expect(mockedRequest).toHaveBeenCalledWith("github.repoConfig.get", {
+      owner: "octo",
+      repo: "intent",
+      ref: "release-1.x",
+    });
+  });
+
+  it("maps a missing file to { config: null, exists: false }", async () => {
+    mockedRequest.mockResolvedValueOnce({ config: null, exists: false });
+    const client = new LiveIntegrationsClient();
+
+    expect(await client.githubRepoConfig("octo", "intent")).toEqual({
+      config: null,
+      exists: false,
+    });
+  });
+
+  it("propagates transport/daemon failures (e.g. unauthenticated private repo)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("GitHub is not configured."));
+    const client = new LiveIntegrationsClient();
+
+    await expect(client.githubRepoConfig("octo", "intent")).rejects.toThrow(
+      "GitHub is not configured.",
+    );
+  });
+});
+
 describe("settings-integrations seeder hydrates the connections slices from the daemon", () => {
   afterEach(() => vi.clearAllMocks());
 

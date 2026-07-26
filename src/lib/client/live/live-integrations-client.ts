@@ -13,6 +13,7 @@
 import type {
   AppClient,
   GitHubBranchListing,
+  GitHubRepoConfigResult,
   IntegrationsClient,
   SubscriptionHandler,
   Unsubscribe,
@@ -21,6 +22,9 @@ import type { GitHubUser } from "$features/github-auth/types";
 import type { LinearIssueResult } from "$features/linear-auth/renderer/linear-auth.client";
 import type { SentryIssueResult } from "$features/sentry-auth/types";
 import { backendRequest } from "./backend-transport";
+import { createLogger } from "$lib/utils/client-logger";
+
+const logger = createLogger("LiveIntegrationsClient");
 
 /** Daemon `github.getUser` result — derived identity only, never the PAT. */
 interface GithubGetUserResult {
@@ -78,6 +82,36 @@ export class LiveIntegrationsClient implements IntegrationsClient {
       // Default branch is a nicety; the branch list alone is sufficient.
     }
     return { branches, defaultBranch };
+  }
+
+  /**
+   * `github.repoConfig.get` (§5.27 v2.4) — the repo's committed
+   * `.intent/config.json` read via the contents API, no clone. `ref` is only
+   * sent when provided (daemon defaults to the repo's default branch).
+   * Failures PROPAGATE; the setup-script probe folds them to "no script".
+   */
+  async githubRepoConfig(
+    owner: string,
+    repo: string,
+    ref?: string,
+  ): Promise<GitHubRepoConfigResult> {
+    const result = await backendRequest<{ config?: unknown; exists?: unknown }>(
+      "github.repoConfig.get",
+      ref ? { owner, repo, ref } : { owner, repo },
+    );
+    const config =
+      result?.config && typeof result.config === "object" && !Array.isArray(result.config)
+        ? (result.config as Record<string, unknown>)
+        : null;
+    // §5.27 never pairs a non-object config with exists=true — surface a
+    // daemon wire regression instead of silently degrading to "no script".
+    if (config === null && result?.config != null) {
+      logger.warn("github.repoConfig.get returned a non-object config; treating as null", {
+        owner,
+        repo,
+      });
+    }
+    return { config, exists: result?.exists === true };
   }
 
   async linearIssues(): Promise<LinearIssueResult[]> {

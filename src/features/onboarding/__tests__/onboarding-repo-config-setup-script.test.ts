@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => {
     dispatch: vi.fn(),
     goto: vi.fn(),
     fetchRepoConfig: vi.fn<(repoPath: string) => Promise<string | null>>(),
+    fetchGitHubRepoConfig:
+      vi.fn<(owner: string, repo: string, ref?: string) => Promise<string | null>>(),
     lastUsedSelect: vi.fn(),
   };
 });
@@ -53,10 +55,11 @@ vi.mock('$store/renderer/slices/setup-scripts/setup-scripts-selectors', () => ({
 }));
 
 // Keep the real priority logic (chooseDefaultSetupScript, templates, name
-// constant); only the IPC-backed probe is stubbed.
+// constant); only the IPC/daemon-backed probes are stubbed.
 vi.mock('$features/setup-scripts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$features/setup-scripts')>()),
   fetchRepoConfigSetupScript: mocks.fetchRepoConfig,
+  fetchGitHubRepoConfigSetupScript: mocks.fetchGitHubRepoConfig,
 }));
 
 vi.mock('$shared/generated/ipc-client', () => ({
@@ -172,6 +175,23 @@ function selectLocalRepo(repoPath: string) {
   });
 }
 
+/** Drive a GitHub-type selection (URL, no local checkout). */
+function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
+  const captured = (
+    window as unknown as {
+      __mockOnboardingPromptStep: { onProjectChange: (selection: unknown) => void };
+    }
+  ).__mockOnboardingPromptStep;
+  captured.onProjectChange({
+    type: 'github',
+    repoPath: '/clones/repo',
+    githubUrl: 'https://github.com/owner/repo',
+    branch: 'main',
+    isValid: true,
+    ...overrides,
+  });
+}
+
 const textOf = (result: ReturnType<typeof renderPage>, testId: string) =>
   result.getByTestId(testId).textContent;
 
@@ -181,6 +201,7 @@ describe('onboarding repo-config setup script detection', () => {
     sessionStorage.clear();
     mocks.lastUsedSelect.mockReturnValue(undefined);
     mocks.fetchRepoConfig.mockResolvedValue(null);
+    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -232,7 +253,54 @@ describe('onboarding repo-config setup script detection', () => {
     expect(textOf(result, 'repo-config-script')).toBe('');
   });
 
-  it('does not probe github/remote selections without a local checkout', async () => {
+  it('probes GitHub selections via github.repoConfig.get with the selected branch as ref', async () => {
+    mocks.fetchGitHubRepoConfig.mockResolvedValue('echo gh-config');
+
+    const result = renderPage();
+    selectGitHubRepo({ branch: 'release-1.x' });
+
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script-name')).toBe(REPO_CONFIG_SCRIPT_NAME);
+    });
+    expect(mocks.fetchRepoConfig).not.toHaveBeenCalled();
+    expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'release-1.x');
+    expect(textOf(result, 'setup-script')).toBe('echo gh-config');
+    expect(textOf(result, 'repo-config-script')).toBe('echo gh-config');
+    // Probe resolved — spinner is gone.
+    expect(textOf(result, 'is-repo-config-loading')).toBe('false');
+  });
+
+  it('omits ref for a GitHub selection without a branch yet', async () => {
+    renderPage();
+    selectGitHubRepo({ branch: '' });
+
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', undefined);
+    });
+  });
+
+  it('shows the loading state while the GitHub probe is in flight, then degrades silently on no config', async () => {
+    const probe = deferred<string | null>();
+    mocks.fetchGitHubRepoConfig.mockReturnValue(probe.promise);
+
+    const result = renderPage();
+    selectGitHubRepo();
+
+    await waitFor(() => {
+      expect(textOf(result, 'is-repo-config-loading')).toBe('true');
+    });
+
+    probe.resolve(null);
+    await waitFor(() => {
+      expect(textOf(result, 'is-repo-config-loading')).toBe('false');
+    });
+    // No config → current default behavior (generic template), no repo-config entry.
+    const generic = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic')!;
+    expect(textOf(result, 'setup-script-name')).toBe(generic.name);
+    expect(textOf(result, 'repo-config-script')).toBe('');
+  });
+
+  it('does not probe remote selections', async () => {
     const result = renderPage();
     const captured = (
       window as unknown as {
@@ -240,9 +308,8 @@ describe('onboarding repo-config setup script detection', () => {
       }
     ).__mockOnboardingPromptStep;
     captured.onProjectChange({
-      type: 'github',
-      repoPath: 'owner/repo',
-      githubUrl: 'https://github.com/owner/repo',
+      type: 'new',
+      repoPath: '/projects/new-thing',
       branch: 'main',
       isValid: true,
     });
@@ -251,6 +318,7 @@ describe('onboarding repo-config setup script detection', () => {
       expect(textOf(result, 'setup-script-name')).not.toBe('Custom');
     });
     expect(mocks.fetchRepoConfig).not.toHaveBeenCalled();
+    expect(mocks.fetchGitHubRepoConfig).not.toHaveBeenCalled();
   });
 
   it('discards a stale probe result after the user switches repos', async () => {
@@ -282,6 +350,61 @@ describe('onboarding repo-config setup script detection', () => {
     expect(textOf(result, 'repo-config-script')).toBe('');
 
     // B's own probe still applies normally.
+    probeB.resolve('echo b-config');
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script-name')).toBe(REPO_CONFIG_SCRIPT_NAME);
+    });
+    expect(textOf(result, 'setup-script')).toBe('echo b-config');
+    expect(textOf(result, 'repo-config-script')).toBe('echo b-config');
+  });
+
+  it('discards a stale GitHub probe result after switching to a local repo', async () => {
+    mocks.lastUsedSelect.mockImplementation((_state: unknown, repo: string) =>
+      repo === '/repo/local' ? { name: 'Local saved', content: 'echo local-saved' } : undefined,
+    );
+    const ghProbe = deferred<string | null>();
+    mocks.fetchGitHubRepoConfig.mockReturnValue(ghProbe.promise);
+
+    const result = renderPage();
+    selectGitHubRepo();
+    await waitFor(() => expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalled());
+
+    // Switch to a local repo while the GitHub read is in flight, then resolve late.
+    selectLocalRepo('/repo/local');
+    await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/local'));
+    ghProbe.resolve('echo gh-config');
+    await Promise.resolve();
+
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script-name')).toBe('Local saved');
+    });
+    expect(textOf(result, 'setup-script')).toBe('echo local-saved');
+    expect(textOf(result, 'repo-config-script')).toBe('');
+  });
+
+  it('re-probes and discards stale results when two GitHub repos share a clone path', async () => {
+    const probeA = deferred<string | null>();
+    const probeB = deferred<string | null>();
+    mocks.fetchGitHubRepoConfig.mockImplementation(async (owner: string) =>
+      owner === 'owner-a' ? probeA.promise : probeB.promise,
+    );
+
+    const result = renderPage();
+    // Both selections use the same clone destination path.
+    selectGitHubRepo({ githubUrl: 'https://github.com/owner-a/repo', branch: '' });
+    await waitFor(() =>
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner-a', 'repo', undefined),
+    );
+
+    // Switching repo identity (same path, different URL) must trigger a new probe.
+    selectGitHubRepo({ githubUrl: 'https://github.com/owner-b/repo', branch: '' });
+    await waitFor(() =>
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner-b', 'repo', undefined),
+    );
+
+    // A's late result must be dropped even though the path still matches.
+    probeA.resolve('echo a-config');
+    await Promise.resolve();
     probeB.resolve('echo b-config');
     await waitFor(() => {
       expect(textOf(result, 'setup-script-name')).toBe(REPO_CONFIG_SCRIPT_NAME);
