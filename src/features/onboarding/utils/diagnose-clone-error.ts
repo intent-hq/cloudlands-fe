@@ -43,19 +43,31 @@ export function diagnoseCloneError(
   errorCode?: string | null,
 ): CloneErrorDiagnosis {
   const raw = message ?? '';
-  const m = raw.toLowerCase();
 
   // A daemon-authored machine-readable code is authoritative — no prose
   // matching needed (PROTOCOL §9.1). Exception: an askpass packaging failure
   // classifies daemon-side as auth-required, but the local fix (move the app
-  // out of quarantine) is more specific, so let the regex win for it.
+  // out of quarantine) is more specific — so for auth-required only, let the
+  // prose classification win when (and only when) it positively identifies
+  // askpass-missing. This is a documented stopgap until the daemon can emit a
+  // distinct code for askpass exec failures (intent-hq/monorepo#837).
   const daemonKind = errorCode ? DAEMON_CODE_TO_KIND[errorCode] : undefined;
-  if (daemonKind && !(daemonKind === 'auth-required' && m.includes('askpass'))) {
+  if (daemonKind) {
+    if (daemonKind === 'auth-required' && classifyByProse(raw) === 'askpass-missing') {
+      return { kind: 'askpass-missing', rawMessage: raw };
+    }
     return { kind: daemonKind, rawMessage: raw };
   }
 
+  return { kind: classifyByProse(raw), rawMessage: raw };
+}
+
+/** Message-based fallback classification for errors without a daemon code. */
+function classifyByProse(raw: string): CloneErrorKind {
+  const m = raw.toLowerCase();
+
   if (!raw.trim()) {
-    return { kind: 'unknown', rawMessage: raw };
+    return 'unknown';
   }
 
   // Order matters: askpass-missing should win over auth-required since the
@@ -66,7 +78,7 @@ export function diagnoseCloneError(
     (m.includes('cannot exec') && m.includes('askpass')) ||
     (m.includes('app.asar') && m.includes('not a directory'))
   ) {
-    return { kind: 'askpass-missing', rawMessage: raw };
+    return 'askpass-missing';
   }
 
   if (
@@ -77,7 +89,7 @@ export function diagnoseCloneError(
     (m.includes('requires authentication') && !m.includes('github authentication is required')) ||
     m.includes('permission denied (publickey)')
   ) {
-    return { kind: 'auth-required', rawMessage: raw };
+    return 'auth-required';
   }
 
   if (
@@ -85,11 +97,11 @@ export function diagnoseCloneError(
     m.includes('returned error: 404') ||
     m.includes('404: not found')
   ) {
-    return { kind: 'repo-not-found', rawMessage: raw };
+    return 'repo-not-found';
   }
 
   if (m.includes('returned error: 403') || m.includes('access denied')) {
-    return { kind: 'access-denied', rawMessage: raw };
+    return 'access-denied';
   }
 
   if (
@@ -98,14 +110,14 @@ export function diagnoseCloneError(
     m.includes('network error') ||
     m.includes('operation timed out')
   ) {
-    return { kind: 'network', rawMessage: raw };
+    return 'network';
   }
 
   if (
     m.includes('already exists and is not an empty directory') ||
     m.includes('already exists and is not empty')
   ) {
-    return { kind: 'destination-exists', rawMessage: raw };
+    return 'destination-exists';
   }
 
   if (
@@ -113,8 +125,8 @@ export function diagnoseCloneError(
     m.includes('spawn git enoent') ||
     m.includes("'git' is not recognized")
   ) {
-    return { kind: 'git-not-installed', rawMessage: raw };
+    return 'git-not-installed';
   }
 
-  return { kind: 'unknown', rawMessage: raw };
+  return 'unknown';
 }

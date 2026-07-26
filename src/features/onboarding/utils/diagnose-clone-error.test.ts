@@ -97,6 +97,15 @@ describe('diagnoseCloneError', () => {
       expect(diagnoseCloneError(msg, 'auth-required').kind).toBe('askpass-missing');
     });
 
+    it('keeps auth-required when the prose mentions askpass without matching askpass-missing', () => {
+      // "askpass" appears, but not in one of the askpass-missing shapes — the
+      // authoritative daemon code must not degrade to unknown (monorepo#837).
+      expect(
+        diagnoseCloneError("error: unable to read askpass response from '/x/y'", 'auth-required')
+          .kind,
+      ).toBe('auth-required');
+    });
+
     it('falls back to prose matching for the clone-failed catch-all and unknown codes', () => {
       expect(diagnoseCloneError('ERROR: Repository not found.', 'clone-failed').kind).toBe(
         'repo-not-found',

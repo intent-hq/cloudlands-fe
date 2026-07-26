@@ -37,7 +37,7 @@
     isOnboardingEnhancing: boolean;
     onboardingCreationError: string | null;
     /** Daemon `error.data.code` for a failed create (PROTOCOL §9.1, monorepo#826). */
-    onboardingCreationErrorCode?: string | null;
+    onboardingCreationErrorCode: string | null;
 
     // Project context
     projectSelection: ProjectSelection | null;
@@ -83,7 +83,7 @@
     isOnboardingCreating,
     isOnboardingEnhancing,
     onboardingCreationError,
-    onboardingCreationErrorCode = null,
+    onboardingCreationErrorCode,
     projectSelection,
     onboardingGithubRepoInfo,
     selectedPRBranch,
