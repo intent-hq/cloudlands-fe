@@ -130,7 +130,7 @@
   ></div>
 
   <div
-    class="fixed inset-0 z-50 flex flex-col items-center overflow-y-auto px-8 pt-[61px] pb-12 pointer-events-none"
+    class="fixed inset-0 z-50 flex flex-col items-center overflow-y-auto px-8 py-12 pointer-events-none"
     role="dialog"
     aria-modal="true"
     aria-label="Usage stats"
@@ -145,8 +145,10 @@
       <Fa icon={faXmark} size={14} />
     </button>
 
-    <!-- Mode pill + period dropdown -->
-    <div class="pointer-events-auto relative z-[3] flex items-center gap-2.5">
+    <!-- Mode pill + period dropdown. The mt-auto here pairs with the hint's mb-auto to
+         center the content block when it fits the viewport, without the top-clipping
+         that justify-center causes on an overflow-y-auto container. -->
+    <div class="pointer-events-auto relative z-[3] mt-auto flex items-center gap-2.5">
       <div class="stats-pill flex rounded-lg p-[3px]">
         {#each STATS_MODES as entry (entry.mode)}
           <button
@@ -230,7 +232,7 @@
       {/if}
     </div>
 
-    <div class="stats-hint mt-[26px] text-xs">
+    <div class="stats-hint mt-[26px] mb-auto text-xs">
       Hover a card to export it as a 1080×1920 PNG story.
     </div>
   </div>
