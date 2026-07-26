@@ -9,7 +9,7 @@
 
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
@@ -70,8 +70,8 @@
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
     chooseDefaultSetupScript,
-    fetchGitHubRepoConfigSetupScript,
-    fetchRepoConfigSetupScript,
+    probeRepoConfigSetupScript,
+    repoIdentityKey,
     REPO_CONFIG_SCRIPT_NAME,
   } from '$features/setup-scripts';
   import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
@@ -192,8 +192,14 @@
   $effect(() => {
     const path = projectSelection?.repoPath ?? null;
     const type = projectSelection?.type;
-    const repoKey =
-      type === 'github' ? `${path}\u0000${projectSelection?.githubUrl || ''}` : path;
+    // Only read githubUrl for GitHub selections so the effect doesn't track
+    // it (and re-run) while a local repo is selected.
+    const identity = {
+      path,
+      type,
+      githubUrl: type === 'github' ? projectSelection?.githubUrl : null,
+    };
+    const repoKey = repoIdentityKey(identity);
     // Only run when the selected repo actually changes
     if (repoKey === previousSetupScriptRepoKey) return;
     const isInitialMount = previousSetupScriptRepoKey === null;
@@ -217,52 +223,31 @@
       }
     }
 
-    // Probe the repo's committed `.intent/config.json` for a setup script.
-    // Local repos read the file directly (absolute paths only — `~` never
-    // expands in host.exec argv, no shell); GitHub repos have no local
-    // checkout, so the daemon reads it via `github.repoConfig.get`.
-    isRepoConfigLoading = false;
-    const isLocalProbe = !!path && type === 'local' && path.startsWith('/');
-    const github =
-      !!path && type === 'github'
-        ? parseGitHubUrl(untrack(() => projectSelection?.githubUrl) || path)
-        : null;
-    if (!isLocalProbe && !github) return;
-    const scriptAtFetchStart = untrack(() => setupScript);
-    isRepoConfigLoading = true;
-    (async () => {
-      const script = isLocalProbe
-        ? await fetchRepoConfigSetupScript(path)
-        : await fetchGitHubRepoConfigSetupScript(
-            github!.owner,
-            github!.repo,
-            untrack(() => projectSelection?.branch) || undefined,
-          );
-      // Staleness guard: user switched repos while the read was in flight
-      // (compare full repo identity — GitHub repos can share a clone path)
-      const currentKey = untrack(() => {
-        const nowPath = projectSelection?.repoPath ?? null;
-        return projectSelection?.type === 'github'
-          ? `${nowPath}\u0000${projectSelection?.githubUrl || ''}`
-          : nowPath;
-      });
-      if (currentKey !== repoKey) return;
-      isRepoConfigLoading = false;
-      repoConfigScript = script;
-      repoConfigScriptRepo = path;
-      if (!script) return;
-      // Repo config has top priority, but never clobber restored form state,
-      // user edits, an open setup-script modal (it snapshots parent values on
-      // open and would commit stale ones on Done), or anything changed while
-      // the read was in flight
-      if (preservedRestoredState) return;
-      if (untrack(() => showSetupScript)) return;
-      if (untrack(() => isCustomSetupScript)) return;
-      if (untrack(() => setupScript) !== scriptAtFetchStart) return;
-      setupScript = script;
-      setupScriptName = REPO_CONFIG_SCRIPT_NAME;
-      isCustomSetupScript = false;
-    })();
+    // Probe the repo's committed `.intent/config.json` for a setup script
+    // (shared helper — spinner state, no-clobber and staleness guards).
+    probeRepoConfigSetupScript({
+      identity,
+      preservedRestoredState,
+      getCurrentIdentity: () => ({
+        path: projectSelection?.repoPath ?? null,
+        type: projectSelection?.type,
+        githubUrl: projectSelection?.githubUrl,
+      }),
+      getBranch: () => projectSelection?.branch,
+      getSetupScript: () => setupScript,
+      isSetupScriptModalOpen: () => showSetupScript,
+      isCustomSetupScript: () => isCustomSetupScript,
+      setLoading: (loading) => (isRepoConfigLoading = loading),
+      onProbeResult: (script) => {
+        repoConfigScript = script;
+        repoConfigScriptRepo = path;
+      },
+      applyScript: (script) => {
+        setupScript = script;
+        setupScriptName = REPO_CONFIG_SCRIPT_NAME;
+        isCustomSetupScript = false;
+      },
+    });
   });
 
   function getInitialOnboardingPrompt(): string {
