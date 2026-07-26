@@ -71,26 +71,27 @@ const codeListing = (): DirectoryPickerListing => ({
   ],
 });
 
-describe('DirectoryPickerModal — folder click does not snap back to home', () => {
-  beforeAll(() => {
-    // jsdom doesn't implement Element.scrollTo; the picker calls it in a
-    // queueMicrotask after each dispatch. Stub it so the test doesn't surface
-    // an unhandled "scrollTo is not a function" error.
-    if (!('scrollTo' in Element.prototype)) {
-      Object.defineProperty(Element.prototype, 'scrollTo', {
-        value: () => {},
-        writable: true,
-        configurable: true,
-      });
-    }
-    appStore.init();
-  });
+// jsdom doesn't implement Element.scrollTo; the picker calls it in a
+// queueMicrotask after each dispatch. Stub it (and init the store) at file
+// level so every suite is self-sufficient under name-filtered runs.
+beforeAll(() => {
+  if (!('scrollTo' in Element.prototype)) {
+    Object.defineProperty(Element.prototype, 'scrollTo', {
+      value: () => {},
+      writable: true,
+      configurable: true,
+    });
+  }
+  appStore.init();
+});
 
-  afterEach(() => {
-    cleanup();
-    backendRequestMock.mockReset();
-    appStore.dispatch(resetDirectoryPicker());
-  });
+afterEach(() => {
+  cleanup();
+  backendRequestMock.mockReset();
+  appStore.dispatch(resetDirectoryPicker());
+});
+
+describe('DirectoryPickerModal — folder click does not snap back to home', () => {
 
   it('clicking a folder loads that folder and never re-requests home', async () => {
     backendRequestMock.mockImplementation(((method: string, params: unknown) => {
@@ -139,22 +140,14 @@ describe('DirectoryPickerModal — folder click does not snap back to home', () 
 });
 
 describe('DirectoryPickerModal — typed tilde path commit (monorepo#824)', () => {
-  beforeAll(() => {
-    appStore.init();
-  });
-
-  afterEach(() => {
-    cleanup();
-    backendRequestMock.mockReset();
-    appStore.dispatch(resetDirectoryPicker());
-  });
-
   it('commits a typed ~/ path even when the initial listing failed (no listing.home)', async () => {
-    // Fresh picker whose initial (home) listing failed with a non-missing-path
-    // error, so no listing — and therefore no `listing.home` — is available.
-    // The client-side `expandTypedPath` fast path cannot expand, so the raw
-    // `~/src` must go over the wire and the daemon-expanded listing must be
-    // applied (host.listDirectory expands leading `~` / `~/` itself).
+    // Fresh picker whose initial (home) listing failed — any rejection of the
+    // home load lands in `directoryListingFailed` (the missing-path fallback
+    // only applies to explicit-path loads), so no listing — and therefore no
+    // `listing.home` — is available. The client-side `expandTypedPath` fast
+    // path cannot expand, so the raw `~/src` must go over the wire and the
+    // daemon-expanded listing must be applied (host.listDirectory expands
+    // leading `~` / `~/` itself).
     const srcListing = (): DirectoryPickerListing => ({
       path: '/Users/me/src',
       parent: '/Users/me',
@@ -200,11 +193,15 @@ describe('DirectoryPickerModal — typed tilde path commit (monorepo#824)', () =
       expect(appStore.state.directoryPicker.pathError).toBeNull();
     });
 
-    // The raw tilde path crossed the wire unchanged (daemon-side expansion).
-    const hostListDirectoryPaths = backendRequestMock.mock.calls
-      .filter(([method]) => method === 'host.listDirectory')
-      .map(([, params]) => (params as { path?: string } | undefined)?.path);
-    expect(hostListDirectoryPaths).toEqual([undefined, '~/src']);
+    // The raw tilde path crossed the wire unchanged (daemon-side expansion) —
+    // exact params: `{}` for the home load, `{ path }` for the typed path.
+    const hostListDirectoryCalls = backendRequestMock.mock.calls.filter(
+      ([method]) => method === 'host.listDirectory',
+    );
+    expect(hostListDirectoryCalls).toEqual([
+      ['host.listDirectory', {}],
+      ['host.listDirectory', { path: '~/src' }],
+    ]);
   });
 
   it('expands a typed ~/ path client-side when listing.home is available (fast path)', async () => {
@@ -246,10 +243,13 @@ describe('DirectoryPickerModal — typed tilde path commit (monorepo#824)', () =
       expect(appStore.state.directoryPicker.listing?.path).toBe('/Users/me/src');
     });
 
-    // The fast path expanded before hitting the wire.
-    const hostListDirectoryPaths = backendRequestMock.mock.calls
-      .filter(([method]) => method === 'host.listDirectory')
-      .map(([, params]) => (params as { path?: string } | undefined)?.path);
-    expect(hostListDirectoryPaths).toEqual([undefined, '/Users/me/src']);
+    // The fast path expanded before hitting the wire — exact params.
+    const hostListDirectoryCalls = backendRequestMock.mock.calls.filter(
+      ([method]) => method === 'host.listDirectory',
+    );
+    expect(hostListDirectoryCalls).toEqual([
+      ['host.listDirectory', {}],
+      ['host.listDirectory', { path: '/Users/me/src' }],
+    ]);
   });
 });
