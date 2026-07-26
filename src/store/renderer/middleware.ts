@@ -50,7 +50,6 @@ import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-serv
 import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
 import { createDirectoryPickerReadMiddleware } from "$features/onboarding/directory-picker-read-service";
 import { createStatsReadMiddleware } from "$features/stats/stats-read-service";
-import { createLegacyImportMiddleware } from "$features/settings/legacy-import-service";
 import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
 import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
@@ -317,9 +316,6 @@ function buildMiddleware(): StoreMiddleware[] {
     // result back to the `stats` slice — keeping the wire call out of the
     // Svelte component (per the `intent/no-component-async-data-fetch` rule).
     createStatsReadMiddleware(),
-    // Route Settings legacy-import requests through the client service and
-    // reflect the asynchronous result in the legacyImport slice.
-    createLegacyImportMiddleware(),
     // Give the (post-saga) ui-layout persistence triggers real handlers so panel
     // sizes / group layouts / collapsed state read on mount and persist on change
     // across sessions via localStorage again.
