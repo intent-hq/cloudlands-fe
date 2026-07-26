@@ -30,6 +30,7 @@
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
+  import { sortWorkingAgentsFirst } from './delegation-ordering';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import {
@@ -119,8 +120,19 @@
     return Array.from(ids);
   });
 
+  // Agents that have finished (completed or deleted) across delegation groups
+  const completedAgentIdSet = $derived.by(() => {
+    const ids = new Set<string>();
+    for (const group of $groups$) {
+      for (const id of group.completedAgentIds) ids.add(id);
+      for (const id of group.deletedAgentIds) ids.add(id);
+    }
+    return ids;
+  });
+
   const watchedAgentIds = $derived.by(() => {
-    return Array.from(new Set([...delegationWatchedIds, ...otherWatchedIds]));
+    const ids = Array.from(new Set([...delegationWatchedIds, ...otherWatchedIds]));
+    return sortWorkingAgentsFirst(ids, completedAgentIdSet);
   });
 
   const waitMode = $derived.by(() => {
@@ -302,7 +314,11 @@
       {#if isCollapsed}
         <div class="flex items-center -space-x-1.5">
           {#each watchedAgentIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
-            <InlineAgentAvatar agentId={watchedAgentId} workspace={resolvedWorkspace} />
+            <InlineAgentAvatar
+              agentId={watchedAgentId}
+              workspace={resolvedWorkspace}
+              isCompleted={completedAgentIdSet.has(watchedAgentId)}
+            />
           {/each}
           {#if watchedAgentIds.length > 5}
             <span class="text-ui text-subtle pl-2">
@@ -363,7 +379,11 @@
     >
       {#each watchedAgentIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
         <div class="w-full" transition:slide={{ axis: 'y', duration: 200 }}>
-          <AgentCard agentId={watchedAgentId} workspace={resolvedWorkspace} />
+          <AgentCard
+            agentId={watchedAgentId}
+            workspace={resolvedWorkspace}
+            isCompleted={completedAgentIdSet.has(watchedAgentId)}
+          />
         </div>
       {/each}
       {#if watchedAgentIds.length > 5}
