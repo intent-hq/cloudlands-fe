@@ -15,9 +15,13 @@
   } = $props();
 
   $effect(() => {
-    (window as unknown as Record<string, unknown>).__mockRepoAndBranchPicker = {
-      onRepoChange,
-      onBranchChange,
+    const registry = window as unknown as Record<string, unknown>;
+    const callbacks = { onRepoChange, onBranchChange };
+    registry.__mockRepoAndBranchPicker = callbacks;
+    return () => {
+      if (registry.__mockRepoAndBranchPicker === callbacks) {
+        delete registry.__mockRepoAndBranchPicker;
+      }
     };
   });
 </script>
