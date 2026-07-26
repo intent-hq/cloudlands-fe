@@ -96,6 +96,7 @@
       draft.sel = draft.sel.includes(oi)
         ? draft.sel.filter((x) => x !== oi)
         : [...draft.sel, oi];
+      draft.skipped = false;
       return;
     }
     draft.sel = draft.sel.includes(oi) ? [] : [oi];
@@ -192,10 +193,11 @@
           </div>
 
           <div class="flex flex-col gap-1.5">
-            {#each current.options as option, oi (option.label)}
+            {#each current.options as option, oi (oi)}
               {@const selected = draft.sel.includes(oi)}
               <button
                 type="button"
+                aria-pressed={selected}
                 class="flex items-start gap-2.5 rounded-(--radius) px-2.5 py-2 cursor-pointer text-left font-[inherit] {selected
                   ? 'border border-primary bg-primary/10'
                   : 'border border-transparent bg-background shadow-xs dark:border-border/60 dark:bg-background/40 hover:border-primary hover:bg-primary/6'}"
@@ -232,6 +234,7 @@
             <Fa icon={faPen} class="text-[10px] text-ghost a11y-ignore" />
             <input
               bind:value={draft.text}
+              oninput={() => (draft.skipped = false)}
               onkeydown={handleKeydown}
               aria-label="Type your own answer"
               placeholder="Or type your own answer…"

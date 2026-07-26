@@ -70,11 +70,21 @@
 
   // Agent Q&A: question cards on assistant messages preceding the last user
   // message render resolved (any later user message supersedes them).
-  const lastUserMessageIndex = $derived.by(() => {
+  // Precomputed Set (same pattern as ChatPanel) so each row is an O(1) lookup.
+  const resolvedQuestionMessageIds = $derived.by(() => {
+    const ids = new Set<string>();
+    let lastUserIndex = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') return i;
+      if (messages[i].role === 'user') {
+        lastUserIndex = i;
+        break;
+      }
     }
-    return -1;
+    for (let i = 0; i < lastUserIndex; i++) {
+      const msg = messages[i];
+      if (msg.role === 'assistant' && msg.id) ids.add(msg.id);
+    }
+    return ids;
   });
 
   // Methods - exposed for parent components
@@ -126,7 +136,7 @@
             <ChatMessage
               {message}
               onCopy={() => handleCopy(extractAllContent(message))}
-              questionsResolved={messages.indexOf(message) < lastUserMessageIndex}
+              questionsResolved={resolvedQuestionMessageIds.has(message.id)}
             />
           {/if}
         </div>

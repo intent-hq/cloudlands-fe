@@ -147,6 +147,31 @@ describe('QuestionWizard', () => {
     expect(answers[1]).toMatchObject({ selectedLabels: ['Migrate silently'], skipped: false });
   });
 
+  it('multi-select answer after Skip then Back clears the stale skipped flag', async () => {
+    const { onComplete } = setup([MULTI, LAST]);
+    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    await fireEvent.click(screen.getByText('Desktop app'));
+    await fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    await fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    const answers = onComplete.mock.calls[0][0];
+    expect(answers[0]).toMatchObject({ selectedLabels: ['Desktop app'], skipped: false });
+  });
+
+  it('free-text answer after Skip then Back clears the stale skipped flag', async () => {
+    const { onComplete } = setup([SINGLE, LAST]);
+    await fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Redis' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    await fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    const answers = onComplete.mock.calls[0][0];
+    expect(answers[0]).toMatchObject({ selectedLabels: [], freeText: 'Redis', skipped: false });
+  });
+
   it('Ignore requests collapse; collapsed renders the banner that re-expands on click', async () => {
     const { onToggleCollapsed, rerender } = setup();
     await fireEvent.click(screen.getByRole('button', { name: /ignore/i }));

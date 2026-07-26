@@ -60,6 +60,7 @@
     {#if question.explanation}
       <button
         type="button"
+        aria-expanded={explanationExpanded}
         class="flex items-start gap-1.5 text-left text-xs text-subtle hover:text-foreground cursor-pointer bg-transparent border-none p-0 font-[inherit]"
         onclick={() => (explanationExpanded = !explanationExpanded)}
       >
@@ -76,7 +77,7 @@
     {/if}
 
     <div class="flex flex-col gap-1.5">
-      {#each question.options as option (option.label)}
+      {#each question.options as option, oi (oi)}
         <div
           class="flex items-start gap-2.5 rounded-(--radius) px-2.5 py-2 {resolved
             ? 'border border-border/40 bg-background/30'
