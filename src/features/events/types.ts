@@ -789,6 +789,23 @@ export interface AgentProcessEvictedEvent extends WorkspaceEventBase {
 }
 
 /**
+ * Emitted when the daemon opens an implicit agent-initiated turn (PROTOCOL
+ * §6.6 / §7). Only agent-initiated (harness-wake) turns emit this event;
+ * prompt (user-initiated) turns never do. `messageId` is the assistant
+ * messageId minted for the wake turn — the same id carried by the turn's
+ * `agent:stream:chunk` / `agent:tool:call` events and the persisted row.
+ */
+export interface AgentStreamStartEvent extends WorkspaceEventBase {
+  type: 'agent:stream:start';
+  data: {
+    agentId: string;
+    messageId: string;
+    /** Why the daemon opened the turn — `"harness-wake"` is the only value today. */
+    reason: string;
+  };
+}
+
+/**
  * Emitted when an agent streams a text chunk (token-by-token)
  */
 export interface AgentStreamChunkEvent extends WorkspaceEventBase {
@@ -898,6 +915,7 @@ export type SpecificWorkspaceEvent =
   // MCP events
   | McpNotificationEvent
   // Agent streaming events
+  | AgentStreamStartEvent
   | AgentStreamChunkEvent
   | AgentStreamContentBlocksEvent
   | AgentStreamEndEvent
