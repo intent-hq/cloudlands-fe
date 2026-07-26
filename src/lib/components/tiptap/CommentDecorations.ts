@@ -83,6 +83,11 @@ function createDecorations(doc: ProseMirrorNode, comments: AnyComment[]): Decora
         anchors.start,
         anchors.end,
         {
+          // Wrap each decoration in its own element so overlapping ranges
+          // stack as nested spans. Without nodeName, prosemirror-view merges
+          // all active decoration attributes onto one span and a colliding
+          // data-comment-id would be overwritten by the other comment's.
+          nodeName: 'span',
           class: getCommentClass(comment),
           'data-comment-id': commentId,
           'data-comment-status': comment.status,
