@@ -93,9 +93,6 @@
   const isSidecarFailure = $derived(
     ($sidecarStartupFailed$ || $sidecarGaveUp$) && !isExternalMode,
   );
-  const sidecarFailureReason = $derived(
-    $sidecarStartupFailedReason$ ?? $sidecarGaveUpReason$,
-  );
   // The on-demand sidecar binds the local UDS socket, which a WS-connected
   // client would never reconnect to — so the button is only offered when the
   // connection target is the local socket (external-ws is excluded). Once a
@@ -134,7 +131,7 @@
     <div class="mx-4 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl">
       <h2 id="daemon-stopped-title" class="text-lg font-semibold text-foreground">
         {#if isSidecarFailure}
-          intentd failed to start
+          {$sidecarStartupFailed$ ? 'intentd failed to start' : 'intentd stopped unexpectedly'}
         {:else if !$hasEverConnected$}
           Cannot connect to intentd
         {:else}
@@ -144,8 +141,13 @@
 
       <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
         {#if isSidecarFailure}
-          The app runs its own intentd daemon, and it failed to
-          start{sidecarFailureReason ? ` (${sidecarFailureReason})` : ''}.
+          {#if $sidecarStartupFailed$}
+            The app runs its own intentd daemon, and it failed to
+            start{$sidecarStartupFailedReason$ ? ` (${$sidecarStartupFailedReason$})` : ''}.
+          {:else}
+            The app-managed intentd daemon stopped and could not be restarted after repeated
+            attempts{$sidecarGaveUpReason$ ? ` (${$sidecarGaveUpReason$})` : ''}.
+          {/if}
         {:else if isExternalMode}
           {#if $hasEverConnected$}
             The connection to the external intentd daemon was lost. It may have been stopped or

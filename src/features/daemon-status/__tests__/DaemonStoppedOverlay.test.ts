@@ -165,16 +165,21 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).toContain('external intentd daemon was lost');
   });
 
-  it('shows the app-managed failure posture after the supervisor gave up, with the reason', async () => {
+  it('shows the crash-loop posture after the supervisor gave up, with distinct copy and the reason', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(sidecarTransport, { sidecarGaveUp: true, reason: 'restart limit reached' });
-    expect(overlay()!.textContent).toContain('runs its own intentd daemon');
-    expect(overlay()!.textContent).toContain('failed to start');
+    // The daemon ran, then crash-looped — "stopped and could not be
+    // restarted", not "failed to start".
+    expect(overlay()!.textContent).toContain('intentd stopped unexpectedly');
+    expect(overlay()!.textContent).toContain('stopped and could not be restarted');
+    expect(overlay()!.textContent).not.toContain('failed to start');
     expect(overlay()!.textContent).toContain('restart limit reached');
     // The app manages the sidecar itself — never "connect to a daemon" wording.
     expect(overlay()!.textContent).not.toContain('connection');
+    // Shares the retry button and log affordance with the startup-failure posture.
     const button = screen.getByTestId('daemon-stopped-spawn-sidecar');
     expect(button.textContent).toContain('Try starting intentd again');
+    expect(screen.getByTestId('daemon-stopped-show-logs')).toBeTruthy();
   });
 
   it('shows the failure posture with the reason when the sidecar spawn could not happen at all', async () => {
