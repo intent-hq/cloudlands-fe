@@ -74,6 +74,18 @@
     onSelect,
   }: Props = $props();
 
+  // Explicit-refresh feedback: AgentGrid suppresses `statusLoading` once a
+  // status is cached (background rechecks stay silent), so a user-initiated
+  // refresh needs its own flag to surface "Checking…" until its probe settles.
+  let userRefreshing = $state(false);
+  let wasRefreshLoading = false;
+  $effect(() => {
+    const loading = $providerLoadingMap$[provider.id] ?? false;
+    if (wasRefreshLoading && !loading) userRefreshing = false;
+    wasRefreshLoading = loading;
+  });
+  const checking = $derived(provider.statusLoading || userRefreshing);
+
   const installed = $derived(provider.available);
   const needsInstall = $derived(!provider.available && !provider.statusLoading);
   const needsUpdate = $derived(provider.id === 'auggie' && installed && auggieNeedsUpdate);
@@ -138,7 +150,7 @@
     aria-pressed={ready ? selected : undefined}
     onclick={handleCardClick}
     onkeydown={handleKeydown}
-    aria-label={provider.statusLoading
+    aria-label={checking
       ? `${provider.name} (checking\u2026)`
       : needsUpdate
         ? `${provider.name} (update needed)`
@@ -225,7 +237,7 @@
       {/if}
 
       <div class="text-xs flex items-center gap-1.5">
-        {#if provider.statusLoading}
+        {#if checking}
           <span class="opacity-50">Checking…</span>
         {:else if needsUpdate}
           <span class="opacity-70">Update needed</span>
@@ -268,6 +280,8 @@
               class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={(e) => {
                 e.stopPropagation();
+                userRefreshing = true;
+                wasRefreshLoading = true;
                 appStore.dispatch(checkSingleProviderRequested(provider.id));
               }}
               disabled={$providerLoadingMap$[provider.id]}
@@ -276,7 +290,7 @@
             >
               <span
                 class={cn('inline-block', {
-                  'animate-spin': $providerLoadingMap$[provider.id],
+                  'animate-spin': $providerLoadingMap$[provider.id] || userRefreshing,
                 })}
               >
                 <Fa icon={faArrowsRotate} size={14} />
