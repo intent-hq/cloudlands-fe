@@ -28,17 +28,38 @@ export interface RepoIdentity {
    */
   type: 'local' | 'github' | (string & {}) | null | undefined;
   githubUrl?: string | null;
+  /**
+   * Selected branch/ref. Part of the probe identity for GitHub selections
+   * (monorepo#835): `.intent/config.json` can differ between branches, so a
+   * branch change re-probes with the new ref and supersedes in-flight
+   * results. Ignored for local repos (detection reads the working tree, not
+   * a ref); empty/cleared means the repo's default branch (no ref sent).
+   */
+  branch?: string | null;
 }
 
 /**
- * Staleness key for a repo selection. Keyed on repo identity, not just path:
- * for GitHub selections the path is the clone destination, which two
- * different repos can share.
+ * Key for the selected repo itself (ref-independent). Keyed on repo
+ * identity, not just path: for GitHub selections the path is the clone
+ * destination, which two different repos can share. A branch change does NOT
+ * change this key — use it for "did the user switch repos" decisions
+ * (last-used restore, cache invalidation).
  */
 export function repoIdentityKey(identity: RepoIdentity): string | null {
   return identity.type === 'github'
     ? `${identity.path}\u0000${identity.githubUrl || ''}`
     : identity.path;
+}
+
+/**
+ * Staleness key for a probe run: the repo identity plus, for GitHub
+ * selections, the selected branch/ref (monorepo#835) — a late response for a
+ * superseded ref must never clobber newer state. A cleared branch keys as
+ * the empty ref (repo default branch). Local probes ignore the branch.
+ */
+export function probeIdentityKey(identity: RepoIdentity): string | null {
+  const repoKey = repoIdentityKey(identity);
+  return identity.type === 'github' ? `${repoKey}\u0000${identity.branch || ''}` : repoKey;
 }
 
 export interface RepoConfigProbeOptions {
@@ -50,10 +71,11 @@ export interface RepoConfigProbeOptions {
    * its result; it just never applies the script.
    */
   preservedRestoredState: boolean;
-  /** Current repo identity, for the staleness guard (read untracked). */
+  /**
+   * Current repo identity (including the selected branch), for the
+   * ref-aware staleness guard (read untracked).
+   */
   getCurrentIdentity: () => RepoIdentity;
-  /** Selected branch, forwarded as the GitHub probe `ref` (read untracked). */
-  getBranch: () => string | null | undefined;
   /** Current setup-script content (read untracked). */
   getSetupScript: () => string;
   /** Whether the setup-script modal is open (read untracked). */
@@ -84,7 +106,7 @@ export interface RepoConfigProbeOptions {
 export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): void {
   const { identity, preservedRestoredState } = options;
   const { path, type } = identity;
-  const repoKey = repoIdentityKey(identity);
+  const probeKey = probeIdentityKey(identity);
 
   options.setLoading(false);
   const isLocalProbe = !!path && type === 'local' && path.startsWith('/');
@@ -99,12 +121,13 @@ export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): voi
       : await fetchGitHubRepoConfigSetupScript(
           github!.owner,
           github!.repo,
-          untrack(options.getBranch) || undefined,
+          identity.branch || undefined,
         );
-    // Staleness guard: user switched repos while the read was in flight
-    // (compare full repo identity — GitHub repos can share a clone path)
-    const currentKey = untrack(() => repoIdentityKey(options.getCurrentIdentity()));
-    if (currentKey !== repoKey) return;
+    // Staleness guard: user switched repos — or, for GitHub, the branch —
+    // while the read was in flight (compare the full ref-aware identity;
+    // GitHub repos can share a clone path)
+    const currentKey = untrack(() => probeIdentityKey(options.getCurrentIdentity()));
+    if (currentKey !== probeKey) return;
     options.setLoading(false);
     options.onProbeResult(script);
     if (!script) return;
@@ -118,4 +141,96 @@ export function probeRepoConfigSetupScript(options: RepoConfigProbeOptions): voi
     if (untrack(options.getSetupScript) !== scriptAtFetchStart) return;
     options.applyScript(script);
   })();
+}
+
+/**
+ * Debounce for branch-change re-probes (monorepo#835): rapid typing or
+ * arrowing through the branch picker coalesces into a single
+ * `github.repoConfig.get` request for the final ref.
+ */
+export const BRANCH_REPROBE_DEBOUNCE_MS = 300;
+
+export interface RepoConfigProbeSelectionOptions
+  extends Omit<RepoConfigProbeOptions, 'preservedRestoredState'> {
+  /**
+   * Called synchronously when the selected repo itself changed (not just the
+   * branch), before the probe starts: invalidate cached repo-config state
+   * and restore the last-used script here. `preservedRestoredState` is true
+   * on the initial mount when a restored non-empty setup script must win
+   * over the probe result.
+   */
+  onRepoChange: (context: { isInitialMount: boolean; preservedRestoredState: boolean }) => void;
+}
+
+/**
+ * Stateful wrapper around {@link probeRepoConfigSetupScript} for the
+ * initializer's repo/branch `$effect`. Call `onSelectionChange` on every
+ * effect run with tracked identity reads (including the branch for GitHub
+ * selections):
+ *
+ * - repo changed → run `onRepoChange` (restore/invalidate), probe at once;
+ * - only the GitHub branch/ref changed → re-probe, debounced (#835) — the
+ *   restored-state guard decided at repo selection keeps applying;
+ * - nothing probe-relevant changed → no-op (a pending re-probe stays
+ *   scheduled).
+ *
+ * Local repos never re-probe on branch changes: the branch is not part of
+ * their probe key (detection reads the working tree, not a ref).
+ *
+ * Call `dispose` on component destroy (e.g. `onDestroy`) so a pending
+ * debounced re-probe never fires against a destroyed component.
+ */
+export function createRepoConfigProbeScheduler(debounceMs = BRANCH_REPROBE_DEBOUNCE_MS) {
+  let previousRepoKey: string | null = null;
+  let previousProbeKey: string | null = null;
+  let preservedRestoredState = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
+
+  return {
+    onSelectionChange(options: RepoConfigProbeSelectionOptions): void {
+      if (disposed) return;
+      const { onRepoChange, ...probeOptions } = options;
+      const repoKey = repoIdentityKey(options.identity);
+      const probeKey = probeIdentityKey(options.identity);
+      if (probeKey === previousProbeKey) return;
+      previousProbeKey = probeKey;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+
+      if (repoKey !== previousRepoKey) {
+        const isInitialMount = previousRepoKey === null;
+        previousRepoKey = repoKey;
+        // Compute before onRepoChange runs the last-used restore, which
+        // overwrites the setup script.
+        preservedRestoredState =
+          isInitialMount && !!untrack(probeOptions.getSetupScript).trim();
+        onRepoChange({ isInitialMount, preservedRestoredState });
+        probeRepoConfigSetupScript({ ...probeOptions, preservedRestoredState });
+        return;
+      }
+
+      // Same repo, new branch/ref — debounced re-probe. The identity
+      // snapshot cannot go stale in the timer: any further change re-runs
+      // the effect, which reschedules (or cancels via the repo path above).
+      timer = setTimeout(() => {
+        timer = null;
+        probeRepoConfigSetupScript({ ...probeOptions, preservedRestoredState });
+      }, debounceMs);
+    },
+
+    /**
+     * Cancel any pending debounced re-probe and refuse further scheduling
+     * (component destroy).
+     */
+    dispose(): void {
+      disposed = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    },
+  };
 }

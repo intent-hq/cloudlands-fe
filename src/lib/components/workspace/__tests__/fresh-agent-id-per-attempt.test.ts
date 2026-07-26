@@ -74,6 +74,10 @@ vi.mock('$features/setup-scripts', () => ({
   fetchGitHubRepoConfigSetupScript: vi.fn(async () => null),
   probeRepoConfigSetupScript: vi.fn(),
   repoIdentityKey: vi.fn((identity: { path: string | null }) => identity.path),
+  createRepoConfigProbeScheduler: vi.fn(() => ({
+    onSelectionChange: vi.fn(),
+    dispose: vi.fn(),
+  })),
   REPO_CONFIG_SCRIPT_NAME: 'Repo config',
 }));
 

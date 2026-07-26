@@ -16,8 +16,7 @@
   SETUP_SCRIPT_TEMPLATES,
   getTemplateContent,
   chooseDefaultSetupScript,
-  probeRepoConfigSetupScript,
-  repoIdentityKey,
+  createRepoConfigProbeScheduler,
   REPO_CONFIG_SCRIPT_NAME,
 } from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
@@ -1128,49 +1127,48 @@
     })();
   });
 
-  // Auto-restore last used setup script when repo changes
-  // This ensures the setup script name/content are correct in the button bar
-  // without requiring the user to open the setup script modal
-  // Keyed on repo identity, not just path: for GitHub selections the path is
-  // the clone destination, which two different repos can share.
-  let previousSetupScriptRepoKey = $state<string | null>(null);
+  // Auto-restore last used setup script when the repo changes, and re-probe
+  // the repo config when the GitHub branch changes (monorepo#835). This
+  // ensures the setup script name/content are correct in the button bar
+  // without requiring the user to open the setup script modal. The scheduler
+  // keys runs on repo identity + ref: repo switches restore and probe at
+  // once, branch-only changes re-probe debounced.
+  const setupScriptProbeScheduler = createRepoConfigProbeScheduler();
+  onDestroy(() => setupScriptProbeScheduler.dispose());
   $effect(() => {
     const path = repoPath;
     const type = repoType;
-    // Only read githubUrl for GitHub selections so the effect doesn't track
-    // it (and re-run) while a local repo is selected.
-    const identity = { path, type, githubUrl: type === 'github' ? githubUrl : null };
-    const repoKey = repoIdentityKey(identity);
-    // Only run when the selected repo actually changes
-    if (repoKey === previousSetupScriptRepoKey) return;
-    const isInitialMount = previousSetupScriptRepoKey === null;
-    previousSetupScriptRepoKey = repoKey;
+    // Only read githubUrl/branch for GitHub selections so the effect doesn't
+    // track them (and re-run) while a local repo is selected.
+    const identity = {
+      path,
+      type,
+      githubUrl: type === 'github' ? githubUrl : null,
+      branch: type === 'github' ? branch : null,
+    };
 
-    // Repo changed — invalidate any cached repo-config script
-    repoConfigScript = null;
-    repoConfigScriptRepo = null;
-
-    // On initial mount, don't override if there's already a setup script set
-    // (e.g., from restored form state). On repo switches, always restore.
-    const preservedRestoredState = isInitialMount && !!setupScript.trim();
-    if (!preservedRestoredState) {
-      // Restore last used script for this repo (or clear if no saved script exists)
-      if (path) {
-        restoreLastUsedSetupScript(path);
-      } else {
-        setupScript = '';
-        setupScriptName = 'Custom';
-        isCustomSetupScript = false;
-      }
-    }
-
-    // Probe the repo's committed `.intent/config.json` for a setup script
-    // (shared helper — spinner state, no-clobber and staleness guards).
-    probeRepoConfigSetupScript({
+    setupScriptProbeScheduler.onSelectionChange({
       identity,
-      preservedRestoredState,
-      getCurrentIdentity: () => ({ path: repoPath, type: repoType, githubUrl }),
-      getBranch: () => branch,
+      onRepoChange: ({ preservedRestoredState }) => {
+        // Repo changed — invalidate any cached repo-config script
+        repoConfigScript = null;
+        repoConfigScriptRepo = null;
+
+        // On initial mount, don't override if there's already a setup script
+        // set (e.g., from restored form state). On repo switches, always
+        // restore.
+        if (!preservedRestoredState) {
+          // Restore last used script for this repo (or clear if no saved script exists)
+          if (path) {
+            restoreLastUsedSetupScript(path);
+          } else {
+            setupScript = '';
+            setupScriptName = 'Custom';
+            isCustomSetupScript = false;
+          }
+        }
+      },
+      getCurrentIdentity: () => ({ path: repoPath, type: repoType, githubUrl, branch }),
       getSetupScript: () => setupScript,
       isSetupScriptModalOpen: () => showSetupScript,
       isCustomSetupScript: () => isCustomSetupScript,

@@ -5,7 +5,9 @@
  * script the same way the New Workspace dialog does: on selecting a local
  * project it probes the repo via `fetchRepoConfigSetupScript` and defaults to
  * the "From repo config" script (priority: repo config > last-used > generic
- * template), never applying stale results after a repo switch.
+ * template), never applying stale results after a repo switch. GitHub
+ * selections also re-probe (debounced) when the branch changes (monorepo#835),
+ * discarding results for superseded refs.
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -382,6 +384,94 @@ describe('onboarding repo-config setup script detection', () => {
     });
     expect(textOf(result, 'setup-script')).toBe('echo local-saved');
     expect(textOf(result, 'repo-config-script')).toBe('');
+  });
+
+  it('re-probes with the new ref when the GitHub branch changes (monorepo#835)', async () => {
+    mocks.fetchGitHubRepoConfig.mockImplementation(async (_owner, _repo, ref) =>
+      ref === 'release-1.x' ? 'echo release-config' : 'echo main-config',
+    );
+
+    const result = renderPage();
+    selectGitHubRepo({ branch: 'main' });
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'main');
+    });
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script')).toBe('echo main-config');
+    });
+
+    // Same repo, new branch — re-probes (debounced) with the new ref.
+    selectGitHubRepo({ branch: 'release-1.x' });
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'release-1.x');
+    });
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script')).toBe('echo release-config');
+    });
+    expect(textOf(result, 'setup-script-name')).toBe(REPO_CONFIG_SCRIPT_NAME);
+    expect(textOf(result, 'repo-config-script')).toBe('echo release-config');
+  });
+
+  it('re-probes the repo default when the branch is cleared', async () => {
+    renderPage();
+    selectGitHubRepo({ branch: 'main' });
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'main');
+    });
+
+    selectGitHubRepo({ branch: '' });
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', undefined);
+    });
+  });
+
+  it('discards a stale probe result for a superseded ref after a branch change', async () => {
+    const probeMain = deferred<string | null>();
+    const probeRelease = deferred<string | null>();
+    mocks.fetchGitHubRepoConfig.mockImplementation((_owner, _repo, ref) =>
+      ref === 'main' ? probeMain.promise : probeRelease.promise,
+    );
+
+    const result = renderPage();
+    selectGitHubRepo({ branch: 'main' });
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'main');
+    });
+
+    // Change the branch while main's read is in flight, then resolve it late.
+    selectGitHubRepo({ branch: 'release-1.x' });
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'release-1.x');
+    });
+    probeMain.resolve('echo main-config');
+    await Promise.resolve();
+
+    // main's late result must never apply or cache; release's own result wins.
+    expect(textOf(result, 'setup-script')).not.toBe('echo main-config');
+    probeRelease.resolve('echo release-config');
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script')).toBe('echo release-config');
+    });
+    expect(textOf(result, 'repo-config-script')).toBe('echo release-config');
+  });
+
+  it('does not re-probe local repos when the branch changes', async () => {
+    renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/a'));
+    expect(mocks.fetchRepoConfig).toHaveBeenCalledTimes(1);
+
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: { onProjectChange: (selection: unknown) => void };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.onProjectChange({ type: 'local', repoPath: '/repo/a', branch: 'other', isValid: true });
+
+    // Debounce window elapses with no further request.
+    await new Promise((r) => setTimeout(r, 400));
+    expect(mocks.fetchRepoConfig).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchGitHubRepoConfig).not.toHaveBeenCalled();
   });
 
   it('re-probes and discards stale results when two GitHub repos share a clone path', async () => {
