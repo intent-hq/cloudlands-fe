@@ -557,6 +557,36 @@ describe('getFileChangesFromMessage', () => {
       expect(result.changes).toHaveLength(0);
     });
 
+    it('falls through to paths when file_paths yields no valid string', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-paths-fallthrough-empty',
+          name: 'remove_files',
+          input: {
+            file_paths: [],
+            paths: ['src/b.ts'],
+          },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-paths-fallthrough-invalid',
+          name: 'remove_files',
+          input: {
+            file_paths: [42],
+            paths: ['src/c.ts'],
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(2);
+      const bChange = result.changes.find((c) => c.filePath === 'src/b.ts');
+      const cChange = result.changes.find((c) => c.filePath === 'src/c.ts');
+      expect(bChange?.action).toBe('delete');
+      expect(cChange?.action).toBe('delete');
+    });
+
     it('handles a non-array non-string file_paths value without throwing', () => {
       const message = makeAssistantMessage([
         {
