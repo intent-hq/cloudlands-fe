@@ -18,7 +18,6 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
-  import LegacyImportSettings from '$lib/components/settings/LegacyImportSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
@@ -572,14 +571,6 @@
 
       <!-- General Tab -->
       {#if activeTab === 'general'}
-        <!-- Data -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Data
-          </h2>
-          <LegacyImportSettings />
-        </div>
-
         <!-- Updates -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
