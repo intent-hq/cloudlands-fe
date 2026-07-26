@@ -1248,6 +1248,219 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
   });
 });
 
+// PROTOCOL §6.6 / §7: `agent:stream:start { agentId, messageId, reason:
+// "harness-wake" }` announces an implicit agent-initiated turn — no user send
+// precedes it, so the bridge itself must open the streaming UI (busy state via
+// chatSendStarted) and prime the accumulator under the wake turn's messageId.
+// Prompt (user-initiated) turns never emit this event.
+describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens the wake turn)', () => {
+  const WAKE_MESSAGE_ID = 'msg_wake_1';
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    // A wake turn starts from a fully idle session — no send set any flags.
+    seedSession({ status: AgentStatus.Idle, isStreaming: false, isProcessing: false });
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function streamStart(handler: (n: { method: string; params?: unknown }) => void): void {
+    handler(
+      notification('agent:stream:start', {
+        agentId: AGENT,
+        messageId: WAKE_MESSAGE_ID,
+        reason: 'harness-wake',
+      }),
+    );
+  }
+
+  it('opens the busy/Thinking state on an idle session WITHOUT adding a user message row', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    streamStart(handler);
+
+    // Busy state opens exactly like a user-initiated turn…
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    const session = readSession();
+    expect(session?.isStreaming).toBe(true);
+    expect(session?.isProcessing).toBe(true);
+
+    // …but with NO phantom/optimistic user row above it.
+    const userMessages = (session?.messages ?? []).filter((m) => m.role === 'user');
+    expect(userMessages).toHaveLength(0);
+
+    // The in-flight assistant placeholder exists under the wake messageId.
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(WAKE_MESSAGE_ID);
+    expect(assistantMessages[0].isStreaming).toBe(true);
+  });
+
+  it('grows the wake turn live on subsequent chunks and finalizes on stream:end + idle', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamStart(handler);
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Waking up: ',
+        messageId: WAKE_MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${WAKE_MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'child finished.',
+        messageId: WAKE_MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${WAKE_MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+
+    let assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(WAKE_MESSAGE_ID);
+    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
+      type: 'text',
+      text: 'Waking up: child finished.',
+    });
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: WAKE_MESSAGE_ID,
+      }),
+    );
+    handler(
+      notification('agent:idle', {
+        agentId: AGENT,
+        status: 'idle',
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        reason: 'stream_complete',
+        finishReason: 'stop',
+      }),
+    );
+
+    assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it('an interrupted wake turn honors agent.stop: stream:end(stopReason=interrupted) stamps the Stopped indicator', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamStart(handler);
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Partial wake…',
+        messageId: WAKE_MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${WAKE_MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        stopReason: 'interrupted',
+        messageId: WAKE_MESSAGE_ID,
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
+      type: 'text',
+      text: 'Partial wake…',
+    });
+    expect(assistantMessages[0].metadata).toMatchObject({
+      interrupted: true,
+      stopReason: 'interrupted',
+    });
+    expect(
+      shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false }),
+    ).toBe(true);
+  });
+
+  it('drops a stale prior-turn accumulator: the wake turn primes a fresh slot under its own messageId', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A previous turn left chunks in the accumulator (no stream:end arrived).
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'old turn',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+
+    streamStart(handler);
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'fresh wake',
+        messageId: WAKE_MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${WAKE_MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+
+    const wakeMessage = readAssistantMessages().find((m) => m.id === WAKE_MESSAGE_ID);
+    expect(wakeMessage).toBeDefined();
+    expect(wakeMessage!.contentBlocks?.[0]).toMatchObject({ type: 'text', text: 'fresh wake' });
+  });
+
+  it('ignores malformed agent:stream:start payloads (missing agentId or messageId)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:stream:start', { agentId: AGENT, reason: 'harness-wake' }));
+    handler(
+      notification('agent:stream:start', { messageId: WAKE_MESSAGE_ID, reason: 'harness-wake' }),
+    );
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expect(readAssistantMessages()).toHaveLength(0);
+  });
+});
+
 // Regression (intentd#336): a user interrupt (agent.stop, or agent.sendMessage
 // with priority:interrupt) mid-stream must NOT erase the streamed-so-far
 // deltas. The daemon persists the partial turn as an interrupted assistant row
