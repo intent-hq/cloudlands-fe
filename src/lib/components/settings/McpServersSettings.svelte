@@ -13,7 +13,7 @@
   import McpServerForm from './mcp/McpServerForm.svelte';
   import McpJsonImport from './mcp/McpJsonImport.svelte';
   import McpIcon from './mcp/McpIcon.svelte';
-  import Switch from '$lib/components/ui/switch/switch.svelte';
+  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -358,7 +358,13 @@
           >
         </p>
       </div>
-      <Switch checked={$enabled$} onCheckedChange={handleToggleEnabled} size="md" />
+      <Toggle
+        pressed={$enabled$}
+        onclick={handleToggleEnabled}
+        variant="indicator"
+        size="xs"
+        class="mb-auto"
+      />
     </div>
     {#if !isAuggieProvider}
       <p class="text-xs text-subtle mt-2">
