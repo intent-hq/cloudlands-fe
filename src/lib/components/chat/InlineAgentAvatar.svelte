@@ -24,9 +24,11 @@
     agentId: string;
     /** Optional workspace for scoping the agent subscription (prevents cross-workspace bleed) */
     workspace?: Workspace | null;
+    /** Whether the agent has finished its delegated work (forces completed avatar state) */
+    isCompleted?: boolean;
   }
 
-  let { agentId, workspace = null }: Props = $props();
+  let { agentId, workspace = null, isCompleted = false }: Props = $props();
 
   const permissionCount = selectPendingCount(agentId);
 
@@ -53,6 +55,7 @@
       },
       {
         hasPermissionRequest: $permissionCount > 0,
+        isCompleted,
       },
     ),
   );
