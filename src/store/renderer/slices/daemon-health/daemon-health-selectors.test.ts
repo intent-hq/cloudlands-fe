@@ -10,7 +10,13 @@
 import { describe, it, expect } from 'vitest';
 import type { StoreState } from '../../types';
 import type { BackendTransportInfo } from './daemon-health-types';
-import { isLocalTransport, selectIsDaemonLocal } from './daemon-health-selectors';
+import {
+  isLocalTransport,
+  selectIsDaemonLocal,
+  selectSidecarStartupFailed,
+  selectSidecarStartupFailedReason,
+  selectHasEverConnected,
+} from './daemon-health-selectors';
 import { initialState } from './daemon-health-slice';
 
 function mockState(
@@ -56,5 +62,27 @@ describe('selectIsDaemonLocal', () => {
 
   it('prefers daemon-reported locality over the transport heuristic (forced local over WS)', () => {
     expect(selectIsDaemonLocal.select(mockState({ mode: 'external-ws' }, 'local'))).toBe(true);
+  });
+});
+
+describe('sidecar startup-failure + hasEverConnected selectors', () => {
+  function stateWith(overrides: Partial<typeof initialState>): StoreState {
+    return { daemonHealth: { ...initialState, ...overrides } } as unknown as StoreState;
+  }
+
+  it('reads the sidecarStartupFailed latch and its reason', () => {
+    expect(selectSidecarStartupFailed.select(stateWith({}))).toBe(false);
+    expect(selectSidecarStartupFailedReason.select(stateWith({}))).toBeNull();
+    const failed = stateWith({
+      sidecarStartupFailed: true,
+      sidecarStartupFailedReason: 'intentd binary not found',
+    });
+    expect(selectSidecarStartupFailed.select(failed)).toBe(true);
+    expect(selectSidecarStartupFailedReason.select(failed)).toBe('intentd binary not found');
+  });
+
+  it('reads the session hasEverConnected latch', () => {
+    expect(selectHasEverConnected.select(stateWith({}))).toBe(false);
+    expect(selectHasEverConnected.select(stateWith({ hasEverConnected: true }))).toBe(true);
   });
 });

@@ -812,6 +812,7 @@ export const IPC_CHANNELS = {
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
+    GET_SIDECAR_RUN_LOG: 'backend:get-sidecar-run-log',
   },
 } as const;
 

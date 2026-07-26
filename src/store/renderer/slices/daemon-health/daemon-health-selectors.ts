@@ -65,6 +65,21 @@ export const selectSidecarGaveUpReason = store.createSelector(
   (state) => state.daemonHealth.sidecarGaveUpReason,
 );
 
+/** True when the sidecar spawn could not happen at all (binary not found, spawn error). */
+export const selectSidecarStartupFailed = store.createSelector(
+  (state) => state.daemonHealth.sidecarStartupFailed,
+);
+
+/** Reason string from the sidecar startup-failure broadcast, if any. */
+export const selectSidecarStartupFailedReason = store.createSelector(
+  (state) => state.daemonHealth.sidecarStartupFailedReason,
+);
+
+/** True once a successful connect has landed at any point since app launch. */
+export const selectHasEverConnected = store.createSelector(
+  (state) => state.daemonHealth.hasEverConnected,
+);
+
 /** True while an on-demand sidecar spawn is pending (#439). */
 export const selectSidecarSpawnPending = store.createSelector(
   (state) => state.daemonHealth.sidecarSpawnPending,

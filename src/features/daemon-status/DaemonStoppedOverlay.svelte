@@ -20,20 +20,28 @@
    * gave up restarting.
    */
   import { store as appStore } from '$store/renderer/store';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
     selectDaemonHealth,
     selectDaemonTransport,
     selectSidecarGaveUp,
     selectSidecarGaveUpReason,
+    selectSidecarStartupFailed,
+    selectSidecarStartupFailedReason,
+    selectHasEverConnected,
     selectSidecarSpawnPending,
     selectSidecarSpawnError,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { spawnSidecarRequested } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import type { SidecarRunLog } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
   const transport$ = selectDaemonTransport();
   const sidecarGaveUp$ = selectSidecarGaveUp();
   const sidecarGaveUpReason$ = selectSidecarGaveUpReason();
+  const sidecarStartupFailed$ = selectSidecarStartupFailed();
+  const sidecarStartupFailedReason$ = selectSidecarStartupFailedReason();
+  const hasEverConnected$ = selectHasEverConnected();
   const spawnPending$ = selectSidecarSpawnPending();
   const spawnError$ = selectSidecarSpawnError();
 
@@ -56,6 +64,9 @@
         graceTimer = null;
       }
       visible = false;
+      // Drop the fetched run log with the dialog — it is stale by the next show.
+      runLog = null;
+      runLogError = null;
     }
     return () => {
       if (graceTimer !== null) {
@@ -71,6 +82,15 @@
   // hidden — the restart policy owns recovery until it gives up.
   const isExternalMode = $derived(
     $transport$?.mode === 'external-uds' || $transport$?.mode === 'external-ws',
+  );
+  // App-managed failure posture: the app runs its own intentd (transport is
+  // sidecar-uds or still unresolved) and either the spawn never happened
+  // (startup failure) or the supervisor crash-looped past its restart policy.
+  const isSidecarFailure = $derived(
+    ($sidecarStartupFailed$ || $sidecarGaveUp$) && !isExternalMode,
+  );
+  const sidecarFailureReason = $derived(
+    $sidecarStartupFailedReason$ ?? $sidecarGaveUpReason$,
   );
   // The on-demand sidecar binds the local UDS socket, which a WS-connected
   // client would never reconnect to — so the button is only offered when the
@@ -88,6 +108,26 @@
   function handleSpawnSidecar() {
     appStore.dispatch(spawnSidecarRequested());
   }
+
+  // "Show logs from last run" — fetched on demand from the main process's
+  // in-memory per-run capture; ephemeral component-local state (no Redux).
+  let runLog = $state<SidecarRunLog | null>(null);
+  let runLogError = $state<string | null>(null);
+  let runLogPending = $state(false);
+
+  async function handleShowRunLog() {
+    runLogPending = true;
+    runLogError = null;
+    try {
+      const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (!api) throw new Error('electronAPI is not available');
+      runLog = (await api.invoke(IPC_CHANNELS.BACKEND.GET_SIDECAR_RUN_LOG)) as SidecarRunLog;
+    } catch (error) {
+      runLogError = error instanceof Error ? error.message : String(error);
+    } finally {
+      runLogPending = false;
+    }
+  }
 </script>
 
 {#if visible}
@@ -102,28 +142,95 @@
   >
     <div class="mx-4 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl">
       <h2 id="daemon-stopped-title" class="text-lg font-semibold text-foreground">
-        intentd is stopped
+        {#if isSidecarFailure}
+          intentd failed to start
+        {:else if !$hasEverConnected$}
+          Cannot connect to intentd
+        {:else}
+          intentd is stopped
+        {/if}
       </h2>
 
       <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
-        {#if $sidecarGaveUp$}
-          The app-managed intentd daemon stopped and could not be restarted after repeated
-          attempts{$sidecarGaveUpReason$ ? ` (${$sidecarGaveUpReason$})` : ''}.
+        {#if isSidecarFailure}
+          The app runs its own intentd daemon, and it failed to
+          start{sidecarFailureReason ? ` (${sidecarFailureReason})` : ''}.
         {:else if isExternalMode}
-          The connection to the external intentd daemon was lost. It may have been stopped or
-          crashed.
-        {:else}
+          {#if $hasEverConnected$}
+            The connection to the external intentd daemon was lost. It may have been stopped or
+            crashed.
+          {:else}
+            Could not connect to the external intentd daemon. It may not be running.
+          {/if}
+        {:else if $hasEverConnected$}
           The connection to the intentd daemon was lost. The app is restarting it automatically.
+        {:else}
+          Could not connect to the intentd daemon. The app is starting it automatically.
         {/if}
       </p>
 
-      <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
-        <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500 align-middle"
-        ></span>
-        <span class="ml-1.5 align-middle">Retrying connection…</span>
-      </p>
+      {#if !isSidecarFailure}
+        <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
+          <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500 align-middle"
+          ></span>
+          <span class="ml-1.5 align-middle">Retrying connection…</span>
+        </p>
+      {/if}
 
-      {#if showSpawnButton}
+      {#if isSidecarFailure}
+        <div class="mt-4 border-t border-border pt-4">
+          <button
+            type="button"
+            class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={$spawnPending$}
+            onclick={handleSpawnSidecar}
+            data-testid="daemon-stopped-spawn-sidecar"
+          >
+            {$spawnPending$ ? 'Starting intentd…' : 'Try starting intentd again'}
+          </button>
+
+          {#if $spawnError$}
+            <p class="mt-2 text-sm text-destructive" data-testid="daemon-stopped-spawn-error">
+              {$spawnError$}
+            </p>
+          {/if}
+
+          <button
+            type="button"
+            class="mt-2 w-full rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={runLogPending}
+            onclick={handleShowRunLog}
+            data-testid="daemon-stopped-show-logs"
+          >
+            {runLogPending ? 'Loading logs…' : 'Show logs from last run'}
+          </button>
+
+          {#if runLogError}
+            <p class="mt-2 text-sm text-destructive" data-testid="daemon-stopped-run-log-error">
+              {runLogError}
+            </p>
+          {:else if runLog}
+            <div class="mt-2" data-testid="daemon-stopped-run-log">
+              {#if runLog.available}
+                <p class="text-xs text-muted-foreground" data-testid="daemon-stopped-run-log-meta">
+                  {#if runLog.spawnError}
+                    Spawn error: {runLog.spawnError}
+                  {:else}
+                    Exit code: {runLog.exitCode ?? 'none'} · Signal: {runLog.signal ?? 'none'}
+                  {/if}
+                </p>
+                <pre
+                  class="mt-1 max-h-48 overflow-auto rounded-md bg-muted p-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground"
+                  data-testid="daemon-stopped-run-log-lines">{runLog.lines.join('\n')}</pre>
+              {:else}
+                <p class="text-xs text-muted-foreground">
+                  No sidecar run has been captured this session.
+                </p>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {:else if showSpawnButton}
         <div class="mt-4 border-t border-border pt-4">
           <button
             type="button"

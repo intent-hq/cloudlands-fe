@@ -44,6 +44,9 @@ describe('daemon-health-service', () => {
   afterEach(() => {
     disposeDaemonHealthService();
     resetMockIpcRouter();
+    // Dispose the store so session latches (hasEverConnected,
+    // sidecarStartupFailed) don't leak into the next test.
+    appStore.dispose();
     vi.clearAllTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -359,6 +362,56 @@ describe('daemon-health-service', () => {
     expect(appStore.state.daemonHealth.health).toBe('healthy');
     expect(appStore.state.daemonHealth.sidecarGaveUp).toBe(false);
     expect(appStore.state.daemonHealth.sidecarGaveUpReason).toBeNull();
+  });
+
+  it('stores sidecarStartupFailed + reason from a startup-failure broadcast and clears on reconnect', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    // Capture the backend:status listener so we can push follow-up events.
+    let statusHandler:
+      | ((payload: {
+          status: string;
+          transport?: BackendTransportInfo;
+          sidecarStartupFailed?: boolean;
+          reason?: string;
+        }) => void)
+      | null = null;
+    window.electronAPI!.on = vi.fn(
+      (channel: string, handler: (payload: { status: string }) => void) => {
+        if (channel === BACKEND.STATUS) statusHandler = handler;
+      },
+    );
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.hasEverConnected).toBe(false);
+
+    // Startup-failure broadcast (pinned contract: sidecarStartupFailed + reason).
+    statusHandler!({
+      status: 'disconnected',
+      sidecarStartupFailed: true,
+      reason: 'intentd binary not found',
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.health).toBe('down');
+    expect(appStore.state.daemonHealth.sidecarStartupFailed).toBe(true);
+    expect(appStore.state.daemonHealth.sidecarStartupFailedReason).toBe(
+      'intentd binary not found',
+    );
+
+    // Reconnect clears the latch and sets the session hasEverConnected latch.
+    statusHandler!({
+      status: 'connected',
+      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock' },
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.sidecarStartupFailed).toBe(false);
+    expect(appStore.state.daemonHealth.sidecarStartupFailedReason).toBeNull();
+    expect(appStore.state.daemonHealth.hasEverConnected).toBe(true);
   });
 
   it('invokes backend:spawn-sidecar on spawnSidecarRequested and keeps pending on success', async () => {

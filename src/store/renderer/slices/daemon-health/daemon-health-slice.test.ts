@@ -29,6 +29,9 @@ describe('daemonHealthReducer', () => {
       hostLocality: null,
       sidecarGaveUp: false,
       sidecarGaveUpReason: null,
+      sidecarStartupFailed: false,
+      sidecarStartupFailedReason: null,
+      hasEverConnected: false,
       sidecarSpawnPending: false,
       sidecarSpawnError: null,
     });
@@ -149,6 +152,79 @@ describe('daemonHealthReducer', () => {
       const state = { ...initialState, sidecarSpawnPending: true };
       const next = daemonHealthReducer(state, connectionStatusChanged('disconnected'));
       expect(next.sidecarSpawnPending).toBe(true);
+    });
+
+    it('latches sidecarStartupFailed + reason on a startup-failure disconnect', () => {
+      const state = { ...initialState, transport: sidecarTransport };
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('disconnected', undefined, {
+          sidecarStartupFailed: true,
+          reason: 'intentd binary not found',
+        }),
+      );
+      expect(next.sidecarStartupFailed).toBe(true);
+      expect(next.sidecarStartupFailedReason).toBe('intentd binary not found');
+    });
+
+    it('keeps sidecarStartupFailed latched on subsequent disconnects without extras', () => {
+      const state = {
+        ...initialState,
+        sidecarStartupFailed: true,
+        sidecarStartupFailedReason: 'intentd binary not found',
+      };
+      const next = daemonHealthReducer(state, connectionStatusChanged('disconnected'));
+      expect(next.sidecarStartupFailed).toBe(true);
+      expect(next.sidecarStartupFailedReason).toBe('intentd binary not found');
+    });
+
+    it('clears sidecarStartupFailed state on the next successful connect', () => {
+      const state = {
+        ...initialState,
+        sidecarStartupFailed: true,
+        sidecarStartupFailedReason: 'intentd binary not found',
+      };
+      const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
+      expect(next.sidecarStartupFailed).toBe(false);
+      expect(next.sidecarStartupFailedReason).toBeNull();
+    });
+
+    it('clears pending spawn when the spawn could not happen at all (startup failure)', () => {
+      const state = { ...initialState, sidecarSpawnPending: true };
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('disconnected', undefined, {
+          sidecarStartupFailed: true,
+          reason: 'intentd binary not found',
+        }),
+      );
+      expect(next.sidecarSpawnPending).toBe(false);
+      expect(next.sidecarStartupFailed).toBe(true);
+    });
+
+    it('latches hasEverConnected on the first successful connect', () => {
+      expect(initialState.hasEverConnected).toBe(false);
+      const next = daemonHealthReducer(initialState, connectionStatusChanged('connected'));
+      expect(next.hasEverConnected).toBe(true);
+    });
+
+    it('keeps hasEverConnected latched for the session across later disconnects', () => {
+      const connected = daemonHealthReducer(initialState, connectionStatusChanged('connected'));
+      const next = daemonHealthReducer(connected, connectionStatusChanged('disconnected'));
+      expect(next.hasEverConnected).toBe(true);
+    });
+
+    it('does not set hasEverConnected on disconnect or connecting statuses', () => {
+      const afterDisconnect = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('disconnected'),
+      );
+      expect(afterDisconnect.hasEverConnected).toBe(false);
+      const afterConnecting = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('connecting'),
+      );
+      expect(afterConnecting.hasEverConnected).toBe(false);
     });
   });
 

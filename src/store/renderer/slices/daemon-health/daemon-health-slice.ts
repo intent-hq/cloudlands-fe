@@ -28,6 +28,9 @@ export const initialState: DaemonHealthState = {
   hostLocality: null,
   sidecarGaveUp: false,
   sidecarGaveUpReason: null,
+  sidecarStartupFailed: false,
+  sidecarStartupFailedReason: null,
+  hasEverConnected: false,
   sidecarSpawnPending: false,
   sidecarSpawnError: null,
 };
@@ -38,10 +41,12 @@ export const initialState: DaemonHealthState = {
 
 /**
  * Extra fields carried on backend:status disconnect broadcasts (#439):
- * sidecar supervisor gave up restarting, plus a human-readable reason.
+ * sidecar supervisor gave up restarting, or the spawn could not happen at all
+ * (binary not found, spawn error), plus a human-readable reason.
  */
 export interface ConnectionStatusExtras {
   sidecarGaveUp?: boolean;
+  sidecarStartupFailed?: boolean;
   reason?: string;
 }
 
@@ -117,6 +122,9 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         transport: transport ?? state.transport,
         sidecarGaveUp: false,
         sidecarGaveUpReason: null,
+        sidecarStartupFailed: false,
+        sidecarStartupFailedReason: null,
+        hasEverConnected: true,
         sidecarSpawnPending: false,
         sidecarSpawnError: null,
       };
@@ -132,10 +140,18 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         sidecarGaveUpReason: extras?.sidecarGaveUp
           ? (extras.reason ?? null)
           : state.sidecarGaveUpReason,
-        // An on-demand spawn that crash-loops to give-up never reaches
-        // 'connected' — clear the pending flag so the fallback button
-        // re-enables for a retry instead of sticking on "Starting sidecar…".
-        sidecarSpawnPending: extras?.sidecarGaveUp ? false : state.sidecarSpawnPending,
+        sidecarStartupFailed: extras?.sidecarStartupFailed ? true : state.sidecarStartupFailed,
+        sidecarStartupFailedReason: extras?.sidecarStartupFailed
+          ? (extras.reason ?? null)
+          : state.sidecarStartupFailedReason,
+        // An on-demand spawn that crash-loops to give-up (or fails to spawn
+        // at all) never reaches 'connected' — clear the pending flag so the
+        // fallback button re-enables for a retry instead of sticking on
+        // "Starting sidecar…".
+        sidecarSpawnPending:
+          extras?.sidecarGaveUp || extras?.sidecarStartupFailed
+            ? false
+            : state.sidecarSpawnPending,
       };
     }
     return state;
