@@ -215,13 +215,28 @@ function boot(): void {
   };
   api.on(BACKEND.STATUS, statusListener);
 
-  // Fetch initial connection status.
+  // Fetch initial connection status. Boot-time sidecar startup failures fire
+  // before this renderer exists, so the broadcast alone is lossy — the main
+  // process latches the failure and exposes it on the get-status response
+  // (spec addendum), making delivery ordering-independent.
   void api
     .invoke(BACKEND.GET_STATUS)
-    .then((result: { status: string; transport?: BackendTransportInfo }) => {
-      appStore.dispatch(connectionStatusChanged(result.status, result.transport));
-      maybeNotifyVersionMismatch(result.transport);
-    })
+    .then(
+      (result: {
+        status: string;
+        transport?: BackendTransportInfo;
+        sidecarStartupFailed?: boolean;
+        sidecarStartupFailedReason?: string;
+      }) => {
+        appStore.dispatch(
+          connectionStatusChanged(result.status, result.transport, {
+            sidecarStartupFailed: result.sidecarStartupFailed,
+            reason: result.sidecarStartupFailedReason,
+          }),
+        );
+        maybeNotifyVersionMismatch(result.transport);
+      },
+    )
     .catch(() => {
       // Bridge not ready yet — status events + polling converge the state.
     });

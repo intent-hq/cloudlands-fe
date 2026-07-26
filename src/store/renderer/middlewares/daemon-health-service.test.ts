@@ -296,6 +296,32 @@ describe('daemon-health-service', () => {
     expect(state.health).toBe('down');
   });
 
+  it('latches sidecarStartupFailed + reason from the boot-time get-status response (spec addendum)', async () => {
+    // Boot-time startup failures fire before the renderer exists, so the
+    // broadcast alone is lossy — the get-status response carries the latched
+    // extras and the middleware must pass them into connectionStatusChanged.
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'disconnected',
+      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock' },
+      sidecarStartupFailed: true,
+      sidecarStartupFailedReason: 'intentd binary not found',
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      const state = appStore.state.daemonHealth;
+      expect(state.sidecarStartupFailed).toBe(true);
+      expect(state.sidecarStartupFailedReason).toBe('intentd binary not found');
+    });
+    expect(appStore.state.daemonHealth.health).toBe('down');
+  });
+
   it('stores sidecarGaveUp + reason from a give-up disconnect broadcast and clears on reconnect', async () => {
     registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
       status: 'connected',
