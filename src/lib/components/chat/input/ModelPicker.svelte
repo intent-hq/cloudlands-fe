@@ -114,13 +114,9 @@
     triggerClass?: string;
     defaultModelId?: string;
     showDefaultOption?: boolean;
-    // Gates the workspace/agent-session updates (setWorkspaceModel,
-    // updateAgentSessionFields, agent.setModel) on a pick.
+    // Gates workspace/agent-session updates (setWorkspaceModel, updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
-    // Gates the global default-model dispatch (selectModel), which the
-    // persistence middleware writes to `model.providerDefaults` and — for a
-    // cross-provider compound pick — `providers.active`. Only the Settings
-    // page default-model picker should pass this.
+    // Gates the global selectModel dispatch (persisted default); Settings default picker only.
     updateGlobalDefault?: boolean;
     silentFallback?: boolean;
     showProviderWarningNotice?: boolean;
@@ -497,15 +493,8 @@
   }
 
   async function handleModelSelect(model: string | undefined) {
-    logger.debug('Model selected:', {
-      model,
-      previousModel: localModel,
-      workspaceId,
-      agentId,
-      deferUpdate,
-      updateGlobalStore,
-      updateGlobalDefault,
-    });
+    logger.debug('Model selected:', { model, previousModel: localModel, workspaceId, agentId });
+    logger.debug('Model pick flags:', { deferUpdate, updateGlobalStore, updateGlobalDefault });
     // Update local state before async work so the UI responds immediately.
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
@@ -516,13 +505,8 @@
 
       await tick();
 
-      if (updateGlobalDefault) {
-        appStore.dispatch(selectModel(model));
-      }
-
-      if (!updateGlobalStore) {
-        return;
-      }
+      if (updateGlobalDefault) appStore.dispatch(selectModel(model));
+      if (!updateGlobalStore) return;
 
       if (workspaceId) {
         appStore.dispatch(setWorkspaceModel({ workspaceId, model }));
