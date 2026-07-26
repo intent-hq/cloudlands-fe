@@ -5,7 +5,9 @@
  * `workspaceId` when supplied (daemon `note.get` requires one), falling back
  * to resolving the note's workspace via the cache. Every listed note's
  * workspace is cached so note-scoped clients (tasks, comments) can resolve it.
- * `subscribe` aggregates notes across workspaces and refetches on `note:*`.
+ * `subscribe` aggregates notes across workspaces — converging via one typed
+ * per-workspace `note.subscribe` channel per workspace (PROTOCOL §6.9) on
+ * liveState daemons, and refetching on legacy `note:*` events otherwise.
  */
 import { AuthorType, ContentType, NoteVisibility } from "$shared/types";
 import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
@@ -21,7 +23,11 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
-import { backendRequest } from "./backend-transport";
+import {
+  backendRequest,
+  onBackendNotification,
+  onBackendReconnected,
+} from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import {
   isEventInFamily,
@@ -103,6 +109,39 @@ export function normalizeNote(raw: Record<string, unknown>, workspaceId: string)
     createdAt: String(raw.createdAt ?? raw.created_at ?? now),
     updatedAt: String(raw.updatedAt ?? raw.updated_at ?? now),
   } as Note;
+}
+
+/**
+ * Dynamic workspace-id source for the per-workspace typed note channel:
+ * yields the FULL desired workspace-id set from `listWorkspaceIds()` — the
+ * same enumeration `subscribe`'s `fetchAll` flattens over, so typed coverage
+ * matches legacy coverage — re-enumerating on legacy `workspace:*` events
+ * (workspace add/delete) and on reconnect (the set may have changed during
+ * the outage; a stale channel for a deleted workspace would otherwise fail
+ * re-registration and pin the subscription in legacy mode). A generation
+ * guard drops out-of-order enumerations so an older set can never overwrite
+ * a newer one.
+ */
+function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void): Unsubscribe {
+  let cancelled = false;
+  let generation = 0;
+  const refresh = () => {
+    generation += 1;
+    const current = generation;
+    void listWorkspaceIds().then((ids) => {
+      if (!cancelled && current === generation) listener(ids);
+    });
+  };
+  refresh();
+  const offNotify = onBackendNotification((n) => {
+    if (isEventInFamily(n.method, n.params, "workspace")) refresh();
+  });
+  const offReconnect = onBackendReconnected(refresh);
+  return () => {
+    cancelled = true;
+    offNotify();
+    offReconnect();
+  };
 }
 
 /**
@@ -361,9 +400,29 @@ export class LiveNotesClient implements NotesClient {
     return result;
   }
 
+  /**
+   * Subscribe to notes across every workspace.
+   *
+   * Typed §6.9 channel: on liveState daemons one per-workspace
+   * `note.subscribe` (`{ workspaceId }`) is registered per id yielded by
+   * `subscribeWorkspaceIds` — the same enumeration `fetchAll` flattens over.
+   * Workspace add → a new channel registers and its snapshot merges in;
+   * workspace delete → the channel unsubscribes and its notes are evicted.
+   * While ANY workspace channel lacks a push-confirmed registration the
+   * subscription stays legacy and refetches keep serving (the #775 safety
+   * net); daemons without liveState never register channels at all.
+   */
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe {
     return createDeltaSubscription<Note>({
       eventTypes: ["note:created", "note:updated", "note:deleted"],
+      channel: {
+        subscribeMethod: "note.subscribe",
+        unsubscribeMethod: "note.unsubscribe",
+        dynamic: {
+          subscribeIds: subscribeWorkspaceIds,
+          paramsForId: (id) => ({ workspaceId: id }),
+        },
+      },
       matchLegacyEvent: (method, params) => isEventInFamily(method, params, "note"),
       fetchAll: async () => {
         const ids = await listWorkspaceIds();
@@ -371,10 +430,13 @@ export class LiveNotesClient implements NotesClient {
         return perWorkspace.flat();
       },
       getId: (raw) => String(raw.id ?? ""),
+      // Push-path entities are the daemon's wire `Note` (§9.1), which always
+      // carries `workspaceId` (camelCase serde) — no per-channel stamping.
       normalize: (raw) => {
         const workspaceId = String(raw.workspaceId ?? "");
+        if (!workspaceId) return null;
         const note = normalizeNote(raw, workspaceId);
-        rememberNoteWorkspace(String(note.id), String(note.workspaceId));
+        rememberNoteWorkspace(String(note.id), workspaceId);
         return note;
       },
       handler,
