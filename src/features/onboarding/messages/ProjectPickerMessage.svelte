@@ -184,6 +184,10 @@
     isGitRepo: boolean;
   } | null>(null);
   let isCheckingGithubCloneDir = $state(false);
+  // Generation token: each effect run invalidates in-flight checks so a late
+  // response for an old target can't overwrite the status (or clear the
+  // checking flag) for a newer one.
+  let githubCloneDirCheckToken = 0;
 
   // Repo name parsed from the GitHub URL
   const githubRepoName = $derived(
@@ -205,30 +209,34 @@
   // clone target, and an existing non-empty parent must not block.
   $effect(() => {
     const targetPath = githubRepoName ? githubFullClonePath : '';
+    const token = ++githubCloneDirCheckToken;
     if (!targetPath) {
       githubCloneDirStatus = null;
+      isCheckingGithubCloneDir = false;
       return;
     }
 
     isCheckingGithubCloneDir = true;
     const checkPath = async () => {
       if (typeof window === 'undefined' || !window.electronAPI) {
-        isCheckingGithubCloneDir = false;
+        if (token === githubCloneDirCheckToken) isCheckingGithubCloneDir = false;
         return;
       }
       try {
         const result = await invoke<any>('file:getDirectoryStatus', {
           path: targetPath,
         });
+        if (token !== githubCloneDirCheckToken) return;
         if (result.success && result.data) {
           githubCloneDirStatus = result.data;
         } else {
           githubCloneDirStatus = null;
         }
       } catch {
+        if (token !== githubCloneDirCheckToken) return;
         githubCloneDirStatus = null;
       } finally {
-        isCheckingGithubCloneDir = false;
+        if (token === githubCloneDirCheckToken) isCheckingGithubCloneDir = false;
       }
     };
 
@@ -334,7 +342,11 @@
         clonePath: githubFullClonePath,
         projectName: githubRepoName || undefined,
         isValid:
-          !!githubUrl && !!clonePath && !githubCloneDirError && !isCheckingGithubCloneDir,
+          !!githubUrl &&
+          !!clonePath &&
+          !!githubRepoName &&
+          !githubCloneDirError &&
+          !isCheckingGithubCloneDir,
       };
     } else {
       const nameError = getProjectNameError(projectName);

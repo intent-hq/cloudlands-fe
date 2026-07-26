@@ -17,7 +17,7 @@
  * + params on `backendRequest` and feed back the daemon response shape from
  * intent-transport host_ops.rs.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -40,7 +40,7 @@ vi.mock('svelte-fa', async () => {
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
-import { setMockIpcInvokeFallback } from '$shared/ipc-mock-router';
+import { resetMockIpcRouter, setMockIpcInvokeFallback } from '$shared/ipc-mock-router';
 // Side-effect import: bridges `file:getDirectoryStatus` → daemon `host.directoryStatus`.
 import '$store/renderer/seeders/host-bridge-seeder';
 
@@ -60,12 +60,16 @@ const directoryStatus = (overrides: Record<string, unknown> = {}) => ({
 });
 
 /** Route daemon RPCs: capture `host.directoryStatus` params, benign defaults elsewhere. */
-function mockDaemon(status: Record<string, unknown>): Array<Record<string, unknown>> {
+function mockDaemon(
+  status: Record<string, unknown> | ((params: { path: string }) => Record<string, unknown>),
+): Array<Record<string, unknown>> {
   const dirStatusCalls: Array<Record<string, unknown>> = [];
   backendRequestMock.mockImplementation(((method: string, params?: unknown) => {
     if (method === 'host.directoryStatus') {
       dirStatusCalls.push(params as Record<string, unknown>);
-      return Promise.resolve(status);
+      return Promise.resolve(
+        typeof status === 'function' ? status(params as { path: string }) : status,
+      );
     }
     if (method === 'host.checkGit') return Promise.resolve({ available: true });
     return Promise.resolve(undefined);
@@ -104,6 +108,13 @@ describe('ProjectPickerMessage — GitHub tab clone destination pre-flight', () 
   afterEach(() => {
     cleanup();
     backendRequestMock.mockReset();
+  });
+
+  afterAll(() => {
+    // Restore the loud-failure default so the blanket fallback cannot leak
+    // into other suites (also drops this file's seeder handlers, which are
+    // re-registered on the next import in a fresh module registry).
+    resetMockIpcRouter();
   });
 
   it('shows an inline error and reports isValid:false when the clone target exists and is non-empty', async () => {
@@ -154,5 +165,71 @@ describe('ProjectPickerMessage — GitHub tab clone destination pre-flight', () 
     expect(document.body.textContent).not.toContain(
       'Clone destination already exists and is not empty.',
     );
+  });
+
+  it('does not block when the clone target exists but is empty', async () => {
+    const dirStatusCalls = mockDaemon(
+      directoryStatus({ exists: true, isDirectory: true, isEmpty: true }),
+    );
+    const selections: ProjectSelection[] = [];
+    const input = await openGithubTab((s) => selections.push(s));
+
+    await fireEvent.input(input, { target: { value: 'octo/hello' } });
+
+    await waitFor(() => expect(dirStatusCalls).toContainEqual({ path: '~/Developer/hello' }), {
+      timeout: 3000,
+    });
+    await waitFor(() => {
+      expect(selections.at(-1)?.isValid).toBe(true);
+    });
+    expect(document.body.textContent).not.toContain(
+      'Clone destination already exists and is not empty.',
+    );
+  });
+
+  it('clears the error when the URL changes to a repo whose target is missing', async () => {
+    const dirStatusCalls = mockDaemon((params) =>
+      params.path === '~/Developer/taken'
+        ? directoryStatus({ exists: true, isDirectory: true, isEmpty: false, isGitRepo: true })
+        : directoryStatus({ exists: false }),
+    );
+    const selections: ProjectSelection[] = [];
+    const input = await openGithubTab((s) => selections.push(s));
+
+    await fireEvent.input(input, { target: { value: 'octo/taken' } });
+    await waitFor(
+      () => {
+        expect(document.body.textContent).toContain(
+          'Clone destination already exists and is not empty.',
+        );
+      },
+      { timeout: 3000 },
+    );
+    expect(selections.at(-1)?.isValid).toBe(false);
+
+    await fireEvent.input(input, { target: { value: 'octo/hello' } });
+    await waitFor(() => expect(dirStatusCalls).toContainEqual({ path: '~/Developer/hello' }), {
+      timeout: 3000,
+    });
+    await waitFor(() => {
+      expect(selections.at(-1)?.isValid).toBe(true);
+    });
+    expect(document.body.textContent).not.toContain(
+      'Clone destination already exists and is not empty.',
+    );
+  });
+
+  it('reports isValid:false when the URL has no parseable repo name', async () => {
+    mockDaemon(directoryStatus({ exists: false }));
+    const selections: ProjectSelection[] = [];
+    const input = await openGithubTab((s) => selections.push(s));
+
+    await fireEvent.input(input, { target: { value: 'octo' } });
+
+    await waitFor(() => {
+      const last = selections.at(-1);
+      expect(last?.type).toBe('github');
+      expect(last?.isValid).toBe(false);
+    });
   });
 });
