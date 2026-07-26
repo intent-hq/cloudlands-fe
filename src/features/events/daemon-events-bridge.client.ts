@@ -10,11 +10,15 @@
  *      `isStreaming`/`isProcessing`/`isResponding` flags set by
  *      `chatSendStarted`).
  *   2. `workspaceAgents/agentStreamUpdateReceived` for the live stream subset
- *      (`agent:stream:chunk`, `agent:tool:call`, `agent:stream:end`,
- *      `agent:failed`), so the `agent-stream-service` middleware grows the
- *      in-flight assistant message live and finalizes it in place. Without
- *      this wire the assistant reply only appears after a manual refresh
- *      (the chat-read-service hydration via `agents.getConversation`).
+ *      (`agent:stream:start`, `agent:stream:chunk`, `agent:tool:call`,
+ *      `agent:stream:end`, `agent:failed`), so the `agent-stream-service`
+ *      middleware grows the in-flight assistant message live and finalizes it
+ *      in place. Without this wire the assistant reply only appears after a
+ *      manual refresh (the chat-read-service hydration via
+ *      `agents.getConversation`). `agent:stream:start` (§6.6, agent-initiated
+ *      harness-wake turns only) additionally dispatches `chatSendStarted` so
+ *      the busy/Thinking UI opens without a user send — see
+ *      `handleStreamStartEvent`.
  *   3. `chatState/streamStatusReceived` on `agent:tool:call` — surfaces the
  *      "Calling tool" hint next to the Thinking spinner on `status=started`
  *      and appends a follow-up "Awaiting tool response" entry on
@@ -133,6 +137,7 @@ import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agen
 import {
   streamStatusReceived,
   chatSendFailed,
+  chatSendStarted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import {
@@ -802,6 +807,65 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
     levelRaw === 'warn' || levelRaw === 'error' ? levelRaw : 'info';
   const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now();
   appStore.dispatch(streamStatusReceived(agentId, { phase, message, level, timestamp }, false));
+}
+
+/**
+ * `agent:stream:start` (PROTOCOL §6.6 / §7) announces an implicit
+ * agent-initiated turn: `{ agentId, messageId, reason: "harness-wake" }`.
+ * Prompt (user-initiated) turns never emit this event — for those,
+ * `chatSendStarted` is dispatched by the send path itself. A wake turn has no
+ * send, so the bridge dispatches it here to open the same streaming UI
+ * (Thinking indicator, busy state, active Stop/interrupt via the
+ * `isStreaming`/`isProcessing` session flags) WITHOUT an optimistic user
+ * message row — `chatSendStarted` only flips flags; the user row is added by
+ * the lifecycle send path, which never runs for a wake turn.
+ *
+ * The accumulator is primed under the wake turn's `messageId` and a `started`
+ * stream update creates the in-flight assistant placeholder, mirroring the
+ * user-initiated flow in `agent-stream-lifecycle.sendMessage`. A stale
+ * prior-turn accumulator is finalized as-is first (mirroring
+ * `handleStreamEndEvent`) so the old in-flight assistant message does not stay
+ * `isStreaming` until the next `agents.getConversation` reconcile. A duplicate
+ * delivery for the same `messageId` (at-least-once, e.g. across a reconnect)
+ * is a no-op: re-dispatching `chatSendStarted` mid-turn would wipe
+ * `statusEvents`/`receivedFirstChunk` and restart the Thinking elapsed timer.
+ * Subsequent `agent:stream:chunk` / `agent:tool:call` events carry the same
+ * `messageId` and grow that message in place; `agent:stream:end` +
+ * `agent:idle` finalize and clear the flags through the existing paths.
+ */
+function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const messageId = data.messageId;
+  if (
+    typeof agentId !== 'string' ||
+    agentId.length === 0 ||
+    typeof messageId !== 'string' ||
+    messageId.length === 0
+  ) {
+    return;
+  }
+  const prior = streamsByAgent.get(agentId);
+  if (prior && prior.messageId === messageId) return;
+  if (prior) {
+    dispatchStreamUpdate(agentId, prior, 'complete');
+    streamsByAgent.delete(agentId);
+  }
+  ensureStream(agentId, messageId, workspaceId);
+  appStore.dispatch(chatSendStarted(agentId, workspaceId));
+  appStore.dispatch(
+    agentStreamUpdateReceived({
+      workspaceId,
+      agentId,
+      handlerSessionId: agentId,
+      source: 'sendMessage',
+      eventType: 'started',
+      assistantMessageId: messageId,
+      contentBlocks: [{ type: 'text', text: '' }],
+      createInitialPlaceholder: true,
+    }),
+  );
 }
 
 function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void {
@@ -2009,7 +2073,11 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'agent:idle') {
     void reconcileWorkspaceActivity(workspaceId, false);
   }
-  if (type === 'agent:stream:chunk' || type === 'agent:stream:status') {
+  if (
+    type === 'agent:stream:start' ||
+    type === 'agent:stream:chunk' ||
+    type === 'agent:stream:status'
+  ) {
     void reconcileWorkspaceActivity(workspaceId, true);
   }
 
@@ -2063,6 +2131,10 @@ function handleNotification(method: string, params: unknown): void {
   // message. `agent:failed` flows through both paths: it finalizes any
   // in-flight stream AND forwards the lifecycle to `eventReceived` so the
   // session status transitions to "failed".
+  if (type === 'agent:stream:start') {
+    handleStreamStartEvent(event, workspaceId);
+    return;
+  }
   if (type === 'agent:stream:chunk') {
     handleStreamChunkEvent(event, workspaceId);
     return;
