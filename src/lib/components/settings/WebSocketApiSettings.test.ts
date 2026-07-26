@@ -166,4 +166,31 @@ describe('WebSocketApiSettings', () => {
       );
     });
   });
+
+  it('hides Save button when the persisted port value is retyped (#814)', async () => {
+    // Arrange: WSS disabled, port 5181
+    mocks.mockSettingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: false },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+
+    render(WebSocketApiSettings);
+
+    // Wait for port input to be visible
+    const portInput = await waitFor(() => screen.getByDisplayValue('5181') as HTMLInputElement);
+
+    // Act: change port value so the Save button appears
+    await fireEvent.input(portInput, { target: { value: '5182' } });
+    await waitFor(() => {
+      expect(screen.getByText('Save')).toBeTruthy();
+    });
+
+    // Act: retype the persisted value (number input coerces the bound value to a number)
+    await fireEvent.input(portInput, { target: { value: '5181' } });
+
+    // Assert: Save button is hidden again
+    await waitFor(() => {
+      expect(screen.queryByText('Save')).toBeNull();
+    });
+  });
 });
