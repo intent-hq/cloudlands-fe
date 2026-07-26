@@ -1382,8 +1382,16 @@ export interface IntegrationsClient {
   subscribe(handler: SubscriptionHandler<{ githubUser: GitHubUser | null }>): Unsubscribe;
 }
 
+/** Machine-level daemon capabilities (`system.capabilities`, PROTOCOL §5.7). */
+export interface SystemCapabilities {
+  /** CoW capability of the workspaces-root filesystem; undefined when the probe could not run. */
+  cowSupported?: boolean;
+}
+
 export interface SystemClient {
   status(): Promise<SystemStatusState>;
+  /** `system.capabilities` (§5.7) — machine capabilities independent of any workspace. */
+  capabilities(): Promise<SystemCapabilities>;
   releaseNotes(): Promise<ReleaseNotes | null>;
   autoUpdate(): Promise<AutoUpdateState | null>;
   subscribe(handler: SubscriptionHandler<SystemStatusState>): Unsubscribe;

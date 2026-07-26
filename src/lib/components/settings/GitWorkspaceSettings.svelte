@@ -7,7 +7,6 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
   import {
   validateBranchPrefix,
@@ -25,10 +24,11 @@
   let branchPrefixError = $state('');
   let settingsError = $state('');
 
-  // Current workspace (for CoW capability check)
-  const currentWorkspace = $derived(selectActiveWorkspace.select(appStore.state));
-  // CoW toggle is visible only when workspace supports it
-  const showCowToggle = $derived(currentWorkspace?.cowSupported === true);
+  // CoW toggle is visible only when the machine supports it — a direct probe
+  // of the workspaces root via `system.capabilities` (PROTOCOL §5.7), with no
+  // dependency on an active/hydrated workspace.
+  let cowSupported = $state(false);
+  const showCowToggle = $derived(cowSupported);
 
   // Daemon setting path per field (PROTOCOL §5.12, BE-owned workspace/git group).
   const SETTING_PATHS = {
@@ -66,8 +66,16 @@
   ];
 
   onMount(async () => {
+    void loadCowCapability();
     await loadSettings();
   });
+
+  async function loadCowCapability() {
+    // capabilities() always resolves ({} on failure), so unknown/error keeps
+    // the toggle hidden rather than crashing the settings pane.
+    const caps = await appClient.system.capabilities();
+    cowSupported = caps.cowSupported === true;
+  }
 
   function stringValue(value: unknown): string {
     return typeof value === 'string' ? value : '';
