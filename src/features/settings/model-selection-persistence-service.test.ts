@@ -220,6 +220,32 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     expect(appStore.state.model.providerModels.codex).toBe("codex:gpt-test-2");
   });
 
+  it("does NOT persist model.providerDefaults or flip providers.active on a workspace-scoped pick (spawn/chat-input context)", async () => {
+    const defaultProviderId = getDefaultProviderId();
+    appStore.dispatch(setActiveProvider(defaultProviderId));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    updateSpy.mockClear();
+    modelsListSpy.mockClear();
+
+    // A cross-provider compound pick scoped to a workspace (the chat-input /
+    // spawn path dispatches setWorkspaceModel, never selectModel) must stay
+    // workspace-local: no global default write, no active-provider switch.
+    appStore.dispatch(
+      setWorkspaceModel({ workspaceId: "ws-spawn", model: "opencode:opencode-go/kimi-k3" }),
+    );
+    await flush();
+
+    expect(appStore.state.providerSettings.activeProviderId).toBe(defaultProviderId);
+    const persistedPaths = updateSpy.mock.calls.flatMap(([params]) =>
+      (params as { changes: { path: string }[] }).changes.map((c) => c.path),
+    );
+    expect(persistedPaths).toEqual(["model.workspaceOverrides"]);
+    expect(persistedPaths).not.toContain("model.providerDefaults");
+    expect(persistedPaths).not.toContain("providers.active");
+    expect(modelsListSpy).not.toHaveBeenCalled();
+  });
+
   it("persists model.workspaceOverrides on workspace pick and clear", async () => {
     appStore.dispatch(setWorkspaceModel({ workspaceId: "ws-1", model: "sonnet-test-3" }));
     await flush();

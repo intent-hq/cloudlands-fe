@@ -450,7 +450,6 @@
           triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
           showManageLink={true}
           defaultModelId={teamModeModel}
-          updateGlobalStore
           silentFallback
         />
       {/key}
@@ -588,7 +587,6 @@
           triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
           showManageLink={true}
           defaultModelId={singleAgentModel}
-          updateGlobalStore
           silentFallback
         />
       {/key}
