@@ -132,6 +132,11 @@
   import ChiefChatEmptyState from './ChiefChatEmptyState.svelte';
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
+  import QuestionWizard, {
+  type QuestionAnswer,
+} from './questions/QuestionWizard.svelte';
+  import { derivePendingQuestions } from './questions/pending-questions';
+  import { flattenAnswersToMessage } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
   followBottom,
@@ -446,10 +451,59 @@
     if (!lastAssistantMessage) {
       return [];
     }
+    // Suggested prompts stay hidden whenever the turn has pending Agent Q&A
+    // questions — including while the wizard is Ignore-collapsed. Only
+    // answering (or any superseding user message) brings them back.
+    if (pendingQuestions) {
+      return [];
+    }
     const messageContent = extractAllContent(lastAssistantMessage);
     const { prompts } = parseSuggestedPrompts(messageContent);
     return prompts;
   });
+
+  // Agent Q&A: question blocks on the LAST assistant message with NO later
+  // user message (and not streaming) replace the composer with the sequential
+  // wizard. Derivation is purely transcript-based (wire contract), so
+  // restored sessions re-surface unanswered questions automatically.
+  const pendingQuestions = $derived.by(() => {
+    const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
+    const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
+    return derivePendingQuestions($agentMessages$, $agentIsRunning$, showingPendingUserMessage);
+  });
+
+  // Ignore = collapse, not dismiss — transient component state, never
+  // persisted; resets whenever a different question-bearing message pends.
+  let questionWizardCollapsed = $state(false);
+  let questionWizardMessageId = $state<string | null>(null);
+  $effect(() => {
+    const id = pendingQuestions?.messageId ?? null;
+    if (id !== questionWizardMessageId) {
+      questionWizardMessageId = id;
+      questionWizardCollapsed = false;
+    }
+  });
+
+  // Completing the wizard flattens all answers into ONE plain-text user
+  // message of `Q:`/`A:` pairs (wire contract — no messageMetadata) sent
+  // through the ordinary send path. The resulting user message supersedes
+  // the questions, so the wizard unmounts, the composer restores, and the
+  // in-transcript cards render resolved.
+  function handleQuestionWizardComplete(answers: QuestionAnswer[]) {
+    if (!workspace || !isActive) return;
+    const text = flattenAnswersToMessage(answers);
+    logger.info('Question wizard completed', { answerCount: answers.length });
+    appStore.dispatch(
+      sendMessage(agentId, {
+        wsId: workspace.id,
+        text,
+        agentName,
+        agentModel,
+        isInitialWorkspaceAgent,
+      }),
+    );
+    void performLocalSendCleanup({ followBottom: true });
+  }
 
   // Search state
   let showSearch = $state(false);
@@ -1277,6 +1331,26 @@
   // Grouped messages for display (include ALL messages)
   // We'll handle the streaming state when rendering
   let groupedMessages = $derived(groupMessagesByDate($agentMessages$));
+
+  // Agent Q&A: assistant messages whose question cards are superseded by ANY
+  // later user message render resolved (wire contract — resolution is
+  // derivational, not id-keyed). Precomputed as a Set of assistant message ids
+  // preceding the last user message.
+  let resolvedQuestionMessageIds = $derived.by(() => {
+    const ids = new Set<string>();
+    let lastUserIndex = -1;
+    for (let i = $agentMessages$.length - 1; i >= 0; i--) {
+      if ($agentMessages$[i].role === 'user') {
+        lastUserIndex = i;
+        break;
+      }
+    }
+    for (let i = 0; i < lastUserIndex; i++) {
+      const msg = $agentMessages$[i];
+      if (msg.role === 'assistant' && msg.id) ids.add(msg.id);
+    }
+    return ids;
+  });
 
   // Get the auggie session ID from the most recent assistant message's metadata
   // This is the raw UUID format that auggie uses, needed for debugging/support
@@ -3056,6 +3130,7 @@
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
+                      questionsResolved={resolvedQuestionMessageIds.has(message.id)}
                     />
                   </div>
                   {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$))}
@@ -3160,6 +3235,7 @@
                       {workspace}
                       isStreaming={isCurrentlyStreaming}
                       backendSessionId={auggieSessionId}
+                      questionsResolved={resolvedQuestionMessageIds.has(message.id)}
                     />
                   </div>
                   {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && ($chatError$ || $chatModelUnavailable$))}
@@ -3462,6 +3538,7 @@
                             suppressCoordinationStoppedIndicator={turn.userMessage
                               ? isAutomatedMessage(turn.userMessage)
                               : false}
+                            questionsResolved={resolvedQuestionMessageIds.has(message.id)}
                           />
                         </div>
                         <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
@@ -3651,27 +3728,45 @@
       </div>
     {/if}
 
-    <SimpleRichInput
-      bind:this={inputComponent}
-      bind:contextItems
-      bind:value={inputValue}
-      onsubmit={handleSend}
-      onforcesubmit={handleForceSubmit}
-      onstop={handleStop}
-      onHistoryPrev={handleHistoryPrev}
-      onHistoryNext={handleHistoryNext}
-      disabled={!workspace || !$agentSession$}
-      isStreaming={$agentSessionIsStreaming$}
-      isResponding={$agentIsResponding$}
-      {workspace}
-      currentContext={currentMainPanelContext}
-      {agentId}
-      selectedModel={hydratedInputModel}
-      compactMode={isCompactMode}
-      editorClassName={isChiefWorkspace ? 'px-1.5!' : 'px-2!'}
-      isProviderChangeLocked={!canChangeProvider}
-      providerId={inputProviderId}
-    />
+    <!-- Agent Q&A: pending questions replace the composer with the sequential
+         wizard; Ignore collapses it to a banner and the composer returns
+         underneath. {#key} remounts (fresh wizard state) per question-bearing
+         message. -->
+    {#if pendingQuestions}
+      {#key pendingQuestions.messageId}
+        <div class="pb-2">
+          <QuestionWizard
+            questions={pendingQuestions.questions}
+            collapsed={questionWizardCollapsed}
+            onToggleCollapsed={(c) => (questionWizardCollapsed = c)}
+            onComplete={handleQuestionWizardComplete}
+          />
+        </div>
+      {/key}
+    {/if}
+    {#if !pendingQuestions || questionWizardCollapsed}
+      <SimpleRichInput
+        bind:this={inputComponent}
+        bind:contextItems
+        bind:value={inputValue}
+        onsubmit={handleSend}
+        onforcesubmit={handleForceSubmit}
+        onstop={handleStop}
+        onHistoryPrev={handleHistoryPrev}
+        onHistoryNext={handleHistoryNext}
+        disabled={!workspace || !$agentSession$}
+        isStreaming={$agentSessionIsStreaming$}
+        isResponding={$agentIsResponding$}
+        {workspace}
+        currentContext={currentMainPanelContext}
+        {agentId}
+        selectedModel={hydratedInputModel}
+        compactMode={isCompactMode}
+        editorClassName={isChiefWorkspace ? 'px-1.5!' : 'px-2!'}
+        isProviderChangeLocked={!canChangeProvider}
+        providerId={inputProviderId}
+      />
+    {/if}
   </div>
 </div>
 
