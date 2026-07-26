@@ -147,6 +147,7 @@
       size="xs"
       class="mb-auto"
       disabled={!rtkAvailable}
+      ariaLabel="RTK command optimization"
     />
   </div>
   {#if !rtkAvailable}
