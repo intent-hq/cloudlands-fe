@@ -6,6 +6,8 @@
  * resolution in startIntentdSidecar is tested separately in
  * `__tests__/connection-mode-resolution.test.ts` (with mocked net/child_process).
  */
+import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
@@ -13,11 +15,17 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  __resetIntentdSidecarForTesting,
+  getSidecarRunLog,
+  getSidecarStartupFailure,
+  onSidecarStartupFailed,
   probeDaemonVersion,
   resolveIntentdBinaryPath,
   resolveSocketPath,
   shouldSpawnSidecar,
+  startIntentdSidecar,
 } from './intentd-sidecar';
+import { __resetConnectionModeForTesting } from './connection-mode';
 
 const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs');
 
@@ -28,6 +36,21 @@ vi.mock('node:fs', async () => {
     ...actual,
     existsSync: vi.fn(actual.existsSync),
   };
+});
+
+// Mock child_process.spawn for the run-log capture tests so no real daemon is
+// launched. Both the `node:`-prefixed and bare specifiers must be mocked: the
+// global test-setup mocks bare 'child_process' with the REAL spawn preserved,
+// which otherwise wins the module-resolution race for this file.
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  const spawnMock = vi.fn();
+  return { ...actual, spawn: spawnMock, default: { ...actual, spawn: spawnMock } };
+});
+vi.mock('child_process', async () => {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  const spawnMock = vi.fn();
+  return { ...actual, spawn: spawnMock, default: { ...actual, spawn: spawnMock } };
 });
 
 describe('shouldSpawnSidecar', () => {
@@ -315,6 +338,193 @@ describe('probeDaemonVersion', () => {
   });
 });
 
+/** Fake ChildProcess with emitter-backed stdout/stderr for run-log capture tests. */
+class FakeSidecarProcess extends EventEmitter {
+  stdout = new EventEmitter();
+  stderr = new EventEmitter();
+  killed = false;
+  exitCode: number | null = null;
+  signalCode: string | null = null;
+  pid: number | undefined = 4242;
+  kill = vi.fn(() => true);
+}
 
+describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () => {
+  const mockExistsSync = vi.mocked(fs.existsSync);
+  const mockSpawn = vi.mocked(spawn);
 
+  /** Spawn via startIntentdSidecar with a fake process; probe finds no daemon. */
+  async function startWithFakeProc(): Promise<FakeSidecarProcess> {
+    const proc = new FakeSidecarProcess();
+    mockSpawn.mockReturnValueOnce(proc as never);
+    await startIntentdSidecar(
+      { INTENTD_SIDECAR: '1', INTENTD_BIN: '/fake/intentd' },
+      false,
+      '/resources',
+      '/cwd',
+    );
+    return proc;
+  }
 
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetIntentdSidecarForTesting();
+    __resetConnectionModeForTesting();
+    // Binary "exists"; socket does not (probe reports no live daemon).
+    mockExistsSync.mockImplementation((p) => !String(p).endsWith('.sock'));
+  });
+
+  afterEach(() => {
+    __resetIntentdSidecarForTesting();
+    __resetConnectionModeForTesting();
+    vi.clearAllMocks();
+  });
+
+  it('reports available:false with null fields before any run', () => {
+    expect(getSidecarRunLog()).toEqual({
+      available: false,
+      startedAt: null,
+      endedAt: null,
+      exitCode: null,
+      signal: null,
+      spawnError: null,
+      lines: [],
+    });
+  });
+
+  it('captures the combined stdout+stderr tail for the current run', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('hello\nworld\n'));
+    proc.stderr.emit('data', Buffer.from('oops\n'));
+
+    const log = getSidecarRunLog();
+    expect(log.available).toBe(true);
+    expect(typeof log.startedAt).toBe('string');
+    expect(log.endedAt).toBeNull();
+    expect(log.exitCode).toBeNull();
+    expect(log.signal).toBeNull();
+    expect(log.spawnError).toBeNull();
+    expect(log.lines).toEqual(['hello', 'world', 'oops']);
+  });
+
+  it('caps the tail at the last 400 lines', async () => {
+    const proc = await startWithFakeProc();
+    for (let i = 1; i <= 450; i++) {
+      proc.stdout.emit('data', Buffer.from(`line-${i}\n`));
+    }
+
+    const log = getSidecarRunLog();
+    expect(log.lines).toHaveLength(400);
+    expect(log.lines[0]).toBe('line-51');
+    expect(log.lines[399]).toBe('line-450');
+  });
+
+  it('records endedAt/exitCode/signal when the process exits', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('starting\n'));
+    proc.emit('exit', 3, null);
+
+    const log = getSidecarRunLog();
+    expect(log.endedAt).not.toBeNull();
+    expect(log.exitCode).toBe(3);
+    expect(log.signal).toBeNull();
+    expect(log.lines).toEqual(['starting']);
+  });
+
+  it('starts a fresh record on respawn (rollover) while retaining the old one until then', async () => {
+    const proc1 = await startWithFakeProc();
+    proc1.stdout.emit('data', Buffer.from('first-run\n'));
+    expect(getSidecarRunLog().lines).toEqual(['first-run']);
+
+    const proc2 = await startWithFakeProc();
+    expect(getSidecarRunLog().lines).toEqual([]);
+    expect(getSidecarRunLog().endedAt).toBeNull();
+
+    proc2.stdout.emit('data', Buffer.from('second-run\n'));
+    expect(getSidecarRunLog().lines).toEqual(['second-run']);
+  });
+
+  it('records spawnError and fires onSidecarStartupFailed when the binary is not found', async () => {
+    mockExistsSync.mockReturnValue(false);
+    const failed = vi.fn();
+    onSidecarStartupFailed(failed);
+
+    await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');
+
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledWith('intentd binary not found');
+    const log = getSidecarRunLog();
+    expect(log.available).toBe(true);
+    expect(log.spawnError).toBe('intentd binary not found');
+    expect(log.endedAt).toBe(log.startedAt);
+    expect(log.lines).toEqual([]);
+  });
+
+  it('records spawnError and fires onSidecarStartupFailed on a spawn-time process error', async () => {
+    const failed = vi.fn();
+    onSidecarStartupFailed(failed);
+
+    const proc = await startWithFakeProc();
+    proc.pid = undefined;
+    proc.emit('error', new Error('spawn ENOENT'));
+
+    expect(failed).toHaveBeenCalledWith('spawn ENOENT');
+    const log = getSidecarRunLog();
+    expect(log.spawnError).toBe('spawn ENOENT');
+    expect(log.endedAt).not.toBeNull();
+  });
+
+  it('redacts the absolute binary path from spawn-time error reasons', async () => {
+    const failed = vi.fn();
+    onSidecarStartupFailed(failed);
+
+    const proc = await startWithFakeProc();
+    proc.pid = undefined;
+    proc.emit('error', new Error('spawn /fake/intentd ENOENT'));
+
+    expect(failed).toHaveBeenCalledWith('spawn intentd binary ENOENT');
+    const log = getSidecarRunLog();
+    expect(log.spawnError).toBe('spawn intentd binary ENOENT');
+    expect(log.spawnError).not.toContain('/fake/intentd');
+  });
+
+  it('does not split a line straddling two data chunks (no double-count toward the cap)', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('first-'));
+    proc.stdout.emit('data', Buffer.from('half\nsecond\n'));
+
+    expect(getSidecarRunLog().lines).toEqual(['first-half', 'second']);
+  });
+
+  it('includes a buffered trailing partial line in the snapshot without duplicating it', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('complete\npartial'));
+
+    expect(getSidecarRunLog().lines).toEqual(['complete', 'partial']);
+
+    proc.stdout.emit('data', Buffer.from('-rest\n'));
+    expect(getSidecarRunLog().lines).toEqual(['complete', 'partial-rest']);
+  });
+
+  it('flushes a trailing partial line when the process exits', async () => {
+    const proc = await startWithFakeProc();
+    proc.stdout.emit('data', Buffer.from('done\ntail-without-newline'));
+    proc.emit('exit', 0, null);
+
+    expect(getSidecarRunLog().lines).toEqual(['done', 'tail-without-newline']);
+  });
+
+  it('latches the startup failure for late consumers and clears it on the next spawn attempt', async () => {
+    expect(getSidecarStartupFailure()).toBeNull();
+
+    // Fail with ZERO listeners registered (real boot ordering).
+    mockExistsSync.mockReturnValue(false);
+    await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');
+    expect(getSidecarStartupFailure()).toEqual({ reason: 'intentd binary not found' });
+
+    // A new spawn attempt supersedes the latched failure.
+    mockExistsSync.mockImplementation((p) => !String(p).endsWith('.sock'));
+    await startWithFakeProc();
+    expect(getSidecarStartupFailure()).toBeNull();
+  });
+});

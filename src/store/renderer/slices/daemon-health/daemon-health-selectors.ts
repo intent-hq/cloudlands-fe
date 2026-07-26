@@ -65,6 +65,21 @@ export const selectSidecarGaveUpReason = store.createSelector(
   (state) => state.daemonHealth.sidecarGaveUpReason,
 );
 
+/** True when the sidecar spawn could not happen at all (binary not found, spawn error). */
+export const selectSidecarStartupFailed = store.createSelector(
+  (state) => state.daemonHealth.sidecarStartupFailed,
+);
+
+/** Reason string from the sidecar startup-failure broadcast, if any. */
+export const selectSidecarStartupFailedReason = store.createSelector(
+  (state) => state.daemonHealth.sidecarStartupFailedReason,
+);
+
+/** True once a successful connect has landed at any point since app launch. */
+export const selectHasEverConnected = store.createSelector(
+  (state) => state.daemonHealth.hasEverConnected,
+);
+
 /** True while an on-demand sidecar spawn is pending (#439). */
 export const selectSidecarSpawnPending = store.createSelector(
   (state) => state.daemonHealth.sidecarSpawnPending,
@@ -73,4 +88,19 @@ export const selectSidecarSpawnPending = store.createSelector(
 /** Error string from the last failed on-demand sidecar spawn, if any. */
 export const selectSidecarSpawnError = store.createSelector(
   (state) => state.daemonHealth.sidecarSpawnError,
+);
+
+/** Last-run sidecar log fetched on demand for the daemon-loss dialog, if any. */
+export const selectSidecarRunLog = store.createSelector(
+  (state) => state.daemonHealth.sidecarRunLog,
+);
+
+/** True while a backend:get-sidecar-run-log fetch is in flight. */
+export const selectSidecarRunLogPending = store.createSelector(
+  (state) => state.daemonHealth.sidecarRunLogPending,
+);
+
+/** Error string from the last failed run-log fetch, if any. */
+export const selectSidecarRunLogError = store.createSelector(
+  (state) => state.daemonHealth.sidecarRunLogError,
 );

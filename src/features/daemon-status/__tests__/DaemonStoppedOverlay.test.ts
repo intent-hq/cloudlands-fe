@@ -47,7 +47,7 @@ function dispatchAndFlush(action: Parameters<typeof appStore.dispatch>[0]) {
 
 async function showOverlay(
   transport: BackendTransportInfo,
-  extras?: { sidecarGaveUp?: boolean; reason?: string },
+  extras?: { sidecarGaveUp?: boolean; sidecarStartupFailed?: boolean; reason?: string },
 ) {
   bootTransport = transport;
   dispatchAndFlush(connectionStatusChanged('connected', transport));
@@ -55,6 +55,28 @@ async function showOverlay(
   // disconnect, so its late 'connected' dispatch can't cancel the grace timer.
   await vi.advanceTimersByTimeAsync(10);
   dispatchAndFlush(connectionStatusChanged('disconnected', undefined, extras));
+  await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS + 50);
+  await vi.waitFor(() => {
+    expect(overlay()).toBeTruthy();
+  });
+}
+
+/**
+ * Show the overlay without any prior successful connect this session — the
+ * boot-time GET_STATUS fetch reports 'disconnected' so the hasEverConnected
+ * latch never sets.
+ */
+async function showOverlayNeverConnected(
+  transport?: BackendTransportInfo,
+  extras?: { sidecarGaveUp?: boolean; sidecarStartupFailed?: boolean; reason?: string },
+) {
+  invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
+    if (channel === BACKEND.GET_STATUS) {
+      return { status: 'disconnected' };
+    }
+    return mockInvoke(channel, ...args);
+  });
+  dispatchAndFlush(connectionStatusChanged('disconnected', transport, extras));
   await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS + 50);
   await vi.waitFor(() => {
     expect(overlay()).toBeTruthy();
@@ -82,6 +104,9 @@ describe('DaemonStoppedOverlay', () => {
     cleanup();
     disposeDaemonHealthService();
     resetMockIpcRouter();
+    // Dispose the store so session latches (hasEverConnected,
+    // sidecarStartupFailed) don't leak into the next test.
+    appStore.dispose();
     vi.clearAllTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -140,12 +165,125 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()!.textContent).toContain('external intentd daemon was lost');
   });
 
-  it('offers the sidecar fallback after the supervisor gave up, with the reason', async () => {
+  it('shows the crash-loop posture after the supervisor gave up, with distinct copy and the reason', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(sidecarTransport, { sidecarGaveUp: true, reason: 'restart limit reached' });
-    expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
-    expect(overlay()!.textContent).toContain('could not be restarted');
+    // The daemon ran, then crash-looped — "stopped and could not be
+    // restarted", not "failed to start".
+    expect(overlay()!.textContent).toContain('intentd stopped unexpectedly');
+    expect(overlay()!.textContent).toContain('stopped and could not be restarted');
+    expect(overlay()!.textContent).not.toContain('failed to start');
     expect(overlay()!.textContent).toContain('restart limit reached');
+    // The app manages the sidecar itself — never "connect to a daemon" wording.
+    expect(overlay()!.textContent).not.toContain('connection');
+    // Shares the retry button and log affordance with the startup-failure posture.
+    const button = screen.getByTestId('daemon-stopped-spawn-sidecar');
+    expect(button.textContent).toContain('Try starting intentd again');
+    expect(screen.getByTestId('daemon-stopped-show-logs')).toBeTruthy();
+  });
+
+  it('shows the failure posture with the reason when the sidecar spawn could not happen at all', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(sidecarTransport, {
+      sidecarStartupFailed: true,
+      reason: 'intentd binary not found',
+    });
+    expect(overlay()!.textContent).toContain('intentd failed to start');
+    expect(overlay()!.textContent).toContain('runs its own intentd daemon');
+    expect(overlay()!.textContent).toContain('intentd binary not found');
+    expect(overlay()!.textContent).not.toContain('connection');
+
+    // The retry button still dispatches spawnSidecarRequested → backend:spawn-sidecar.
+    const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
+    expect(button.textContent).toContain('Try starting intentd again');
+    await fireEvent.click(button);
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(BACKEND.SPAWN_SIDECAR);
+    });
+  });
+
+  it('fetches backend:get-sidecar-run-log on demand and renders the last-run tail', async () => {
+    // Contract-shaped payload (spec "Pinned IPC contract").
+    const runLog = {
+      available: true,
+      startedAt: '2026-07-26T00:00:00.000Z',
+      endedAt: '2026-07-26T00:00:05.000Z',
+      exitCode: 1,
+      signal: null,
+      spawnError: null,
+      lines: ['intentd starting', 'error: bind failed'],
+    };
+    invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'backend:get-sidecar-run-log') return runLog;
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected', transport: bootTransport };
+      return mockInvoke(channel, ...args);
+    });
+
+    render(DaemonStoppedOverlay);
+    await showOverlay(sidecarTransport, {
+      sidecarStartupFailed: true,
+      reason: 'intentd binary not found',
+    });
+
+    await fireEvent.click(screen.getByTestId('daemon-stopped-show-logs'));
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId('daemon-stopped-run-log')).toBeTruthy();
+    });
+    // Exact channel name pinned by the IPC contract.
+    expect(invokeMock).toHaveBeenCalledWith('backend:get-sidecar-run-log');
+    expect(screen.getByTestId('daemon-stopped-run-log-meta').textContent).toContain('Exit code: 1');
+    const lines = screen.getByTestId('daemon-stopped-run-log-lines').textContent;
+    expect(lines).toContain('intentd starting');
+    expect(lines).toContain('error: bind failed');
+  });
+
+  it('shows the spawn error and a no-capture notice from the run-log payload', async () => {
+    invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'backend:get-sidecar-run-log') {
+        return {
+          available: false,
+          startedAt: null,
+          endedAt: null,
+          exitCode: null,
+          signal: null,
+          spawnError: null,
+          lines: [],
+        };
+      }
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected', transport: bootTransport };
+      return mockInvoke(channel, ...args);
+    });
+
+    render(DaemonStoppedOverlay);
+    await showOverlay(sidecarTransport, { sidecarStartupFailed: true });
+
+    await fireEvent.click(screen.getByTestId('daemon-stopped-show-logs'));
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId('daemon-stopped-run-log')).toBeTruthy();
+    });
+    expect(screen.getByTestId('daemon-stopped-run-log').textContent).toContain(
+      'No sidecar run has been captured',
+    );
+  });
+
+  it('says "could not connect" (not "was lost") when never connected in sidecar posture', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlayNeverConnected(sidecarTransport);
+    expect(overlay()!.textContent).toContain('Could not connect to the intentd daemon');
+    expect(overlay()!.textContent).toContain('starting it automatically');
+    expect(overlay()!.textContent).not.toContain('was lost');
+    expect(overlay()!.textContent).not.toContain('restarting');
+  });
+
+  it('says "could not connect" with the sidecar fallback when never connected in external posture', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlayNeverConnected(externalTransport);
+    expect(overlay()!.textContent).toContain('Could not connect to the external intentd daemon');
+    expect(overlay()!.textContent).not.toContain('was lost');
+    // Buttons follow the same transport-mode rules as the lost-connection posture.
+    expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
+      'Start app-managed sidecar',
+    );
   });
 
   it('spawn button invokes backend:spawn-sidecar, disables while pending, and dismisses on reconnect', async () => {

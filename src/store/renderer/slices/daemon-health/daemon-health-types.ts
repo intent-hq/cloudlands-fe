@@ -115,10 +115,53 @@ export interface DaemonHealthState {
   /** Reason string from the sidecar give-up broadcast, if any. */
   sidecarGaveUpReason: string | null;
   /**
+   * True when the app is in sidecar posture but the spawn could not happen at
+   * all (binary not found, spawn error) — latched from the backend:status
+   * `sidecarStartupFailed` extra. Cleared on the next successful connect.
+   */
+  sidecarStartupFailed: boolean;
+  /** Reason string from the sidecar startup-failure broadcast, if any. */
+  sidecarStartupFailedReason: string | null;
+  /**
+   * True once a successful connect has landed at any point since app launch.
+   * Session-scoped latch (never cleared) so the daemon-loss UI can
+   * distinguish "never connected since launch" from "connection lost".
+   */
+  hasEverConnected: boolean;
+  /**
    * True while an on-demand sidecar spawn (backend:spawn-sidecar) is pending —
    * from the user's request until the daemon reconnects or the spawn fails.
    */
   sidecarSpawnPending: boolean;
   /** Error string when the last on-demand sidecar spawn failed. */
   sidecarSpawnError: string | null;
+  /**
+   * Last-run sidecar log fetched on demand (backend:get-sidecar-run-log) for
+   * the daemon-loss dialog, or null before a fetch / after it is dropped.
+   * Cleared on the next successful connect — it is stale by the next show.
+   */
+  sidecarRunLog: SidecarRunLog | null;
+  /** True while a backend:get-sidecar-run-log fetch is in flight. */
+  sidecarRunLogPending: boolean;
+  /** Error string when the last run-log fetch failed. */
+  sidecarRunLogError: string | null;
+}
+
+/**
+ * backend:get-sidecar-run-log response — renderer-safe capture of the most
+ * recent sidecar run for this app session (no env values).
+ */
+export interface SidecarRunLog {
+  /** False when no sidecar run has ever been captured. */
+  available: boolean;
+  /** ISO timestamp of the most recent spawn, or null. */
+  startedAt: string | null;
+  /** ISO timestamp when the run ended; null while running. */
+  endedAt: string | null;
+  exitCode: number | null;
+  signal: string | null;
+  /** Spawn-level failure, e.g. "intentd binary not found". */
+  spawnError: string | null;
+  /** Tail of combined stdout+stderr, capped (e.g. last 400 lines). */
+  lines: string[];
 }
