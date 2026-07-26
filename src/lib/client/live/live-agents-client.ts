@@ -2,10 +2,12 @@
  * Live agents domain backed by the intentd daemon.
  *
  * Reads resolve via `agent.list({ workspaceId })` / `agent.get({ agentId })`.
- * `subscribe` emits an initial snapshot aggregated across workspaces, then
- * refetches on agent LIFECYCLE events only — `agent:stream:*` and `agent:message`
- * are high-volume, so this intentionally narrows to start/complete/idle/
- * status-changed rather than blanket-subscribing `agent:*`.
+ * `subscribe` aggregates agents across workspaces — converging via one typed
+ * per-workspace `agent.subscribe` channel per workspace (PROTOCOL §6.9) on
+ * liveState daemons, and refetching on agent LIFECYCLE events otherwise —
+ * `agent:stream:*` and `agent:message` are high-volume, so the legacy path
+ * intentionally narrows to start/complete/idle/status-changed rather than
+ * blanket-subscribing `agent:*`.
  */
 import { AgentStatus } from "$shared/types";
 import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
@@ -21,9 +23,19 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
-import { backendRequest } from "./backend-transport";
+import {
+  backendRequest,
+  onBackendNotification,
+  onBackendReconnected,
+} from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
-import { isEventOneOf, listWorkspaceIds, newIdempotencyKey, runMutation } from "./live-support";
+import {
+  isEventInFamily,
+  isEventOneOf,
+  listWorkspaceIds,
+  newIdempotencyKey,
+  runMutation,
+} from "./live-support";
 
 /**
  * agentId → workspaceId cache populated by every `normalizeAgent` call (so any
@@ -49,6 +61,39 @@ const AGENT_LIFECYCLE_EVENTS = [
   "agent:status-changed",
   "agent:renamed",
 ] as const;
+
+/**
+ * Dynamic workspace-id source for the per-workspace typed agent channel:
+ * yields the FULL desired workspace-id set from `listWorkspaceIds()` — the
+ * same enumeration `subscribe`'s `fetchAll` flattens over, so typed coverage
+ * matches legacy coverage — re-enumerating on legacy `workspace:*` events
+ * (workspace add/delete) and on reconnect (the set may have changed during
+ * the outage; a stale channel for a deleted workspace would otherwise fail
+ * re-registration and pin the subscription in legacy mode). A generation
+ * guard drops out-of-order enumerations so an older set can never overwrite
+ * a newer one.
+ */
+function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void): Unsubscribe {
+  let cancelled = false;
+  let generation = 0;
+  const refresh = () => {
+    generation += 1;
+    const current = generation;
+    void listWorkspaceIds().then((ids) => {
+      if (!cancelled && current === generation) listener(ids);
+    });
+  };
+  refresh();
+  const offNotify = onBackendNotification((n) => {
+    if (isEventInFamily(n.method, n.params, "workspace")) refresh();
+  });
+  const offReconnect = onBackendReconnected(refresh);
+  return () => {
+    cancelled = true;
+    offNotify();
+    offReconnect();
+  };
+}
 
 /** Coerce a raw daemon agent object into the renderer `AgentSession` shape. */
 function normalizeAgent(raw: Record<string, unknown>): AgentSession {
@@ -467,9 +512,35 @@ export class LiveAgentsClient implements AgentsClient {
     return resolved.length > 0 ? resolved : null;
   }
 
+  /**
+   * Subscribe to agents across every workspace.
+   *
+   * Typed §6.9 channel: on liveState daemons one per-workspace
+   * `agent.subscribe` (bare `{ workspaceId }` — the params shape that routes
+   * to the collection channel rather than the deprecated `eventTypes` service
+   * alias) is registered per id yielded by `subscribeWorkspaceIds` — the same
+   * enumeration `fetchAll` flattens over. The channel carries `AgentLite`
+   * entities; `agent:deleted` (the soft-hide-then-commit deletion flow's
+   * convergence signal) arrives as a `removedIds` delta, which the reconciler
+   * drops. Workspace add → a new channel registers and its snapshot merges
+   * in; workspace delete → the channel unsubscribes and its agents are
+   * evicted. While ANY workspace channel lacks a push-confirmed registration
+   * the subscription stays legacy and refetches keep serving (the #775
+   * safety net); daemons without liveState never register channels at all.
+   * Every push entity flows through `normalizeAgent`, so the
+   * `agentWorkspaceIndex` cache is primed exactly like the list/get paths.
+   */
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe {
     return createDeltaSubscription<AgentSession>({
       eventTypes: [...AGENT_LIFECYCLE_EVENTS],
+      channel: {
+        subscribeMethod: "agent.subscribe",
+        unsubscribeMethod: "agent.unsubscribe",
+        dynamic: {
+          subscribeIds: subscribeWorkspaceIds,
+          paramsForId: (id) => ({ workspaceId: id }),
+        },
+      },
       matchLegacyEvent: (method, params) => isEventOneOf(method, params, AGENT_LIFECYCLE_EVENTS),
       fetchAll: async () => {
         const ids = await listWorkspaceIds();
