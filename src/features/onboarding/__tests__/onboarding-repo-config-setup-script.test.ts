@@ -381,4 +381,35 @@ describe('onboarding repo-config setup script detection', () => {
     expect(textOf(result, 'setup-script')).toBe('echo local-saved');
     expect(textOf(result, 'repo-config-script')).toBe('');
   });
+
+  it('re-probes and discards stale results when two GitHub repos share a clone path', async () => {
+    const probeA = deferred<string | null>();
+    const probeB = deferred<string | null>();
+    mocks.fetchGitHubRepoConfig.mockImplementation(async (owner: string) =>
+      owner === 'owner-a' ? probeA.promise : probeB.promise,
+    );
+
+    const result = renderPage();
+    // Both selections use the same clone destination path.
+    selectGitHubRepo({ githubUrl: 'https://github.com/owner-a/repo', branch: '' });
+    await waitFor(() =>
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner-a', 'repo', undefined),
+    );
+
+    // Switching repo identity (same path, different URL) must trigger a new probe.
+    selectGitHubRepo({ githubUrl: 'https://github.com/owner-b/repo', branch: '' });
+    await waitFor(() =>
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner-b', 'repo', undefined),
+    );
+
+    // A's late result must be dropped even though the path still matches.
+    probeA.resolve('echo a-config');
+    await Promise.resolve();
+    probeB.resolve('echo b-config');
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script-name')).toBe(REPO_CONFIG_SCRIPT_NAME);
+    });
+    expect(textOf(result, 'setup-script')).toBe('echo b-config');
+    expect(textOf(result, 'repo-config-script')).toBe('echo b-config');
+  });
 });

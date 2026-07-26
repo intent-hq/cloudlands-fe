@@ -185,15 +185,19 @@
     return null;
   });
 
-  // Auto-restore last used setup script when repo changes
-  let previousSetupScriptRepo = $state<string | null>(null);
+  // Auto-restore last used setup script when repo changes.
+  // Keyed on repo identity, not just path: for GitHub selections the path is
+  // the clone destination, which two different repos can share.
+  let previousSetupScriptRepoKey = $state<string | null>(null);
   $effect(() => {
     const path = projectSelection?.repoPath ?? null;
     const type = projectSelection?.type;
-    // Only run when repo actually changes
-    if (path === previousSetupScriptRepo) return;
-    const isInitialMount = previousSetupScriptRepo === null;
-    previousSetupScriptRepo = path;
+    const repoKey =
+      type === 'github' ? `${path}\u0000${projectSelection?.githubUrl || ''}` : path;
+    // Only run when the selected repo actually changes
+    if (repoKey === previousSetupScriptRepoKey) return;
+    const isInitialMount = previousSetupScriptRepoKey === null;
+    previousSetupScriptRepoKey = repoKey;
 
     // Repo changed — invalidate any cached repo-config script
     repoConfigScript = null;
@@ -235,7 +239,14 @@
             untrack(() => projectSelection?.branch) || undefined,
           );
       // Staleness guard: user switched repos while the read was in flight
-      if (untrack(() => projectSelection?.repoPath ?? null) !== path) return;
+      // (compare full repo identity — GitHub repos can share a clone path)
+      const currentKey = untrack(() => {
+        const nowPath = projectSelection?.repoPath ?? null;
+        return projectSelection?.type === 'github'
+          ? `${nowPath}\u0000${projectSelection?.githubUrl || ''}`
+          : nowPath;
+      });
+      if (currentKey !== repoKey) return;
       isRepoConfigLoading = false;
       repoConfigScript = script;
       repoConfigScriptRepo = path;

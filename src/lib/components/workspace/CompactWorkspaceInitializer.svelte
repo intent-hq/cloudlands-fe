@@ -1130,14 +1130,17 @@
   // Auto-restore last used setup script when repo changes
   // This ensures the setup script name/content are correct in the button bar
   // without requiring the user to open the setup script modal
-  let previousSetupScriptRepo = $state<string | null>(null);
+  // Keyed on repo identity, not just path: for GitHub selections the path is
+  // the clone destination, which two different repos can share.
+  let previousSetupScriptRepoKey = $state<string | null>(null);
   $effect(() => {
     const path = repoPath;
     const type = repoType;
-    // Only run when repo actually changes
-    if (path === previousSetupScriptRepo) return;
-    const isInitialMount = previousSetupScriptRepo === null;
-    previousSetupScriptRepo = path;
+    const repoKey = type === 'github' ? `${path}\u0000${githubUrl || ''}` : path;
+    // Only run when the selected repo actually changes
+    if (repoKey === previousSetupScriptRepoKey) return;
+    const isInitialMount = previousSetupScriptRepoKey === null;
+    previousSetupScriptRepoKey = repoKey;
 
     // Repo changed — invalidate any cached repo-config script
     repoConfigScript = null;
@@ -1177,7 +1180,11 @@
             untrack(() => branch) || undefined,
           );
       // Staleness guard: user switched repos while the read was in flight
-      if (untrack(() => repoPath) !== path) return;
+      // (compare full repo identity — GitHub repos can share a clone path)
+      const currentKey = untrack(() =>
+        repoType === 'github' ? `${repoPath}\u0000${githubUrl || ''}` : repoPath,
+      );
+      if (currentKey !== repoKey) return;
       isRepoConfigLoading = false;
       repoConfigScript = script;
       repoConfigScriptRepo = path;
