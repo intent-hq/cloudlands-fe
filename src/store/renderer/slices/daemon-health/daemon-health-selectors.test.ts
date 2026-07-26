@@ -16,6 +16,9 @@ import {
   selectSidecarStartupFailed,
   selectSidecarStartupFailedReason,
   selectHasEverConnected,
+  selectSidecarRunLog,
+  selectSidecarRunLogPending,
+  selectSidecarRunLogError,
 } from './daemon-health-selectors';
 import { initialState } from './daemon-health-slice';
 
@@ -84,5 +87,28 @@ describe('sidecar startup-failure + hasEverConnected selectors', () => {
   it('reads the session hasEverConnected latch', () => {
     expect(selectHasEverConnected.select(stateWith({}))).toBe(false);
     expect(selectHasEverConnected.select(stateWith({ hasEverConnected: true }))).toBe(true);
+  });
+
+  it('reads the sidecar run-log fetch state', () => {
+    expect(selectSidecarRunLog.select(stateWith({}))).toBeNull();
+    expect(selectSidecarRunLogPending.select(stateWith({}))).toBe(false);
+    expect(selectSidecarRunLogError.select(stateWith({}))).toBeNull();
+    const runLog = {
+      available: false,
+      startedAt: null,
+      endedAt: null,
+      exitCode: null,
+      signal: null,
+      spawnError: null,
+      lines: [],
+    };
+    const fetched = stateWith({
+      sidecarRunLog: runLog,
+      sidecarRunLogPending: true,
+      sidecarRunLogError: 'bridge unavailable',
+    });
+    expect(selectSidecarRunLog.select(fetched)).toEqual(runLog);
+    expect(selectSidecarRunLogPending.select(fetched)).toBe(true);
+    expect(selectSidecarRunLogError.select(fetched)).toBe('bridge unavailable');
   });
 });

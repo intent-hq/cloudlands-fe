@@ -22,9 +22,13 @@ import {
   heartbeatFailed,
   spawnSidecarRequested,
   spawnSidecarFailed,
+  fetchSidecarRunLogRequested,
+  fetchSidecarRunLogSucceeded,
+  fetchSidecarRunLogFailed,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type {
   BackendTransportInfo,
+  SidecarRunLog,
   SystemStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -161,6 +165,26 @@ async function spawnSidecar(): Promise<void> {
 }
 
 /**
+ * Invoke backend:get-sidecar-run-log (main-process in-memory per-run capture)
+ * and dispatch the contract-shaped payload or the failure into the slice.
+ */
+async function fetchSidecarRunLog(): Promise<void> {
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (!api) {
+    appStore.dispatch(fetchSidecarRunLogFailed('electronAPI is not available'));
+    return;
+  }
+  try {
+    const log = (await api.invoke(BACKEND.GET_SIDECAR_RUN_LOG)) as SidecarRunLog;
+    appStore.dispatch(fetchSidecarRunLogSucceeded(log));
+  } catch (error) {
+    appStore.dispatch(
+      fetchSidecarRunLogFailed(error instanceof Error ? error.message : String(error)),
+    );
+  }
+}
+
+/**
  * Boot-time setup: listen to backend:status and start polling.
  */
 function boot(): void {
@@ -221,6 +245,10 @@ export function createDaemonHealthMiddleware(): StoreMiddleware {
     // User asked for the sidecar fallback from the daemon-loss UI (#439).
     if (action.type === spawnSidecarRequested.type) {
       void spawnSidecar();
+    }
+    // User asked for the last-run sidecar log from the daemon-loss dialog.
+    if (action.type === fetchSidecarRunLogRequested.type) {
+      void fetchSidecarRunLog();
     }
     return result;
   };

@@ -89,3 +89,18 @@ export const selectSidecarSpawnPending = store.createSelector(
 export const selectSidecarSpawnError = store.createSelector(
   (state) => state.daemonHealth.sidecarSpawnError,
 );
+
+/** Last-run sidecar log fetched on demand for the daemon-loss dialog, if any. */
+export const selectSidecarRunLog = store.createSelector(
+  (state) => state.daemonHealth.sidecarRunLog,
+);
+
+/** True while a backend:get-sidecar-run-log fetch is in flight. */
+export const selectSidecarRunLogPending = store.createSelector(
+  (state) => state.daemonHealth.sidecarRunLogPending,
+);
+
+/** Error string from the last failed run-log fetch, if any. */
+export const selectSidecarRunLogError = store.createSelector(
+  (state) => state.daemonHealth.sidecarRunLogError,
+);

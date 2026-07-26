@@ -11,6 +11,7 @@ import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
 import type {
   DaemonHealthState,
   DaemonHealthStats,
+  SidecarRunLog,
   SystemStatusWirePayload,
   BackendTransportInfo,
 } from './daemon-health-types';
@@ -33,6 +34,9 @@ export const initialState: DaemonHealthState = {
   hasEverConnected: false,
   sidecarSpawnPending: false,
   sidecarSpawnError: null,
+  sidecarRunLog: null,
+  sidecarRunLogPending: false,
+  sidecarRunLogError: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -105,6 +109,29 @@ export const spawnSidecarFailed = createAction<[error: string]>(
   'daemonHealth/spawnSidecarFailed',
 );
 
+/**
+ * User asked for the last-run sidecar log from the daemon-loss dialog. The
+ * daemon-health middleware invokes backend:get-sidecar-run-log (main-process
+ * in-memory capture — no daemon wire request involved).
+ */
+export const fetchSidecarRunLogRequested = createAction(
+  'daemonHealth/fetchSidecarRunLogRequested',
+);
+
+/**
+ * backend:get-sidecar-run-log resolved with the contract-shaped payload.
+ */
+export const fetchSidecarRunLogSucceeded = createAction<[log: SidecarRunLog]>(
+  'daemonHealth/fetchSidecarRunLogSucceeded',
+);
+
+/**
+ * backend:get-sidecar-run-log rejected (bridge unavailable, invoke error).
+ */
+export const fetchSidecarRunLogFailed = createAction<[error: string]>(
+  'daemonHealth/fetchSidecarRunLogFailed',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -127,6 +154,11 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         hasEverConnected: true,
         sidecarSpawnPending: false,
         sidecarSpawnError: null,
+        // The dialog dismisses on reconnect — drop the fetched run log with
+        // it; it is stale by the next show.
+        sidecarRunLog: null,
+        sidecarRunLogPending: false,
+        sidecarRunLogError: null,
       };
     } else if (status === 'disconnected' || status === 'connecting') {
       // Connection down or reconnecting — health moves to 'down'.
@@ -199,4 +231,13 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
   })
   .with(spawnSidecarFailed, (state, { payload: [error] }) => {
     return { ...state, sidecarSpawnPending: false, sidecarSpawnError: error };
+  })
+  .with(fetchSidecarRunLogRequested, (state) => {
+    return { ...state, sidecarRunLogPending: true, sidecarRunLogError: null };
+  })
+  .with(fetchSidecarRunLogSucceeded, (state, { payload: [log] }) => {
+    return { ...state, sidecarRunLogPending: false, sidecarRunLog: log };
+  })
+  .with(fetchSidecarRunLogFailed, (state, { payload: [error] }) => {
+    return { ...state, sidecarRunLogPending: false, sidecarRunLogError: error };
   });

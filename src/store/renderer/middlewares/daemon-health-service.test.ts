@@ -12,9 +12,11 @@ import { disposeDaemonHealthService } from './daemon-health-service';
 import {
   pollSystemStatus,
   spawnSidecarRequested,
+  fetchSidecarRunLogRequested,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type {
   BackendTransportInfo,
+  SidecarRunLog,
   SystemStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -470,6 +472,71 @@ describe('daemon-health-service', () => {
       expect(appStore.state.daemonHealth.sidecarSpawnPending).toBe(false);
       expect(appStore.state.daemonHealth.sidecarSpawnError).toBe('intentd binary not found');
     });
+  });
+
+  it('invokes backend:get-sidecar-run-log on fetchSidecarRunLogRequested and stores the payload', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    // Contract-shaped payload (spec "Pinned IPC contract").
+    const runLog: SidecarRunLog = {
+      available: true,
+      startedAt: '2026-07-26T00:00:00.000Z',
+      endedAt: '2026-07-26T00:00:05.000Z',
+      exitCode: 1,
+      signal: null,
+      spawnError: null,
+      lines: ['intentd starting', 'error: bind failed'],
+    };
+    const invokeMock = vi.mocked(window.electronAPI!.invoke);
+    invokeMock.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_SIDECAR_RUN_LOG) return runLog;
+      return mockInvoke(channel);
+    });
+
+    appStore.dispatch(fetchSidecarRunLogRequested());
+    expect(appStore.state.daemonHealth.sidecarRunLogPending).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+
+    // Exact channel name pinned by the IPC contract.
+    expect(invokeMock).toHaveBeenCalledWith('backend:get-sidecar-run-log');
+    await vi.waitFor(() => {
+      expect(appStore.state.daemonHealth.sidecarRunLogPending).toBe(false);
+      expect(appStore.state.daemonHealth.sidecarRunLog).toEqual(runLog);
+    });
+    expect(appStore.state.daemonHealth.sidecarRunLogError).toBeNull();
+  });
+
+  it('dispatches fetchSidecarRunLogFailed when backend:get-sidecar-run-log rejects', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    const invokeMock = vi.mocked(window.electronAPI!.invoke);
+    invokeMock.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_SIDECAR_RUN_LOG) throw new Error('bridge unavailable');
+      return mockInvoke(channel);
+    });
+
+    appStore.dispatch(fetchSidecarRunLogRequested());
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      expect(appStore.state.daemonHealth.sidecarRunLogPending).toBe(false);
+      expect(appStore.state.daemonHealth.sidecarRunLogError).toBe('bridge unavailable');
+    });
+    expect(appStore.state.daemonHealth.sidecarRunLog).toBeNull();
   });
 
   it('shows a one-time dismissible warning toast when the transport reports a version mismatch', async () => {

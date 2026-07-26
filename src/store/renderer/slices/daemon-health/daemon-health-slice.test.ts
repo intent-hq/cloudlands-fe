@@ -15,8 +15,15 @@ import {
   systemStatusFailure,
   spawnSidecarRequested,
   spawnSidecarFailed,
+  fetchSidecarRunLogRequested,
+  fetchSidecarRunLogSucceeded,
+  fetchSidecarRunLogFailed,
 } from './daemon-health-slice';
-import type { BackendTransportInfo, SystemStatusWirePayload } from './daemon-health-types';
+import type {
+  BackendTransportInfo,
+  SidecarRunLog,
+  SystemStatusWirePayload,
+} from './daemon-health-types';
 
 describe('daemonHealthReducer', () => {
   it('has the correct initial state', () => {
@@ -34,6 +41,9 @@ describe('daemonHealthReducer', () => {
       hasEverConnected: false,
       sidecarSpawnPending: false,
       sidecarSpawnError: null,
+      sidecarRunLog: null,
+      sidecarRunLogPending: false,
+      sidecarRunLogError: null,
     });
   });
 
@@ -241,6 +251,52 @@ describe('daemonHealthReducer', () => {
       const next = daemonHealthReducer(state, spawnSidecarFailed('intentd binary not found'));
       expect(next.sidecarSpawnPending).toBe(false);
       expect(next.sidecarSpawnError).toBe('intentd binary not found');
+    });
+  });
+
+  describe('fetchSidecarRunLog actions', () => {
+    const runLog: SidecarRunLog = {
+      available: true,
+      startedAt: '2026-07-26T00:00:00.000Z',
+      endedAt: '2026-07-26T00:00:05.000Z',
+      exitCode: 1,
+      signal: null,
+      spawnError: null,
+      lines: ['intentd starting', 'error: bind failed'],
+    };
+
+    it('marks the fetch pending and clears a previous error on request', () => {
+      const state = { ...initialState, sidecarRunLogError: 'earlier failure' };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogRequested());
+      expect(next.sidecarRunLogPending).toBe(true);
+      expect(next.sidecarRunLogError).toBeNull();
+    });
+
+    it('stores the payload and clears pending on success', () => {
+      const state = { ...initialState, sidecarRunLogPending: true };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogSucceeded(runLog));
+      expect(next.sidecarRunLogPending).toBe(false);
+      expect(next.sidecarRunLog).toEqual(runLog);
+    });
+
+    it('clears pending and stores the error on failure', () => {
+      const state = { ...initialState, sidecarRunLogPending: true };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogFailed('bridge unavailable'));
+      expect(next.sidecarRunLogPending).toBe(false);
+      expect(next.sidecarRunLogError).toBe('bridge unavailable');
+    });
+
+    it('drops the fetched run log on the next successful connect', () => {
+      const state = {
+        ...initialState,
+        sidecarRunLog: runLog,
+        sidecarRunLogPending: true,
+        sidecarRunLogError: 'earlier failure',
+      };
+      const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
+      expect(next.sidecarRunLog).toBeNull();
+      expect(next.sidecarRunLogPending).toBe(false);
+      expect(next.sidecarRunLogError).toBeNull();
     });
   });
 

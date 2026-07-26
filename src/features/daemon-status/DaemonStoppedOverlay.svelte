@@ -20,7 +20,6 @@
    * gave up restarting.
    */
   import { store as appStore } from '$store/renderer/store';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
     selectDaemonHealth,
     selectDaemonTransport,
@@ -31,9 +30,14 @@
     selectHasEverConnected,
     selectSidecarSpawnPending,
     selectSidecarSpawnError,
+    selectSidecarRunLog,
+    selectSidecarRunLogPending,
+    selectSidecarRunLogError,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
-  import { spawnSidecarRequested } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-  import type { SidecarRunLog } from '$store/renderer/slices/daemon-health/daemon-health-types';
+  import {
+    spawnSidecarRequested,
+    fetchSidecarRunLogRequested,
+  } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 
   const health$ = selectDaemonHealth();
   const transport$ = selectDaemonTransport();
@@ -44,6 +48,9 @@
   const hasEverConnected$ = selectHasEverConnected();
   const spawnPending$ = selectSidecarSpawnPending();
   const spawnError$ = selectSidecarSpawnError();
+  const runLog$ = selectSidecarRunLog();
+  const runLogPending$ = selectSidecarRunLogPending();
+  const runLogError$ = selectSidecarRunLogError();
 
   // Presentational grace-period latch: health 'down' arms a timer; a recovery
   // before it fires cancels the overlay entirely (no flash on quick blips).
@@ -64,9 +71,6 @@
         graceTimer = null;
       }
       visible = false;
-      // Drop the fetched run log with the dialog — it is stale by the next show.
-      runLog = null;
-      runLogError = null;
     }
     return () => {
       if (graceTimer !== null) {
@@ -109,24 +113,11 @@
     appStore.dispatch(spawnSidecarRequested());
   }
 
-  // "Show logs from last run" — fetched on demand from the main process's
-  // in-memory per-run capture; ephemeral component-local state (no Redux).
-  let runLog = $state<SidecarRunLog | null>(null);
-  let runLogError = $state<string | null>(null);
-  let runLogPending = $state(false);
-
-  async function handleShowRunLog() {
-    runLogPending = true;
-    runLogError = null;
-    try {
-      const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
-      if (!api) throw new Error('electronAPI is not available');
-      runLog = (await api.invoke(IPC_CHANNELS.BACKEND.GET_SIDECAR_RUN_LOG)) as SidecarRunLog;
-    } catch (error) {
-      runLogError = error instanceof Error ? error.message : String(error);
-    } finally {
-      runLogPending = false;
-    }
+  // "Show logs from last run" — the daemon-health middleware performs the
+  // backend:get-sidecar-run-log invoke; the slice holds the payload and drops
+  // it on the next successful connect (when this dialog dismisses).
+  function handleShowRunLog() {
+    appStore.dispatch(fetchSidecarRunLogRequested());
   }
 </script>
 
@@ -198,30 +189,30 @@
           <button
             type="button"
             class="mt-2 w-full rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={runLogPending}
+            disabled={$runLogPending$}
             onclick={handleShowRunLog}
             data-testid="daemon-stopped-show-logs"
           >
-            {runLogPending ? 'Loading logs…' : 'Show logs from last run'}
+            {$runLogPending$ ? 'Loading logs…' : 'Show logs from last run'}
           </button>
 
-          {#if runLogError}
+          {#if $runLogError$}
             <p class="mt-2 text-sm text-destructive" data-testid="daemon-stopped-run-log-error">
-              {runLogError}
+              {$runLogError$}
             </p>
-          {:else if runLog}
+          {:else if $runLog$}
             <div class="mt-2" data-testid="daemon-stopped-run-log">
-              {#if runLog.available}
+              {#if $runLog$.available}
                 <p class="text-xs text-muted-foreground" data-testid="daemon-stopped-run-log-meta">
-                  {#if runLog.spawnError}
-                    Spawn error: {runLog.spawnError}
+                  {#if $runLog$.spawnError}
+                    Spawn error: {$runLog$.spawnError}
                   {:else}
-                    Exit code: {runLog.exitCode ?? 'none'} · Signal: {runLog.signal ?? 'none'}
+                    Exit code: {$runLog$.exitCode ?? 'none'} · Signal: {$runLog$.signal ?? 'none'}
                   {/if}
                 </p>
                 <pre
                   class="mt-1 max-h-48 overflow-auto rounded-md bg-muted p-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground"
-                  data-testid="daemon-stopped-run-log-lines">{runLog.lines.join('\n')}</pre>
+                  data-testid="daemon-stopped-run-log-lines">{$runLog$.lines.join('\n')}</pre>
               {:else}
                 <p class="text-xs text-muted-foreground">
                   No sidecar run has been captured this session.

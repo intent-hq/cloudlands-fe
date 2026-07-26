@@ -135,6 +135,16 @@ export interface DaemonHealthState {
   sidecarSpawnPending: boolean;
   /** Error string when the last on-demand sidecar spawn failed. */
   sidecarSpawnError: string | null;
+  /**
+   * Last-run sidecar log fetched on demand (backend:get-sidecar-run-log) for
+   * the daemon-loss dialog, or null before a fetch / after it is dropped.
+   * Cleared on the next successful connect — it is stale by the next show.
+   */
+  sidecarRunLog: SidecarRunLog | null;
+  /** True while a backend:get-sidecar-run-log fetch is in flight. */
+  sidecarRunLogPending: boolean;
+  /** Error string when the last run-log fetch failed. */
+  sidecarRunLogError: string | null;
 }
 
 /**
