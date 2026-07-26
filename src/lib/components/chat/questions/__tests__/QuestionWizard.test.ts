@@ -54,7 +54,7 @@ describe('QuestionWizard', () => {
   it('renders the first question with counter and no Next for mid-flow single-select', () => {
     const { container } = setup();
     expect(screen.getByText('1 of 3')).toBeTruthy();
-    expect(container.querySelectorAll('.w-3\\.5.h-1')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-progress-segment]')).toHaveLength(3);
     expect(screen.getByRole('button', { name: /back/i })).toBeTruthy();
     expect(screen.getByText('Token storage')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /next/i })).toBeNull();
@@ -64,7 +64,7 @@ describe('QuestionWizard', () => {
   it('single-question wizard hides the counter, progress segments, and Back button', () => {
     const { container } = setup([MULTI]);
     expect(screen.queryByText('1 of 1')).toBeNull();
-    expect(container.querySelectorAll('.w-3\\.5.h-1')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-progress-segment]')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /back/i })).toBeNull();
     expect(screen.getByText('Agent Has Questions')).toBeTruthy();
     expect(screen.getByText('select all that apply')).toBeTruthy();

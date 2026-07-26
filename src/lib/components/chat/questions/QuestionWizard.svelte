@@ -160,6 +160,7 @@
         <span class="flex items-center gap-1">
           {#each questions as _, i (i)}
             <span
+              data-progress-segment
               class="w-3.5 h-1 rounded-[2px] {i < idx
                 ? 'bg-primary/40'
                 : i === idx
