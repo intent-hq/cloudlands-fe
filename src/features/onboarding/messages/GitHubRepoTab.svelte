@@ -26,28 +26,24 @@
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import {
-  loadGithubRepos,
-  type GithubRepoItem,
-} from '$store/renderer/slices/github-repos/github-repos-slice';
+    loadGithubRepos,
+    type GithubRepoItem,
+  } from '$store/renderer/slices/github-repos/github-repos-slice';
   import {
-  selectGithubRepos,
-  selectGithubReposError,
-  selectGithubReposLoaded,
-  selectGithubReposLoading,
-} from '$store/renderer/slices/github-repos/github-repos-selectors';
+    selectGithubRepos,
+    selectGithubReposError,
+    selectGithubReposLoaded,
+    selectGithubReposLoading,
+  } from '$store/renderer/slices/github-repos/github-repos-selectors';
   import { searchGithubRepos } from '$store/renderer/slices/github-repo-search/github-repo-search-slice';
   import {
-  selectGithubRepoSearchLastQuery,
-  selectGithubRepoSearchLoading,
-  selectGithubRepoSearchResults,
-} from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
+    selectGithubRepoSearchLastQuery,
+    selectGithubRepoSearchLoading,
+    selectGithubRepoSearchResults,
+  } from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
   import { selectWorkspaceInitializerDefaultParentPath } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import {
-  faArrowUpRightFromSquare,
-  faFolder,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faArrowUpRightFromSquare, faFolder, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
 
@@ -191,6 +187,48 @@
   /** Default base directory for cloned repos, hydrated through Redux persistence. */
   const defaultCloneBase = $derived($defaultParentPath$ || '~/Developer');
 
+  /** Repo-name segment of a GitHub URL (mirrors ProjectPickerMessage.buildSelection). */
+  function repoNameFromUrl(url: string): string | undefined {
+    return url.match(/github\.com\/[^/]+\/([^/\s#?]+)/i)?.[1]?.replace(/\.git$/, '');
+  }
+
+  /** Strips a trailing `/repoName` segment so full clone paths hydrated from
+   *  persisted selections (base + repo name, see buildSelection) compare and
+   *  swap against their base directory rather than the full path. */
+  function stripRepoSegment(path: string, repoName: string | undefined): string {
+    return repoName && path.endsWith(`/${repoName}`) ? path.slice(0, -(repoName.length + 1)) : path;
+  }
+
+  /**
+   * Whether the user explicitly chose a clone destination (#823). Repo
+   * selection and owner/repo typing only auto-fill the default base while
+   * the path is untouched, so a user-picked parent directory survives
+   * selecting or switching repos. Initialized from the prop because this
+   * component remounts on tab switches ({#key activeTab} in the parent)
+   * while the clonePath state lives in ProjectPickerMessage; hydrated full
+   * clone paths (base + repo name) count as untouched when their base is the
+   * default. Capturing the initial values only is intentional, hence the
+   * svelte-ignore.
+   */
+  // svelte-ignore state_referenced_locally
+  let clonePathDirty = $state(
+    !!clonePath && stripRepoSegment(clonePath, repoNameFromUrl(githubUrl)) !== defaultCloneBase,
+  );
+
+  /** On repo selection/typing: fill the default base while untouched; for a
+   *  user-chosen path, only swap out a stale repo-name suffix (hydrated full
+   *  paths) so buildSelection appends the new repo name without nesting. */
+  function updateCloneBase(previousRepoName: string | undefined) {
+    if (!clonePathDirty) {
+      onClonePathChange(defaultCloneBase);
+    } else {
+      const base = stripRepoSegment(clonePath, previousRepoName);
+      if (base !== clonePath) {
+        onClonePathChange(base);
+      }
+    }
+  }
+
   function handleInputChange(value: string) {
     // Strip full URL prefix if user pastes a full URL
     let cleaned = value.replace(/^https?:\/\/github\.com\//, '');
@@ -199,6 +237,7 @@
     githubInput = cleaned;
 
     if (cleaned) {
+      const previousRepoName = repoNameFromUrl(githubUrl);
       onGithubUrlChange(`https://github.com/${cleaned}`);
 
       // Auto-fill clone path when input looks like owner/repo
@@ -206,7 +245,7 @@
       if (parts.length >= 2 && parts[0] && parts[1]) {
         const repoName = parts[1].split(/[?#]/)[0]; // strip query/hash
         if (repoName) {
-          onClonePathChange(defaultCloneBase);
+          updateCloneBase(previousRepoName);
         }
       }
     } else {
@@ -258,6 +297,7 @@
     pickerOpen = false;
     try {
       onClonePathChange(pickedPath);
+      clonePathDirty = true;
     } catch (err) {
       logger.error('Failed to select clone folder', err);
     }
@@ -265,11 +305,13 @@
 
   /** Click-to-select from the repo list. Notifies the parent of the
    *  selection without changing the search input so the user can keep
-   *  browsing. Also auto-fills the clone path with a sensible default. */
+   *  browsing. Also auto-fills the clone path with a sensible default —
+   *  unless the user already chose a destination (#823). */
   function handleSelectRepo(repo: GithubRepoItem) {
+    const previousRepoName = repoNameFromUrl(githubUrl);
     const path = `${repo.owner}/${repo.name}`;
     onGithubUrlChange(`https://github.com/${path}`);
-    onClonePathChange(defaultCloneBase);
+    updateCloneBase(previousRepoName);
   }
 
   /** User-initiated refresh (also drives the error "Try again" action). The
@@ -398,7 +440,10 @@
               />
               <div class="flex-1 min-w-0">
                 <div
-                  class={cn('flex items-center text-sm font-medium truncate', isCommitted ? 'text-background' : 'text-foreground')}
+                  class={cn(
+                    'flex items-center text-sm font-medium truncate',
+                    isCommitted ? 'text-background' : 'text-foreground',
+                  )}
                 >
                   <div class={cn('mr-1', isCommitted ? 'text-background/60' : 'text-subtle')}>
                     {repo.owner} /
