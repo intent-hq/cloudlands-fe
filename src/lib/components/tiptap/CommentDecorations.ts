@@ -324,8 +324,10 @@ export const commentDecorationStyles = `
     color: hsl(var(--warning) / 0.8);
   }
 
-  /* Overlapping comments */
-  .comment-highlight + .comment-highlight {
+  /* Overlapping comments — each decoration wraps its own span (nodeName),
+     so overlap regions render as NESTED highlight spans, never adjacent
+     siblings (siblings are just split segments of a single comment). */
+  .comment-highlight .comment-highlight {
     background: linear-gradient(
       45deg,
       hsl(var(--warning) / 0.2) 25%,

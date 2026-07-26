@@ -67,7 +67,6 @@ import {
   processMarkdownToHTML,
   processHTMLToMarkdown,
 } from '$lib/utils/markdown-processor';
-import { scanForProblematicAnchors } from '../main/markdown-anchor-recovery';
 import {
   createTestEditor,
   destroyTestEditor,
@@ -177,19 +176,18 @@ describe('Overlapping comment ranges', () => {
       return plugin;
     }
 
-    /** Concatenated visible text of all decoration spans for one comment id. */
+    /**
+     * Concatenated visible text of all decoration spans for one comment id.
+     * Same-id spans never nest (one decoration per comment; split segments
+     * render as siblings), so plain concatenation cannot double-count.
+     */
     function decoratedText(commentId: string): string {
       const spans = editor.view.dom.querySelectorAll(
         `.comment-highlight[data-comment-id="${commentId}"]`,
       );
       let text = '';
       spans.forEach((span) => {
-        // Skip spans nested inside another span for the SAME id so overlap
-        // segments are not double-counted.
-        const parent = span.parentElement?.closest(
-          `.comment-highlight[data-comment-id="${commentId}"]`,
-        );
-        if (!parent) text += span.textContent ?? '';
+        text += span.textContent ?? '';
       });
       return text;
     }
@@ -383,7 +381,10 @@ describe('Overlapping comment ranges', () => {
       expectAscending(markerOrder(roundTripped, NESTED_MARKERS));
     });
 
-    it('scanForProblematicAnchors does not flag interleaved pairs', () => {
+    it('scanForProblematicAnchors does not flag interleaved pairs', async () => {
+      // Dynamic import: this main-process module must not enter the
+      // renderer-side static import graph (AGENTS.md module boundary).
+      const { scanForProblematicAnchors } = await import('../main/markdown-anchor-recovery');
       expect(scanForProblematicAnchors(INTERLEAVED_MD, ['cmt-a', 'cmt-b'])).toEqual([]);
       expect(scanForProblematicAnchors(NESTED_MD, ['cmt-a', 'cmt-b'])).toEqual([]);
     });
