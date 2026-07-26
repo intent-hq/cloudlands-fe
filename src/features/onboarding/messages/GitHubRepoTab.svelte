@@ -56,6 +56,8 @@
   interface Props {
     githubUrl: string;
     clonePath: string;
+    /** Pre-flight validation error for the computed clone target (owned by the parent) */
+    cloneDirError?: string;
     onGithubUrlChange: (url: string) => void;
     onClonePathChange: (path: string) => void;
     /** Called when user presses Enter - should select AND advance to next step */
@@ -64,8 +66,14 @@
 
   // Submit/continue is handled by the unified button at the bottom of the
   // onboarding flow (see `+page.svelte`). This tab only collects data.
-  let { githubUrl, clonePath, onGithubUrlChange, onClonePathChange, onSelectAndAdvance }: Props =
-    $props();
+  let {
+    githubUrl,
+    clonePath,
+    cloneDirError,
+    onGithubUrlChange,
+    onClonePathChange,
+    onSelectAndAdvance,
+  }: Props = $props();
 
   const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const repos$ = selectGithubRepos();
@@ -471,6 +479,10 @@
     {clonePath ? clonePath.replace(/^\/Users\/[^/]+/, '~') : 'Select folder'}
   </span>
 </button>
+
+{#if cloneDirError}
+  <p class="text-sm text-red-500 px-1 mt-2">{cloneDirError}</p>
+{/if}
 
 <DirectoryPickerModal
   open={pickerOpen}
