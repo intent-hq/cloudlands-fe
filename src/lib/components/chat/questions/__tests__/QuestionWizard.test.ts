@@ -73,6 +73,15 @@ describe('QuestionWizard', () => {
     expect(screen.getByRole('button', { name: /send/i })).toBeTruthy();
   });
 
+  it('single-select single-question wizard shows Send and no advance hint', () => {
+    const { container } = setup([LAST]);
+    expect(screen.queryByText('1 of 1')).toBeNull();
+    expect(container.querySelectorAll('[data-progress-segment]')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /back/i })).toBeNull();
+    expect(screen.queryByText('Selecting an option moves to the next question')).toBeNull();
+    expect(screen.getByRole('button', { name: /send/i })).toBeTruthy();
+  });
+
   it('single-select advances immediately on selection', async () => {
     setup();
     await fireEvent.click(screen.getByText('OS keychain'));

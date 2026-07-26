@@ -60,6 +60,8 @@
   const draft = $derived(answers[idx]);
   const isLast = $derived(idx === questions.length - 1);
   const isMulti = $derived(!!current?.multiSelect);
+  // Single-question wizards drop the counter, segments, and Back button.
+  const multiStep = $derived(questions.length > 1);
   // Single-select mid-flow advances on selection — no Next button.
   const showNext = $derived(isMulti || isLast);
   const nextDisabled = $derived(
@@ -155,7 +157,7 @@
     <div class="flex items-center gap-2.5 px-3.5 pt-2.5">
       <Fa icon={faCircleQuestion} class="text-xs text-primary" />
       <span class="text-xs font-medium text-foreground">Agent Has Questions</span>
-      {#if questions.length > 1}
+      {#if multiStep}
         <span class="text-xs text-subtle">{idx + 1} of {questions.length}</span>
         <span class="flex items-center gap-1">
           {#each questions as _, i (i)}
@@ -253,7 +255,7 @@
 
         <!-- Footer -->
         <div class="flex items-center gap-2 px-3.5 pt-0.5 pb-3">
-          {#if questions.length > 1}
+          {#if multiStep}
             <button
               type="button"
               class="inline-flex items-center gap-1.25 border-none bg-transparent text-xs font-[inherit] px-2 py-1 rounded-(--radius) {idx === 0
