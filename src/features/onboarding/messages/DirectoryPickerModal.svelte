@@ -206,7 +206,14 @@
     });
   });
 
-  /** Expand a leading `~` to the daemon-host home before hitting the wire. */
+  /**
+   * Expand a leading `~` to the daemon-host home before hitting the wire.
+   *
+   * This is a fast path only, not a correctness requirement: when no listing
+   * (and thus no `home`) is available — e.g. the initial load failed — the raw
+   * tilde path is sent unchanged, and the daemon expands leading `~` / `~/`
+   * itself (`host.listDirectory`, monorepo#824).
+   */
   function expandTypedPath(raw: string): string {
     const trimmed = raw.trim();
     const home = listing?.home;
