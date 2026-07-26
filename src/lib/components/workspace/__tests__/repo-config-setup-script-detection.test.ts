@@ -5,8 +5,9 @@
  * repo-committed `.intent/config.json` setup script through the shared probe
  * helper (monorepo#833): spinner on the setup-script control while the probe
  * is in flight, "From repo config" once it resolves, and restored form state
- * never clobbered. This is the modal-side counterpart of the onboarding
- * suite, so a modal-only edit can no longer go untested.
+ * never clobbered. GitHub selections also re-probe (debounced) when the
+ * branch changes (monorepo#835). This is the modal-side counterpart of the
+ * onboarding suite, so a modal-only edit can no longer go untested.
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -152,7 +153,7 @@ vi.mock('$lib/components/workspace/initializer/IssueSuggestions.svelte', async (
 }));
 
 vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({
-  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+  default: (await import('./mocks/MockRepoAndBranchPicker.svelte')).default,
 }));
 
 vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
@@ -179,6 +180,31 @@ function renderInitializer() {
 }
 
 const SPINNER_LABEL = 'Detecting setup script…';
+
+/** Callbacks the initializer passed to the (mocked) RepoAndBranchPicker. */
+function pickerCallbacks() {
+  return (
+    window as unknown as {
+      __mockRepoAndBranchPicker: {
+        onRepoChange: (event: { detail: Record<string, unknown> }) => void;
+        onBranchChange: (event: { detail: { branch: string } }) => void;
+      };
+    }
+  ).__mockRepoAndBranchPicker;
+}
+
+/** Drive a GitHub repo selection through the picker's onRepoChange. */
+function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
+  pickerCallbacks().onRepoChange({
+    detail: {
+      path: '/clones/repo',
+      type: 'github',
+      githubUrl: 'https://github.com/owner/repo',
+      isValidPath: true,
+      ...overrides,
+    },
+  });
+}
 
 describe('CompactWorkspaceInitializer repo-config setup script detection', () => {
   beforeEach(() => {
@@ -264,5 +290,64 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
       expect(result.queryByText(SPINNER_LABEL)).toBeNull();
     });
     expect(result.getByText('My saved script')).toBeTruthy();
+  });
+
+  it('re-probes with the new ref when the GitHub branch changes (monorepo#835)', async () => {
+    mocks.fetchGitHubRepoConfig.mockImplementation(async (_owner, _repo, ref) =>
+      ref === 'release-1.x' ? 'echo release-config' : null,
+    );
+
+    const result = renderInitializer();
+    await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
+    // Selecting a GitHub repo probes at once (repo default branch — no ref).
+    selectGitHubRepo();
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', undefined);
+    });
+
+    // Picking a branch re-probes (debounced) with the new ref and applies
+    // that branch's config script.
+    pickerCallbacks().onBranchChange({ detail: { branch: 'release-1.x' } });
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'release-1.x');
+    });
+    await waitFor(() => {
+      expect(result.getByText(REPO_CONFIG_SCRIPT_NAME)).toBeTruthy();
+    });
+  });
+
+  it('discards a stale probe result for a superseded ref after a branch change', async () => {
+    const probeMain = deferred<string | null>();
+    const probeRelease = deferred<string | null>();
+    mocks.fetchGitHubRepoConfig.mockImplementation((_owner, _repo, ref) =>
+      ref === 'main' ? probeMain.promise : probeRelease.promise,
+    );
+    mocks.savedFormState = {
+      repoPath: '/clones/repo',
+      repoType: 'github',
+      githubUrl: 'https://github.com/owner/repo',
+      branch: 'main',
+      isValidPath: true,
+    };
+
+    const result = renderInitializer();
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'main');
+    });
+
+    // Change the branch while main's read is in flight, then resolve it late.
+    pickerCallbacks().onBranchChange({ detail: { branch: 'release-1.x' } });
+    await waitFor(() => {
+      expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'release-1.x');
+    });
+    probeMain.resolve('echo main-config');
+    await Promise.resolve();
+
+    // main's late result must never apply; release's own result wins.
+    expect(result.queryByText(REPO_CONFIG_SCRIPT_NAME)).toBeNull();
+    probeRelease.resolve('echo release-config');
+    await waitFor(() => {
+      expect(result.getByText(REPO_CONFIG_SCRIPT_NAME)).toBeTruthy();
+    });
   });
 });

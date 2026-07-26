@@ -70,8 +70,7 @@
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
     chooseDefaultSetupScript,
-    probeRepoConfigSetupScript,
-    repoIdentityKey,
+    createRepoConfigProbeScheduler,
     REPO_CONFIG_SCRIPT_NAME,
   } from '$features/setup-scripts';
   import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
@@ -185,55 +184,50 @@
     return null;
   });
 
-  // Auto-restore last used setup script when repo changes.
-  // Keyed on repo identity, not just path: for GitHub selections the path is
-  // the clone destination, which two different repos can share.
-  let previousSetupScriptRepoKey = $state<string | null>(null);
+  // Auto-restore last used setup script when the repo changes, and re-probe
+  // the repo config when the GitHub branch changes (monorepo#835). The
+  // scheduler keys runs on repo identity + ref: repo switches restore and
+  // probe at once, branch-only changes re-probe debounced.
+  const setupScriptProbeScheduler = createRepoConfigProbeScheduler();
   $effect(() => {
     const path = projectSelection?.repoPath ?? null;
     const type = projectSelection?.type;
-    // Only read githubUrl for GitHub selections so the effect doesn't track
-    // it (and re-run) while a local repo is selected.
+    // Only read githubUrl/branch for GitHub selections so the effect doesn't
+    // track them (and re-run) while a local repo is selected.
     const identity = {
       path,
       type,
       githubUrl: type === 'github' ? projectSelection?.githubUrl : null,
+      branch: type === 'github' ? projectSelection?.branch : null,
     };
-    const repoKey = repoIdentityKey(identity);
-    // Only run when the selected repo actually changes
-    if (repoKey === previousSetupScriptRepoKey) return;
-    const isInitialMount = previousSetupScriptRepoKey === null;
-    previousSetupScriptRepoKey = repoKey;
 
-    // Repo changed — invalidate any cached repo-config script
-    repoConfigScript = null;
-    repoConfigScriptRepo = null;
-
-    // On initial mount, don't override if there's already a setup script set
-    // (e.g., from restored form state). On repo switches, always restore.
-    const preservedRestoredState = isInitialMount && !!setupScript.trim();
-    if (!preservedRestoredState) {
-      // Restore last used script for this repo (or clear if no saved script exists)
-      if (path) {
-        restoreLastUsedSetupScript(path);
-      } else {
-        setupScript = '';
-        setupScriptName = 'Custom';
-        isCustomSetupScript = false;
-      }
-    }
-
-    // Probe the repo's committed `.intent/config.json` for a setup script
-    // (shared helper — spinner state, no-clobber and staleness guards).
-    probeRepoConfigSetupScript({
+    setupScriptProbeScheduler.onSelectionChange({
       identity,
-      preservedRestoredState,
+      onRepoChange: ({ preservedRestoredState }) => {
+        // Repo changed — invalidate any cached repo-config script
+        repoConfigScript = null;
+        repoConfigScriptRepo = null;
+
+        // On initial mount, don't override if there's already a setup script
+        // set (e.g., from restored form state). On repo switches, always
+        // restore.
+        if (!preservedRestoredState) {
+          // Restore last used script for this repo (or clear if no saved script exists)
+          if (path) {
+            restoreLastUsedSetupScript(path);
+          } else {
+            setupScript = '';
+            setupScriptName = 'Custom';
+            isCustomSetupScript = false;
+          }
+        }
+      },
       getCurrentIdentity: () => ({
         path: projectSelection?.repoPath ?? null,
         type: projectSelection?.type,
         githubUrl: projectSelection?.githubUrl,
+        branch: projectSelection?.branch,
       }),
-      getBranch: () => projectSelection?.branch,
       getSetupScript: () => setupScript,
       isSetupScriptModalOpen: () => showSetupScript,
       isCustomSetupScript: () => isCustomSetupScript,
@@ -408,6 +402,7 @@
     appStore.dispatch(cancelWorkspaceInitializerOnboardingFormStateDebounce());
     if (onboardingPromptSaveTimer) clearTimeout(onboardingPromptSaveTimer);
     if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
+    setupScriptProbeScheduler.dispose();
   });
 
   // ============================================================================
