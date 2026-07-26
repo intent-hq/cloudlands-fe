@@ -55,9 +55,11 @@ vi.mock('$store/renderer/slices/setup-scripts/setup-scripts-selectors', () => ({
 }));
 
 // Keep the real priority logic (chooseDefaultSetupScript, templates, name
-// constant); only the IPC/daemon-backed probes are stubbed.
-vi.mock('$features/setup-scripts', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$features/setup-scripts')>()),
+// constant); only the IPC/daemon-backed probes are stubbed. Mock the deep
+// module (not the barrel) so the shared probe helper's relative import of
+// './repo-config' resolves to the same stubs.
+vi.mock('$features/setup-scripts/repo-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/setup-scripts/repo-config')>()),
   fetchRepoConfigSetupScript: mocks.fetchRepoConfig,
   fetchGitHubRepoConfigSetupScript: mocks.fetchGitHubRepoConfig,
 }));

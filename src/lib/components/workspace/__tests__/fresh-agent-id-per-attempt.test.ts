@@ -72,6 +72,8 @@ vi.mock('$features/setup-scripts', () => ({
   chooseDefaultSetupScript: vi.fn(() => ({ content: '', name: 'Custom' })),
   fetchRepoConfigSetupScript: vi.fn(async () => null),
   fetchGitHubRepoConfigSetupScript: vi.fn(async () => null),
+  probeRepoConfigSetupScript: vi.fn(),
+  repoIdentityKey: vi.fn((identity: { path: string | null }) => identity.path),
   REPO_CONFIG_SCRIPT_NAME: 'Repo config',
 }));
 
@@ -89,6 +91,7 @@ vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
 
 vi.mock('$lib/utils/workspace-validation', () => ({
   getGitErrorMessage: (message: string) => message,
+  parseGitHubUrl: vi.fn(() => null),
   validateBranchName: vi.fn(() => ({ valid: true })),
   validateInitialPrompt: vi.fn(() => ({ valid: true })),
   validateRepoPath: vi.fn(async () => ({ valid: true })),
