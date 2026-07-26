@@ -114,7 +114,14 @@
     triggerClass?: string;
     defaultModelId?: string;
     showDefaultOption?: boolean;
+    // Gates the workspace/agent-session updates (setWorkspaceModel,
+    // updateAgentSessionFields, agent.setModel) on a pick.
     updateGlobalStore?: boolean;
+    // Gates the global default-model dispatch (selectModel), which the
+    // persistence middleware writes to `model.providerDefaults` and — for a
+    // cross-provider compound pick — `providers.active`. Only the Settings
+    // page default-model picker should pass this.
+    updateGlobalDefault?: boolean;
     silentFallback?: boolean;
     showProviderWarningNotice?: boolean;
   }
@@ -139,6 +146,7 @@
     defaultModelId,
     showDefaultOption = false,
     updateGlobalStore = false,
+    updateGlobalDefault = false,
     silentFallback = false,
     showProviderWarningNotice,
   }: Props = $props();
@@ -496,6 +504,7 @@
       agentId,
       deferUpdate,
       updateGlobalStore,
+      updateGlobalDefault,
     });
     // Update local state before async work so the UI responds immediately.
     propModelAtLocalChange = selectedModel;
@@ -507,11 +516,13 @@
 
       await tick();
 
+      if (updateGlobalDefault) {
+        appStore.dispatch(selectModel(model));
+      }
+
       if (!updateGlobalStore) {
         return;
       }
-
-      appStore.dispatch(selectModel(model));
 
       if (workspaceId) {
         appStore.dispatch(setWorkspaceModel({ workspaceId, model }));

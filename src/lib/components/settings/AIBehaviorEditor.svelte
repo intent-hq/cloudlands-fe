@@ -413,6 +413,7 @@
           variant="default"
           size="sm"
           updateGlobalStore
+          updateGlobalDefault
         />
         {#if !allSpecialistsUseSelectedModel}
           <button

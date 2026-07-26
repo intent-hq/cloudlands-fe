@@ -237,6 +237,10 @@ import {
   getModelsForProvider,
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
+import {
+  selectModel,
+  setWorkspaceModel,
+} from '$store/renderer/slices/model/model-slice';
 import ModelPicker from './ModelPicker.svelte';
 
 describe('ModelPicker locked state', () => {
@@ -1004,5 +1008,103 @@ describe('ModelPicker unlocked agent provider handling', () => {
 
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
     expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
+  });
+});
+
+describe('ModelPicker global-default vs per-agent dispatch gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+    ];
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockAgentSession$.set(undefined);
+    mockSvelteDispatch.mockClear();
+    vi.mocked(getModelsForProvider).mockResolvedValue([
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+    ]);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: await vi.mocked(getModelsForProvider)(providerId),
+    }));
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+    mockAgentSession$.set(undefined);
+  });
+
+  const pickModelOne = async () => {
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 1/ }));
+    // handleModelSelect awaits a tick before dispatching — let it settle.
+    await new Promise((r) => setTimeout(r, 0));
+  };
+
+  const dispatchedTypes = () =>
+    mockSvelteDispatch.mock.calls.map(([action]) => (action as { type?: string }).type);
+
+  it('spawn context (no flags): a pick dispatches neither selectModel nor any per-workspace update', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: { onModelChange, portal: false },
+    });
+
+    await pickModelOne();
+
+    expect(onModelChange).toHaveBeenCalledWith('model-1');
+    expect(dispatchedTypes()).not.toContain(selectModel.type);
+    expect(dispatchedTypes()).not.toContain(setWorkspaceModel.type);
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('chat-input context (updateGlobalStore): a pick updates workspace + agent but never the global default', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+
+    render(ModelPicker, {
+      props: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+
+    await pickModelOne();
+
+    await waitFor(() => {
+      expect(dispatchedTypes()).toContain(setWorkspaceModel.type);
+    });
+    expect(dispatchedTypes()).toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith('agent-1', 'model-1', 'ws-1');
+    // The global default (selectModel → model.providerDefaults /
+    // providers.active persistence) must never fire from the chat input.
+    expect(dispatchedTypes()).not.toContain(selectModel.type);
+  });
+
+  it('settings context (updateGlobalDefault): a pick dispatches the global selectModel', async () => {
+    render(ModelPicker, {
+      props: { updateGlobalDefault: true, portal: false },
+    });
+
+    await pickModelOne();
+
+    await waitFor(() => {
+      expect(dispatchedTypes()).toContain(selectModel.type);
+    });
+    const selectModelActions = mockSvelteDispatch.mock.calls
+      .map(([action]) => action as { type?: string; payload?: unknown })
+      .filter((action) => action.type === selectModel.type);
+    expect(selectModelActions[0]?.payload).toEqual(['model-1']);
+    expect(dispatchedTypes()).not.toContain(setWorkspaceModel.type);
   });
 });
