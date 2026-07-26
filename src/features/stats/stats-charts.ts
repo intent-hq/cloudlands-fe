@@ -62,12 +62,36 @@ export function hourAmPm(hour: number): string {
   return `${h - 12}pm`;
 }
 
-const pad2 = (n: number) => String(n).padStart(2, '0');
+export const pad2 = (n: number) => String(n).padStart(2, '0');
 
 export interface HourBar {
   heightPct: number;
   outPct: number;
   peak: boolean;
+}
+
+/** Inclusive-start / exclusive-end local-hour window, e.g. 9→18 = 09:00–18:00. */
+export interface HourWindow {
+  start: number;
+  end: number;
+}
+
+/** Default WORKING HOURS window: 09:00–18:00 local (Spec D15). */
+export const DEFAULT_WORKING_HOURS: HourWindow = { start: 9, end: 18 };
+
+/**
+ * Step one bound of a working-hours window by `delta` hours, clamped so the
+ * window stays valid: start ∈ [0, end-1], end ∈ [start+1, 24] (Spec D15).
+ */
+export function stepHourWindow(
+  window: HourWindow,
+  bound: 'start' | 'end',
+  delta: number,
+): HourWindow {
+  if (bound === 'start') {
+    return { ...window, start: Math.max(0, Math.min(window.end - 1, window.start + delta)) };
+  }
+  return { ...window, end: Math.max(window.start + 1, Math.min(24, window.end + delta)) };
 }
 
 export interface HourCardModel {
@@ -77,6 +101,7 @@ export interface HourCardModel {
   bars: HourBar[];
   axis: string[];
   workingHours: string;
+  workingHoursPct: number;
   overnight: string;
 }
 
@@ -84,12 +109,14 @@ export interface HourCardModel {
  * Derive the Tokens-by-Hour card from the 24 `byHourOfDay` cells. For
  * month/year the cells are local hours-of-day 0..23; in the 24h variant
  * (Spec D11 addendum) they are the trailing 24 hourly buckets in
- * chronological order, each labelled with its local hour. Working hours are
- * 09:00–18:00 local, overnight 00:00–06:00, both computed by local hour.
+ * chronological order, each labelled with its local hour. Working hours
+ * cover the `workingWindow` local hours (default 09:00–18:00, adjustable in
+ * the card per Spec D15), overnight 00:00–06:00, both computed by local hour.
  */
 export function hourCardModel(
   byHour: UsageHourStats[],
   variant: 'hour-of-day' | 'trailing-24h',
+  workingWindow: HourWindow = DEFAULT_WORKING_HOURS,
 ): HourCardModel {
   const cells: UsageHourStats[] = Array.from({ length: 24 }, (_, i) => {
     return (
@@ -120,6 +147,8 @@ export function hourCardModel(
 
   const axis = [0, 6, 12, 18, 23].map((i) => pad2(variant === 'trailing-24h' ? cells[i].hour : i));
 
+  const workingHoursPct = pct(inRange(workingWindow.start, workingWindow.end));
+
   return {
     peakLabel: peakIdx >= 0 ? `${pad2(cells[peakIdx].hour)}:00` : '—',
     peakSub:
@@ -129,7 +158,8 @@ export function hourCardModel(
     grid: gridLines(max),
     bars,
     axis,
-    workingHours: `09–18 · ${pct(inRange(9, 18))}%`,
+    workingHours: `${pad2(workingWindow.start)}–${pad2(workingWindow.end)} · ${workingHoursPct}%`,
+    workingHoursPct,
     overnight: `${pct(inRange(0, 6))}%`,
   };
 }

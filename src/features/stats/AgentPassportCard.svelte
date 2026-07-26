@@ -55,13 +55,6 @@
       <div class="stat-label">LONGEST RUN</div>
       <div class="stat-small">{formatDuration(data?.longestRunMs ?? 0)}</div>
     </div>
-    <div class="span-all">
-      <div class="stat-label">LINES CHANGED</div>
-      <div class="stat-small">
-        <span class="lines-add">+{formatInt(data?.linesAdded ?? 0)}</span>
-        <span class="lines-del">−{formatInt(data?.linesDeleted ?? 0)}</span>
-      </div>
-    </div>
   </div>
   <div class="foot">
     <span class="foot-brand">Built with Intent</span>
@@ -153,9 +146,6 @@
     padding: 22px 24px;
     margin-top: 7px;
   }
-  .span-all {
-    grid-column: 1 / -1;
-  }
   .stat-label {
     font-size: 11px;
     letter-spacing: 0.14em;
@@ -175,12 +165,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .lines-add {
-    color: hsl(160 84% 39%);
-  }
-  .lines-del {
-    color: hsl(0 84% 60%);
   }
   .foot {
     margin-top: auto;
