@@ -298,6 +298,22 @@ describe('daemonHealthReducer', () => {
       expect(next.sidecarRunLogPending).toBe(false);
       expect(next.sidecarRunLogError).toBeNull();
     });
+
+    it('ignores a late success when no fetch is pending (connect reset cancels it)', () => {
+      // Connect cleared the log and pending flag; the in-flight fetch then
+      // resolves late — it must not re-populate the stale log.
+      const state = { ...initialState, sidecarRunLogPending: false };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogSucceeded(runLog));
+      expect(next).toBe(state);
+      expect(next.sidecarRunLog).toBeNull();
+    });
+
+    it('ignores a late failure when no fetch is pending', () => {
+      const state = { ...initialState, sidecarRunLogPending: false };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogFailed('bridge unavailable'));
+      expect(next).toBe(state);
+      expect(next.sidecarRunLogError).toBeNull();
+    });
   });
 
   describe('heartbeatFailed', () => {

@@ -236,8 +236,13 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
     return { ...state, sidecarRunLogPending: true, sidecarRunLogError: null };
   })
   .with(fetchSidecarRunLogSucceeded, (state, { payload: [log] }) => {
+    // A connect reset (pending → false) acts as a cancellation: a fetch that
+    // resolves late must not re-populate the log the connect branch cleared,
+    // or the next failure posture would auto-display a stale log.
+    if (!state.sidecarRunLogPending) return state;
     return { ...state, sidecarRunLogPending: false, sidecarRunLog: log };
   })
   .with(fetchSidecarRunLogFailed, (state, { payload: [error] }) => {
+    if (!state.sidecarRunLogPending) return state;
     return { ...state, sidecarRunLogPending: false, sidecarRunLogError: error };
   });
