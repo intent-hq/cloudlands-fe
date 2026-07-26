@@ -8,6 +8,7 @@
   } from '$shared/types';
   import { isProposal } from '$shared/types';
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
+  import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { resolveCard, type ResolvedCard } from './cards/card-registry';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
@@ -65,8 +66,6 @@
     hideToolCalls?: boolean;
     hideSetupScripts?: boolean;
     workspaceId?: string;
-    /** True once a later user message supersedes this message's question cards. */
-    questionsResolved?: boolean;
     onSetupScriptGenerated?: (script: {
       name: string;
       description: string;
@@ -80,7 +79,6 @@
     hideToolCalls = false,
     hideSetupScripts = false,
     workspaceId,
-    questionsResolved = false,
     onSetupScriptGenerated,
   }: Props = $props();
 
@@ -133,7 +131,11 @@
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
-    const rawBlocks = dedupeResourceBlocks(content || []);
+    // Agent Q&A questions are wizard-only: they never render in the
+    // transcript (pending or resolved), so strip them up front.
+    const rawBlocks = dedupeResourceBlocks(content || []).filter(
+      (block) => !isQuestionResourceBlock(block),
+    );
 
     // DEBUG: Log content block types for tool call visibility debugging
     if (isStreaming) {
@@ -429,13 +431,11 @@
   }
 
   // Handlers handed to the MIME-keyed card registry when resolving a §7.1
-  // resource block to its card component (ProposalCard, QuestionCard et al.).
-  // $derived so question cards flip to resolved when a later user message lands.
-  const cardHandlers = $derived({
+  // resource block to its card component (ProposalCard et al.).
+  const cardHandlers = {
     onProposalApply: handleProposalApply,
     onProposalUndo: handleProposalUndo,
-    questionsResolved,
-  });
+  };
 
   // Parse text blocks to extract augment_code_snippet blocks, digests, and setup scripts
   // PERFORMANCE: Memoize results to avoid re-parsing on every render

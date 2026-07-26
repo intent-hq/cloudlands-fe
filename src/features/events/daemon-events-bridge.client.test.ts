@@ -173,6 +173,8 @@ import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-se
 import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptOutputLine } from '$store/renderer/slices/scripts/scripts-types';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
+import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
+import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -1598,6 +1600,206 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
       type: 'text',
       text: 'New turn',
     });
+  });
+});
+
+describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agent:stream:end)', () => {
+  const QUESTION: Question = {
+    attachmentId: 'tar-aaa111bbb222',
+    header: 'Auth method',
+    question: 'Which authentication method should the new endpoint use?',
+    options: [
+      { label: 'OAuth', description: 'Standard OAuth 2.0 flow' },
+      { label: 'API key', description: 'Static key in header' },
+    ],
+    multiSelect: false,
+  };
+
+  /** Question resource block exactly as the daemon persists/emits it (§7.1). */
+  function questionBlock(q: Question = QUESTION): Record<string, unknown> {
+    return {
+      type: 'resource',
+      resource: {
+        uri: `intent-question://${q.attachmentId}`,
+        name: q.header,
+        mimeType: QUESTION_RESOURCE_MIME_TYPE,
+        text: JSON.stringify(q),
+      },
+    };
+  }
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('appends trailingBlocks to the streamed turn on stream:end and the wizard derivation goes live (no refetch)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Before I proceed:',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+        trailingBlocks: [questionBlock()],
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['text', 'resource']);
+
+    // The wizard derivation reads the finalized transcript directly — the
+    // questions pend LIVE off the stream:end delivery, no reconcile needed.
+    const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
+    expect(pending).not.toBeNull();
+    expect(pending!.messageId).toBe(MESSAGE_ID);
+    expect(pending!.questions.map((q) => q.header)).toEqual(['Auth method']);
+  });
+
+  it('pre-first-token question turn: trailingBlocks with NO local stream state finalize a question-only placeholder', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A turn whose ONLY content is questions: no chunk/tool events ever fire,
+    // so the accumulator is empty when the terminal stream:end lands.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+        trailingBlocks: [questionBlock()],
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['resource']);
+
+    const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
+    expect(pending).not.toBeNull();
+    expect(pending!.questions).toHaveLength(1);
+  });
+
+  it('is idempotent against a later reconcile delivering the same canonical blocks (no duplicates)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Question:',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+        trailingBlocks: [questionBlock()],
+      }),
+    );
+
+    // Simulate the chat-read-service hydration reconcile: the persisted row
+    // carries the SAME canonical trailing block under the SAME message id.
+    const session = readSession()!;
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...session,
+          isStreaming: false,
+          status: AgentStatus.Idle,
+          messages: [
+            ...(session.messages ?? []).filter((m) => m.role !== 'assistant'),
+            {
+              id: MESSAGE_ID,
+              role: 'assistant',
+              timestamp: '2026-01-02T00:00:01.000Z',
+              contentBlocks: [
+                { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Question:' },
+                questionBlock(),
+              ],
+            } as unknown as AgentMessage,
+          ],
+        },
+      ]),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['text', 'resource']);
+
+    const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
+    expect(pending).not.toBeNull();
+    // dedupeResourceBlocks in the derivation collapses any residual duplicate
+    // by the stamped nonce — exactly one question pends.
+    expect(pending!.questions).toHaveLength(1);
+  });
+
+  it('duplicate trailingBlocks entries for the same canonical nonce collapse to one block', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+        trailingBlocks: [questionBlock(), questionBlock()],
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['resource']);
+  });
+
+  it('normal stream:end without trailingBlocks and no local stream state stays a no-op', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+      }),
+    );
+
+    expect(readAssistantMessages()).toHaveLength(0);
   });
 });
 

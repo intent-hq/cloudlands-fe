@@ -812,30 +812,56 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // terminal `agent:stream:end` with `stopReason: "interrupted"` (+ the turn's
   // `messageId`); absence means a normal turn end.
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
+  const messageId = typeof data?.messageId === 'string' ? data.messageId : undefined;
+  // LIVE Q&A DELIVERY (PROTOCOL §7): the terminal `agent:stream:end` carries
+  // `trailingBlocks` — the standalone resource blocks the daemon appended to
+  // the turn's final assistant message after the text stream finished (Agent
+  // Q&A questions today), byte-identical to the persisted transcript. Append
+  // them into the accumulator before finalizing so the wizard triggers live
+  // without a refetch. `buildContentBlocks`'s `dedupeResourceBlocks` keeps
+  // this idempotent against rejoin-snapshot seeds / tool-call-claimed copies
+  // of the same canonical block (stamped `attachmentId` nonce).
+  const trailingBlocks = Array.isArray(data?.trailingBlocks)
+    ? (data.trailingBlocks.filter((b) => b !== null && typeof b === 'object') as ContentBlock[])
+    : [];
   const state = streamsByAgent.get(agentId);
-  if (!state) {
-    // Pre-first-token stop: nothing streamed locally, but the daemon persisted
-    // a synthetic empty interrupted assistant row under `messageId`. Finalize a
-    // matching placeholder so the Stopped indicator appears live.
-    const messageId = data?.messageId;
-    if (stopReason === 'interrupted' && typeof messageId === 'string') {
-      appStore.dispatch(
-        agentStreamUpdateReceived({
-          workspaceId,
-          agentId,
-          handlerSessionId: agentId,
-          source: 'sendMessage',
-          eventType: 'complete',
-          assistantMessageId: messageId,
-          contentBlocks: [],
-          stopReason,
-        }),
-      );
+  if (state && (!messageId || state.messageId === messageId)) {
+    if (trailingBlocks.length > 0) {
+      const maxIndex = Math.max(-1, ...state.blocksByIndex.keys());
+      trailingBlocks.forEach((block, ordinal) => {
+        state.blocksByIndex.set(maxIndex + 1 + ordinal, block);
+      });
     }
+    dispatchStreamUpdate(agentId, state, 'complete', stopReason);
+    streamsByAgent.delete(agentId);
     return;
   }
-  dispatchStreamUpdate(agentId, state, 'complete', stopReason);
-  streamsByAgent.delete(agentId);
+  if (state) {
+    // Accumulator holds a DIFFERENT turn's message: finalize it as-is and
+    // fall through so the trailing blocks land under their own messageId.
+    dispatchStreamUpdate(agentId, state, 'complete', stopReason);
+    streamsByAgent.delete(agentId);
+  }
+  // No local stream state for this turn (pre-first-token): the daemon
+  // persisted an assistant row under `messageId` anyway — a synthetic empty
+  // interrupted row on `agent.stop`, or a turn whose ONLY content is the
+  // trailing blocks (e.g. questions with no streamed text). Finalize a
+  // matching placeholder so the Stopped indicator / question wizard appears
+  // live. A later `agents.getConversation` reconcile dedupes by message id.
+  if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted')) {
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        workspaceId,
+        agentId,
+        handlerSessionId: agentId,
+        source: 'sendMessage',
+        eventType: 'complete',
+        assistantMessageId: messageId,
+        contentBlocks: dedupeResourceBlocks(trailingBlocks),
+        ...(stopReason ? { stopReason } : {}),
+      }),
+    );
+  }
 }
 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {

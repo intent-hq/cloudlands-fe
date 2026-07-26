@@ -8,6 +8,7 @@
   } from '$shared/types';
   import { isProposal } from '$shared/types';
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
+  import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { resolveCard, type ResolvedCard } from './cards/card-registry';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
@@ -58,11 +59,9 @@
     content: ContentBlock[];
     isStreaming?: boolean;
     workspaceId?: string;
-    /** True once a later user message supersedes this message's question cards. */
-    questionsResolved?: boolean;
   }
 
-  let { content, isStreaming = false, workspaceId, questionsResolved = false }: Props = $props();
+  let { content, isStreaming = false, workspaceId }: Props = $props();
 
   // Filter out empty text blocks and deduplicate tool_use blocks by ID.
   // Deduplication: when a skeleton tool_use (vague label) and its follow-up
@@ -73,6 +72,11 @@
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
     const filtered = dedupeResourceBlocks(content || []).filter((block) => {
+      // Agent Q&A questions are wizard-only: they never render in the
+      // transcript (pending or resolved), so strip them here.
+      if (isQuestionResourceBlock(block)) {
+        return false;
+      }
       if (block.type === 'text') {
         const text = block.text || '';
         const { cleanedContent } = parseSuggestedPrompts(text);
@@ -331,13 +335,11 @@
   }
 
   // Handlers handed to the MIME-keyed card registry when resolving a §7.1
-  // resource block to its card component (ProposalCard, QuestionCard et al.).
-  // $derived so question cards flip to resolved when a later user message lands.
-  const cardHandlers = $derived({
+  // resource block to its card component (ProposalCard et al.).
+  const cardHandlers = {
     onProposalApply: handleProposalApply,
     onProposalUndo: handleProposalUndo,
-    questionsResolved,
-  });
+  };
 
   /**
    * Generate a stable unique key for a render content block.

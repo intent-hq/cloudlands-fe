@@ -26,6 +26,7 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
+  import { isQuestionOnlyContent } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { isImageBlock } from '$shared/types/content-block.guards';
@@ -141,8 +142,6 @@
     backendSessionId?: string | null;
     /** Hide noisy stopped badges for interrupted automated coordination turns. */
     suppressCoordinationStoppedIndicator?: boolean;
-    /** True once a later user message supersedes this message's question cards. */
-    questionsResolved?: boolean;
   }
 
   let {
@@ -169,7 +168,6 @@
     onScrollToPrevious,
     backendSessionId,
     suppressCoordinationStoppedIndicator = false,
-    questionsResolved = false,
   }: Props = $props();
 
   // Per-message Redux subscription. Must be called at component-init time
@@ -698,6 +696,9 @@
   // Get combined content for StreamingMessageContent - use $derived for reactivity
   const combinedContent = $derived(message?.contentBlocks || []);
 
+  // Agent Q&A wizard-only rendering: question-only turns render no bubble.
+  const questionOnlyTurn = $derived(role === 'assistant' && isQuestionOnlyContent(combinedContent));
+
   // Get plain text from message for copying/editing
   function getMessageText(): string {
     if (message?.contentBlocks && Array.isArray(message.contentBlocks)) {
@@ -909,7 +910,8 @@
 {#if !message}
   <!-- Guard against null message prop -->
   <div class="text-subtle text-sm p-2">Loading...</div>
-{:else}
+{:else if questionOnlyTurn && !shouldShowStoppedIndicator}
+  <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
     bind:this={messageElement}
     class="group group/message transition-transform duration-200 ease-out {role === 'user'
@@ -1144,7 +1146,6 @@
           {isStreaming}
           {hideToolCalls}
           workspaceId={workspace?.id ? String(workspace.id) : undefined}
-          {questionsResolved}
         />
 
         <!-- Stopped indicator for interrupted messages -->
@@ -1156,7 +1157,7 @@
         {/if}
 
         <!-- Actions for assistant messages (shown on hover) -->
-        {#if !isStreaming}
+        {#if !isStreaming && !questionOnlyTurn}
           <div class="flex items-center justify-end mt-2">
             <MessageActions
               role="assistant"
