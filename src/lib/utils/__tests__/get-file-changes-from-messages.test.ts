@@ -481,4 +481,186 @@ describe('getFileChangesFromMessage', () => {
       expect(saveChange?.newContent).toBe('456');
     });
   });
+
+  describe('non-string path-type input values (regression: monorepo#846)', () => {
+    it('treats a numeric path on str-replace-editor as missing', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-path-num',
+          name: 'str_replace_editor',
+          input: {
+            command: 'str_replace',
+            path: 42,
+            old_str: 'old',
+            new_str: 'new',
+          },
+        },
+      ]);
+
+      expect(() => getFileChangesFromMessage(message)).not.toThrow();
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('falls through to file_path when save_file path is an object', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-path-obj',
+          name: 'save_file',
+          input: {
+            path: { bad: 'value' },
+            file_path: 'src/fallback.ts',
+            file_content: 'content',
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].filePath).toBe('src/fallback.ts');
+    });
+
+    it('picks the first string element from a mixed file_paths array', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-paths-mixed',
+          name: 'remove_files',
+          input: {
+            file_paths: [42, 'src/a.ts'],
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].filePath).toBe('src/a.ts');
+      expect(result.changes[0].action).toBe('delete');
+    });
+
+    it('returns no change when file_paths contains no valid strings', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-paths-invalid',
+          name: 'remove_files',
+          input: {
+            file_paths: [42, { bad: 'value' }, null, '   '],
+          },
+        },
+      ]);
+
+      expect(() => getFileChangesFromMessage(message)).not.toThrow();
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('falls through to paths when file_paths yields no valid string', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-paths-fallthrough-empty',
+          name: 'remove_files',
+          input: {
+            file_paths: [],
+            paths: ['src/b.ts'],
+          },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-paths-fallthrough-invalid',
+          name: 'remove_files',
+          input: {
+            file_paths: [42],
+            paths: ['src/c.ts'],
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(2);
+      const bChange = result.changes.find((c) => c.filePath === 'src/b.ts');
+      const cChange = result.changes.find((c) => c.filePath === 'src/c.ts');
+      expect(bChange?.action).toBe('delete');
+      expect(cChange?.action).toBe('delete');
+    });
+
+    it('handles a non-array non-string file_paths value without throwing', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-paths-nonarray',
+          name: 'remove_files',
+          input: {
+            file_paths: 42,
+          },
+        },
+      ]);
+
+      expect(() => getFileChangesFromMessage(message)).not.toThrow();
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('returns no change for tool-name fallbacks with whitespace-only suffix', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-edit-blank',
+          name: 'Edit ',
+          input: { old_str: 'old', new_str: 'new' },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-save-blank',
+          name: 'Save  ',
+          input: { file_content: 'content' },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-create-blank',
+          name: 'Create ',
+          input: { file_text: 'content' },
+        },
+      ]);
+
+      expect(() => getFileChangesFromMessage(message)).not.toThrow();
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('returns no change when toolName is not a string', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-name-num',
+          name: 42,
+          input: { path: 'src/a.ts', old_str: 'old', new_str: 'new' },
+        },
+      ]);
+
+      expect(() => getFileChangesFromMessage(message)).not.toThrow();
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('falls back to a string toolName when name is a truthy non-string', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-name-fallback',
+          name: 42,
+          toolName: 'save_file',
+          input: { path: 'src/from-tool-name.ts', file_content: 'content' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].filePath).toBe('src/from-tool-name.ts');
+      expect(result.changes[0].toolName).toBe('save_file');
+    });
+  });
 });
