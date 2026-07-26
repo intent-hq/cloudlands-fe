@@ -3828,6 +3828,30 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.status).toBe('Inactive');
   });
 
+  it('maps the canonical skipIsolation delta onto the skipWorktree entity field', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §5.1: the daemon serializes the `workspace.update` skip toggle
+    // under its canonical `skipIsolation` name in the changes delta.
+    handler(updatedNotification({ skipIsolation: true }));
+
+    const ws = await readWorkspace();
+    expect(ws.skipWorktree).toBe(true);
+  });
+
+  it('still accepts the deprecated skipWorktree delta key from older daemons', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ skipWorktree: true }));
+
+    const ws = await readWorkspace();
+    expect(ws.skipWorktree).toBe(true);
+  });
+
   it('drops unknown wire fields rather than leaking them into the entity', async () => {
     await seedWorkspace();
     await primeBridge();

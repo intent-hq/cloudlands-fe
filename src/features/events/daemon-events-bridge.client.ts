@@ -1373,7 +1373,15 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   if (typeof raw.repositoryName === 'string') changes.repositoryName = raw.repositoryName;
   if (typeof raw.worktreePath === 'string') changes.worktreePath = raw.worktreePath;
   if (typeof raw.scope === 'string') changes.scope = raw.scope;
-  if (typeof raw.skipWorktree === 'boolean') changes.skipWorktree = raw.skipWorktree;
+  // `skipIsolation` is the canonical wire name for the skip toggle in the
+  // `workspace.update` delta (PROTOCOL §5.1); `skipWorktree` is the deprecated
+  // pre-CoW alias emitted by older daemons. The FE `Workspace` entity field
+  // keeps its `skipWorktree` name, matching the daemon's persisted column.
+  if (typeof raw.skipIsolation === 'boolean') {
+    changes.skipWorktree = raw.skipIsolation;
+  } else if (typeof raw.skipWorktree === 'boolean') {
+    changes.skipWorktree = raw.skipWorktree;
+  }
   if (typeof raw.setupScript === 'string') changes.setupScript = raw.setupScript;
   if (typeof raw.isRemote === 'boolean') changes.isRemote = raw.isRemote;
   if (typeof raw.defaultModel === 'string') changes.defaultModel = raw.defaultModel;
