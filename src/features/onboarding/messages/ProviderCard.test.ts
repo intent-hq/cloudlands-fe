@@ -6,8 +6,9 @@
  * ring/outline + top-right check badge treatment. Unselected or not-ready
  * cards must render neither.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render } from '@testing-library/svelte';
+import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -15,9 +16,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
       agentAvailability: {
@@ -34,6 +34,14 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
+
+// REAL electron-bridge (overrides the global test-setup stub, which lacks
+// `shell`): its invoke() routes through the mock IPC router, so the tests can
+// assert the exact shell:openExternal wire request via registerMockIpcHandler.
+vi.mock('$lib/electron-bridge', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/electron-bridge')>();
+  return { ...actual };
+});
 
 import ProviderCard from './ProviderCard.svelte';
 import type { ProviderCardData, ProviderBrandColors } from './ProviderCard.svelte';
@@ -64,14 +72,7 @@ const notInstalledProvider = (): ProviderCardData => ({
 const baseProps = () => ({
   brand,
   auggieNeedsUpdate: false,
-  auggieActionInProgress: false,
-  auggieInstructions: null,
-  auggieCommand: null,
   onSelect: vi.fn(),
-  onAuggieInstall: vi.fn(),
-  onAuggieLogin: vi.fn(),
-  onAuggieRecheck: vi.fn(),
-  onAuggieDismissInstructions: vi.fn(),
 });
 
 const banner = (root: HTMLElement) =>
@@ -194,5 +195,99 @@ describe('ProviderCard click affordance', () => {
     expect(el.className).toContain('cursor-default');
     expect(el.getAttribute('role')).toBeNull();
     expect(el.getAttribute('tabindex')).toBeNull();
+  });
+});
+
+describe('ProviderCard auggie link-out click behavior', () => {
+  const card = (root: HTMLElement) => root.querySelector('.group\\/card') as HTMLElement;
+  const instructionsPanel = (root: HTMLElement) =>
+    root.querySelector('[data-testid="auggie-instructions-panel"]');
+
+  const AUGGIE_DOCS_URL = 'https://docs.augmentcode.com/cli/overview';
+
+  const auggieProvider = (overrides: Partial<ProviderCardData> = {}): ProviderCardData => ({
+    ...readyProvider(),
+    id: 'auggie',
+    name: 'Auggie',
+    docsUrl: AUGGIE_DOCS_URL,
+    installCommand: 'npm install -g @augmentcode/auggie',
+    loginCommand: 'auggie login',
+    ...overrides,
+  });
+
+  let openExternal: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    openExternal = vi.fn().mockResolvedValue(undefined);
+    registerMockIpcHandler('shell:openExternal', openExternal);
+  });
+
+  afterEach(() => {
+    unregisterMockIpcHandler('shell:openExternal');
+  });
+
+  it('opens the docs URL via shell:openExternal when auggie is not installed', async () => {
+    const props = {
+      ...baseProps(),
+      provider: auggieProvider({ available: false, authenticated: undefined }),
+    };
+    const { container } = render(ProviderCard, { props });
+
+    const el = card(container);
+    expect(el.className).toContain('cursor-pointer');
+    expect(el.getAttribute('role')).toBe('button');
+
+    await fireEvent.click(el);
+    await Promise.resolve();
+
+    // Exact wire request: shell:openExternal with the { url } payload.
+    expect(openExternal).toHaveBeenCalledTimes(1);
+    expect(openExternal).toHaveBeenCalledWith({ url: AUGGIE_DOCS_URL });
+    expect(props.onSelect).not.toHaveBeenCalled();
+    // No inline instructions render anywhere in the card.
+    expect(instructionsPanel(container)).toBeNull();
+  });
+
+  it('opens the docs URL when auggie is installed but not logged in', async () => {
+    const props = {
+      ...baseProps(),
+      provider: auggieProvider({ authenticated: false, authDetails: undefined }),
+    };
+    const { container } = render(ProviderCard, { props });
+
+    await fireEvent.click(card(container));
+    await Promise.resolve();
+
+    expect(openExternal).toHaveBeenCalledTimes(1);
+    expect(openExternal).toHaveBeenCalledWith({ url: AUGGIE_DOCS_URL });
+    expect(props.onSelect).not.toHaveBeenCalled();
+    expect(instructionsPanel(container)).toBeNull();
+  });
+
+  it('opens the docs URL when auggie needs a version update', async () => {
+    const props = {
+      ...baseProps(),
+      auggieNeedsUpdate: true,
+      provider: auggieProvider(),
+    };
+    const { container } = render(ProviderCard, { props });
+
+    await fireEvent.click(card(container));
+    await Promise.resolve();
+
+    expect(openExternal).toHaveBeenCalledTimes(1);
+    expect(openExternal).toHaveBeenCalledWith({ url: AUGGIE_DOCS_URL });
+    expect(props.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('selects a ready auggie card instead of opening docs', async () => {
+    const props = { ...baseProps(), provider: auggieProvider() };
+    const { container } = render(ProviderCard, { props });
+
+    await fireEvent.click(card(container));
+    await Promise.resolve();
+
+    expect(props.onSelect).toHaveBeenCalledWith('auggie');
+    expect(openExternal).not.toHaveBeenCalled();
   });
 });
