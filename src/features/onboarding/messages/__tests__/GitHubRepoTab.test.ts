@@ -165,4 +165,42 @@ describe('GitHubRepoTab clone destination (#823)', () => {
     expect(props.onGithubUrlChange).toHaveBeenCalledWith('https://github.com/octo/alpha');
     expect(props.onClonePathChange).toHaveBeenCalledWith('~/Developer');
   });
+
+  // The pre-filled githubUrl narrows the repo list to the matching repo, so
+  // widen the filter (type just the owner) before clicking the other repo.
+  const widenFilter = async (container: HTMLElement) => {
+    const input = container.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    await fireEvent.input(input, { target: { value: 'octo' } });
+  };
+
+  it('hydrated full path on the default base counts as untouched: switching repos refills the default', async () => {
+    // Persisted selections store the FULL clone path (base + repo name, see
+    // ProjectPickerMessage.buildSelection). A default-base full path must not
+    // count as user-chosen, or switching repos would nest paths.
+    const props = {
+      ...baseProps(),
+      githubUrl: 'https://github.com/octo/alpha',
+      clonePath: '~/Developer/alpha',
+    };
+    const { container } = render(GitHubRepoTab, { props });
+    await widenFilter(container);
+
+    await fireEvent.click(repoOptions(container)[1]);
+    expect(props.onGithubUrlChange).toHaveBeenCalledWith('https://github.com/octo/beta');
+    expect(props.onClonePathChange).toHaveBeenCalledExactlyOnceWith('~/Developer');
+  });
+
+  it('hydrated full path on a user-chosen base swaps back to the base on repo switch', async () => {
+    const props = {
+      ...baseProps(),
+      githubUrl: 'https://github.com/octo/alpha',
+      clonePath: '/Users/me/src/alpha',
+    };
+    const { container } = render(GitHubRepoTab, { props });
+    await widenFilter(container);
+
+    await fireEvent.click(repoOptions(container)[1]);
+    expect(props.onGithubUrlChange).toHaveBeenCalledWith('https://github.com/octo/beta');
+    expect(props.onClonePathChange).toHaveBeenCalledExactlyOnceWith('/Users/me/src');
+  });
 });
