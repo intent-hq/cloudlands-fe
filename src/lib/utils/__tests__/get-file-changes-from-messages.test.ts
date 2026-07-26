@@ -424,6 +424,29 @@ describe('getFileChangesFromMessage', () => {
       expect(nullsChange?.newContent).toBe('new value');
     });
 
+    it('does not count empty unescaped content as a changed line', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-empty-counts',
+          name: 'str_replace_editor',
+          input: {
+            command: 'str_replace',
+            path: 'src/empty-counts.ts',
+            old_str: null,
+            new_str: 'new value',
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].deletions).toBe(0);
+      expect(result.changes[0].additions).toBe(1);
+      expect(result.totalDeletions).toBe(0);
+      expect(result.totalAdditions).toBe(1);
+    });
+
     it('getFileChangesFromMessages does not throw on non-string inputs', () => {
       const messages = [
         makeAssistantMessage([

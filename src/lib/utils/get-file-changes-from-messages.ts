@@ -500,8 +500,8 @@ function extractFromStrReplace(
       if (rawOldStr !== undefined && rawNewStr !== undefined) {
         const oldStr = unescapeContent(rawOldStr);
         const newStr = unescapeContent(rawNewStr);
-        deletions += oldStr.split('\n').length;
-        additions += newStr.split('\n').length;
+        deletions += oldStr ? oldStr.split('\n').length : 0;
+        additions += newStr ? newStr.split('\n').length : 0;
         oldParts.push(oldStr);
         newParts.push(newStr);
         if (startLineNumber === undefined && lineNum !== undefined) {
@@ -519,7 +519,7 @@ function extractFromStrReplace(
 
       if (rawNewStr !== undefined) {
         const newStr = unescapeContent(rawNewStr);
-        additions += newStr.split('\n').length;
+        additions += newStr ? newStr.split('\n').length : 0;
         newParts.push(newStr);
         if (startLineNumber === undefined && insertLine !== undefined) {
           startLineNumber = parseInt(insertLine, 10) + 1;
@@ -543,8 +543,8 @@ function extractFromStrReplace(
         // Unescape literal \n characters from JSON encoding
         const oldStr = unescapeContent(rawOldStr);
         const newStr = unescapeContent(rawNewStr);
-        deletions += oldStr.split('\n').length;
-        additions += newStr.split('\n').length;
+        deletions += oldStr ? oldStr.split('\n').length : 0;
+        additions += newStr ? newStr.split('\n').length : 0;
         oldParts.push(oldStr);
         newParts.push(newStr);
         // Use the first start line number we find
@@ -567,7 +567,7 @@ function extractFromStrReplace(
         const rawNewStr = input[`new_str_${i}`];
         if (rawNewStr !== undefined) {
           const newStr = unescapeContent(rawNewStr);
-          additions += newStr.split('\n').length;
+          additions += newStr ? newStr.split('\n').length : 0;
           newParts.push(newStr);
         } else {
           break;
