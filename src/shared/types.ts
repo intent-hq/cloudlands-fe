@@ -271,8 +271,8 @@ export interface Workspace {
   gitSummary?: WorkspaceGitSummary; // Git status for list views (commits ahead/behind)
   /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
   cowSupported?: boolean;
-  /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout. */
-  checkoutMode?: 'cow' | 'worktree' | 'direct';
+  /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation/direct, remote, …). */
+  checkoutMode?: 'cow' | 'worktree';
 }
 
 /**

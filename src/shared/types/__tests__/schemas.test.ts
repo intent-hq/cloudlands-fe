@@ -323,13 +323,31 @@ describe('Zod Schemas', () => {
       expect(parsed.checkoutMode).toBe('cow');
     });
 
-    it('accepts all checkoutMode values and rejects unknown ones', () => {
-      for (const mode of ['cow', 'worktree', 'direct']) {
+    it('accepts the wire checkoutMode values and rejects non-wire ones', () => {
+      // PROTOCOL §5.1: checkoutMode is "cow" | "worktree"; omitted (never
+      // "direct") for rows without a daemon-provisioned checkout.
+      for (const mode of ['cow', 'worktree']) {
         expect(WorkspaceSchema.parse({ ...baseWorkspace, checkoutMode: mode }).checkoutMode).toBe(
           mode,
         );
       }
+      expect(() => WorkspaceSchema.parse({ ...baseWorkspace, checkoutMode: 'direct' })).toThrow();
       expect(() => WorkspaceSchema.parse({ ...baseWorkspace, checkoutMode: 'bogus' })).toThrow();
+    });
+
+    it('accepts setupScript as the wire SetupScript object and as a legacy string', () => {
+      // PROTOCOL §5.25: the daemon emits setupScript as an object
+      // { script, updatedAt, projectType?, generatedBy? }.
+      const wire = WorkspaceSchema.parse({
+        ...baseWorkspace,
+        setupScript: { script: 'pnpm install', updatedAt: '2026-07-26T00:00:00.000Z' },
+      });
+      expect(wire.setupScript).toEqual({
+        script: 'pnpm install',
+        updatedAt: '2026-07-26T00:00:00.000Z',
+      });
+      const legacy = WorkspaceSchema.parse({ ...baseWorkspace, setupScript: 'pnpm install' });
+      expect(legacy.setupScript).toBe('pnpm install');
     });
 
     it('does not strip any populated Workspace-type fields', () => {

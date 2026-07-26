@@ -10,7 +10,12 @@
 import type { ReleaseNotes } from "$store/renderer/slices/release-notes/release-notes-types";
 import type { AutoUpdateState } from "$store/renderer/slices/auto-update/auto-update-types";
 import type { SystemStatusState } from "$store/renderer/slices/system-status/system-status-slice";
-import type { SystemClient, SubscriptionHandler, Unsubscribe } from "../app-client";
+import type {
+  SystemCapabilities,
+  SystemClient,
+  SubscriptionHandler,
+  Unsubscribe,
+} from "../app-client";
 import { backendRequest } from "./backend-transport";
 import { autoUpdateClient } from "$features/auto-update/auto-update.client";
 
@@ -55,6 +60,28 @@ export class LiveSystemClient implements SystemClient {
         auggieInstalled: false,
         binaryInstallAvailable: false,
       };
+    }
+  }
+
+  /**
+   * Fetches machine-level capabilities via `system.capabilities` (PROTOCOL §5.7).
+   *
+   * Always resolves: on failure returns `{}` so callers treat unknown as
+   * "capability not confirmed" (e.g. the CoW toggle stays hidden). Per the
+   * contract, `cowSupported` is present as a boolean when the daemon's
+   * workspaces-root probe ran and omitted when it could not.
+   */
+  async capabilities(): Promise<SystemCapabilities> {
+    try {
+      const result = await backendRequest<SystemCapabilities>("system.capabilities");
+      if (!result || typeof result !== "object") {
+        return {};
+      }
+      return {
+        cowSupported: typeof result.cowSupported === "boolean" ? result.cowSupported : undefined,
+      };
+    } catch {
+      return {};
     }
   }
 
