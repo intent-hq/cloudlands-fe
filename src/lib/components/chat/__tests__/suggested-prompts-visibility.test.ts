@@ -19,7 +19,9 @@ import {
   expect,
 } from 'vitest';
 import { parseSuggestedPrompts } from '$lib/utils/messageParser';
-import type { AgentMessage } from '$shared/types';
+import { derivePendingQuestions } from '../questions/pending-questions';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import type { SuggestedPrompt } from '$shared/types';
 
 /**
@@ -47,6 +49,12 @@ function computeSuggestedPrompts(
   }
   const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
   if (!lastAssistantMessage) {
+    return [];
+  }
+  // Suggested prompts stay hidden whenever the turn has pending Agent Q&A
+  // questions — including while the wizard is Ignore-collapsed (collapse is
+  // transient UI state that does not affect this derivation).
+  if (derivePendingQuestions(messages, isRunning, showingPendingUserMessage)) {
     return [];
   }
   // Extract text content from contentBlocks
@@ -177,6 +185,60 @@ Test prompt
     it('returns empty array when an optimistic pending user message is shown', () => {
       const prompts = computeSuggestedPrompts(false, [messageWithPrompts], true);
       expect(prompts).toEqual([]);
+    });
+  });
+
+  describe('hiding while Agent Q&A questions are pending', () => {
+    const questionBlock: ContentBlock = {
+      type: 'resource',
+      resource: {
+        uri: 'intent-question://tar-abc123def456',
+        name: 'Auth method',
+        mimeType: QUESTION_RESOURCE_MIME_TYPE,
+        text: JSON.stringify({
+          attachmentId: 'tar-abc123def456',
+          header: 'Auth method',
+          question: 'Which authentication method should the new endpoint use?',
+          options: [{ label: 'OAuth' }, { label: 'API key' }],
+        }),
+      },
+    } as unknown as ContentBlock;
+
+    const messageWithPromptsAndQuestions: AgentMessage = {
+      ...messageWithPrompts,
+      contentBlocks: [...(messageWithPrompts.contentBlocks || []), questionBlock],
+    };
+
+    /**
+     * REGRESSION: Suggested prompts stay hidden whenever the turn has pending
+     * questions — including while the wizard is Ignore-collapsed. Collapse is
+     * transient component state and never feeds this derivation, so a single
+     * assertion covers both expanded and collapsed.
+     */
+    it('returns empty array when the last assistant message has pending questions', () => {
+      const prompts = computeSuggestedPrompts(false, [messageWithPromptsAndQuestions]);
+      expect(prompts).toEqual([]);
+    });
+
+    it('returns prompts again once a later user message supersedes the questions', () => {
+      const userMsg: AgentMessage = {
+        id: 'msg_user_answers',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'Q: …\nA: OAuth' }],
+        timestamp: new Date().toISOString(),
+      };
+      const followUp = createAssistantMessage(`Thanks!
+
+<!-- suggested-prompts
+Continue
+-->
+`);
+      const prompts = computeSuggestedPrompts(false, [
+        messageWithPromptsAndQuestions,
+        userMsg,
+        followUp,
+      ]);
+      expect(prompts).toEqual(['Continue']);
     });
   });
 
