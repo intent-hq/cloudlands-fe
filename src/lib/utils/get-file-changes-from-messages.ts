@@ -440,12 +440,18 @@ function extractFileChangeFromBlock(block: ContentBlock): ChatFileChange | null 
 
 /**
  * Unescape literal \n and \t characters in content from JSON-encoded tool inputs
+ *
+ * Tool inputs are not guaranteed to be strings (agents may emit numbers, booleans,
+ * objects, etc.), so accept unknown and coerce defensively instead of crashing.
  */
-function unescapeContent(content: string): string {
-  if (!content) return content;
+function unescapeContent(content: unknown): string {
+  if (content === null || content === undefined) return '';
+  if (typeof content === 'object') return '';
+  const str = typeof content === 'string' ? content : String(content);
+  if (!str) return str;
   // Replace literal \n with actual newlines and \t with tabs
   // But only if they're escaped (not already actual control characters)
-  return content.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r');
+  return str.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r');
 }
 
 function extractFromStrReplace(
@@ -492,10 +498,10 @@ function extractFromStrReplace(
       const lineNum = entry.old_str_start_line_number;
 
       if (rawOldStr !== undefined && rawNewStr !== undefined) {
-        const oldStr = unescapeContent(rawOldStr as string);
-        const newStr = unescapeContent(rawNewStr as string);
-        deletions += oldStr.split('\n').length;
-        additions += newStr.split('\n').length;
+        const oldStr = unescapeContent(rawOldStr);
+        const newStr = unescapeContent(rawNewStr);
+        deletions += oldStr ? oldStr.split('\n').length : 0;
+        additions += newStr ? newStr.split('\n').length : 0;
         oldParts.push(oldStr);
         newParts.push(newStr);
         if (startLineNumber === undefined && lineNum !== undefined) {
@@ -512,8 +518,8 @@ function extractFromStrReplace(
       const insertLine = entry.insert_line;
 
       if (rawNewStr !== undefined) {
-        const newStr = unescapeContent(rawNewStr as string);
-        additions += newStr.split('\n').length;
+        const newStr = unescapeContent(rawNewStr);
+        additions += newStr ? newStr.split('\n').length : 0;
         newParts.push(newStr);
         if (startLineNumber === undefined && insertLine !== undefined) {
           startLineNumber = parseInt(insertLine, 10) + 1;
@@ -535,10 +541,10 @@ function extractFromStrReplace(
 
       if (rawOldStr !== undefined && rawNewStr !== undefined) {
         // Unescape literal \n characters from JSON encoding
-        const oldStr = unescapeContent(rawOldStr as string);
-        const newStr = unescapeContent(rawNewStr as string);
-        deletions += oldStr.split('\n').length;
-        additions += newStr.split('\n').length;
+        const oldStr = unescapeContent(rawOldStr);
+        const newStr = unescapeContent(rawNewStr);
+        deletions += oldStr ? oldStr.split('\n').length : 0;
+        additions += newStr ? newStr.split('\n').length : 0;
         oldParts.push(oldStr);
         newParts.push(newStr);
         // Use the first start line number we find
@@ -560,8 +566,8 @@ function extractFromStrReplace(
       for (let i = 1; i <= 10; i++) {
         const rawNewStr = input[`new_str_${i}`];
         if (rawNewStr !== undefined) {
-          const newStr = unescapeContent(rawNewStr as string);
-          additions += newStr.split('\n').length;
+          const newStr = unescapeContent(rawNewStr);
+          additions += newStr ? newStr.split('\n').length : 0;
           newParts.push(newStr);
         } else {
           break;
