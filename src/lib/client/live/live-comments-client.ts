@@ -5,7 +5,9 @@
  * know the note's workspace pass an explicit `workspaceId` (which wins);
  * otherwise it is resolved as a fallback (see `resolveNoteWorkspaceId`).
  * Results are normalized into the renderer `CommentV2` shape. `subscribe`
- * refetches on `comment:*` events.
+ * converges via the typed per-note `comment.subscribe` channel (PROTOCOL
+ * §6.9) on liveState daemons and refetches on legacy `comment:*` events
+ * otherwise.
  */
 import type {
   CommentAnchor,
@@ -24,6 +26,7 @@ import type {
 } from "../app-client";
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
+import type { TypedChannelDescriptor } from "./delta-subscription";
 import {
   isEventInFamily,
   newIdempotencyKey,
@@ -241,18 +244,59 @@ export class LiveCommentsClient implements CommentsClient {
    * pins every refetch to the owning workspace — note ids are not globally
    * unique and the resolver cache is last-writer-wins across workspaces
    * (monorepo#621) — otherwise the resolver fallback applies as before.
+   *
+   * Typed §6.9 channel: on liveState daemons the per-note `comment.subscribe`
+   * (`{ workspaceId, noteId }` — the optional noteId narrowing) is registered
+   * alongside the legacy firehose. A caller-supplied workspaceId registers
+   * statically; otherwise the workspace is resolved the same way
+   * `fetchComments` does, through the descriptor's dynamic scope so the
+   * asynchronous resolution completes before registration. When no workspace
+   * claims the note the id source never yields, typed registration is skipped
+   * entirely, and legacy refetches keep serving (the #775 safety net).
    */
   subscribe(
     noteId: string,
     handler: SubscriptionHandler<CommentV2[]>,
     workspaceId?: string,
   ): Unsubscribe {
+    // Workspace id stamped onto push-path entities by `normalize`: the
+    // caller's explicit id, or the resolver result once the dynamic scope
+    // yields it (registration — and thus every push — happens after).
+    let channelWorkspaceId = workspaceId;
+    const channel: TypedChannelDescriptor = {
+      subscribeMethod: "comment.subscribe",
+      unsubscribeMethod: "comment.unsubscribe",
+      ...(workspaceId
+        ? { params: { workspaceId, noteId } }
+        : {
+            dynamic: {
+              subscribeIds: (listener: (ids: readonly string[]) => void) => {
+                let cancelled = false;
+                resolveNoteWorkspaceId(noteId)
+                  .then((resolved) => {
+                    if (cancelled || !resolved) return;
+                    channelWorkspaceId = resolved;
+                    listener([resolved]);
+                  })
+                  .catch(() => {
+                    // Unresolvable workspace: typed registration is skipped;
+                    // legacy refetches keep serving.
+                  });
+                return () => {
+                  cancelled = true;
+                };
+              },
+              paramsForId: (id: string) => ({ workspaceId: id, noteId }),
+            },
+          }),
+    };
     return createDeltaSubscription<CommentV2>({
       eventTypes: ["comment:added"],
+      channel,
       matchLegacyEvent: (method, params) => isEventInFamily(method, params, "comment"),
       fetchAll: () => fetchComments(noteId, workspaceId),
       getId: (raw) => String(raw.id ?? ""),
-      normalize: (raw) => normalizeComment(raw, noteId, workspaceId),
+      normalize: (raw) => normalizeComment(raw, noteId, channelWorkspaceId),
       handler,
     });
   }
