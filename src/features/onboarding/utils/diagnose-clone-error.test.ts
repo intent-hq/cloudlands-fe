@@ -74,4 +74,39 @@ describe('diagnoseCloneError', () => {
     const raw = 'ERROR: Repository not found.';
     expect(diagnoseCloneError(raw).rawMessage).toBe(raw);
   });
+
+  describe('daemon-authored error codes (PROTOCOL §9.1, monorepo#826)', () => {
+    it('maps each stable daemon code to its kind, ignoring the prose', () => {
+      const detail = 'workspace.create clone failed (x): some unrecognizable detail';
+      expect(diagnoseCloneError(detail, 'auth-required').kind).toBe('auth-required');
+      expect(diagnoseCloneError(detail, 'network').kind).toBe('network');
+      expect(diagnoseCloneError(detail, 'destination-exists-non-empty').kind).toBe(
+        'destination-exists',
+      );
+      expect(diagnoseCloneError(detail, 'path-invalid').kind).toBe('path-invalid');
+    });
+
+    it('daemon code wins over a conflicting prose match', () => {
+      const msg = 'fatal: Authentication failed for https://github.com/a/b.git';
+      expect(diagnoseCloneError(msg, 'network').kind).toBe('network');
+    });
+
+    it('lets askpass-missing prose win over an auth-required code', () => {
+      const msg =
+        'fatal: cannot exec ssh-askpass-intent.sh\nfatal: could not read Username: terminal prompts disabled';
+      expect(diagnoseCloneError(msg, 'auth-required').kind).toBe('askpass-missing');
+    });
+
+    it('falls back to prose matching for the clone-failed catch-all and unknown codes', () => {
+      expect(diagnoseCloneError('ERROR: Repository not found.', 'clone-failed').kind).toBe(
+        'repo-not-found',
+      );
+      expect(diagnoseCloneError('something opaque', 'some-future-code').kind).toBe('unknown');
+    });
+
+    it('preserves the raw message when classified by code', () => {
+      const raw = 'workspace.create clone failed (network): could not resolve host';
+      expect(diagnoseCloneError(raw, 'network').rawMessage).toBe(raw);
+    });
+  });
 });

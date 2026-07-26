@@ -36,6 +36,8 @@
     isOnboardingCreating: boolean;
     isOnboardingEnhancing: boolean;
     onboardingCreationError: string | null;
+    /** Daemon `error.data.code` for a failed create (PROTOCOL §9.1, monorepo#826). */
+    onboardingCreationErrorCode?: string | null;
 
     // Project context
     projectSelection: ProjectSelection | null;
@@ -81,6 +83,7 @@
     isOnboardingCreating,
     isOnboardingEnhancing,
     onboardingCreationError,
+    onboardingCreationErrorCode = null,
     projectSelection,
     onboardingGithubRepoInfo,
     selectedPRBranch,
@@ -503,7 +506,11 @@
 
     <!-- Error state: post-submit error (user clicked Create and it failed). -->
     {#if onboardingCreationError}
-      <WorkspaceCreationError message={onboardingCreationError} onRetry={onSubmit} />
+      <WorkspaceCreationError
+        message={onboardingCreationError}
+        errorCode={onboardingCreationErrorCode}
+        onRetry={onSubmit}
+      />
     {/if}
 
     <!-- Create button -->

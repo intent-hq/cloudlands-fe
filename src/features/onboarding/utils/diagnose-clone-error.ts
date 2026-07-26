@@ -15,6 +15,7 @@ export type CloneErrorKind =
   | 'access-denied'
   | 'network'
   | 'destination-exists'
+  | 'path-invalid'
   | 'git-not-installed'
   | 'unknown';
 
@@ -23,9 +24,35 @@ export interface CloneErrorDiagnosis {
   rawMessage: string;
 }
 
-export function diagnoseCloneError(message: string | null | undefined): CloneErrorDiagnosis {
+/**
+ * Daemon-authored `error.data.code` values from the `workspace.create` clone
+ * failure taxonomy (PROTOCOL §9.1, monorepo#826), mapped to diagnosis kinds.
+ * These are a stable wire contract — when present they win over the prose
+ * regexes below. The daemon's `clone-failed` fallback is intentionally
+ * unmapped so the message-based classification still gets a chance.
+ */
+const DAEMON_CODE_TO_KIND: Record<string, CloneErrorKind> = {
+  'auth-required': 'auth-required',
+  network: 'network',
+  'destination-exists-non-empty': 'destination-exists',
+  'path-invalid': 'path-invalid',
+};
+
+export function diagnoseCloneError(
+  message: string | null | undefined,
+  errorCode?: string | null,
+): CloneErrorDiagnosis {
   const raw = message ?? '';
   const m = raw.toLowerCase();
+
+  // A daemon-authored machine-readable code is authoritative — no prose
+  // matching needed (PROTOCOL §9.1). Exception: an askpass packaging failure
+  // classifies daemon-side as auth-required, but the local fix (move the app
+  // out of quarantine) is more specific, so let the regex win for it.
+  const daemonKind = errorCode ? DAEMON_CODE_TO_KIND[errorCode] : undefined;
+  if (daemonKind && !(daemonKind === 'auth-required' && m.includes('askpass'))) {
+    return { kind: daemonKind, rawMessage: raw };
+  }
 
   if (!raw.trim()) {
     return { kind: 'unknown', rawMessage: raw };
