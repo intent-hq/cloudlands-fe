@@ -4,12 +4,14 @@
    *
    * Month/year: 24 local hours of day. 24H (Spec D11 addendum): the trailing
    * 24 hourly buckets in chronological order, labelled with local hours. All
-   * math lives in `stats-charts.ts`.
+   * math lives in `stats-charts.ts`. The WORKING HOURS window is adjustable
+   * via hover arrows on the start/end numbers (Spec D15); the state is
+   * component-local and resets to 09–18 whenever the overlay reopens.
    */
   import Logo from '$lib/components/Logo.svelte';
   import type { UsageStatsResult } from '$lib/client/app-client';
   import type { StatsMode } from './stats-period';
-  import { hourCardModel } from './stats-charts';
+  import { DEFAULT_WORKING_HOURS, hourCardModel, pad2, stepHourWindow } from './stats-charts';
 
   let {
     data,
@@ -23,8 +25,22 @@
     loading?: boolean;
   } = $props();
 
+  // Adjustable WORKING HOURS window (Spec D15). Component-local only — never
+  // persisted, so a fresh overlay open resets to the 09–18 default.
+  let whStart = $state(DEFAULT_WORKING_HOURS.start);
+  let whEnd = $state(DEFAULT_WORKING_HOURS.end);
+
+  function stepBound(bound: 'start' | 'end', delta: number) {
+    const next = stepHourWindow({ start: whStart, end: whEnd }, bound, delta);
+    whStart = next.start;
+    whEnd = next.end;
+  }
+
   const model = $derived(
-    hourCardModel(data?.byHourOfDay ?? [], mode === '24h' ? 'trailing-24h' : 'hour-of-day'),
+    hourCardModel(data?.byHourOfDay ?? [], mode === '24h' ? 'trailing-24h' : 'hour-of-day', {
+      start: whStart,
+      end: whEnd,
+    }),
   );
 </script>
 
@@ -71,7 +87,26 @@
   <div class="stat-grid">
     <div>
       <div class="stat-label">WORKING HOURS</div>
-      <div class="stat-value mono">{model.workingHours}</div>
+      <div class="stat-value mono">
+        {#snippet hourBound(bound: 'start' | 'end', value: number)}
+          <!-- Hover-only stepper chrome: arrows are absolutely positioned
+               (no layout shift) and visibility-gated on :hover, so they never
+               appear in PNG exports (html-to-image serializes the non-hover
+               computed styles). -->
+          <span class="wh-bound"
+            >{pad2(value)}<button
+              class="wh-arrow wh-arrow-up"
+              onclick={() => stepBound(bound, 1)}
+              aria-label="Increase working hours {bound}">▲</button
+            ><button
+              class="wh-arrow wh-arrow-down"
+              onclick={() => stepBound(bound, -1)}
+              aria-label="Decrease working hours {bound}">▼</button
+            ></span
+          >
+        {/snippet}
+        {@render hourBound('start', whStart)}–{@render hourBound('end', whEnd)} · {model.workingHoursPct}%
+      </div>
     </div>
     <div>
       <div class="stat-label">OVERNIGHT</div>
@@ -267,6 +302,41 @@
   .stat-value {
     font-size: 15px;
     margin-top: 6px;
+  }
+
+  .wh-bound {
+    position: relative;
+    display: inline-block;
+  }
+
+  .wh-arrow {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    visibility: hidden;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-size: 8px; /* a11y-ignore: tiny decorative hover-only stepper arrow */
+    line-height: 1;
+    color: hsl(240 5% 58%);
+  }
+
+  .wh-arrow:hover {
+    color: hsl(0 0% 97%);
+  }
+
+  .wh-arrow-up {
+    bottom: 100%;
+  }
+
+  .wh-arrow-down {
+    top: 100%;
+  }
+
+  .wh-bound:hover .wh-arrow {
+    visibility: visible;
   }
 
   .footer-wrap {
