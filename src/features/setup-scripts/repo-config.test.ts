@@ -21,6 +21,7 @@ import {
   fetchGitHubRepoConfigSetupScript,
   fetchRepoConfigSetupScript,
   parseRepoConfigSetupScript,
+  toRepoConfigSubset,
   REPO_CONFIG_SCRIPT_NAME,
 } from './repo-config';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -56,6 +57,29 @@ describe('parseRepoConfigSetupScript', () => {
     expect(parseRepoConfigSetupScript(JSON.stringify({ setupScript: '   ' }))).toBeNull();
     expect(parseRepoConfigSetupScript(JSON.stringify({ setupScript: 7 }))).toBeNull();
     expect(parseRepoConfigSetupScript(JSON.stringify({ setupScript: null }))).toBeNull();
+  });
+});
+
+describe('toRepoConfigSubset', () => {
+  it('extracts a valid setupScript from a config object', () => {
+    expect(toRepoConfigSubset({ setupScript: 'npm ci', other: 1 })).toEqual({
+      setupScript: 'npm ci',
+    });
+  });
+
+  it.each([
+    ['null', null],
+    ['array', ['setupScript']],
+    ['string', 'setupScript'],
+    ['number', 42],
+  ])('folds a non-object config (%s) to a null setupScript', (_label, config) => {
+    expect(toRepoConfigSubset(config)).toEqual({ setupScript: null });
+  });
+
+  it('folds a missing, blank, or non-string setupScript to null', () => {
+    expect(toRepoConfigSubset({})).toEqual({ setupScript: null });
+    expect(toRepoConfigSubset({ setupScript: '   ' })).toEqual({ setupScript: null });
+    expect(toRepoConfigSubset({ setupScript: 7 })).toEqual({ setupScript: null });
   });
 });
 

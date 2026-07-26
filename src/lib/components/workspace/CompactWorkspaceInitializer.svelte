@@ -16,8 +16,8 @@
   SETUP_SCRIPT_TEMPLATES,
   getTemplateContent,
   chooseDefaultSetupScript,
-  fetchGitHubRepoConfigSetupScript,
-  fetchRepoConfigSetupScript,
+  probeRepoConfigSetupScript,
+  repoIdentityKey,
   REPO_CONFIG_SCRIPT_NAME,
 } from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
@@ -68,6 +68,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import {
   getGitErrorMessage,
+  parseGitHubUrl,
   validateBranchName,
   validateInitialPrompt,
   validateRepoPath,
@@ -1136,7 +1137,8 @@
   $effect(() => {
     const path = repoPath;
     const type = repoType;
-    const repoKey = type === 'github' ? `${path}\u0000${githubUrl || ''}` : path;
+    const identity = { path, type, githubUrl };
+    const repoKey = repoIdentityKey(identity);
     // Only run when the selected repo actually changes
     if (repoKey === previousSetupScriptRepoKey) return;
     const isInitialMount = previousSetupScriptRepoKey === null;
@@ -1160,47 +1162,27 @@
       }
     }
 
-    // Probe the repo's committed `.intent/config.json` for a setup script.
-    // Local repos read the file directly (absolute paths only — `~` never
-    // expands in host.exec argv, no shell); GitHub repos have no local
-    // checkout, so the daemon reads it via `github.repoConfig.get`.
-    isRepoConfigLoading = false;
-    const isLocalProbe = !!path && type === 'local' && path.startsWith('/');
-    const github =
-      !!path && type === 'github' ? parseGitHubInfo(untrack(() => githubUrl) || path) : null;
-    if (!isLocalProbe && !github) return;
-    const scriptAtFetchStart = untrack(() => setupScript);
-    isRepoConfigLoading = true;
-    (async () => {
-      const script = isLocalProbe
-        ? await fetchRepoConfigSetupScript(path)
-        : await fetchGitHubRepoConfigSetupScript(
-            github!.owner,
-            github!.repo,
-            untrack(() => branch) || undefined,
-          );
-      // Staleness guard: user switched repos while the read was in flight
-      // (compare full repo identity — GitHub repos can share a clone path)
-      const currentKey = untrack(() =>
-        repoType === 'github' ? `${repoPath}\u0000${githubUrl || ''}` : repoPath,
-      );
-      if (currentKey !== repoKey) return;
-      isRepoConfigLoading = false;
-      repoConfigScript = script;
-      repoConfigScriptRepo = path;
-      if (!script) return;
-      // Repo config has top priority, but never clobber restored form state,
-      // user edits, an open setup-script modal (it snapshots parent values on
-      // open and would commit stale ones on Done), or anything changed while
-      // the read was in flight
-      if (preservedRestoredState) return;
-      if (untrack(() => showSetupScript)) return;
-      if (untrack(() => isCustomSetupScript)) return;
-      if (untrack(() => setupScript) !== scriptAtFetchStart) return;
-      setupScript = script;
-      setupScriptName = REPO_CONFIG_SCRIPT_NAME;
-      isCustomSetupScript = false;
-    })();
+    // Probe the repo's committed `.intent/config.json` for a setup script
+    // (shared helper — spinner state, no-clobber and staleness guards).
+    probeRepoConfigSetupScript({
+      identity,
+      preservedRestoredState,
+      getCurrentIdentity: () => ({ path: repoPath, type: repoType, githubUrl }),
+      getBranch: () => branch,
+      getSetupScript: () => setupScript,
+      isSetupScriptModalOpen: () => showSetupScript,
+      isCustomSetupScript: () => isCustomSetupScript,
+      setLoading: (loading) => (isRepoConfigLoading = loading),
+      onProbeResult: (script) => {
+        repoConfigScript = script;
+        repoConfigScriptRepo = path;
+      },
+      applyScript: (script) => {
+        setupScript = script;
+        setupScriptName = REPO_CONFIG_SCRIPT_NAME;
+        isCustomSetupScript = false;
+      },
+    });
   });
 
   // Derived validation
@@ -1213,30 +1195,11 @@
       (repoType !== 'github' || githubAuthNeeded === 'none'),
   );
 
-  // Helper to parse GitHub owner/repo from URL or path
-  function parseGitHubInfo(url: string): { owner: string; repo: string } | null {
-    // Handle GitHub URL formats
-    const patterns = [
-      /^https?:\/\/github\.com\/([^\/]+)\/([^\/\.]+?)(?:\.git)?(?:\/.*)?$/,
-      /^git@github\.com:([^\/]+)\/([^\/\.]+?)(?:\.git)?$/,
-    ];
-    for (const pattern of patterns) {
-      const match = url.trim().match(pattern);
-      if (match) return { owner: match[1], repo: match[2] };
-    }
-    // Check for simple owner/repo format
-    const simpleMatch = url.trim().match(/^([a-zA-Z0-9\-_]+)\/([a-zA-Z0-9\-_\.]+)$/);
-    if (simpleMatch && !url.includes('\\') && !url.includes(':') && !url.startsWith('.')) {
-      return { owner: simpleMatch[1], repo: simpleMatch[2] };
-    }
-    return null;
-  }
-
   // Derived GitHub repo info for IssueSuggestions
   const githubRepoInfo = $derived.by(() => {
     // First try the explicit GitHub URL
     if (githubUrl) {
-      return parseGitHubInfo(githubUrl);
+      return parseGitHubUrl(githubUrl);
     }
     // Try detected owner/repo from local repo's remote URL
     if (detectedGitHubOwner && detectedGitHubRepo) {
@@ -1244,7 +1207,7 @@
     }
     // Then try the repoPath (might be owner/repo format from GitHub selection)
     if (repoPath) {
-      return parseGitHubInfo(repoPath);
+      return parseGitHubUrl(repoPath);
     }
     return null;
   });

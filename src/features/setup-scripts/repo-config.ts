@@ -19,6 +19,34 @@ export const REPO_CONFIG_SCRIPT_NAME = 'From repo config';
 export const REPO_CONFIG_SCRIPT_ID = 'repo-config';
 
 /**
+ * Typed subset of the repo-committed `.intent/config.json` that the frontend
+ * consumes. The daemon owns the full schema; the FE only reads `setupScript`
+ * (deferred typing item from cloudlands-fe#417 review).
+ */
+export interface RepoConfigSubset {
+  /** Committed setup script — null when missing, blank, or not a string. */
+  setupScript: string | null;
+}
+
+/**
+ * Narrow loosely-shaped config data (parsed `.intent/config.json` or the
+ * `config` object from `github.repoConfig.get`) to the typed subset.
+ * Tolerant like intentd's `read_repo_config`: a non-object root
+ * (array/string/number/null) or a missing/non-string/blank `setupScript`
+ * folds to null.
+ */
+export function toRepoConfigSubset(config: unknown): RepoConfigSubset {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return { setupScript: null };
+  }
+  const setupScript = (config as Record<string, unknown>).setupScript;
+  return {
+    setupScript:
+      typeof setupScript === 'string' && setupScript.trim().length > 0 ? setupScript : null,
+  };
+}
+
+/**
  * Extract `setupScript` from raw `.intent/config.json` content.
  *
  * Tolerant like intentd's `read_repo_config`: invalid JSON, a non-object root
@@ -32,9 +60,7 @@ export function parseRepoConfigSetupScript(raw: string): string | null {
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  const setupScript = (parsed as Record<string, unknown>).setupScript;
-  return typeof setupScript === 'string' && setupScript.trim().length > 0 ? setupScript : null;
+  return toRepoConfigSubset(parsed).setupScript;
 }
 
 /** Envelope returned by the `setup-scripts:read-repo-config` bridge. */
@@ -79,8 +105,7 @@ export async function fetchGitHubRepoConfigSetupScript(
   try {
     const { appClient } = await import('$lib/client');
     const result = await appClient.integrations.githubRepoConfig(owner, repo, ref);
-    const setupScript = result.config?.setupScript;
-    return typeof setupScript === 'string' && setupScript.trim().length > 0 ? setupScript : null;
+    return toRepoConfigSubset(result.config).setupScript;
   } catch {
     return null;
   }
