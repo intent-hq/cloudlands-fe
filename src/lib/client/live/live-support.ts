@@ -11,8 +11,12 @@
  *    workspace without an extra parameter; when the cache misses they fall back
  *    to scanning the workspace list.
  */
-import type { MutationResult } from "../app-client";
-import { backendRequest } from "./backend-transport";
+import type { MutationResult, Unsubscribe } from "../app-client";
+import {
+  backendRequest,
+  onBackendNotification,
+  onBackendReconnected,
+} from "./backend-transport";
 
 /**
  * Generate an idempotency key for create/commit/merge mutations (§5.6): a UUID
@@ -171,6 +175,57 @@ export async function listWorkspaceIds(): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Legacy workspace events that can change the id SET `listWorkspaceIds()`
+ * yields (`workspace.list` is archived-EXCLUSIVE by default, §5.1):
+ * create/delete change membership directly, and archive/unarchive land as
+ * `workspace:updated` carrying the `changes.archived` delta (§6.5 — there is
+ * no dedicated archive event), moving a workspace out of / back into the
+ * default listing. High-frequency siblings (`workspace:activity-changed`,
+ * `workspace:attention-changed`, …) never change the set and are excluded so
+ * the id source does not issue a `workspace.list` round-trip on every
+ * activity tick.
+ */
+const WORKSPACE_ID_SET_EVENTS = [
+  "workspace:created",
+  "workspace:updated",
+  "workspace:deleted",
+] as const;
+
+/**
+ * Dynamic workspace-id source for the per-workspace typed channels (one
+ * `note`/`task`/`agent.subscribe` per workspace, PROTOCOL §6.9): yields the
+ * FULL desired workspace-id set from `listWorkspaceIds()` — the same
+ * enumeration the clients' `subscribe` `fetchAll` flattens over, so typed
+ * coverage matches legacy coverage — re-enumerating on the legacy workspace
+ * events that can change that set ({@link WORKSPACE_ID_SET_EVENTS}) and on
+ * reconnect (the set may have changed during the outage; a stale channel for
+ * a deleted workspace would otherwise fail re-registration and pin the
+ * subscription in legacy mode). A generation guard drops out-of-order
+ * enumerations so an older set can never overwrite a newer one.
+ */
+export function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void): Unsubscribe {
+  let cancelled = false;
+  let generation = 0;
+  const refresh = () => {
+    generation += 1;
+    const current = generation;
+    void listWorkspaceIds().then((ids) => {
+      if (!cancelled && current === generation) listener(ids);
+    });
+  };
+  refresh();
+  const offNotify = onBackendNotification((n) => {
+    if (isEventOneOf(n.method, n.params, WORKSPACE_ID_SET_EVENTS)) refresh();
+  });
+  const offReconnect = onBackendReconnected(refresh);
+  return () => {
+    cancelled = true;
+    offNotify();
+    offReconnect();
+  };
 }
 
 /** noteId → workspaceId, populated as notes are listed so note-scoped reads resolve. */

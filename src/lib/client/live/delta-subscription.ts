@@ -321,6 +321,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           // any pre-ack pushes that raced this reply.
           drainBufferedPushes(subscriptionId);
         }
+        pruneForeignBufferedPushes();
       })
       .catch(() => {
         // Without a daemon subscription we still serve the refetch fallback.
@@ -337,6 +338,15 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
       return false;
     }
     return Boolean(channel) && channelCapable && channelSubscriptionId === undefined;
+  };
+
+  // Once no registration awaits its ack, any push still buffered was drained
+  // by none of our ids — it is provably foreign. Clear the buffer instead of
+  // leaving it to capacity eviction, so a stale foreign entry can never
+  // replay into a later registration that reuses its subscriptionId. Called
+  // after each subscribe reply resolves (the only pending→resolved edges).
+  const pruneForeignBufferedPushes = () => {
+    if (bufferedPushes.length > 0 && !hasPendingRegistration()) bufferedPushes.length = 0;
   };
 
   // Typed channel registration goes through plain `backendRequest` (the
@@ -364,6 +374,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
         }
         channelSubscriptionId = id;
         if (id) drainBufferedPushes(id);
+        pruneForeignBufferedPushes();
       })
       .catch(() => {
         // Registration failure leaves `live` false, so legacy refetches keep
@@ -425,6 +436,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
         }
         state.subscriptionId = sid;
         if (sid) drainBufferedPushes(sid);
+        pruneForeignBufferedPushes();
       })
       .catch(() => {
         // This channel stays unconfirmed, so `live` stays false and legacy

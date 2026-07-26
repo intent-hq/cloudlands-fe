@@ -25,11 +25,7 @@ import type {
   TaskAgentAssociation,
   TaskAgentAssociationsByTaskKey,
 } from "$store/renderer/slices/task-agent-associations/task-agent-associations-types";
-import {
-  backendRequest,
-  onBackendNotification,
-  onBackendReconnected,
-} from "./backend-transport";
+import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import {
   isEventInFamily,
@@ -38,6 +34,7 @@ import {
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
   runMutationWithId,
+  subscribeWorkspaceIds,
 } from "./live-support";
 
 /** Map a raw daemon note to a `WorkspaceTask` when it carries task metadata. */
@@ -108,39 +105,6 @@ function conflictToTask(raw: Record<string, unknown>): WorkspaceTask | null {
 
 /** Zero-aggregate fallback for the synthesized `subscribe` snapshot (workspace not loaded). */
 const EMPTY_STATS: WorkspaceTaskStats = { total: 0, completed: 0, inProgress: 0 };
-
-/**
- * Dynamic workspace-id source for the per-workspace typed task channel:
- * yields the FULL desired workspace-id set from `listWorkspaceIds()` — the
- * same enumeration `subscribe`'s `fetchAll` flattens over, so typed coverage
- * matches legacy coverage — re-enumerating on legacy `workspace:*` events
- * (workspace add/delete) and on reconnect (the set may have changed during
- * the outage; a stale channel for a deleted workspace would otherwise fail
- * re-registration and pin the subscription in legacy mode). A generation
- * guard drops out-of-order enumerations so an older set can never overwrite
- * a newer one.
- */
-function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void): Unsubscribe {
-  let cancelled = false;
-  let generation = 0;
-  const refresh = () => {
-    generation += 1;
-    const current = generation;
-    void listWorkspaceIds().then((ids) => {
-      if (!cancelled && current === generation) listener(ids);
-    });
-  };
-  refresh();
-  const offNotify = onBackendNotification((n) => {
-    if (isEventInFamily(n.method, n.params, "workspace")) refresh();
-  });
-  const offReconnect = onBackendReconnected(refresh);
-  return () => {
-    cancelled = true;
-    offNotify();
-    offReconnect();
-  };
-}
 
 /**
  * Normalize a daemon `TaskAgentLink` row into the renderer

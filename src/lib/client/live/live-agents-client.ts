@@ -23,18 +23,14 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
-import {
-  backendRequest,
-  onBackendNotification,
-  onBackendReconnected,
-} from "./backend-transport";
+import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import {
-  isEventInFamily,
   isEventOneOf,
   listWorkspaceIds,
   newIdempotencyKey,
   runMutation,
+  subscribeWorkspaceIds,
 } from "./live-support";
 
 /**
@@ -61,39 +57,6 @@ const AGENT_LIFECYCLE_EVENTS = [
   "agent:status-changed",
   "agent:renamed",
 ] as const;
-
-/**
- * Dynamic workspace-id source for the per-workspace typed agent channel:
- * yields the FULL desired workspace-id set from `listWorkspaceIds()` — the
- * same enumeration `subscribe`'s `fetchAll` flattens over, so typed coverage
- * matches legacy coverage — re-enumerating on legacy `workspace:*` events
- * (workspace add/delete) and on reconnect (the set may have changed during
- * the outage; a stale channel for a deleted workspace would otherwise fail
- * re-registration and pin the subscription in legacy mode). A generation
- * guard drops out-of-order enumerations so an older set can never overwrite
- * a newer one.
- */
-function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void): Unsubscribe {
-  let cancelled = false;
-  let generation = 0;
-  const refresh = () => {
-    generation += 1;
-    const current = generation;
-    void listWorkspaceIds().then((ids) => {
-      if (!cancelled && current === generation) listener(ids);
-    });
-  };
-  refresh();
-  const offNotify = onBackendNotification((n) => {
-    if (isEventInFamily(n.method, n.params, "workspace")) refresh();
-  });
-  const offReconnect = onBackendReconnected(refresh);
-  return () => {
-    cancelled = true;
-    offNotify();
-    offReconnect();
-  };
-}
 
 /** Coerce a raw daemon agent object into the renderer `AgentSession` shape. */
 function normalizeAgent(raw: Record<string, unknown>): AgentSession {

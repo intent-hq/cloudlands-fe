@@ -23,11 +23,7 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
-import {
-  backendRequest,
-  onBackendNotification,
-  onBackendReconnected,
-} from "./backend-transport";
+import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import {
   isEventInFamily,
@@ -36,6 +32,7 @@ import {
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
   runMutation,
+  subscribeWorkspaceIds,
 } from "./live-support";
 
 /**
@@ -109,39 +106,6 @@ export function normalizeNote(raw: Record<string, unknown>, workspaceId: string)
     createdAt: String(raw.createdAt ?? raw.created_at ?? now),
     updatedAt: String(raw.updatedAt ?? raw.updated_at ?? now),
   } as Note;
-}
-
-/**
- * Dynamic workspace-id source for the per-workspace typed note channel:
- * yields the FULL desired workspace-id set from `listWorkspaceIds()` — the
- * same enumeration `subscribe`'s `fetchAll` flattens over, so typed coverage
- * matches legacy coverage — re-enumerating on legacy `workspace:*` events
- * (workspace add/delete) and on reconnect (the set may have changed during
- * the outage; a stale channel for a deleted workspace would otherwise fail
- * re-registration and pin the subscription in legacy mode). A generation
- * guard drops out-of-order enumerations so an older set can never overwrite
- * a newer one.
- */
-function subscribeWorkspaceIds(listener: (ids: readonly string[]) => void): Unsubscribe {
-  let cancelled = false;
-  let generation = 0;
-  const refresh = () => {
-    generation += 1;
-    const current = generation;
-    void listWorkspaceIds().then((ids) => {
-      if (!cancelled && current === generation) listener(ids);
-    });
-  };
-  refresh();
-  const offNotify = onBackendNotification((n) => {
-    if (isEventInFamily(n.method, n.params, "workspace")) refresh();
-  });
-  const offReconnect = onBackendReconnected(refresh);
-  return () => {
-    cancelled = true;
-    offNotify();
-    offReconnect();
-  };
 }
 
 /**

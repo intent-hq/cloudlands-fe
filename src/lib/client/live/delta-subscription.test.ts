@@ -816,6 +816,48 @@ describe("createDeltaSubscription", () => {
       dispose();
     });
 
+    it("drops a foreign buffered push once no registration is pending (no stale replay)", async () => {
+      // PR #400 review: a foreign push buffered during a pending window must
+      // be cleared as soon as every subscribe reply has resolved — otherwise
+      // a later registration that reuses its subscriptionId would drain the
+      // stale foreign snapshot as its own seed.
+      liveStateCapability = true;
+      deferChannelSubscribe = true;
+      const { source, handler, fetchAll, dispose } = setupDynamic([{ id: "a" }], ["w1"]);
+      await flush();
+      expect(channelSubscribes().length).toBe(1); // chan-1 reply held pending
+
+      // A FOREIGN push (id "chan-2" belongs to no channel of ours) arrives
+      // inside the buffering window → buffered, not dropped outright.
+      chanSnapshot("chan-2", 0, [{ id: "foreign" }]);
+
+      // chan-1's reply lands: nothing pending remains, so the foreign entry
+      // is pruned. chan-1 then confirms normally.
+      channelSubscribeResolvers[0]!();
+      await flush();
+      chanSnapshot("chan-1", 0, [{ id: "a" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }]);
+
+      // A new id registers and REUSES "chan-2" (mock id sequence). Without
+      // the prune, the stale foreign snapshot would replay into it and flip
+      // live with foreign data.
+      source.emit(["w1", "w2"]);
+      await flush();
+      channelSubscribeResolvers[1]!();
+      await flush();
+      expect(handler).not.toHaveBeenCalledWith([{ id: "a" }, { id: "foreign" }]);
+      // chan-2 is NOT snapshot-confirmed by the stale entry → still legacy
+      // bridging (initial + live-drop on w2 add + this event = 3 fetches).
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(3);
+
+      // Its REAL seq-0 snapshot then flips live with genuine data.
+      chanSnapshot("chan-2", 0, [{ id: "b" }]);
+      expect(handler).toHaveBeenLastCalledWith([{ id: "a" }, { id: "b" }]);
+      dispose();
+    });
+
     it("a subscribe reply for an id removed while in flight is dropped and unsubscribed", async () => {
       liveStateCapability = true;
       deferChannelSubscribe = true;
