@@ -1367,6 +1367,17 @@ export interface GitHubBranchListing {
   defaultBranch?: string;
 }
 
+/**
+ * Remote repo-config read (`github.repoConfig.get`, §5.27 v2.4) for a GitHub
+ * repo with no local checkout: the committed `.intent/config.json` fetched
+ * via the contents API. `config` is null when the file (or repo/ref) is
+ * missing; a present but invalid file folds tolerantly to `{}` on the daemon.
+ */
+export interface GitHubRepoConfigResult {
+  config: Record<string, unknown> | null;
+  exists: boolean;
+}
+
 export interface IntegrationsClient {
   githubUser(): Promise<GitHubUser | null>;
   /**
@@ -1377,6 +1388,14 @@ export interface IntegrationsClient {
    * explicit error/auth state — never a fabricated branch list.
    */
   githubBranches(owner: string, repo: string): Promise<GitHubBranchListing>;
+  /**
+   * The repo's committed `.intent/config.json` (`github.repoConfig.get`,
+   * §5.27 v2.4) for a GitHub repo without a local checkout. `ref` defaults to
+   * the repo's default branch on the daemon when omitted. THROWS on
+   * transport/daemon errors (e.g. unauthenticated private repo); the
+   * setup-script probe folds failures to "no script" at the call site.
+   */
+  githubRepoConfig(owner: string, repo: string, ref?: string): Promise<GitHubRepoConfigResult>;
   linearIssues(): Promise<LinearIssueResult[]>;
   sentryIssues(): Promise<SentryIssueResult[]>;
   subscribe(handler: SubscriptionHandler<{ githubUser: GitHubUser | null }>): Unsubscribe;

@@ -13,6 +13,7 @@
 import type {
   AppClient,
   GitHubBranchListing,
+  GitHubRepoConfigResult,
   IntegrationsClient,
   SubscriptionHandler,
   Unsubscribe,
@@ -78,6 +79,28 @@ export class LiveIntegrationsClient implements IntegrationsClient {
       // Default branch is a nicety; the branch list alone is sufficient.
     }
     return { branches, defaultBranch };
+  }
+
+  /**
+   * `github.repoConfig.get` (§5.27 v2.4) — the repo's committed
+   * `.intent/config.json` read via the contents API, no clone. `ref` is only
+   * sent when provided (daemon defaults to the repo's default branch).
+   * Failures PROPAGATE; the setup-script probe folds them to "no script".
+   */
+  async githubRepoConfig(
+    owner: string,
+    repo: string,
+    ref?: string,
+  ): Promise<GitHubRepoConfigResult> {
+    const result = await backendRequest<{ config?: unknown; exists?: unknown }>(
+      "github.repoConfig.get",
+      ref ? { owner, repo, ref } : { owner, repo },
+    );
+    const config =
+      result?.config && typeof result.config === "object" && !Array.isArray(result.config)
+        ? (result.config as Record<string, unknown>)
+        : null;
+    return { config, exists: result?.exists === true };
   }
 
   async linearIssues(): Promise<LinearIssueResult[]> {

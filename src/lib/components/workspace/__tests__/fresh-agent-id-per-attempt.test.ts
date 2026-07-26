@@ -71,6 +71,7 @@ vi.mock('$features/setup-scripts', () => ({
   getTemplateContent: vi.fn(() => ''),
   chooseDefaultSetupScript: vi.fn(() => ({ content: '', name: 'Custom' })),
   fetchRepoConfigSetupScript: vi.fn(async () => null),
+  fetchGitHubRepoConfigSetupScript: vi.fn(async () => null),
   REPO_CONFIG_SCRIPT_NAME: 'Repo config',
 }));
 

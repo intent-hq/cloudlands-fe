@@ -70,6 +70,7 @@
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
     chooseDefaultSetupScript,
+    fetchGitHubRepoConfigSetupScript,
     fetchRepoConfigSetupScript,
     REPO_CONFIG_SCRIPT_NAME,
   } from '$features/setup-scripts';
@@ -213,14 +214,29 @@
     }
 
     // Probe the repo's committed `.intent/config.json` for a setup script.
-    // Only absolute local paths — GitHub/remote repos have no local checkout,
-    // and `~` never expands in host.exec argv (no shell).
-    if (!path || type !== 'local' || !path.startsWith('/')) return;
+    // Local repos read the file directly (absolute paths only — `~` never
+    // expands in host.exec argv, no shell); GitHub repos have no local
+    // checkout, so the daemon reads it via `github.repoConfig.get`.
+    isRepoConfigLoading = false;
+    const isLocalProbe = !!path && type === 'local' && path.startsWith('/');
+    const github =
+      !!path && type === 'github'
+        ? parseGitHubUrl(untrack(() => projectSelection?.githubUrl) || path)
+        : null;
+    if (!isLocalProbe && !github) return;
     const scriptAtFetchStart = untrack(() => setupScript);
+    isRepoConfigLoading = true;
     (async () => {
-      const script = await fetchRepoConfigSetupScript(path);
+      const script = isLocalProbe
+        ? await fetchRepoConfigSetupScript(path)
+        : await fetchGitHubRepoConfigSetupScript(
+            github!.owner,
+            github!.repo,
+            untrack(() => projectSelection?.branch) || undefined,
+          );
       // Staleness guard: user switched repos while the read was in flight
       if (untrack(() => projectSelection?.repoPath ?? null) !== path) return;
+      isRepoConfigLoading = false;
       repoConfigScript = script;
       repoConfigScriptRepo = path;
       if (!script) return;
@@ -313,10 +329,13 @@
   let setupScriptName = $state('Custom');
   let isCustomSetupScript = $state(false);
 
-  // Repo-committed setup script from <repo>/.intent/config.json (local repos only).
+  // Repo-committed setup script from <repo>/.intent/config.json (local repos
+  // read the file over IPC; GitHub repos use `github.repoConfig.get`).
   // Cached alongside the repo it was fetched for so stale results are never applied.
   let repoConfigScript = $state<string | null>(null);
   let repoConfigScriptRepo = $state<string | null>(null);
+  // True while the repo-config probe is in flight (spinner on the setup-script control).
+  let isRepoConfigLoading = $state(false);
 
   // Helper to restore the default setup script for a repo.
   // Priority: repo-committed `.intent/config.json` setupScript > last used for
@@ -1133,6 +1152,7 @@
                           repoConfigScript={repoConfigScriptRepo === projectSelection?.repoPath
                             ? repoConfigScript
                             : null}
+                          {isRepoConfigLoading}
                           {visibleSuggestions}
                           bind:focusedSuggestionIndex
                           onSubmit={handleOnboardingSubmit}

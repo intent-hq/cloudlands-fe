@@ -16,6 +16,7 @@
   SETUP_SCRIPT_TEMPLATES,
   getTemplateContent,
   chooseDefaultSetupScript,
+  fetchGitHubRepoConfigSetupScript,
   fetchRepoConfigSetupScript,
   REPO_CONFIG_SCRIPT_NAME,
 } from '$features/setup-scripts';
@@ -461,10 +462,13 @@
   let setupScriptName = $state(savedState?.setupScriptName ?? 'Custom');
   let isCustomSetupScript = $state(savedState?.isCustomSetupScript ?? false);
 
-  // Repo-committed setup script from <repo>/.intent/config.json (local repos only).
+  // Repo-committed setup script from <repo>/.intent/config.json (local repos
+  // read the file over IPC; GitHub repos use `github.repoConfig.get`).
   // Cached alongside the repo it was fetched for so stale results are never applied.
   let repoConfigScript = $state<string | null>(null);
   let repoConfigScriptRepo = $state<string | null>(null);
+  // True while the repo-config probe is in flight (spinner on the setup-script control).
+  let isRepoConfigLoading = $state(false);
 
   // Helper to restore the default setup script for a repo.
   // Priority: repo-committed `.intent/config.json` setupScript > last used for
@@ -1154,14 +1158,27 @@
     }
 
     // Probe the repo's committed `.intent/config.json` for a setup script.
-    // Only absolute local paths — GitHub/remote repos have no local checkout,
-    // and `~` never expands in host.exec argv (no shell).
-    if (!path || type !== 'local' || !path.startsWith('/')) return;
+    // Local repos read the file directly (absolute paths only — `~` never
+    // expands in host.exec argv, no shell); GitHub repos have no local
+    // checkout, so the daemon reads it via `github.repoConfig.get`.
+    isRepoConfigLoading = false;
+    const isLocalProbe = !!path && type === 'local' && path.startsWith('/');
+    const github =
+      !!path && type === 'github' ? parseGitHubInfo(untrack(() => githubUrl) || path) : null;
+    if (!isLocalProbe && !github) return;
     const scriptAtFetchStart = untrack(() => setupScript);
+    isRepoConfigLoading = true;
     (async () => {
-      const script = await fetchRepoConfigSetupScript(path);
+      const script = isLocalProbe
+        ? await fetchRepoConfigSetupScript(path)
+        : await fetchGitHubRepoConfigSetupScript(
+            github!.owner,
+            github!.repo,
+            untrack(() => branch) || undefined,
+          );
       // Staleness guard: user switched repos while the read was in flight
       if (untrack(() => repoPath) !== path) return;
+      isRepoConfigLoading = false;
       repoConfigScript = script;
       repoConfigScriptRepo = path;
       if (!script) return;
@@ -2773,8 +2790,12 @@
               onclick={() => (showSetupScript = !showSetupScript)}
             >
               <span>Set up dev environment with</span>
-              <div class="bg-background px-2 py-0.5 font-medium">{setupScriptName}</div>
-              <p class="text-sm text-subtle">script</p>
+              {#if isRepoConfigLoading}
+                <Fa icon={faSpinner} class="animate-spin" size="sm" />
+              {:else}
+                <div class="bg-background px-2 py-0.5 font-medium">{setupScriptName}</div>
+                <p class="text-sm text-subtle">script</p>
+              {/if}
             </button>
             <!-- Right: rapid fire -->
             <Tooltip content="Stay on this page after creating a space" side="top" size="sm">
