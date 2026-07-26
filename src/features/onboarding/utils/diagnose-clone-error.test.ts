@@ -79,6 +79,7 @@ describe('diagnoseCloneError', () => {
     it('maps each stable daemon code to its kind, ignoring the prose', () => {
       const detail = 'workspace.create clone failed (x): some unrecognizable detail';
       expect(diagnoseCloneError(detail, 'auth-required').kind).toBe('auth-required');
+      expect(diagnoseCloneError(detail, 'askpass-missing').kind).toBe('askpass-missing');
       expect(diagnoseCloneError(detail, 'repo-not-found').kind).toBe('repo-not-found');
       expect(diagnoseCloneError(detail, 'access-denied').kind).toBe('access-denied');
       expect(diagnoseCloneError(detail, 'network').kind).toBe('network');
@@ -98,19 +99,13 @@ describe('diagnoseCloneError', () => {
       expect(diagnoseCloneError(msg, 'network').kind).toBe('network');
     });
 
-    it('lets askpass-missing prose win over an auth-required code', () => {
+    it('honors an auth-required code even when the prose looks like askpass-missing', () => {
+      // The prose exception is retired (monorepo#837): the daemon now emits a
+      // distinct askpass-missing code, so its codes are always authoritative.
       const msg =
         'fatal: cannot exec ssh-askpass-intent.sh\nfatal: could not read Username: terminal prompts disabled';
-      expect(diagnoseCloneError(msg, 'auth-required').kind).toBe('askpass-missing');
-    });
-
-    it('keeps auth-required when the prose mentions askpass without matching askpass-missing', () => {
-      // "askpass" appears, but not in one of the askpass-missing shapes — the
-      // authoritative daemon code must not degrade to unknown (monorepo#837).
-      expect(
-        diagnoseCloneError("error: unable to read askpass response from '/x/y'", 'auth-required')
-          .kind,
-      ).toBe('auth-required');
+      expect(diagnoseCloneError(msg, 'auth-required').kind).toBe('auth-required');
+      expect(diagnoseCloneError(msg, 'askpass-missing').kind).toBe('askpass-missing');
     });
 
     it('falls back to prose matching for the clone-failed catch-all and unknown codes', () => {

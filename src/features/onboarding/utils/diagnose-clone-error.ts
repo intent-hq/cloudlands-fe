@@ -33,6 +33,7 @@ export interface CloneErrorDiagnosis {
  */
 const DAEMON_CODE_TO_KIND: Record<string, CloneErrorKind> = {
   'auth-required': 'auth-required',
+  'askpass-missing': 'askpass-missing',
   'repo-not-found': 'repo-not-found',
   'access-denied': 'access-denied',
   network: 'network',
@@ -47,17 +48,11 @@ export function diagnoseCloneError(
   const raw = message ?? '';
 
   // A daemon-authored machine-readable code is authoritative — no prose
-  // matching needed (PROTOCOL §9.1). Exception: an askpass packaging failure
-  // classifies daemon-side as auth-required, but the local fix (move the app
-  // out of quarantine) is more specific — so for auth-required only, let the
-  // prose classification win when (and only when) it positively identifies
-  // askpass-missing. This is a documented stopgap until the daemon can emit a
-  // distinct code for askpass exec failures (intent-hq/monorepo#837).
+  // matching needed (PROTOCOL §9.1). Askpass packaging failures now arrive as
+  // their own `askpass-missing` code (intent-hq/monorepo#837), so the former
+  // prose exception that specialized `auth-required` is retired.
   const daemonKind = errorCode ? DAEMON_CODE_TO_KIND[errorCode] : undefined;
   if (daemonKind) {
-    if (daemonKind === 'auth-required' && classifyByProse(raw) === 'askpass-missing') {
-      return { kind: 'askpass-missing', rawMessage: raw };
-    }
     return { kind: daemonKind, rawMessage: raw };
   }
 
