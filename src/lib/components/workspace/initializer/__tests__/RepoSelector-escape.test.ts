@@ -170,5 +170,12 @@ describe('RepoSelector Recent list owner rendering', () => {
       expect(screen.getByText('app')).toBeTruthy();
       expect(screen.getByText('solo')).toBeTruthy();
     });
+
+    // The ownerless row must render the name only — no stray owner prefix.
+    const soloRow = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.includes('solo'));
+    expect(soloRow).toBeTruthy();
+    expect(soloRow!.textContent?.replace(/\s+/g, ' ').trim()).toBe('solo');
   });
 });
