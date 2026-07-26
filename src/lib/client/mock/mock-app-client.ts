@@ -152,6 +152,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly integrations: AppClient["integrations"] = {
     githubUser: async () => fx.mockGitHubUser,
     githubBranches: async () => ({ branches: [] }),
+    githubRepoConfig: async () => ({ config: null, exists: false }),
     linearIssues: async () => fx.mockLinearIssues,
     sentryIssues: async () => fx.mockSentryIssues,
     subscribe: (handler) => emitOnce(handler, { githubUser: fx.mockGitHubUser }),

@@ -18,6 +18,7 @@
   faMagicWandSparkles,
   faArrowsRotate,
   faCodeBranch,
+  faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button';
@@ -51,6 +52,8 @@
     isCustomSetupScript: boolean;
     /** Repo-committed `.intent/config.json` script, forwarded to SetupScriptModal. */
     repoConfigScript: string | null;
+    /** True while the repo-config probe is in flight (spinner on the setup-script control). */
+    isRepoConfigLoading?: boolean;
 
     // Suggestions
     visibleSuggestions: string[];
@@ -88,6 +91,7 @@
     setupScriptName = $bindable(),
     isCustomSetupScript = $bindable(),
     repoConfigScript,
+    isRepoConfigLoading = false,
     visibleSuggestions,
     focusedSuggestionIndex = $bindable(),
     onSubmit,
@@ -453,10 +457,15 @@
             onclick={() => onShowSetupScriptChange(!showSetupScript)}
           >
             <span>Set up environment with</span>
-            <span class="bg-card/50 px-1.5 py-0.5 font-medium"
-              >{setupScriptName}</span
-            >
-            <span class="text-muted-foreground">script</span>
+            {#if isRepoConfigLoading}
+              <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
+              <span class="sr-only">Detecting setup script…</span>
+            {:else}
+              <span class="bg-card/50 px-1.5 py-0.5 font-medium"
+                >{setupScriptName}</span
+              >
+              <span class="text-muted-foreground">script</span>
+            {/if}
           </button>
         </div>
         <SetupScriptModal
