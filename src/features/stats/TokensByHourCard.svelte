@@ -318,7 +318,7 @@
     border: none;
     padding: 0;
     cursor: pointer;
-    font-size: 8px;
+    font-size: 8px; /* a11y-ignore: tiny decorative hover-only stepper arrow */
     line-height: 1;
     color: hsl(240 5% 58%);
   }
