@@ -176,6 +176,94 @@
     }
   });
 
+  // Track directory status of the GitHub clone target path
+  let githubCloneDirStatus = $state<{
+    exists: boolean;
+    isDirectory: boolean;
+    isEmpty: boolean;
+    isGitRepo: boolean;
+  } | null>(null);
+  let isCheckingGithubCloneDir = $state(false);
+  // Generation token: each effect run invalidates in-flight checks so a late
+  // response for an old target can't overwrite the status (or clear the
+  // checking flag) for a newer one.
+  let githubCloneDirCheckToken = 0;
+
+  // Repo name parsed from the GitHub URL
+  const githubRepoName = $derived(
+    githubUrl.match(/github\.com\/[^/]+\/([^/\s#?]+)/i)?.[1]?.replace(/\.git$/, '') ?? '',
+  );
+
+  // clonePath is the parent directory (e.g. ~/Developer). We append the repo
+  // name so the actual clone target is ~/Developer/repo-name, unless the user
+  // already picked a folder ending in the repo name.
+  const githubFullClonePath = $derived.by(() => {
+    const normalizedClonePath = clonePath.replace(/\/$/, '');
+    return githubRepoName && normalizedClonePath.split('/').pop() !== githubRepoName
+      ? `${normalizedClonePath}/${githubRepoName}`
+      : normalizedClonePath;
+  });
+
+  // Check directory status when the clone target changes. Only checks once a
+  // repo name is known — the bare parent dir (e.g. ~/Developer) is not the
+  // clone target, and an existing non-empty parent must not block.
+  $effect(() => {
+    const targetPath = githubRepoName ? githubFullClonePath : '';
+    const token = ++githubCloneDirCheckToken;
+    if (!targetPath) {
+      githubCloneDirStatus = null;
+      isCheckingGithubCloneDir = false;
+      return;
+    }
+
+    isCheckingGithubCloneDir = true;
+    const checkPath = async () => {
+      if (typeof window === 'undefined' || !window.electronAPI) {
+        if (token === githubCloneDirCheckToken) isCheckingGithubCloneDir = false;
+        return;
+      }
+      try {
+        const result = await invoke<any>('file:getDirectoryStatus', {
+          path: targetPath,
+        });
+        if (token !== githubCloneDirCheckToken) return;
+        if (result.success && result.data) {
+          githubCloneDirStatus = result.data;
+        } else {
+          githubCloneDirStatus = null;
+        }
+      } catch {
+        if (token !== githubCloneDirCheckToken) return;
+        githubCloneDirStatus = null;
+      } finally {
+        if (token === githubCloneDirCheckToken) isCheckingGithubCloneDir = false;
+      }
+    };
+
+    const timeout = setTimeout(checkPath, 300);
+    return () => clearTimeout(timeout);
+  });
+
+  // Error when the clone target exists and is non-empty. A missing target —
+  // including a missing parent like ~/Developer — is fine: git clone creates
+  // the leading directories.
+  const githubCloneDirError = $derived.by(() => {
+    if (!githubCloneDirStatus?.exists) return undefined;
+    if (!githubCloneDirStatus.isEmpty)
+      return 'Clone destination already exists and is not empty. Choose a different folder, or open it from the Local folder tab.';
+    return undefined;
+  });
+
+  // Re-notify parent when the clone-target check resolves (affects isValid)
+  $effect(() => {
+    // Subscribe to the derived values so the effect re-runs when they change
+    void githubCloneDirError;
+    void isCheckingGithubCloneDir;
+    if (activeTab === 'github') {
+      onProjectChange?.(buildSelection());
+    }
+  });
+
   function applyPersistedRepoSelection(data: WorkspaceInitializerRepoSelection | null) {
     if (!data) return;
     if (data.type === 'local' && data.path) {
@@ -243,24 +331,22 @@
       // handleOnboardingProjectChange. We emit an empty string here and
       // let the next step populate it on first render.
       //
-      // clonePath is the parent directory (e.g. ~/Developer). We append
-      // the repo name so the actual clone target is ~/Developer/repo-name.
-      const repoName = githubUrl
-        .match(/github\.com\/[^/]+\/([^/\s#?]+)/i)?.[1]
-        ?.replace(/\.git$/, '');
-      const normalizedClonePath = clonePath.replace(/\/$/, '');
-      const fullClonePath =
-        repoName && normalizedClonePath.split('/').pop() !== repoName
-          ? `${normalizedClonePath}/${repoName}`
-          : normalizedClonePath;
+      // The full clone target (<clonePath>/<repo>) comes from the shared
+      // deriveds so buildSelection and the pre-flight dir-status check always
+      // agree on the path being validated.
       return {
         type: 'github',
-        repoPath: fullClonePath,
+        repoPath: githubFullClonePath,
         branch: '',
         githubUrl,
-        clonePath: fullClonePath,
-        projectName: repoName,
-        isValid: !!githubUrl && !!clonePath,
+        clonePath: githubFullClonePath,
+        projectName: githubRepoName || undefined,
+        isValid:
+          !!githubUrl &&
+          !!clonePath &&
+          !!githubRepoName &&
+          !githubCloneDirError &&
+          !isCheckingGithubCloneDir,
       };
     } else {
       const nameError = getProjectNameError(projectName);
@@ -362,6 +448,7 @@
           <GitHubRepoTab
             {githubUrl}
             {clonePath}
+            cloneDirError={githubCloneDirError}
             onGithubUrlChange={(url) => {
               githubUrl = url;
               notifyParent();
