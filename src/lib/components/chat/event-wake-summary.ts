@@ -23,11 +23,18 @@ export interface ParsedAgentEvent {
   lastResponseSummary?: string;
 }
 
+/** Event types that mean a child agent finished its work. */
+const COMPLETION_EVENT_TYPES: ReadonlySet<string> = new Set(['agent:idle', 'agent:reportToParent']);
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) return value;
+  }
+  return undefined;
+}
+
 /** Parse agent events from message text and/or metadata. */
-export function parseAgentEvents(
-  text: string,
-  metadata?: EventWakeMetadata,
-): ParsedAgentEvent[] {
+export function parseAgentEvents(text: string, metadata?: EventWakeMetadata): ParsedAgentEvent[] {
   // Use a Map to deduplicate by agentId (later events override earlier ones)
   const agentMap = new Map<string, ParsedAgentEvent>();
 
@@ -36,13 +43,13 @@ export function parseAgentEvents(
     for (const event of metadata.events) {
       const data = event.data as Record<string, unknown>;
       const agentId = data.agentId as string | undefined;
-      if (agentId && (event.type === 'agent:idle' || event.type === 'agent:created')) {
+      if (agentId && (COMPLETION_EVENT_TYPES.has(event.type) || event.type === 'agent:created')) {
         agentMap.set(agentId, {
           type: event.type,
           agentId,
           agentName: data.agentName as string | undefined,
-          completionReport: data.completionReport as string | undefined,
-          lastResponseSummary: data.lastResponseSummary as string | undefined,
+          completionReport: firstNonEmptyString(data.completionReport, data.report),
+          lastResponseSummary: firstNonEmptyString(data.lastResponseSummary),
         });
       }
     }
@@ -66,7 +73,10 @@ export function parseAgentEvents(
       }
       const agentNameMatch = rawSummary.match(/"([^"]+)"/);
       const agentName = agentNameMatch?.[1];
-      if (agentId && (eventMatch[1] === 'agent:idle' || eventMatch[1] === 'agent:created')) {
+      if (
+        agentId &&
+        (COMPLETION_EVENT_TYPES.has(eventMatch[1]) || eventMatch[1] === 'agent:created')
+      ) {
         agentMap.set(agentId, { type: eventMatch[1], agentId, agentName });
       }
     }
@@ -137,13 +147,13 @@ export function summarizeEventWake(
     }
   }
 
-  const idle = events.filter((e) => e.type === 'agent:idle');
+  const completed = events.filter((e) => COMPLETION_EVENT_TYPES.has(e.type));
   const created = events.filter((e) => e.type === 'agent:created');
   const parts: string[] = [];
-  if (idle.length === 1) {
-    parts.push(`Child agent ${idle[0].agentName ?? idle[0].agentId} completed`);
-  } else if (idle.length > 1) {
-    parts.push(`${idle.length} child agents completed`);
+  if (completed.length === 1) {
+    parts.push(`Child agent ${completed[0].agentName ?? completed[0].agentId} completed`);
+  } else if (completed.length > 1) {
+    parts.push(`${completed.length} child agents completed`);
   }
   if (created.length === 1) {
     parts.push(`Child agent ${created[0].agentName ?? created[0].agentId} created`);
@@ -168,10 +178,21 @@ export function summarizeEventWake(
     label = count > 0 ? `${count} workspace event${count === 1 ? '' : 's'}` : 'Workspace events';
   }
 
-  const withReport = idle.find((e) => e.completionReport || e.lastResponseSummary);
+  const withReport = completed.find((e) => e.completionReport || e.lastResponseSummary);
   let preview = withReport?.completionReport ?? withReport?.lastResponseSummary;
-  if (!preview && parts.length === 0 && eventLines.length > 0) {
-    preview = truncatePreview(eventLines[0]);
+  if (!preview && parts.length === 0) {
+    if (eventLines.length > 0) {
+      preview = truncatePreview(eventLines[0]);
+    } else {
+      // Rust daemon wakes are a single unnumbered "[WORKSPACE EVENTS] …" line;
+      // strip the prefix and skip the generic wake header boilerplate.
+      const firstLine = (content.split('\n')[0] ?? '')
+        .replace(/^\[WORKSPACE EVENTS\]\s*/, '')
+        .trim();
+      if (firstLine && !/^You have been woken up by/i.test(firstLine)) {
+        preview = truncatePreview(firstLine);
+      }
+    }
   }
 
   return { label, preview };

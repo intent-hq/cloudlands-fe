@@ -125,6 +125,84 @@ describe('QueuedMessageList', () => {
     expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
   });
 
+  it('renders a reportToParent wake as a completion with the report as preview', () => {
+    const message = queued({
+      content:
+        '[WORKSPACE EVENTS] Child agent Foo (agent-foo-1) completed. Report: Opened PR #410 and all checks pass.',
+      messageMetadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:reportToParent'],
+        events: [
+          {
+            type: 'agent:reportToParent',
+            timestamp: '2026-01-01T00:00:00.000Z',
+            data: {
+              agentId: 'agent-foo-1',
+              agentName: 'Foo',
+              report: 'Opened PR #410 and all checks pass.',
+            },
+          },
+        ],
+      },
+    });
+    const { container } = render(QueuedMessageList, { props: { messages: [message] } });
+
+    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
+    expect(screen.getByText(/Opened PR #410 and all checks pass\./)).toBeTruthy();
+    expect(buttonTooltips(container)).not.toContain('Edit');
+  });
+
+  it('reads the legacy data.report key as the preview for agent:idle wakes', () => {
+    render(QueuedMessageList, {
+      props: {
+        messages: [
+          queued({
+            content: WAKE_TEXT,
+            messageMetadata: {
+              type: 'event_notification',
+              eventCount: 1,
+              eventTypes: ['agent:idle'],
+              events: [
+                {
+                  type: 'agent:idle',
+                  timestamp: '2026-01-01T00:00:00.000Z',
+                  data: {
+                    agentId: 'agent-foo-1',
+                    agentName: 'Foo',
+                    report: 'Fixed the flaky test and reran the suite.',
+                  },
+                },
+              ],
+            },
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
+    expect(screen.getByText(/Fixed the flaky test and reran the suite\./)).toBeTruthy();
+  });
+
+  it('strips the [WORKSPACE EVENTS] prefix as the preview for single-line wakes without metadata', () => {
+    render(QueuedMessageList, {
+      props: {
+        messages: [
+          queued({
+            content:
+              '[WORKSPACE EVENTS] Child agent Foo (agent-foo-1) completed. Report: Did the thing.',
+            messageMetadata: { type: 'event_notification', eventCount: 1 },
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText('1 workspace event')).toBeTruthy();
+    expect(
+      screen.getByText(/Child agent Foo \(agent-foo-1\) completed\. Report: Did the thing\./),
+    ).toBeTruthy();
+  });
+
   it('labels a non-agent event wake with categories derived from eventTypes', () => {
     const { container } = render(QueuedMessageList, {
       props: {
