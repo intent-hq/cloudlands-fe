@@ -233,6 +233,7 @@
             <input
               bind:value={draft.text}
               onkeydown={handleKeydown}
+              aria-label="Type your own answer"
               placeholder="Or type your own answer…"
               class="flex-1 border-none outline-none bg-transparent text-[0.8125rem] font-[inherit] text-foreground py-1"
             />
