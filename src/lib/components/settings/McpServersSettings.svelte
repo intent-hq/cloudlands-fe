@@ -364,6 +364,7 @@
         variant="indicator"
         size="xs"
         class="mb-auto"
+        ariaLabel="Custom MCP Servers"
       />
     </div>
     {#if !isAuggieProvider}
