@@ -68,6 +68,15 @@
     searchResults.length > 0 ? searchResults[currentSearchIndex] : null,
   );
 
+  // Agent Q&A: question cards on assistant messages preceding the last user
+  // message render resolved (any later user message supersedes them).
+  const lastUserMessageIndex = $derived.by(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') return i;
+    }
+    return -1;
+  });
+
   // Methods - exposed for parent components
   export function scrollToMessage(messageId: string) {
     const element = document.getElementById(`message-${messageId}`);
@@ -114,7 +123,11 @@
             />
           {:else}
             <!-- Completed message -->
-            <ChatMessage {message} onCopy={() => handleCopy(extractAllContent(message))} />
+            <ChatMessage
+              {message}
+              onCopy={() => handleCopy(extractAllContent(message))}
+              questionsResolved={messages.indexOf(message) < lastUserMessageIndex}
+            />
           {/if}
         </div>
       {:else if message.role === 'system'}

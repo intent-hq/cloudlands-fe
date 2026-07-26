@@ -58,9 +58,11 @@
     content: ContentBlock[];
     isStreaming?: boolean;
     workspaceId?: string;
+    /** True once a later user message supersedes this message's question cards. */
+    questionsResolved?: boolean;
   }
 
-  let { content, isStreaming = false, workspaceId }: Props = $props();
+  let { content, isStreaming = false, workspaceId, questionsResolved = false }: Props = $props();
 
   // Filter out empty text blocks and deduplicate tool_use blocks by ID.
   // Deduplication: when a skeleton tool_use (vague label) and its follow-up
@@ -329,11 +331,13 @@
   }
 
   // Handlers handed to the MIME-keyed card registry when resolving a §7.1
-  // resource block to its card component (ProposalCard et al.).
-  const cardHandlers = {
+  // resource block to its card component (ProposalCard, QuestionCard et al.).
+  // $derived so question cards flip to resolved when a later user message lands.
+  const cardHandlers = $derived({
     onProposalApply: handleProposalApply,
     onProposalUndo: handleProposalUndo,
-  };
+    questionsResolved,
+  });
 
   /**
    * Generate a stable unique key for a render content block.

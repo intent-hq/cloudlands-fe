@@ -31,6 +31,15 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let shouldFollowBottom = $state(true);
   let showScrollToBottom = $state(false);
 
+  // Agent Q&A: question cards on assistant messages preceding the last user
+  // message render resolved (any later user message supersedes them).
+  const lastUserMessageIndex = $derived.by(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') return i;
+    }
+    return -1;
+  });
+
   function applyAgentSession(session: AgentSession) {
     agent = session;
     messages = session.messages || [];
@@ -194,7 +203,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         }}
         class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 scrollbar-thin scrollbar-thumb-muted scrollbar-track-muted/20 will-change-scroll scroll-container"
       >
-        {#each messages as message (message.id || message.timestamp)}
+        {#each messages as message, messageIndex (message.id || message.timestamp)}
           <div
             class="flex flex-col gap-2 message-container {message.isStreaming
               ? 'streaming-message'
@@ -223,6 +232,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                   : $activeWorkspace?.id
                     ? String($activeWorkspace.id)
                     : undefined}
+                questionsResolved={message.role === 'assistant' &&
+                  messageIndex < lastUserMessageIndex}
               />
             </div>
           </div>

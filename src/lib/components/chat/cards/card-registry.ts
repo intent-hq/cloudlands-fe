@@ -2,11 +2,13 @@ import type { Component } from 'svelte';
 import type { Proposal, ProposalActionDetail } from '$shared/types';
 import { isProposal } from '$shared/types';
 import { PROPOSAL_RESOURCE_MIME_TYPE } from '$shared/types/proposal-resource';
+import { QUESTION_RESOURCE_MIME_TYPE, isQuestion, type Question } from '$shared/types/question-resource';
 import {
   getResourceContents,
   type ResourceBlockContents,
 } from '$shared/types/resource-block-identity';
 import ProposalCard from '../proposals/ProposalCard.svelte';
+import QuestionCard from '../questions/QuestionCard.svelte';
 
 /**
  * MIME-keyed card registry for standalone `{ type: "resource", resource:
@@ -22,6 +24,13 @@ import ProposalCard from '../proposals/ProposalCard.svelte';
 export interface CardHandlers {
   onProposalApply: (detail: ProposalActionDetail) => void;
   onProposalUndo: (proposalId: string) => void;
+  /**
+   * True once ANY later user message exists after the question-bearing
+   * assistant message — questions render inactive/resolved (Agent Q&A wire
+   * contract: resolution is derivational, not id-keyed). Hosts that don't
+   * track this (e.g. read-only transcript views) may omit it.
+   */
+  questionsResolved?: boolean;
 }
 
 /**
@@ -67,6 +76,24 @@ register<Proposal>(PROPOSAL_RESOURCE_MIME_TYPE, {
     proposal,
     onApply: handlers.onProposalApply,
     onUndo: handlers.onProposalUndo,
+  }),
+});
+
+function parseQuestion(contents: ResourceBlockContents): Question | null {
+  try {
+    const question: unknown = JSON.parse(contents.text);
+    return isQuestion(question) ? question : null;
+  } catch {
+    return null;
+  }
+}
+
+register<Question>(QUESTION_RESOURCE_MIME_TYPE, {
+  parse: parseQuestion,
+  component: QuestionCard,
+  props: (question, handlers) => ({
+    question,
+    resolved: handlers.questionsResolved ?? false,
   }),
 });
 

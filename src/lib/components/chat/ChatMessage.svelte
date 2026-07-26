@@ -141,6 +141,8 @@
     backendSessionId?: string | null;
     /** Hide noisy stopped badges for interrupted automated coordination turns. */
     suppressCoordinationStoppedIndicator?: boolean;
+    /** True once a later user message supersedes this message's question cards. */
+    questionsResolved?: boolean;
   }
 
   let {
@@ -167,6 +169,7 @@
     onScrollToPrevious,
     backendSessionId,
     suppressCoordinationStoppedIndicator = false,
+    questionsResolved = false,
   }: Props = $props();
 
   // Per-message Redux subscription. Must be called at component-init time
@@ -1141,6 +1144,7 @@
           {isStreaming}
           {hideToolCalls}
           workspaceId={workspace?.id ? String(workspace.id) : undefined}
+          {questionsResolved}
         />
 
         <!-- Stopped indicator for interrupted messages -->
