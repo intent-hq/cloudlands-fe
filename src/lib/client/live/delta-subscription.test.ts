@@ -406,6 +406,28 @@ describe("createDeltaSubscription", () => {
       dispose();
     });
 
+    it("registers a static channel with its descriptor params verbatim (§6.9 scoped channels)", async () => {
+      liveStateCapability = true;
+      const dispose = createDeltaSubscription<Row>({
+        eventTypes: ["x:changed"],
+        channel: {
+          subscribeMethod: "ws.subscribe",
+          unsubscribeMethod: "ws.unsubscribe",
+          params: { workspaceId: "w1", noteId: "n1" },
+        },
+        matchLegacyEvent: (method) => method === "events.event",
+        fetchAll: vi.fn(async () => []),
+        getId,
+        normalize,
+        handler: vi.fn(),
+      });
+      await flush();
+      expect(channelSubscribes()).toEqual([
+        { method: "ws.subscribe", params: { workspaceId: "w1", noteId: "n1" } },
+      ]);
+      dispose();
+    });
+
     it("does not register the channel on a legacy daemon (no liveState)", async () => {
       liveStateCapability = false;
       const { dispose } = setupChannel([]);
