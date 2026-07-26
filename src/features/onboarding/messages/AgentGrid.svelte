@@ -12,10 +12,7 @@
   import { onMount } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
   import { ACP_PROVIDERS, getDefaultProviderId } from '$shared/config/provider-config';
-  import {
-  AUGGIE_CHANNELS,
-  PROVIDERS_CHANNELS,
-} from '$shared/ipc/channels';
+  import { AUGGIE_CHANNELS } from '$shared/ipc/channels';
   import ProviderCard from './ProviderCard.svelte';
   import type { ProviderBrandColors } from './ProviderCard.svelte';
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
@@ -24,33 +21,25 @@
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
-  setActiveProvider,
-  setProviderEnabled,
-} from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import {
-  reloadModelsForProvider,
-  retryLoadModels,
-} from '$store/renderer/slices/model/model-slice';
-
+    setActiveProvider,
+    setProviderEnabled,
+  } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
 
   import { createLogger } from '$lib/utils/client-logger';
 
   import {
-  selectProviderStatusMap,
-  selectProviderLoadingMap,
-  selectHasCheckedOnce,
-  selectNpxStatus,
-} from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+    selectProviderStatusMap,
+    selectProviderLoadingMap,
+    selectHasCheckedOnce,
+    selectNpxStatus,
+  } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import {
-  checkSingleProviderSuccess,
-  checkSingleProviderFailure,
-  checkAllProvidersRequested,
-  ensureProvidersChecked as ensureProvidersCheckedAction,
-} from '$store/renderer/slices/agent-availability/agent-availability-slice';
-  import type { ProviderStatus } from '$store/renderer/slices/agent-availability/agent-availability-types';
+    checkAllProvidersRequested,
+    ensureProvidersChecked as ensureProvidersCheckedAction,
+  } from '$store/renderer/slices/agent-availability/agent-availability-slice';
 
   import { fly } from 'svelte/transition';
-  import { toast } from 'svelte-sonner';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -73,37 +62,12 @@
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Svelte prop used by parent
   let { onProviderSelected, onAvailabilityChange, horizontal = false }: Props = $props();
 
-
   // Reactive Redux selectors — init at component top level
   const providerStatusMap$ = selectProviderStatusMap();
   const providerLoadingMap$ = selectProviderLoadingMap();
   const hasCheckedOnce$ = selectHasCheckedOnce();
   const activeProviderId$ = selectActiveProviderId();
   const npxStatus$ = selectNpxStatus();
-
-  /**
-   * Check a single provider via IPC and dispatch the result to Redux.
-   * Returns the status for callers that need the immediate result.
-   */
-  async function checkSingleProvider(providerId: string): Promise<ProviderStatus | undefined> {
-    try {
-      const result = await invoke<{
-        success: boolean;
-        providerId: string;
-        data?: ProviderStatus;
-        error?: string;
-      }>(PROVIDERS_CHANNELS.CHECK_SINGLE, providerId);
-      if (result.success && result.data) {
-        appStore.dispatch(checkSingleProviderSuccess(providerId, result.data));
-        return result.data;
-      }
-      appStore.dispatch(checkSingleProviderFailure(providerId));
-    } catch (err) {
-      logger.error(`Failed to check provider ${providerId}`, err as Error);
-      appStore.dispatch(checkSingleProviderFailure(providerId));
-    }
-    return undefined;
-  }
 
   /** Brand colors per provider for the card top area.
    *  `color` is the solid brand color; the gradient fades it vertically
@@ -132,10 +96,7 @@
   }
 
   /** Short descriptions for each provider */
-  const PROVIDER_DESCRIPTIONS: Record<string, string> = {
-    auggie:
-      "Using Augment's agent, you get real-time codebase context, GitHub, Linear, and Sentry integrations.",
-  };
+  const PROVIDER_DESCRIPTIONS: Record<string, string> = {};
 
   /**
    * Install command + docs URL for each provider.
@@ -249,9 +210,7 @@
     return p.authenticated !== false;
   }
 
-  const readyProviderIds = $derived(
-    visibleProviders.filter(isProviderReady).map((p) => p.id),
-  );
+  const readyProviderIds = $derived(visibleProviders.filter(isProviderReady).map((p) => p.id));
 
   const hasAnyProvider = $derived(readyProviderIds.length > 0);
 
@@ -277,22 +236,12 @@
     onProviderSelected?.(providerId);
   }
 
-  // ---------------------------------------------------------------------------
-  // Auggie instructions-only setup surface.
-  //
-  // Post-P2-12c the daemon no longer executes install / OAuth login on the FE's
-  // behalf. AUGGIE_CHANNELS.INSTALL and AUGGIE_CHANNELS.AUTHENTICATE return
-  // `data.instructions` (ordered manual steps) + `data.command` (copyable
-  // shell command) that the user runs in their own terminal. This component
-  // renders those steps and re-runs detection (host.checkAuggie via
-  // provider-availability + AUGGIE_CHANNELS.STATUS) when the user clicks
-  // "check again".
-  // ---------------------------------------------------------------------------
+  // Auggie version gate: AUGGIE_CHANNELS.STATUS drives the "Update needed"
+  // badge. Users complete install/login in their own terminal (the card links
+  // out to the docs); the focus/visibility listeners below re-run detection
+  // when they return to the app.
   const logger = createLogger('AgentGrid');
 
-  let auggieActionInProgress = $state(false);
-  let auggieInstructions = $state<string[] | null>(null);
-  let auggieCommand = $state<string | null>(null);
   let auggieVersionOk = $state<boolean | undefined>(undefined);
   let auggieNeedsUpdate = $derived(auggieVersionOk === false);
 
@@ -308,118 +257,6 @@
       }
     } catch (err) {
       logger.debug('Failed to check auggie version', { error: err });
-    }
-  }
-
-  /** Reset the instructions panel state. */
-  function clearAuggieInstructions() {
-    auggieInstructions = null;
-    auggieCommand = null;
-  }
-
-  /** Called after auggie is detected as ready to refresh models. */
-  async function onAuggieReady() {
-    clearAuggieInstructions();
-    appStore.dispatch(retryLoadModels());
-  }
-
-  // Auto-clear instructions once auggie becomes authenticated
-  $effect(() => {
-    const statusMap = $providerStatusMap$;
-    if (statusMap.auggie?.authenticated === true) {
-      clearAuggieInstructions();
-    }
-  });
-
-  type InstructionResponse = {
-    success: boolean;
-    error?: string;
-    data?: {
-      instructions?: string[];
-      command?: string;
-      authenticated?: boolean;
-      completed?: boolean;
-    };
-  };
-
-  function applyInstructionResponse(result: InstructionResponse): void {
-    if (result.data?.instructions && result.data.instructions.length > 0) {
-      auggieInstructions = result.data.instructions;
-      auggieCommand = result.data.command ?? null;
-    } else if (result.error) {
-      auggieInstructions = [result.error];
-      auggieCommand = result.data?.command ?? null;
-    }
-  }
-
-  /** Ask the daemon for install instructions and render them. */
-  async function installAuggieBinary() {
-    try {
-      auggieActionInProgress = true;
-      const result = await invoke<InstructionResponse>(AUGGIE_CHANNELS.INSTALL);
-      applyInstructionResponse(result);
-    } catch (err) {
-      const message = (err as Error).message;
-      logger.error('Failed to fetch install instructions', { error: err });
-      auggieInstructions = [message];
-      auggieCommand = null;
-    } finally {
-      auggieActionInProgress = false;
-    }
-  }
-
-  /** Ask the daemon whether auggie is authenticated; otherwise render login instructions. */
-  async function loginAuggie() {
-    try {
-      auggieActionInProgress = true;
-      const result = await invoke<InstructionResponse>(AUGGIE_CHANNELS.AUTHENTICATE, {
-        action: 'start',
-      });
-      if (result.success && result.data?.authenticated) {
-        toast.success('Logged in to Auggie');
-        await checkSingleProvider('auggie');
-        await checkAuggieVersion();
-        await onAuggieReady();
-        return;
-      }
-      applyInstructionResponse(result);
-    } catch (err) {
-      const message = (err as Error).message;
-      logger.error('Failed to fetch login instructions', { error: err });
-      auggieInstructions = [message];
-      auggieCommand = null;
-    } finally {
-      auggieActionInProgress = false;
-    }
-  }
-
-  /** Re-run detection after the user completes the manual step. */
-  async function recheckAuggie() {
-    try {
-      auggieActionInProgress = true;
-      const status = await checkSingleProvider('auggie');
-      await checkAuggieVersion();
-      if (status?.available && status?.authenticated === true) {
-        toast.success('Auggie ready');
-        await onAuggieReady();
-        return;
-      }
-      // Not yet ready — refresh the instructions to reflect current state
-      const channel = status?.available
-        ? AUGGIE_CHANNELS.AUTHENTICATE
-        : AUGGIE_CHANNELS.INSTALL;
-      const args = channel === AUGGIE_CHANNELS.AUTHENTICATE ? [{ action: 'start' }] : [];
-      const result = await invoke<InstructionResponse>(channel, ...args);
-      if (result.success && result.data?.authenticated) {
-        toast.success('Logged in to Auggie');
-        await onAuggieReady();
-        return;
-      }
-      applyInstructionResponse(result);
-    } catch (err) {
-      logger.error('Failed to recheck auggie status', { error: err });
-    } finally {
-      auggieActionInProgress = false;
     }
   }
 
@@ -459,14 +296,7 @@
         selected={provider.id === selectedProviderId}
         npxStatus={$npxStatus$}
         {auggieNeedsUpdate}
-        {auggieActionInProgress}
-        {auggieInstructions}
-        {auggieCommand}
         onSelect={handleSelectProvider}
-        onAuggieInstall={installAuggieBinary}
-        onAuggieLogin={() => loginAuggie()}
-        onAuggieRecheck={() => recheckAuggie()}
-        onAuggieDismissInstructions={clearAuggieInstructions}
       />
     </div>
   {/each}
