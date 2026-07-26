@@ -10,8 +10,6 @@
  * sole rendering surface (see `derivePendingQuestions`). Transcript renderers
  * use `isQuestionResourceBlock` to strip them.
  */
-import { getResourceContents } from './resource-block-identity';
-
 export const QUESTION_RESOURCE_MIME_TYPE = 'application/vnd.intent.question+json';
 
 export const QUESTION_RESOURCE_URI_SCHEME = 'intent-question';
@@ -69,7 +67,15 @@ export function isQuestion(value: unknown): value is Question {
  * question blocks from transcript rendering (wizard-only surface).
  */
 export function isQuestionResourceBlock(block: unknown): boolean {
-  return getResourceContents(block)?.mimeType === QUESTION_RESOURCE_MIME_TYPE;
+  if (!block || typeof block !== 'object') return false;
+  const candidate = block as { type?: unknown; resource?: unknown };
+  if (candidate.type !== 'resource') return false;
+  const resource = candidate.resource as { mimeType?: unknown } | null | undefined;
+  return (
+    typeof resource === 'object' &&
+    resource !== null &&
+    resource.mimeType === QUESTION_RESOURCE_MIME_TYPE
+  );
 }
 
 export function getQuestionFromResourceBlock(block: unknown): Question | null {

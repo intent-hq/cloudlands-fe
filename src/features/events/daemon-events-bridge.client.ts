@@ -839,7 +839,9 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   if (state) {
     // Accumulator holds a DIFFERENT turn's message: finalize it as-is and
     // fall through so the trailing blocks land under their own messageId.
-    dispatchStreamUpdate(agentId, state, 'complete', stopReason);
+    // The stopReason belongs to THIS event's messageId — do not stamp the
+    // Stopped badge onto the unrelated accumulated turn.
+    dispatchStreamUpdate(agentId, state, 'complete');
     streamsByAgent.delete(agentId);
   }
   // No local stream state for this turn (pre-first-token): the daemon

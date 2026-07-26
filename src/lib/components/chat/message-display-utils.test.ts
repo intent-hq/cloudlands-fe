@@ -159,4 +159,14 @@ describe('isQuestionOnlyContent', () => {
     expect(isQuestionOnlyContent([])).toBe(false);
     expect(isQuestionOnlyContent([{ type: 'text', text: 'hello' } as ContentBlock])).toBe(false);
   });
+
+  it('true for a malformed question-MIME block (missing uri/text) — the MIME-only strip must still suppress it', () => {
+    // isQuestionResourceBlock is deliberately tolerant: even a question block
+    // that fails full §7.1 shape validation must never surface a bubble.
+    const malformed = {
+      type: 'resource',
+      resource: { mimeType: QUESTION_RESOURCE_MIME_TYPE },
+    } as unknown as ContentBlock;
+    expect(isQuestionOnlyContent([malformed])).toBe(true);
+  });
 });

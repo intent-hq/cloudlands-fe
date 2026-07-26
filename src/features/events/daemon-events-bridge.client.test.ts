@@ -1787,6 +1787,44 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['resource']);
   });
 
+  it('messageId-mismatch stream:end: the stale accumulated turn finalizes WITHOUT the stopReason — only the event messageId gets the interrupted metadata', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const OTHER_MESSAGE_ID = 'msg_assistant_2';
+
+    // Accumulator holds turn A (chunks under MESSAGE_ID)…
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Turn A text',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+    // …but the terminal stream:end targets a DIFFERENT turn B with an
+    // interrupt stopReason. Turn A must finalize clean; turn B's placeholder
+    // carries the interrupted metadata.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: 'stream_2',
+        stopReason: 'interrupted',
+        messageId: OTHER_MESSAGE_ID,
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages.map((m) => m.id)).toEqual([MESSAGE_ID, OTHER_MESSAGE_ID]);
+    const [turnA, turnB] = assistantMessages;
+    expect(turnA.metadata?.interrupted).toBeUndefined();
+    expect(shouldShowStoppedIndicator({ message: turnA, isStreaming: false })).toBe(false);
+    expect(turnB.metadata).toMatchObject({ interrupted: true, stopReason: 'interrupted' });
+    expect(shouldShowStoppedIndicator({ message: turnB, isStreaming: false })).toBe(true);
+  });
+
   it('normal stream:end without trailingBlocks and no local stream state stays a no-op', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
