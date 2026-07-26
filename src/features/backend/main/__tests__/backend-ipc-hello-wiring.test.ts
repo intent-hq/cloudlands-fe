@@ -3,14 +3,37 @@
  * must be constructed with a `helloParams` provider that presents the
  * persisted clientId on every (re)connect, and an `onHelloResult` observer
  * that persists a daemon-returned clientId (first-run mint).
+ *
+ * Also covers the sidecar run-log bridge: the `backend:get-sidecar-run-log`
+ * handler returns the pinned payload, and a sidecar startup failure is
+ * broadcast on `backend:status` with a `sidecarStartupFailed` marker.
  */
 
+import { BrowserWindow, ipcMain } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
 
-const { ctorOptions, mockGetOrCreateClientId, mockPersistClientId } = vi.hoisted(() => ({
+const {
+  ctorOptions,
+  mockGetOrCreateClientId,
+  mockPersistClientId,
+  mockRunLog,
+  startupFailedListeners,
+  mockStartupFailure,
+} = vi.hoisted(() => ({
   ctorOptions: [] as Array<Record<string, unknown>>,
   mockGetOrCreateClientId: vi.fn(async () => 'cli-persisted'),
   mockPersistClientId: vi.fn(async () => {}),
+  mockRunLog: {
+    available: true,
+    startedAt: '2026-07-26T00:00:00.000Z',
+    endedAt: null,
+    exitCode: null,
+    signal: null,
+    spawnError: null,
+    lines: ['line one', 'line two'],
+  },
+  startupFailedListeners: [] as Array<(reason: string) => void>,
+  mockStartupFailure: { current: null as { reason: string } | null },
 }));
 
 vi.mock('../json-rpc-client', () => ({
@@ -43,6 +66,12 @@ vi.mock('../client-identity', () => ({
 
 vi.mock('../intentd-sidecar', () => ({
   onSidecarGaveUp: vi.fn(),
+  onSidecarStartupFailed: vi.fn((listener: (reason: string) => void) => {
+    startupFailedListeners.push(listener);
+    return () => {};
+  }),
+  getSidecarRunLog: vi.fn(() => mockRunLog),
+  getSidecarStartupFailure: vi.fn(() => mockStartupFailure.current),
   spawnSidecarOnDemand: vi.fn(),
 }));
 
@@ -77,5 +106,77 @@ describe('backend.ipc client identity wiring (§5.17)', () => {
     onHelloResult({ clientId: 42 });
     onHelloResult({});
     expect(mockPersistClientId).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('backend.ipc sidecar run-log bridge', () => {
+  it('registers backend:get-sidecar-run-log returning the pinned payload', async () => {
+    const { registerBackendHandlers } = await import('../backend.ipc');
+    registerBackendHandlers();
+
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([channel]) => channel === 'backend:get-sidecar-run-log');
+    expect(call).toBeDefined();
+
+    const handler = call![1] as () => Promise<unknown>;
+    await expect(handler()).resolves.toEqual({
+      available: true,
+      startedAt: '2026-07-26T00:00:00.000Z',
+      endedAt: null,
+      exitCode: null,
+      signal: null,
+      spawnError: null,
+      lines: ['line one', 'line two'],
+    });
+  });
+
+  it('broadcasts a sidecarStartupFailed marker on backend:status when the listener fires', async () => {
+    const { registerBackendHandlers } = await import('../backend.ipc');
+    registerBackendHandlers();
+
+    expect(startupFailedListeners.length).toBeGreaterThan(0);
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValueOnce([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    startupFailedListeners[0]('intentd binary not found');
+
+    expect(send).toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({
+        status: 'disconnected',
+        sidecarStartupFailed: true,
+        reason: 'intentd binary not found',
+      }),
+    );
+  });
+
+  it('exposes a latched startup failure on the backend:get-status response', async () => {
+    const { registerBackendHandlers } = await import('../backend.ipc');
+    registerBackendHandlers();
+
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([channel]) => channel === 'backend:get-status');
+    expect(call).toBeDefined();
+    const handler = call![1] as () => Promise<Record<string, unknown>>;
+
+    mockStartupFailure.current = null;
+    const clean = await handler();
+    expect(clean.sidecarStartupFailed).toBeUndefined();
+    expect(clean.sidecarStartupFailedReason).toBeUndefined();
+
+    mockStartupFailure.current = { reason: 'intentd binary not found' };
+    await expect(handler()).resolves.toEqual(
+      expect.objectContaining({
+        status: 'disconnected',
+        sidecarStartupFailed: true,
+        sidecarStartupFailedReason: 'intentd binary not found',
+      }),
+    );
+    mockStartupFailure.current = null;
   });
 });

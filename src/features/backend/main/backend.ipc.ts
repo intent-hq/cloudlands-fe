@@ -35,7 +35,13 @@ import {
 import { JsonRpcError } from './json-rpc-errors';
 import { getOrCreateClientId, persistClientId } from './client-identity';
 import { formatTransportInfo } from './transport-info';
-import { onSidecarGaveUp, spawnSidecarOnDemand } from './intentd-sidecar';
+import {
+  getSidecarRunLog,
+  getSidecarStartupFailure,
+  onSidecarGaveUp,
+  onSidecarStartupFailed,
+  spawnSidecarOnDemand,
+} from './intentd-sidecar';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 
 const logger = new Logger('Backend-IPC');
@@ -199,6 +205,20 @@ export function registerBackendHandlers(): void {
   ipcMain.handle(BACKEND.GET_STATUS, async () => {
     const client = getBackendClient();
     const transport = formatTransportInfo(client.getConfig());
+    // Boot-time startup failures fire before this module registers its
+    // `onSidecarStartupFailed` listener and before any window exists, so the
+    // broadcast alone is lossy. Expose the latched failure here so the
+    // renderer's boot-time get-status fetch learns about it regardless of
+    // ordering (PR #402 review; spec addendum under "Pinned IPC contract").
+    const startupFailure = getSidecarStartupFailure();
+    if (startupFailure) {
+      return {
+        status: client.getStatus(),
+        transport,
+        sidecarStartupFailed: true as const,
+        sidecarStartupFailedReason: startupFailure.reason,
+      };
+    }
     return { status: client.getStatus(), transport };
   });
 
@@ -236,6 +256,25 @@ export function registerBackendHandlers(): void {
     } catch (error) {
       return { ok: false, spawned: false, error: toErrorPayload(error) };
     }
+  });
+
+  // Per-run sidecar log capture: the renderer's daemon-loss dialog offers to
+  // show the captured stdout/stderr tail from the last sidecar run. The
+  // payload is renderer-safe by construction (no env values, no secrets).
+  ipcMain.handle(BACKEND.GET_SIDECAR_RUN_LOG, async () => getSidecarRunLog());
+
+  // Sidecar posture but the spawn could not happen at all (binary not found,
+  // spawn error): broadcast a `sidecarStartupFailed` marker on the status
+  // channel (same pattern as `sidecarGaveUp`) so the renderer says the
+  // app-managed intentd failed to start instead of "connection was lost".
+  onSidecarStartupFailed((reason) => {
+    const instance = getBackendClient();
+    broadcast(BACKEND.STATUS, {
+      status: instance.getStatus(),
+      sidecarStartupFailed: true,
+      reason,
+      transport: formatTransportInfo(instance.getConfig()),
+    });
   });
 
   // Crash-looping sidecar: the restart policy exhausted its attempts. Reuse

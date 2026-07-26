@@ -11,6 +11,7 @@ import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
 import type {
   DaemonHealthState,
   DaemonHealthStats,
+  SidecarRunLog,
   SystemStatusWirePayload,
   BackendTransportInfo,
 } from './daemon-health-types';
@@ -28,8 +29,14 @@ export const initialState: DaemonHealthState = {
   hostLocality: null,
   sidecarGaveUp: false,
   sidecarGaveUpReason: null,
+  sidecarStartupFailed: false,
+  sidecarStartupFailedReason: null,
+  hasEverConnected: false,
   sidecarSpawnPending: false,
   sidecarSpawnError: null,
+  sidecarRunLog: null,
+  sidecarRunLogPending: false,
+  sidecarRunLogError: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -38,10 +45,12 @@ export const initialState: DaemonHealthState = {
 
 /**
  * Extra fields carried on backend:status disconnect broadcasts (#439):
- * sidecar supervisor gave up restarting, plus a human-readable reason.
+ * sidecar supervisor gave up restarting, or the spawn could not happen at all
+ * (binary not found, spawn error), plus a human-readable reason.
  */
 export interface ConnectionStatusExtras {
   sidecarGaveUp?: boolean;
+  sidecarStartupFailed?: boolean;
   reason?: string;
 }
 
@@ -100,6 +109,29 @@ export const spawnSidecarFailed = createAction<[error: string]>(
   'daemonHealth/spawnSidecarFailed',
 );
 
+/**
+ * User asked for the last-run sidecar log from the daemon-loss dialog. The
+ * daemon-health middleware invokes backend:get-sidecar-run-log (main-process
+ * in-memory capture — no daemon wire request involved).
+ */
+export const fetchSidecarRunLogRequested = createAction(
+  'daemonHealth/fetchSidecarRunLogRequested',
+);
+
+/**
+ * backend:get-sidecar-run-log resolved with the contract-shaped payload.
+ */
+export const fetchSidecarRunLogSucceeded = createAction<[log: SidecarRunLog]>(
+  'daemonHealth/fetchSidecarRunLogSucceeded',
+);
+
+/**
+ * backend:get-sidecar-run-log rejected (bridge unavailable, invoke error).
+ */
+export const fetchSidecarRunLogFailed = createAction<[error: string]>(
+  'daemonHealth/fetchSidecarRunLogFailed',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -117,8 +149,16 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         transport: transport ?? state.transport,
         sidecarGaveUp: false,
         sidecarGaveUpReason: null,
+        sidecarStartupFailed: false,
+        sidecarStartupFailedReason: null,
+        hasEverConnected: true,
         sidecarSpawnPending: false,
         sidecarSpawnError: null,
+        // The dialog dismisses on reconnect — drop the fetched run log with
+        // it; it is stale by the next show.
+        sidecarRunLog: null,
+        sidecarRunLogPending: false,
+        sidecarRunLogError: null,
       };
     } else if (status === 'disconnected' || status === 'connecting') {
       // Connection down or reconnecting — health moves to 'down'.
@@ -132,10 +172,18 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
         sidecarGaveUpReason: extras?.sidecarGaveUp
           ? (extras.reason ?? null)
           : state.sidecarGaveUpReason,
-        // An on-demand spawn that crash-loops to give-up never reaches
-        // 'connected' — clear the pending flag so the fallback button
-        // re-enables for a retry instead of sticking on "Starting sidecar…".
-        sidecarSpawnPending: extras?.sidecarGaveUp ? false : state.sidecarSpawnPending,
+        sidecarStartupFailed: extras?.sidecarStartupFailed ? true : state.sidecarStartupFailed,
+        sidecarStartupFailedReason: extras?.sidecarStartupFailed
+          ? (extras.reason ?? null)
+          : state.sidecarStartupFailedReason,
+        // An on-demand spawn that crash-loops to give-up (or fails to spawn
+        // at all) never reaches 'connected' — clear the pending flag so the
+        // fallback button re-enables for a retry instead of sticking on
+        // "Starting sidecar…".
+        sidecarSpawnPending:
+          extras?.sidecarGaveUp || extras?.sidecarStartupFailed
+            ? false
+            : state.sidecarSpawnPending,
       };
     }
     return state;
@@ -183,4 +231,18 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
   })
   .with(spawnSidecarFailed, (state, { payload: [error] }) => {
     return { ...state, sidecarSpawnPending: false, sidecarSpawnError: error };
+  })
+  .with(fetchSidecarRunLogRequested, (state) => {
+    return { ...state, sidecarRunLogPending: true, sidecarRunLogError: null };
+  })
+  .with(fetchSidecarRunLogSucceeded, (state, { payload: [log] }) => {
+    // A connect reset (pending → false) acts as a cancellation: a fetch that
+    // resolves late must not re-populate the log the connect branch cleared,
+    // or the next failure posture would auto-display a stale log.
+    if (!state.sidecarRunLogPending) return state;
+    return { ...state, sidecarRunLogPending: false, sidecarRunLog: log };
+  })
+  .with(fetchSidecarRunLogFailed, (state, { payload: [error] }) => {
+    if (!state.sidecarRunLogPending) return state;
+    return { ...state, sidecarRunLogPending: false, sidecarRunLogError: error };
   });

@@ -12,9 +12,11 @@ import { disposeDaemonHealthService } from './daemon-health-service';
 import {
   pollSystemStatus,
   spawnSidecarRequested,
+  fetchSidecarRunLogRequested,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type {
   BackendTransportInfo,
+  SidecarRunLog,
   SystemStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -44,6 +46,9 @@ describe('daemon-health-service', () => {
   afterEach(() => {
     disposeDaemonHealthService();
     resetMockIpcRouter();
+    // Dispose the store so session latches (hasEverConnected,
+    // sidecarStartupFailed) don't leak into the next test.
+    appStore.dispose();
     vi.clearAllTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -291,6 +296,32 @@ describe('daemon-health-service', () => {
     expect(state.health).toBe('down');
   });
 
+  it('latches sidecarStartupFailed + reason from the boot-time get-status response (spec addendum)', async () => {
+    // Boot-time startup failures fire before the renderer exists, so the
+    // broadcast alone is lossy — the get-status response carries the latched
+    // extras and the middleware must pass them into connectionStatusChanged.
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
+      status: 'disconnected',
+      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock' },
+      sidecarStartupFailed: true,
+      sidecarStartupFailedReason: 'intentd binary not found',
+    }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      const state = appStore.state.daemonHealth;
+      expect(state.sidecarStartupFailed).toBe(true);
+      expect(state.sidecarStartupFailedReason).toBe('intentd binary not found');
+    });
+    expect(appStore.state.daemonHealth.health).toBe('down');
+  });
+
   it('stores sidecarGaveUp + reason from a give-up disconnect broadcast and clears on reconnect', async () => {
     registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({
       status: 'connected',
@@ -361,6 +392,56 @@ describe('daemon-health-service', () => {
     expect(appStore.state.daemonHealth.sidecarGaveUpReason).toBeNull();
   });
 
+  it('stores sidecarStartupFailed + reason from a startup-failure broadcast and clears on reconnect', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    // Capture the backend:status listener so we can push follow-up events.
+    let statusHandler:
+      | ((payload: {
+          status: string;
+          transport?: BackendTransportInfo;
+          sidecarStartupFailed?: boolean;
+          reason?: string;
+        }) => void)
+      | null = null;
+    window.electronAPI!.on = vi.fn(
+      (channel: string, handler: (payload: { status: string }) => void) => {
+        if (channel === BACKEND.STATUS) statusHandler = handler;
+      },
+    );
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.hasEverConnected).toBe(false);
+
+    // Startup-failure broadcast (pinned contract: sidecarStartupFailed + reason).
+    statusHandler!({
+      status: 'disconnected',
+      sidecarStartupFailed: true,
+      reason: 'intentd binary not found',
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.health).toBe('down');
+    expect(appStore.state.daemonHealth.sidecarStartupFailed).toBe(true);
+    expect(appStore.state.daemonHealth.sidecarStartupFailedReason).toBe(
+      'intentd binary not found',
+    );
+
+    // Reconnect clears the latch and sets the session hasEverConnected latch.
+    statusHandler!({
+      status: 'connected',
+      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock' },
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(appStore.state.daemonHealth.sidecarStartupFailed).toBe(false);
+    expect(appStore.state.daemonHealth.sidecarStartupFailedReason).toBeNull();
+    expect(appStore.state.daemonHealth.hasEverConnected).toBe(true);
+  });
+
   it('invokes backend:spawn-sidecar on spawnSidecarRequested and keeps pending on success', async () => {
     registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
     registerMockIpcHandler(BACKEND.REQUEST, async () => ({
@@ -417,6 +498,71 @@ describe('daemon-health-service', () => {
       expect(appStore.state.daemonHealth.sidecarSpawnPending).toBe(false);
       expect(appStore.state.daemonHealth.sidecarSpawnError).toBe('intentd binary not found');
     });
+  });
+
+  it('invokes backend:get-sidecar-run-log on fetchSidecarRunLogRequested and stores the payload', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    // Contract-shaped payload (spec "Pinned IPC contract").
+    const runLog: SidecarRunLog = {
+      available: true,
+      startedAt: '2026-07-26T00:00:00.000Z',
+      endedAt: '2026-07-26T00:00:05.000Z',
+      exitCode: 1,
+      signal: null,
+      spawnError: null,
+      lines: ['intentd starting', 'error: bind failed'],
+    };
+    const invokeMock = vi.mocked(window.electronAPI!.invoke);
+    invokeMock.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_SIDECAR_RUN_LOG) return runLog;
+      return mockInvoke(channel);
+    });
+
+    appStore.dispatch(fetchSidecarRunLogRequested());
+    expect(appStore.state.daemonHealth.sidecarRunLogPending).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+
+    // Exact channel name pinned by the IPC contract.
+    expect(invokeMock).toHaveBeenCalledWith('backend:get-sidecar-run-log');
+    await vi.waitFor(() => {
+      expect(appStore.state.daemonHealth.sidecarRunLogPending).toBe(false);
+      expect(appStore.state.daemonHealth.sidecarRunLog).toEqual(runLog);
+    });
+    expect(appStore.state.daemonHealth.sidecarRunLogError).toBeNull();
+  });
+
+  it('dispatches fetchSidecarRunLogFailed when backend:get-sidecar-run-log rejects', async () => {
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'disconnected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+      ok: false,
+      error: { code: 'UNAVAILABLE', message: 'backend unavailable' },
+    }));
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+
+    const invokeMock = vi.mocked(window.electronAPI!.invoke);
+    invokeMock.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_SIDECAR_RUN_LOG) throw new Error('bridge unavailable');
+      return mockInvoke(channel);
+    });
+
+    appStore.dispatch(fetchSidecarRunLogRequested());
+    await vi.advanceTimersByTimeAsync(100);
+
+    await vi.waitFor(() => {
+      expect(appStore.state.daemonHealth.sidecarRunLogPending).toBe(false);
+      expect(appStore.state.daemonHealth.sidecarRunLogError).toBe('bridge unavailable');
+    });
+    expect(appStore.state.daemonHealth.sidecarRunLog).toBeNull();
   });
 
   it('shows a one-time dismissible warning toast when the transport reports a version mismatch', async () => {

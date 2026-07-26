@@ -15,8 +15,15 @@ import {
   systemStatusFailure,
   spawnSidecarRequested,
   spawnSidecarFailed,
+  fetchSidecarRunLogRequested,
+  fetchSidecarRunLogSucceeded,
+  fetchSidecarRunLogFailed,
 } from './daemon-health-slice';
-import type { BackendTransportInfo, SystemStatusWirePayload } from './daemon-health-types';
+import type {
+  BackendTransportInfo,
+  SidecarRunLog,
+  SystemStatusWirePayload,
+} from './daemon-health-types';
 
 describe('daemonHealthReducer', () => {
   it('has the correct initial state', () => {
@@ -29,8 +36,14 @@ describe('daemonHealthReducer', () => {
       hostLocality: null,
       sidecarGaveUp: false,
       sidecarGaveUpReason: null,
+      sidecarStartupFailed: false,
+      sidecarStartupFailedReason: null,
+      hasEverConnected: false,
       sidecarSpawnPending: false,
       sidecarSpawnError: null,
+      sidecarRunLog: null,
+      sidecarRunLogPending: false,
+      sidecarRunLogError: null,
     });
   });
 
@@ -150,6 +163,79 @@ describe('daemonHealthReducer', () => {
       const next = daemonHealthReducer(state, connectionStatusChanged('disconnected'));
       expect(next.sidecarSpawnPending).toBe(true);
     });
+
+    it('latches sidecarStartupFailed + reason on a startup-failure disconnect', () => {
+      const state = { ...initialState, transport: sidecarTransport };
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('disconnected', undefined, {
+          sidecarStartupFailed: true,
+          reason: 'intentd binary not found',
+        }),
+      );
+      expect(next.sidecarStartupFailed).toBe(true);
+      expect(next.sidecarStartupFailedReason).toBe('intentd binary not found');
+    });
+
+    it('keeps sidecarStartupFailed latched on subsequent disconnects without extras', () => {
+      const state = {
+        ...initialState,
+        sidecarStartupFailed: true,
+        sidecarStartupFailedReason: 'intentd binary not found',
+      };
+      const next = daemonHealthReducer(state, connectionStatusChanged('disconnected'));
+      expect(next.sidecarStartupFailed).toBe(true);
+      expect(next.sidecarStartupFailedReason).toBe('intentd binary not found');
+    });
+
+    it('clears sidecarStartupFailed state on the next successful connect', () => {
+      const state = {
+        ...initialState,
+        sidecarStartupFailed: true,
+        sidecarStartupFailedReason: 'intentd binary not found',
+      };
+      const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
+      expect(next.sidecarStartupFailed).toBe(false);
+      expect(next.sidecarStartupFailedReason).toBeNull();
+    });
+
+    it('clears pending spawn when the spawn could not happen at all (startup failure)', () => {
+      const state = { ...initialState, sidecarSpawnPending: true };
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('disconnected', undefined, {
+          sidecarStartupFailed: true,
+          reason: 'intentd binary not found',
+        }),
+      );
+      expect(next.sidecarSpawnPending).toBe(false);
+      expect(next.sidecarStartupFailed).toBe(true);
+    });
+
+    it('latches hasEverConnected on the first successful connect', () => {
+      expect(initialState.hasEverConnected).toBe(false);
+      const next = daemonHealthReducer(initialState, connectionStatusChanged('connected'));
+      expect(next.hasEverConnected).toBe(true);
+    });
+
+    it('keeps hasEverConnected latched for the session across later disconnects', () => {
+      const connected = daemonHealthReducer(initialState, connectionStatusChanged('connected'));
+      const next = daemonHealthReducer(connected, connectionStatusChanged('disconnected'));
+      expect(next.hasEverConnected).toBe(true);
+    });
+
+    it('does not set hasEverConnected on disconnect or connecting statuses', () => {
+      const afterDisconnect = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('disconnected'),
+      );
+      expect(afterDisconnect.hasEverConnected).toBe(false);
+      const afterConnecting = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('connecting'),
+      );
+      expect(afterConnecting.hasEverConnected).toBe(false);
+    });
   });
 
   describe('spawnSidecarRequested / spawnSidecarFailed', () => {
@@ -165,6 +251,68 @@ describe('daemonHealthReducer', () => {
       const next = daemonHealthReducer(state, spawnSidecarFailed('intentd binary not found'));
       expect(next.sidecarSpawnPending).toBe(false);
       expect(next.sidecarSpawnError).toBe('intentd binary not found');
+    });
+  });
+
+  describe('fetchSidecarRunLog actions', () => {
+    const runLog: SidecarRunLog = {
+      available: true,
+      startedAt: '2026-07-26T00:00:00.000Z',
+      endedAt: '2026-07-26T00:00:05.000Z',
+      exitCode: 1,
+      signal: null,
+      spawnError: null,
+      lines: ['intentd starting', 'error: bind failed'],
+    };
+
+    it('marks the fetch pending and clears a previous error on request', () => {
+      const state = { ...initialState, sidecarRunLogError: 'earlier failure' };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogRequested());
+      expect(next.sidecarRunLogPending).toBe(true);
+      expect(next.sidecarRunLogError).toBeNull();
+    });
+
+    it('stores the payload and clears pending on success', () => {
+      const state = { ...initialState, sidecarRunLogPending: true };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogSucceeded(runLog));
+      expect(next.sidecarRunLogPending).toBe(false);
+      expect(next.sidecarRunLog).toEqual(runLog);
+    });
+
+    it('clears pending and stores the error on failure', () => {
+      const state = { ...initialState, sidecarRunLogPending: true };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogFailed('bridge unavailable'));
+      expect(next.sidecarRunLogPending).toBe(false);
+      expect(next.sidecarRunLogError).toBe('bridge unavailable');
+    });
+
+    it('drops the fetched run log on the next successful connect', () => {
+      const state = {
+        ...initialState,
+        sidecarRunLog: runLog,
+        sidecarRunLogPending: true,
+        sidecarRunLogError: 'earlier failure',
+      };
+      const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
+      expect(next.sidecarRunLog).toBeNull();
+      expect(next.sidecarRunLogPending).toBe(false);
+      expect(next.sidecarRunLogError).toBeNull();
+    });
+
+    it('ignores a late success when no fetch is pending (connect reset cancels it)', () => {
+      // Connect cleared the log and pending flag; the in-flight fetch then
+      // resolves late — it must not re-populate the stale log.
+      const state = { ...initialState, sidecarRunLogPending: false };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogSucceeded(runLog));
+      expect(next).toBe(state);
+      expect(next.sidecarRunLog).toBeNull();
+    });
+
+    it('ignores a late failure when no fetch is pending', () => {
+      const state = { ...initialState, sidecarRunLogPending: false };
+      const next = daemonHealthReducer(state, fetchSidecarRunLogFailed('bridge unavailable'));
+      expect(next).toBe(state);
+      expect(next.sidecarRunLogError).toBeNull();
     });
   });
 

@@ -69,6 +69,170 @@ function notifySidecarGaveUp(reason: string): void {
   }
 }
 
+/** Listener invoked when the sidecar spawn could not happen at all. */
+type SidecarStartupFailedListener = (reason: string) => void;
+const sidecarStartupFailedListeners = new Set<SidecarStartupFailedListener>();
+
+/**
+ * Register a listener fired when the app is in sidecar posture but the spawn
+ * could not happen at all (binary not found, spawn error). Consumers
+ * (backend.ipc.ts) broadcast this to the renderer so the daemon-loss UI can
+ * say the app-managed intentd failed to start. Returns a disposer.
+ */
+export function onSidecarStartupFailed(listener: SidecarStartupFailedListener): () => void {
+  sidecarStartupFailedListeners.add(listener);
+  return () => {
+    sidecarStartupFailedListeners.delete(listener);
+  };
+}
+
+/**
+ * Latched most-recent startup failure. Boot-time failures fire before
+ * backend.ipc.ts registers its listener and before any window exists, so the
+ * notify/broadcast path alone is lossy; late consumers (the
+ * `backend:get-status` handler) query this instead. Cleared when a new spawn
+ * attempt begins.
+ */
+let sidecarStartupFailure: { reason: string } | null = null;
+
+/**
+ * Latched startup failure (spawn could not happen at all), or null. Exposed
+ * on the `backend:get-status` response so delivery is ordering-independent
+ * (see PR #402 review).
+ */
+export function getSidecarStartupFailure(): { reason: string } | null {
+  return sidecarStartupFailure;
+}
+
+function notifySidecarStartupFailed(reason: string): void {
+  sidecarStartupFailure = { reason };
+  for (const listener of sidecarStartupFailedListeners) {
+    try {
+      listener(reason);
+    } catch (error) {
+      logger.warn('sidecar startup-failed listener threw', { error });
+    }
+  }
+}
+
+/**
+ * Renderer-safe snapshot of the most recent sidecar run (pinned IPC contract
+ * for `backend:get-sidecar-run-log`). No env values or secrets.
+ */
+export interface SidecarRunLog {
+  /** False when no sidecar run has ever been captured this app session. */
+  available: boolean;
+  /** ISO timestamp of the most recent spawn (or failed spawn attempt). */
+  startedAt: string | null;
+  /** Null while the run is still in progress. */
+  endedAt: string | null;
+  exitCode: number | null;
+  signal: string | null;
+  /** e.g. "intentd binary not found" when the spawn could not happen. */
+  spawnError: string | null;
+  /** Tail of combined stdout+stderr, capped at the last 400 lines. */
+  lines: string[];
+}
+
+/** Cap on the combined stdout+stderr tail retained per run. */
+const SIDECAR_RUN_LOG_MAX_LINES = 400;
+
+interface SidecarRunRecord {
+  startedAt: string;
+  endedAt: string | null;
+  exitCode: number | null;
+  signal: string | null;
+  spawnError: string | null;
+  lines: string[];
+  /** Trailing partial line awaiting its newline (data chunks are not line-aligned). */
+  pendingPartial: string;
+}
+
+/**
+ * Most recent run record (in-memory, current app session only). A new spawn
+ * starts a fresh record; until then the previous record IS "the last run".
+ */
+let currentRunRecord: SidecarRunRecord | null = null;
+
+function beginSidecarRunRecord(): SidecarRunRecord {
+  // A new attempt supersedes any latched startup failure from a prior one.
+  sidecarStartupFailure = null;
+  currentRunRecord = {
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    exitCode: null,
+    signal: null,
+    spawnError: null,
+    lines: [],
+    pendingPartial: '',
+  };
+  return currentRunRecord;
+}
+
+function pushRunLogLine(record: SidecarRunRecord, rawLine: string): void {
+  const line = rawLine.trimEnd();
+  if (line.length === 0) return;
+  record.lines.push(line);
+  if (record.lines.length > SIDECAR_RUN_LOG_MAX_LINES) {
+    record.lines.splice(0, record.lines.length - SIDECAR_RUN_LOG_MAX_LINES);
+  }
+}
+
+/**
+ * Append output to a run record, keeping only the last N complete lines. A
+ * line straddling two data chunks is buffered until its newline arrives so it
+ * is recorded once, not split into two entries.
+ */
+function appendRunLogLines(record: SidecarRunRecord, text: string): void {
+  const segments = (record.pendingPartial + text).split('\n');
+  record.pendingPartial = segments.pop() ?? '';
+  for (const segment of segments) {
+    pushRunLogLine(record, segment);
+  }
+}
+
+/** Flush any buffered partial line (no newline will ever arrive). */
+function flushRunLogPartial(record: SidecarRunRecord): void {
+  if (record.pendingPartial.length > 0) {
+    pushRunLogLine(record, record.pendingPartial);
+    record.pendingPartial = '';
+  }
+}
+
+/** Snapshot of the most recent sidecar run for the renderer (see [[SidecarRunLog]]). */
+export function getSidecarRunLog(): SidecarRunLog {
+  if (!currentRunRecord) {
+    return {
+      available: false,
+      startedAt: null,
+      endedAt: null,
+      exitCode: null,
+      signal: null,
+      spawnError: null,
+      lines: [],
+    };
+  }
+  // Include a buffered partial trailing line in the snapshot (without
+  // mutating the record) so a live view is not missing the newest output.
+  const lines = [...currentRunRecord.lines];
+  const partial = currentRunRecord.pendingPartial.trimEnd();
+  if (partial.length > 0) {
+    lines.push(partial);
+    if (lines.length > SIDECAR_RUN_LOG_MAX_LINES) {
+      lines.splice(0, lines.length - SIDECAR_RUN_LOG_MAX_LINES);
+    }
+  }
+  return {
+    available: true,
+    startedAt: currentRunRecord.startedAt,
+    endedAt: currentRunRecord.endedAt,
+    exitCode: currentRunRecord.exitCode,
+    signal: currentRunRecord.signal,
+    spawnError: currentRunRecord.spawnError,
+    lines,
+  };
+}
+
 /**
  * Test seam: reset module state for testing.
  * @internal
@@ -91,6 +255,9 @@ export function __resetIntentdSidecarForTesting(): void {
   isShuttingDown = false;
   consecutiveFailures = 0;
   sidecarGaveUpListeners.clear();
+  sidecarStartupFailedListeners.clear();
+  currentRunRecord = null;
+  sidecarStartupFailure = null;
   spawnOnDemandInFlight = null;
 }
 
@@ -442,11 +609,16 @@ async function spawnSidecarProcess(
     spawnEnv.INTENTD_DATA_DIR = env.INTENTD_DATA_DIR.trim();
   }
 
-  sidecarProcess = spawn(binaryPath, ['serve'], {
+  const proc = spawn(binaryPath, ['serve'], {
     env: spawnEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
   });
+  sidecarProcess = proc;
+
+  // Fresh per-run record for this spawn; the previous record was "the last
+  // run" until now. Each handler below closes over its own run's record.
+  const runRecord = beginSidecarRunRecord();
 
   // Initialize restart policy if not already done
   if (!restartPolicy) {
@@ -454,18 +626,27 @@ async function spawnSidecarProcess(
   }
   restartPolicy.onSpawn();
 
-  sidecarProcess.stdout?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString('utf8').trim();
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    const raw = chunk.toString('utf8');
+    appendRunLogLines(runRecord, raw);
+    const text = raw.trim();
     if (text) logger.info(`[intentd stdout] ${text}`);
   });
 
-  sidecarProcess.stderr?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString('utf8').trim();
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    const raw = chunk.toString('utf8');
+    appendRunLogLines(runRecord, raw);
+    const text = raw.trim();
     if (text) logger.warn(`[intentd stderr] ${text}`);
   });
 
-  sidecarProcess.on('exit', (code, signal) => {
+  proc.on('exit', (code, signal) => {
     logger.info('Sidecar exited', { code, signal });
+
+    flushRunLogPartial(runRecord);
+    runRecord.endedAt = new Date().toISOString();
+    runRecord.exitCode = code;
+    runRecord.signal = signal;
 
     // Clear watchdog timer, kill escalation timer, and reset failure counter
     if (watchdogTimer) {
@@ -511,8 +692,20 @@ async function spawnSidecarProcess(
     }, decision.delayMs);
   });
 
-  sidecarProcess.on('error', (err: Error) => {
+  proc.on('error', (err: Error) => {
     logger.error('Sidecar process error', err);
+    // Node embeds the absolute binary path in spawn errors (e.g.
+    // "spawn /path/to/intentd ENOENT"); the run-log/status payloads are
+    // renderer-facing and the pinned contract allows no absolute paths except
+    // logFilePath — redact the path (full detail stays in the main log above).
+    const reason = err.message.split(binaryPath).join('intentd binary');
+    runRecord.spawnError = reason;
+    // A spawn-time failure (e.g. ENOENT) never assigns a pid and fires no
+    // 'exit': close out the record and surface it as a startup failure.
+    if (proc.pid === undefined) {
+      if (!runRecord.endedAt) runRecord.endedAt = new Date().toISOString();
+      notifySidecarStartupFailed(reason);
+    }
   });
 
   // Start the health watchdog after spawning
@@ -591,6 +784,15 @@ export async function startIntentdSidecar(
       cwd,
       intentdBinEnv: env.INTENTD_BIN ?? null,
     });
+    // Sidecar posture but the spawn could not happen at all: record the
+    // failed attempt as "the last run" and surface it to the renderer so the
+    // daemon-loss UI says the app-managed intentd failed to start instead of
+    // falsely claiming it is being restarted.
+    const reason = 'intentd binary not found';
+    const record = beginSidecarRunRecord();
+    record.endedAt = record.startedAt;
+    record.spawnError = reason;
+    notifySidecarStartupFailed(reason);
     return;
   }
 

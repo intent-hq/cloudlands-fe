@@ -22,9 +22,13 @@ import {
   heartbeatFailed,
   spawnSidecarRequested,
   spawnSidecarFailed,
+  fetchSidecarRunLogRequested,
+  fetchSidecarRunLogSucceeded,
+  fetchSidecarRunLogFailed,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type {
   BackendTransportInfo,
+  SidecarRunLog,
   SystemStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
@@ -161,6 +165,26 @@ async function spawnSidecar(): Promise<void> {
 }
 
 /**
+ * Invoke backend:get-sidecar-run-log (main-process in-memory per-run capture)
+ * and dispatch the contract-shaped payload or the failure into the slice.
+ */
+async function fetchSidecarRunLog(): Promise<void> {
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (!api) {
+    appStore.dispatch(fetchSidecarRunLogFailed('electronAPI is not available'));
+    return;
+  }
+  try {
+    const log = (await api.invoke(BACKEND.GET_SIDECAR_RUN_LOG)) as SidecarRunLog;
+    appStore.dispatch(fetchSidecarRunLogSucceeded(log));
+  } catch (error) {
+    appStore.dispatch(
+      fetchSidecarRunLogFailed(error instanceof Error ? error.message : String(error)),
+    );
+  }
+}
+
+/**
  * Boot-time setup: listen to backend:status and start polling.
  */
 function boot(): void {
@@ -171,16 +195,19 @@ function boot(): void {
   if (!api) return;
 
   // Listen for backend:status events (connection status changes).
-  // Disconnect broadcasts may additionally carry sidecarGaveUp/reason (#439).
+  // Disconnect broadcasts may additionally carry sidecarGaveUp /
+  // sidecarStartupFailed / reason (#439).
   statusListener = (payload: {
     status: string;
     transport?: BackendTransportInfo;
     sidecarGaveUp?: boolean;
+    sidecarStartupFailed?: boolean;
     reason?: string;
   }) => {
     appStore.dispatch(
       connectionStatusChanged(payload.status, payload.transport, {
         sidecarGaveUp: payload.sidecarGaveUp,
+        sidecarStartupFailed: payload.sidecarStartupFailed,
         reason: payload.reason,
       }),
     );
@@ -188,13 +215,28 @@ function boot(): void {
   };
   api.on(BACKEND.STATUS, statusListener);
 
-  // Fetch initial connection status.
+  // Fetch initial connection status. Boot-time sidecar startup failures fire
+  // before this renderer exists, so the broadcast alone is lossy — the main
+  // process latches the failure and exposes it on the get-status response
+  // (spec addendum), making delivery ordering-independent.
   void api
     .invoke(BACKEND.GET_STATUS)
-    .then((result: { status: string; transport?: BackendTransportInfo }) => {
-      appStore.dispatch(connectionStatusChanged(result.status, result.transport));
-      maybeNotifyVersionMismatch(result.transport);
-    })
+    .then(
+      (result: {
+        status: string;
+        transport?: BackendTransportInfo;
+        sidecarStartupFailed?: boolean;
+        sidecarStartupFailedReason?: string;
+      }) => {
+        appStore.dispatch(
+          connectionStatusChanged(result.status, result.transport, {
+            sidecarStartupFailed: result.sidecarStartupFailed,
+            reason: result.sidecarStartupFailedReason,
+          }),
+        );
+        maybeNotifyVersionMismatch(result.transport);
+      },
+    )
     .catch(() => {
       // Bridge not ready yet — status events + polling converge the state.
     });
@@ -218,6 +260,10 @@ export function createDaemonHealthMiddleware(): StoreMiddleware {
     // User asked for the sidecar fallback from the daemon-loss UI (#439).
     if (action.type === spawnSidecarRequested.type) {
       void spawnSidecar();
+    }
+    // User asked for the last-run sidecar log from the daemon-loss dialog.
+    if (action.type === fetchSidecarRunLogRequested.type) {
+      void fetchSidecarRunLog();
     }
     return result;
   };
