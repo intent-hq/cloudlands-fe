@@ -114,7 +114,10 @@
     triggerClass?: string;
     defaultModelId?: string;
     showDefaultOption?: boolean;
+    // Gates workspace/agent-session updates (setWorkspaceModel, updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
+    // Gates the global selectModel dispatch (persisted default); Settings default picker only.
+    updateGlobalDefault?: boolean;
     silentFallback?: boolean;
     showProviderWarningNotice?: boolean;
   }
@@ -139,6 +142,7 @@
     defaultModelId,
     showDefaultOption = false,
     updateGlobalStore = false,
+    updateGlobalDefault = false,
     silentFallback = false,
     showProviderWarningNotice,
   }: Props = $props();
@@ -489,14 +493,8 @@
   }
 
   async function handleModelSelect(model: string | undefined) {
-    logger.debug('Model selected:', {
-      model,
-      previousModel: localModel,
-      workspaceId,
-      agentId,
-      deferUpdate,
-      updateGlobalStore,
-    });
+    logger.debug('Model selected:', { model, previousModel: localModel, workspaceId, agentId });
+    logger.debug('Model pick flags:', { deferUpdate, updateGlobalStore, updateGlobalDefault });
     // Update local state before async work so the UI responds immediately.
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
@@ -507,11 +505,8 @@
 
       await tick();
 
-      if (!updateGlobalStore) {
-        return;
-      }
-
-      appStore.dispatch(selectModel(model));
+      if (updateGlobalDefault) appStore.dispatch(selectModel(model));
+      if (!updateGlobalStore) return;
 
       if (workspaceId) {
         appStore.dispatch(setWorkspaceModel({ workspaceId, model }));
