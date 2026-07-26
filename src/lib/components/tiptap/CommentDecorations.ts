@@ -83,6 +83,11 @@ function createDecorations(doc: ProseMirrorNode, comments: AnyComment[]): Decora
         anchors.start,
         anchors.end,
         {
+          // Wrap each decoration in its own element so overlapping ranges
+          // stack as nested spans. Without nodeName, prosemirror-view merges
+          // all active decoration attributes onto one span and a colliding
+          // data-comment-id would be overwritten by the other comment's.
+          nodeName: 'span',
           class: getCommentClass(comment),
           'data-comment-id': commentId,
           'data-comment-status': comment.status,
@@ -319,8 +324,10 @@ export const commentDecorationStyles = `
     color: hsl(var(--warning) / 0.8);
   }
 
-  /* Overlapping comments */
-  .comment-highlight + .comment-highlight {
+  /* Overlapping comments — each decoration wraps its own span (nodeName),
+     so overlap regions render as NESTED highlight spans, never adjacent
+     siblings (siblings are just split segments of a single comment). */
+  .comment-highlight .comment-highlight {
     background: linear-gradient(
       45deg,
       hsl(var(--warning) / 0.2) 25%,
