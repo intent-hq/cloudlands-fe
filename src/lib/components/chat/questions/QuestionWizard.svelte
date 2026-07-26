@@ -6,7 +6,9 @@
   Skip clears + advances, Back returns with the previous answer pre-selected.
   Ignore collapses the well to a compact re-expandable banner (transient —
   the host owns the collapse flag; nothing is persisted). On the last
-  question Send hands the full answers array to `onComplete`.
+  question Send hands the full answers array to `onComplete`. Single-question
+  wizards hide the step counter, progress segments, and Back button — none
+  carry information when there is only one step.
 -->
 <script lang="ts" module>
   import type { Question } from '$shared/types/question-resource';
@@ -58,6 +60,8 @@
   const draft = $derived(answers[idx]);
   const isLast = $derived(idx === questions.length - 1);
   const isMulti = $derived(!!current?.multiSelect);
+  // Single-question wizards drop the counter, segments, and Back button.
+  const multiStep = $derived(questions.length > 1);
   // Single-select mid-flow advances on selection — no Next button.
   const showNext = $derived(isMulti || isLast);
   const nextDisabled = $derived(
@@ -153,18 +157,21 @@
     <div class="flex items-center gap-2.5 px-3.5 pt-2.5">
       <Fa icon={faCircleQuestion} class="text-xs text-primary" />
       <span class="text-xs font-medium text-foreground">Agent Has Questions</span>
-      <span class="text-xs text-subtle">{idx + 1} of {questions.length}</span>
-      <span class="flex items-center gap-1">
-        {#each questions as _, i (i)}
-          <span
-            class="w-3.5 h-1 rounded-[2px] {i < idx
-              ? 'bg-primary/40'
-              : i === idx
-                ? 'bg-primary'
-                : 'bg-muted-foreground/25'}"
-          ></span>
-        {/each}
-      </span>
+      {#if multiStep}
+        <span class="text-xs text-subtle">{idx + 1} of {questions.length}</span>
+        <span class="flex items-center gap-1">
+          {#each questions as _, i (i)}
+            <span
+              data-progress-segment
+              class="w-3.5 h-1 rounded-[2px] {i < idx
+                ? 'bg-primary/40'
+                : i === idx
+                  ? 'bg-primary'
+                  : 'bg-muted-foreground/25'}"
+            ></span>
+          {/each}
+        </span>
+      {/if}
       {#if isMulti}
         <span class="text-[0.7rem] px-1.75 py-px rounded-full bg-secondary text-subtle">
           select all that apply
@@ -248,17 +255,19 @@
 
         <!-- Footer -->
         <div class="flex items-center gap-2 px-3.5 pt-0.5 pb-3">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.25 border-none bg-transparent text-xs font-[inherit] px-2 py-1 rounded-(--radius) {idx === 0
-              ? 'text-ghost opacity-50 cursor-default'
-              : 'text-subtle cursor-pointer hover:text-foreground'}"
-            disabled={idx === 0}
-            onclick={handleBack}
-          >
-            <Fa icon={faChevronLeft} class="text-[9px] a11y-ignore" />
-            Back
-          </button>
+          {#if multiStep}
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.25 border-none bg-transparent text-xs font-[inherit] px-2 py-1 rounded-(--radius) {idx === 0
+                ? 'text-ghost opacity-50 cursor-default'
+                : 'text-subtle cursor-pointer hover:text-foreground'}"
+              disabled={idx === 0}
+              onclick={handleBack}
+            >
+              <Fa icon={faChevronLeft} class="text-[9px] a11y-ignore" />
+              Back
+            </button>
+          {/if}
           {#if !isMulti && !isLast}
             <span class="text-[0.7rem] text-ghost">
               Selecting an option moves to the next question
