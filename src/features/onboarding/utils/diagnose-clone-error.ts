@@ -33,6 +33,8 @@ export interface CloneErrorDiagnosis {
  */
 const DAEMON_CODE_TO_KIND: Record<string, CloneErrorKind> = {
   'auth-required': 'auth-required',
+  'repo-not-found': 'repo-not-found',
+  'access-denied': 'access-denied',
   network: 'network',
   'destination-exists-non-empty': 'destination-exists',
   'path-invalid': 'path-invalid',
