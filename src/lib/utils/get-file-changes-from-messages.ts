@@ -388,9 +388,13 @@ function isNotePath(filePath: string): boolean {
  * Extract file change from a tool_use content block
  */
 function extractFileChangeFromBlock(block: ContentBlock): ChatFileChange | null {
-  const rawToolName = block.name || block.toolName || '';
-  // Tool names are not guaranteed to be strings; treat non-strings as missing
-  const toolName = typeof rawToolName === 'string' ? rawToolName : '';
+  // Tool names are not guaranteed to be strings; use the first non-empty string candidate
+  const toolName =
+    typeof block.name === 'string' && block.name
+      ? block.name
+      : typeof block.toolName === 'string'
+        ? block.toolName
+        : '';
   // Input can be in block.input or block.metadata?.toolInput (from auggie parser)
   const input = block.input || (block.metadata as Record<string, any>)?.toolInput || {};
   const id = block.id || block.tool_use_id || (block.metadata as Record<string, any>)?.toolId || '';

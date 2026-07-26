@@ -645,5 +645,22 @@ describe('getFileChangesFromMessage', () => {
       const result = getFileChangesFromMessage(message);
       expect(result.changes).toHaveLength(0);
     });
+
+    it('falls back to a string toolName when name is a truthy non-string', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-name-fallback',
+          name: 42,
+          toolName: 'save_file',
+          input: { path: 'src/from-tool-name.ts', file_content: 'content' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].filePath).toBe('src/from-tool-name.ts');
+      expect(result.changes[0].toolName).toBe('save_file');
+    });
   });
 });
