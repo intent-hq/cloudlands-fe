@@ -1735,6 +1735,9 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
 
     // Simulate the chat-read-service hydration reconcile: the persisted row
     // carries the SAME canonical trailing block under the SAME message id.
+    // The live-finalized assistant row is KEPT in the incoming list so this
+    // exercises the upsert-path dedupe (same-id collapse), not a constructed
+    // end state.
     const session = readSession()!;
     appStore.dispatch(
       bulkUpsertSessions([
@@ -1743,7 +1746,7 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
           isStreaming: false,
           status: AgentStatus.Idle,
           messages: [
-            ...(session.messages ?? []).filter((m) => m.role !== 'assistant'),
+            ...(session.messages ?? []),
             {
               id: MESSAGE_ID,
               role: 'assistant',

@@ -863,6 +863,15 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         ...(stopReason ? { stopReason } : {}),
       }),
     );
+    return;
+  }
+  if (trailingBlocks.length > 0) {
+    // Daemon/FE version skew: PROTOCOL §7 pairs trailingBlocks with messageId,
+    // so a bare delivery has nowhere to land. Log instead of dropping silently.
+    logger.debug('Dropping agent:stream:end trailingBlocks without a messageId', {
+      agentId,
+      trailingBlockCount: trailingBlocks.length,
+    });
   }
 }
 
