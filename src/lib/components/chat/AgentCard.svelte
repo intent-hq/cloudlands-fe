@@ -75,6 +75,8 @@
     hidePreview?: boolean;
     /** Optional workspace to load agent session from (for home page usage) */
     workspace?: Workspace | null;
+    /** Whether the agent has finished its delegated work (forces completed avatar state) */
+    isCompleted?: boolean;
   }
 
   let {
@@ -90,6 +92,7 @@
     showStateBorder = false,
     hidePreview = false,
     workspace = null,
+    isCompleted = false,
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
@@ -342,6 +345,7 @@
       },
       {
         hasPermissionRequest: $agentPermCount > 0,
+        isCompleted,
       },
     ),
   );

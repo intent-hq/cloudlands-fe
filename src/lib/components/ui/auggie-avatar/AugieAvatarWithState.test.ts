@@ -100,7 +100,8 @@ describe('AugieAvatarWithState avatar wiring', () => {
 
     const avatar = screen.getByTestId('mock-auggie-avatar');
     expectReadableAgentArg(selectAgentProviderMock, 'codex-agent');
-    expect(avatar.parentElement?.classList.contains('opacity-30')).toBe(true);
+    expect(avatar.parentElement?.classList.contains('grayscale')).toBe(true);
+    expect(avatar.parentElement?.classList.contains('opacity-60')).toBe(true);
     expect(document.querySelector('[data-icon="check"]')).toBeNull();
   });
 
@@ -135,7 +136,28 @@ describe('AugieAvatarWithState avatar wiring', () => {
     render(AugieAvatarWithState, { props: { agentId: 'auggie-agent', state: 'completed' } });
 
     const avatar = screen.getByTestId('mock-auggie-avatar');
-    expect(avatar.parentElement?.classList.contains('opacity-30')).toBe(true);
+    expect(avatar.parentElement?.classList.contains('grayscale')).toBe(true);
+    expect(avatar.parentElement?.classList.contains('opacity-60')).toBe(true);
     expect(document.querySelector('[data-icon="check"]')).not.toBeNull();
+  });
+
+  it('keeps the completed check indicator outside the grayscale wrapper so it stays colored', () => {
+    render(AugieAvatarWithState, { props: { agentId: 'auggie-agent', state: 'completed' } });
+
+    const check = document.querySelector('[data-icon="check"]');
+    expect(check).not.toBeNull();
+    expect(check?.closest('.grayscale')).toBeNull();
+  });
+
+  it('does not apply grayscale to non-completed states', () => {
+    for (const state of ['running', 'failed', 'needs-permission', 'waiting', 'idle'] as const) {
+      const { unmount } = render(AugieAvatarWithState, {
+        props: { agentId: 'auggie-agent', state },
+      });
+      const avatar = screen.getByTestId('mock-auggie-avatar');
+      expect(avatar.parentElement?.classList.contains('grayscale')).toBe(false);
+      expect(avatar.parentElement?.classList.contains('opacity-60')).toBe(false);
+      unmount();
+    }
   });
 });

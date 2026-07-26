@@ -40,7 +40,7 @@
   // Indicator size scales with avatar size
   let indicatorSize = $derived(Math.max(6, Math.round(size * 0.3)));
 
-  // Whether to show as dimmed (completed agents)
+  // Whether to show as dimmed monochrome (completed agents)
   let isDimmed = $derived(state === 'completed');
 
   // svelte-ignore state_referenced_locally -- selector args are mirrored into a readable for mounted avatar reuse.
@@ -53,8 +53,11 @@
 
 </script>
 
-<div class={cn('relative inline-flex', isDimmed ? 'opacity-30' : '', className)}>
-  <AuggieAvatar {agentId} {size} {specialist} />
+<div class={cn('relative inline-flex', className)}>
+  <!-- Grayscale/dim only the avatar so the completed check indicator stays colored -->
+  <span class={cn('inline-flex', isDimmed ? 'grayscale opacity-60' : '')}>
+    <AuggieAvatar {agentId} {size} {specialist} />
+  </span>
 
   {#if state === 'running' || state === 'responding'}
     <!-- Running indicator - green pulsing dot -->
