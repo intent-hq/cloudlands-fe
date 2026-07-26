@@ -5,7 +5,9 @@
  * `workspaceId` when supplied (daemon `note.get` requires one), falling back
  * to resolving the note's workspace via the cache. Every listed note's
  * workspace is cached so note-scoped clients (tasks, comments) can resolve it.
- * `subscribe` aggregates notes across workspaces and refetches on `note:*`.
+ * `subscribe` aggregates notes across workspaces — converging via one typed
+ * per-workspace `note.subscribe` channel per workspace (PROTOCOL §6.9) on
+ * liveState daemons, and refetching on legacy `note:*` events otherwise.
  */
 import { AuthorType, ContentType, NoteVisibility } from "$shared/types";
 import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
@@ -30,6 +32,7 @@ import {
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
   runMutation,
+  subscribeWorkspaceIds,
 } from "./live-support";
 
 /**
@@ -361,9 +364,29 @@ export class LiveNotesClient implements NotesClient {
     return result;
   }
 
+  /**
+   * Subscribe to notes across every workspace.
+   *
+   * Typed §6.9 channel: on liveState daemons one per-workspace
+   * `note.subscribe` (`{ workspaceId }`) is registered per id yielded by
+   * `subscribeWorkspaceIds` — the same enumeration `fetchAll` flattens over.
+   * Workspace add → a new channel registers and its snapshot merges in;
+   * workspace delete → the channel unsubscribes and its notes are evicted.
+   * While ANY workspace channel lacks a push-confirmed registration the
+   * subscription stays legacy and refetches keep serving (the #775 safety
+   * net); daemons without liveState never register channels at all.
+   */
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe {
     return createDeltaSubscription<Note>({
       eventTypes: ["note:created", "note:updated", "note:deleted"],
+      channel: {
+        subscribeMethod: "note.subscribe",
+        unsubscribeMethod: "note.unsubscribe",
+        dynamic: {
+          subscribeIds: subscribeWorkspaceIds,
+          paramsForId: (id) => ({ workspaceId: id }),
+        },
+      },
       matchLegacyEvent: (method, params) => isEventInFamily(method, params, "note"),
       fetchAll: async () => {
         const ids = await listWorkspaceIds();
@@ -371,10 +394,13 @@ export class LiveNotesClient implements NotesClient {
         return perWorkspace.flat();
       },
       getId: (raw) => String(raw.id ?? ""),
+      // Push-path entities are the daemon's wire `Note` (§9.1), which always
+      // carries `workspaceId` (camelCase serde) — no per-channel stamping.
       normalize: (raw) => {
         const workspaceId = String(raw.workspaceId ?? "");
+        if (!workspaceId) return null;
         const note = normalizeNote(raw, workspaceId);
-        rememberNoteWorkspace(String(note.id), String(note.workspaceId));
+        rememberNoteWorkspace(String(note.id), workspaceId);
         return note;
       },
       handler,
