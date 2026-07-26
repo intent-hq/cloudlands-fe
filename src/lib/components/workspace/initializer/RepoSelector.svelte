@@ -347,7 +347,11 @@
     }
     return typeFiltered.filter((repo) => {
       const search = searchTerm.toLowerCase();
-      return repo.name.toLowerCase().includes(search) || repo.path.toLowerCase().includes(search);
+      return (
+        repo.name.toLowerCase().includes(search) ||
+        repo.path.toLowerCase().includes(search) ||
+        (repo.owner && repo.owner.toLowerCase().includes(search))
+      );
     });
   });
 
@@ -1510,7 +1514,12 @@
                       size={12}
                     />
                   {/if}
-                  <span class="text-sm text-foreground truncate">{repo.name}</span>
+                  <span class="text-sm text-foreground truncate">
+                    {#if repo.owner}
+                      <span class="text-subtle mr-1">{repo.owner} /</span>
+                    {/if}
+                    {repo.name}
+                  </span>
                 </button>
               {/each}
             </div>
