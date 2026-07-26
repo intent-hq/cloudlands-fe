@@ -26,7 +26,8 @@ export interface ParsedAgentEvent {
 /** Event types that mean a child agent finished its work. */
 const COMPLETION_EVENT_TYPES: ReadonlySet<string> = new Set(['agent:idle', 'agent:reportToParent']);
 
-function firstNonEmptyString(...values: unknown[]): string | undefined {
+/** First value that is a non-empty (non-whitespace) string, if any. */
+export function firstNonEmptyString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === 'string' && value.trim().length > 0) return value;
   }

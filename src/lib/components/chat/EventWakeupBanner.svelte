@@ -12,7 +12,7 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
   import AgentCard from './AgentCard.svelte';
-  import { categorizeEventTypes } from './event-wake-summary';
+  import { categorizeEventTypes, firstNonEmptyString } from './event-wake-summary';
   import type { Workspace } from '$shared/types';
 
   interface EventData {
@@ -132,7 +132,7 @@
           type: event.type,
           agentId: data.agentId as string | undefined,
           agentName: data.agentName as string | undefined,
-          completionReport: (data.completionReport ?? data.report) as string | undefined,
+          completionReport: firstNonEmptyString(data.completionReport, data.report),
           lastResponseSummary: data.lastResponseSummary as string | undefined,
         };
       });
