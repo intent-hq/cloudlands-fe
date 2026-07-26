@@ -3,23 +3,22 @@
    * ProviderCard
    *
    * A single provider card for the AgentGrid. Renders brand-color top area,
-   * provider icon, connection status, install/login controls, and auggie-specific
-   * auth UI. Extracted from AgentGrid to keep per-provider rendering isolated.
+   * provider icon, connection status, and install/login state. Extracted from
+   * AgentGrid to keep per-provider rendering isolated.
    */
   import { slide } from 'svelte/transition';
   import {
-  faArrowUpRightFromSquare,
-  faArrowsRotate,
-  faPlug,
-  faTriangleExclamation,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowUpRightFromSquare,
+    faArrowsRotate,
+    faPlug,
+    faTriangleExclamation,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils';
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { shell } from '$lib/electron-bridge';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
-  import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
 
   import { selectProviderLoadingMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { checkSingleProviderRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
@@ -62,26 +61,8 @@
     npxStatus: NpxStatus | null | undefined;
     /** Whether auggie needs a version update */
     auggieNeedsUpdate: boolean;
-    /** Whether an auggie action (install/login) is in progress */
-    auggieActionInProgress: boolean;
-    /**
-     * Manual instructions returned by AUGGIE_CHANNELS.INSTALL /
-     * AUGGIE_CHANNELS.AUTHENTICATE — when set, the card renders an
-     * inline instructions panel with the copyable `command`.
-     */
-    auggieInstructions: string[] | null;
-    /** Copyable shell command paired with `auggieInstructions`. */
-    auggieCommand: string | null;
     /** Called when a ready provider is selected */
     onSelect: (providerId: string) => void;
-    /** Called to install auggie */
-    onAuggieInstall: () => void;
-    /** Called to start auggie login */
-    onAuggieLogin: () => void;
-    /** Called when the user finishes the manual step and asks for a recheck. */
-    onAuggieRecheck: () => void;
-    /** Called when the user dismisses the instructions panel. */
-    onAuggieDismissInstructions: () => void;
   }
 
   let {
@@ -90,14 +71,7 @@
     selected = false,
     npxStatus,
     auggieNeedsUpdate,
-    auggieActionInProgress,
-    auggieInstructions,
-    auggieCommand,
     onSelect,
-    onAuggieInstall,
-    onAuggieLogin,
-    onAuggieRecheck,
-    onAuggieDismissInstructions,
   }: Props = $props();
 
   const installed = $derived(provider.available);
@@ -114,9 +88,7 @@
     !provider.statusLoading && (needsInstall || needsLogin || needsUpdate),
   );
   const cardClickable = $derived(
-    ready ||
-      (provider.id === 'auggie' && needsAction) ||
-      (!ready && !provider.statusLoading && provider.id !== 'auggie' && !!provider.docsUrl),
+    ready || (!ready && !provider.statusLoading && !!provider.docsUrl),
   );
 
   // Show npx hint when: provider has npx fallback, binary not installed, npx missing or too old
@@ -138,10 +110,7 @@
   function handleCardClick() {
     if (ready) {
       onSelect(provider.id);
-    } else if (needsAction && provider.id === 'auggie') {
-      if (needsInstall || needsUpdate) onAuggieInstall();
-      else onAuggieLogin();
-    } else if (!ready && !provider.statusLoading && provider.id !== 'auggie' && provider.docsUrl) {
+    } else if (!provider.statusLoading && provider.docsUrl) {
       shell.open(provider.docsUrl);
     }
   }
@@ -152,7 +121,6 @@
       handleCardClick();
     }
   }
-
 </script>
 
 <div class="overflow-hidden transition-all flex flex-col flex-1 min-w-66">
@@ -302,16 +270,13 @@
                 e.stopPropagation();
                 appStore.dispatch(checkSingleProviderRequested(provider.id));
               }}
-              disabled={$providerLoadingMap$[provider.id] ||
-                (provider.id === 'auggie' && auggieActionInProgress)}
+              disabled={$providerLoadingMap$[provider.id]}
               title="Refresh {provider.name} status"
               aria-label="Refresh {provider.name} status"
             >
               <span
                 class={cn('inline-block', {
-                  'animate-spin':
-                    $providerLoadingMap$[provider.id] ||
-                    (provider.id === 'auggie' && auggieActionInProgress),
+                  'animate-spin': $providerLoadingMap$[provider.id],
                 })}
               >
                 <Fa icon={faArrowsRotate} size={14} />
@@ -329,8 +294,8 @@
             Requires Node.js (npx) — <button
               type="button"
               class="underline hover:no-underline"
-              onclick={() => shell.open('https://nodejs.org')}
-            >install from nodejs.org</button>
+              onclick={() => shell.open('https://nodejs.org')}>install from nodejs.org</button
+            >
           </span>
         </div>
       {:else if showNpxOldHint}
@@ -349,23 +314,10 @@
               — <button
                 type="button"
                 class="underline hover:no-underline"
-                onclick={() => void shell.open('https://nodejs.org')}
-              >nodejs.org</button>
+                onclick={() => void shell.open('https://nodejs.org')}>nodejs.org</button
+              >
             {/if}
           </span>
-        </div>
-      {/if}
-
-      <!-- Auggie instructions panel (rendered from IPC data.instructions/data.command) -->
-      {#if provider.id === 'auggie' && auggieInstructions && auggieInstructions.length > 0}
-        <div class="mt-2">
-          <AuggieInstructionsPanel
-            instructions={auggieInstructions}
-            command={auggieCommand ?? undefined}
-            onRecheck={onAuggieRecheck}
-            onDismiss={onAuggieDismissInstructions}
-            rechecking={auggieActionInProgress}
-          />
         </div>
       {/if}
     </div>
