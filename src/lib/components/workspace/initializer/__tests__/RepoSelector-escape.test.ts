@@ -3,9 +3,20 @@
  * The dropdown pushes an escape layer while open, so Escape dismisses it
  * (and only it, when stacked under other overlays — see the NewSpaceModal
  * regression test in modals/__tests__).
+ * Also covers the Recent list rendering (owner-qualified repo names).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+
+const mockRepos = vi.hoisted(() => ({
+  recentRepos: [] as Array<{
+    path: string;
+    type: 'local' | 'github';
+    githubUrl?: string;
+    name: string;
+    owner?: string;
+  }>,
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -20,7 +31,7 @@ vi.mock(
     const store = createAppStoreMock({ state: {} });
     return {
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
-      selectWorkspaceInitializerRecentRepos: store.createSelector(() => []),
+      selectWorkspaceInitializerRecentRepos: store.createSelector(() => mockRepos.recentRepos),
       selectWorkspaceInitializerRemoteSetups: store.createSelector(() => []),
     };
   },
@@ -79,6 +90,11 @@ vi.mock('$lib/utils/performance', () => ({
   performanceMonitor: { start: vi.fn(), end: vi.fn() },
 }));
 
+vi.mock('svelte-fa', async () => {
+  const MockFa = (await import('../../../ui/__tests__/mocks/Fa.svelte')).default;
+  return { default: MockFa, Fa: MockFa };
+});
+
 // Stub the heavy nested modals (BE-driven folder picker, remote setup)
 vi.mock('$features/onboarding/messages/DirectoryPickerModal.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
@@ -129,5 +145,37 @@ describe('RepoSelector Escape handling (escape-layer stack)', () => {
     window.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe('RepoSelector Recent list owner rendering', () => {
+  afterEach(() => {
+    mockRepos.recentRepos = [];
+    cleanup();
+  });
+
+  it('shows owner-qualified name when owner is set and plain name otherwise', async () => {
+    mockRepos.recentRepos = [
+      { path: '/Users/dev/app', type: 'local', name: 'app', owner: 'acme' },
+      { path: '/Users/dev/solo', type: 'local', name: 'solo' },
+    ];
+    const { container } = render(RepoSelector, { props: {} });
+    await openDropdown(container);
+    await waitFor(() => {
+      expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('acme /')).toBeTruthy();
+      expect(screen.getByText('app')).toBeTruthy();
+      expect(screen.getByText('solo')).toBeTruthy();
+    });
+
+    // The ownerless row must render the name only — no stray owner prefix.
+    const soloRow = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.includes('solo'));
+    expect(soloRow).toBeTruthy();
+    expect(soloRow!.textContent?.replace(/\s+/g, ' ').trim()).toBe('solo');
   });
 });
