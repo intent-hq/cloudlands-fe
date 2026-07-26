@@ -144,6 +144,35 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     });
   });
 
+  it("create surfaces a classified clone failure's code and detail-bearing message", async () => {
+    // monorepo#826 (PROTOCOL §9.1): workspace.create clone failures carry
+    // error.message = "workspace.create clone failed (<category>): <detail>"
+    // and error.data = { code: "<category>", detail } — the FE must surface
+    // both so onboarding never shows a bare "Internal error".
+    const error = Object.assign(
+      new Error(
+        "workspace.create clone failed (auth-required): fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+      ),
+      {
+        data: {
+          code: "auth-required",
+          detail:
+            "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+        },
+      },
+    );
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: "Private repo" } as CreateWorkspaceRequest);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("unreachable");
+    expect(result.errorCode).toBe("auth-required");
+    expect(result.error).toContain("terminal prompts disabled");
+    expect(result.error).not.toBe("Internal error");
+  });
+
   it("create omits errorCode when the daemon error carries no string data.code", async () => {
     const error = Object.assign(new Error("boom"), { data: { detail: "no code here" } });
     mockedRequest.mockRejectedValueOnce(error);

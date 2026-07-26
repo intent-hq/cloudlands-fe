@@ -310,6 +310,11 @@
 
   let isOnboardingCreating = $state(false);
   let onboardingCreationError = $state<string | null>(null);
+  // Daemon-authored machine-readable code from the clone failure taxonomy
+  // (`error.data.code`, PROTOCOL §9.1, monorepo#826); accompanies
+  // `onboardingCreationError` so the error block classifies without prose
+  // matching.
+  let onboardingCreationErrorCode = $state<string | null>(null);
 
   // Live setup step statuses for WorkspaceSetupCard during creation
   type SetupStepStatus = 'pending' | 'active' | 'done';
@@ -482,6 +487,7 @@
     projectSelection = selection;
     if (projectIdentityChanged) {
       onboardingCreationError = null;
+      onboardingCreationErrorCode = null;
     }
     appStore.dispatch(
       setProjectConfig({
@@ -683,6 +689,7 @@
 
     isOnboardingCreating = true;
     onboardingCreationError = null;
+    onboardingCreationErrorCode = null;
     setupRepoStatus = 'active';
     setupBranchStatus = 'active';
     setupAgentStatus = 'pending';
@@ -784,7 +791,13 @@
         },
       });
 
-      if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
+      if (!result.ok) {
+        // Keep the daemon's machine-readable code (clone failure taxonomy,
+        // PROTOCOL §9.1) alongside the human message so the error block can
+        // classify without prose matching.
+        onboardingCreationErrorCode = result.errorCode ?? null;
+        throw new Error(result.error || 'Failed to create workspace');
+      }
 
       const workspace = result.data.workspace;
       // The daemon assigns the initial agent's id and returns it on the
@@ -1137,6 +1150,7 @@
                           {isOnboardingCreating}
                           {isOnboardingEnhancing}
                           {onboardingCreationError}
+                          {onboardingCreationErrorCode}
                           {projectSelection}
                           {onboardingGithubRepoInfo}
                           {selectedPRBranch}

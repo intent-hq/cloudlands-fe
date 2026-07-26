@@ -24,6 +24,12 @@
     message: string;
     onRetry?: () => void;
     /**
+     * Machine-readable `error.data.code` from the daemon's clone failure
+     * taxonomy (PROTOCOL §9.1, monorepo#826). When present, classification
+     * uses it instead of prose matching on `message`.
+     */
+    errorCode?: string | null;
+    /**
      * 'error' (default) — post-submit failure. Uses destructive colors and the
      *   "Failed to create workspace" fallback title.
      * 'warning' — pre-submit preflight failure. Uses warning colors and a
@@ -33,9 +39,9 @@
     variant?: 'error' | 'warning';
   }
 
-  let { message, onRetry, variant = 'error' }: Props = $props();
+  let { message, onRetry, errorCode = null, variant = 'error' }: Props = $props();
 
-  const diagnosis = $derived(diagnoseCloneError(message));
+  const diagnosis = $derived(diagnoseCloneError(message, errorCode));
 
   const titles: Record<CloneErrorKind, string> = $derived({
     'auth-required': 'GitHub authentication required',
@@ -44,12 +50,15 @@
     'access-denied': 'Access denied',
     network: 'Network error',
     'destination-exists': 'Destination folder already exists',
+    'path-invalid': 'Clone destination is not usable',
     'git-not-installed': 'Git is not installed',
     unknown:
       variant === 'warning' ? 'We found an issue with this repository' : 'Failed to create workspace',
   });
 
-  let showDetails = $state(false);
+  // Daemon-provided detail renders inline (expanded) so users see the real
+  // cause without an extra click (monorepo#826); the toggle can still hide it.
+  let showDetails = $state(true);
   let copiedCommand = $state<string | null>(null);
 
   async function copyCommand(cmd: string) {
@@ -150,6 +159,11 @@
       The folder where Intent was going to clone this repository already exists and isn't empty.
       Choose a different location in the project picker.
     </p>
+  {:else if diagnosis.kind === 'path-invalid'}
+    <p class="text-foreground">
+      Intent can't clone into that destination — the path is invalid or not writable.
+      Pick a different folder in the project picker and try again.
+    </p>
   {:else if diagnosis.kind === 'git-not-installed'}
     <p class="text-foreground">
       Intent couldn't find <code class="font-mono text-xs">git</code> on your system. Install it from
@@ -183,7 +197,9 @@
     {/if}
   </div>
 
-  {#if showDetails && diagnosis.rawMessage.trim()}
+  <!-- The unknown branch already renders rawMessage as the body, so the
+       details block only applies to classified kinds. -->
+  {#if showDetails && diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
     <pre
       class="mt-2 rounded bg-background/70 border border-border/50 px-2 py-1.5 text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-40 overflow-auto">
 {diagnosis.rawMessage}</pre>
