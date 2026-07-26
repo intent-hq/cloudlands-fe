@@ -102,6 +102,7 @@ export const WorkspaceStatusMessageSchema = z
 
 export const WorkspaceSchema = z.object({
   id: workspaceIdSchema, // Accepts slug format, UUID, or optimistic IDs
+  name: z.string().optional(), // Compatibility with agent system
   title: z.string().max(100),
   branch: z.string(),
   baseRef: z.string().optional(),
@@ -112,6 +113,7 @@ export const WorkspaceSchema = z.object({
   conversationInfo: z.array(z.any()),
   status: z.nativeEnum(WorkspaceStatus),
   statusMessage: WorkspaceStatusMessageSchema.optional(),
+  activity: z.enum(['idle', 'agent_running']).optional(), // BE-derived in-flight agent state
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   archived: z.boolean().optional(),
@@ -126,6 +128,12 @@ export const WorkspaceSchema = z.object({
   worktreePath: z.string().optional(),
   scope: z.string().optional(), // Optional relative path within worktreePath
   skipWorktree: z.boolean().optional(),
+  // Wire emits a SetupScript object { script, updatedAt, ... } (PROTOCOL §5.25);
+  // the string arm covers legacy FE-local values until the Workspace type is fixed.
+  setupScript: z
+    .union([z.string(), z.object({ script: z.string() }).passthrough()])
+    .optional(),
+  isRemote: z.boolean().optional(),
   diffs: z.array(z.any()).optional(),
   diffSummary: DiffSummarySchema.optional(),
   // prUrl does NOT use .url() validation because empty strings can come from
@@ -136,6 +144,14 @@ export const WorkspaceSchema = z.object({
   pullRequests: z.array(z.any()).optional(),
   activePullRequest: z.any().optional(),
   environmentConfig: z.any().optional(),
+  defaultModel: z.string().optional(),
+  agentSummary: z.object({ agentIds: z.array(z.string()) }).optional(),
+  taskStats: z.any().optional(), // Deprecated aggregate; fetch on demand
+  gitSummary: z.any().optional(), // Deprecated aggregate; fetch on demand
+  /** CoW filesystem capability of the workspaces root (PROTOCOL §5.1); gates the cowIsolation toggle. */
+  cowSupported: z.boolean().optional(),
+  /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout (skip-isolation/direct, remote, …). */
+  checkoutMode: z.enum(['cow', 'worktree']).optional(),
 });
 
 // SSH configuration schema for remote workspaces

@@ -140,6 +140,46 @@ describe("LiveSystemClient", () => {
     });
   });
 
+  describe("capabilities", () => {
+    it("invokes system.capabilities via backend:request", async () => {
+      mockInvoke.mockResolvedValue({ ok: true, result: { cowSupported: true } });
+
+      await client.capabilities();
+
+      expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+        method: "system.capabilities",
+        params: undefined,
+      });
+    });
+
+    it("maps a PROTOCOL-shaped response with cowSupported", async () => {
+      mockInvoke.mockResolvedValue({ ok: true, result: { cowSupported: false } });
+
+      const result = await client.capabilities();
+
+      expect(result).toEqual({ cowSupported: false });
+    });
+
+    it("leaves cowSupported undefined when the probe field is omitted (PROTOCOL §5.7)", async () => {
+      mockInvoke.mockResolvedValue({ ok: true, result: {} });
+
+      const result = await client.capabilities();
+
+      expect(result.cowSupported).toBeUndefined();
+    });
+
+    it("returns {} on wire error", async () => {
+      mockInvoke.mockResolvedValue({
+        ok: false,
+        error: { code: "TRANSPORT_ERROR", message: "Connection failed" },
+      });
+
+      const result = await client.capabilities();
+
+      expect(result).toEqual({});
+    });
+  });
+
   describe("releaseNotes", () => {
     it("returns null (daemon does not manage release notes)", async () => {
       const result = await client.releaseNotes();
