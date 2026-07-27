@@ -104,3 +104,18 @@ export const selectSidecarRunLogPending = store.createSelector(
 export const selectSidecarRunLogError = store.createSelector(
   (state) => state.daemonHealth.sidecarRunLogError,
 );
+
+/** Last unsloth.status result (polled while the status dropdown is open), if any. */
+export const selectUnslothStatus = store.createSelector(
+  (state) => state.daemonHealth.unslothStatus,
+);
+
+/** True while an unsloth.stop request is in flight. */
+export const selectUnslothStopping = store.createSelector(
+  (state) => state.daemonHealth.unslothStopping,
+);
+
+/** Error string from the last failed unsloth.stop request, if any. */
+export const selectUnslothStopError = store.createSelector(
+  (state) => state.daemonHealth.unslothStopError,
+);
