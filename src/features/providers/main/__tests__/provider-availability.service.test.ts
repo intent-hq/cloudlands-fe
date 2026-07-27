@@ -393,10 +393,10 @@ describe('provider availability service', () => {
     });
   });
 
-  it('single recheck resolves unsloth off the opencode binary without an auth probe', async () => {
+  it('single recheck resolves unsloth off both opencode and unsloth binaries without an auth probe', async () => {
     routeBackend({});
     mocks.findBinary.mockImplementation(async (name: string) =>
-      name === 'opencode' ? '/usr/local/bin/opencode' : null,
+      name === 'opencode' || name === 'unsloth' ? `/usr/local/bin/${name}` : null,
     );
 
     const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
@@ -419,6 +419,38 @@ describe('provider availability service', () => {
   });
 
   it('single recheck reports unsloth unavailable when opencode is missing', async () => {
+    routeBackend({});
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'unsloth' ? '/usr/local/bin/unsloth' : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, 'unsloth');
+
+    expect(result).toEqual({ success: true, providerId: 'unsloth', data: { available: false } });
+  });
+
+  it('single recheck reports unsloth unavailable when the unsloth CLI is missing', async () => {
+    routeBackend({});
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'opencode' ? '/usr/local/bin/opencode' : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, 'unsloth');
+
+    expect(result).toEqual({ success: true, providerId: 'unsloth', data: { available: false } });
+  });
+
+  it('single recheck reports unsloth unavailable when neither binary is present', async () => {
     routeBackend({});
     mocks.findBinary.mockResolvedValue(null);
 
