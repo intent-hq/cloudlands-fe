@@ -11,7 +11,11 @@ import {
   selectAgentIsResponding,
   selectAgentMessages,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
-import { chatSendStarted } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  chatLastAttemptedMessageSet,
+  chatSendStarted,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
+import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
@@ -153,6 +157,44 @@ describe("agentStreamService (real store)", () => {
     appStore.dispatch(agentStreamUpdateReceived(makePayload({ eventType: "error" })));
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("#941: a failed turn (error finalize) preserves lastAttemptedMessage for the retry banner", () => {
+    simulateSendInFlight();
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "edited text" }));
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "chunk", contentBlocks: textBlocks("partial") }),
+      ),
+    );
+
+    appStore.dispatch(
+      agentStreamUpdateReceived(makePayload({ eventType: "error", error: "stream failed" })),
+    );
+
+    const chatState = selectChatAgentState.select(appStore.state, AGENT);
+    expect(chatState?.error).toBe("stream failed");
+    expect(chatState?.lastAttemptedMessage).toEqual({ text: "edited text" });
+  });
+
+  it("#941: a successful complete clears lastAttemptedMessage", () => {
+    simulateSendInFlight();
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "edited text" }));
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "chunk", contentBlocks: textBlocks("partial") }),
+      ),
+    );
+
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "complete", contentBlocks: textBlocks("done") }),
+      ),
+    );
+
+    expect(
+      selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage,
+    ).toBeNull();
   });
 
   it("clears session-level streaming flags on timeout (selectAgentIsResponding === false)", () => {

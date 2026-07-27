@@ -29,7 +29,10 @@ import {
   agentSessionEditAndRegenerateRequested,
   bulkUpsertSessions,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
-import { chatSendFailed } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  chatLastAttemptedMessageSet,
+  chatSendFailed,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import type { ChatAgentState } from "$store/renderer/slices/chat-state/chat-state-types";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -160,6 +163,38 @@ describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real s
     const chatState = readChatState(AGENT);
     expect(chatState?.error).toBeNull();
     expect(chatState?.streamingStartTime).toEqual(expect.any(Number));
+  });
+
+  it("records the EDITED content as lastAttemptedMessage on success so retry-after-failure resends it (#941)", async () => {
+    const WS = "ws-edit-retry";
+    const AGENT = "agent-edit-retry";
+    seedSession(AGENT, WS, [
+      makeMessage("m1", "user", "pre-edit text"),
+      makeMessage("m2", "assistant", "reply"),
+    ]);
+    // A stale retry payload from a pre-edit send attempt.
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "pre-edit text" }));
+    editAndRegenerate.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "edited text" });
+  });
+
+  it("leaves a previously recorded lastAttemptedMessage untouched on a non-success result (#941)", async () => {
+    const WS = "ws-edit-retry-fail";
+    const AGENT = "agent-edit-retry-fail";
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "pre-edit text")]);
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "pre-edit text" }));
+    editAndRegenerate.mockResolvedValueOnce({ success: false, error: "bad message id" });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("bad message id");
+
+    expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "pre-edit text" });
   });
 
   it("leaves chat-state untouched on a non-success result", async () => {
