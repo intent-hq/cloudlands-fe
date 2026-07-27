@@ -30,7 +30,6 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
-  import CheckoutModePill from './CheckoutModePill.svelte';
   import { deriveWorkspacePhase } from './workspace-phase';
   import WorkspaceHoverCard from './WorkspaceHoverCard.svelte';
   import WorkspacePhaseIndicator from './WorkspacePhaseIndicator.svelte';
@@ -249,9 +248,8 @@
 
         <!-- Row 2: repo info (hidden when grouped by repo) -->
         {#if !groupByRepo && ws.repositoryOwner && ws.repositoryName}
-          <div class="flex min-w-0 items-center gap-1 text-xs text-subtle">
-            <span class="min-w-0 truncate">{ws.repositoryOwner}/{ws.repositoryName}</span>
-            <CheckoutModePill checkoutMode={ws.checkoutMode} />
+          <div class="truncate text-xs text-subtle">
+            {ws.repositoryOwner}/{ws.repositoryName}
           </div>
         {/if}
       </div>
