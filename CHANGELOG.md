@@ -4,6 +4,32 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.7.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.6.0...v2.7.0) (2026-07-27)
+
+
+### 🚀 Features
+
+* add RepoConfig parity types with cowCloneExclude (intentd[#614](https://github.com/intent-hq/cloudlands-fe/issues/614)) ([#463](https://github.com/intent-hq/cloudlands-fe/issues/463)) ([7792469](https://github.com/intent-hq/cloudlands-fe/commit/7792469e0f1812573cabefe2232112e9b7b8167e))
+* add unsloth provider surface ([#455](https://github.com/intent-hq/cloudlands-fe/issues/455)) ([fae8235](https://github.com/intent-hq/cloudlands-fe/commit/fae8235726672e88db93a54994fa30529d3d97bd))
+* allow mid-conversation model/provider switching with confirmation and transcript notice ([#462](https://github.com/intent-hq/cloudlands-fe/issues/462)) ([8bd64c0](https://github.com/intent-hq/cloudlands-fe/commit/8bd64c06c5b4aa1c5d50e0c34a1063f7fed7484e))
+* consume BE-owned workspace displayStatus ([#458](https://github.com/intent-hq/cloudlands-fe/issues/458)) ([ecc3a21](https://github.com/intent-hq/cloudlands-fe/commit/ecc3a210d965fe01afef9cc4d9a59483308a51d3))
+* dedicated settings rows for CoW isolation and git credentials ([#466](https://github.com/intent-hq/cloudlands-fe/issues/466)) ([2e545f0](https://github.com/intent-hq/cloudlands-fe/commit/2e545f03329df870cf4caa3811983ccc94b00a34))
+* settings toggle for git credentials in terminals and agents ([#454](https://github.com/intent-hq/cloudlands-fe/issues/454)) ([720b15b](https://github.com/intent-hq/cloudlands-fe/commit/720b15b73226e7ae03895cc24ba493c36d1ec7e8))
+* show checkout-mode pill in the workspace overview panel ([#456](https://github.com/intent-hq/cloudlands-fe/issues/456)) ([b3ba9f4](https://github.com/intent-hq/cloudlands-fe/commit/b3ba9f41636bbd0840bd137b521b8093635741f7))
+* show checkout-mode pill next to the org/repo subtitle ([#452](https://github.com/intent-hq/cloudlands-fe/issues/452)) ([3d715f6](https://github.com/intent-hq/cloudlands-fe/commit/3d715f6e286e838aaff4303014dbbc651ff89ccb))
+* show managed unsloth server status in the intentd status indicator with a confirmed stop action ([#472](https://github.com/intent-hq/cloudlands-fe/issues/472)) ([23706d7](https://github.com/intent-hq/cloudlands-fe/commit/23706d70a857beced795e9bca31fc887d59a7e53))
+
+
+### 🐛 Bug Fixes
+
+* align checkout-mode pill to repo text baseline ([#469](https://github.com/intent-hq/cloudlands-fe/issues/469)) ([6c3bdf3](https://github.com/intent-hq/cloudlands-fe/commit/6c3bdf30b44788a9145507addc454057a71e13c3))
+* clear chat error and start loading state on edit-and-regenerate ([#470](https://github.com/intent-hq/cloudlands-fe/issues/470)) ([7e12a59](https://github.com/intent-hq/cloudlands-fe/commit/7e12a5958f7fbc298bc9c4e44328a1d74dc3c15c))
+* don't report all-done with staged or unpushed work after PR merge (monorepo[#912](https://github.com/intent-hq/cloudlands-fe/issues/912)) ([#461](https://github.com/intent-hq/cloudlands-fe/issues/461)) ([116c0b9](https://github.com/intent-hq/cloudlands-fe/commit/116c0b98713bdebf8578a35c09ab26c00f18bed5))
+* **providers:** require unsloth CLI alongside opencode for unsloth availability ([#465](https://github.com/intent-hq/cloudlands-fe/issues/465)) ([04311b7](https://github.com/intent-hq/cloudlands-fe/commit/04311b7df25b77e579dfa9fb9972cb7079dc646a))
+* return explicit specialist model before tier resolution in selectEffectiveModel ([#471](https://github.com/intent-hq/cloudlands-fe/issues/471)) ([6187f5d](https://github.com/intent-hq/cloudlands-fe/commit/6187f5dfa1eeb4a5a2bc33474e4a86bc58974150))
+* stream raw script output chunks to xterm instead of line-splitting ([#467](https://github.com/intent-hq/cloudlands-fe/issues/467)) ([4f2254c](https://github.com/intent-hq/cloudlands-fe/commit/4f2254c078bed727ea5bb3cc4fe23ff4fb0d6447))
+* treat open tasks as new work after PR merge in workflow stage ([#457](https://github.com/intent-hq/cloudlands-fe/issues/457)) ([4d36e92](https://github.com/intent-hq/cloudlands-fe/commit/4d36e92e0eaf233709736cad9b044e3e0b90a806))
+
 ## [2.6.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.5.0...v2.6.0) (2026-07-27)
 
 
