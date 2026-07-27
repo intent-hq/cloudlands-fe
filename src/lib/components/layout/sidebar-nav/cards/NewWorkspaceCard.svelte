@@ -147,7 +147,12 @@
               <span class="text-ghost shrink-0"><Fa icon={faFolder} size="xs" /></span
               >
             {/if}
-            <span class="text-sm text-muted-foreground truncate font-medium flex-1">{repo.name}</span>
+            <span class="text-sm text-muted-foreground truncate font-medium flex-1">
+              {#if repo.owner}
+                <span class="text-subtle mr-1">{repo.owner} /</span>
+              {/if}
+              {repo.name}
+            </span>
           </button>
         {/each}
       </div>
