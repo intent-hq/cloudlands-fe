@@ -41,9 +41,14 @@ vi.mock('@xterm/xterm', () => {
     refresh = vi.fn();
     dispose = vi.fn();
     getSelection = vi.fn(() => '');
+    dataHandler?: (data: string) => void;
 
     constructor(options: any) {
       this.options = options;
+      this.onData.mockImplementation((handler: (data: string) => void) => {
+        this.dataHandler = handler;
+        return { dispose: vi.fn() };
+      });
       xtermMock.instances.push(this);
     }
   }
@@ -177,7 +182,7 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     adapter.detach();
   });
 
-  it('write() forwards xterm onData input through TerminalsClient.write', () => {
+  it('forwards xterm onData DEL unchanged through TerminalsClient.write', () => {
     const container = document.createElement('div');
     const terminals = fakeTerminalsClient();
     const adapter = new TerminalAdapter({
@@ -191,9 +196,35 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     (adapter as any).stateMachine.transition('connect');
     (adapter as any).stateMachine.transition('connected');
 
-    adapter.write('ls\n');
+    (adapter as any).setupXTermEventHandlers();
+    const xterm = (adapter as any).xterm;
+    xterm.dataHandler('\x7f');
 
-    expect(terminals.write).toHaveBeenCalledWith('term-1', 'ls\n');
+    expect(terminals.write).toHaveBeenCalledWith('term-1', '\x7f');
+  });
+
+  it('passes PTY erase echo unchanged from terminal:data to xterm.write', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    let capturedHandlers: any;
+    terminals.subscribeEvents = vi.fn((_id: string, handlers: any) => {
+      capturedHandlers = handlers;
+      return () => {};
+    }) as any;
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+    (adapter as any).stateMachine.transition('initialize');
+    (adapter as any).stateMachine.transition('connect');
+    (adapter as any).stateMachine.transition('connected');
+    (adapter as any).setupIpcEventHandlers();
+
+    capturedHandlers.onData({ terminalId: 'term-1', chunk: '\x08 \x08' });
+
+    expect((adapter as any).xterm.write).toHaveBeenCalledWith('\x08 \x08');
   });
 
   it('resize() forwards dimensions through TerminalsClient.resize', () => {
