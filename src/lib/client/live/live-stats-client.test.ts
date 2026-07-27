@@ -39,6 +39,16 @@ const USAGE_RESULT = {
       cacheCreationTokens: 5,
     },
   ],
+  byProvider: [
+    {
+      provider: "claude-code",
+      runs: 12,
+      inputTokens: 100,
+      outputTokens: 40,
+      cacheReadTokens: 10,
+      cacheCreationTokens: 5,
+    },
+  ],
   byHourOfDay: Array.from({ length: 24 }, (_, hour) => ({
     hour,
     inputTokens: 0,
