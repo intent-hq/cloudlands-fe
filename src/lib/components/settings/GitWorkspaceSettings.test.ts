@@ -155,10 +155,12 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
 
     render(GitWorkspaceSettings);
 
-    await waitFor(() => screen.getByRole('checkbox', { name: GIT_CRED_LABEL }));
+    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: GIT_CRED_LABEL }));
     const description = screen.getByText(/credential helper scoped to HTTPS\s+github\.com remotes/);
     expect(description).toBeTruthy();
     expect(description.closest('[title]')).toBeNull();
+    expect(description.id).toBe('git-credentials-description');
+    expect(toggle.getAttribute('aria-describedby')).toBe('git-credentials-description');
   });
 });
 
@@ -200,15 +202,25 @@ describe('GitWorkspaceSettings — CoW isolation toggle', () => {
     );
     expect(description.textContent).not.toMatch(/instant/i);
     expect(description.closest('[title]')).toBeNull();
+    expect(description.id).toBe('cow-isolation-description');
+    const toggle = screen.getByRole('checkbox', { name: COW_LABEL });
+    expect(toggle.getAttribute('aria-describedby')).toBe('cow-isolation-description');
   });
 
   it('hides the toggle when capabilities do not report cowSupported', async () => {
     mocks.mockCapabilities.mockResolvedValue({});
+    // Include the git-credential setting so a load-gated sibling row appears —
+    // waiting for it guarantees both the settings load and the earlier-scheduled
+    // capabilities probe have resolved before asserting absence.
+    mocks.mockSettingsList.mockResolvedValue([
+      ...baseSettings,
+      { path: GIT_CRED_PATH, value: true },
+    ]);
 
     render(GitWorkspaceSettings);
 
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Auto-fetch updates/ })).toBeTruthy();
+      expect(screen.getByRole('checkbox', { name: GIT_CRED_LABEL })).toBeTruthy();
     });
     expect(screen.queryByRole('checkbox', { name: COW_LABEL })).toBeNull();
     expect(screen.queryByText('Experimental')).toBeNull();
@@ -216,11 +228,15 @@ describe('GitWorkspaceSettings — CoW isolation toggle', () => {
 
   it('hides the toggle when capabilities report cowSupported as false', async () => {
     mocks.mockCapabilities.mockResolvedValue({ cowSupported: false });
+    mocks.mockSettingsList.mockResolvedValue([
+      ...baseSettings,
+      { path: GIT_CRED_PATH, value: true },
+    ]);
 
     render(GitWorkspaceSettings);
 
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Auto-fetch updates/ })).toBeTruthy();
+      expect(screen.getByRole('checkbox', { name: GIT_CRED_LABEL })).toBeTruthy();
     });
     expect(screen.queryByRole('checkbox', { name: COW_LABEL })).toBeNull();
     expect(screen.queryByText('Experimental')).toBeNull();

@@ -307,6 +307,7 @@
             bind:checked={cowIsolation}
             onchange={handleSave}
             class="cursor-pointer"
+            aria-describedby="cow-isolation-description"
           />
           <span>Use Copy-on-Write isolation</span>
         </label>
@@ -316,7 +317,7 @@
           Experimental
         </span>
       </div>
-      <p class="text-xs text-subtle mt-0.5 ml-6">
+      <p id="cow-isolation-description" class="text-xs text-subtle mt-0.5 ml-6">
         New workspaces are provisioned as copy-on-write clones of the repository, and each delegated
         agent runs in its own CoW sandbox that is merged back automatically when it finishes.
         Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on
@@ -334,10 +335,11 @@
           bind:checked={exposeGitCredential}
           onchange={handleSave}
           class="cursor-pointer"
+          aria-describedby="git-credentials-description"
         />
         <span>Git credentials in terminals &amp; agents</span>
       </label>
-      <p class="text-xs text-subtle mt-0.5 ml-6">
+      <p id="git-credentials-description" class="text-xs text-subtle mt-0.5 ml-6">
         When on, git commands in workspace terminals and agent sessions can authenticate to
         github.com using your connected GitHub account, via a credential helper scoped to HTTPS
         github.com remotes. The token is never exposed as GITHUB_TOKEN, and your own git credential
