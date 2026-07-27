@@ -1295,7 +1295,7 @@
                   }
                 }
               }}
-              placeholder={detectedGitHub?.repo || 'repo-name'}
+              placeholder={detectedGitHub?.repo || 'repo-name' /* i18n-ignore (example folder name) */}
               class="bg-sidebar border-none"
               noFocusStyle
             />

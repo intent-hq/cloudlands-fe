@@ -379,7 +379,7 @@
         disabled={!workspace}
       >
         {#if workspace}
-          {workspace.title || 'Untitled'}
+          {workspace.title || m.workspace_links_untitled_label()}
         {/if}
       </button>
     {/if}
@@ -416,12 +416,14 @@
         class:text-ghost={!currentStatusMessage}
         onclick={startEditingStatusMessage}
         title={currentStatusMessage
-          ? 'Click to edit workspace status'
-          : 'Click to add workspace status'}
-        aria-label={currentStatusMessage ? 'Edit workspace status' : 'Add workspace status'}
+          ? m.workspace_sidebarHeader_editStatus_tooltip()
+          : m.workspace_sidebarHeader_addStatus_tooltip()}
+        aria-label={currentStatusMessage
+          ? m.workspace_sidebarHeader_editStatus_ariaLabel()
+          : m.workspace_sidebarHeader_addStatus_ariaLabel()}
         disabled={!workspace}
       >
-        {currentStatusMessage || 'Add status…'}
+        {currentStatusMessage || m.workspace_sidebarHeader_addStatus_label()}
       </button>
     {/if}
 
@@ -468,7 +470,7 @@
           disabled={!workspace || isSavingBranch}
         >
           {#if workspace}
-            {workspace.branch || 'no branch'}
+            {workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
           {/if}
         </button>
       {/if}

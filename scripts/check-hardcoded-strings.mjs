@@ -7,8 +7,11 @@
 //   - Svelte template text nodes containing words (after stripping `{...}`
 //     expressions and HTML entities) — `{m.some_message()}` passes, literal
 //     text fails.
-//   - User-facing attributes (placeholder, title, aria-label, alt, label, …)
-//     with literal string values.
+//   - User-facing attributes (placeholder, title, aria-label, alt, label,
+//     tooltip, …) with literal string values, including string literals inside
+//     expression values like `title={cond ? 'A' : 'B'}`.
+//   - `||`-fallback string literals in template render expressions
+//     (e.g. `{x || 'Untitled'}`).
 //   - TS / Svelte-script string literals that look like user-facing sentences
 //     (two or more words that start capitalized or end with sentence
 //     punctuation) — a heuristic that tolerates class lists, paths, and keys.
@@ -54,6 +57,7 @@ const USER_FACING_ATTRS = [
   'title',
   'alt',
   'label',
+  'tooltip',
   'aria-label',
   'aria-description',
   'aria-placeholder',
@@ -205,6 +209,69 @@ function stripHtmlEntities(text) {
   return text.replace(/&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, ' ');
 }
 
+// Index of the `}` closing the `{` at openIndex (quote-aware), or -1.
+function findBalancedBrace(text, openIndex) {
+  let depth = 0;
+  let quote = null;
+  for (let j = openIndex; j < text.length; j++) {
+    const c = text[j];
+    if (quote) {
+      if (c === '\\') {
+        j++;
+        continue;
+      }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      quote = c;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return j;
+    }
+  }
+  return -1;
+}
+
+// String literals in a JS expression: [{ start, value }] with template-literal
+// `${...}` interpolations blanked out of the value.
+function extractStringLiterals(expr) {
+  const out = [];
+  let i = 0;
+  while (i < expr.length) {
+    const c = expr[i];
+    if (c !== '"' && c !== "'" && c !== '`') {
+      i++;
+      continue;
+    }
+    const quote = c;
+    const start = i;
+    i++;
+    let value = '';
+    while (i < expr.length && expr[i] !== quote) {
+      if (expr[i] === '\\') {
+        value += expr[i + 1] ?? '';
+        i += 2;
+        continue;
+      }
+      if (quote === '`' && expr[i] === '$' && expr[i + 1] === '{') {
+        const end = findBalancedBrace(expr, i + 1);
+        value += ' ';
+        i = end === -1 ? expr.length : end + 1;
+        continue;
+      }
+      value += expr[i];
+      i++;
+    }
+    i++;
+    out.push({ start, value });
+  }
+  return out;
+}
+
 const WORDS_RE = /[A-Za-z]{2,}/;
 const SENTENCE_RE = /[A-Za-z]{2,}\s+[A-Za-z]{2,}/;
 const CAPITALIZED_START_RE = /^[^A-Za-z]*[A-Z][a-z]/;
@@ -264,13 +331,43 @@ function checkTemplateText(src, template, start, end, violations) {
   const raw = template.slice(start, end);
   const stripped = stripHtmlEntities(stripBraceExpressions(raw));
   const match = WORDS_RE.exec(stripped);
-  if (!match) return;
-  const snippet = stripped.trim().replace(/\s+/g, ' ').slice(0, 60);
-  violations.push({
-    line: lineAt(src, start + match.index),
-    kind: 'template text',
-    snippet,
-  });
+  if (match) {
+    const snippet = stripped.trim().replace(/\s+/g, ' ').slice(0, 60);
+    violations.push({
+      line: lineAt(src, start + match.index),
+      kind: 'template text',
+      snippet,
+    });
+  }
+  checkTemplateFallbacks(src, raw, start, violations);
+}
+
+// Flag `||`-fallback string literals inside render expressions, e.g.
+// `{workspace.title || 'Untitled'}`. Control-flow blocks (`{#if …}` etc.) are
+// skipped — they are conditions, not rendered output.
+function checkTemplateFallbacks(src, raw, start, violations) {
+  let i = 0;
+  while (i < raw.length) {
+    if (raw[i] !== '{') {
+      i++;
+      continue;
+    }
+    const close = findBalancedBrace(raw, i);
+    if (close === -1) return;
+    const expr = raw.slice(i + 1, close);
+    if (!/^[#:/@]/.test(expr.trim())) {
+      for (const lit of extractStringLiterals(expr)) {
+        if (!raw.slice(i + 1, i + 1 + lit.start).trimEnd().endsWith('||')) continue;
+        if (!WORDS_RE.test(stripHtmlEntities(lit.value))) continue;
+        violations.push({
+          line: lineAt(src, start + i + 1 + lit.start),
+          kind: 'fallback literal',
+          snippet: lit.value.trim().replace(/\s+/g, ' ').slice(0, 60),
+        });
+      }
+    }
+    i = close + 1;
+  }
 }
 
 function checkTagAttributes(src, tag, tagStart, violations) {
@@ -286,6 +383,25 @@ function checkTagAttributes(src, tag, tagStart, violations) {
         kind: `attribute ${attr}`,
         snippet: value.trim().replace(/\s+/g, ' ').slice(0, 60),
       });
+    }
+    // Expression values: title={cond ? 'A' : 'B'} — any word-bearing string
+    // literal inside the expression is user-facing.
+    const exprAttrRe = new RegExp(`(?:^|[\\s{])${attr}\\s*=\\s*\\{`, 'g');
+    let em;
+    while ((em = exprAttrRe.exec(tag)) !== null) {
+      const open = em.index + em[0].length - 1;
+      const close = findBalancedBrace(tag, open);
+      if (close === -1) break;
+      const expr = tag.slice(open + 1, close);
+      for (const lit of extractStringLiterals(expr)) {
+        if (!WORDS_RE.test(stripHtmlEntities(lit.value))) continue;
+        violations.push({
+          line: lineAt(src, tagStart + open + 1 + lit.start),
+          kind: `attribute ${attr}`,
+          snippet: lit.value.trim().replace(/\s+/g, ' ').slice(0, 60),
+        });
+      }
+      exprAttrRe.lastIndex = close + 1;
     }
   }
 }

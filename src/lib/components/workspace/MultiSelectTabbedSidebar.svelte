@@ -1204,7 +1204,7 @@
                         variant="ghost"
                         size="icon-xs"
                         class="shrink-0 text-subtle"
-                        tooltip="New file"
+                        tooltip={m.workspace_multiSelectSidebar_newFile_tooltip()}
                         onclick={() => filesPanelRef?.startCreatingFile()}
                       >
                         <Fa icon={faPlus} class="w-3 h-3" />
@@ -1214,8 +1214,8 @@
                         size="icon-xs"
                         class="shrink-0 {showOnlyChangedFiles ? 'text-primary' : 'text-subtle'}"
                         tooltip={showOnlyChangedFiles
-                          ? 'Show all files'
-                          : 'Show only changed files'}
+                          ? m.workspace_multiSelectSidebar_showAllFiles_tooltip()
+                          : m.workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip()}
                         onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
                       >
                         <Fa icon={faPencil} class="w-3 h-3" />
@@ -1224,7 +1224,9 @@
                         variant="ghost"
                         size="icon-xs"
                         class="shrink-0 text-subtle"
-                        tooltip={hasExpandedDirectories ? 'Collapse all' : 'Expand all'}
+                        tooltip={hasExpandedDirectories
+                          ? m.workspace_multiSelectSidebar_collapseAll_tooltip()
+                          : m.workspace_multiSelectSidebar_expandAll_tooltip()}
                         onclick={async () => {
                           if (hasExpandedDirectories) {
                             filesPanelRef?.collapseAll();

@@ -479,7 +479,7 @@
       <div class="flex items-start gap-2">
         <div class="min-w-0 flex-1">
           <div class="text-sm font-semibold text-foreground truncate">
-            {workspace?.title || 'Untitled'}
+            {workspace?.title || m.workspace_links_untitled_label()}
           </div>
         </div>
         {#if lifecycleText}

@@ -1220,7 +1220,9 @@
     {#if hasTriggerIcon}
       <GitBranchIcon size={12} class="text-ghost" />
     {/if}
-    <span class="truncate">{selectedBranch || value || 'No branch selected'}</span>
+    <span class="truncate"
+      >{selectedBranch || value || m.workspace_branchSelector_noBranchSelected_label()}</span
+    >
   </div>
 {:else}
   <div class="relative min-w-0" bind:this={containerEl}>

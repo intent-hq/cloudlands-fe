@@ -73,7 +73,7 @@
   tabindex={active ? 0 : -1}
   data-tab-id={id}
   aria-selected={active}
-  aria-label={`Space tab: ${id}`}
+  aria-label={m.ui_tab_spaceTab_ariaLabel({ id: id ?? '' })}
   class={cn(
     'tab-button group/tab-button relative h-9 px-1 text-sm font-medium cursor-pointer',
     active ? 'bg-sidebar text-foreground rounded-t-lg' : '',

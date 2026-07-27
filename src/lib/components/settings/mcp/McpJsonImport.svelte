@@ -67,7 +67,7 @@
     <textarea
       bind:value={jsonContent}
       onkeydown={handleKeydown}
-      placeholder={`{"my-server": {"command": "npx", "args": ["-y", "@some/mcp-server"]}}`}
+      placeholder={/* i18n-ignore (JSON config example) */ `{"my-server": {"command": "npx", "args": ["-y", "@some/mcp-server"]}}`}
       rows={12}
       class="w-full px-3 py-2 text-sm font-mono rounded-md border border-border
              bg-background focus:outline-none focus:ring-2 focus:ring-primary/30

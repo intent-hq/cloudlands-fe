@@ -166,7 +166,7 @@
               : 'cursor-default'}"
             onclick={startEditingTitle}
             disabled={!editableTitle}
-            title={editableTitle ? 'Click to edit' : title}
+            title={editableTitle ? m.ui_contentHeader_clickToEdit_tooltip() : title}
           >
             {title}
           </button>

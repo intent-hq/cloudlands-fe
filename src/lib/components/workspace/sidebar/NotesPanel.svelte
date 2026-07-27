@@ -734,7 +734,9 @@
                 type="button"
                 class="shrink-0 p-1 mr-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100"
                 onclick={(e) => toggleCollapse(note.id as string, e)}
-                aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                aria-label={isCollapsed
+                  ? m.workspace_notesPanel_expand_ariaLabel()
+                  : m.workspace_notesPanel_collapse_ariaLabel()}
               >
                 <div
                   class="transition-transform duration-150 ease-out"

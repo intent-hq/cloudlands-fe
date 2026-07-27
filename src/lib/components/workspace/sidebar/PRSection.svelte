@@ -949,7 +949,9 @@
               })}
         <p class="text-xs text-subtle">
           {m.workspace_prSection_forcePushLocal_before()}
-          <span class="font-medium">{$workspace$?.branch || 'branch'}</span>
+          <span class="font-medium"
+            >{$workspace$?.branch || m.workspace_prSection_branchFallback_label()}</span
+          >
           {m.workspace_prSection_forcePushAheadBehind_label({
             ahead: aheadPhrase,
             behind: behindPhrase,
@@ -1099,7 +1101,7 @@
                           workspaceId: workspaceId as WorkspaceId,
                           forceExternal: true,
                         })}
-                      tooltip="Open in browser"
+                      tooltip={m.workspace_sidebar_openInBrowser_tooltip()}
                       tooltipSide="top"
                     >
                       <Fa icon={faArrowUpRightFromSquare} size="xs" />

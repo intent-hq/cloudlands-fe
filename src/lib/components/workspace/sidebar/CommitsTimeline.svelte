@@ -821,7 +821,7 @@
                   class="{!isOperatingOnThis &&
                     'opacity-0!'} group-hover:opacity-100! transition-opacity shrink-0"
                   onclick={(e: MouseEvent) => openCommitInBrowser(commit.hash, e)}
-                  tooltip="Open in browser"
+                  tooltip={m.workspace_sidebar_openInBrowser_tooltip()}
                   tooltipSide="top"
                 >
                   <Fa icon={faArrowUpRightFromSquare} size="xs" class="text-subtle" />

@@ -714,7 +714,7 @@
           >
             <textarea
               class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground resize-y focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-              placeholder={'{"mcpServers": {}}'}
+              placeholder={'{"mcpServers": {}}' /* i18n-ignore (JSON config example) */}
               aria-label={m.settings_mcpServers_jsonEditorAriaLabel()}
               bind:value={userMcpSettingsContent}
             ></textarea>

@@ -837,7 +837,7 @@
     <!-- Header: Title and repo -->
     <div class="w-full">
       <div class="text-sm font-semibold text-foreground truncate">
-        {$workspace?.title || 'Untitled'}
+        {$workspace?.title || m.workspace_links_untitled_label()}
       </div>
       <div class="text-sm text-subtle truncate mt-0.5 flex items-center gap-1">
         <Tooltip
@@ -1191,9 +1191,11 @@
               class:text-ghost={!currentStatusMessage}
               onclick={startEditingStatusMessage}
               title={currentStatusMessage
-                ? 'Click to edit workspace status'
-                : 'Click to add workspace status'}
-              aria-label={currentStatusMessage ? 'Edit workspace status' : 'Add workspace status'}
+                ? m.workspace_sidebarHeader_editStatus_tooltip()
+                : m.workspace_sidebarHeader_addStatus_tooltip()}
+              aria-label={currentStatusMessage
+                ? m.workspace_sidebarHeader_editStatus_ariaLabel()
+                : m.workspace_sidebarHeader_addStatus_ariaLabel()}
               disabled={!$workspace}
             >
               {currentStatusMessage}

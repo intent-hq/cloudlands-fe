@@ -89,6 +89,53 @@ describe('hardcoded user-facing string gate', () => {
     );
   });
 
+  it('flags string literals inside expression-valued attributes and tooltip attributes', () => {
+    withFixture(
+      {
+        'Example.svelte': [
+          '<script lang="ts">',
+          '  let pinned = $state(false);',
+          '</script>',
+          '',
+          "<button title={pinned ? 'Unpin from list' : 'Pin to list'}>x</button>",
+          '<div tooltip="Open in browser">y</div>',
+          "<div tooltip={pinned ? m.a_b() : 'Collapse all'}>z</div>",
+        ].join('\n'),
+      },
+      (dir) => {
+        const result = runGate(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('[attribute title] "Unpin from list"');
+        expect(result.output).toContain('[attribute title] "Pin to list"');
+        expect(result.output).toContain('[attribute tooltip] "Open in browser"');
+        expect(result.output).toContain('[attribute tooltip] "Collapse all"');
+      },
+    );
+  });
+
+  it('flags || fallback literals in template expressions but not m.* usage', () => {
+    withFixture(
+      {
+        'Example.svelte': [
+          '<script lang="ts">',
+          '  let title = $state("");',
+          '</script>',
+          '',
+          "<span>{title || 'Untitled'}</span>",
+          '<span>{title || m.fallback_label()}</span>',
+          "<span class={title || 'text-subtle'}></span>",
+        ].join('\n'),
+      },
+      (dir) => {
+        const result = runGate(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('[fallback literal] "Untitled"');
+        expect(result.output).not.toContain('fallback_label');
+        expect(result.output).not.toContain('text-subtle');
+      },
+    );
+  });
+
   it('flags sentence-like string literals in TS but tolerates non-UI strings', () => {
     withFixture(
       {

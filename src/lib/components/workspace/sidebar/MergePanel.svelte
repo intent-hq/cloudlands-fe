@@ -335,7 +335,7 @@
     <p class="text-xs text-subtle">
       {m.workspace_mergePanel_prMergedInto_before({ number: openPR.number })}
       <span class="font-medium text-foreground"
-        >{targetBranch || trunkBranch || 'main'}</span
+        >{targetBranch || trunkBranch || 'main' /* i18n-ignore (git branch name) */}</span
       >.
     </p>
 
@@ -415,7 +415,7 @@
         parts: mergeParts.join(m.workspace_prSection_and_separator()),
       })}
       <span class="font-medium text-foreground"
-        >{targetBranch || trunkBranch || 'trunk'}</span
+        >{targetBranch || trunkBranch || m.workspace_mergePanel_trunkFallback_label()}</span
       >.
     </p>
   {/if}

@@ -215,7 +215,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 >
                   <AuggieAvatar size={22} {agentId} />
                   <span class="truncate font-medium text-subtle -mt-0.5"
-                    >{getAgentName(agentId) || 'Agent'}</span
+                    >{getAgentName(agentId) || m.workspace_fileChanges_agent_label()}</span
                   >
                 </button>
               {/each}

@@ -718,7 +718,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                       variant="ghost-light"
                       size="icon-xs"
                       class="h-5 w-5"
-                      tooltip="Open linked note"
+                      tooltip={m.workspace_fileChanges_openLinkedNote_tooltip()}
                       onclick={(e: MouseEvent) => {
                         e.stopPropagation();
                         const noteId = getLinkedNoteId(group.agentId);
@@ -733,7 +733,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                       variant="ghost-light"
                       size="icon-xs"
                       class="h-5 w-5"
-                      tooltip="Approve all"
+                      tooltip={m.workspace_fileChanges_approveAll_tooltip()}
                       onclick={(e: MouseEvent) => {
                         e.stopPropagation();
                         handleStageGroup(group);
@@ -755,7 +755,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5 relative"
-                        tooltip="Queued — click to cancel"
+                        tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
                           cancelGroupCommit(group, 'unstaged');
@@ -770,7 +770,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5"
-                        tooltip="Stage & commit"
+                        tooltip={m.workspace_fileChanges_stageAndCommit_tooltip()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
                           enqueueGroupCommit(group, 'unstaged');
@@ -939,7 +939,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                       variant="ghost-light"
                       size="icon-xs"
                       class="h-5 w-5"
-                      tooltip="Open linked note"
+                      tooltip={m.workspace_fileChanges_openLinkedNote_tooltip()}
                       onclick={(e: MouseEvent) => {
                         e.stopPropagation();
                         const noteId = getLinkedNoteId(group.agentId);
@@ -954,7 +954,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                       variant="ghost-light"
                       size="icon-xs"
                       class="h-5 w-5"
-                      tooltip="Unapprove all"
+                      tooltip={m.workspace_fileChanges_unapproveAll_tooltip()}
                       onclick={(e: MouseEvent) => {
                         e.stopPropagation();
                         handleUnstageGroup(group);
@@ -976,7 +976,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5 relative"
-                        tooltip="Queued — click to cancel"
+                        tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
                           cancelGroupCommit(group, 'staged');
@@ -991,7 +991,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5"
-                        tooltip="Commit"
+                        tooltip={m.workspace_commitDrawer_commit_label()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
                           enqueueGroupCommit(group, 'staged');

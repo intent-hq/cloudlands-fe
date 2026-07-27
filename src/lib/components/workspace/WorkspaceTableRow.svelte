@@ -185,7 +185,8 @@
               'text-base font-medium truncate flex-1 min-w-0',
               ws.archived || !ws.title ? 'text-muted-foreground' : 'text-foreground',
             )}
-            title={ws.title || 'Untitled'}>{ws.title || 'Untitled'}</span
+            title={ws.title || m.workspace_links_untitled_label()}
+            >{ws.title || m.workspace_links_untitled_label()}</span
           >
 
           <!-- Agent avatars -->
@@ -270,7 +271,9 @@
           size="icon-xs"
           onclick={handleArchive}
           class="hover:text-muted-foreground"
-          tooltip={isArchived ? 'Unarchive space' : 'Archive space'}
+          tooltip={isArchived
+            ? m.workspace_tableRow_unarchive_tooltip()
+            : m.workspace_tableRow_archive_tooltip()}
         >
           <Fa icon={isArchived ? faBoxOpen : faBoxArchive} size="sm" />
         </Button>
@@ -281,7 +284,7 @@
           size="icon-xs"
           onclick={handleDelete}
           class="hover:text-destructive-foreground hover:bg-destructive/10!"
-          tooltip="Delete space"
+          tooltip={m.workspace_tableRow_delete_tooltip()}
         >
           <Fa icon={faTrash} size="sm" />
         </Button>

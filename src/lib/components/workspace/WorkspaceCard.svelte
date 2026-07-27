@@ -431,7 +431,7 @@
               ? 'text-foreground'
               : 'text-subtle'}"
         >
-          {workspace.title || 'Untitled'}
+          {workspace.title || m.workspace_links_untitled_label()}
         </span>
 
         {#if isRunning && streamingAgentIds.length > 0 && workspace?.activity !== 'idle'}
@@ -537,8 +537,8 @@
             class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50 hover:text-foreground
               {isPinned ? 'text-primary/60' : 'text-ghost'}"
             onclick={onTogglePin}
-            aria-label={isPinned ? 'Unpin' : 'Pin'}
-            title={isPinned ? 'Unpin from Active list' : 'Pin to Active list'}
+            aria-label={isPinned ? m.workspace_card_unpin_ariaLabel() : m.workspace_card_pin_ariaLabel()}
+            title={isPinned ? m.workspace_card_unpin_tooltip() : m.workspace_card_pin_tooltip()}
           >
             <Fa icon={faThumbtack} size="xs" />
           </button>
