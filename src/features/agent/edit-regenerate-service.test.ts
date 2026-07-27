@@ -29,6 +29,8 @@ import {
   agentSessionEditAndRegenerateRequested,
   bulkUpsertSessions,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { chatSendFailed } from "$store/renderer/slices/chat-state/chat-state-slice";
+import type { ChatAgentState } from "$store/renderer/slices/chat-state/chat-state-types";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -63,6 +65,13 @@ function readMessages(agentId: string): AgentMessage[] {
     agentSessions?: { byAgentId: Record<string, AgentSession> };
   };
   return state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+}
+
+function readChatState(agentId: string): ChatAgentState | undefined {
+  const state = appStore.state as {
+    chatState?: { byAgentId: Record<string, ChatAgentState> };
+  };
+  return state.chatState?.byAgentId[agentId];
 }
 
 describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real store)", () => {
@@ -131,6 +140,58 @@ describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real s
     await flush();
     expect(toast.error).toHaveBeenCalledWith("bad message id");
     expect(readMessages(AGENT).map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("clears a stale chat error and starts the loading state on success", async () => {
+    const WS = "ws-edit-chatstate";
+    const AGENT = "agent-edit-chatstate";
+    seedSession(AGENT, WS, [
+      makeMessage("m1", "user", "first"),
+      makeMessage("m2", "assistant", "reply"),
+    ]);
+    appStore.dispatch(chatSendFailed(AGENT, "provider exploded"));
+    expect(readChatState(AGENT)?.error).toBe("provider exploded");
+    editAndRegenerate.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited");
+    appStore.dispatch(action);
+    await action.promise;
+
+    const chatState = readChatState(AGENT);
+    expect(chatState?.error).toBeNull();
+    expect(chatState?.streamingStartTime).toEqual(expect.any(Number));
+  });
+
+  it("leaves chat-state untouched on a non-success result", async () => {
+    const WS = "ws-edit-chatstate-fail";
+    const AGENT = "agent-edit-chatstate-fail";
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "first")]);
+    appStore.dispatch(chatSendFailed(AGENT, "original error"));
+    editAndRegenerate.mockResolvedValueOnce({ success: false, error: "bad message id" });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("bad message id");
+
+    const chatState = readChatState(AGENT);
+    expect(chatState?.error).toBe("original error");
+    expect(chatState?.streamingStartTime).toBeNull();
+  });
+
+  it("leaves chat-state untouched on a thrown transport error", async () => {
+    const WS = "ws-edit-chatstate-throw";
+    const AGENT = "agent-edit-chatstate-throw";
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "first")]);
+    appStore.dispatch(chatSendFailed(AGENT, "original error"));
+    editAndRegenerate.mockRejectedValueOnce(new Error("transport boom"));
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("transport boom");
+
+    const chatState = readChatState(AGENT);
+    expect(chatState?.error).toBe("original error");
+    expect(chatState?.streamingStartTime).toBeNull();
   });
 
   it("rejects, toasts, and leaves the transcript untouched on a thrown transport error", async () => {
