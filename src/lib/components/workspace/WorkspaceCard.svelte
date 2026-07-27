@@ -18,7 +18,6 @@
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import type { WorkspacePhaseInfo, WorkspacePhaseStats, WorkspacePhase } from './workspace-phase';
   import TaskProgressBar from './TaskProgressBar.svelte';
-  import CheckoutModePill from './CheckoutModePill.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
@@ -501,9 +500,8 @@
       </div>
 
       {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
-        <div class="wc-repo flex min-w-0 items-center gap-1 text-ui text-subtle">
-          <span class="min-w-0 truncate">{workspace.repositoryOwner}/{workspace.repositoryName}</span>
-          <CheckoutModePill checkoutMode={workspace.checkoutMode} />
+        <div class="wc-repo truncate text-ui text-subtle">
+          {workspace.repositoryOwner}/{workspace.repositoryName}
         </div>
       {/if}
     </div>
