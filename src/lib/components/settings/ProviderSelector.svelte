@@ -751,7 +751,7 @@
                 <ProviderPathConfig
                   providerId={provider.id}
                   providerName={provider.name}
-                  cliCommand={provider.command}
+                  cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
                   configuredPath={providerPaths[provider.id]}
                   resolvedPath={resolvedPaths[provider.id]}
                   isInstalled={provider.available}
