@@ -245,6 +245,60 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
   });
 });
 
+describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("sends workspace.list and passes the BE-owned displayStatus through normalization", async () => {
+    // intent-hq/intentd#600: the daemon computes the current-cycle
+    // `displayStatus` (snake_case wire values) and the FE renders it verbatim
+    // — the normalizer must not strip or remap it.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Rollup ws",
+          branch: "intent/rollup",
+          status: "Active",
+          displayStatus: "in_progress",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          updatedAt: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list({ includeArchived: true });
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", { includeArchived: true });
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0]).toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      title: "Rollup ws",
+      displayStatus: "in_progress",
+    });
+  });
+
+  it("leaves displayStatus undefined when an older daemon omits the field", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          title: "Legacy ws",
+          branch: "intent/legacy",
+          status: "Active",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(workspaces[0]?.displayStatus).toBeUndefined();
+  });
+});
+
+
 describe("LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
 

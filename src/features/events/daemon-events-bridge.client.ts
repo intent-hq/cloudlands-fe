@@ -124,7 +124,7 @@ import type {
   TaskStatus,
   Workspace,
 } from '$shared/types';
-import { WorkspaceStatus, isProposal } from '$shared/types';
+import { WorkspaceStatus, isProposal, isWorkspaceDisplayStatus } from '$shared/types';
 import {
   PROPOSAL_RESOURCE_MIME_TYPE,
   createProposalResource,
@@ -1378,6 +1378,30 @@ function handleActivityChangedEvent(event: WorkspaceEvent, workspaceId: string):
 }
 
 /**
+ * `workspace:displayStatus-changed` (intent-hq/intentd#600) carries the
+ * self-sufficient transition payload `{ workspaceId, displayStatus }` — the
+ * daemon emits it only when its BE-owned current-cycle rollup changes, so the
+ * FE mirrors the new value directly into the workspace entity without a
+ * follow-up `workspace.get`. The wire values are snake_case and match the FE
+ * type exactly, so no mapping is needed. Like the tokenUsage/context handlers,
+ * the payload's own `data.workspaceId` wins over the envelope id when present.
+ */
+function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  const displayStatus = data.displayStatus;
+  if (!isWorkspaceDisplayStatus(displayStatus)) return;
+  appStore.dispatch(
+    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { displayStatus })]),
+  );
+}
+
+/**
  * Reconcile workspace.activity when a missed edge is detected. The daemon only
  * emits `workspace:activity-changed` on the 0↔1 edge; for coordinator-only
  * workspaces that edge can fire before the FE bridge subscribed or before the
@@ -2013,6 +2037,13 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'workspace:activity-changed') {
     handleActivityChangedEvent(event, workspaceId);
   }
+  // `workspace:displayStatus-changed` (intent-hq/intentd#600) — merge the
+  // BE-owned current-cycle status onto the workspace entity so the sidebar
+  // status grouping updates live without a refetch. Side effect, never an
+  // early return.
+  if (type === 'workspace:displayStatus-changed') {
+    handleDisplayStatusChangedEvent(event, workspaceId);
+  }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
@@ -2276,6 +2307,10 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   // state changes (idle ↔ agent_running) so the FE can update the workspace
   // entity without a refetch.
   'workspace:activity-changed',
+  // `workspace:displayStatus-changed` (intent-hq/intentd#600) — BE-owned
+  // current-cycle display status transitions so the sidebar grouping updates
+  // without a refetch.
+  'workspace:displayStatus-changed',
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',
