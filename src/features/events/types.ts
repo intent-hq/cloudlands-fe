@@ -47,6 +47,13 @@ export interface CanonicalAgentStatusFields {
   isProcessing: boolean | null;
   isResponding: boolean | null;
   stopReason: string | null;
+  /**
+   * Derived corrupted/poisoned-session flag (monorepo#940). Present (`true`)
+   * only on the terminal-failure `agent:status-changed` when the failure
+   * classifies as session-fatal; omitted otherwise (absent ≠ present-false on
+   * the wire) and on older daemons.
+   */
+  sessionCorrupted?: boolean;
 }
 
 // ============================================================================

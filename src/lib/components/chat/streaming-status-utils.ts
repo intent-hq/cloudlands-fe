@@ -95,3 +95,38 @@ export function shouldAppendStreamingEvent(
   return true;
 }
 
+/** Copy for the corrupted-session error surface (monorepo#940). */
+export const SESSION_CORRUPTED_TITLE = 'Agent session corrupted';
+export const SESSION_CORRUPTED_MESSAGE =
+  'Try again will start a fresh session and carry over the conversation history';
+
+export interface ErrorDisplay {
+  corrupted: boolean;
+  title: string;
+  message: string;
+  /** Raw error text demoted to secondary detail when corrupted copy replaces it. */
+  detail: string | null;
+}
+
+/**
+ * Derive the error surface copy from the raw error text and the daemon's
+ * derived sessionCorrupted flag (monorepo#940). When the flag is absent/false
+ * the result matches the pre-existing rendering exactly (title "Response
+ * failed", the raw error as the message); when corrupted, distinct
+ * recreate-aware copy is shown and the raw error becomes secondary detail.
+ */
+export function deriveErrorDisplay(
+  error: string | null | undefined,
+  sessionCorrupted?: boolean,
+): ErrorDisplay | null {
+  if (!error) return null;
+  if (sessionCorrupted === true) {
+    return {
+      corrupted: true,
+      title: SESSION_CORRUPTED_TITLE,
+      message: SESSION_CORRUPTED_MESSAGE,
+      detail: error,
+    };
+  }
+  return { corrupted: false, title: 'Response failed', message: error, detail: null };
+}

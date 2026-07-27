@@ -345,6 +345,14 @@
     return null;
   });
 
+  // monorepo#940: the daemon flags the parked error session as corrupted —
+  // Retry will recreate the provider session instead of resuming, so the error
+  // surface shows recreate-aware copy. Absent flag (older daemons / ordinary
+  // errors) renders exactly as before.
+  const effectiveSessionCorrupted = $derived(
+    $agentSession$?.status === AgentStatus.Error && $agentSession$?.sessionCorrupted === true,
+  );
+
   // Track if there's a pending permission request for this agent
   // When a permission is pending, we hide the "Thinking" indicator since the permission UI shows instead
   const allPermissionRequests = selectPermissionRequests();
@@ -3134,6 +3142,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        sessionCorrupted={effectiveSessionCorrupted}
                         isStalled={$chatIsStalled$}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
@@ -3158,6 +3167,7 @@
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
+                      sessionCorrupted={effectiveSessionCorrupted}
                       isStalled={$chatIsStalled$}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
@@ -3238,6 +3248,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
+                        sessionCorrupted={effectiveSessionCorrupted}
                         isStalled={$chatIsStalled$}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
@@ -3262,6 +3273,7 @@
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
+                      sessionCorrupted={effectiveSessionCorrupted}
                       isStalled={$chatIsStalled$}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
@@ -3291,6 +3303,7 @@
                 receivedFirstChunk={$chatReceivedFirstChunk$}
                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
                 error={effectiveError}
+                sessionCorrupted={effectiveSessionCorrupted}
                 isStalled={$chatIsStalled$}
                 modelUnavailable={$chatModelUnavailable$}
                 {hasPendingPermission}
@@ -3497,6 +3510,7 @@
                             receivedFirstChunk={$chatReceivedFirstChunk$}
                             streamingContentLength={$chatStreamingContent$?.length ?? 0}
                             error={effectiveError}
+                            sessionCorrupted={effectiveSessionCorrupted}
                             isStalled={$chatIsStalled$}
                             modelUnavailable={$chatModelUnavailable$}
                             {hasPendingPermission}
@@ -3554,6 +3568,7 @@
                               receivedFirstChunk={$chatReceivedFirstChunk$}
                               streamingContentLength={$chatStreamingContent$?.length ?? 0}
                               error={effectiveError}
+                              sessionCorrupted={effectiveSessionCorrupted}
                               isStalled={$chatIsStalled$}
                               modelUnavailable={$chatModelUnavailable$}
                               {hasPendingPermission}
@@ -3601,6 +3616,7 @@
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
                   error={effectiveError}
+                  sessionCorrupted={effectiveSessionCorrupted}
                   isStalled={$chatIsStalled$}
                   modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}
