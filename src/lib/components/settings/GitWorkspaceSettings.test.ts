@@ -84,6 +84,20 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
     expect(toggle.checked).toBe(false);
   });
 
+  it('renders the toggle unchecked when the daemon reports a non-boolean value (fail-safe)', async () => {
+    mocks.mockSettingsList.mockResolvedValue([
+      ...baseSettings,
+      { path: GIT_CRED_PATH, value: null },
+    ]);
+
+    render(GitWorkspaceSettings);
+
+    const toggle = await waitFor(
+      () => screen.getByRole('checkbox', { name: GIT_CRED_LABEL }) as HTMLInputElement
+    );
+    expect(toggle.checked).toBe(false);
+  });
+
   it('hides the toggle when the daemon does not report the setting (older daemon)', async () => {
     mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
 

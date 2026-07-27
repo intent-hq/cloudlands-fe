@@ -119,7 +119,9 @@
     cowIsolation = byPath.get(SETTING_PATHS.cowIsolation) === true;
     branchPrefix = stringValue(byPath.get(SETTING_PATHS.branchPrefix));
     gitCredentialSettingSupported = byPath.has(SETTING_PATHS.exposeGitCredential);
-    exposeGitCredential = byPath.get(SETTING_PATHS.exposeGitCredential) !== false;
+    // Security-sensitive: only an explicit boolean `true` counts as enabled, so
+    // malformed/unexpected values fail safe to off.
+    exposeGitCredential = byPath.get(SETTING_PATHS.exposeGitCredential) === true;
     loadedValues = currentValues();
   }
 
