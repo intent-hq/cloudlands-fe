@@ -43,6 +43,36 @@ export interface SystemStatusWirePayload {
 }
 
 /**
+ * unsloth.status wire payload (protocol 2.5, intentd traits.rs / PROTOCOL §5.37):
+ * `{ running, repoId?, port?, pid?, uptimeSecs?, phase?, cpuPercent?,
+ * memoryBytes?, attachedAgentCount? }`. `running: false` means no managed
+ * server is up and every per-server field is omitted. `attachedAgentCount`
+ * is reported regardless of `running` when the daemon's agent manager is
+ * attached (a stopped-but-attached state is possible mid-restart), but a
+ * daemon without an attached agent manager reports exactly `{ running:
+ * false }` — so the field is optional.
+ */
+export interface UnslothStatusWirePayload {
+  running: boolean;
+  /** Full HF repo id currently served (or being started). */
+  repoId?: string;
+  /** Port the managed server listens on. */
+  port?: number;
+  /** OS pid of the managed server child, when known. */
+  pid?: number;
+  /** Seconds since the child was spawned. */
+  uptimeSecs?: number;
+  /** Coarse startup phase: "starting" | "minting" | "loading" | "ready". */
+  phase?: string;
+  /** CPU percent summed across the server's process tree (sysinfo convention: 100 = one full core). */
+  cpuPercent?: number;
+  /** Resident memory (bytes) summed across the server's process tree. */
+  memoryBytes?: number;
+  /** Currently-tracked agents spawned with the unsloth provider. Omitted when the agent manager is not attached. */
+  attachedAgentCount?: number;
+}
+
+/**
  * FE connection mode to the intentd daemon.
  * Additive transport info from backend:get-status and backend:status.
  *   - `sidecar-uds`  → local UDS to the daemon Electron spawned.
@@ -145,6 +175,18 @@ export interface DaemonHealthState {
   sidecarRunLogPending: boolean;
   /** Error string when the last run-log fetch failed. */
   sidecarRunLogError: string | null;
+  /**
+   * Last unsloth.status result, or null before the first poll. Polled only
+   * while the status dropdown is open (no constant background polling), so
+   * this can be stale between opens.
+   */
+  unslothStatus: UnslothStatusWirePayload | null;
+  /** True while an unsloth.status poll is in flight. */
+  unslothPolling: boolean;
+  /** True while an unsloth.stop request is in flight. */
+  unslothStopping: boolean;
+  /** Error string when the last unsloth.stop request failed. */
+  unslothStopError: string | null;
 }
 
 /**
