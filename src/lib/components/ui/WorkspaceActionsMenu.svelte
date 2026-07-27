@@ -28,6 +28,7 @@
   import { appClient } from '$lib/client';
   import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
+  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -116,6 +117,11 @@
   const canOpenExternalEditors = hasCapability('externalEditors');
 
   const installedEditors$ = selectInstalledEditorsFiltered();
+
+  // "Choose app" shows a LOCAL app picker against a daemon-host path, so like
+  // the editor list above it, it must disappear on a remote daemon
+  // (monorepo#883). Same gate as selectInstalledEditorsFiltered.
+  const isDaemonLocal$ = selectIsDaemonLocal();
 
   let resolvedPath: string = $state('');
   let resolvedFolderPath: string = $state('');
@@ -591,7 +597,7 @@
 
 <div class="w-full overflow-hidden">
   {#if showFileActions}
-    {#if canOpenExternalEditors}
+    {#if canOpenExternalEditors && $isDaemonLocal$}
       <!-- Open Actions - dynamically rendered based on installed editors -->
       <div class="space-y-0.5">
         {#each $installedEditors$ as editor (editor.id)}
