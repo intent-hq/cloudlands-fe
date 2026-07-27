@@ -93,6 +93,8 @@
     onchange?: (event: CustomEvent<RepoChangeDetail>) => void;
     triggerClass?: string;
     displayValue?: string;
+    /** Dimmed suffix rendered after the repo name, e.g. "owner/repo" */
+    triggerSuffix?: string;
     triggerValueClass?: string;
     triggerContentClass?: string;
     emptyLabel?: string;
@@ -108,6 +110,7 @@
     onchange,
     triggerClass,
     displayValue,
+    triggerSuffix,
     triggerValueClass = 'text-subtle',
     triggerContentClass = 'gap-0.75',
     emptyLabel = 'Select a repository',
@@ -1181,6 +1184,9 @@
             <span class={triggerValueClass}>{triggerDisplayValue}</span>
             {#if isNewRepo && !displayValue}
               <span class="text-sm text-subtle ml-1">(new)</span>
+            {/if}
+            {#if triggerSuffix}
+              <span class="text-sm text-subtle ml-1">({triggerSuffix})</span>
             {/if}
           {:else}
             <span class={triggerValueClass}>{emptyLabel}</span>
