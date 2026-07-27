@@ -5,6 +5,7 @@
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import { faCodeBranch } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -32,7 +33,7 @@
 </script>
 
 <VSCodeScrollablePanel
-  title="Code"
+  title={m.fileExplorer_vscodePanel_code_title()}
   collapsible={true}
   {collapsed}
   {onCollapse}
@@ -41,7 +42,9 @@
 >
   {#snippet headerActions()}
     <TooltipShortcut
-      label={showOnlyChanged ? 'Show all files' : 'Show only changed files'}
+      label={showOnlyChanged
+        ? m.fileExplorer_vscodePanel_showAll_label()
+        : m.fileExplorer_vscodePanel_showChanged_label()}
       side="bottom"
     >
       <Button

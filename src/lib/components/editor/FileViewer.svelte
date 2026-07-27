@@ -11,6 +11,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import CodeEditor from './CodeEditor.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('FileViewer');
 
@@ -82,7 +83,7 @@
   };
 
   const fileType = $derived(getFileType(filePath));
-  const fileName = $derived(filePath.split('/').pop() || 'Unknown');
+  const fileName = $derived(filePath.split('/').pop() || m.editor_fileViewer_unknown_fallback());
 
   // Image viewer state
   let imageZoom = $state(100);
@@ -206,16 +207,28 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleZoomOut}
-          title="Zoom out"
+          title={m.editor_fileViewer_zoomOut_tooltip()}
         >
           <Fa icon={faSearchMinus} size="sm" />
         </Button>
         <span class="text-xs text-subtle min-w-[50px] text-center">{imageZoom}%</span>
-        <Button size="icon" variant="ghost" class="h-7 w-7" onclick={handleZoomIn} title="Zoom in">
+        <Button
+          size="icon"
+          variant="ghost"
+          class="h-7 w-7"
+          onclick={handleZoomIn}
+          title={m.editor_fileViewer_zoomIn_tooltip()}
+        >
           <Fa icon={faSearchPlus} size="sm" />
         </Button>
         <div class="w-px h-5 bg-border mx-1"></div>
-        <Button size="icon" variant="ghost" class="h-7 w-7" onclick={handleRotate} title="Rotate">
+        <Button
+          size="icon"
+          variant="ghost"
+          class="h-7 w-7"
+          onclick={handleRotate}
+          title={m.editor_fileViewer_rotate_tooltip()}
+        >
           <Fa icon={faArrowsRotate} size="sm" />
         </Button>
         <div class="w-px h-5 bg-border mx-1"></div>
@@ -224,7 +237,7 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleCopyImage}
-          title="Copy image"
+          title={m.editor_fileViewer_copyImage_tooltip()}
         >
           {#if copied}
             <Fa icon={faCheck} size="sm" class="text-green-500" />
@@ -237,7 +250,7 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleDownload}
-          title="Download"
+          title={m.editor_fileViewer_download_tooltip()}
         >
           <Fa icon={faDownload} size="sm" />
         </Button>
@@ -266,7 +279,7 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleDownload}
-          title="Download"
+          title={m.editor_fileViewer_download_tooltip()}
         >
           <Fa icon={faDownload} size="sm" />
         </Button>
@@ -284,7 +297,7 @@
       <!-- svelte-ignore a11y_media_has_caption -->
       <video controls class="max-w-full max-h-full">
         <source src={getImageSrc()} />
-        Your browser does not support the video tag.
+        {m.editor_fileViewer_videoUnsupported_label()}
       </video>
     </div>
   {:else if fileType === 'audio'}
@@ -303,7 +316,7 @@
       <div class="text-sm text-subtle mb-4">{fileName}</div>
       <audio controls class="w-full max-w-md">
         <source src={getImageSrc()} />
-        Your browser does not support the audio tag.
+        {m.editor_fileViewer_audioUnsupported_label()}
       </audio>
     </div>
   {:else if fileType === 'pdf'}
@@ -319,10 +332,10 @@
           />
         </svg>
       </div>
-      <p class="text-sm text-subtle mb-4">PDF Preview not available</p>
+      <p class="text-sm text-subtle mb-4">{m.editor_fileViewer_pdfUnavailable_label()}</p>
       <Button size="sm" variant="secondary" onclick={handleDownload}>
         <Fa icon={faDownload} size="sm" class="mr-2" />
-        Download PDF
+        {m.editor_fileViewer_downloadPdf_label()}
       </Button>
     </div>
   {:else if fileType === 'json'}
@@ -375,7 +388,7 @@
         </svg>
       </div>
       <p class="text-sm text-subtle mb-2">{fileName}</p>
-      <p class="text-xs text-subtle">Archive file - extract to view contents</p>
+      <p class="text-xs text-subtle">{m.editor_fileViewer_archive_label()}</p>
     </div>
   {:else if fileType === 'binary'}
     <!-- Binary File Notice -->
@@ -391,7 +404,7 @@
         </svg>
       </div>
       <p class="text-sm text-subtle mb-2">{fileName}</p>
-      <p class="text-xs text-subtle">Binary file - cannot be displayed</p>
+      <p class="text-xs text-subtle">{m.editor_fileViewer_binary_label()}</p>
     </div>
   {:else}
     <!-- Default: Code Editor -->

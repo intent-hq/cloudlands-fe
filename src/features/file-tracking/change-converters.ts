@@ -9,6 +9,7 @@ import type { TrackedChange, FileStats, AgentAttribution } from './types';
 import { ChangeStage } from './types';
 import type { WorkspaceEvent, CodeChange } from '../events/types';
 import { Logger } from '$lib/utils/logger';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger({ category: 'change-converters' });
 
@@ -93,7 +94,7 @@ function createAgentAttribution(
     };
     return {
       agentId: actor.id,
-      agentName: actor.name || 'Agent',
+      agentName: actor.name || m.fileTracking_changeTimeline_agent_fallback(),
       // Prefer actor fields (from attribution flow), fall back to eventData
       sessionId: actor.sessionId || eventData.sessionId || '',
       turnNumber: actor.turnNumber ?? eventData.turnNumber ?? 0,
@@ -105,7 +106,7 @@ function createAgentAttribution(
   if (eventData.agentId) {
     return {
       agentId: eventData.agentId,
-      agentName: eventData.agentName || 'Agent',
+      agentName: eventData.agentName || m.fileTracking_changeTimeline_agent_fallback(),
       sessionId: eventData.sessionId || '',
       turnNumber: eventData.turnNumber || 0,
       timestamp: new Date(event.timestamp).getTime(),
@@ -240,6 +241,7 @@ export function eventToTrackedChange(event: WorkspaceEvent): TrackedChange[] {
     return [];
   } catch (error) {
     logger.error(
+      // i18n-ignore (log message, not user-facing)
       'Error converting event to TrackedChange',
       error instanceof Error ? error : new Error(String(error)),
       {

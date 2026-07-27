@@ -38,6 +38,7 @@
     selectShouldInitializeFileExplorerForWorkspace,
   } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -128,12 +129,16 @@
 <Sidebar.Root collapsible="icon">
   <Sidebar.Header>
     <div class="flex items-center gap-2 px-2">
-      <Input bind:value={searchQuery} placeholder="Search files..." class="h-8" />
+      <Input
+        bind:value={searchQuery}
+        placeholder={m.fileExplorer_sidebar_search_placeholder()}
+        class="h-8"
+      />
       <Button
         size="icon"
         variant="ghost"
         onclick={() => appStore.dispatch(refreshFileExplorer(effectiveWsId))}
-        title="Refresh"
+        title={m.fileExplorer_sidebar_refresh_tooltip()}
       >
         <Fa icon={faArrowsRotate} size="1x" class="w-4 h-4" />
       </Button>
@@ -142,7 +147,7 @@
 
   <Sidebar.Content>
     <Sidebar.Group>
-      <Sidebar.GroupLabel>Files</Sidebar.GroupLabel>
+      <Sidebar.GroupLabel>{m.fileExplorer_sidebar_files_label()}</Sidebar.GroupLabel>
       <Sidebar.GroupContent>
         <ScrollArea class="h-[calc(100vh-8rem)]">
           <Sidebar.Menu>
@@ -226,7 +231,7 @@
   <Sidebar.Footer>
     <div class="px-2 py-1 text-xs text-subtle">
       {#if $fileCount$ > 0}
-        {$fileCount$} files
+        {m.fileExplorer_sidebar_fileCount_many({ count: $fileCount$ })}
       {/if}
     </div>
   </Sidebar.Footer>

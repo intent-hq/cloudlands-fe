@@ -331,6 +331,7 @@ export class PerformanceMonitor extends EventEmitter {
       this.metrics.gitPollDuration > this.thresholds.maxGitPollDuration
     ) {
       alerts.push(
+        // i18n-ignore (developer diagnostic alert, logged not shown in UI)
         `Git poll duration (${this.metrics.gitPollDuration}ms) exceeds threshold (${this.thresholds.maxGitPollDuration}ms)`,
       );
     }
@@ -340,6 +341,7 @@ export class PerformanceMonitor extends EventEmitter {
       this.metrics.eventProcessingTime > this.thresholds.maxEventProcessingTime
     ) {
       alerts.push(
+        // i18n-ignore (developer diagnostic alert, logged not shown in UI)
         `Event processing time (${this.metrics.eventProcessingTime}ms) exceeds threshold (${this.thresholds.maxEventProcessingTime}ms)`,
       );
     }
@@ -350,6 +352,7 @@ export class PerformanceMonitor extends EventEmitter {
     ) {
       const usedMB = Math.round(this.metrics.memoryUsage.heapUsed / 1024 / 1024);
       const thresholdMB = Math.round(this.thresholds.maxMemoryUsage / 1024 / 1024);
+      // i18n-ignore (developer diagnostic alert, logged not shown in UI)
       alerts.push(`Memory usage (${usedMB}MB) exceeds threshold (${thresholdMB}MB)`);
     }
 
@@ -358,6 +361,7 @@ export class PerformanceMonitor extends EventEmitter {
       this.metrics.eventQueueSize > this.thresholds.maxEventQueueSize
     ) {
       alerts.push(
+        // i18n-ignore (developer diagnostic alert, logged not shown in UI)
         `Event queue size (${this.metrics.eventQueueSize}) exceeds threshold (${this.thresholds.maxEventQueueSize})`,
       );
     }
@@ -365,6 +369,7 @@ export class PerformanceMonitor extends EventEmitter {
     const errorRate = this.errorTimestamps.length;
     if (errorRate > this.thresholds.maxErrorRate) {
       alerts.push(
+        // i18n-ignore (developer diagnostic alert, logged not shown in UI)
         `Error rate (${errorRate}/min) exceeds threshold (${this.thresholds.maxErrorRate}/min)`,
       );
     }

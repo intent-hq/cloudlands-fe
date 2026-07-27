@@ -1,5 +1,6 @@
 <script lang="ts">
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     isOpen: boolean;
@@ -30,8 +31,12 @@
 
   const resultText = $derived.by(() => {
     if (!searchQuery) return null;
-    if (hasMatches === false) return 'No results';
-    if (totalMatches > 0) return `${currentMatchIndex + 1} of ${totalMatches}`;
+    if (hasMatches === false) return m.terminal_searchBar_noResults_label();
+    if (totalMatches > 0)
+      return m.ui_panelFindBar_matchOf_label({
+        current: currentMatchIndex + 1,
+        total: totalMatches,
+      });
     return null;
   });
 
@@ -53,13 +58,13 @@
   <PanelFindBar
     bind:query={searchQuery}
     bind:inputRef={inputRef}
-    placeholder="Find in terminal..."
+    placeholder={m.terminal_searchBar_find_placeholder()}
     autofocus
     {focusTrigger}
     currentMatchIndex={currentMatchIndex}
     totalMatches={totalMatches}
     {resultText}
-    emptyResultText="No results"
+    emptyResultText={m.terminal_searchBar_noResults_label()}
     resultFormat="of"
     disableNavigationWhenNoMatches={false}
     class="top-0 right-0 z-10 rounded-none border-0 border-l border-b border-border bg-background/90 px-2 py-1"

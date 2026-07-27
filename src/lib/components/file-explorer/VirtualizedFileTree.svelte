@@ -36,6 +36,7 @@
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
@@ -48,7 +49,11 @@
     // @ts-expect-error - userAgentData is not in all browsers
     (navigator.userAgentData?.platform === 'macOS' ||
       /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
-  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
+  const fileManagerName = isWindows
+    ? m.layout_panelTabBar_fileManagerExplorer_label()
+    : isMac
+      ? m.layout_panelTabBar_fileManagerFinder_label()
+      : m.layout_panelTabBar_fileManagerGeneric_label();
 
   interface Props {
     flattenedNodes: FlattenedFileNode[];
@@ -727,7 +732,7 @@
   // seam is workspace-scoped + relative-path, so migrating these absolute-path,
   // undo-aware operations is deferred to a dedicated explorer migration; out of scope.
   async function handleDeleteFile(filePath: string) {
-    const fileName = filePath.split('/').pop() || 'file';
+    const fileName = filePath.split('/').pop() || m.fileExplorer_tree_file_fallback();
     // Read file content before deleting so we can undo
     let savedContent = '';
     try {
@@ -744,7 +749,7 @@
           path: filePath,
         });
         if (!result?.success) {
-          throw new Error(result?.error || 'Failed to delete file');
+          throw new Error(result?.error || m.fileExplorer_tree_deleteFailed_error());
         }
         // Close related panel tabs after successful deletion
         if (workspaceId && hasPanelLayoutManager(workspaceId)) {
@@ -769,7 +774,7 @@
     if (onCreateFile) {
       items.push({
         id: 'new-file',
-        label: 'New File',
+        label: m.fileExplorer_tree_newFile_label(),
         icon: faPlus,
         onClick: () => {
           startCreatingFile($fileExplorerWorkspacePath);
@@ -786,7 +791,7 @@
     if (node.type === 'file') {
       items.push({
         id: 'open',
-        label: 'Open',
+        label: m.fileExplorer_tree_open_label(),
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           onFileSelect?.(node.path);
@@ -797,7 +802,7 @@
         const parentDir = node.path.substring(0, node.path.lastIndexOf('/')) || $fileExplorerWorkspacePath;
         items.push({
           id: 'new-file',
-          label: 'New File',
+          label: m.fileExplorer_tree_newFile_label(),
           icon: faPlus,
           onClick: () => {
             startCreatingFile(parentDir);
@@ -808,7 +813,9 @@
     } else {
       items.push({
         id: 'toggle',
-        label: flattenedNodes.find((n) => n.node.path === node.path)?.isExpanded ? 'Collapse' : 'Expand',
+        label: flattenedNodes.find((n) => n.node.path === node.path)?.isExpanded
+          ? m.fileExplorer_tree_collapse_label()
+          : m.fileExplorer_tree_expand_label(),
         icon: faFolderOpen,
         onClick: () => {
           const flatNode = flattenedNodes.find((n) => n.node.path === node.path);
@@ -819,7 +826,7 @@
       if (onCreateFile) {
         items.push({
           id: 'new-file',
-          label: 'New File',
+          label: m.fileExplorer_tree_newFile_label(),
           icon: faPlus,
           onClick: () => {
             startCreatingFile(node.path);
@@ -832,7 +839,7 @@
     if (onRenameFile) {
       items.push({
         id: 'rename',
-        label: 'Rename',
+        label: m.fileExplorer_tree_rename_label(),
         icon: faPencil,
         onClick: () => {
           startEditing(node.path, node.name);
@@ -844,7 +851,7 @@
     if (node.type === 'file') {
       items.push({
         id: 'delete',
-        label: 'Delete',
+        label: m.fileExplorer_tree_delete_label(),
         icon: faTrash,
         onClick: () => {
           handleDeleteFile(node.path);
@@ -859,7 +866,7 @@
       items.push({ type: 'separator' });
       items.push({
         id: 'reveal',
-        label: `Reveal in ${fileManagerName}`,
+        label: m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName }),
         onClick: async () => {
           await invoke('shell:showItemInFolder', { path: node.path });
           closeContextMenu();
@@ -1056,7 +1063,7 @@
   style="contain: layout style;"
   tabindex="0"
   role="tree"
-  aria-label="File explorer"
+  aria-label={m.fileExplorer_tree_fileExplorer_ariaLabel()}
   onkeydown={handleKeydown}
   oncontextmenu={handleBackgroundContextMenu}
   ondragenter={handleFileDragEnter}
@@ -1098,7 +1105,7 @@
                   bind:value={creatingValue}
                   onblur={saveCreate}
                   onkeydown={handleCreateKeydown}
-                  placeholder="filename"
+                  placeholder={m.fileExplorer_tree_filename_placeholder()}
                   class="flex-1 text-sm leading-tight bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
                   onclick={(e) => e.stopPropagation()}
                 />
@@ -1224,7 +1231,7 @@
                     <button
                       type="button"
                       class="rounded-full overflow-hidden cursor-pointer"
-                      title="Click to open agent"
+                      title={m.fileExplorer_tree_openAgent_tooltip()}
                       onclick={(e) => {
                         e.stopPropagation();
                         onSelectAgent?.(agentId);

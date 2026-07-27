@@ -55,6 +55,14 @@ const ENFORCED_DIRS = [
   'src/lib/components/shared',
   'src/lib/components/common',
   'src/lib/components/error',
+  'src/lib/components/terminal',
+  'src/lib/components/editor',
+  'src/lib/components/file-explorer',
+  'src/lib/components/file-tracking',
+  'src/features/terminal',
+  'src/features/file-explorer',
+  'src/features/files',
+  'src/features/file-tracking',
 ];
 
 const ROOT = process.cwd();

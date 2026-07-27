@@ -6,6 +6,7 @@
 
 import type { LocalCommitInfo } from '$features/accept-changes/types';
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
+import { m } from '$shared/paraglide/messages.js';
 
 /** Open in target options */
 export type OpenInTarget = 'vscode' | 'terminal' | 'finder';
@@ -82,7 +83,7 @@ export function groupFilesByAgent(files: UIFileChange[]): AgentChangeGroup[] {
     const firstFile = groupFiles.find((f) => f.attribution);
     result.push({
       agentId: agentId === 'manual' ? null : agentId,
-      agentName: firstFile?.attribution?.agentName ?? 'Manual Changes',
+      agentName: firstFile?.attribution?.agentName ?? m.fileTracking_changes_manualChanges_label(),
       files: groupFiles,
       stats: calculateStats(groupFiles),
     });
