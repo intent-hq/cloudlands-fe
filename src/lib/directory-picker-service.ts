@@ -27,6 +27,13 @@ export async function pickDirectory({
     return;
   }
 
-  const path = await dialog.openDirectory({ title, defaultPath });
+  let path: string | null;
+  try {
+    path = await dialog.openDirectory({ title, defaultPath });
+  } catch {
+    openModal();
+    return;
+  }
+
   if (path !== null) await onSelect(path);
 }

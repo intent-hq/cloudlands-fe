@@ -84,4 +84,17 @@ describe('pickDirectory', () => {
     expect(onSelect).not.toHaveBeenCalled();
     expect(openModal).not.toHaveBeenCalled();
   });
+
+  it('falls back to the modal when the native picker rejects', async () => {
+    mocks.hasCapability.mockReturnValue(true);
+    mocks.isDaemonLocal.mockReturnValue(true);
+    mocks.openDirectory.mockRejectedValue(new Error('Native dialog unavailable'));
+    const openModal = vi.fn();
+    const onSelect = vi.fn();
+
+    await pickDirectory({ openModal, onSelect });
+
+    expect(openModal).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });
