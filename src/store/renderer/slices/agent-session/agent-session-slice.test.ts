@@ -4224,4 +4224,22 @@ describe('stopReason hydration', () => {
     expect(state.byAgentId['a1'].status).toBe('completed');
     expect(state.byAgentId['a1'].stopReason).toBe('end_turn');
   });
+
+  it('hydrates sessionCorrupted from a daemon agent.list/agent.get snapshot via bulkUpsertSessions (monorepo#940)', () => {
+    const corruptedSession = makeSession('a1', 'ws-1', {
+      status: 'error',
+      activationState: 'error',
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      stopReason: 'JSON-RPC error -32603: invalid argument',
+      sessionCorrupted: true,
+    });
+
+    const state = agentSessionReducer(initialState, bulkUpsertSessions([corruptedSession]));
+
+    expect(state.byAgentId['a1'].status).toBe('error');
+    expect(state.byAgentId['a1'].stopReason).toBe('JSON-RPC error -32603: invalid argument');
+    expect(state.byAgentId['a1'].sessionCorrupted).toBe(true);
+  });
 });

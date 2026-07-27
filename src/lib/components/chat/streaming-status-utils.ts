@@ -130,4 +130,3 @@ export function deriveErrorDisplay(
   }
   return { corrupted: false, title: 'Response failed', message: error, detail: null };
 }
-
