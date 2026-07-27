@@ -93,6 +93,17 @@ describe("LiveTerminalsClient wire requests (fake transport)", () => {
     });
   });
 
+  it("preserves xterm DEL as one byte in terminal.write params", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveTerminalsClient();
+
+    expect(await client.write("term-1", "\x7f")).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("terminal.write", {
+      terminalId: "term-1",
+      data: "fw==",
+    });
+  });
+
   it("resize forwards terminal.resize with cols/rows ints", async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveTerminalsClient();
@@ -255,6 +266,31 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
     });
 
     expect(onData).toHaveBeenCalledWith({ terminalId: "term-1", chunk: "ls\nfile.txt\n" });
+  });
+
+  it("preserves PTY erase-echo bytes when decoding terminal:data", async () => {
+    let handler: ((n: { method: string; params?: unknown }) => void) | undefined;
+    mockedOnNotification.mockImplementationOnce((cb) => {
+      handler = cb as typeof handler;
+      return () => {};
+    });
+    const onData = vi.fn();
+    const client = new LiveTerminalsClient();
+    client.subscribeEvents("term-1", { onData });
+    await flushSubscribe();
+
+    handler!({
+      method: "events.event",
+      params: {
+        subscriptionId: "sub-term-1",
+        event: {
+          type: "terminal:data",
+          data: { terminalId: "term-1", chunk: "CCAI" },
+        },
+      },
+    });
+
+    expect(onData).toHaveBeenCalledWith({ terminalId: "term-1", chunk: "\x08 \x08" });
   });
 
   it("ignores events for other terminals and unknown event types", async () => {
