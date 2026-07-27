@@ -254,6 +254,14 @@ export interface AgentSession {
   stopReason?: string | null;
 
   /**
+   * Derived corrupted/poisoned-session flag (monorepo#940). Present (`true`)
+   * only when the session is parked in `error` and the failure classifies as
+   * session-fatal — `agent.retry` will recreate the provider session instead
+   * of resuming. Omitted when false and on older daemons.
+   */
+  sessionCorrupted?: boolean;
+
+  /**
    * Cumulative usage counters (PROTOCOL §5.24). Point-read via
    * `agent.getSessionStats`; live-updated by `agent:session-stats-changed`.
    */

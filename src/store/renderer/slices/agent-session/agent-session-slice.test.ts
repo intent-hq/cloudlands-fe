@@ -1003,6 +1003,97 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].status).toBe('error');
       expect(state.byAgentId['a1'].isActive).toBe(false);
     });
+
+    it('applies sessionCorrupted from a terminal-failure agent:status-changed (monorepo#940)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-corrupted-1',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: 'JSON-RPC error -32603: invalid argument',
+            sessionCorrupted: true,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].stopReason).toBe('JSON-RPC error -32603: invalid argument');
+      expect(state.byAgentId['a1'].sessionCorrupted).toBe(true);
+    });
+
+    it('keeps sessionCorrupted falsy on an error status-changed without the key (older daemons / ordinary errors)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-plain-error',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: 'Spawn timeout',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].sessionCorrupted).toBeFalsy();
+    });
+
+    it('clears a stale sessionCorrupted flag on a status transition without the key (omitted-when-false wire semantics)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-corrupted-2',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: 'JSON-RPC error -32603: invalid argument',
+            sessionCorrupted: true,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].sessionCorrupted).toBe(true);
+
+      // agent.retry recreated the provider session — the daemon emits the
+      // follow-up status-changed WITHOUT the flag (absent = not corrupted).
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-recovered',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'pending',
+            isActive: true,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('pending');
+      expect(state.byAgentId['a1'].sessionCorrupted).toBe(false);
+    });
   });
 
   describe('updateAgentDigest', () => {
@@ -4132,5 +4223,23 @@ describe('stopReason hydration', () => {
 
     expect(state.byAgentId['a1'].status).toBe('completed');
     expect(state.byAgentId['a1'].stopReason).toBe('end_turn');
+  });
+
+  it('hydrates sessionCorrupted from a daemon agent.list/agent.get snapshot via bulkUpsertSessions (monorepo#940)', () => {
+    const corruptedSession = makeSession('a1', 'ws-1', {
+      status: 'error',
+      activationState: 'error',
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      stopReason: 'JSON-RPC error -32603: invalid argument',
+      sessionCorrupted: true,
+    });
+
+    const state = agentSessionReducer(initialState, bulkUpsertSessions([corruptedSession]));
+
+    expect(state.byAgentId['a1'].status).toBe('error');
+    expect(state.byAgentId['a1'].stopReason).toBe('JSON-RPC error -32603: invalid argument');
+    expect(state.byAgentId['a1'].sessionCorrupted).toBe(true);
   });
 });

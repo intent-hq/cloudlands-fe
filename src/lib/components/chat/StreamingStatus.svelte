@@ -21,7 +21,7 @@
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import { Spinner } from '$lib/components/ui/indicators';
-  import { formatDuration } from './streaming-status-utils';
+  import { deriveErrorDisplay, formatDuration } from './streaming-status-utils';
 
   interface Props {
     /** Whether streaming is active */
@@ -36,6 +36,11 @@
     streamingContentLength?: number;
     /** Error message if connection failed */
     error?: string | null;
+    /**
+     * Daemon-derived corrupted-session flag (monorepo#940) — when true, the
+     * error surface shows recreate-aware copy instead of the raw error.
+     */
+    sessionCorrupted?: boolean;
     /** Whether the stream appears stalled (no chunks received recently) */
     isStalled?: boolean;
     /** Model unavailable info - when set, shows retry with suggested model */
@@ -72,6 +77,7 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingContentLength = 0,
     error = null,
+    sessionCorrupted = false,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isStalled = false,
     modelUnavailable = null,
@@ -255,6 +261,10 @@
 
     return 'Thinking';
   });
+
+  // Error surface copy: recreate-aware when the daemon flagged the session
+  // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
+  let errorDisplay = $derived(deriveErrorDisplay(error, sessionCorrupted));
 </script>
 
 {#if visible}
@@ -281,11 +291,14 @@
               >{modelUnavailable.failedModel}</code
             > is not available
           </span>
-        {:else if status === 'error' && error}
+        {:else if status === 'error' && errorDisplay}
           <Fa icon={faExclamationTriangle} class="text-destructive-foreground/70 shrink-0" />
           <div class="flex flex-col gap-0.5">
-            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title">Response failed</span>
-            <span class="text-destructive-foreground text-sm" data-testid="error-message">{statusMessage}</span>
+            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title">{errorDisplay.title}</span>
+            <span class="text-destructive-foreground text-sm" data-testid="error-message">{errorDisplay.message}</span>
+            {#if errorDisplay.detail}
+              <span class="text-destructive-foreground/60 text-xs" data-testid="error-detail">{errorDisplay.detail}</span>
+            {/if}
           </div>
         {:else}
           <!-- Normal - show spinner -->
