@@ -168,11 +168,6 @@
 
   const effectiveProviderId = $derived(explicitProviderId ?? $activeProviderId$);
 
-  // Single-provider restriction — only when the provider is explicitly locked
-  // via the providerId prop (e.g. SimpleRichInput). An unlocked agent whose
-  // session provider differs from the active one keeps the multi-provider list.
-  const isAgentProviderOverride = $derived(Boolean(providerId));
-
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
   >(null);
@@ -274,12 +269,10 @@
   );
 
   // The per-agent fetch is only needed when the effective provider's models
-  // aren't already covered elsewhere: the locked case, or an unlocked agent
-  // whose provider was since disabled (fetchAllProviderModels only fetches
-  // enabled providers). Skipping it otherwise avoids a duplicate wire fetch.
+  // aren't already covered by the all-providers fetch because the agent's
+  // provider was since disabled. Skipping it otherwise avoids a duplicate fetch.
   const usesAgentProviderFetch = $derived(
-    effectiveProviderId !== $activeProviderId$ &&
-      (isAgentProviderOverride || !isEffectiveProviderEnabled),
+    effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderEnabled,
   );
 
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
@@ -315,7 +308,6 @@
 
   let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    if (isAgentProviderOverride) return;
     const providerIds = $enabledProviderIds$;
     clearTimeout(fetchDebounceTimer);
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
@@ -329,13 +321,11 @@
       : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
   );
   const isLoadingModels = $derived(
-    isAgentProviderOverride
-      ? agentProviderLoading
-      : agentProviderLoading ||
-          (!hasProviderResult(effectiveProviderId) &&
-            ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded)),
+    agentProviderLoading ||
+      (!hasProviderResult(effectiveProviderId) &&
+        ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded)),
   );
-  const loadError = $derived(isAgentProviderOverride ? agentProviderError : $loadError$);
+  const loadError = $derived($loadError$);
 
   // Provider display name for footer — reflects the effective provider, not the global one
 
@@ -362,14 +352,12 @@
       if (providerId === effectiveProviderId && usesAgentProviderFetch) {
         agentProviderModels = result.models;
       }
-      if (!isAgentProviderOverride) {
-        const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
-        allProviderErrors = remainingErrors;
-        allProviderModels = {
-          ...allProviderModels,
-          [providerId]: toDropdownOptions(result.models),
-        };
-      }
+      const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
+      allProviderErrors = remainingErrors;
+      allProviderModels = {
+        ...allProviderModels,
+        [providerId]: toDropdownOptions(result.models),
+      };
     } catch (err) {
       const providerError = formatProviderLoadError(providerId, err);
       allProviderErrors = {
@@ -388,24 +376,8 @@
   let isRefreshing = $state(false);
 
   async function handleRetry() {
-    if (isAgentProviderOverride) {
-      agentProviderLoading = true;
-      agentProviderError = null;
-      try {
-        const result = await getModelsForProviderForLoadingState(effectiveProviderId);
-        agentProviderModels = result.models;
-        setProviderWarningState(effectiveProviderId, result.warning);
-      } catch (err: unknown) {
-        const providerError = formatProviderLoadError(effectiveProviderId, err);
-        agentProviderError = providerError.displayText;
-        setProviderErrorState(effectiveProviderId, providerError.displayText);
-      } finally {
-        agentProviderLoading = false;
-      }
-    } else {
-      lastFetchedProviderIds = '';
-      fetchAllProviderModels($enabledProviderIds$);
-    }
+    lastFetchedProviderIds = '';
+    fetchAllProviderModels($enabledProviderIds$);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -413,21 +385,8 @@
     if (isRefreshing) return;
     isRefreshing = true;
     try {
-      if (isAgentProviderOverride) {
-        const result = await getModelsForProviderForLoadingState(effectiveProviderId);
-        agentProviderModels = result.models;
-        setProviderWarningState(effectiveProviderId, result.warning);
-        agentProviderError = null;
-      } else {
-        lastFetchedProviderIds = '';
-        fetchAllProviderModels($enabledProviderIds$);
-      }
-    } catch (err) {
-      if (isAgentProviderOverride) {
-        const providerError = formatProviderLoadError(effectiveProviderId, err);
-        agentProviderError = providerError.displayText;
-        setProviderErrorState(effectiveProviderId, providerError.displayText);
-      }
+      lastFetchedProviderIds = '';
+      await fetchAllProviderModels($enabledProviderIds$);
     } finally {
       isRefreshing = false;
     }
@@ -542,12 +501,9 @@
   // Get the label for a model ID from available models list
   function getModelLabel(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
-    // Search all provider models when in multi-provider mode
-    if (!isAgentProviderOverride) {
-      for (const models of Object.values(allProviderModels)) {
-        const found = models.find((m) => m.value === modelId);
-        if (found) return found.label;
-      }
+    for (const models of Object.values(allProviderModels)) {
+      const found = models.find((m) => m.value === modelId);
+      if (found) return found.label;
     }
     return (
       availableModels.find((m) => m.value === modelId)?.label ||
@@ -577,11 +533,9 @@
 
   const isTriggerLabelResolved = $derived.by(() => {
     if (!hasExplicitModel || !localModel) return true; // "Default model" text, no need for skeleton
-    if (!isLoadingModels && (isAgentProviderOverride || allProvidersLoaded)) return true;
-    if (!isAgentProviderOverride) {
-      for (const models of Object.values(allProviderModels)) {
-        if (models.some((m) => m.value === localModel)) return true;
-      }
+    if (!isLoadingModels && allProvidersLoaded) return true;
+    for (const models of Object.values(allProviderModels)) {
+      if (models.some((m) => m.value === localModel)) return true;
     }
     return availableModels.some((m) => m.value === localModel);
   });
@@ -609,14 +563,10 @@
 
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
-    ...(isAgentProviderOverride
-      ? toDropdownOptions(availableModels)
-      : [
-          ...$enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? []),
-          // Keep the agent's current provider selectable even if it was since
-          // disabled, so the selected model isn't treated as unavailable.
-          ...(isEffectiveProviderEnabled ? [] : toDropdownOptions(availableModels)),
-        ]),
+    ...$enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? []),
+    // Keep the agent's current provider selectable even if it was since
+    // disabled, so the selected model isn't treated as unavailable.
+    ...(isEffectiveProviderEnabled ? [] : toDropdownOptions(availableModels)),
   ]);
 
   const hasLoadedModelOptions = $derived(
@@ -624,10 +574,6 @@
   );
 
   const providerLoadWarnings = $derived.by<ProviderLoadError[]>(() => {
-    if (isAgentProviderOverride && agentProviderError) {
-      return [formatProviderLoadError(effectiveProviderId, agentProviderError)];
-    }
-
     return $enabledProviderIds$
       .map((pid) => allProviderErrors[getProviderConfig(pid).id])
       .filter((error): error is ProviderLoadError => Boolean(error));
@@ -643,12 +589,6 @@
 
   const providerFallbackWarnings = $derived.by<ProviderWarningNotice[]>(() => {
     const warnings = $allProviderWarnings$;
-
-    if (isAgentProviderOverride) {
-      const warning = getProviderWarningNotice(effectiveProviderId, warnings);
-      return warning ? [warning] : [];
-    }
-
     return $enabledProviderIds$
       .map((pid) => getProviderWarningNotice(pid, warnings))
       .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
@@ -693,7 +633,6 @@
     buildGroupedModelOptions({
       showDefaultOption,
       useDefaultOption,
-      isAgentProviderOverride,
       effectiveProviderId,
       availableModels,
       enabledProviderIds: $enabledProviderIds$,
@@ -717,7 +656,7 @@
 
   const isSelectedModelUnavailable = $derived.by(() => {
     if (isLoadingModels) return false;
-    if (!isAgentProviderOverride && !allProvidersLoaded) return false;
+    if (!allProvidersLoaded) return false;
     if (!hasExplicitModel) return false;
     if (!localModel) return false;
 
@@ -803,7 +742,6 @@
     const modelProvider = getProviderConfig(rawModelProvider).id;
     if (
       !isUserProviderSettled({
-        isAgentProviderOverride,
         agentProviderModels,
         agentProviderError,
         enabledProviderIds: $enabledProviderIds$,

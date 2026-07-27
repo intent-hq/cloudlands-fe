@@ -1069,7 +1069,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
-        providerId={providerChangeLocked ? selectedProviderId : undefined}
         variant="ghost-light"
         size="xs"
         isLocked={effectiveModelLocked}

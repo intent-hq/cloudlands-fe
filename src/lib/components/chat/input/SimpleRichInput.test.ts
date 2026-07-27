@@ -247,7 +247,7 @@ describe('SimpleRichInput provider switch sync', () => {
       },
     });
 
-    expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
+    expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
     expect(screen.getByTestId('model-picker-model').textContent).toBe('');
     expect(onmodelChange).not.toHaveBeenCalled();
     expect(setModelMock).not.toHaveBeenCalled();
@@ -264,7 +264,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
@@ -272,7 +272,7 @@ describe('SimpleRichInput provider switch sync', () => {
     expect(setModelMock).not.toHaveBeenCalled();
   });
 
-  it('hydrates the persisted provider from session state instead of showing the default provider on reopen', async () => {
+  it('does not pass a hydrated session provider to ModelPicker as a filter', async () => {
     removeMockSession('ws-1', 'agent-1');
     addMockSession('ws-1',
       createSession({
@@ -301,7 +301,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
     });
 
     expect(setModelMock).not.toHaveBeenCalled();
