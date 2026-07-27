@@ -28,6 +28,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   /** MCP sources that have brand icons in McpIcon */
   const BRANDED_MCP_ICONS = new Set([
@@ -63,14 +64,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       if (parsedResult.taskTitle && parsedResult.taskStatus) {
         return {
           ...baseToolDisplay,
-          verb: 'Mark',
+          verb: m.chat_toolCall_mark_label(),
           subject: `${parsedResult.taskTitle} ${parsedResult.taskStatus}`,
         };
       } else if (parsedResult.taskStatus) {
         // We have status but no title - show generic message
         return {
           ...baseToolDisplay,
-          verb: 'Mark task',
+          verb: m.chat_toolCall_markTask_label(),
           subject: parsedResult.taskStatus,
         };
       }
@@ -147,7 +148,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       >
         {#if isAgentMessage && parsedResult?.toAgentId}
           <!-- Agent message: show avatar + name + message preview -->
-          <span class="text-subtle whitespace-nowrap shrink-0">Message</span>
+          <span class="text-subtle whitespace-nowrap shrink-0">{m.chat_toolCall_message_label()}</span>
           <AuggieAvatar agentId={parsedResult.toAgentId} size={16} class="shrink-0" />
           <span
             class="text-foreground font-medium whitespace-nowrap shrink-0 max-w-[120px] truncate"
@@ -287,7 +288,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       <div class="overflow-hidden rounded border border-border/40">
         <img
           src={`data:${parsedResult.figmaScreenshotMimeType || 'image/png'};base64,${parsedResult.figmaScreenshot}`}
-          alt="Figma design"
+          alt={m.chat_toolCall_figmaDesign_alt()}
           class="w-full h-auto object-contain bg-white"
           style="max-height: 200px; max-width: 400px"
         />

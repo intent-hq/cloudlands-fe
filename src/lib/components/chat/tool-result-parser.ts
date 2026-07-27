@@ -5,6 +5,8 @@
  * Handles view, str-replace-editor, codebase-retrieval, save-file, and terminal tools.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 export type ToolResultType =
   | 'file-view'
   | 'file-edit'
@@ -745,12 +747,16 @@ function parseViewResult(
 
   for (const line of lines) {
     // Skip header lines
+    // i18n-ignore (wire-content sniffing of tool output headers, not rendered)
     if (line.startsWith("Here's the result of running")) continue;
+    // i18n-ignore (wire-content sniffing of tool output headers, not rendered)
     if (line.startsWith('Regex search results for pattern:')) continue;
+    // i18n-ignore (wire-content sniffing of tool output headers, not rendered)
     if (line.startsWith('Search limited to lines')) continue;
     if (line.startsWith('Found ') && line.includes('matching line')) continue;
 
     // Skip the footer line: "Total lines in file: ..."
+    // i18n-ignore (wire-content sniffing of tool output headers, not rendered)
     if (line.startsWith('Total lines in file:')) continue;
 
     // Skip empty lines at the start
@@ -1061,9 +1067,11 @@ function parseNoteReadResult(
     if (line.startsWith('Note:')) continue;
 
     // Skip image summary lines
+    // i18n-ignore (wire-content sniffing of tool output headers, not rendered)
     if (line.startsWith('Note: If you received images')) continue;
 
     // Stop at task metadata section (we could parse this later if needed)
+    // i18n-ignore (wire-content sniffing of tool output headers, not rendered)
     if (line.startsWith('--- Task Metadata ---')) {
       inTaskMetadata = true;
       continue;
@@ -2053,7 +2061,11 @@ function parseSentryIssueDetails(result: string): ParsedToolResult {
 
   if (data && typeof data === 'object') {
     parsed.sentryIssue = {
-      title: data.title || data.metadata?.title || data.culprit || 'Unknown Issue',
+      title:
+        data.title ||
+        data.metadata?.title ||
+        data.culprit ||
+        m.chat_toolResultParser_unknownIssue_fallback(),
       shortId: data.shortId || data.short_id || '',
       status: data.status || 'unknown',
       level: data.level || 'error',
@@ -2089,7 +2101,7 @@ function parseSentryIssueDetails(result: string): ParsedToolResult {
 
   if (titleMatch || statusMatch || levelMatch) {
     parsed.sentryIssue = {
-      title: titleMatch?.[2]?.trim() || 'Unknown Issue',
+      title: titleMatch?.[2]?.trim() || m.chat_toolResultParser_unknownIssue_fallback(),
       shortId: shortIdMatch?.[1] || titleMatch?.[1] || '',
       status: statusMatch?.[1]?.toLowerCase() || 'unknown',
       level: levelMatch?.[1]?.toLowerCase() || 'error',

@@ -21,6 +21,7 @@
 } from './unified-diff-merger';
   import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
   import { selectDiffSideBySide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -100,7 +101,7 @@
 
 {#if mergedHunks.length === 0}
   <div class="flex items-center justify-center py-8 text-subtle text-sm">
-    No changes to display
+    {m.chat_unifiedMultiStageDiff_noChanges_label()}
   </div>
 {:else if workspaceId}
   <div class="unified-multi-stage-diff">
@@ -119,7 +120,7 @@
   </div>
 {:else}
   <div class="flex items-center justify-center h-24 text-subtle">
-    No workspace available
+    {m.chat_unifiedMultiStageDiff_noWorkspace_label()}
   </div>
 {/if}
 

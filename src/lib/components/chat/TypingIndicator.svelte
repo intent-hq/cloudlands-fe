@@ -7,6 +7,7 @@
 } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { Spinner } from '$lib/components/ui/indicators';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     size?: 'sm' | 'md' | 'lg';
@@ -18,7 +19,7 @@
 
   let {
     size = 'md',
-    message = 'Assistant is typing...',
+    message = m.chat_typingIndicator_typing_label(),
     showAvatar = true,
     seed = 'default',
   }: Props = $props();

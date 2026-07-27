@@ -37,6 +37,7 @@
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
   import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     proposal: Proposal;
@@ -414,8 +415,9 @@
   }
 
   function getEmptyFieldLabel(field: ProposalEditableField): string {
-    if (field.editable !== false && field.key === 'title') return 'Add title…';
-    return field.editable !== false ? '(not set)' : '—';
+    if (field.editable !== false && field.key === 'title')
+      return m.chat_proposalCard_addTitle_placeholder();
+    return field.editable !== false ? m.chat_proposalCard_notSet_label() : '—';
   }
 
   function isMultilineEditor(field: ProposalEditableField): boolean {
@@ -600,19 +602,20 @@
     // internal "proposal" terminology, and the success state is signalled by the
     // "Open workspace" link rather than a status line.
     if (isWorkspaceCreate) {
-      if (isAwaitingPrBranchLookup) return 'Detecting PR branch…';
-      if (isApplying) return 'Creating workspace…';
+      if (isAwaitingPrBranchLookup) return m.chat_proposalCard_detectingPrBranch_label();
+      if (isApplying) return m.chat_proposalCard_creatingWorkspace_label();
       if (isFailed) {
-        const message = `Workspace creation failed${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
+        const message = `${m.chat_proposalCard_workspaceCreationFailed_label()}${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
         return isBaseRefFailure
-          ? `${message}. Choose a different base branch above, then retry.`
+          ? `${message}${m.chat_proposalCard_chooseDifferentBranch_label()}`
           : message;
       }
       return '';
     }
     if (isApplying) return 'Applying…';
     if (isUndoing) return 'Undoing…';
-    if (isFailed) return `Action failed${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
+    if (isFailed)
+      return `${m.chat_shared_actionFailed_label()}${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
     if ($lifecycleStatus === 'applied') return 'Applied.';
     return '';
   }
@@ -641,7 +644,7 @@
 
 {#if isDismissed}
   <div class="my-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-subtle">
-    Discarded: {proposal.preview.title}
+    {m.chat_shared_discarded_label()} {proposal.preview.title}
   </div>
 {:else if settingsProposal}
   <SettingsChangeCard proposal={settingsProposal} {disabled} {onApply} {onDiscard} {onUndo} />
@@ -654,7 +657,9 @@
     data-proposal-kind={proposal.kind}
     data-lifecycle-status={$lifecycleStatus}
     data-apply-tool-call-id={proposal.applyToolCallId}
-    title={proposal.applyToolCallId ? `Tool ${proposal.applyToolCallId}` : undefined}
+    title={proposal.applyToolCallId
+      ? m.chat_shared_tool_title({ id: proposal.applyToolCallId })
+      : undefined}
     use:cardKeyboardShortcut
   >
     {#if isWorkspaceCreate}
@@ -678,19 +683,19 @@
           <dl class="space-y-1 text-xs">
             {#if createdRepoLabel}
               <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2">
-                <dt class="text-subtle">Repo</dt>
+                <dt class="text-subtle">{m.chat_proposalCard_repo_label()}</dt>
                 <dd class="min-w-0 truncate text-foreground">{createdRepoLabel}</dd>
               </div>
             {/if}
             {#if workspaceBranch}
               <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2">
-                <dt class="text-subtle">Base branch</dt>
+                <dt class="text-subtle">{m.chat_proposalCard_baseBranch_label()}</dt>
                 <dd class="min-w-0 truncate text-foreground">{workspaceBranch}</dd>
               </div>
             {/if}
             {#if createdSpecialistLabel}
               <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2">
-                <dt class="text-subtle">Specialist</dt>
+                <dt class="text-subtle">{m.chat_proposalCard_specialist_label()}</dt>
                 <dd class="min-w-0 truncate text-foreground">{createdSpecialistLabel}</dd>
               </div>
             {/if}
@@ -704,11 +709,11 @@
                 data-testid="proposal-open-created-workspace"
                 class="inline-flex"
               >
-                <Button size="sm" class="text-white">Open workspace</Button>
+                <Button size="sm" class="text-white">{m.chat_proposalCard_openWorkspace_label()}</Button>
               </a>
             {:else}
               <span class="text-xs text-subtle" data-testid="proposal-workspace-created"
-                >Workspace created.</span
+                >{m.chat_proposalCard_workspaceCreated_label()}</span
               >
             {/if}
           </div>
@@ -721,7 +726,7 @@
 
           <Textarea
             bind:value={workspaceInitialPrompt}
-            placeholder="What would you like to work on?"
+            placeholder={m.chat_proposalCard_initialPrompt_placeholder()}
             minHeight={112}
             maxHeight={240}
             doesExpandToFit
@@ -741,7 +746,7 @@
                 class="text-sm text-subtle"
                 data-metadata-label
               >
-                Repo
+                {m.chat_proposalCard_repo_label()}
               </span>
               <div class="min-w-0" data-testid="proposal-repo-picker">
                 <RepoAndBranchPicker
@@ -767,7 +772,7 @@
                 class="pt-1 text-sm text-subtle"
                 data-metadata-label
               >
-                Base branch
+                {m.chat_proposalCard_baseBranch_label()}
               </span>
               <div class="min-w-0 space-y-1">
                 <div
@@ -779,7 +784,7 @@
                   data-branch-warning={branchNeedsAttention ? 'true' : undefined}
                   tabindex="-1"
                   role="group"
-                  aria-label="Base branch"
+                  aria-label={m.chat_proposalCard_baseBranch_label()}
                   aria-describedby={proposedBranchMissing
                     ? `${metadataIdPrefix}-branch-mismatch`
                     : undefined}
@@ -802,13 +807,16 @@
                     class="px-2 text-xs text-amber-600 dark:text-amber-400"
                     data-testid="proposal-branch-mismatch-warning"
                   >
-                    Base branch '{proposedBranchMissing}' wasn't found in this repo{#if branchListDefault}&nbsp;—
-                      using default '{branchListDefault}'{/if}.
+                    {m.chat_proposalCard_branchNotFound_label({
+                      branch: proposedBranchMissing,
+                    })}{#if branchListDefault}&nbsp;{m.chat_proposalCard_usingDefault_label({
+                        branch: branchListDefault,
+                      })}{/if}.
                   </p>
                 {/if}
                 {#if prBranchLookupFailed}
                   <p class="px-2 text-xs text-subtle" data-testid="proposal-branch-lookup-failure">
-                    Couldn't auto-detect base branch; using default
+                    {m.chat_proposalCard_branchLookupFailed_label()}
                   </p>
                 {/if}
               </div>
@@ -826,7 +834,7 @@
                 class="text-sm text-subtle"
                 data-metadata-label
               >
-                Specialist
+                {m.chat_proposalCard_specialist_label()}
               </span>
               <SpecialistDropdown
                 value={workspaceSpecialist}
@@ -861,7 +869,7 @@
 
           <div class="flex items-center justify-end gap-2 pt-1">
             <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleDiscard}
-              >Discard</Button
+              >{m.chat_shared_discard_label()}</Button
             >
             <Button
               size="sm"
@@ -913,7 +921,7 @@
                     data-proposal-before-after-row={field.key}
                   >
                     <div class="min-w-0 rounded px-2 py-1.5 text-subtle">
-                      <span class="sr-only">Before: </span>
+                      <span class="sr-only">{m.chat_shared_before_label()} </span>
                       <div class="whitespace-pre-wrap break-words line-through">
                         {formatValue(field.before) || '—'}
                       </div>
@@ -927,7 +935,7 @@
                     </div>
                     {#if editingFieldKey === field.key}
                       <div class="min-w-0 flex-1 rounded px-2 py-1.5 text-foreground">
-                        <span class="sr-only">After: </span>
+                        <span class="sr-only">{m.chat_shared_after_label()} </span>
                         {#if field.multiline}
                           <Textarea
                             bind:this={activeEditor}
@@ -953,11 +961,11 @@
                         data-proposal-field-value={field.key}
                         role="button"
                         tabindex="0"
-                        aria-label={`Edit ${field.label}`}
+                        aria-label={m.chat_proposalCard_editField_ariaLabel({ label: field.label })}
                         onclick={() => void startEditing(field)}
                         onkeydown={(event) => handleEditableKeydown(event, field)}
                       >
-                        <span class="sr-only">After: </span>
+                        <span class="sr-only">{m.chat_shared_after_label()} </span>
                         <div
                           class="flex cursor-text items-start gap-1.5 whitespace-pre-wrap break-words"
                         >
@@ -980,7 +988,7 @@
                         class="min-w-0 flex-1 rounded px-2 py-1.5 text-foreground"
                         data-proposal-field-value={field.key}
                       >
-                        <span class="sr-only">After: </span>
+                        <span class="sr-only">{m.chat_shared_after_label()} </span>
                         <div class="whitespace-pre-wrap break-words">
                           {#if getAfterDisplayValue(field)}
                             {getAfterDisplayValue(field)}
@@ -1019,7 +1027,7 @@
                     data-proposal-field-value={field.key}
                     role="button"
                     tabindex="0"
-                    aria-label={`Edit ${field.label}`}
+                    aria-label={m.chat_proposalCard_editField_ariaLabel({ label: field.label })}
                     onclick={() => void startEditing(field)}
                     onkeydown={(event) => handleEditableKeydown(event, field)}
                   >
@@ -1128,7 +1136,7 @@
       {#if !isApplied}
         <div class="flex items-center justify-end gap-2 px-3 pb-3 pt-1">
           <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleDiscard}
-            >Discard</Button
+            >{m.chat_shared_discard_label()}</Button
           >
           <Button
             size="sm"

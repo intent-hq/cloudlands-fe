@@ -1,5 +1,6 @@
 import type { AppSettingApplyPlan, AppSettingDefinition } from '$shared/app-settings-schema';
 import { findAppSettingDefinition } from '$shared/app-settings-schema';
+import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
 import { appClient } from '$lib/client';
 import { store as appStore } from "$store/renderer/store";
@@ -194,7 +195,9 @@ function toSerializableSettingValue(value: unknown): SerializableSettingValue {
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error || 'Unknown settings error');
+  return error instanceof Error
+    ? error.message
+    : String(error || m.chat_settingsProposalActions_unknownError_fallback());
 }
 
 async function readDaemonSettingValue(definition: AppSettingDefinition): Promise<unknown> {
@@ -552,7 +555,7 @@ export async function applySettingsProposalWork(
       ...change,
       value: parseEditedValue(detail, change),
     })),
-    'Failed to apply settings change',
+    m.chat_settingsProposalActions_applyFailed_label(),
   );
   return {
     reverseChanges,
@@ -562,7 +565,7 @@ export async function applySettingsProposalWork(
 export async function undoSettingsProposalChanges(
   reverseChanges: SettingsProposalReverseChange[],
 ): Promise<void> {
-  await applySettingsTransaction(reverseChanges, 'Failed to undo settings change');
+  await applySettingsTransaction(reverseChanges, m.chat_settingsProposalActions_undoFailed_label());
 }
 
 export async function undoSettingsProposalWork(

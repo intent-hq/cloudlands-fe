@@ -18,6 +18,7 @@
     selectProposalStatus,
   } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
   import { getProposalId } from './proposal-id';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     proposal: SettingsChangeProposal;
@@ -169,7 +170,8 @@
   function getStatusMessage(): string {
     if (isApplying) return 'Applying…';
     if (isUndoing) return 'Undoing…';
-    if (isFailed) return `Action failed${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
+    if (isFailed)
+      return `${m.chat_shared_actionFailed_label()}${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
     if ($lifecycleStatus === 'applied') return 'Applied.';
     return '';
   }
@@ -199,7 +201,7 @@
 
 {#if isDismissed}
   <div class="my-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-subtle">
-    Discarded: {proposal.preview.title}
+    {m.chat_shared_discarded_label()} {proposal.preview.title}
   </div>
 {:else}
   <section
@@ -207,7 +209,9 @@
     class="my-2 w-full max-w-xl overflow-hidden rounded-lg border border-border bg-background"
     data-proposal-kind={proposal.kind}
     data-apply-tool-call-id={proposal.applyToolCallId}
-    title={proposal.applyToolCallId ? `Tool ${proposal.applyToolCallId}` : undefined}
+    title={proposal.applyToolCallId
+      ? m.chat_shared_tool_title({ id: proposal.applyToolCallId })
+      : undefined}
   >
     <div class="px-3 pt-3">
       <h3 class="text-sm font-semibold leading-snug text-foreground">{proposal.preview.title}</h3>
@@ -266,7 +270,7 @@
       <div
         class="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2.5 text-xs text-subtle"
       >
-        <span>Applied {timeAgo} <span aria-hidden="true">·</span></span>
+        <span>{m.chat_shared_appliedTimeAgo_label({ timeAgo })} <span aria-hidden="true">·</span></span>
         <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleUndo}>
           {isUndoing ? 'Undoing…' : isFailed ? 'Retry' : 'Undo'}
         </Button>
@@ -274,7 +278,7 @@
     {:else}
       <div class="flex items-center justify-end gap-2 px-3 pb-3 pt-1">
         <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleDiscard}
-          >Discard</Button
+          >{m.chat_shared_discard_label()}</Button
         >
         <Button size="sm" disabled={actionDisabled} onclick={handleApply}>
           {isApplying ? 'Applying…' : isFailed ? 'Retry' : (proposal.preview.applyLabel ?? 'Apply')}

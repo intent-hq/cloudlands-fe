@@ -22,6 +22,7 @@
   import { cn } from '$lib/utils/cn';
   import { Spinner } from '$lib/components/ui/indicators';
   import { formatDuration } from './streaming-status-utils';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Whether streaming is active */
@@ -206,8 +207,11 @@
 
   // Provider status page URLs — used in stalled messages
   const PROVIDER_STATUS_URLS: Record<string, string> = {
+    // i18n-ignore (brand names used as lookup keys)
     'Augment Auggie': 'https://status.augmentcode.com/',
+    // i18n-ignore (brand names used as lookup keys)
     'Anthropic Claude Code': 'https://status.anthropic.com/',
+    // i18n-ignore (brand names used as lookup keys)
     'OpenAI Codex': 'https://status.openai.com/',
   };
 
@@ -253,7 +257,7 @@
     //   }
     // }
 
-    return 'Thinking';
+    return m.chat_streamingStatus_thinking_label();
   });
 </script>
 
@@ -277,14 +281,14 @@
         {#if status === 'model-unavailable' && modelUnavailable}
           <Fa icon={faExclamationTriangle} class="text-amber-500/70 shrink-0" />
           <span class="text-amber-600 dark:text-amber-400 text-sm">
-            Model <code class="px-1 py-0.5 bg-muted rounded text-ui"
-              >{modelUnavailable.failedModel}</code
-            > is not available
+            {m.chat_streamingStatus_modelUnavailable_before()} <code
+              class="px-1 py-0.5 bg-muted rounded text-ui">{modelUnavailable.failedModel}</code
+            > {m.chat_streamingStatus_modelUnavailable_after()}
           </span>
         {:else if status === 'error' && error}
           <Fa icon={faExclamationTriangle} class="text-destructive-foreground/70 shrink-0" />
           <div class="flex flex-col gap-0.5">
-            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title">Response failed</span>
+            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title">{m.chat_streamingStatus_responseFailed_label()}</span>
             <span class="text-destructive-foreground text-sm" data-testid="error-message">{statusMessage}</span>
           </div>
         {:else}
@@ -317,12 +321,12 @@
             class="h-7 px-2 text-sm gap-1.5"
           >
             <Fa icon={faRotateRight} class="size-3" />
-            Retry with {modelUnavailable.nextAvailableModel}
+            {m.chat_streamingStatus_retryWith_label({ model: modelUnavailable.nextAvailableModel })}
           </Button>
         {:else if status === 'error' && onRetry && !isStreaming && !isProcessing}
           <Button variant="ghost" size="sm" onclick={onRetry} class="h-7 px-2 text-sm gap-1.5">
             <Fa icon={faRotateRight} class="size-3" />
-            Try again
+            {m.chat_streamingStatus_tryAgain_label()}
           </Button>
         {/if}
       </div>
@@ -335,7 +339,7 @@
           <div class="flex items-center gap-1.5 text-xs {event.level === 'warn' ? 'text-amber-500' : event.level === 'error' ? 'text-destructive-foreground' : 'text-ghost'}">
             <span class="w-3 text-ghost/30">│</span>
             <span>{event.message}</span>
-            <span class="text-ghost/60">took {duration}</span>
+            <span class="text-ghost/60">{m.chat_streamingStatus_took_label({ duration })}</span>
           </div>
         {/each}
       </div>

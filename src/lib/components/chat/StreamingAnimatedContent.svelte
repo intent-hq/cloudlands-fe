@@ -5,6 +5,7 @@
   import { fly } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('StreamingAnimatedContent');
 
@@ -101,6 +102,7 @@
           const resultBlock = block as ToolResultBlock;
           if (typeof resultBlock.content === 'string') {
             const contentStr = resultBlock.content;
+            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
             if (contentStr.includes('\u001b[') || contentStr.includes('🔧 Tool call:')) {
               return false;
             }
@@ -360,7 +362,9 @@
           const contentText = typeof result.content === 'string' ? result.content : '';
           const hasErrorInContent =
             contentText.includes('❌') ||
+            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
             contentText.startsWith('Error:') ||
+            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
             contentText.includes('Tool Error:');
           newToolStates.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
           newToolResults.set(toolBlock.id, result.content);
@@ -408,6 +412,7 @@
     html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
 
     // Code (inline)
+    // i18n-ignore (HTML markup transform, not user-facing copy)
     html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 
     // Line breaks
@@ -470,17 +475,17 @@
       <details class="thinking-block" open={isStreaming} in:fly={{ y: 10, duration: 200 }}>
         <summary class="cursor-pointer text-sm text-subtle">
           <span class="thinking-icon">🤔</span>
-          Thinking...
+          {m.chat_streamingAnimatedContent_thinking_label()}
         </summary>
         <div class="thinking-content">
           {#if isStreaming}
             <div class="streaming-text-container">
               {@html renderStreamingText(
-                animatedTexts.get(blockIndex) || block.content || 'Processing...',
+                animatedTexts.get(blockIndex) || block.content || m.chat_shared_processing_fallback(),
               )}
             </div>
           {:else}
-            <MarkdownViewer content={block.content || 'Processing...'} isStreaming={false} />
+            <MarkdownViewer content={block.content || m.chat_shared_processing_fallback()} isStreaming={false} />
           {/if}
         </div>
       </details>

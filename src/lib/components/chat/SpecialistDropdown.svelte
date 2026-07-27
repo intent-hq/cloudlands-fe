@@ -13,6 +13,7 @@
     filterPickableSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Currently selected specialist ID - null means blank agent */
@@ -40,7 +41,7 @@
   const currentSpecialist = $derived(value ? $allSpecialists.find((s) => s.id === value) : null);
 
   // Display label
-  const displayLabel = $derived(currentSpecialist?.name ?? 'General');
+  const displayLabel = $derived(currentSpecialist?.name ?? m.chat_shared_general_fallback());
 
   function handleSelect(id: string | null) {
     if (id !== value) {
@@ -95,8 +96,8 @@
       >
         <AuggieAvatar seed="blank" size={20} specialist={null} />
         <div class="flex flex-col">
-          <span class="font-medium text-foreground">General</span>
-          <span class="text-xs text-subtle">No specialized behavior</span>
+          <span class="font-medium text-foreground">{m.chat_shared_general_fallback()}</span>
+          <span class="text-xs text-subtle">{m.chat_shared_noSpecializedBehavior_label()}</span>
         </div>
       </button>
 

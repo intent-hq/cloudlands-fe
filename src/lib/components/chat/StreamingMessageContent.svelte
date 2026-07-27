@@ -54,6 +54,7 @@
   import ResponseGroup from './ResponseGroup.svelte';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
   import { onDestroy } from 'svelte';
   import flatstr from 'flatstr';
 
@@ -185,6 +186,7 @@
           const resultBlock = block as ToolResultBlock;
           if (typeof resultBlock.content === 'string') {
             const contentStr = resultBlock.content;
+            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
             if (contentStr.includes('\u001b[') || contentStr.includes('🔧 Tool call:')) {
               return false;
             }
@@ -268,6 +270,7 @@
           // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
           const contentText = getToolResultText(result);
           const hasErrorInContent =
+            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
             contentText.startsWith('Error:') || contentText.includes('Tool Error:');
           newToolStates.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
         } else if (!isStreaming) {
@@ -574,7 +577,7 @@
       <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
     {:else if parsedBlock.type === 'commit_message'}
       <div class="commit-message-block p-3 my-2 rounded-md bg-background border border-border">
-        <div class="text-xs font-medium text-subtle mb-1.5">Generated Commit Message</div>
+        <div class="text-xs font-medium text-subtle mb-1.5">{m.chat_messageContent_generatedCommitMessage_label()}</div>
         <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
           {parsedBlock.content}
         </div>

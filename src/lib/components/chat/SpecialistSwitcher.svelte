@@ -6,6 +6,7 @@
   filterPickableSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Currently selected specialist ID - null means blank agent */
@@ -35,7 +36,11 @@
   // Options: blank + visible specialists
   const options = $derived.by<Array<{ id: string | null; name: string; description: string }>>(
     () => [
-      { id: null, name: 'Blank', description: 'No preset behavior' },
+      {
+        id: null,
+        name: m.chat_specialistSwitcher_blank_label(),
+        description: m.chat_specialistSwitcher_noPresetBehavior_description(),
+      },
       ...visibleSpecialists.map((s) => ({
         id: s.id,
         name: s.name,
