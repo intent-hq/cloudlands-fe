@@ -257,13 +257,15 @@
 
   .stats-pill,
   .stats-dd-trigger,
-  .stats-dd {
+  .stats-dd,
+  .stats-hint {
     background: hsl(240 12% 11%);
     border: 1px solid hsl(256 6% 24%);
   }
 
   .stats-pill,
-  .stats-dd-trigger {
+  .stats-dd-trigger,
+  .stats-hint {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   }
 
@@ -311,9 +313,6 @@
   }
 
   .stats-hint {
-    background: hsl(240 12% 11%);
-    border: 1px solid hsl(256 6% 24%);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     color: hsl(240 5% 58%);
   }
 
