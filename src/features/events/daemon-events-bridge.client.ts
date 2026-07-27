@@ -184,10 +184,7 @@ import {
   appendScriptOutput,
   updateRuntimeState,
 } from '$store/renderer/slices/scripts/scripts-slice';
-import type {
-  ScriptOutputLine,
-  ScriptRuntimeState,
-} from '$store/renderer/slices/scripts/scripts-types';
+import type { ScriptRuntimeState } from '$store/renderer/slices/scripts/scripts-types';
 import {
   clearServerErrorMessage,
   setServerErrorMessage,
@@ -1610,11 +1607,11 @@ function decodeBase64Chunk(chunk: string): string | null {
 
 /**
  * `script:output` (§6.5) carries `{ scriptId, chunk }` where `chunk` is the
- * base64 of raw PTY bytes. Split on `\r?\n` into `ScriptOutputLine[]` and
- * feed the scripts slice's `appendScriptOutput`; the trailing empty string
- * from a chunk that ends on a newline is dropped so the reference viewer's
- * `.join('\n')` reconstruction stays lossless. Streams are collapsed to
- * `stdout` because the daemon PTY is a single unified stream (§5.8).
+ * base64 of raw PTY bytes. The decoded text is appended to the scripts
+ * slice verbatim — never line-split — so xterm can replay the exact PTY
+ * stream (spinner `\r` redraws, ANSI sequences split across chunks, the
+ * daemon's in-band restart separators). The daemon PTY is a single unified
+ * stream (§5.8).
  */
 function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1623,16 +1620,10 @@ function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): vo
   const chunk = data.chunk;
   if (typeof scriptId !== 'string' || typeof chunk !== 'string') return;
   const text = decodeBase64Chunk(chunk);
-  if (text === null) return;
-  const parts = text.split(/\r?\n/);
-  const timestamp = new Date().toISOString();
-  const lines: ScriptOutputLine[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    if (i === parts.length - 1 && parts[i] === '') continue;
-    lines.push({ text: parts[i], stream: 'stdout', timestamp });
-  }
-  if (lines.length === 0) return;
-  appStore.dispatch(appendScriptOutput(workspaceId, scriptId, lines));
+  if (text === null || text === '') return;
+  appStore.dispatch(
+    appendScriptOutput(workspaceId, scriptId, { text, timestamp: new Date().toISOString() }),
+  );
 }
 
 /**

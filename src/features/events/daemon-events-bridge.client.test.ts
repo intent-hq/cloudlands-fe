@@ -171,7 +171,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
-import type { ScriptOutputLine } from '$store/renderer/slices/scripts/scripts-types';
+import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
@@ -2756,7 +2756,7 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
 
   function readScriptsState(): {
     scripts: Record<string, { runtime: { status: string; pid?: number; detectedUrl?: string } }>;
-    outputBuffers: Record<string, ScriptOutputLine[]>;
+    outputBuffers: Record<string, ScriptOutputBuffer>;
   } {
     const state = appStore.state as {
       scripts: {
@@ -2767,7 +2767,7 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
               string,
               { runtime: { status: string; pid?: number; detectedUrl?: string } }
             >;
-            outputBuffers: Record<string, ScriptOutputLine[]>;
+            outputBuffers: Record<string, ScriptOutputBuffer>;
           }
         >;
       };
@@ -2795,7 +2795,7 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
 
   afterEach(() => vi.clearAllMocks());
 
-  it('decodes script:output base64 chunk and appends split lines to the output buffer', async () => {
+  it('decodes script:output base64 chunk and appends it verbatim — no line splitting', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -2804,22 +2804,67 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     const chunk = Buffer.from(raw, 'utf-8').toString('base64');
     handler(notification('script:output', { scriptId: SCRIPT_ID, chunk }));
 
-    const buffer = readScriptsState().outputBuffers[SCRIPT_ID] ?? [];
-    expect(buffer.map((line) => line.text)).toEqual(['hello', 'world']);
-    for (const line of buffer) expect(line.stream).toBe('stdout');
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text)).toEqual([raw]);
+    expect(buffer.dropped).toBe(0);
   });
 
-  it('keeps a trailing partial line as its own output line (no newline at end of chunk)', async () => {
+  it('reconstructs a multi-chunk stream (chunk ending mid-line) with no injected newlines', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    const chunk = Buffer.from('first\nsecond', 'utf-8').toString('base64');
-    handler(notification('script:output', { scriptId: SCRIPT_ID, chunk }));
+    const send = (raw: string) =>
+      handler(
+        notification('script:output', {
+          scriptId: SCRIPT_ID,
+          chunk: Buffer.from(raw, 'utf-8').toString('base64'),
+        }),
+      );
+    send('Compi');
+    send('ling...\r\ndo');
+    send('ne\r\n');
 
-    expect(readScriptsState().outputBuffers[SCRIPT_ID].map((line) => line.text)).toEqual([
-      'first',
-      'second',
-    ]);
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text).join('')).toBe('Compiling...\r\ndone\r\n');
+    // Verbatim storage: each wire chunk is one store chunk.
+    expect(buffer.chunks).toHaveLength(3);
+  });
+
+  it('preserves bare-\\r spinner frames verbatim (no synthesized lines)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const raw = '⠋ building\r⠙ building\r⠹ building\r';
+    handler(
+      notification('script:output', {
+        scriptId: SCRIPT_ID,
+        chunk: Buffer.from(raw, 'utf-8').toString('base64'),
+      }),
+    );
+
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text)).toEqual([raw]);
+    expect(buffer.chunks.map((c) => c.text).join('')).not.toContain('\n');
+  });
+
+  it('preserves an ANSI sequence split across two chunks', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const send = (raw: string) =>
+      handler(
+        notification('script:output', {
+          scriptId: SCRIPT_ID,
+          chunk: Buffer.from(raw, 'utf-8').toString('base64'),
+        }),
+      );
+    // '\x1b[32mok\x1b[0m' split mid-CSI-sequence.
+    send('\x1b[3');
+    send('2mok\x1b[0m');
+
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text).join('')).toBe('\x1b[32mok\x1b[0m');
+    expect(buffer.chunks.map((c) => c.text).join('')).not.toContain('\n');
   });
 
   it('ignores script:output payloads without a scriptId or chunk', async () => {
