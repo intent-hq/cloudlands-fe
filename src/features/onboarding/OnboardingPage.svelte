@@ -47,6 +47,11 @@
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
   import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
+  import OnboardingRequirementsStep from '$features/onboarding/steps/OnboardingRequirementsStep.svelte';
+  import {
+    selectAllRequirementsMet,
+    selectHostRequirementsHasCheckedOnce,
+  } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
 
   import { Button } from '$lib/components/ui/button';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
@@ -120,6 +125,8 @@
   const onboardingStep$ = selectOnboardingStep();
   const onboardingState$ = selectOnboardingState();
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const allRequirementsMet$ = selectAllRequirementsMet();
+  const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
 
   let projectSelection = $state<ProjectSelection | null>(null);
   let projectName = $derived.by(() => {
@@ -359,7 +366,8 @@
     const customScript = isCustomSetupScript;
 
     if (!isOnboarding || !$workspaceInitializerHydrated$) return;
-    if (!(selection || skipIso || script || step !== 'welcome')) return;
+    if (!(selection || skipIso || script || (step !== 'requirements' && step !== 'welcome')))
+      return;
     appStore.dispatch(
       debounceWorkspaceInitializerOnboardingFormState({
         projectSelection: selection
@@ -410,29 +418,50 @@
   // ============================================================================
 
   const onboardingStepIndex = $derived(ONBOARDING_STEP_ORDER.indexOf($onboardingStep$));
+  const isRequirementsStep = $derived($onboardingStep$ === 'requirements');
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
   const isGitHubStep = $derived($onboardingStep$ === 'github');
   const isProjectStep = $derived($onboardingStep$ === 'project');
   const isConfiguringStep = $derived(
     $onboardingStep$ === 'configuring' || $onboardingStep$ === 'ready',
   );
-  const showStartWorking = $derived(onboardingStepIndex >= 3);
+  const showStartWorking = $derived(
+    onboardingStepIndex >= ONBOARDING_STEP_ORDER.indexOf('configuring'),
+  );
   const onboardingVisibleStep = $derived(
     isConfiguringStep ? 4 : isProjectStep ? 3 : isGitHubStep ? 2 : 1,
   );
+  // The 'requirements' gate is not counted in the visible step indicator, and
   // 'configuring' and 'ready' share one visible step, so the count is the
-  // step order minus the terminal 'ready' entry.
-  const ONBOARDING_TOTAL_STEPS = ONBOARDING_STEP_ORDER.length - 1;
+  // visible order minus the terminal 'ready' entry. Back navigation maps
+  // visible step N-1 to the visible order so it never lands on the gate.
+  const VISIBLE_STEP_ORDER = ONBOARDING_STEP_ORDER.filter((step) => step !== 'requirements');
+  const ONBOARDING_TOTAL_STEPS = VISIBLE_STEP_ORDER.length - 1;
 
   // ============================================================================
   // Mount: Reset onboarding state
   // ============================================================================
 
   onMount(() => {
-    // Always start onboarding from step 1. Related persisted initializer state
-    // and session handoffs are cleared by the workspace-initializer saga.
+    // Always start onboarding from the beginning. Related persisted initializer
+    // state and session handoffs are cleared by the workspace-initializer saga.
     if (isOnboarding) {
       appStore.dispatch(resetOnboarding());
+    }
+  });
+
+  // Requirements gate: auto-advance to 'welcome' only once the check group
+  // has settled with every requirement met; otherwise stay blocked on the
+  // requirements step (OnboardingRequirementsStep renders the setup guidance
+  // and re-checks on focus/visibility until the tools appear).
+  $effect(() => {
+    if (
+      isOnboarding &&
+      $onboardingStep$ === 'requirements' &&
+      $requirementsCheckedOnce$ &&
+      $allRequirementsMet$
+    ) {
+      appStore.dispatch(goToStep('welcome'));
     }
   });
 
@@ -984,17 +1013,19 @@
                   <div class="relative max-w-5xl mx-auto">
                     <div class="w-full absolute top-0 transform -translate-y-full pb-4">
                       <div class="flex items-center gap-3 text-xs">
-                        <span class="text-muted-foreground" aria-live="polite">
-                          Step {onboardingVisibleStep} / {ONBOARDING_TOTAL_STEPS}
-                        </span>
+                        {#if !isRequirementsStep}
+                          <span class="text-muted-foreground" aria-live="polite">
+                            Step {onboardingVisibleStep} / {ONBOARDING_TOTAL_STEPS}
+                          </span>
+                        {/if}
 
-                        {#if onboardingVisibleStep > 1}
+                        {#if !isRequirementsStep && onboardingVisibleStep > 1}
                           <button
                             type="button"
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                             onclick={() =>
                               appStore.dispatch(
-                                goToStep(ONBOARDING_STEP_ORDER[onboardingVisibleStep - 2]),
+                                goToStep(VISIBLE_STEP_ORDER[onboardingVisibleStep - 2]),
                               )}
                             aria-label="Go back to previous step"
                           >
@@ -1006,7 +1037,24 @@
                     </div>
 
                     <div class="flex flex-col">
-                      {#if isWelcomeStep}
+                      {#if isRequirementsStep}
+                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
+                          <div class="space-y-3">
+                            {#if !$requirementsCheckedOnce$}
+                              <h1 class="text-5xl font-semibold tracking-tight leading-tight">
+                                Checking your setup…
+                              </h1>
+                            {:else}
+                              <h1 class="text-5xl font-semibold tracking-tight leading-tight">
+                                Let's get your machine ready
+                              </h1>
+                              <p class="text-lg text-muted-foreground">
+                                Intent needs a couple of tools before we can create workspaces.
+                              </p>
+                            {/if}
+                          </div>
+                        </div>
+                      {:else if isWelcomeStep}
                         <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
                           <div class="space-y-3">
                             <h1 class="text-5xl font-semibold tracking-tight leading-tight">
@@ -1060,7 +1108,11 @@
                 <div class="w-full min-w-0">
                   {#key $onboardingStep$}
                     <div class="py-8 space-y-6" in:fly={{ y: 15, duration: 300, easing: cubicOut }}>
-                      {#if isWelcomeStep}
+                      {#if isRequirementsStep}
+                        <div class="max-w-5xl mx-auto" data-testid="onboarding-requirements-step">
+                          <OnboardingRequirementsStep />
+                        </div>
+                      {:else if isWelcomeStep}
                         <div class="py-6 overflow-x-auto scrollbar-none -mx-6">
                           <div class="pl-[max(1.5rem,calc((100%-64rem)/2))] pr-32">
                             <AgentGrid

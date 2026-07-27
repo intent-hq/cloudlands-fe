@@ -77,6 +77,7 @@ import { specialistProposalHistoryReducer } from "./slices/specialist-proposal-h
 import { proposalLifecycleReducer } from "./slices/proposal-lifecycle/proposal-lifecycle-slice";
 import { prBranchLookupReducer } from "./slices/pr-branch-lookup/pr-branch-lookup-slice";
 import { daemonHealthReducer } from "./slices/daemon-health/daemon-health-slice";
+import { hostRequirementsReducer } from "./slices/host-requirements/host-requirements-slice";
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -158,4 +159,5 @@ export const reducers = {
   proposalLifecycle: proposalLifecycleReducer,
   prBranchLookup: prBranchLookupReducer,
   daemonHealth: daemonHealthReducer,
+  hostRequirements: hostRequirementsReducer,
 } as const;

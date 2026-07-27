@@ -237,6 +237,7 @@ const ALLOWED_CHANNELS = [
   "system:execute-command",
   "system:execute-command-streaming",
   "system:check-git",
+  "system:check-node",
   "system:check-rtk",
   "system:list-fonts",
   "app:set-badge",

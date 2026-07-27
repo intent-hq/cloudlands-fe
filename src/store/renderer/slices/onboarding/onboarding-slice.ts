@@ -15,7 +15,7 @@ import { STEP_ORDER } from './onboarding-types';
 // =============================================================================
 
 export const initialState: OnboardingState = {
-  step: 'welcome',
+  step: 'requirements',
   projectConfig: {
     repoUrl: null,
     repoName: null,
