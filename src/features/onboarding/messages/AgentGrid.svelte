@@ -155,8 +155,10 @@
   const randomizedProviderOrder = shuffleArray(Object.values(ACP_PROVIDERS));
 
   /** Visible providers (not hidden by env var / feature code gates),
-   *  tier-ordered (ready → installed-not-logged-in → not-installed) from the
-   *  last-known statuses, preserving the mount-time shuffle within each tier. */
+   *  tier-ordered (confirmed-logged-in → installed-not-logged-in-or-unknown →
+   *  not-installed) from the last-known statuses, preserving the mount-time
+   *  shuffle within each tier. Tier 1 requires `authenticated === true` — a
+   *  stricter bar than `isProviderReady`, which counts unknown auth as ready. */
   const visibleProviders = $derived.by(() => {
     const state = appStore.state;
     // Reactive reads from Redux selectors
