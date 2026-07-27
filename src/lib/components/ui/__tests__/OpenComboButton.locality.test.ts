@@ -156,4 +156,18 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
 
     expect(actionLabels(container)).toEqual(['Copy path', 'Copy branch name']);
   });
+
+  it('honors BE-reported hostLocality=local over a remote transport', async () => {
+    // Forced server.locality override (§5.12/§5.14): a WS connection to a
+    // daemon that reports itself local restores the full action set.
+    mockStoreState = makeState({ mode: 'external-ws' }, 'local');
+    const container = await renderAndOpenDropdown();
+
+    expect(actionLabels(container)).toEqual([
+      'Visual Studio Code',
+      'Other',
+      'Copy path',
+      'Copy branch name',
+    ]);
+  });
 });

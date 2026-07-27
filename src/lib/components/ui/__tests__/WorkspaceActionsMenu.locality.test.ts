@@ -131,4 +131,14 @@ describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
     expect(container.textContent).not.toContain('Choose app');
     expect(container.textContent).toContain('Copy Absolute Path');
   });
+
+  it('honors BE-reported hostLocality=local over a remote transport', async () => {
+    // Forced server.locality override (§5.12/§5.14): a WS connection to a
+    // daemon that reports itself local restores the editors block.
+    mockStoreState = makeState({ mode: 'external-ws' }, 'local');
+    const container = await renderMenu();
+
+    expect(container.textContent).toContain('Open in Visual Studio Code');
+    expect(container.textContent).toContain('Choose app');
+  });
 });
