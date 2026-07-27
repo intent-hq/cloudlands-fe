@@ -16,6 +16,7 @@ const RESULT: UsageStatsResult = {
   linesAdded: 8,
   linesDeleted: 9,
   byModel: [],
+  byProvider: [],
   byHourOfDay: [],
   byMonth: [],
   availablePeriods: { months: ["2026-07"], years: ["2026"] },

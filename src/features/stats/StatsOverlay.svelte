@@ -15,6 +15,7 @@
   import { faChevronDown, faCheck, faDownload, faXmark } from '@fortawesome/free-solid-svg-icons';
   import AgentPassportCard from './AgentPassportCard.svelte';
   import ModelsCard from './ModelsCard.svelte';
+  import ProvidersCard from './ProvidersCard.svelte';
   import TokensByHourCard from './TokensByHourCard.svelte';
   import TokensByMonthCard from './TokensByMonthCard.svelte';
   import {
@@ -218,6 +219,10 @@
       <div class="stats-card-wrap relative">
         {@render exportBtn('models')}
         <ModelsCard data={$data$} label={cardLabel} />
+      </div>
+      <div class="stats-card-wrap relative">
+        {@render exportBtn('providers')}
+        <ProvidersCard data={$data$} label={cardLabel} />
       </div>
       <div class="stats-card-wrap relative">
         {@render exportBtn('by-hour')}

@@ -1312,6 +1312,12 @@ export interface UsageModelStats extends UsageTokenTotals {
   runs: number;
 }
 
+/** Per-provider rollup row (raw provider id; sorted desc by total tokens by the daemon). */
+export interface UsageProviderStats extends UsageTokenTotals {
+  provider: string;
+  runs: number;
+}
+
 /** One of the 24 `byHourOfDay` cells (`hour` is the local-time hour label). */
 export interface UsageHourStats extends UsageTokenTotals {
   hour: number;
@@ -1331,6 +1337,7 @@ export interface UsageStatsResult {
   linesAdded: number;
   linesDeleted: number;
   byModel: UsageModelStats[];
+  byProvider: UsageProviderStats[];
   byHourOfDay: UsageHourStats[];
   byMonth: UsageMonthStats[];
   /** Periods with any data at all (computed over ALL rows, not the request). */
