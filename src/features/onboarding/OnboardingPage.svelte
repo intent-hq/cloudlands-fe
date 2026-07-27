@@ -47,6 +47,11 @@
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
   import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
+  import OnboardingRequirementsStep from '$features/onboarding/steps/OnboardingRequirementsStep.svelte';
+  import {
+    selectAllRequirementsMet,
+    selectHostRequirementsHasCheckedOnce,
+  } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
 
   import { Button } from '$lib/components/ui/button';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
@@ -120,6 +125,8 @@
   const onboardingStep$ = selectOnboardingStep();
   const onboardingState$ = selectOnboardingState();
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const allRequirementsMet$ = selectAllRequirementsMet();
+  const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
 
   let projectSelection = $state<ProjectSelection | null>(null);
   let projectName = $derived.by(() => {
@@ -443,11 +450,17 @@
     }
   });
 
-  // Placeholder behavior for the 'requirements' gate (the real checks UI
-  // arrives in a follow-up): auto-advance straight to 'welcome' so the flow
-  // stays usable.
+  // Requirements gate: auto-advance to 'welcome' only once the check group
+  // has settled with every requirement met; otherwise stay blocked on the
+  // requirements step (OnboardingRequirementsStep renders the setup guidance
+  // and re-checks on focus/visibility until the tools appear).
   $effect(() => {
-    if (isOnboarding && $onboardingStep$ === 'requirements') {
+    if (
+      isOnboarding &&
+      $onboardingStep$ === 'requirements' &&
+      $requirementsCheckedOnce$ &&
+      $allRequirementsMet$
+    ) {
       appStore.dispatch(goToStep('welcome'));
     }
   });
@@ -1000,11 +1013,13 @@
                   <div class="relative max-w-5xl mx-auto">
                     <div class="w-full absolute top-0 transform -translate-y-full pb-4">
                       <div class="flex items-center gap-3 text-xs">
-                        <span class="text-muted-foreground" aria-live="polite">
-                          Step {onboardingVisibleStep} / {ONBOARDING_TOTAL_STEPS}
-                        </span>
+                        {#if !isRequirementsStep}
+                          <span class="text-muted-foreground" aria-live="polite">
+                            Step {onboardingVisibleStep} / {ONBOARDING_TOTAL_STEPS}
+                          </span>
+                        {/if}
 
-                        {#if onboardingVisibleStep > 1}
+                        {#if !isRequirementsStep && onboardingVisibleStep > 1}
                           <button
                             type="button"
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
@@ -1023,12 +1038,20 @@
 
                     <div class="flex flex-col">
                       {#if isRequirementsStep}
-                        <!-- Placeholder heading for the requirements gate; the real checks UI arrives in a follow-up. -->
                         <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
                           <div class="space-y-3">
-                            <h1 class="text-5xl font-semibold tracking-tight leading-tight">
-                              Checking your setup…
-                            </h1>
+                            {#if !$requirementsCheckedOnce$}
+                              <h1 class="text-5xl font-semibold tracking-tight leading-tight">
+                                Checking your setup…
+                              </h1>
+                            {:else}
+                              <h1 class="text-5xl font-semibold tracking-tight leading-tight">
+                                Let's get your machine ready
+                              </h1>
+                              <p class="text-lg text-muted-foreground">
+                                Intent needs a couple of tools before we can create workspaces.
+                              </p>
+                            {/if}
                           </div>
                         </div>
                       {:else if isWelcomeStep}
@@ -1086,11 +1109,9 @@
                   {#key $onboardingStep$}
                     <div class="py-8 space-y-6" in:fly={{ y: 15, duration: 300, easing: cubicOut }}>
                       {#if isRequirementsStep}
-                        <!-- Placeholder for the requirements gate; auto-advances to welcome (see $effect above). -->
-                        <div
-                          class="max-w-5xl mx-auto"
-                          data-testid="onboarding-requirements-placeholder"
-                        ></div>
+                        <div class="max-w-5xl mx-auto" data-testid="onboarding-requirements-step">
+                          <OnboardingRequirementsStep />
+                        </div>
                       {:else if isWelcomeStep}
                         <div class="py-6 overflow-x-auto scrollbar-none -mx-6">
                           <div class="pl-[max(1.5rem,calc((100%-64rem)/2))] pr-32">
