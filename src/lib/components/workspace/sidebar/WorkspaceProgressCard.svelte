@@ -836,7 +836,7 @@
       <div class="text-sm font-semibold text-foreground truncate">
         {$workspace?.title || 'Untitled'}
       </div>
-      <div class="text-sm text-subtle truncate mt-0.5 flex items-center gap-1">
+      <div class="text-sm text-subtle truncate mt-0.5 flex items-baseline gap-1">
         <Tooltip
           side="bottom"
           align="start"
@@ -1006,7 +1006,7 @@
         </div>
       </div>
       <!-- repo -->
-      <div class="w-full flex items-center -mt-1.5 gap-1">
+      <div class="w-full flex items-baseline -mt-1.5 gap-1">
         <Tooltip
           side="bottom"
           align="start"
