@@ -168,3 +168,48 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     );
   });
 });
+
+describe('ChatMessage model-change notice row', () => {
+  function modelChangedMessage(): AgentMessage {
+    // Daemon-persisted notice row shape (PROTOCOL.md §5.5, agent.setModel).
+    return {
+      id: 'msg-mc',
+      role: 'system',
+      contentBlocks: [
+        { type: 'text', text: 'Model changed from auggie:gpt5.4 to codex:gpt-5-codex.' },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+      metadata: {
+        type: 'model_changed',
+        from: 'gpt5.4',
+        to: 'gpt-5-codex',
+        fromProvider: 'auggie',
+        toProvider: 'codex',
+      },
+    } as AgentMessage;
+  }
+
+  it('renders as an inline status divider, not a message bubble', () => {
+    const { container } = render(ChatMessage, { props: { message: modelChangedMessage() } });
+
+    expect(screen.getByRole('status')).toBeTruthy();
+    // No bubble wrapper: the notice replaces the message chrome entirely.
+    expect(container.querySelector('[data-message-role]')).toBeNull();
+    expect(container.querySelector('.user-message')).toBeNull();
+    expect(container.querySelector('.assistant-message')).toBeNull();
+  });
+
+  it('is not editable or regeneratable even when onEditSubmit is wired', async () => {
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, { props: { message: modelChangedMessage(), onEditSubmit } });
+
+    const notice = screen.getByRole('status');
+    await fireEvent.click(notice);
+    await fireEvent.dblClick(notice);
+
+    // Neither edit mode nor the regenerate confirm dialog can open.
+    expect(screen.queryByTestId('mock-rich-input')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onEditSubmit).not.toHaveBeenCalled();
+  });
+});
