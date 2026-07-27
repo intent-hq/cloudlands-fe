@@ -1647,9 +1647,10 @@
           try {
             const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
               await import('$store/renderer/slices/scripts/scripts-selectors');
+            const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
             const scriptId = mention.id;
             const state = appStore.state;
-            const outputLines = selectScriptOutput.select(state, scriptId);
+            const outputLines = scriptOutputToLines(selectScriptOutput.select(state, scriptId));
             const script = selectScriptById.select(state, scriptId);
             const runtime = selectScriptRuntime.select(state, scriptId);
 
@@ -1664,10 +1665,7 @@
               content += `URL: ${runtime.detectedUrl}\n`;
             }
             if (outputLines.length > 0) {
-              const lastLines = outputLines
-                .slice(-100)
-                .map((l: any) => l.text)
-                .join('\n');
+              const lastLines = outputLines.slice(-100).join('\n');
               content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
             } else {
               content += '\nNo output yet.';
