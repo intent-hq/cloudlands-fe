@@ -10,6 +10,7 @@
   import {
   WorkspaceStatusEnum,
   PullRequestStatus,
+  isWorkspaceDisplayStatus,
 } from '$shared/types';
   import type { Workspace } from '$shared/types';
   import {
@@ -119,6 +120,13 @@
   });
 
   function getDisplayStatus(ws: Workspace): WorkspaceDisplayStatus {
+    // BE-owned current-cycle status (workspace.displayStatus, intent-hq/intentd#600):
+    // render it verbatim when present. The daemon owns the precedence (open/draft
+    // PR → open tasks → merged PR → complete), so a merged PR never masks open
+    // work. Unknown wire values (a future daemon's new value) are treated as
+    // absent so the workspace degrades to the local derivation below instead of
+    // vanishing from the grouped view.
+    if (isWorkspaceDisplayStatus(ws.displayStatus)) return ws.displayStatus;
     const pullRequests = ws.pullRequests || [];
     const activePR = selectWorkspaceActivePullRequest.select(appStore.state, ws.id);
     const hasMergedPR =
