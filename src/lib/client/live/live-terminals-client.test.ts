@@ -285,6 +285,10 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
         subscriptionId: "sub-term-1",
         event: {
           type: "terminal:data",
+          workspaceId: "ws-1",
+          id: "evt-1",
+          timestamp: "2026-06-17T05:00:00.000Z",
+          actor: { type: "system" },
           data: { terminalId: "term-1", chunk: "CCAI" },
         },
       },
