@@ -909,8 +909,8 @@ function classifyToolInner(
         const verbLower = writeMatch[1].toLowerCase();
         const verb =
           verbLower === 'save' || verbLower === 'write' || verbLower === 'create'
-            ? 'Save'
-            : 'Edit';
+            ? m.chat_toolClassifier_save_label()
+            : m.chat_toolClassifier_edit_label();
         return {
           category: 'file-write',
           icon: CATEGORY_ICONS['file-write'],
@@ -1194,7 +1194,10 @@ function fileWriteDisplay(name: string, input: Record<string, any>): ToolDisplay
     }
   }
 
-  const verb = name.includes('save') || name.includes('write') ? 'Save' : 'Edit';
+  const verb =
+    name.includes('save') || name.includes('write')
+      ? m.chat_toolClassifier_save_label()
+      : m.chat_toolClassifier_edit_label();
   let fileLine: number | null = null;
   if (input.line !== undefined) {
     fileLine = input.line;
@@ -1961,15 +1964,18 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
     subject = getElement();
   } else if (name.includes('screenshot')) {
     verb = 'Screenshot';
-    subject = getElement() || 'page';
+    subject = getElement() || m.chat_toolClassifier_page_subject();
   } else if (name.includes('snapshot')) {
-    verb = 'Snapshot';
-    subject = 'page';
+    verb = m.chat_toolClassifier_snapshot_label();
+    subject = m.chat_toolClassifier_page_subject();
   } else if (name.includes('type') || name === 'fill' || name.includes('fill_form')) {
-    verb = name === 'fill' || name.includes('fill') ? 'Fill' : 'Type';
+    verb =
+      name === 'fill' || name.includes('fill')
+        ? m.chat_toolClassifier_fill_label()
+        : m.chat_toolClassifier_type_label();
     subject = input.text ? truncate(input.text, 30) : getElement();
   } else if (name.includes('hover')) {
-    verb = 'Hover';
+    verb = m.chat_toolClassifier_hover_label();
     subject = getElement();
   } else if (name.includes('drag')) {
     verb = 'Drag';

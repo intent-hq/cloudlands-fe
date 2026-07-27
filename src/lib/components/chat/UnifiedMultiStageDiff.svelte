@@ -64,7 +64,7 @@
   const mergedContent = $derived(buildContentFromMergedHunks(mergedHunks));
 
   // File path from the first part
-  const filePath = $derived(parts[0]?.change.filePath || 'file');
+  const filePath = $derived(parts[0]?.change.filePath || m.chat_toolClassifier_file_subject());
 
   // Starting line number in the working tree for the merged snippet. Used so
   // the diff viewer gutter shows real file line numbers.

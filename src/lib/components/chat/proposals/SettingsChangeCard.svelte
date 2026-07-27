@@ -113,8 +113,8 @@
   function formatRowValue(row: DisplayRow, value: unknown): string {
     const definition = findAppSettingDefinition(row.key);
     if (definition) return formatSettingValue(definition, value);
-    if (value === null || value === undefined || value === '') return '(none)';
-    if (typeof value === 'boolean') return value ? 'On' : 'Off';
+    if (value === null || value === undefined || value === '') return m.chat_shared_valueNone_label();
+    if (typeof value === 'boolean') return value ? m.chat_shared_valueOn_label() : m.chat_shared_valueOff_label();
     if (typeof value === 'string' || typeof value === 'number') return String(value);
     return JSON.stringify(value) ?? String(value);
   }
@@ -168,11 +168,11 @@
   }
 
   function getStatusMessage(): string {
-    if (isApplying) return 'Applying…';
-    if (isUndoing) return 'Undoing…';
+    if (isApplying) return m.chat_shared_applying_label();
+    if (isUndoing) return m.chat_shared_undoing_label();
     if (isFailed)
       return `${m.chat_shared_actionFailed_label()}${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
-    if ($lifecycleStatus === 'applied') return 'Applied.';
+    if ($lifecycleStatus === 'applied') return m.chat_shared_appliedStatus_label();
     return '';
   }
 
@@ -242,7 +242,7 @@
                 onchange={(event) => handleEnumEdit(row, event)}
               >
                 {#if definition.nullable}
-                  <option value="">{definition.nullLabel ?? '(none)'}</option>
+                  <option value="">{definition.nullLabel ?? m.chat_shared_valueNone_label()}</option>
                 {/if}
                 {#each definition.enumValues ?? [] as option}
                   <option value={option}>{definition.enumLabels?.[option] ?? option}</option>
@@ -272,7 +272,7 @@
       >
         <span>{m.chat_shared_appliedTimeAgo_label({ timeAgo })} <span aria-hidden="true">·</span></span>
         <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleUndo}>
-          {isUndoing ? 'Undoing…' : isFailed ? 'Retry' : 'Undo'}
+          {isUndoing ? m.chat_shared_undoing_label() : isFailed ? m.chat_shared_retry_label() : m.chat_shared_undo_label()}
         </Button>
       </div>
     {:else}
@@ -281,7 +281,11 @@
           >{m.chat_shared_discard_label()}</Button
         >
         <Button size="sm" disabled={actionDisabled} onclick={handleApply}>
-          {isApplying ? 'Applying…' : isFailed ? 'Retry' : (proposal.preview.applyLabel ?? 'Apply')}
+          {isApplying
+            ? m.chat_shared_applying_label()
+            : isFailed
+              ? m.chat_shared_retry_label()
+              : (proposal.preview.applyLabel ?? m.chat_shared_apply_label())}
         </Button>
       </div>
     {/if}

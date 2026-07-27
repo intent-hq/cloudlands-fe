@@ -611,7 +611,9 @@
       />
     {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
       {@const refData = parsedBlock.metadata.referenceData}
-      {@const refFileName = refData.filePath?.split('/').pop() || refData.semanticId || 'Reference'}
+      {@const refFileName = refData.filePath?.split('/').pop() ||
+        refData.semanticId ||
+        m.chat_messageContent_reference_fallback()}
       <div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
         <div class="flex items-center gap-2 px-3 py-1.5">
           <Fa icon={faCode} size="xs" class="flex-none text-ghost" />
@@ -749,7 +751,7 @@
       <!-- We don't render them separately as they're shown within the ToolCall component -->
     {:else if block.type === 'thinking'}
       <ThinkingBlock
-        content={block.content || 'Processing...'}
+        content={block.content || m.chat_shared_processing_fallback()}
         isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
       />
     {/if}

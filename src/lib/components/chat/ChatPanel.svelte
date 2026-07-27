@@ -1080,7 +1080,7 @@
       return {
         type: isSpec ? 'spec' : 'note',
         noteId,
-        title: note?.title || (isSpec ? 'Spec' : undefined),
+        title: note?.title || (isSpec ? m.chat_shared_spec_label() : undefined),
         kind: isSpec ? 'spec' : 'note',
       };
     }
@@ -2971,7 +2971,7 @@
           <WorkspaceSetupCard
             repoName={onboardingContext.projectName ||
               onboardingContext.projectPath?.split('/').pop() ||
-              'your project'}
+              m.chat_chatPanel_yourProject_fallback()}
             repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
             worktreePath={onboardingContext.worktreePath}
             branch={onboardingContext.branch}
@@ -2997,7 +2997,7 @@
             <WorkspaceSetupCard
               repoName={onboardingContext.projectName ||
                 onboardingContext.projectPath?.split('/').pop() ||
-                'your project'}
+                m.chat_chatPanel_yourProject_fallback()}
               repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
               worktreePath={onboardingContext.worktreePath}
               branch={onboardingContext.branch}
@@ -3070,7 +3070,7 @@
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||
                       onboardingContext.projectPath?.split('/').pop() ||
-                      'your project'}
+                      m.chat_chatPanel_yourProject_fallback()}
                     repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                     worktreePath={onboardingContext.worktreePath}
                     branch={onboardingContext.branch}
@@ -3175,7 +3175,7 @@
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||
                       onboardingContext.projectPath?.split('/').pop() ||
-                      'your project'}
+                      m.chat_chatPanel_yourProject_fallback()}
                     repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                     worktreePath={onboardingContext.worktreePath}
                     branch={onboardingContext.branch}
@@ -3310,7 +3310,7 @@
                 <WorkspaceSetupCard
                   repoName={onboardingContext.projectName ||
                     onboardingContext.projectPath?.split('/').pop() ||
-                    'your project'}
+                    m.chat_chatPanel_yourProject_fallback()}
                   repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                   worktreePath={onboardingContext.worktreePath}
                   branch={onboardingContext.branch}
@@ -3673,10 +3673,10 @@
           ? 'opacity-0!'
           : ''}"
         title={showLock
-          ? 'Auto-scroll locked (click to unlock)'
+          ? m.chat_chatPanel_autoScrollLocked_tooltip()
           : showUnlock
-            ? 'Auto-scroll unlocked (click to lock)'
-            : 'Scroll to bottom'}
+            ? m.chat_chatPanel_autoScrollUnlocked_tooltip()
+            : m.chat_chatPanel_scrollToBottom_tooltip()}
       >
         <Fa icon={showArrow ? faArrowDown : showLock ? faLock : faLockOpen} class="w-3! h-3!" />
       </Button>

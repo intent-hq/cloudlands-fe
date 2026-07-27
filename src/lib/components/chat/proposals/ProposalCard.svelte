@@ -612,11 +612,11 @@
       }
       return '';
     }
-    if (isApplying) return 'Applying…';
-    if (isUndoing) return 'Undoing…';
+    if (isApplying) return m.chat_shared_applying_label();
+    if (isUndoing) return m.chat_shared_undoing_label();
     if (isFailed)
       return `${m.chat_shared_actionFailed_label()}${$lifecycleError ? `: ${$lifecycleError}` : ''}`;
-    if ($lifecycleStatus === 'applied') return 'Applied.';
+    if ($lifecycleStatus === 'applied') return m.chat_shared_appliedStatus_label();
     return '';
   }
 
@@ -880,12 +880,12 @@
             >
               <span>
                 {isAwaitingPrBranchLookup
-                  ? 'Detecting branch…'
+                  ? m.chat_proposalCard_detectingBranch_label()
                   : isApplying
-                    ? 'Applying…'
+                    ? m.chat_shared_applying_label()
                     : isFailed
-                      ? 'Retry'
-                      : 'Create workspace'}
+                      ? m.chat_shared_retry_label()
+                      : m.chat_proposalCard_createWorkspace_label()}
               </span>
               {#if !isApplying && !isFailed}
                 <span class="opacity-50">{shortcutModifier}+↵</span>
@@ -1071,7 +1071,7 @@
             {#if diff.patch}
               <DiffViewer
                 patch={diff.patch}
-                fileName={diff.fileName ?? 'proposal'}
+                fileName={diff.fileName ?? m.chat_proposalCard_proposalFile_fallback()}
                 language={diff.language}
                 viewMode="unified"
                 showHeader={true}
@@ -1082,7 +1082,7 @@
               <DiffViewer
                 oldContent={diff.oldContent}
                 newContent={diff.newContent}
-                fileName={diff.fileName ?? 'proposal'}
+                fileName={diff.fileName ?? m.chat_proposalCard_proposalFile_fallback()}
                 language={diff.language}
                 viewMode="unified"
                 showHeader={true}
@@ -1145,10 +1145,10 @@
             aria-keyshortcuts="Enter"
           >
             {isApplying
-              ? 'Applying…'
+              ? m.chat_shared_applying_label()
               : isFailed
-                ? 'Retry'
-                : (proposal.preview.applyLabel ?? 'Apply')}
+                ? m.chat_shared_retry_label()
+                : (proposal.preview.applyLabel ?? m.chat_shared_apply_label())}
           </Button>
         </div>
       {/if}

@@ -239,7 +239,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <DiffViewer
               oldContent={parsedResult.oldContent}
               newContent={parsedResult.newContent}
-              fileName={parsedResult.fileName || 'file'}
+              fileName={parsedResult.fileName || m.chat_toolClassifier_file_subject()}
               viewMode="unified"
               showHeader
               showStats

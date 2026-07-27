@@ -6,6 +6,7 @@
  */
 
 import { m } from '$shared/paraglide/messages.js';
+import { formatInteger } from '$lib/i18n/format';
 
 export type ToolResultType =
   | 'file-view'
@@ -533,7 +534,7 @@ export function parseToolResult(
     name.includes('add_patch') ||
     name.includes('add_agent_action')
   ) {
-    return { type: 'note-edit' as const, editSummary: resultText || 'Updated', content: resultText || undefined };
+    return { type: 'note-edit' as const, editSummary: resultText || m.chat_toolDetails_updated_label(), content: resultText || undefined };
   }
 
   // ── Workspace/agent rename → confirmation ──
@@ -825,7 +826,9 @@ function parseEditResult(
   // Count replacements
   const replacementCount = Object.keys(input).filter((k) => k.startsWith('old_str_')).length;
   if (replacementCount > 1) {
-    parsed.editSummary = `${replacementCount} replacements`;
+    parsed.editSummary = m.chat_toolResultParser_replacements_many({
+      count: formatInteger(replacementCount),
+    });
   }
 
   // Extract line range from input params or result text
@@ -987,7 +990,7 @@ function parseNoteUpdateResult(
   const noteId = input.noteId || 'note';
   const parsed: ParsedToolResult = {
     type: 'note-edit',
-    fileName: noteId === 'spec' ? 'Spec' : noteId,
+    fileName: noteId === 'spec' ? m.chat_shared_spec_label() : noteId,
     language: 'markdown',
   };
 
@@ -1052,7 +1055,7 @@ function parseNoteReadResult(
   const noteId = input.noteId || 'note';
   const parsed: ParsedToolResult = {
     type: 'note-view',
-    fileName: noteId === 'spec' ? 'Spec' : noteId,
+    fileName: noteId === 'spec' ? m.chat_shared_spec_label() : noteId,
     language: 'markdown',
   };
 
@@ -1528,7 +1531,7 @@ function parseNoteListResult(
     if (Array.isArray(data)) {
       parsed.notes = data.map((note: { id: string; title?: string; tags?: string[] }) => ({
         id: note.id,
-        title: note.title || 'Untitled',
+        title: note.title || m.chat_toolResultParser_untitledNote_fallback(),
         tags: note.tags || [],
       }));
     }
@@ -1842,7 +1845,7 @@ function parseAgentListResult(
       parsed.agents = data
         .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
         .map((agent: { name?: string; id?: string; agentId?: string; status?: string }) => ({
-          name: agent.name || 'Agent',
+          name: agent.name || m.chat_shared_agentName_fallback(),
           agentId: agent.id || agent.agentId || '',
           status: agent.status,
         }));
@@ -2171,7 +2174,7 @@ function parseSentrySearchResults(result: string): ParsedToolResult {
     const issues = Array.isArray(data) ? data : (data.issues || data.results || []);
     if (Array.isArray(issues)) {
       parsed.sentryIssues = issues.slice(0, 20).map((issue: any) => ({
-        title: issue.title || issue.metadata?.title || 'Unknown',
+        title: issue.title || issue.metadata?.title || m.chat_toolResultParser_unknownTitle_fallback(),
         shortId: issue.shortId || issue.short_id || '',
         status: issue.status || 'unknown',
         level: issue.level || 'error',
@@ -2190,7 +2193,7 @@ function parseSentrySearchResults(result: string): ParsedToolResult {
     const issues: ParsedToolResult['sentryIssues'] = [];
     while ((match = issuePattern.exec(result)) !== null) {
       issues.push({
-        title: match[2]?.trim() || 'Unknown',
+        title: match[2]?.trim() || m.chat_toolResultParser_unknownTitle_fallback(),
         shortId: match[1],
         status: match[3]?.toLowerCase() || 'unknown',
         level: match[4]?.toLowerCase() || 'error',

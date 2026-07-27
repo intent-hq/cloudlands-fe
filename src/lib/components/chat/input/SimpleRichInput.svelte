@@ -772,7 +772,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       id: `file-upload-${Date.now()}-${fileName}`,
       type: 'file',
       label: fileName,
-      description: `${file.type || 'Unknown type'} • ${formatFileSize(file.size)}`,
+      description: m.chat_richInput_fileTypeSize_description({
+        type: file.type || m.chat_richInput_unknownType_fallback(),
+        size: formatFileSize(file.size),
+      }),
       path: fileName,
       file: file,
     };
