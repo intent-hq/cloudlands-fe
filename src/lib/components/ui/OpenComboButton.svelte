@@ -193,7 +193,25 @@
     return [...editorActions, otherAction, ...specialActions];
   });
 
-  const currentAction = $derived(actions.find((a) => a.id === $openAction) || actions[0]);
+  // "Open-capable" means anything beyond the always-present copy specials
+  // (editor/terminal/finder/"Other…"). When none remain — remote daemon or web
+  // build — the "Open in …" combo presentation is dropped (monorepo#890).
+  const hasOpenCapableAction = $derived(
+    actions.some((a) => a.id !== 'copy' && a.id !== 'copy-branch'),
+  );
+
+  const currentAction = $derived.by(() => {
+    if (!hasOpenCapableAction) {
+      // Primary is always "Copy path" here, even if a now-gated editor (or
+      // "Copy branch name") is the remembered open action.
+      return actions.find((a) => a.id === 'copy') || actions[0];
+    }
+    return actions.find((a) => a.id === $openAction) || actions[0];
+  });
+
+  const primaryTitle = $derived(
+    hasOpenCapableAction ? `Open in ${currentAction.label}` : currentAction.label,
+  );
 
   /**
    * Get the path to open for editors (VSCode, Cursor, JetBrains, Xcode).
@@ -302,12 +320,7 @@
   <DropdownMenu bind:open={dropdownOpen} align="end" portal={usePortal} {side}>
     {#snippet trigger({ toggle }: { toggle: () => void })}
       {#if children}
-        <button
-          type="button"
-          onclick={toggle}
-          class="cursor-pointer"
-          title="Open in {currentAction.label}"
-        >
+        <button type="button" onclick={toggle} class="cursor-pointer" title={primaryTitle}>
           {@render children()}
         </button>
       {:else if compact}
@@ -330,7 +343,7 @@
             type="button"
             class="flex items-center gap-1.5 px-2 py-1 text-xs {bgClass} transition-colors cursor-pointer"
             onclick={handlePrimaryClick}
-            title="Open in {currentAction.label}"
+            title={primaryTitle}
           >
             {#if currentAction.iconBase64}
               <img
@@ -350,15 +363,17 @@
             {:else}
               <Fa icon={faCode} class="w-3.5 h-3.5 opacity-60" />
             {/if}
-            <span class="text-subtle">Open</span>
+            <span class="text-subtle">{hasOpenCapableAction ? 'Open' : currentAction.label}</span>
           </button>
-          <button
-            type="button"
-            class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
-            onclick={toggle}
-          >
-            <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
-          </button>
+          {#if actions.length > 1}
+            <button
+              type="button"
+              class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
+              onclick={toggle}
+            >
+              <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
+            </button>
+          {/if}
         </div>
       {/if}
     {/snippet}
