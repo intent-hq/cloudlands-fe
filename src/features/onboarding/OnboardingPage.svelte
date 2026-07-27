@@ -359,7 +359,8 @@
     const customScript = isCustomSetupScript;
 
     if (!isOnboarding || !$workspaceInitializerHydrated$) return;
-    if (!(selection || skipIso || script || step !== 'welcome')) return;
+    if (!(selection || skipIso || script || (step !== 'requirements' && step !== 'welcome')))
+      return;
     appStore.dispatch(
       debounceWorkspaceInitializerOnboardingFormState({
         projectSelection: selection
@@ -410,29 +411,44 @@
   // ============================================================================
 
   const onboardingStepIndex = $derived(ONBOARDING_STEP_ORDER.indexOf($onboardingStep$));
+  const isRequirementsStep = $derived($onboardingStep$ === 'requirements');
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
   const isGitHubStep = $derived($onboardingStep$ === 'github');
   const isProjectStep = $derived($onboardingStep$ === 'project');
   const isConfiguringStep = $derived(
     $onboardingStep$ === 'configuring' || $onboardingStep$ === 'ready',
   );
-  const showStartWorking = $derived(onboardingStepIndex >= 3);
+  const showStartWorking = $derived(
+    onboardingStepIndex >= ONBOARDING_STEP_ORDER.indexOf('configuring'),
+  );
   const onboardingVisibleStep = $derived(
     isConfiguringStep ? 4 : isProjectStep ? 3 : isGitHubStep ? 2 : 1,
   );
+  // The 'requirements' gate is not counted in the visible step indicator, and
   // 'configuring' and 'ready' share one visible step, so the count is the
-  // step order minus the terminal 'ready' entry.
-  const ONBOARDING_TOTAL_STEPS = ONBOARDING_STEP_ORDER.length - 1;
+  // visible order minus the terminal 'ready' entry. Back navigation maps
+  // visible step N-1 to the visible order so it never lands on the gate.
+  const VISIBLE_STEP_ORDER = ONBOARDING_STEP_ORDER.filter((step) => step !== 'requirements');
+  const ONBOARDING_TOTAL_STEPS = VISIBLE_STEP_ORDER.length - 1;
 
   // ============================================================================
   // Mount: Reset onboarding state
   // ============================================================================
 
   onMount(() => {
-    // Always start onboarding from step 1. Related persisted initializer state
-    // and session handoffs are cleared by the workspace-initializer saga.
+    // Always start onboarding from the beginning. Related persisted initializer
+    // state and session handoffs are cleared by the workspace-initializer saga.
     if (isOnboarding) {
       appStore.dispatch(resetOnboarding());
+    }
+  });
+
+  // Placeholder behavior for the 'requirements' gate (the real checks UI
+  // arrives in a follow-up): auto-advance straight to 'welcome' so the flow
+  // stays usable.
+  $effect(() => {
+    if (isOnboarding && $onboardingStep$ === 'requirements') {
+      appStore.dispatch(goToStep('welcome'));
     }
   });
 
@@ -994,7 +1010,7 @@
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                             onclick={() =>
                               appStore.dispatch(
-                                goToStep(ONBOARDING_STEP_ORDER[onboardingVisibleStep - 2]),
+                                goToStep(VISIBLE_STEP_ORDER[onboardingVisibleStep - 2]),
                               )}
                             aria-label="Go back to previous step"
                           >
@@ -1006,7 +1022,16 @@
                     </div>
 
                     <div class="flex flex-col">
-                      {#if isWelcomeStep}
+                      {#if isRequirementsStep}
+                        <!-- Placeholder heading for the requirements gate; the real checks UI arrives in a follow-up. -->
+                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
+                          <div class="space-y-3">
+                            <h1 class="text-5xl font-semibold tracking-tight leading-tight">
+                              Checking your setup…
+                            </h1>
+                          </div>
+                        </div>
+                      {:else if isWelcomeStep}
                         <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
                           <div class="space-y-3">
                             <h1 class="text-5xl font-semibold tracking-tight leading-tight">
@@ -1060,7 +1085,13 @@
                 <div class="w-full min-w-0">
                   {#key $onboardingStep$}
                     <div class="py-8 space-y-6" in:fly={{ y: 15, duration: 300, easing: cubicOut }}>
-                      {#if isWelcomeStep}
+                      {#if isRequirementsStep}
+                        <!-- Placeholder for the requirements gate; auto-advances to welcome (see $effect above). -->
+                        <div
+                          class="max-w-5xl mx-auto"
+                          data-testid="onboarding-requirements-placeholder"
+                        ></div>
+                      {:else if isWelcomeStep}
                         <div class="py-6 overflow-x-auto scrollbar-none -mx-6">
                           <div class="pl-[max(1.5rem,calc((100%-64rem)/2))] pr-32">
                             <AgentGrid
