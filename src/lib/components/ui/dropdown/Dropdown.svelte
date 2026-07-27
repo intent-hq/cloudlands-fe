@@ -22,6 +22,8 @@
     DropdownTriggerVariant,
     DropdownTriggerSize,
   } from './types';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     /** Current value - string for single, string[] for multiple */
@@ -78,7 +80,7 @@
     value = $bindable(),
     options = [],
     groups = [],
-    placeholder = 'Select...',
+    placeholder = m.ui_dropdown_select_placeholder(),
     portal = false,
     searchable = true,
     multiple = false,
@@ -568,7 +570,7 @@
         class="w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 outline-none border-none ring-0 focus:ring-0! focus:outline-none!"
         {placeholder}
         role="searchbox"
-        aria-label="Search options"
+        aria-label={m.ui_dropdown_search_ariaLabel()}
         aria-activedescendant={highlightedIndex >= 0
           ? `dropdown-option-${highlightedIndex}`
           : undefined}
@@ -580,8 +582,9 @@
     <!-- Screen reader announcement for filtered results -->
     {#if searchValue}
       <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {selectableOptions.length}
-        {selectableOptions.length === 1 ? 'result' : 'results'} found
+        {selectableOptions.length === 1
+          ? m.ui_dropdown_resultsFound_one()
+          : m.ui_dropdown_resultsFound_many({ count: formatInteger(selectableOptions.length) })}
       </div>
     {/if}
   {/if}
@@ -627,13 +630,13 @@
       {#if searchValue && allOptions.length > 0}
         <!-- Search yielded no results but there are options available -->
         <div class="flex flex-col items-center gap-1 py-6 px-3 text-muted-foreground">
-          <span class="text-sm">No results for &ldquo;{searchValue}&rdquo;</span>
-          <span class="text-xs text-subtle">Try a different search term</span>
+          <span class="text-sm">{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
+          <span class="text-xs text-subtle">{m.ui_dropdown_tryDifferentSearch_description()}</span>
         </div>
       {:else if empty}
         {@render empty()}
       {:else}
-        <div class="px-2 py-4 text-center text-sm text-subtle">No results found</div>
+        <div class="px-2 py-4 text-center text-sm text-subtle">{m.ui_dropdown_noResults_label()}</div>
       {/if}
     {/if}
   </div>
@@ -648,6 +651,7 @@
 
 {#snippet optionItem(option: DropdownOption)}
   {@const optionIndex = selectableOptions.findIndex((o) => o.value === option.value)}
+  <!-- i18n-ignore (scanner false positive: `<` comparison inside the const expression) -->
   {@const isHighlighted =
     highlightedIndex >= 0 &&
     highlightedIndex < selectableOptions.length &&

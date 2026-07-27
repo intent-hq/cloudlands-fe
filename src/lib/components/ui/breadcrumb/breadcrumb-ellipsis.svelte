@@ -3,6 +3,7 @@
   import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils.js';
   import type { HTMLAttributes } from 'svelte/elements';
+  import { m } from '$shared/paraglide/messages.js';
 
   type Props = HTMLAttributes<HTMLSpanElement>;
 
@@ -16,5 +17,5 @@
   {...restProps}
 >
   <Fa icon={faEllipsis} size="1x" class="h-4 w-4" />
-  <span class="sr-only">More</span>
+  <span class="sr-only">{m.ui_breadcrumb_more_label()}</span>
 </span>

@@ -11,6 +11,7 @@
    */
   import { tick } from 'svelte';
   import { cn } from '$lib/utils';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** The current name value */
@@ -33,12 +34,12 @@
 
   let {
     value,
-    placeholder = 'Untitled',
+    placeholder = m.ui_editableName_placeholder(),
     onSave,
     disabled = false,
     class: className = '',
     textClass = 'text-sm font-medium',
-    title = 'Click to rename',
+    title = m.ui_editableName_rename_tooltip(),
     maxWidth = 200,
   }: Props = $props();
 
