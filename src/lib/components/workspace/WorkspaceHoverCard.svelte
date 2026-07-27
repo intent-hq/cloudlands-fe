@@ -11,7 +11,7 @@
   PullRequestStatus,
   WorkspaceStatusEnum,
 } from '$shared/types';
-  import { formatDistanceToNow } from 'date-fns';
+  import { formatDistanceToNow } from '$lib/i18n/format';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
@@ -91,7 +91,7 @@
     try {
       const parsed = new Date(date);
       if (!Number.isFinite(parsed.getTime())) return null;
-      return formatDistanceToNow(parsed, { addSuffix: true });
+      return formatDistanceToNow(parsed);
     } catch {
       return 'Recently';
     }

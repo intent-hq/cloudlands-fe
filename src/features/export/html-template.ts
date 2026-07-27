@@ -1,6 +1,7 @@
 /**
  * HTML template with inlined CSS for light and dark themes
  */
+import { formatDateTime } from '$lib/i18n/format';
 
 const LIGHT_THEME_CSS = `
   :root {
@@ -540,7 +541,7 @@ export function getHtmlTemplate(
   messagesHtml: string,
   exportedAt?: Date,
 ): string {
-  const timestamp = exportedAt ? new Date(exportedAt).toLocaleString() : new Date().toLocaleString();
+  const timestamp = formatDateTime(exportedAt ?? new Date());
 
   return `<!DOCTYPE html>
 <html lang="en">

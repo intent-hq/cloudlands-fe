@@ -1,4 +1,5 @@
 import type { AgentMessage } from '$shared/types';
+import { formatDateTime } from '$lib/i18n/format';
 import {
   renderContentBlock,
   escapeHtml,
@@ -41,9 +42,7 @@ export function exportChatToHtml(messages: AgentMessage[], options: ExportOption
  */
 function renderMessage(message: AgentMessage): string {
   const role = message.role || 'assistant';
-  const timestamp = message.timestamp
-    ? new Date(message.timestamp).toLocaleString()
-    : new Date().toLocaleString();
+  const timestamp = formatDateTime(message.timestamp ?? new Date());
   const turnNumber = message.turnNumber ? `Turn ${message.turnNumber}` : '';
 
   // Build header metadata

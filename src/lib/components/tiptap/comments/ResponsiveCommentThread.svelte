@@ -1,10 +1,10 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
+  import { differenceInDays } from 'date-fns';
   import {
   formatDistanceToNow,
-  format,
-  differenceInDays,
-} from 'date-fns';
+  formatShortDate,
+} from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
   import type { Workspace } from '$shared/types';
   import {
@@ -149,7 +149,7 @@
     if (!dateStr) return '';
     const d = new Date(dateStr);
     const days = differenceInDays(new Date(), d);
-    return days >= 1 ? format(d, 'MMM d') : formatDistanceToNow(d, { addSuffix: true });
+    return days >= 1 ? formatShortDate(d) : formatDistanceToNow(d);
   }
 
   // Truncate content for tooltips

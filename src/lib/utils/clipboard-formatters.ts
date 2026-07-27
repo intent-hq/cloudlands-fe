@@ -4,6 +4,7 @@
  * Shared utilities for formatting agent conversations and tool calls
  * for clipboard operations.
  */
+import { formatDateTime } from '$lib/i18n/format';
 
 /**
  * Safely stringify a value, handling circular references and errors
@@ -174,11 +175,7 @@ export function formatAgentMessagesForClipboard(
     // Format with role prefix
     const role = msg.role === 'user' ? 'User' : 'Assistant';
     const timestamp = msg.timestamp
-      ? new Date(
-          typeof msg.timestamp === 'number' || typeof msg.timestamp === 'string'
-            ? msg.timestamp
-            : msg.timestamp,
-        ).toLocaleString()
+      ? formatDateTime(msg.timestamp)
       : '';
 
     parts.push(`${role}${timestamp ? ` (${timestamp})` : ''}:\n${messageParts.join('\n\n')}`);

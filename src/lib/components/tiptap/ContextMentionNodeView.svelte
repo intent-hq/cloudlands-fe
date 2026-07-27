@@ -16,6 +16,7 @@
   import type { ContextProvider, ContextItemType } from '$features/context/types';
   import type { ContextMentionMetadata } from './ContextMention';
   import { handleLink } from '$features/navigation/link-handler';
+  import { formatRelativeTime as formatRelative } from '$lib/i18n/format';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
 
@@ -129,20 +130,7 @@
   // Format relative time
   function formatRelativeTime(dateStr: string | undefined): string {
     if (!dateStr) return '';
-    try {
-      const date = new Date(dateStr);
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      if (diffDays === 0) return 'today';
-      if (diffDays === 1) return 'yesterday';
-      if (diffDays < 7) return `${diffDays}d ago`;
-      if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-      if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
-      return `${Math.floor(diffDays / 365)}y ago`;
-    } catch {
-      return '';
-    }
+    return formatRelative(dateStr, { style: 'narrow' });
   }
 
   // Get state color class

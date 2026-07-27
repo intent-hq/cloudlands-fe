@@ -4,6 +4,7 @@
  */
 
 import type { Note } from "$shared/types";
+import { formatRelativeTime as formatRelative, formatShortDate } from "$lib/i18n/format";
 import type { PaletteMruEntry, PaletteMruEntryType } from "../palette/palette-types";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -84,23 +85,17 @@ export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
   return score;
 }
 
-/** Format a date string as a relative time label. */
+/**
+ * Format a date string as a compact relative time label in the active locale;
+ * dates older than a week show a short date instead.
+ */
 export function formatRelativeTime(dateStr: Date | string | undefined): string {
   if (!dateStr) return "";
   const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays === 1) return "yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (Number.isNaN(date.getTime())) return "";
+  const diffDays = (Date.now() - date.getTime()) / 86_400_000;
+  if (diffDays >= 7) return formatShortDate(date);
+  return formatRelative(date, { style: "narrow" });
 }
 
 /** Parse a search query for filter prefix. */

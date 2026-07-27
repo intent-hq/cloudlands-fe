@@ -13,6 +13,7 @@
  */
 import { baseLocale, locales, overwriteGetLocale } from '$shared/paraglide/runtime.js';
 import { resolveLocale } from '$shared/i18n/locale-matcher';
+import { loadDateFnsLocale } from '$shared/i18n/formatters';
 
 export type AppLocale = (typeof locales)[number];
 
@@ -44,9 +45,15 @@ export function resolvePreferenceToLocale(preference: string): AppLocale {
   return resolveLocale(preference, getSystemLocales(), locales, baseLocale) as AppLocale;
 }
 
-/** Resolve `preference` and make it the active locale for all `m.*()` calls. */
+/**
+ * Resolve `preference` and make it the active locale for all `m.*()` calls.
+ * Also kicks off loading the matching date-fns locale data in the background
+ * so date formatting (`$lib/i18n/format`) follows the language; until it
+ * arrives, date-fns falls back to its built-in `en`.
+ */
 export function applyLanguagePreference(preference: string): void {
   activeLocale = resolvePreferenceToLocale(preference);
+  void loadDateFnsLocale(activeLocale);
 }
 
 /** The locale currently served to `m.*()` calls. */

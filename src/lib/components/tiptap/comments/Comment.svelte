@@ -1,10 +1,11 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
+  import { differenceInDays } from 'date-fns';
   import {
   formatDistanceToNow,
-  format,
-  differenceInDays,
-} from 'date-fns';
+  formatFullDateTime,
+  formatShortDate,
+} from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
   import TipTapEditor from '$lib/components/chat/input/TipTapEditor.svelte';
   import type { Workspace } from '$shared/types';
@@ -101,7 +102,7 @@
     if (!dateStr) return '';
     const d = new Date(dateStr);
     const days = differenceInDays(new Date(), d);
-    return days >= 1 ? format(d, 'MMM d') : formatDistanceToNow(d, { addSuffix: true });
+    return days >= 1 ? formatShortDate(d) : formatDistanceToNow(d);
   }
 
   // Editing state - use external if provided, otherwise internal
@@ -225,7 +226,7 @@
         {#if comment.createdAt}
           <span
             class="text-subtle whitespace-nowrap {timestampSize}"
-            title={new Date(comment.createdAt).toLocaleString()}
+            title={formatFullDateTime(comment.createdAt)}
             >{formatTimestamp(comment.createdAt)}</span
           >
         {/if}

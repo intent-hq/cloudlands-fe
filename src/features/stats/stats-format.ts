@@ -7,6 +7,7 @@
  * and NaN-safe: a zero-data period renders zeroes, never NaN.
  */
 import type { UsageModelStats, UsageTokenTotals } from '$lib/client/app-client';
+import { formatInteger } from '$lib/i18n/format';
 
 /** Sum of the 4 separate token counters (Spec D6). */
 export function totalTokens(t: UsageTokenTotals): number {
@@ -39,10 +40,9 @@ export function formatDuration(ms: number): string {
   return `${hours}h ${String(minutes).padStart(2, '0')}m`;
 }
 
-/** Thousands-separated integer (the design uses en-US grouping). */
+/** Thousands-separated integer in the active locale. */
 export function formatInt(n: number): string {
-  if (!Number.isFinite(n)) return '0';
-  return Math.round(n).toLocaleString('en-US');
+  return formatInteger(n);
 }
 
 /** "61%" share label for a 0..1 fraction. */

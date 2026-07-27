@@ -28,6 +28,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { formatDate, formatInteger } from '$lib/i18n/format';
 
   interface Props {
     input: Record<string, any>;
@@ -906,16 +907,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               <div class="px-3 py-2 border-t border-border/50 bg-muted/20 flex items-center gap-4 text-xs">
                 <div class="flex items-center gap-1">
                   <span class="text-subtle">Events</span>
-                  <span class="font-medium text-foreground">{issue.count.toLocaleString()}</span>
+                  <span class="font-medium text-foreground">{formatInteger(issue.count)}</span>
                 </div>
                 <div class="flex items-center gap-1">
                   <span class="text-subtle">Users</span>
-                  <span class="font-medium text-foreground">{issue.userCount.toLocaleString()}</span>
+                  <span class="font-medium text-foreground">{formatInteger(issue.userCount)}</span>
                 </div>
                 {#if issue.lastSeen}
                   <div class="flex items-center gap-1 ml-auto">
                     <span class="text-subtle">Last seen</span>
-                    <span class="text-muted-foreground">{new Date(issue.lastSeen).toLocaleDateString()}</span>
+                    <span class="text-muted-foreground">{formatDate(issue.lastSeen)}</span>
                   </div>
                 {/if}
               </div>
@@ -962,7 +963,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                   </div>
                   <span class="text-ui {statusText} shrink-0">{issue.status}</span>
                   {#if issue.count > 0}
-                    <span class="text-ui text-subtle shrink-0">{issue.count.toLocaleString()}</span>
+                    <span class="text-ui text-subtle shrink-0">{formatInteger(issue.count)}</span>
                   {/if}
                 </div>
               {/each}

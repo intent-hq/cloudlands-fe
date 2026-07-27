@@ -15,6 +15,7 @@
   import { Logger } from '$lib/utils/logger';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import { appClient } from '$lib/client';
+  import { formatInteger } from '$lib/i18n/format';
 
 
   const logger = new Logger({ category: 'AgentRulesEditor' });
@@ -96,8 +97,8 @@
     // Block saving if over limit
     if (isOverLimit) {
       showError(
-        `Rules exceed the maximum length of ${MAX_RULES_LENGTH.toLocaleString()} characters. ` +
-          `Please reduce by ${excessChars.toLocaleString()} characters before saving.`,
+        `Rules exceed the maximum length of ${formatInteger(MAX_RULES_LENGTH)} characters. ` +
+          `Please reduce by ${formatInteger(excessChars)} characters before saving.`,
       );
       return;
     }
@@ -195,8 +196,8 @@
     >
       <Fa icon={faCircleExclamation} class="w-4 h-4 flex-shrink-0" />
       <span class="text-sm">
-        Rules exceed the maximum length of {MAX_RULES_LENGTH.toLocaleString()} characters. Please reduce
-        by {excessChars.toLocaleString()} characters to save.
+        Rules exceed the maximum length of {formatInteger(MAX_RULES_LENGTH)} characters. Please reduce
+        by {formatInteger(excessChars)} characters to save.
       </span>
     </div>
   {:else if isApproachingLimit}

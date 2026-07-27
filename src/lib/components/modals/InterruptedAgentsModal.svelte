@@ -8,6 +8,7 @@
   import { faExclamationTriangle, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
+  import { formatDateTime } from '$lib/i18n/format';
 
   interface Props {
     open?: boolean;
@@ -155,7 +156,7 @@
                     <div class="flex-1 min-w-0">
                       <p class="text-sm text-foreground truncate">{agent.agentName}</p>
                       <p class="text-xs text-subtle">
-                        {agent.prevStatus} • interrupted {new Date(agent.interruptedAt).toLocaleString()}
+                        {agent.prevStatus} • interrupted {formatDateTime(agent.interruptedAt)}
                       </p>
                     </div>
                   </div>

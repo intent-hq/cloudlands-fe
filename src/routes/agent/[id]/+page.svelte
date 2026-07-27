@@ -16,6 +16,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import type { AgentSession } from '$shared/types';
+  import { formatTime } from '$lib/i18n/format';
   import { store as appStore } from '$store/renderer/store';
 
   const activeWorkspace = selectActiveWorkspace();
@@ -165,8 +166,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   function formatTimestamp(timestamp: string): string {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatTime(timestamp);
   }
 </script>
 

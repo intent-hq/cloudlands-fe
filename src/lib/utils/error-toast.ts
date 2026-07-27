@@ -14,6 +14,7 @@ import type { AppError } from '$lib/utils/error-handler.svelte';
 import { errorHandler } from '$lib/utils/error-handler.svelte';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import { formatDateTime } from '$lib/i18n/format';
 
 const APP_NAME = 'Intent';
 
@@ -26,7 +27,7 @@ async function copyError(error: AppError): Promise<void> {
     '',
     `**Error:** ${error.title}`,
     `**Message:** ${error.message}`,
-    `**Time:** ${error.timestamp.toLocaleString()}`,
+    `**Time:** ${formatDateTime(error.timestamp)}`,
     `**ID:** \`${error.id}\``,
     '',
   ];

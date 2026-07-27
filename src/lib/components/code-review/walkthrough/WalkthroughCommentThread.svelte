@@ -8,6 +8,7 @@
    * - Expandable "Suggested changes" section if needed
    * - Text input for asking questions
    */
+  import { formatTime as formatClockTime } from '$lib/i18n/format';
   import {
   slide,
   fly,
@@ -131,7 +132,7 @@
   // Format timestamp
   function formatTime(date?: Date): string {
     if (!date) return '';
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatClockTime(date);
   }
 
   // Check if there's any conversation beyond the initial annotation

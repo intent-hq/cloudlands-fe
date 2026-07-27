@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { NoteVersion } from '$shared/types';
-  import { formatDistanceToNow } from 'date-fns';
+  import { formatDistanceToNow } from '$lib/i18n/format';
   import DiffViewer from '$lib/components/ui/diff/DiffViewer.svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
@@ -70,11 +70,7 @@
   });
 
   function formatRelativeTime(dateStr: string): string {
-    try {
-      return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
-    } catch {
-      return 'Unknown';
-    }
+    return formatDistanceToNow(dateStr) || 'Unknown';
   }
 
   function normalizeForDiff(content: string): string {

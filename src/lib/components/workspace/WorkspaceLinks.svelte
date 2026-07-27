@@ -23,6 +23,7 @@
   buildRepoPathLookup,
   getGroupKey,
 } from './utils/workspace-grouping';
+  import { formatInteger, formatRelativeTime } from '$lib/i18n/format';
   interface Props {
     workspaces: Workspace[];
     collapsed?: boolean;
@@ -135,28 +136,7 @@
 
   function formatDate(dateInput: string | Date | number | undefined): string {
     if (!dateInput) return 'Never';
-
-    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
-    if (!Number.isFinite(date.getTime())) return 'Never';
-
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (days === 0) {
-      const hours = Math.floor(diff / (1000 * 60 * 60));
-      if (hours === 0) {
-        const minutes = Math.floor(diff / (1000 * 60));
-        return minutes === 0 ? 'Just now' : `${minutes}m ago`;
-      }
-      return `${hours}h ago`;
-    } else if (days === 1) {
-      return 'Yesterday';
-    } else if (days < 7) {
-      return `${days} days ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
+    return formatRelativeTime(dateInput, { style: 'narrow' }) || 'Never';
   }
 </script>
 
@@ -210,12 +190,12 @@
                   <span class="flex items-center gap-1.5 text-xs font-mono ml-2 flex-shrink-0">
                     {#if stats.additions > 0}
                       <span class="text-green-600 dark:text-green-400">
-                        +{stats.additions.toLocaleString()}
+                        +{formatInteger(stats.additions)}
                       </span>
                     {/if}
                     {#if stats.deletions > 0}
                       <span class="text-red-600 dark:text-red-400">
-                        -{stats.deletions.toLocaleString()}
+                        -{formatInteger(stats.deletions)}
                       </span>
                     {/if}
                   </span>

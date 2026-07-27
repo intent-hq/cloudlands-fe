@@ -5,6 +5,7 @@
    * Minimal slider for scrubbing through activity history.
    * ShadCN/Vercel-inspired design.
    */
+  import { formatTime as formatClockTime } from '$lib/i18n/format';
 
   interface Props {
     currentTime: string;
@@ -51,13 +52,7 @@
   // Format time for display
   function formatTime(isoTime: string): string {
     try {
-      const date = new Date(isoTime);
-      if (isNaN(date.getTime())) return '--:--:--';
-      return date.toLocaleTimeString(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
+      return formatClockTime(isoTime, { seconds: true }) || '--:--:--';
     } catch {
       return '--:--:--';
     }
