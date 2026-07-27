@@ -71,7 +71,7 @@ describe('RepoAndBranchPicker', () => {
 
     const repoSelector = screen.getByTestId('repo-selector');
     expect(repoSelector.getAttribute('data-trigger-suffix')).toBe('');
-    expect(repoSelector.textContent).not.toContain('(');
+    expect(repoSelector.textContent?.replace(/\s+/g, ' ').trim()).toBe('/Users/dev/monorepo');
   });
 
   it('does not pass the suffix to the GitHub clone flow (owner/repo already shown)', () => {
