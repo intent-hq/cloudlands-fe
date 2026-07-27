@@ -1,4 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -239,12 +240,17 @@ export default defineConfig(({ mode }) => {
 
   return {
   // Plugin order:
-  // 1. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
-  // 2. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
-  // 3. sveltekit() - SvelteKit's virtual modules and SSR handling
-  // 4. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
-  // 5. excludeNodeModules() - excludes Node.js-only code from browser bundle
+  // 1. paraglideVitePlugin() - compiles messages/{locale}.json into src/shared/paraglide (typed m.* functions)
+  // 2. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
+  // 3. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
+  // 4. sveltekit() - SvelteKit's virtual modules and SSR handling
+  // 5. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
+  // 6. excludeNodeModules() - excludes Node.js-only code from browser bundle
   plugins: [
+    paraglideVitePlugin({
+      project: join(__dirname, 'project.inlang'),
+      outdir: join(__dirname, 'src/shared/paraglide'),
+    }),
     devHealthProbeSilencer(),
     preventSvelteKitRegenHMR(),
     sveltekit(),

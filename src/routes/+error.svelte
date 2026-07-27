@@ -4,6 +4,7 @@
   import Fa from 'svelte-fa';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   let error = $derived(page.error);
   let status = $derived(page.status);
@@ -36,7 +37,7 @@
       <!-- Error Message - Centered -->
       <div class="space-y-3">
         <h2 class="text-2xl font-semibold text-foreground">
-          Something went wrong
+          {m.error_page_title()}
         </h2>
         {#if status && status !== 500}
           <p class="text-sm text-subtle">Error {status}</p>
@@ -49,10 +50,10 @@
       <!-- Action Buttons - Centered horizontally -->
       <div class="flex items-center justify-center gap-3 flex-wrap">
         <Button variant="outline" size="default" onclick={() => window.location.reload()}>
-          Reload Page
+          {m.error_page_reload_button()}
         </Button>
         <Button variant="default" size="default" onclick={() => window.location.href = '/'}>
-          Go Home
+          {m.error_page_go_home_button()}
         </Button>
       </div>
 

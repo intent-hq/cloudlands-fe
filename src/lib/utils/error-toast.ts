@@ -13,6 +13,7 @@ import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace
 import type { AppError } from '$lib/utils/error-handler.svelte';
 import { errorHandler } from '$lib/utils/error-handler.svelte';
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 
 const APP_NAME = 'Intent';
 
@@ -92,9 +93,9 @@ async function attemptRecovery(error: AppError): Promise<void> {
   const success = await errorHandler.attemptRecovery(error.id);
   if (success) {
     errorHandler.dismiss(error.id);
-    toast.success('Successfully recovered from error');
+    toast.success(m.error_recovery_success());
   } else {
-    toast.error('Recovery attempt failed. Please try again.');
+    toast.error(m.error_recovery_failed());
   }
 }
 

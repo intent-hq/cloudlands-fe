@@ -1,0 +1,12 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+  "error_page_title": "Something went wrong",
+  "error_page_reload_button": "Reload Page",
+  "error_page_go_home_button": "Go Home",
+  "error_recovery_success": "Successfully recovered from error",
+  "error_recovery_failed": "Recovery attempt failed. Please try again.",
+  "quit_dialog_sidecar_title": "Agents Still Working",
+  "quit_dialog_sidecar_detail": "Quitting will shut down running agents. You can resume them when the app reopens. Quit now?",
+  "quit_dialog_quit_button": "Quit",
+  "quit_dialog_cancel_button": "Cancel"
+}

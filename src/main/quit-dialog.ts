@@ -20,6 +20,7 @@ import type { MessageBoxOptions } from 'electron';
 
 import type { ConnectionMode } from '../features/backend/main/connection-mode';
 import type { RespondingAgent } from './running-agents';
+import { m } from '../shared/paraglide/messages.js';
 
 /** Max agent names listed in the external-mode dialog before "and M more". */
 export const MAX_LISTED_AGENT_NAMES = 5;
@@ -68,11 +69,10 @@ export function buildQuitDialogOptions(
   // default.
   return {
     type: 'info',
-    title: 'Agents Still Working',
+    title: m.quit_dialog_sidecar_title(),
     message: `${count} agent${plural ? 's are' : ' is'} still working.`,
-    detail:
-      'Quitting will shut down running agents. You can resume them when the app reopens. Quit now?',
-    buttons: ['Quit', 'Cancel'],
+    detail: m.quit_dialog_sidecar_detail(),
+    buttons: [m.quit_dialog_quit_button(), m.quit_dialog_cancel_button()],
     defaultId: 0,
     cancelId: 1,
   };
