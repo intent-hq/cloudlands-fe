@@ -209,16 +209,20 @@ export const selectWorkflowStage = store.createSelector<
   const hasUnpushedCommits =
     (gitStatus?.localCommits?.filter((c) => !c.isPushed).length ?? 0) > 0;
   const existingPR = gitStatus?.existingPR;
+  const hasOpenTasks = taskStats.total > 0 && taskStats.completed < taskStats.total;
 
   if (existingPR) {
     if (existingPR.state === "merged") {
-      // PR merged: only show new work if there are uncommitted changes, else done.
-      if (!hasUncommittedChanges) {
+      // PR merged: open tasks or uncommitted changes mean there is still new work.
+      if (!hasUncommittedChanges && !hasOpenTasks) {
         return "all-done";
       }
-      // Otherwise fall through to check the uncommitted-change states.
+      // Otherwise fall through to the task-based and uncommitted-change states.
     } else if (existingPR.state === "closed") {
-      return "all-done";
+      if (!hasOpenTasks) {
+        return "all-done";
+      }
+      // Open tasks remain: fall through to the task-based states.
     } else if (existingPR.state === "open") {
       if (activePR?.reviewDecision === "APPROVED") {
         return "pr-approved";

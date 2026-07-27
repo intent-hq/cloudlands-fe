@@ -164,6 +164,48 @@ describe("selectWorkflowStage", () => {
     );
   });
 
+  it("returns 'all-done' when the PR is merged and all tasks are complete", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+    });
+    const input = makeInput({
+      gitStatus,
+      taskStats: makeTaskStats({ total: 2, completed: 2 }),
+      completionRatio: 1,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, input)).toBe("all-done");
+  });
+
+  it("returns 'tasks-ready' when the PR is merged but unstarted tasks remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+    });
+    const input = makeInput({ gitStatus, taskStats: makeTaskStats({ total: 3 }) });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, input)).toBe("tasks-ready");
+  });
+
+  it("returns 'tasks-in-progress' when the PR is merged but open tasks remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+    });
+    const input = makeInput({
+      gitStatus,
+      taskStats: makeTaskStats({ total: 4, completed: 2, inProgress: 1 }),
+      completionRatio: 0.5,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, input)).toBe("tasks-in-progress");
+  });
+
+  it("returns 'changes-unstaged' when the PR is merged with uncommitted changes and no tasks", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+      uncommittedCount: 2,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
+      "changes-unstaged",
+    );
+  });
+
   it("returns 'all-done' when the PR is closed", () => {
     const gitStatus = makeGitStatus({
       existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "closed" },
@@ -171,6 +213,18 @@ describe("selectWorkflowStage", () => {
     expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
       "all-done",
     );
+  });
+
+  it("returns a task stage when the PR is closed but open tasks remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "closed" },
+    });
+    const input = makeInput({
+      gitStatus,
+      taskStats: makeTaskStats({ total: 3, completed: 1, inProgress: 1 }),
+      completionRatio: 1 / 3,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, input)).toBe("tasks-in-progress");
   });
 
   it("returns 'all-done' when all tasks are complete with no changes", () => {
