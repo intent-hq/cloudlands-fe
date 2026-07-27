@@ -27,6 +27,7 @@
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
@@ -221,7 +222,7 @@
         class:mt-1={isCollapsed}
       >
         <span class="font-medium text-foreground truncate {authorSize}"
-          >{comment.author || 'Unknown'}</span
+          >{comment.author || m.tiptap_comment_unknownAuthor_label()}</span
         >
         {#if comment.createdAt}
           <span
@@ -233,7 +234,7 @@
         {#if showType && comment.type && comment.type !== 'comment'}
           <span
             class="comment-type-badge px-1.5 py-0.5 text-ui font-mono bg-muted/50 text-subtle"
-            title="Comment type"
+            title={m.tiptap_comment_type_tooltip()}
           >
             {comment.type}
           </span>
@@ -249,8 +250,8 @@
             <Button
               variant="ghost-light"
               size="icon-xs"
-              aria-label="Edit"
-              tooltip="Edit"
+              aria-label={m.tiptap_comment_edit_label()}
+              tooltip={m.tiptap_comment_edit_label()}
               onclick={() => {
                 beginEdit();
                 onEdit?.();
@@ -264,8 +265,8 @@
             <Button
               variant="ghost-light"
               size="icon-xs"
-              aria-label="Resolve"
-              tooltip="Resolve"
+              aria-label={m.tiptap_comment_resolve_label()}
+              tooltip={m.tiptap_comment_resolve_label()}
               onclick={() => onResolve?.()}
             >
               <Fa icon={faCheck} size="xs" />
@@ -276,8 +277,8 @@
             <Button
               variant="ghost-light"
               size="icon-xs"
-              aria-label="Collapse"
-              tooltip="Collapse"
+              aria-label={m.tiptap_comment_collapse_label()}
+              tooltip={m.tiptap_comment_collapse_label()}
               onclick={() => onClose?.()}
             >
               <Fa icon={faTimes} size="xs" />
@@ -298,7 +299,7 @@
         <TipTapEditor
           bind:this={externalEditEditor}
           value={externalEditHTML ?? ''}
-          placeholder="Edit comment"
+          placeholder={m.tiptap_comment_edit_placeholder()}
           minHeight={60}
           maxHeight={200}
           {workspace}
@@ -308,7 +309,7 @@
         <TipTapEditor
           bind:this={internalEditEditor}
           value={internalEditHTML}
-          placeholder="Edit comment"
+          placeholder={m.tiptap_comment_edit_placeholder()}
           minHeight={60}
           maxHeight={200}
           {workspace}
@@ -316,8 +317,8 @@
         />
       {/if}
       <div class="flex items-center gap-2 mt-2">
-        <Button size="sm" onclick={saveEdit}>Save</Button>
-        <Button size="sm" variant="ghost" onclick={cancelEdit}>Cancel</Button>
+        <Button size="sm" onclick={saveEdit}>{m.tiptap_comment_save_label()}</Button>
+        <Button size="sm" variant="ghost" onclick={cancelEdit}>{m.tiptap_comment_cancel_label()}</Button>
       </div>
     {:else if (commentText || '').length > 180}
       <div class="text-xs">
@@ -332,7 +333,7 @@
           <button
             class="block text-sm text-muted-foreground hover:text-foreground underline underline-offset-2"
             onclick={() => (expanded = true)}
-            type="button">more</button
+            type="button">{m.tiptap_comment_more_label()}</button
           >
         {/if}
       </div>
@@ -369,7 +370,7 @@
         class="mt-2 text-xs text-blue-500 hover:text-blue-600 hover:underline"
         type="button"
       >
-        View agent →
+        {m.tiptap_comment_viewAgent_label()}
       </button>
     {/if}
   </div>

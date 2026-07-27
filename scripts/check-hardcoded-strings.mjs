@@ -43,6 +43,7 @@ const ENFORCED_DIRS = [
   'src/features/layout',
   'src/routes/workspace',
   'src/routes/agent',
+  'src/lib/components/tiptap',
   'src/routes/+page.svelte',
   'src/routes/+layout.svelte',
   'src/routes/+error.svelte',

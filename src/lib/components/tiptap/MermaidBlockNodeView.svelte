@@ -14,6 +14,7 @@
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { m } from '$shared/paraglide/messages.js';
 
   // TipTap NodeViewProps
   let { node, selected, updateAttributes }: NodeViewProps = $props();
@@ -226,10 +227,10 @@
         </div>
         <div class="edit-actions">
           {#if hasChanges}
-            <button type="button" class="action-btn" onclick={cancelChanges}>Cancel</button>
-            <button type="button" class="action-btn primary" onclick={saveChanges}>Save</button>
+            <button type="button" class="action-btn" onclick={cancelChanges}>{m.tiptap_mermaidBlock_cancel_label()}</button>
+            <button type="button" class="action-btn primary" onclick={saveChanges}>{m.tiptap_mermaidBlock_save_label()}</button>
           {:else}
-            <button type="button" class="action-btn" onclick={closeCodeView}>Close</button>
+            <button type="button" class="action-btn" onclick={closeCodeView}>{m.tiptap_mermaidBlock_close_label()}</button>
           {/if}
         </div>
       </div>
@@ -238,10 +239,10 @@
     <!-- Action buttons (edit + expand) -->
     {#if !showCode}
       <div class="action-btns">
-        <button type="button" class="hover-btn" onclick={openCodeView} title="Edit code">
+        <button type="button" class="hover-btn" onclick={openCodeView} title={m.tiptap_mermaidBlock_editCode_tooltip()}>
           <Fa icon={faPencil} size="xs" />
         </button>
-        <button type="button" class="hover-btn" onclick={openFullscreen} title="Fullscreen">
+        <button type="button" class="hover-btn" onclick={openFullscreen} title={m.tiptap_mermaidBlock_fullscreen_tooltip()}>
           <Fa icon={faExpand} size="xs" />
         </button>
       </div>
@@ -258,15 +259,15 @@
     tabindex="-1"
     role="dialog"
     aria-modal="true"
-    aria-label="Fullscreen diagram view"
+    aria-label={m.tiptap_mermaidBlock_fullscreenView_ariaLabel()}
     bind:this={fullscreenDialogElement}
   >
     <div class="fullscreen-content">
       <button
         class="close-button"
         onclick={closeFullscreen}
-        title="Close fullscreen"
-        aria-label="Close fullscreen view"
+        title={m.tiptap_mermaidBlock_closeFullscreen_tooltip()}
+        aria-label={m.tiptap_mermaidBlock_closeFullscreen_ariaLabel()}
       >
         <Fa icon={faTimes} size="sm" />
       </button>

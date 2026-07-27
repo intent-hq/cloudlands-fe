@@ -26,6 +26,8 @@
   faCircleQuestion,
   faPaperPlane,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
 // Type definitions
   interface CommentLike {
@@ -272,8 +274,9 @@
         </div>
         {#if replies.length > 0}
           <div class="hover-card-footer">
-            {replies.length}
-            {replies.length === 1 ? 'reply' : 'replies'}
+            {replies.length === 1
+              ? m.tiptap_responsiveThread_replies_one()
+              : m.tiptap_responsiveThread_replies_many({ count: formatInteger(replies.length) })}
           </div>
         {/if}
       </div>
@@ -314,7 +317,7 @@
           <div class="full-text">{comment.content}</div>
           <div class="compact-actions">
             <Button size="xs" variant="ghost" onclick={() => onResolve?.()}>
-              <Fa icon={faCheck} size="xs" /> Resolve
+              <Fa icon={faCheck} size="xs" /> {m.tiptap_responsiveThread_resolve_label()}
             </Button>
             <Button size="xs" variant="ghost" onclick={() => onClose?.()}>
               <Fa icon={faTimes} size="xs" />

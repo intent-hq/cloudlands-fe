@@ -6,6 +6,7 @@
     faCircleQuestion,
   } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     x: number;
@@ -21,10 +22,10 @@
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const typeOptions = [
-    { value: 'comment', label: 'Comment', icon: faCommentDots },
-    { value: 'suggestion', label: 'Suggestion', icon: faCodePullRequest },
-    { value: 'change-request', label: 'Change Request', icon: faSquarePen },
-    { value: 'question', label: 'Question', icon: faCircleQuestion },
+    { value: 'comment', get label() { return m.tiptap_commentDialog_typeComment_label(); }, icon: faCommentDots },
+    { value: 'suggestion', get label() { return m.tiptap_commentDialog_typeSuggestion_label(); }, icon: faCodePullRequest },
+    { value: 'change-request', get label() { return m.tiptap_commentDialog_typeChangeRequest_label(); }, icon: faSquarePen },
+    { value: 'question', get label() { return m.tiptap_commentDialog_typeQuestion_label(); }, icon: faCircleQuestion },
   ];
 
   function handleSubmit() {
@@ -90,7 +91,7 @@
       <textarea
         bind:value={content}
         use:focusOnMount
-        placeholder="Add a comment..."
+        placeholder={m.tiptap_commentDialog_content_placeholder()}
         onkeydown={handleKeyDown}
         class="w-full p-2 text-xs rounded bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600 resize-none border-0"
         rows="3"
@@ -104,20 +105,20 @@
           onclick={handleSubmit}
           class="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Send
+          {m.tiptap_commentDialog_send_label()}
         </button>
         <button
           onclick={handleClose}
           class="text-xs px-2 py-1 rounded text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         >
-          Cancel
+          {m.tiptap_commentDialog_cancel_label()}
         </button>
       </div>
     {/if}
   </div>
 
   <!-- Backdrop - click outside to close -->
-  <button class="fixed inset-0 z-[14]" onclick={handleClose} aria-label="Close dialog" type="button"
+  <button class="fixed inset-0 z-[14]" onclick={handleClose} aria-label={m.tiptap_commentDialog_close_ariaLabel()} type="button"
   ></button>
 </Portal>
 

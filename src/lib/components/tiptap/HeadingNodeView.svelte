@@ -17,6 +17,8 @@
 } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   // Props from SvelteNodeViewRenderer
   let { node, editor }: NodeViewProps = $props();
@@ -177,10 +179,12 @@
         size="xs"
         class="px-1.5 gap-1"
         onclick={handleStartAllTasks}
-        title="Start all {sectionTasks.incomplete} tasks in this section"
+        title={m.tiptap_headingNodeView_startAllTasks_tooltip({ count: formatInteger(sectionTasks.incomplete) })}
       >
         <Fa icon={faPlay} class="opacity-30" />
-        <span>Start {sectionTasks.incomplete} task{sectionTasks.incomplete === 1 ? '' : 's'}</span>
+        <span>{sectionTasks.incomplete === 1
+            ? m.tiptap_headingNodeView_startTasks_one()
+            : m.tiptap_headingNodeView_startTasks_many({ count: formatInteger(sectionTasks.incomplete) })}</span>
       </Button>
     </span>
   {/if}

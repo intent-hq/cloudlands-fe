@@ -20,6 +20,8 @@
   import AgentPreviewToolLabel from '$lib/components/chat/AgentPreviewToolLabel.svelte';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   const logger = createLogger('TaskAgentStatus');
 
@@ -394,7 +396,7 @@
     if (isStreamActive && streamingContent) {
       const lastLine = getLastMeaningfulLine(streamingContent);
       return {
-        text: lastLine || 'Working...',
+        text: lastLine || m.tiptap_taskAgentStatus_working_label(),
         isStreaming: true,
       };
     }
@@ -520,16 +522,18 @@
       {#if processQueueHint?.waiting}
         <!-- Process queue hint takes priority -->
         <span class="status-text"
-          >Waiting for a free agent slot ({processQueueHint.used}/{processQueueHint.cap}
-          busy)</span
+          >{m.tiptap_taskAgentStatus_waitingSlot_label({
+            used: formatInteger(processQueueHint.used),
+            cap: formatInteger(processQueueHint.cap),
+          })}</span
         >
       {:else if agentDigest}
         <!-- Show digest prominently when available -->
         <span class="line-clamp-3 break-all text-subtle">{agentDigest}</span>
       {:else if !agent && !agentFound}
-        <span class="status-text loading-text">Spinning up...</span>
+        <span class="status-text loading-text">{m.tiptap_taskAgentStatus_spinningUp_label()}</span>
       {:else if !agent}
-        <span class="status-text loading-text">Loading agent...</span>
+        <span class="status-text loading-text">{m.tiptap_taskAgentStatus_loadingAgent_label()}</span>
       {:else if latestContent?.toolBlock}
         <span class="status-text">
           <AgentPreviewToolLabel
@@ -540,13 +544,13 @@
       {:else if latestContent?.text}
         <span class="status-text">{latestContent.text}</span>
       {:else if agentStatus === 'streaming' || agentStatus === 'active'}
-        <span class="status-text">Working...</span>
+        <span class="status-text">{m.tiptap_taskAgentStatus_working_label()}</span>
       {:else if agentStatus === 'complete'}
-        <span class="status-text">Completed</span>
+        <span class="status-text">{m.tiptap_taskAgentStatus_completed_label()}</span>
       {:else if agentStatus === 'error'}
-        <span class="status-text">Error occurred</span>
+        <span class="status-text">{m.tiptap_taskAgentStatus_error_label()}</span>
       {:else}
-        <span class="status-text">Agent assigned</span>
+        <span class="status-text">{m.tiptap_taskAgentStatus_assigned_label()}</span>
       {/if}
     </div>
 

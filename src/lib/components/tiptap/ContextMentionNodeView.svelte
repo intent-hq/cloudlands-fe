@@ -19,6 +19,7 @@
   import { formatRelativeTime as formatRelative } from '$lib/i18n/format';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { m } from '$shared/paraglide/messages.js';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -195,19 +196,19 @@
     return identifier || title;
   });
 
-  // Provider display names
+  // Provider display names (Linear/GitHub/Sentry are brand names)
   const providerName = $derived(() => {
     switch (provider) {
       case 'linear':
-        return 'Linear';
+        return 'Linear'; // i18n-ignore (brand name)
       case 'github':
-        return 'GitHub';
+        return 'GitHub'; // i18n-ignore (brand name)
       case 'sentry':
-        return 'Sentry';
+        return 'Sentry'; // i18n-ignore (brand name)
       case 'browser':
-        return 'URL';
+        return m.tiptap_contextMention_providerUrl_label();
       case 'internal':
-        return 'Internal';
+        return m.tiptap_contextMention_providerInternal_label();
       default:
         return provider;
     }
@@ -327,10 +328,10 @@
           {#if meta && provider === 'sentry' && (meta.count || meta.userCount)}
             <div class="flex items-center gap-3 text-ui text-subtle">
               {#if meta.count}
-                <span>{meta.count} events</span>
+                <span>{m.tiptap_contextMention_events_label({ count: meta.count })}</span>
               {/if}
               {#if meta.userCount}
-                <span>{meta.userCount} users</span>
+                <span>{m.tiptap_contextMention_users_label({ count: meta.userCount })}</span>
               {/if}
             </div>
           {/if}
@@ -347,7 +348,7 @@
                 <span class="text-ui text-subtle">{meta.project}</span>
               {/if}
               {#if meta.author}
-                <span class="text-ui text-subtle">by {meta.author}</span>
+                <span class="text-ui text-subtle">{m.tiptap_contextMention_byAuthor_label({ author: meta.author })}</span>
               {/if}
               {#if meta.createdAt}
                 <span class="text-ui text-subtle ml-auto"
@@ -367,7 +368,7 @@
       class="delete-btn absolute right-0 top-0 bottom-0 flex items-center justify-center w-5 rounded-r-md cursor-pointer
         opacity-0 group-hover/pill:opacity-100 transition-opacity
         {selected ? 'bg-primary/20 hover:bg-primary/30' : 'bg-muted/60 hover:bg-muted'}"
-      aria-label="Remove mention"
+      aria-label={m.tiptap_contextMention_remove_ariaLabel()}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -384,13 +385,13 @@
 
   <!-- Branch switch button - positioned to the right of the pill -->
   {#if branchDiffers}
-    <Tooltip content="Switch to PR's branch" side="top" delayDuration={200}>
+    <Tooltip content={m.tiptap_contextMention_switchBranch_tooltip()} side="top" delayDuration={200}>
       <button
         type="button"
         onclick={handleSwitchToPRBranch}
         class="branch-switch-btn inline-flex items-center justify-center w-5 h-5 ml-1 rounded cursor-pointer transition-colors
           hover:bg-primary/20"
-        aria-label="Switch to PR's branch"
+        aria-label={m.tiptap_contextMention_switchBranch_tooltip()}
       >
         <GitBranchIcon size={12} class="text-primary hover:text-primary/80" />
       </button>
