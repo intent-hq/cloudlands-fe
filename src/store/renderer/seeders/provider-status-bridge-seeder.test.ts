@@ -221,6 +221,31 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.grok).toEqual({ available: true });
     });
 
+    it("keys unsloth availability off the opencode binary (available ⇒ authenticated)", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            opencode: { available: true, path: "/usr/local/bin/opencode" },
+          },
+        },
+        "host.providerAuthStatus": authSweep(),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      // Local-only provider: no login surface, so available ⇒ authenticated.
+      expect(response.data?.providers.unsloth).toEqual({
+        available: true,
+        authenticated: true,
+      });
+      // opencode itself keeps its own (unknown) auth verdict.
+      expect(response.data?.providers.opencode).toEqual({ available: true });
+    });
+
     it("does not attach verdicts to unavailable providers", async () => {
       routeDaemon({
         "host.checkAuggie": { available: false },
@@ -608,6 +633,42 @@ describe("provider-status-bridge-seeder", () => {
         success: true,
         providerId: "droid",
         data: { available: true, authenticated: false },
+      });
+    });
+
+    it("rechecks unsloth off the opencode binary — local-only, so available ⇒ authenticated", async () => {
+      routeDaemon({
+        "host.findBinary": (params: unknown) =>
+          (params as { name?: string }).name === "opencode"
+            ? { available: true, path: "/usr/local/bin/opencode" }
+            : { available: false },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "opencode" });
+      expect(mockedRequest).not.toHaveBeenCalledWith(
+        "host.providerAuthStatus",
+        expect.anything(),
+      );
+      expect(response).toEqual({
+        success: true,
+        providerId: "unsloth",
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it("rechecks unsloth as unavailable when opencode is missing", async () => {
+      routeDaemon({
+        "host.findBinary": { available: false },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "unsloth",
+        data: { available: false },
       });
     });
 

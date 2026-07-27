@@ -1,7 +1,7 @@
 /**
- * Model catalog bridge — routes the 8 per-provider `*:get-models` channels
- * (auggie / claude-code / codex / cortex / droid / grok / opencode / pi) to
- * the daemon's per-provider model catalog (`models.list { providerId,
+ * Model catalog bridge — routes the 9 per-provider `*:get-models` channels
+ * (auggie / claude-code / codex / cortex / droid / grok / opencode / pi /
+ * unsloth) to the daemon's per-provider model catalog (`models.list { providerId,
  * forceRefresh }`, PROTOCOL §6.7) for daemon/web builds where no Electron
  * main process serves these channels.
  *
@@ -28,6 +28,7 @@ import {
   GROK_CHANNELS,
   OPENCODE_CHANNELS,
   PI_CHANNELS,
+  UNSLOTH_CHANNELS,
 } from "$shared/ipc/channels";
 import {
   wireModelsToProviderModels,
@@ -56,6 +57,7 @@ const PROVIDER_MODEL_CHANNELS: Array<[string, string]> = [
   ["grok", GROK_CHANNELS.GET_MODELS],
   ["opencode", OPENCODE_CHANNELS.GET_MODELS],
   ["pi", PI_CHANNELS.GET_MODELS],
+  ["unsloth", UNSLOTH_CHANNELS.GET_MODELS],
 ];
 
 for (const [providerId, channel] of PROVIDER_MODEL_CHANNELS) {

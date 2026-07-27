@@ -82,6 +82,7 @@
     opencode: { color1: '#000', color2: '#1E1E1E' },
     droid: { color1: '#F0822F', color2: '#E55A2B' },
     grok: { color1: '#000000', color2: '#252525' },
+    unsloth: { color1: '#0FA47F', color2: '#106B55' },
     cortex: { color1: '#FFA2A3', color2: '#FFA2A3' },
   };
 
@@ -143,6 +144,12 @@
       installCommand: 'npm i -g @xai-official/grok',
       loginCommand: 'grok login',
       docsUrl: 'https://docs.x.ai/build/overview',
+    },
+    unsloth: {
+      // Unsloth runs local GGUF models through the opencode runtime — the
+      // daemon manages the local server; only the opencode CLI is needed.
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash',
+      docsUrl: 'https://docs.unsloth.ai',
     },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
