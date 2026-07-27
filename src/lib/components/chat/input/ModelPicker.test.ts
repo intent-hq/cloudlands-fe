@@ -188,9 +188,6 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
       return { providerId: providerId || 'auggie', modelId: rest.join(':') };
     },
     resolvePreferredModel: () => undefined,
-    getAlwaysEnabledProviders: () => [
-      { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: true },
-    ],
     ACP_PROVIDERS: {
       auggie: { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: true },
       codex: { id: 'codex', displayName: 'OpenAI Codex', canBeDisabled: true },
