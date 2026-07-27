@@ -311,8 +311,9 @@
 
   .wh-arrow {
     position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 0;
+    right: 0;
+    text-align: center;
     visibility: hidden;
     background: none;
     border: none;
@@ -323,6 +324,21 @@
     color: hsl(240 5% 58%);
   }
 
+  /* Enlarged hit area: an invisible pseudo-element extends the click target
+     to at least the full width of the hour number and ~22px tall, biased
+     away from the number so the two arrows' targets don't overlap. Being
+     part of the button, it also keeps .wh-bound:hover (and thus arrow
+     visibility) active while the pointer is over it. Purely a hit area —
+     no visual change and no layout shift. */
+  .wh-arrow::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max(100%, 22px);
+    height: 22px;
+  }
+
   .wh-arrow:hover {
     color: hsl(0 0% 97%);
   }
@@ -331,8 +347,16 @@
     bottom: 100%;
   }
 
+  .wh-arrow-up::before {
+    bottom: -3px;
+  }
+
   .wh-arrow-down {
     top: 100%;
+  }
+
+  .wh-arrow-down::before {
+    top: -3px;
   }
 
   .wh-bound:hover .wh-arrow {
