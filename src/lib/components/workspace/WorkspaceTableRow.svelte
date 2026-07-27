@@ -250,7 +250,7 @@
         <!-- Row 2: repo info (hidden when grouped by repo) -->
         {#if !groupByRepo && ws.repositoryOwner && ws.repositoryName}
           <div class="flex min-w-0 items-center gap-1 text-xs text-subtle">
-            <span class="truncate">{ws.repositoryOwner}/{ws.repositoryName}</span>
+            <span class="min-w-0 truncate">{ws.repositoryOwner}/{ws.repositoryName}</span>
             <CheckoutModePill checkoutMode={ws.checkoutMode} />
           </div>
         {/if}

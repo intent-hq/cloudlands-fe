@@ -18,7 +18,7 @@
 
 {#if label}
   <span
-    class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-[10px] leading-[14px] text-subtle {className}"
+    class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-ui-sm leading-4 text-subtle {className}"
     title="Checkout mode: {label}"
   >
     {label}

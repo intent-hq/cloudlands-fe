@@ -425,9 +425,9 @@
     <!-- repo -->
     <div class="flex min-w-0 items-center gap-1 text-subtle text-xs pl-1.5 -mt-1">
       {#if workspace?.repositoryOwner && workspace?.repositoryName}
-        <span class="truncate">{workspace.repositoryOwner}/{workspace.repositoryName}</span>
+        <span class="min-w-0 truncate">{workspace.repositoryOwner}/{workspace.repositoryName}</span>
       {:else if workspace?.repositoryPath}
-        <span class="truncate">{workspace.repositoryPath.split('/').pop()}</span>
+        <span class="min-w-0 truncate">{workspace.repositoryPath.split('/').pop()}</span>
       {/if}
       <CheckoutModePill checkoutMode={workspace?.checkoutMode} />
     </div>

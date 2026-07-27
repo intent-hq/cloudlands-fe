@@ -502,7 +502,7 @@
 
       {#if !hideRepoAvatar && workspace.repositoryOwner && workspace.repositoryName}
         <div class="wc-repo flex min-w-0 items-center gap-1 text-ui text-subtle">
-          <span class="truncate">{workspace.repositoryOwner}/{workspace.repositoryName}</span>
+          <span class="min-w-0 truncate">{workspace.repositoryOwner}/{workspace.repositoryName}</span>
           <CheckoutModePill checkoutMode={workspace.checkoutMode} />
         </div>
       {/if}
