@@ -18,6 +18,7 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { toNativePath } from '$lib/utils/path-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
@@ -37,9 +38,11 @@ vi.mock('$store/renderer/store', async () => {
   };
 });
 
-// Electron build: the capability alone must NOT keep "Other…" visible.
+// Electron build by default: the capability alone must NOT keep "Other…"
+// visible. Flipped to false to exercise the web-build branch.
+let mockExternalEditorsCapability = true;
 vi.mock('$lib/utils/platform-capabilities', () => ({
-  hasCapability: () => true,
+  hasCapability: () => mockExternalEditorsCapability,
 }));
 
 vi.mock('svelte-fa', async () => {
@@ -81,10 +84,11 @@ const mockEditors: InstalledEditor[] = [
 function makeState(
   transport: BackendTransportInfo | null,
   hostLocality: 'local' | 'remote' | null = null,
+  selectedAction = 'vscode',
 ): Partial<StoreState> {
   return {
     externalEditors: {
-      selectedAction: 'vscode',
+      selectedAction,
       editors: createCollection<InstalledEditor, 'id'>('id', mockEditors),
       hiddenEditorIds: [],
       loading: false,
@@ -95,11 +99,16 @@ function makeState(
   } as unknown as Partial<StoreState>;
 }
 
-async function renderAndOpenDropdown() {
+async function renderCombo(props: Record<string, unknown> = {}) {
   const OpenComboButton = (await import('../OpenComboButton.svelte')).default;
   const { container } = render(OpenComboButton, {
-    props: { filePath: '/tmp/project', branchName: 'main' },
+    props: { filePath: '/tmp/project', branchName: 'main', ...props },
   });
+  return container;
+}
+
+async function renderAndOpenDropdown() {
+  const container = await renderCombo();
 
   // Full mode renders [primary, dropdown-toggle] buttons; open the dropdown.
   const buttons = container.querySelectorAll('button');
@@ -144,10 +153,10 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
     mockStoreState = makeState({ mode: 'external-ws' });
     const container = await renderAndOpenDropdown();
 
-    // Remembered action ('vscode') is gone remotely; actions[0] must be the
-    // locality-safe "Copy path", not "Other" (the pre-#883 failure mode).
-    const primary = container.querySelector('button[title^="Open in"]');
-    expect(primary?.getAttribute('title')).toBe('Open in Copy path');
+    // Remembered action ('vscode') is gone remotely; the primary must be the
+    // locality-safe "Copy path" — with no "Open in" prefix (monorepo#890).
+    const primary = container.querySelector('button[title]');
+    expect(primary?.getAttribute('title')).toBe('Copy path');
   });
 
   it('honors BE-reported hostLocality=remote over a local transport', async () => {
@@ -169,5 +178,73 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
       'Copy path',
       'Copy branch name',
     ]);
+  });
+});
+
+describe('OpenComboButton copy-only presentation (monorepo#890)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExternalEditorsCapability = true;
+  });
+
+  it('keeps the "Open in …" combo + chevron when open-capable actions exist', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderCombo();
+
+    const buttons = container.querySelectorAll('button');
+    expect(buttons).toHaveLength(2); // primary + dropdown chevron
+    expect(buttons[0].getAttribute('title')).toBe('Open in Visual Studio Code');
+    expect(buttons[0].textContent).toContain('Open');
+  });
+
+  it('labels the primary "Copy path" but keeps the dropdown when "Copy branch name" remains', async () => {
+    mockStoreState = makeState({ mode: 'external-ws' });
+    const container = await renderCombo();
+
+    const buttons = container.querySelectorAll('button');
+    expect(buttons).toHaveLength(2); // chevron stays to reach "Copy branch name"
+    expect(buttons[0].getAttribute('title')).toBe('Copy path');
+    expect(buttons[0].textContent).toContain('Copy path');
+    expect(buttons[0].textContent).not.toContain('Open');
+  });
+
+  it('never says "Open in …" even when "copy-branch" is the remembered action', async () => {
+    mockStoreState = makeState({ mode: 'external-ws' }, null, 'copy-branch');
+    const container = await renderCombo();
+
+    const primary = container.querySelector('button[title]');
+    expect(primary?.getAttribute('title')).toBe('Copy path');
+  });
+
+  it('renders a plain chevron-less button that copies the path when "Copy path" is the only action', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+
+    try {
+      mockStoreState = makeState({ mode: 'external-ws' });
+      const container = await renderCombo({ branchName: undefined });
+
+      const buttons = container.querySelectorAll('button');
+      expect(buttons).toHaveLength(1); // no dropdown chevron at all
+      expect(buttons[0].getAttribute('title')).toBe('Copy path');
+      expect(buttons[0].textContent).toContain('Copy path');
+
+      await fireEvent.click(buttons[0]);
+      await waitFor(() => {
+        expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/tmp/project'));
+      });
+    } finally {
+      delete (navigator as { clipboard?: unknown }).clipboard;
+    }
+  });
+
+  it('renders the plain "Copy path" button on web builds (no externalEditors capability)', async () => {
+    mockExternalEditorsCapability = false;
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderCombo({ branchName: undefined });
+
+    const buttons = container.querySelectorAll('button');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].getAttribute('title')).toBe('Copy path');
   });
 });
