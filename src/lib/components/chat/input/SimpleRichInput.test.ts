@@ -248,6 +248,7 @@ describe('SimpleRichInput provider switch sync', () => {
       },
     });
 
+    expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
     expect(screen.getByTestId('model-picker-model').textContent).toBe('');
     expect(onmodelChange).not.toHaveBeenCalled();
     expect(setModelMock).not.toHaveBeenCalled();
@@ -264,6 +265,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
@@ -271,7 +273,7 @@ describe('SimpleRichInput provider switch sync', () => {
     expect(setModelMock).not.toHaveBeenCalled();
   });
 
-  it('hydrates the persisted model from session state without firing setModel on reopen', async () => {
+  it('hydrates the persisted model without passing the session provider as a filter', async () => {
     removeMockSession('ws-1', 'agent-1');
     addMockSession('ws-1',
       createSession({
@@ -300,6 +302,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 

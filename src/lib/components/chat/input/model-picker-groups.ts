@@ -12,7 +12,6 @@ type ModelPickerOptions = Parameters<typeof toDropdownOptions>[0];
 interface BuildGroupedModelOptionsParams {
   showDefaultOption: boolean;
   useDefaultOption: DropdownOption;
-  isAgentProviderOverride: boolean;
   effectiveProviderId: string;
   availableModels: ModelPickerOptions;
   enabledProviderIds: string[];
@@ -25,7 +24,6 @@ interface BuildGroupedModelOptionsParams {
 export function buildGroupedModelOptions({
   showDefaultOption,
   useDefaultOption,
-  isAgentProviderOverride,
   effectiveProviderId,
   availableModels,
   enabledProviderIds,
@@ -42,18 +40,6 @@ export function buildGroupedModelOptions({
       label: '',
       options: [useDefaultOption],
     });
-  }
-
-  if (isAgentProviderOverride) {
-    const providerConfig = getProviderConfig(effectiveProviderId);
-    if (availableModels.length > 0) {
-      groups.push({
-        key: effectiveProviderId,
-        label: providerConfig.displayName,
-        options: toDropdownOptions(availableModels),
-      });
-    }
-    return groups;
   }
 
   const normalizedEnabledProviderIds = new Set(
