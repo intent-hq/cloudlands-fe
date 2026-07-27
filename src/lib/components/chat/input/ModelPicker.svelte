@@ -108,7 +108,7 @@
      */
     confirmModelChange?: (
       from: string | null | undefined,
-      to: string,
+      to: string | null,
     ) => boolean | Promise<boolean>;
     providerId?: string;
     isCompact?: boolean;
@@ -981,12 +981,18 @@
     const modelValue = value as string;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
-    // the current model or picking "Default model" is never gated.
+    // the current model is never gated; picking "Default model" while an
+    // explicit model is selected is gated too — the agent still restarts on
+    // the provider default (a null `to` in the gate means "provider default").
     const isActualChange =
-      modelValue !== USE_DEFAULT_VALUE &&
-      (!localModel || normalizeModelIdForMatch(modelValue) !== normalizeModelIdForMatch(localModel));
+      modelValue === USE_DEFAULT_VALUE
+        ? hasExplicitModel
+        : !localModel || normalizeModelIdForMatch(modelValue) !== normalizeModelIdForMatch(localModel);
     if (isActualChange && confirmModelChange) {
-      const confirmed = await confirmModelChange(localModel, modelValue);
+      const confirmed = await confirmModelChange(
+        localModel,
+        modelValue === USE_DEFAULT_VALUE ? null : modelValue,
+      );
       if (!confirmed) {
         // Revert the dropdown's internal selection back to the current model.
         dropdownValue = localModel ?? USE_DEFAULT_VALUE;

@@ -472,33 +472,42 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   function describeModelForDialog(model: string | null | undefined): {
     modelLabel: string;
     providerName: string;
+    providerId: string;
   } {
     if (!model) {
       const provider = selectedProviderId || getDefaultProviderId();
-      return { modelLabel: 'Default model', providerName: getProviderConfig(provider).displayName };
+      const config = getProviderConfig(provider);
+      return { modelLabel: 'Default model', providerName: config.displayName, providerId: config.id };
     }
     // Bare (non-compound) ids belong to the agent's current provider, not the
     // default provider parseCompoundModelId falls back to.
     const rawProvider = model.includes(':')
       ? parseCompoundModelId(model).providerId
       : selectedProviderId || getDefaultProviderId();
+    const config = getProviderConfig(rawProvider);
     return {
       modelLabel: parseCompoundModelId(model).modelId,
-      providerName: getProviderConfig(rawProvider).displayName,
+      providerName: config.displayName,
+      providerId: config.id,
     };
   }
 
   function confirmModelSwitch(
     from: string | null | undefined,
-    to: string,
+    to: string | null,
   ): boolean | Promise<boolean> {
     if (!requiresModelSwitchConfirmation) return true;
 
+    // Settle any previously pending dialog so its awaiter never hangs.
+    modelSwitchDialog?.resolve(false);
     const fromInfo = describeModelForDialog(from);
     const toInfo = describeModelForDialog(to);
     return new Promise<boolean>((resolve) => {
       modelSwitchDialog = {
-        isProviderChange: fromInfo.providerName !== toInfo.providerName,
+        // Compare normalized provider ids, not display names — unknown ids
+        // fall back to the default config's display name and would misclassify
+        // a cross-provider switch as model-only.
+        isProviderChange: fromInfo.providerId !== toInfo.providerId,
         fromModelLabel: fromInfo.modelLabel,
         toModelLabel: toInfo.modelLabel,
         fromProviderName: fromInfo.providerName,

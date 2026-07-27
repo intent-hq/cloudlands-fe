@@ -1177,6 +1177,63 @@ describe('ModelPicker confirmModelChange gate', () => {
     expect(trigger?.textContent).not.toContain('Model 2');
   });
 
+  it('gates switching from an explicit model to "Default model" and passes null as the target', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(true);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-1',
+        onModelChange,
+        confirmModelChange,
+        portal: false,
+        showDefaultOption: true,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
+
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+    });
+    // Confirming applies the pick: the trigger now shows "Default model".
+    await waitFor(() => {
+      const trigger = screen
+        .getAllByRole('button')
+        .find((b) => b.textContent?.includes('Default model') || b.textContent?.includes('Model 1'));
+      expect(trigger?.textContent).toContain('Default model');
+    });
+  });
+
+  it('reverts an explicit-to-default pick when the gate resolves false', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(false);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-1',
+        onModelChange,
+        confirmModelChange,
+        portal: false,
+        showDefaultOption: true,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
+
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onModelChange).not.toHaveBeenCalled();
+    const trigger = screen
+      .getAllByRole('button')
+      .find((b) => b.textContent?.includes('Model 1') || b.textContent?.includes('Default model'));
+    expect(trigger?.textContent).toContain('Model 1');
+  });
+
   it('does not invoke the gate when re-selecting the current model', async () => {
     const onModelChange = vi.fn();
     const confirmModelChange = vi.fn().mockResolvedValue(true);
