@@ -7,6 +7,12 @@
     ProposalActionDetail,
   } from '$shared/types';
   import { isProposal } from '$shared/types';
+  import {
+    buildToolResultsMap,
+    findToolResult,
+    getToolResultPayload,
+    getToolResultText,
+  } from './tool-result-pairing';
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
@@ -232,58 +238,17 @@
   // Track tool states
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
 
+  // Tool results paired by toolCallId ↔ tool_use_id per PROTOCOL.md §7.1,
+  // with position-based fallback for error results with empty tool_use_id.
+  // tool_use blocks carry both an addressable `id` (messageId:blockIndex) and
+  // a provider `toolCallId`; tool_result references the call via `tool_use_id`
+  // (canonically the toolCallId). Indexing under both keys lets lookup by
+  // tool_use.id and tool_use.toolCallId both resolve.
+  let toolResultsMap = $derived.by(() => buildToolResultsMap(blocks));
+
   // Update tool states based on content
   $effect(() => {
-    // First pass: collect all tool results, indexed by every identifier the
-    // result carries. Per PROTOCOL.md §7, tool_use blocks carry both an
-    // addressable `id` (messageId:blockIndex) and a provider `toolCallId`, and
-    // tool_result references the call via `tool_use_id` (canonically the
-    // toolCallId). Indexing under both keys lets lookup by tool_use.id and
-    // tool_use.toolCallId both resolve.
-    const resultsMap = new Map<string, ToolResultBlock>();
-    for (const block of blocks) {
-      if (block.type === 'tool_result') {
-        const resultBlock = block as ToolResultBlock;
-        const resultRefs = [
-          resultBlock.tool_use_id,
-          (resultBlock as { toolCallId?: string }).toolCallId,
-        ];
-        for (const ref of resultRefs) {
-          if (ref) resultsMap.set(ref, resultBlock);
-        }
-      }
-    }
-
-    // Second pass: match error results with empty tool_use_id to preceding tool_use
-    // This handles the case where error results don't have proper IDs
-    // SAFEGUARD: Only match if there's no other tool_use between the error and its target
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      if (block.type === 'tool_result') {
-        const resultBlock = block as ToolResultBlock;
-        const isError = resultBlock.is_error || (resultBlock as any).isError;
-        // Only do position-based matching for error results with empty ID
-        if (isError && !resultBlock.tool_use_id) {
-          // Find the immediately preceding tool_use that doesn't have a result
-          // Stop if we encounter another tool_use (to avoid misattribution)
-          for (let j = i - 1; j >= 0; j--) {
-            const prevBlock = blocks[j];
-            if (prevBlock.type === 'tool_use') {
-              const toolBlock = prevBlock as ToolUseBlock;
-              if (!resultsMap.has(toolBlock.id)) {
-                // Match this error result to the preceding tool_use
-                resultsMap.set(toolBlock.id, resultBlock);
-              }
-              // Always break on first tool_use found - either we matched it or it
-              // already has a result, in which case we can't safely attribute this error
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Third pass: set tool states based on whether they have results
+    // Set tool states based on whether they have results
     const newToolStates = new Map<string, 'running' | 'completed' | 'error'>();
 
     for (const block of blocks) {
@@ -294,15 +259,14 @@
         // Otherwise mark as running. Look up by both the addressable block id
         // and the provider toolCallId (when present) to align with PROTOCOL.md
         // tool-call pairing.
-        const toolCallId = (toolBlock as { toolCallId?: string }).toolCallId;
-        const result =
-          resultsMap.get(toolBlock.id) ?? (toolCallId ? resultsMap.get(toolCallId) : undefined);
+        const result = findToolResult(toolResultsMap, toolBlock);
         if (result) {
           // Check both snake_case and camelCase for error flag
-          const isError = result.is_error || (result as any).isError;
-          // Also detect errors from content text (e.g., "Error:" prefix or "Tool Error:")
+          const isError = result.is_error || result.isError;
+          // Also detect errors from the result payload text (§7.1 `output`,
+          // legacy `content` fallback; e.g., "Error:" prefix or "Tool Error:")
           // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
-          const contentText = typeof result.content === 'string' ? result.content : '';
+          const contentText = getToolResultText(result);
           const hasErrorInContent =
             contentText.startsWith('Error:') || contentText.includes('Tool Error:');
           newToolStates.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
@@ -767,15 +731,8 @@
       </div>
     {:else if block.type === 'tool_use'}
       {@const toolBlock = block as ToolUseBlock}
-      {@const toolResultBlock = blocks.find((b) => {
-        if (b.type !== 'tool_result') return false;
-        const refs = [(b as any).tool_use_id, (b as any).toolCallId];
-        const targets = [toolBlock.id, (toolBlock as { toolCallId?: string }).toolCallId];
-        return refs.some(
-          (ref) => ref !== undefined && targets.some((t) => t !== undefined && ref === t),
-        );
-      })}
-      {@const resultContent = toolResultBlock ? (toolResultBlock as ToolResultBlock).content : null}
+      {@const toolResultBlock = findToolResult(toolResultsMap, toolBlock)}
+      {@const resultContent = getToolResultPayload(toolResultBlock)}
       <div class="relative w-full min-w-0">
         <ToolCall
           toolUse={toolBlock}
