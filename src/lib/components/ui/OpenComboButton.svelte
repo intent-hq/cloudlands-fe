@@ -320,7 +320,13 @@
   <DropdownMenu bind:open={dropdownOpen} align="end" portal={usePortal} {side}>
     {#snippet trigger({ toggle }: { toggle: () => void })}
       {#if children}
-        <button type="button" onclick={toggle} class="cursor-pointer" title={primaryTitle}>
+        <!-- With a single action there is no dropdown to show; run it directly. -->
+        <button
+          type="button"
+          onclick={actions.length > 1 ? toggle : handlePrimaryClick}
+          class="cursor-pointer"
+          title={primaryTitle}
+        >
           {@render children()}
         </button>
       {:else if compact}

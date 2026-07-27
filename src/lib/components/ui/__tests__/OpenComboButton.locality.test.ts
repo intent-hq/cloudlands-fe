@@ -18,6 +18,7 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { toNativePath } from '$lib/utils/path-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
@@ -37,9 +38,11 @@ vi.mock('$store/renderer/store', async () => {
   };
 });
 
-// Electron build: the capability alone must NOT keep "Other…" visible.
+// Electron build by default: the capability alone must NOT keep "Other…"
+// visible. Flipped to false to exercise the web-build branch.
+let mockExternalEditorsCapability = true;
 vi.mock('$lib/utils/platform-capabilities', () => ({
-  hasCapability: () => true,
+  hasCapability: () => mockExternalEditorsCapability,
 }));
 
 vi.mock('svelte-fa', async () => {
@@ -181,6 +184,7 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
 describe('OpenComboButton copy-only presentation (monorepo#890)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExternalEditorsCapability = true;
   });
 
   it('keeps the "Open in …" combo + chevron when open-capable actions exist', async () => {
@@ -216,17 +220,31 @@ describe('OpenComboButton copy-only presentation (monorepo#890)', () => {
     const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
 
-    mockStoreState = makeState({ mode: 'external-ws' });
+    try {
+      mockStoreState = makeState({ mode: 'external-ws' });
+      const container = await renderCombo({ branchName: undefined });
+
+      const buttons = container.querySelectorAll('button');
+      expect(buttons).toHaveLength(1); // no dropdown chevron at all
+      expect(buttons[0].getAttribute('title')).toBe('Copy path');
+      expect(buttons[0].textContent).toContain('Copy path');
+
+      await fireEvent.click(buttons[0]);
+      await waitFor(() => {
+        expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/tmp/project'));
+      });
+    } finally {
+      delete (navigator as { clipboard?: unknown }).clipboard;
+    }
+  });
+
+  it('renders the plain "Copy path" button on web builds (no externalEditors capability)', async () => {
+    mockExternalEditorsCapability = false;
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
     const container = await renderCombo({ branchName: undefined });
 
     const buttons = container.querySelectorAll('button');
-    expect(buttons).toHaveLength(1); // no dropdown chevron at all
+    expect(buttons).toHaveLength(1);
     expect(buttons[0].getAttribute('title')).toBe('Copy path');
-    expect(buttons[0].textContent).toContain('Copy path');
-
-    await fireEvent.click(buttons[0]);
-    await waitFor(() => {
-      expect(clipboard.writeText).toHaveBeenCalledWith('/tmp/project');
-    });
   });
 });
