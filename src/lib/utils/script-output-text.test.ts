@@ -33,9 +33,21 @@ describe('scriptOutputToLines', () => {
     expect(scriptOutputToLines(buffer('⠋ building\r⠙ building\r⠹ done\r\n'))).toEqual(['⠹ done']);
   });
 
+  it('keeps the final frame when the stream ends in a bare \\r (in-flight spinner)', () => {
+    expect(scriptOutputToLines(buffer('⠋ building\r⠙ building\r'))).toEqual(['⠙ building']);
+    expect(scriptOutputToLines(buffer('⠹ building\r'))).toEqual(['⠹ building']);
+  });
+
   it('strips ANSI escape sequences, including ones split across chunks', () => {
     expect(scriptOutputToLines(buffer('\x1b[3', '2mok\x1b[0m\n'))).toEqual(['ok']);
     expect(scriptOutputToLines(buffer('\x1b]0;title\x07hi\n'))).toEqual(['hi']);
+  });
+
+  it('strips an unterminated trailing escape sequence (tail chunk not yet arrived)', () => {
+    expect(scriptOutputToLines(buffer('ok\x1b[3'))).toEqual(['ok']);
+    expect(scriptOutputToLines(buffer('ok\x1b['))).toEqual(['ok']);
+    expect(scriptOutputToLines(buffer('ok\x1b'))).toEqual(['ok']);
+    expect(scriptOutputToLines(buffer('ok\x1b]0;tit'))).toEqual(['ok']);
   });
 });
 

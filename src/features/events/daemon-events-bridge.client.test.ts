@@ -2867,6 +2867,25 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     expect(buffer.chunks.map((c) => c.text).join('')).not.toContain('\n');
   });
 
+  it('decodes a multibyte character split across two chunks losslessly (streaming decoder)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // '⠋ build' is 9 UTF-8 bytes ('⠋' = e2 a0 8b); split mid-character so each
+    // chunk alone is invalid UTF-8. A stateless decoder would emit U+FFFD.
+    const bytes = Buffer.from('⠋ build', 'utf-8');
+    const send = (slice: Buffer) =>
+      handler(
+        notification('script:output', { scriptId: SCRIPT_ID, chunk: slice.toString('base64') }),
+      );
+    send(bytes.subarray(0, 2));
+    send(bytes.subarray(2));
+
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text).join('')).toBe('⠋ build');
+    expect(buffer.chunks.map((c) => c.text).join('')).not.toContain('\uFFFD');
+  });
+
   it('ignores script:output payloads without a scriptId or chunk', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

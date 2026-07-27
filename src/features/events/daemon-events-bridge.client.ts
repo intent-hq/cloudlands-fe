@@ -1587,19 +1587,34 @@ function handleSettingsChangedEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * Decode a base64 `chunk` (PROTOCOL §6.5 `script:output` payload) into a
- * UTF-8 string. Runs in the renderer, so `atob` is available; the two-step
- * conversion via `Uint8Array` preserves multibyte characters that a naive
- * `atob(...).split('')` would corrupt.
+ * Per-script streaming UTF-8 decoders keyed by `workspaceId:scriptId`.
+ * `decode(bytes, { stream: true })` carries a multibyte character split
+ * across two `script:output` chunks over the boundary instead of emitting
+ * U+FFFD for each half. Entries are dropped when the script leaves the
+ * `running` state (PTY stream ended) and on test reset; a decoder holds at
+ * most 3 buffered bytes, so the map stays negligible either way.
  */
-function decodeBase64Chunk(chunk: string): string | null {
+const scriptOutputDecoders = new Map<string, TextDecoder>();
+
+/**
+ * Decode a base64 `chunk` (PROTOCOL §6.5 `script:output` payload) into a
+ * UTF-8 string using the script's streaming decoder. Runs in the renderer,
+ * so `atob` is available; the two-step conversion via `Uint8Array` preserves
+ * multibyte characters that a naive `atob(...).split('')` would corrupt.
+ */
+function decodeBase64Chunk(decoderKey: string, chunk: string): string | null {
   try {
     const binary = atob(chunk);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
-    return new TextDecoder('utf-8').decode(bytes);
+    let decoder = scriptOutputDecoders.get(decoderKey);
+    if (!decoder) {
+      decoder = new TextDecoder('utf-8');
+      scriptOutputDecoders.set(decoderKey, decoder);
+    }
+    return decoder.decode(bytes, { stream: true });
   } catch {
     return null;
   }
@@ -1619,7 +1634,7 @@ function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): vo
   const scriptId = data.scriptId;
   const chunk = data.chunk;
   if (typeof scriptId !== 'string' || typeof chunk !== 'string') return;
-  const text = decodeBase64Chunk(chunk);
+  const text = decodeBase64Chunk(`${workspaceId}:${scriptId}`, chunk);
   if (text === null || text === '') return;
   appStore.dispatch(
     appendScriptOutput(workspaceId, scriptId, { text, timestamp: new Date().toISOString() }),
@@ -1638,6 +1653,8 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   if (!data) return;
   const { scriptId, ...rest } = data as { scriptId?: unknown } & Record<string, unknown>;
   if (typeof scriptId !== 'string') return;
+  // PTY stream ended — drop the streaming decoder so a later run starts fresh.
+  if (rest.status !== 'running') scriptOutputDecoders.delete(`${workspaceId}:${scriptId}`);
   appStore.dispatch(updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>));
 }
 
@@ -2463,4 +2480,5 @@ export function __resetDaemonEventsBridgeForTests(): void {
     clearTimeout(timer);
   }
   tasksRefreshTimersByWorkspace.clear();
+  scriptOutputDecoders.clear();
 }

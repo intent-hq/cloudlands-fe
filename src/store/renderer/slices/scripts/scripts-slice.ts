@@ -113,7 +113,13 @@ export const updateRuntimeState = createAction(
 export const appendScriptOutput =
   createAction<[wsId: string, scriptId: string, chunk: ScriptOutputChunk]>('scripts/appendOutput');
 
-/** Set output buffer for a script (used during init to load buffered output) */
+/**
+ * Replace a script's output buffer wholesale. No production dispatcher today
+ * (reopen replay is served straight from the renderer store); kept for tests
+ * and future seeding. The reducer resets `dropped` to 0 — do not dispatch
+ * while a `ScriptOutputViewer` is live, or its absolute stream position would
+ * exceed the new buffer's and it would render nothing until it catches up.
+ */
 export const setScriptOutput =
   createAction<[wsId: string, scriptId: string, chunks: ScriptOutputChunk[]]>('scripts/setOutput');
 
