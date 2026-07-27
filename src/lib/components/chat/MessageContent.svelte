@@ -133,12 +133,11 @@
           // Check both snake_case and camelCase for error flag
           const isError = result.is_error || result.isError;
           // Also detect errors from the result payload text (§7.1 `output`,
-          // legacy `content` fallback)
+          // legacy `content` fallback; e.g., "Error:" prefix or "Tool Error:")
+          // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
           const contentText = getToolResultText(result);
           const hasErrorInContent =
-            contentText.includes('❌') ||
-            contentText.startsWith('Error:') ||
-            contentText.includes('Tool Error:');
+            contentText.startsWith('Error:') || contentText.includes('Tool Error:');
           states.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
         } else if (!isStreaming) {
           // Not streaming and no result - mark as completed
@@ -457,16 +456,17 @@
       <ToolCall toolUse={toolBlock} {toolState} result={resultContent} {workspaceId} />
     </div>
   {:else if block.type === 'tool_result'}
+    {@const resultPayload = getToolResultPayload(block)}
     <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
       <div class="px-3 py-2 bg-muted/50 border-b border-border">
         <span class="text-xs text-subtle">Tool Result</span>
       </div>
       <div class="p-3">
-        {#if typeof block.content === 'string'}
-          <CodeBlock code={block.content} />
-        {:else if Array.isArray(block.content)}
+        {#if typeof resultPayload === 'string'}
+          <CodeBlock code={resultPayload} />
+        {:else if Array.isArray(resultPayload)}
           <!-- Recursively render nested content blocks -->
-          {#each block.content as any[] as nestedBlock, nestedIndex (nestedBlock.id || `nested-${blockIndex}-${nestedIndex}-${nestedBlock.type}`)}
+          {#each resultPayload as any[] as nestedBlock, nestedIndex (nestedBlock.id || `nested-${blockIndex}-${nestedIndex}-${nestedBlock.type}`)}
             {#if nestedBlock.type === 'text' && nestedBlock.text}
               <div class="w-full">
                 <MarkdownViewer
