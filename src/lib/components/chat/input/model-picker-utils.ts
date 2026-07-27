@@ -40,11 +40,9 @@ export function toDropdownOptions(models: ModelPickerOptionInput[]): DropdownOpt
 }
 
 export interface IsUserProviderSettledParams {
-  /** True when the agent's provider differs from the global active provider. */
-  isAgentProviderOverride: boolean;
-  /** Models fetched for the agent's provider, or null while the fetch is pending. */
+  /** Models fetched for a disabled agent provider, or null while the fetch is pending. */
   agentProviderModels: AuggieModel[] | null;
-  /** Error produced by the agent-provider fetch, or null when none. */
+  /** Error produced by the disabled agent-provider fetch, or null when none. */
   agentProviderError: string | null;
   /** Raw enabled provider ids; normalized internally through `getProviderConfig(id).id`. */
   enabledProviderIds: string[];
@@ -68,15 +66,11 @@ export interface IsUserProviderSettledParams {
  * identical to "model gone" and would silently replace the user's picked
  * model (e.g. Sonnet 4.6 → GPT 5.4) in a way that survives reload.
  *
- * Settled means one of:
- *   - override mode: the agent's provider fetch has produced a result
- *     (models or an explicit error).
- *   - non-override: the user's provider is either no longer enabled
- *     (genuinely gone) or has successfully loaded ≥1 model.
+ * Settled means the enabled provider has successfully loaded at least one
+ * model, or the disabled agent-provider fetch has produced a result or error.
  *
- * @param params.isAgentProviderOverride - True when the agent's provider differs from the global active provider.
- * @param params.agentProviderModels - Models fetched for the agent's provider, or `null` while the fetch is pending.
- * @param params.agentProviderError - Error from the agent-provider fetch, or `null` when none.
+ * @param params.agentProviderModels - Models fetched for a disabled agent provider, or `null` while pending.
+ * @param params.agentProviderError - Error from the disabled agent-provider fetch, or `null` when none.
  * @param params.enabledProviderIds - Raw enabled provider ids; normalized internally via `getProviderConfig(id).id`.
  * @param params.allProviderModels - Models per normalized provider id for the "all providers" view.
  * @param params.modelProvider - The model's provider id, already normalized through `getProviderConfig(id).id`.
@@ -84,7 +78,6 @@ export interface IsUserProviderSettledParams {
  */
 export function isUserProviderSettled(params: IsUserProviderSettledParams): boolean {
   const {
-    isAgentProviderOverride,
     agentProviderModels,
     agentProviderError,
     enabledProviderIds,
@@ -92,12 +85,9 @@ export function isUserProviderSettled(params: IsUserProviderSettledParams): bool
     modelProvider,
   } = params;
 
-  if (isAgentProviderOverride) {
-    return agentProviderModels !== null || agentProviderError !== null;
-  }
   const normalizedEnabledProviderIds = enabledProviderIds.map((pid) => getProviderConfig(pid).id);
   const providerEnabled = normalizedEnabledProviderIds.includes(modelProvider);
-  if (!providerEnabled) return true;
+  if (!providerEnabled) return agentProviderModels !== null || agentProviderError !== null;
   return (allProviderModels[modelProvider]?.length ?? 0) > 0;
 }
 
