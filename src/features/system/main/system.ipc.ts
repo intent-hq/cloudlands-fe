@@ -26,6 +26,7 @@ import {
   AppSetBadgeSchema,
   DeepLinkHandleSchema,
   DialogMessageSchema,
+  DialogOpenSchema,
   EmptySchema,
   JetbrainsOpenSchema,
   ShellOpenExternalSchema,
@@ -922,6 +923,28 @@ export function setupSystemIPC() {
         return result.response;
       },
       DIALOG_CHANNELS.MESSAGE,
+    ),
+  );
+
+  // Native directory picker
+  ipcMain.handle(
+    DIALOG_CHANNELS.OPEN,
+    createSafeValidatedHandler(
+      DialogOpenSchema,
+      async (event, validated) => {
+        const focusedWindow = BrowserWindow.getFocusedWindow();
+        const targetWindow = focusedWindow || BrowserWindow.fromWebContents(event.sender);
+        const options: Electron.OpenDialogOptions = {
+          title: validated.title,
+          defaultPath: validated.defaultPath,
+          properties: ['openDirectory'],
+        };
+        const result = targetWindow
+          ? await dialog.showOpenDialog(targetWindow, options)
+          : await dialog.showOpenDialog(options);
+        return result.canceled ? null : result.filePaths;
+      },
+      DIALOG_CHANNELS.OPEN,
     ),
   );
 

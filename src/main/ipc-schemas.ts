@@ -1116,6 +1116,11 @@ export const DialogMessageSchema = z.object({
   buttons: z.array(z.string()).optional(),
 });
 
+export const DialogOpenSchema = z.object({
+  title: z.string().optional(),
+  defaultPath: z.string().optional(),
+});
+
 // SHELL_CHANNELS schemas
 export const ShellOpenExternalSchema = z.object({
   url: z.string().refine(
