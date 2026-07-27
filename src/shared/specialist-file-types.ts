@@ -57,13 +57,14 @@ export interface SpecialistFileFrontmatter {
   codingAgent?: string;
   /**
    * Default model ID, e.g., "opus4.5", "sonnet4.5" (optional)
-   * If modelTier is also specified, modelTier takes precedence for provider-aware resolution.
+   * Takes precedence over modelTier: when both are specified, this explicit model wins.
    */
   model?: string;
   /**
    * Model tier for provider-aware resolution (optional).
    * When specified, the actual model is resolved based on the active provider.
-   * Takes precedence over the 'model' field.
+   * The 'model' field takes precedence when both are specified; the tier is
+   * used as the fallback when no explicit model is set.
    * - 'smart': Most capable model (e.g., opus4.5 for Anthropic)
    * - 'balanced': General purpose model (e.g., sonnet4.5 for Anthropic)
    * - 'fast': Faster, cheaper model (e.g., haiku4.5 for Anthropic)
