@@ -11,6 +11,8 @@
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import {
   RESERVED_MCP_SERVER_NAMES,
   MCP_SERVER_NAME_REGEX,
@@ -45,16 +47,16 @@
 
   // Transport type options
   const transportTypes: { value: McpTransportType; label: string }[] = [
-    { value: 'stdio', label: 'Local (stdio)' },
-    { value: 'http', label: 'HTTP' },
-    { value: 'sse', label: 'SSE (Server-Sent Events)' },
+    { value: 'stdio', label: m.settings_mcp_form_transport_stdio() },
+    { value: 'http', label: m.settings_mcp_form_transport_http() },
+    { value: 'sse', label: m.settings_mcp_form_transport_sse() },
   ];
 
   // Auth type options
   const authTypes: { value: McpAuthType; label: string }[] = [
-    { value: 'none', label: 'None' },
-    { value: 'oauth', label: 'OAuth' },
-    { value: 'header', label: 'Header Auth' },
+    { value: 'none', label: m.settings_mcp_form_auth_none() },
+    { value: 'oauth', label: m.settings_mcp_form_auth_oauth() },
+    { value: 'header', label: m.settings_mcp_form_auth_header() },
   ];
 
   // Add a new env var pair
@@ -89,19 +91,19 @@
   function validateName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
-      return 'Server name is required';
+      return m.settings_mcp_form_nameRequired();
     }
     if (trimmed.length > MCP_SERVER_NAME_MAX_LENGTH) {
-      return `Server name must be ${MCP_SERVER_NAME_MAX_LENGTH} characters or less`;
+      return m.settings_mcp_form_nameTooLong({ max: formatInteger(MCP_SERVER_NAME_MAX_LENGTH) });
     }
     if (!MCP_SERVER_NAME_REGEX.test(trimmed)) {
-      return 'Server name can only contain letters, numbers, hyphens, underscores, and dots';
+      return m.settings_mcp_form_nameInvalidChars();
     }
     if ((RESERVED_MCP_SERVER_NAMES as readonly string[]).includes(trimmed)) {
-      return `"${trimmed}" is a reserved name and cannot be used`;
+      return m.settings_mcp_form_nameReserved({ name: trimmed });
     }
     if (!editMode && existingServerNames.includes(trimmed)) {
-      return `A server named "${trimmed}" already exists`;
+      return m.settings_mcp_form_nameExists({ name: trimmed });
     }
     return '';
   }
@@ -123,19 +125,19 @@
     // Validate based on type
     if (form.type === 'stdio') {
       if (!form.command.trim()) {
-        error = 'Command is required';
+        error = m.settings_mcp_form_commandRequired();
         return;
       }
     } else {
       if (!form.url.trim()) {
-        error = 'URL is required';
+        error = m.settings_mcp_form_urlRequired();
         return;
       }
       // Basic URL validation
       try {
         new URL(form.url);
       } catch {
-        error = 'Invalid URL format';
+        error = m.settings_mcp_form_urlInvalid();
         return;
       }
     }
@@ -155,25 +157,26 @@
   <!-- Server Name -->
   <div>
     <span class="block text-sm font-medium mb-1.5">
-      Server Name <span class="text-destructive-foreground">*</span>
+      {m.settings_mcp_form_serverName_label()} <span class="text-destructive-foreground">*</span>
     </span>
     <Input
       bind:value={form.name}
-      placeholder="e.g., my-mcp-server"
+      placeholder={m.settings_mcp_form_serverName_placeholder()}
       disabled={editMode}
       maxlength={MCP_SERVER_NAME_MAX_LENGTH}
     />
     {#if nameError && !editMode}
       <p class="text-xs text-destructive-foreground mt-1">{nameError}</p>
     {:else}
-      <p class="text-xs text-subtle mt-1">A unique identifier for this MCP server (letters, numbers, hyphens, underscores, dots)</p>
+      <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_serverName_hint()}</p>
     {/if}
   </div>
 
   <!-- Connection Type -->
   <div>
     <span class="block text-sm font-medium mb-1.5">
-      Connection Type <span class="text-destructive-foreground">*</span>
+      {m.settings_mcp_form_connectionType_label()}
+      <span class="text-destructive-foreground">*</span>
     </span>
     <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
       {#each transportTypes as type (type.value)}
@@ -191,11 +194,11 @@
     </div>
     <p class="text-xs text-subtle mt-1.5">
       {#if form.type === 'stdio'}
-        Local servers run as a command on your machine
+        {m.settings_mcp_form_transportHint_stdio()}
       {:else if form.type === 'http'}
-        HTTP servers communicate via standard HTTP requests
+        {m.settings_mcp_form_transportHint_http()}
       {:else}
-        SSE servers use Server-Sent Events for real-time streaming
+        {m.settings_mcp_form_transportHint_sse()}
       {/if}
     </p>
   </div>
@@ -205,37 +208,41 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <span class="block text-sm font-medium mb-1.5">
-          Command <span class="text-destructive-foreground">*</span>
+          {m.settings_mcp_form_command_label()} <span class="text-destructive-foreground">*</span>
         </span>
+        <!-- i18n-ignore (example command) -->
         <Input bind:value={form.command} placeholder="npx -y @some/mcp-server" />
-        <p class="text-xs text-subtle mt-1">e.g., npx, node, python</p>
+        <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_command_hint()}</p>
       </div>
 
       <div>
-        <span class="block text-sm font-medium mb-1.5">Arguments</span>
+        <span class="block text-sm font-medium mb-1.5">{m.settings_mcp_form_arguments_label()}</span>
+        <!-- i18n-ignore (example flags) -->
         <Input bind:value={form.args} placeholder="--port 3000 --verbose" />
-        <p class="text-xs text-subtle mt-1">Space-separated</p>
+        <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_arguments_hint()}</p>
       </div>
     </div>
 
     <!-- Environment Variables -->
     <div>
       <div class="flex items-center justify-between mb-1.5">
-        <span class="text-sm font-medium">Environment Variables</span>
+        <span class="text-sm font-medium">{m.settings_mcp_form_envVars_label()}</span>
         <Button size="sm" variant="ghost" onclick={addEnvVar}>
           <Fa icon={faPlus} class="mr-1" size="xs" />
-          Add
+          {m.settings_mcp_form_add()}
         </Button>
       </div>
-      <p class="text-xs text-subtle mb-2">Pass secrets or configuration to the server process</p>
+      <p class="text-xs text-subtle mb-2">{m.settings_mcp_form_envVars_hint()}</p>
       {#if form.envPairs.length === 0}
-        <p class="text-xs text-subtle italic">No environment variables set</p>
+        <p class="text-xs text-subtle italic">{m.settings_mcp_form_envVars_empty()}</p>
       {:else}
         <div class="space-y-2">
           {#each form.envPairs as pair (pair.id)}
             <div class="flex gap-2 items-center">
+              <!-- i18n-ignore (env var format examples) -->
               <Input bind:value={pair.key} placeholder="KEY" class="flex-1" />
               <span class="text-subtle">=</span>
+              <!-- i18n-ignore (env var format examples) -->
               <Input bind:value={pair.value} placeholder="value" class="flex-1" />
               <Button size="sm" variant="ghost" onclick={() => removeEnvVar(pair.id)}>
                 <Fa icon={faTrash} size="xs" class="text-destructive-foreground" />
@@ -249,15 +256,16 @@
     <!-- Remote fields (http/sse) -->
     <div>
       <span class="block text-sm font-medium mb-1.5">
-        URL <span class="text-destructive-foreground">*</span>
+        {m.settings_mcp_form_url_label()} <span class="text-destructive-foreground">*</span>
       </span>
+      <!-- i18n-ignore (example URL) -->
       <Input bind:value={form.url} placeholder="https://example.com/mcp" />
-      <p class="text-xs text-subtle mt-1">The full URL of the MCP server endpoint</p>
+      <p class="text-xs text-subtle mt-1">{m.settings_mcp_form_url_hint()}</p>
     </div>
 
     <!-- Auth Type -->
     <div>
-      <span class="block text-sm font-medium mb-1.5">Authentication</span>
+      <span class="block text-sm font-medium mb-1.5">{m.settings_mcp_form_authentication_label()}</span>
       <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit">
         {#each authTypes as auth (auth.value)}
           <button
@@ -274,11 +282,11 @@
       </div>
       <p class="text-xs text-subtle mt-1.5">
         {#if form.authType === 'none'}
-          No authentication required for this server
+          {m.settings_mcp_form_authHint_none()}
         {:else if form.authType === 'oauth'}
-          Authenticate via OAuth flow when connecting
+          {m.settings_mcp_form_authHint_oauth()}
         {:else}
-          Send custom headers with each request (e.g., API keys)
+          {m.settings_mcp_form_authHint_header()}
         {/if}
       </p>
     </div>
@@ -287,21 +295,23 @@
     {#if form.authType === 'header'}
       <div>
         <div class="flex items-center justify-between mb-1.5">
-          <span class="text-sm font-medium">Authorization Headers</span>
+          <span class="text-sm font-medium">{m.settings_mcp_form_headers_label()}</span>
           <Button size="sm" variant="ghost" onclick={addHeader}>
             <Fa icon={faPlus} class="mr-1" size="xs" />
-            Add
+            {m.settings_mcp_form_add()}
           </Button>
         </div>
-        <p class="text-xs text-subtle mb-2">Add headers like Authorization, X-API-Key, etc.</p>
+        <p class="text-xs text-subtle mb-2">{m.settings_mcp_form_headers_hint()}</p>
         {#if form.headerPairs.length === 0}
-          <p class="text-xs text-subtle italic">No headers set</p>
+          <p class="text-xs text-subtle italic">{m.settings_mcp_form_headers_empty()}</p>
         {:else}
           <div class="space-y-2">
             {#each form.headerPairs as pair (pair.id)}
               <div class="flex gap-2 items-center">
+                <!-- i18n-ignore (header format examples) -->
                 <Input bind:value={pair.key} placeholder="Header-Name" class="flex-1" />
                 <span class="text-subtle">:</span>
+                <!-- i18n-ignore (header format examples) -->
                 <Input bind:value={pair.value} placeholder="value" class="flex-1" />
                 <Button size="sm" variant="ghost" onclick={() => removeHeader(pair.id)}>
                   <Fa icon={faTrash} size="xs" class="text-destructive-foreground" />
@@ -316,7 +326,7 @@
     {#if form.authType === 'oauth'}
       <div class="p-3 bg-muted/30 rounded-md border border-border">
         <p class="text-sm text-subtle">
-          You'll be prompted to authenticate via OAuth when you first connect to this server. The server will handle the authentication flow.
+          {m.settings_mcp_form_oauthNote()}
         </p>
       </div>
     {/if}
@@ -329,12 +339,14 @@
 
   <!-- Actions -->
   <div class="flex gap-2 pt-2">
-    <Button variant="outline" onclick={onCancel} class="flex-1" disabled={isSubmitting}>Cancel</Button>
+    <Button variant="outline" onclick={onCancel} class="flex-1" disabled={isSubmitting}>
+      {m.settings_mcp_form_cancel()}
+    </Button>
     <Button onclick={handleSubmit} class="flex-1" disabled={isSubmitting}>
       {#if isSubmitting}
-        Adding...
+        {m.settings_mcp_form_adding()}
       {:else}
-        {editMode ? 'Update Server' : 'Add Server'}
+        {editMode ? m.settings_mcp_form_updateServer() : m.settings_mcp_form_addServer()}
       {/if}
     </Button>
   </div>

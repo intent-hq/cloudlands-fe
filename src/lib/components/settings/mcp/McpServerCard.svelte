@@ -16,6 +16,8 @@
   faRotateRight,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     server: McpServerWithStatus;
@@ -37,13 +39,34 @@
 
   // Status badge config: label, text color, bg color
   const statusBadges: Record<string, { label: string; class: string }> = {
-    connected: { label: 'Connected', class: 'text-green-700 dark:text-green-400 bg-green-500/10' },
-    configured: { label: 'Ready', class: 'text-blue-700 dark:text-blue-400 bg-blue-500/10' },
-    disconnected: { label: 'Disconnected', class: 'text-gray-600 dark:text-gray-400 bg-gray-500/10' },
-    error: { label: 'Error', class: 'text-red-700 dark:text-red-400 bg-red-500/10' },
-    stopped: { label: 'Stopped', class: 'text-orange-700 dark:text-orange-400 bg-orange-500/10' },
-    auth_required: { label: 'Needs Auth', class: 'text-amber-700 dark:text-amber-400 bg-amber-500/10' },
-    disabled: { label: 'Disabled', class: 'text-gray-500 dark:text-gray-500 bg-gray-500/10' },
+    connected: {
+      label: m.settings_mcp_status_connected(),
+      class: 'text-green-700 dark:text-green-400 bg-green-500/10',
+    },
+    configured: {
+      label: m.settings_mcp_status_ready(),
+      class: 'text-blue-700 dark:text-blue-400 bg-blue-500/10',
+    },
+    disconnected: {
+      label: m.settings_mcp_status_disconnected(),
+      class: 'text-gray-600 dark:text-gray-400 bg-gray-500/10',
+    },
+    error: {
+      label: m.settings_mcp_status_error(),
+      class: 'text-red-700 dark:text-red-400 bg-red-500/10',
+    },
+    stopped: {
+      label: m.settings_mcp_status_stopped(),
+      class: 'text-orange-700 dark:text-orange-400 bg-orange-500/10',
+    },
+    auth_required: {
+      label: m.settings_mcp_status_needsAuth(),
+      class: 'text-amber-700 dark:text-amber-400 bg-amber-500/10',
+    },
+    disabled: {
+      label: m.settings_mcp_status_disabled(),
+      class: 'text-gray-500 dark:text-gray-500 bg-gray-500/10',
+    },
   };
 
   // Match server to a known preset for icon/description
@@ -61,13 +84,26 @@
 
   // Dropdown options - use type: 'action' to prevent checkmarks
   const dropdownOptions = $derived([
-    { type: 'action' as const, value: 'edit', label: 'Edit', icon: faPen },
-    { type: 'action' as const, value: 'copy', label: 'Copy JSON', icon: faCopy },
+    { type: 'action' as const, value: 'edit', label: m.settings_mcp_action_edit(), icon: faPen },
+    { type: 'action' as const, value: 'copy', label: m.settings_mcp_action_copyJson(), icon: faCopy },
     ...(server.authType && server.authType !== 'none'
-      ? [{ type: 'action' as const, value: 'reauth', label: 'Reauthenticate', icon: faKey }]
+      ? [
+          {
+            type: 'action' as const,
+            value: 'reauth',
+            label: m.settings_mcp_action_reauthenticate(),
+            icon: faKey,
+          },
+        ]
       : []),
     { type: 'separator' as const, value: 'sep', label: '' },
-    { type: 'action' as const, value: 'delete', label: 'Delete', icon: faTrash, class: 'text-destructive-foreground' },
+    {
+      type: 'action' as const,
+      value: 'delete',
+      label: m.settings_mcp_action_delete(),
+      icon: faTrash,
+      class: 'text-destructive-foreground',
+    },
   ]);
 
   function handleDropdownAction(value: string | string[]) {
@@ -139,7 +175,11 @@
         <div class="flex items-center gap-2">
           <span class="font-medium text-sm truncate" title={matchedPreset ? matchedPreset.label : server.name}>{matchedPreset ? matchedPreset.label : server.name}</span>
           {#if server.toolCount > 0}
-            <span class="text-xs text-subtle">{server.toolCount} {server.toolCount === 1 ? 'tool' : 'tools'}</span>
+            <span class="text-xs text-subtle">
+              {server.toolCount === 1
+                ? m.settings_mcp_toolCount_one()
+                : m.settings_mcp_toolCount_many({ count: formatInteger(server.toolCount) })}
+            </span>
           {/if}
           <!-- Status badge -->
           {#if statusBadges[server.status]}
@@ -157,7 +197,7 @@
           >{server.errorMessage}</p>
         {:else if server.status === 'stopped'}
           <p class="mt-1 text-xs text-orange-600 dark:text-orange-400 line-clamp-2">
-            Server stopped or failed to start. Restart to try again.
+            {m.settings_mcp_serverStoppedMessage()}
           </p>
         {/if}
 
@@ -168,7 +208,11 @@
             class="mt-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center gap-1"
             onclick={() => (showTools = !showTools)}
           >
-            <span>{showTools ? 'Hide' : 'Show'} {server.tools.length} tools</span>
+            <span>
+              {showTools
+                ? m.settings_mcp_hideTools({ count: formatInteger(server.tools.length) })
+                : m.settings_mcp_showTools({ count: formatInteger(server.tools.length) })}
+            </span>
             <div class="transition-transform duration-200 {showTools ? 'rotate-180' : ''}">
               <Fa icon={faChevronDown} size="xs" />
             </div>
@@ -185,7 +229,7 @@
           class="px-2.5 py-1 text-xs font-medium rounded-md border border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
           onclick={() => onReauthenticate?.(server.name)}
         >
-          Authenticate
+          {m.settings_mcp_authenticateButton()}
         </button>
       {:else if isRetryable && onRestart && !server.disabled}
         <button
@@ -194,7 +238,7 @@
           onclick={() => onRestart?.(server.name)}
         >
           <Fa icon={faRotateRight} size="xs" />
-          Restart
+          {m.settings_mcp_restartButton()}
         </button>
       {/if}
       <!-- Toggle switch -->
@@ -255,6 +299,6 @@
     class="fixed bottom-4 right-4 px-3 py-2 bg-green-600 text-white text-sm rounded-md shadow-lg z-50"
     transition:slide={{ duration: 150 }}
   >
-    JSON copied to clipboard!
+    {m.settings_mcp_jsonCopied()}
   </div>
 {/if}

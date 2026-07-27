@@ -29,7 +29,9 @@ import { join, relative, resolve } from 'node:path';
 // its migrated directories here. The list starts EMPTY; the settings pilot
 // extraction adds the first entry.
 const ENFORCED_DIRS = [
-  // (none yet — pilot extraction adds the first directory)
+  'src/lib/components/settings',
+  'src/features/settings',
+  'src/routes/settings',
 ];
 
 const ROOT = process.cwd();

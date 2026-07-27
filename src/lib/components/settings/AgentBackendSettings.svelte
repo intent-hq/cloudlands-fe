@@ -8,6 +8,8 @@
 
   import { appClient } from '$lib/client';
   import { onMount } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import { Input } from '$lib/components/ui/input';
 
   // Settings state
@@ -30,7 +32,7 @@
       inputValue = value === 0 ? '' : String(value);
       settingsError = '';
     } catch (error) {
-      settingsError = 'Failed to load agent settings from the backend.';
+      settingsError = m.settings_agentBackend_loadError();
       console.error('Failed to load agent settings:', error);
     }
   }
@@ -79,12 +81,14 @@
       inputValue = newValue === 0 ? '' : String(newValue);
       settingsError = '';
     } catch (error) {
-      settingsError = 'Failed to save agent settings.';
+      settingsError = m.settings_agentBackend_saveError();
       console.error('Failed to save agent settings:', error);
     }
   }
 
-  const displayValue = $derived(maxConcurrent === 0 ? 'Auto (based on system RAM)' : String(maxConcurrent));
+  const displayValue = $derived(
+    maxConcurrent === 0 ? m.settings_agentBackend_autoValue() : formatInteger(maxConcurrent),
+  );
 </script>
 
 <div class="space-y-4">
@@ -97,10 +101,9 @@
   <!-- Max Concurrent Agents -->
   <div class="flex items-center justify-between gap-4">
     <div class="flex-1 min-w-0">
-      <p class="text-sm font-medium text-foreground">Max concurrent agents</p>
+      <p class="text-sm font-medium text-foreground">{m.settings_agentBackend_maxConcurrent_label()}</p>
       <p class="text-xs text-subtle mt-0.5">
-        Current: {displayValue}. Set to 0 or leave empty for auto (based on system RAM), or specify
-        1-200. Changes apply on daemon restart.
+        {m.settings_agentBackend_maxConcurrent_description({ current: displayValue })}
       </p>
     </div>
     <div class="shrink-0 w-32">
@@ -110,7 +113,7 @@
         oninput={handleInput}
         onblur={handleBlur}
         onkeydown={handleKeydown}
-        placeholder="Auto"
+        placeholder={m.settings_agentBackend_autoPlaceholder()}
         min="0"
         max="200"
         step="1"

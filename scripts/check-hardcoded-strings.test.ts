@@ -38,10 +38,10 @@ function runGate(dir?: string) {
 }
 
 describe('hardcoded user-facing string gate', () => {
-  it('passes with no enforced directories configured', () => {
+  it('passes on the enforced directories', () => {
     const result = runGate();
     expect(result.exitCode).toBe(0);
-    expect(result.output).toContain('No enforced directories yet');
+    expect(result.output).toContain('✓ No hardcoded-string violations found.');
   });
 
   it('flags literal template text and user-facing attributes in Svelte files', () => {

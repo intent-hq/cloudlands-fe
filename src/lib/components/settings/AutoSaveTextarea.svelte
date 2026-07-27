@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatNumber } from '$lib/i18n/format';
   import {
   faCheck,
   faRotateLeft,
@@ -134,7 +136,7 @@
           class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
         >
           <Fa icon={faRotateLeft} class="w-3 h-3" />
-          Reset
+          {m.settings_autoSave_reset()}
         </button>
       {/if}
     </div>
@@ -174,7 +176,14 @@
         ? 'text-destructive'
         : 'text-warning'}"
     >
-      <span>{charCountPercentage}% of limit used</span>
+      <span>
+        {m.settings_autoSave_limitUsed({
+          percent: formatNumber(charCountPercentage / 100, {
+            style: 'percent',
+            maximumFractionDigits: 0,
+          }),
+        })}
+      </span>
     </div>
   {/if}
 </div>

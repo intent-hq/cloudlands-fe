@@ -12,6 +12,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -68,11 +69,11 @@
         { path: 'providers.paths', value: { ...existing, [providerId]: inputValue } },
       ]);
       onPathChange?.(inputValue);
-      toast.success('Path saved');
+      toast.success(m.settings_providerPath_saved());
       logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, inputValue);
     } catch (error) {
       logger.error(`[ProviderPathConfig] Failed to save ${providerId} path:`, error);
-      toast.error('Failed to save path');
+      toast.error(m.settings_providerPath_saveError());
     }
   }
 
@@ -90,7 +91,9 @@
   }
 
   // Determine the display path (configured > resolved > placeholder)
-  const placeholderText = $derived(resolvedPath ? resolvedPath : `Path to ${cliCommand}`);
+  const placeholderText = $derived(
+    resolvedPath ? resolvedPath : m.settings_providerPath_placeholder({ command: cliCommand }),
+  );
 </script>
 
 <DropdownMenu bind:open={dropdownOpen} align="end" side="bottom" portal={true}>
@@ -99,7 +102,7 @@
       type="button"
       onclick={toggle}
       class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer"
-      title="Configure {providerName} path"
+      title={m.settings_providerPath_configureTitle({ name: providerName })}
     >
       <Fa icon={faFolder} size={11} />
     </button>
@@ -109,14 +112,16 @@
     <div class="w-80 p-3 space-y-3 overflow-hidden">
       <!-- Header with helpful copy -->
       <div class="space-y-1">
-        <p class="text-sm font-medium text-foreground">{providerName} CLI Path</p>
+        <p class="text-sm font-medium text-foreground">
+          {m.settings_providerPath_header({ name: providerName })}
+        </p>
         <p class="text-xs text-subtle">
           {#if isInstalled}
-            Override the auto-detected path if needed.
+            {m.settings_providerPath_overrideHint()}
           {:else}
-            Specify the path to the <code class="px-1 py-0.5 bg-muted rounded text-ui"
-              >{cliCommand}</code
-            > executable.
+            {m.settings_providerPath_specifyHint_before()}
+            <code class="px-1 py-0.5 bg-muted rounded text-ui">{cliCommand}</code>
+            {m.settings_providerPath_specifyHint_after()}
           {/if}
         </p>
       </div>
@@ -139,7 +144,7 @@
       {#if resolvedPath && !configuredPath}
         <p class="text-ui text-subtle flex items-center gap-1 min-w-0">
           <Fa icon={faCheck} class="text-green-500/70 shrink-0" size="xs" />
-          <span class="shrink-0">Auto-detected at</span>
+          <span class="shrink-0">{m.settings_providerPath_autoDetectedAt()}</span>
           <code class="px-1 py-0.5 bg-muted/50 rounded truncate min-w-0" title={resolvedPath}
             >{resolvedPath}</code
           >

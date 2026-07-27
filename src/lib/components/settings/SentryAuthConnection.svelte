@@ -21,6 +21,7 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -92,6 +93,7 @@
   <div class="space-y-1">
     <div class="flex items-center gap-1">
       <SentryIcon size={17} class="text-ghost" />
+      <!-- i18n-ignore (brand name) -->
       <span class="text-sm text-foreground">Sentry</span>
       {#if $isAuthenticated$}
         <span class="text-xs text-subtle flex items-center gap-1">
@@ -99,12 +101,12 @@
           {#if $organization$}
             {$organization$}
           {:else}
-            Connected
+            {m.settings_connections_connected()}
           {/if}
         </span>
       {/if}
     </div>
-    <p class="text-xs text-subtle pl-6">Create spaces directly from issues.</p>
+    <p class="text-xs text-subtle pl-6">{m.settings_connections_sentry_description()}</p>
     {#if $error$}
       <p class="text-xs text-destructive-foreground pl-6">{$error$}</p>
     {/if}
@@ -112,14 +114,14 @@
 
   <div class="flex items-center gap-2 text-xs">
     {#if $storeIsConnecting$ || pendingConnect}
-      <span class="text-subtle">Connecting...</span>
+      <span class="text-subtle">{m.settings_connections_connecting()}</span>
     {:else if $isAuthenticated$}
       <button
         type="button"
         class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
         onclick={handleSentryReconnect}
       >
-        Reconnect
+        {m.settings_connections_reconnect()}
       </button>
       <span class="text-ghost">·</span>
       <button
@@ -128,7 +130,9 @@
         onclick={handleSentryDisconnect}
         disabled={isDisconnectingSentry}
       >
-        {isDisconnectingSentry ? 'Disconnecting...' : 'Disconnect'}
+        {isDisconnectingSentry
+          ? m.settings_connections_disconnecting()
+          : m.settings_connections_disconnect()}
       </button>
     {:else}
       <button
@@ -136,7 +140,7 @@
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
         onclick={() => (showConnectForm = true)}
       >
-        Connect
+        {m.settings_connections_connect()}
       </button>
     {/if}
   </div>
@@ -146,34 +150,34 @@
   <div class="space-y-3 rounded-md bg-sidebar p-3">
     <div class="space-y-2">
       <label for="sentry-org" class="block text-xs font-medium text-foreground">
-        Organization Slug
+        {m.settings_connections_sentry_orgSlug_label()}
       </label>
       <Input
         id="sentry-org"
         bind:value={sentryOrg}
-        placeholder="your-org"
+        placeholder={m.settings_connections_sentry_orgSlug_placeholder()}
         disabled={$storeIsConnecting$}
         class="text-sm"
       />
       <p class="text-xs text-subtle">
-        Your Sentry organization slug (found in your Sentry URL)
+        {m.settings_connections_sentry_orgSlug_description()}
       </p>
     </div>
 
     <div class="space-y-2">
       <label for="sentry-token" class="block text-xs font-medium text-foreground">
-        API Token
+        {m.settings_connections_sentry_apiToken_label()}
       </label>
       <Input
         id="sentry-token"
         type="password"
         bind:value={sentryToken}
-        placeholder="sntrys_..."
+        placeholder={'sntrys_...' /* i18n-ignore (token format) */}
         disabled={$storeIsConnecting$}
         class="text-sm"
       />
       <p class="text-xs text-subtle">
-        Create a token at{' '}
+        {m.settings_connections_sentry_apiToken_createTokenAt()}{' '}
         <button
           type="button"
           onclick={() => {
@@ -183,9 +187,11 @@
           }}
           class="text-primary hover:underline cursor-pointer"
         >
+          <!-- i18n-ignore (URL) -->
           sentry.io/settings/account/api/auth-tokens/
         </button>
-        {' '}with scopes:
+        {' '}{m.settings_connections_sentry_apiToken_withScopes()}
+        <!-- i18n-ignore (scope identifiers) -->
         <span class="font-mono text-subtle">org:read, project:read, event:read</span>
       </p>
     </div>
@@ -197,10 +203,12 @@
         onclick={handleSentryConnect}
         disabled={$storeIsConnecting$ || !sentryOrg.trim() || !sentryToken.trim()}
       >
-        {$storeIsConnecting$ ? 'Connecting...' : 'Connect'}
+        {$storeIsConnecting$
+          ? m.settings_connections_connecting()
+          : m.settings_connections_connect()}
       </Button>
       <Button variant="ghost" size="sm" onclick={handleCancelConnect} disabled={$storeIsConnecting$}>
-        Cancel
+        {m.settings_connections_cancel()}
       </Button>
     </div>
   </div>

@@ -9,6 +9,7 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import {
   selectLinearIsAuthenticated,
@@ -102,16 +103,17 @@
     <div class="space-y-1">
       <div class="flex items-center gap-2">
         <LinearIcon size={14} class="text-ghost" />
+        <!-- i18n-ignore (brand name) -->
         <span class="text-sm text-foreground">Linear</span>
         {#if $isAuthenticated$}
           <span class="text-xs text-subtle flex items-center gap-1">
             <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-            Connected
+            {m.settings_connections_connected()}
           </span>
         {/if}
       </div>
       <p class="text-xs text-subtle pl-6">
-        Create workspaces tasks directly from tickets.
+        {m.settings_connections_linear_description()}
       </p>
       {#if $error$}
         <p class="text-xs text-destructive-foreground pl-6">{$error$}</p>
@@ -120,14 +122,14 @@
 
     <div class="flex items-center gap-2 text-xs">
       {#if $isAuthenticating$}
-        <span class="text-subtle">Validating API key...</span>
+        <span class="text-subtle">{m.settings_connections_linear_validatingApiKey()}</span>
       {:else if $isAuthenticated$}
         <button
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
           onclick={handleShowKeyInput}
         >
-          Replace key
+          {m.settings_connections_linear_replaceKey()}
         </button>
         <span class="text-ghost">·</span>
         <button
@@ -136,7 +138,9 @@
           onclick={handleLinearDisconnect}
           disabled={isDisconnectingLinear}
         >
-          {isDisconnectingLinear ? 'Disconnecting...' : 'Disconnect'}
+          {isDisconnectingLinear
+            ? m.settings_connections_disconnecting()
+            : m.settings_connections_disconnect()}
         </button>
       {:else if !$requiresDaemonAuth$}
         <button
@@ -144,10 +148,10 @@
           class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
           onclick={handleShowKeyInput}
         >
-          Connect
+          {m.settings_connections_connect()}
         </button>
       {:else}
-        <span class="text-xs text-subtle">Requires daemon authentication</span>
+        <span class="text-xs text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
       {/if}
     </div>
   </div>
@@ -158,9 +162,9 @@
         <Input
           type="password"
           bind:value={apiKeyDraft}
-          placeholder="lin_api_..."
+          placeholder={'lin_api_...' /* i18n-ignore (API key format) */}
           class="h-7 text-xs flex-1"
-          aria-label="Linear personal API key"
+          aria-label={m.settings_connections_linear_apiKeyAriaLabel()}
           onkeydown={(e) => {
             if (e.key === 'Enter') handleSubmitApiKey();
             if (e.key === 'Escape') handleCancelKeyInput();
@@ -172,29 +176,29 @@
           onclick={handleSubmitApiKey}
           disabled={!apiKeyDraft.trim()}
         >
-          Save
+          {m.settings_connections_save()}
         </button>
         <button
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors text-xs"
           onclick={handleCancelKeyInput}
         >
-          Cancel
+          {m.settings_connections_cancel()}
         </button>
       </div>
       <p class="text-xs text-subtle">
-        Paste a Linear personal API key. It is stored by the daemon in a permission-restricted
-        secrets file — never in plaintext config or logs.
+        {m.settings_connections_linear_apiKeyStorageNote()}
       </p>
     </div>
   {/if}
 
   {#if $isAuthenticated$}
     <div class="pl-6 flex items-center gap-3">
-      <span class="text-xs text-subtle shrink-0">Show issues:</span>
+      <span class="text-xs text-subtle shrink-0">{m.settings_connections_linear_showIssues()}</span>
       <Select.Root bind:value={issueFilter}>
         <Select.Trigger class="h-7 text-xs w-[180px]">
-          {LINEAR_ISSUE_FILTER_OPTIONS.find((o) => o.value === issueFilter)?.label || 'Select...'}
+          {LINEAR_ISSUE_FILTER_OPTIONS.find((o) => o.value === issueFilter)?.label ||
+            m.settings_connections_linear_selectPlaceholder()}
         </Select.Trigger>
         <Select.Content>
           {#each LINEAR_ISSUE_FILTER_OPTIONS as option (option.value)}

@@ -24,6 +24,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   const installedEditors$ = selectInstalledEditors();
   const hiddenEditorIds$ = selectHiddenEditorIds();
@@ -62,7 +63,7 @@
 
 <div class="flex flex-col gap-1">
   {#if installedEditors.length === 0}
-    <p class="text-sm text-subtle">No installed Open In apps detected.</p>
+    <p class="text-sm text-subtle">{m.settings_openInApps_empty()}</p>
   {:else}
     {#each installedEditors as editor (editor.id)}
       <div class="flex items-center justify-between gap-4 py-2">
@@ -86,7 +87,7 @@
           pressed={isEditorEnabled(editor.id)}
           onChange={(value) => handleEditorToggle(editor.id, value)}
           size="xs"
-          ariaLabel={`Show ${editor.name} in Open In`}
+          ariaLabel={m.settings_openInApps_showToggleAriaLabel({ name: editor.name })}
         />
       </div>
     {/each}
