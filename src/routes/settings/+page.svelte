@@ -19,6 +19,7 @@
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
+  import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
@@ -55,6 +56,7 @@
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import { Select } from '$lib/components/ui/select';
+  import { m } from '$shared/paraglide/messages.js';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import {
@@ -571,6 +573,18 @@
 
       <!-- General Tab -->
       {#if activeTab === 'general'}
+        <!-- Language -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {m.settings_language_section_title()}
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <LanguageSettings />
+            </section>
+          </div>
+        </div>
+
         <!-- Updates -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">

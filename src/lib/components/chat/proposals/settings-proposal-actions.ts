@@ -33,6 +33,7 @@ import {
   selectCodeFontFamily,
   selectGroupByRepo,
   selectHasCompletedProviderSetup,
+  selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
   selectNoteFontStyle,
@@ -76,6 +77,7 @@ import {
   setCodeFontFamily,
   setGroupByRepo,
   setHasCompletedProviderSetup,
+  setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
   setShowArchived,
@@ -247,6 +249,8 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectGroupByRepo.select(state);
     case 'providers.completedSetup':
       return selectHasCompletedProviderSetup.select(state);
+    case 'preferences.language':
+      return selectLanguagePreference.select(state);
     case 'theme.preference':
       return selectThemePreference.select(state);
     case 'theme.activePresetId':
@@ -336,6 +340,9 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       return true;
     case 'providers.completedSetup':
       appStore.dispatch(setHasCompletedProviderSetup(Boolean(value)));
+      return true;
+    case 'preferences.language':
+      appStore.dispatch(setLanguagePreference(String(value ?? '')));
       return true;
     case 'theme.preference':
       if (!isThemePreference(value)) return false;

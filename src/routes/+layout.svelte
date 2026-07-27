@@ -91,7 +91,7 @@
     selectWorkspaceItems,
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectHasCompletedProviderSetup, selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     clearActiveWorkspace,
     loadWorkspacesRequested,
@@ -164,6 +164,7 @@
   const workspaceLoading = selectWorkspaceLoading();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
   const hasCompletedProviderSetup = selectHasCompletedProviderSetup();
+  const resolvedLocale$ = selectResolvedLocale(); // {#key} on this re-renders m.*() strings on language change
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabOrder = selectWorkspaceTabOrder();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
@@ -1027,7 +1028,7 @@
           aria-label="Main content"
         >
           <div class="flex-1 min-h-0 overflow-auto">
-            {@render children?.()}
+            {#key $resolvedLocale$}{@render children?.()}{/key}
           </div>
 
           <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->

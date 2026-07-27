@@ -15,8 +15,10 @@ import {
   setNoteFontStyle,
   setCodeFontFamily,
   saveActivityLogPreset,
+  setLanguagePreference,
   type ActivityLogPresetPreference,
 } from "../slices/user-preferences/user-preferences-slice";
+import { getActiveLocale } from "$lib/i18n/locale";
 
 const mem = new Map<string, string>();
 function installMemoryLocalStorage(): void {
@@ -107,6 +109,17 @@ describe("userPreferencesPersistenceService (real store)", () => {
     expect(safeLocalStorage.getItem("workspace-list:showArchived")).toBeTruthy();
     expect(safeLocalStorage.getItem("workspace-list:groupByRepo")).toBeTruthy();
     expect(safeLocalStorage.getItem("workspace-list:completedProviderSetup")).toBeTruthy();
+  });
+
+  it("persists the language preference and applies it to the locale service", () => {
+    appStore.dispatch(setLanguagePreference("de"));
+    expect(safeLocalStorage.getJSON("language-preference")).toBe("de");
+    // Only the `en` catalog ships, so any preference resolves to `en`.
+    expect(getActiveLocale()).toBe("en");
+
+    appStore.dispatch(setLanguagePreference("system"));
+    expect(safeLocalStorage.getJSON("language-preference")).toBe("system");
+    expect(getActiveLocale()).toBe("en");
   });
 
   it("uses legacy font settings storage keys", () => {

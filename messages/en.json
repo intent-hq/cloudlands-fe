@@ -8,5 +8,9 @@
   "quit_dialog_sidecar_title": "Agents Still Working",
   "quit_dialog_sidecar_detail": "Quitting will shut down running agents. You can resume them when the app reopens. Quit now?",
   "quit_dialog_quit_button": "Quit",
-  "quit_dialog_cancel_button": "Cancel"
+  "quit_dialog_cancel_button": "Cancel",
+  "settings_language_section_title": "Language",
+  "settings_language_label": "Display language",
+  "settings_language_description": "The language used for the app interface. System follows your operating system language.",
+  "settings_language_system_option": "System"
 }

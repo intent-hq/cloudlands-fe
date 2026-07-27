@@ -3,6 +3,7 @@ import {
   SYSTEM_DEFAULT_FONT,
   type FontOption,
 } from "./user-preferences-slice";
+import { resolvePreferenceToLocale } from "$lib/i18n/locale";
 
 export const selectAgentFontStyle = store.createSelector((state) => {
   return state.userPreferences.agentFontStyle;
@@ -125,4 +126,13 @@ export const selectNotificationVolume = store.createSelector((state) => {
 
 export const selectActivityLogPresets = store.createSelector((state) => {
   return state.userPreferences.activityLogPresets;
+});
+
+export const selectLanguagePreference = store.createSelector((state) => {
+  return state.userPreferences.languagePreference;
+});
+
+/** The concrete catalog locale the preference resolves to (explicit → system → en). */
+export const selectResolvedLocale = store.createSelector((state) => {
+  return resolvePreferenceToLocale(state.userPreferences.languagePreference);
 });
