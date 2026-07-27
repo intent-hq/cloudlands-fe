@@ -953,6 +953,11 @@ export interface AgentMetadata {
   originalAgentId?: string; // Original agent ID if this is a restored/migrated agent
   triggerType?: string; // Type of trigger (e.g., 'commit', 'pr', 'review')
   taskNoteId?: NoteId; // Phase 1C: Task note this agent is working on
+  // Agent sandbox (CoW workspace clone) fields — set by the daemon on
+  // sandboxed agents (agent.list / agent.get carry them in `metadata`).
+  sandboxPath?: string; // Absolute daemon-host path of the sandbox directory
+  sandboxId?: string; // Sandbox identifier
+  sandboxBranch?: string; // Git branch checked out inside the sandbox
   // Allow additional properties for flexibility with proper typing
   [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
 }

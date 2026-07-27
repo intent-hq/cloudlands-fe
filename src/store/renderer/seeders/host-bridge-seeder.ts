@@ -450,7 +450,15 @@ registerMockIpcHandler(IPC_CHANNELS.EXTERNAL_EDITORS.DETECT_INSTALLED, async () 
         bundleId: def.bundleId,
         shortcut: def.shortcut,
         priority: def.priority,
-        installed: entry.installed === true,
+        // The file manager is always present: the daemon's macOS bundle probe
+        // looks for /Applications/Finder.app, which never exists (Finder lives
+        // in /System/Library/CoreServices), so `finder` came back
+        // installed:false and the "Reveal in Finder" row vanished from every
+        // Open-In menu. The reveal launches via `host.exec` (shell-reveal-
+        // bridge-seeder), not the bundle path, and the legacy Electron handler
+        // (external-editors.ipc.ts) hard-coded finder as installed — mirror
+        // that here; locality gating still hides it on remote daemons.
+        installed: entry.installed === true || def.handlerType === "finder",
       });
     }
     return { success: true, data };

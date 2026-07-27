@@ -303,6 +303,27 @@ describe("host-bridge-seeder", () => {
       expect(warp.category).toBe("terminal");
     });
 
+    it("forces the file manager installed even when the daemon bundle probe misses it (regression: Finder lives in /System/Library/CoreServices, not /Applications)", async () => {
+      mockedRequest.mockResolvedValueOnce({
+        editors: [
+          { id: "finder", installed: false },
+          { id: "vscode", installed: false },
+        ],
+      });
+
+      const response = await mockInvoke<{
+        success: boolean;
+        data: Array<Record<string, unknown>>;
+      }>(IPC_CHANNELS.EXTERNAL_EDITORS.DETECT_INSTALLED);
+
+      expect(response.success).toBe(true);
+      const finder = response.data.find((e) => e.id === "finder");
+      expect(finder?.installed).toBe(true);
+      // Non-finder entries still honor the daemon's detection facts.
+      const vscode = response.data.find((e) => e.id === "vscode");
+      expect(vscode?.installed).toBe(false);
+    });
+
     it("folds an RPC failure to {success:false, error} so fetchEditorsFailure carries the message", async () => {
       mockedRequest.mockRejectedValueOnce(new Error("transport down"));
 

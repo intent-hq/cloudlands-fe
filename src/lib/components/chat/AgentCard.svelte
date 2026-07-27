@@ -45,11 +45,14 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
   faArrowUpRightFromSquare,
+  faFolderOpen,
   faPen,
   faStop,
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import { store as appStore } from '$store/renderer/store';
+  import { invoke } from '$lib/electron-bridge';
+  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 
   interface Props {
     agentId: string;
@@ -114,6 +117,16 @@
 
   // Context menu state
   let contextMenu: { x: number; y: number } | null = $state(null);
+
+  // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
+  // machine, so the client platform matches; PanelTabBar idiom).
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    // @ts-expect-error - userAgentData is not in all browsers
+    (navigator.userAgentData?.platform === 'macOS' ||
+      /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
+  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
 
   // Start editing the agent name
   async function startEditing() {
@@ -239,6 +252,28 @@
       },
     ];
 
+    // Reveal the agent's CoW sandbox directory — daemon-host desktop action,
+    // only offered when the agent has a sandbox and the daemon runs on this
+    // machine (PROTOCOL §5.14 locality; same gate as other reveal affordances).
+    const sandboxPath = agentSandboxPath;
+    if (sandboxPath && selectIsDaemonLocal.select(appStore.state)) {
+      items.push({
+        id: 'reveal-sandbox',
+        label: `Reveal in ${fileManagerName}`,
+        icon: faFolderOpen,
+        onClick: async () => {
+          closeContextMenu();
+          try {
+            await invoke('shell:showItemInFolder', { path: sandboxPath });
+          } catch (error) {
+            toast.error(
+              error instanceof Error ? error.message : `Failed to reveal in ${fileManagerName}`,
+            );
+          }
+        },
+      });
+    }
+
     // Add stop option if agent is running
     if (avatarState === 'running' || avatarState === 'responding') {
       items.push({
@@ -350,6 +385,12 @@
   const specialist = $derived.by(() => {
     const specialistId = $agent$?.metadata?.specialist || $agent$?.agentMetadata?.specialist;
     return specialistId || null;
+  });
+
+  // Sandbox directory for sandboxed agents (daemon-provided metadata).
+  const agentSandboxPath = $derived.by(() => {
+    const path = $agent$?.metadata?.sandboxPath || $agent$?.agentMetadata?.sandboxPath;
+    return typeof path === 'string' && path.length > 0 ? path : null;
   });
 
   // Show streaming content if actively streaming, otherwise show last response.
