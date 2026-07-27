@@ -161,7 +161,12 @@ function reduceAgentStreamUpdate(
       receivedFirstChunk: false,
       isStalled: false,
       statusEvents: [],
-      lastAttemptedMessage: null,
+      // Preserve the retry payload when the turn FAILED so the error
+      // banner's "Try again" can resend it (#941); clear it only on a
+      // successful completion.
+      lastAttemptedMessage: failureMessage
+        ? getAgent(state, payload.agentId).lastAttemptedMessage
+        : null,
       modelUnavailable: getModelUnavailableInfo(payload.completeMessage),
       error: failureMessage,
     });
@@ -206,6 +211,16 @@ export const chatSendStarted = createAction(
     timestampIso: new Date(timestamp).toISOString(),
   }),
 );
+
+/**
+ * Record the exact message content a send attempt carried so the error
+ * banner's "Try again" can resend it verbatim (#941). Dispatched by the
+ * send paths (chat-send-service, edit-regenerate-service) alongside
+ * `chatSendStarted`.
+ */
+export const chatLastAttemptedMessageSet = createAction<
+  [agentId: string, lastAttemptedMessage: LastAttemptedMessage | null]
+>('chatState/lastAttemptedMessageSet');
 
 /**
  * Set the idle-reconcile suppression marker. Dispatched true by
@@ -361,6 +376,9 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       statusEvents: [],
       idleReconcileSuppressed: false,
     }),
+  )
+  .with(chatLastAttemptedMessageSet, (state, { payload: [agentId, lastAttemptedMessage] }) =>
+    updateAgent(state, agentId, { lastAttemptedMessage }),
   )
   .with(chatIdleReconcileSuppressionSet, (state, { payload: [agentId, suppressed] }) =>
     updateAgent(state, agentId, { idleReconcileSuppressed: suppressed }),

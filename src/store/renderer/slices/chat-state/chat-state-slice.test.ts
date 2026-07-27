@@ -28,6 +28,7 @@ import {
   streamStatusReceived,
   transcriptHydrationStarted,
   transcriptHydrationSettled,
+  chatLastAttemptedMessageSet,
 } from './chat-state-slice';
 import {
   selectChatAgentState,
@@ -168,6 +169,72 @@ describe('chatStateReducer', () => {
     const agent = s2.byAgentId[AGENT];
     expect(agent.streamingStartTime).toBeNull();
     expect(agent.receivedFirstChunk).toBe(false);
+  });
+
+  it('chatLastAttemptedMessageSet records the retry payload (#941)', () => {
+    const attempted = { text: 'send this', options: { noteIds: ['note-1'] } };
+    const s1 = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    expect(s1.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+    const s2 = chatStateReducer(s1, chatLastAttemptedMessageSet(AGENT, null));
+    expect(s2.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+  });
+
+  it('chatSendStarted preserves a previously recorded lastAttemptedMessage', () => {
+    const attempted = { text: 'edited text' };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, chatSendStarted(AGENT));
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+  });
+
+  it('agentStreamUpdateReceived(complete, success) clears lastAttemptedMessage (#941)', () => {
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'sent' }));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+    }));
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+  });
+
+  it('agentStreamUpdateReceived(complete with timeout finishReason) preserves lastAttemptedMessage for retry (#941)', () => {
+    const attempted = { text: 'edited text' };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+      finishReason: 'timeout',
+    }));
+    expect(s.byAgentId[AGENT].error).toContain('timed out');
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+  });
+
+  it('agentStreamUpdateReceived(timeout) preserves lastAttemptedMessage for retry (#941)', () => {
+    const attempted = { text: 'edited text' };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'timeout',
+    }));
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+  });
+
+  it('agentStreamUpdateReceived(error) preserves lastAttemptedMessage for retry (#941)', () => {
+    const attempted = { text: 'edited text' };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'error',
+      error: 'stream failed',
+    }));
+    expect(s.byAgentId[AGENT].error).toBe('stream failed');
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
   });
 
   it('agentStreamUpdateReceived(started) sets streaming metadata state', () => {
