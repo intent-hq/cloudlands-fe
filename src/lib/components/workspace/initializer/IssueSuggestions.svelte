@@ -116,7 +116,7 @@
   export async function preloadIssues(): Promise<void> {
     // Skip if already preloading or cache is still valid
     if (isPreloading) {
-      preloadLogger.debug('Preload already in progress, skipping');
+      preloadLogger.debug('Preload already in progress, skipping'); // i18n-ignore (log line)
       return;
     }
 
@@ -124,12 +124,12 @@
     const sentryCacheValid = isCacheValid(issueCache.sentry);
 
     if (linearCacheValid && sentryCacheValid) {
-      preloadLogger.debug('Cache is valid for both Linear and Sentry, skipping preload');
+      preloadLogger.debug('Cache is valid for both Linear and Sentry, skipping preload'); // i18n-ignore (log line)
       return;
     }
 
     isPreloading = true;
-    preloadLogger.debug('Starting issues preload');
+    preloadLogger.debug('Starting issues preload'); // i18n-ignore (log line)
 
     try {
       // Dynamic imports to avoid circular dependencies
@@ -148,7 +148,7 @@
             try {
               const linearAuthState = await linearAuthClient.getAuthState(true);
               if (!linearAuthState.isAuthenticated) {
-                preloadLogger.debug('Linear not authenticated, skipping preload');
+                preloadLogger.debug('Linear not authenticated, skipping preload'); // i18n-ignore (log line)
                 return;
               }
 
@@ -167,12 +167,13 @@
                 timestamp: Date.now(),
               };
 
+              // i18n-ignore (log line)
               preloadLogger.debug('Preloaded Linear issues', {
                 assigned: assignedPage.issues.length,
                 created: createdPage.issues.length,
               });
             } catch (error) {
-              preloadLogger.error('Failed to preload Linear issues', error as Error);
+              preloadLogger.error('Failed to preload Linear issues', error as Error); // i18n-ignore (log line)
             }
           })(),
         );
@@ -185,7 +186,7 @@
             try {
               const authState = await sentryAuthClient.getAuthState();
               if (!authState.isAuthenticated) {
-                preloadLogger.debug('Sentry not authenticated, skipping preload');
+                preloadLogger.debug('Sentry not authenticated, skipping preload'); // i18n-ignore (log line)
                 return;
               }
 
@@ -196,18 +197,18 @@
                 timestamp: Date.now(),
               };
 
-              preloadLogger.debug('Preloaded Sentry issues', { count: page.issues.length });
+              preloadLogger.debug('Preloaded Sentry issues', { count: page.issues.length }); // i18n-ignore (log line)
             } catch (error) {
-              preloadLogger.error('Failed to preload Sentry issues', error as Error);
+              preloadLogger.error('Failed to preload Sentry issues', error as Error); // i18n-ignore (log line)
             }
           })(),
         );
       }
 
       await Promise.all(preloadTasks);
-      preloadLogger.debug('Preload complete');
+      preloadLogger.debug('Preload complete'); // i18n-ignore (log line)
     } catch (error) {
-      preloadLogger.error('Preload failed', error as Error);
+      preloadLogger.error('Preload failed', error as Error); // i18n-ignore (log line)
     } finally {
       isPreloading = false;
     }
@@ -250,6 +251,7 @@
   selectSentryError,
 } from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import Header from '$lib/components/ui/Header.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -1203,11 +1205,11 @@
     const teamKey = issue.identifier.split('-')[0];
     // Map priority number to readable string
     const priorityMap: Record<number, string> = {
-      0: 'No priority',
-      1: 'Urgent',
-      2: 'High',
-      3: 'Medium',
-      4: 'Low',
+      0: m.workspace_issueSuggestions_priorityNone_label(),
+      1: m.workspace_issueSuggestions_priorityUrgent_label(),
+      2: m.workspace_issueSuggestions_priorityHigh_label(),
+      3: m.workspace_issueSuggestions_priorityMedium_label(),
+      4: m.workspace_issueSuggestions_priorityLow_label(),
     };
     onSelect?.(issueText, {
       type: 'linear',
@@ -1463,15 +1465,15 @@
   function getSearchPlaceholder(sourceId: ContextSource): string {
     switch (sourceId) {
       case 'linear':
-        return 'Search Linear issues...';
+        return m.workspace_issueSuggestions_searchLinear_placeholder();
       case 'sentry':
-        return 'Search Sentry issues...';
+        return m.workspace_issueSuggestions_searchSentry_placeholder();
       case 'github-issues':
-        return 'Search GitHub issues...';
+        return m.workspace_issueSuggestions_searchGithubIssues_placeholder();
       case 'github-prs':
-        return 'Search pull requests...';
+        return m.workspace_issueSuggestions_searchPullRequests_placeholder();
       default:
-        return 'Search...';
+        return m.workspace_issueSuggestions_search_placeholder();
     }
   }
 </script>
@@ -1489,7 +1491,7 @@
         size={11}
         class="transform transition-transform duration-200 {isOpen ? '-rotate-45' : ''}"
       />
-      <span>Add context</span>
+      <span>{m.workspace_issueSuggestions_addContext_label()}</span>
       <!-- Show all provider icons when collapsed -->
       <!-- {#if !isOpen} -->
       <div class="flex items-end gap-2 ml-1 -mb-0.5">
@@ -1560,7 +1562,7 @@
               ? 'bg-muted text-foreground'
               : 'text-muted-foreground hover:text-foreground'}"
           >
-            All
+            {m.workspace_issueSuggestions_all_label()}
           </button>
           {#each sentryProjects as project}
             <button
@@ -1579,14 +1581,14 @@
 
       {#if activeSource === 'linear' && linearTeams.length > 1}
         <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border/20 bg-muted/20">
-          <span class="text-xs text-subtle">Team:</span>
+          <span class="text-xs text-subtle">{m.workspace_issueSuggestions_team_label()}</span>
           <select
             bind:value={selectedLinearTeam}
             class="text-xs bg-transparent border-none text-muted-foreground hover:text-foreground cursor-pointer outline-none py-0.5 pr-4 appearance-none"
             style="background-image: url('data:image/svg+xml;charset=US-ASCII,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 4 5%22><path fill=%22%236b7280%22 d=%22M2 0L0 2h4z%22 transform=%22rotate(180 2 2.5)%22/></svg>'); background-repeat: no-repeat; background-position: right 0 center; background-size: 8px;"
           >
             <option value={null}
-              >All ({linearAssignedIssues.length + linearCreatedIssues.length})</option
+              >{m.workspace_issueSuggestions_allWithCount_label({ count: linearAssignedIssues.length + linearCreatedIssues.length })}</option
             >
             {#each linearTeams as team}
               {@const count = [...linearAssignedIssues, ...linearCreatedIssues].filter(
@@ -1614,7 +1616,7 @@
               ? 'bg-muted text-foreground'
               : 'text-muted-foreground hover:text-foreground'}"
           >
-            All
+            {m.workspace_issueSuggestions_all_label()}
           </button>
           <button
             type="button"
@@ -1629,7 +1631,7 @@
               ? 'bg-muted text-foreground'
               : 'text-muted-foreground hover:text-foreground'}"
           >
-            Review Requested
+            {m.workspace_issueSuggestions_reviewRequested_label()}
           </button>
           <button
             type="button"
@@ -1644,7 +1646,7 @@
               ? 'bg-muted text-foreground'
               : 'text-muted-foreground hover:text-foreground'}"
           >
-            Assigned
+            {m.workspace_issueSuggestions_assigned_label()}
           </button>
           <button
             type="button"
@@ -1659,7 +1661,7 @@
               ? 'bg-muted text-foreground'
               : 'text-muted-foreground hover:text-foreground'}"
           >
-            Created
+            {m.workspace_issueSuggestions_created_label()}
           </button>
           <button
             type="button"
@@ -1674,7 +1676,7 @@
               ? 'bg-muted text-foreground'
               : 'text-muted-foreground hover:text-foreground'}"
           >
-            Involves Me
+            {m.workspace_issueSuggestions_involvesMe_label()}
           </button>
         </div>
       {/if}
@@ -1707,9 +1709,9 @@
         {:else if !hasVisibleIssues && !isFilteredByUnauthenticatedSource() && !isFilteredByMissingGitHubRepo}
           <div class="px-3 py-3 text-sm text-subtle text-center">
             {#if searchQuery}
-              No issues match "{searchQuery}"
+              {m.workspace_issueSuggestions_noIssuesMatch_label({ query: searchQuery })}
             {:else if activeSource === 'github-issues'}
-              No issues found for <button
+              {m.workspace_issueSuggestions_noIssuesFoundFor_label()} <button
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
                     workspaceId:
@@ -1720,7 +1722,7 @@
                 >{repositoryOwner}/{repositoryName}</button
               >
             {:else if activeSource === 'github-prs'}
-              No pull requests found for <button
+              {m.workspace_issueSuggestions_noPullRequestsFoundFor_label()} <button
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
                     workspaceId:
@@ -1731,7 +1733,7 @@
                 >{repositoryOwner}/{repositoryName}</button
               >
             {:else}
-              No issues found
+              {m.workspace_issueSuggestions_noIssuesFound_label()}
             {/if}
           </div>
         {:else}
@@ -1739,7 +1741,7 @@
           {#if activeSource === 'linear'}
             <!-- Assigned to me -->
             {#if visibleLinearAssigned.length > 0}
-              <Header size={6} class="px-3 pt-2 pb-1">Assigned to me</Header>
+              <Header size={6} class="px-3 pt-2 pb-1">{m.workspace_issueSuggestions_assignedToMe_label()}</Header>
               {#each visibleLinearAssigned as issue (issue.id)}
                 <TooltipRich
                   side="top"
@@ -1791,7 +1793,7 @@
                       {/if}
                       <div class="flex items-center gap-2 text-xs text-subtle pt-1">
                         {#if issue.assignee}
-                          <span>Assignee: {issue.assignee}</span>
+                          <span>{m.workspace_issueSuggestions_assignee_label({ assignee: issue.assignee })}</span>
                         {/if}
                         {#if issue.createdAt}
                           <span class="ml-auto">{formatRelativeTime(issue.createdAt)}</span>
@@ -1805,7 +1807,7 @@
 
             <!-- Created by me -->
             {#if visibleLinearCreated.length > 0}
-              <Header size={6} class="px-3 pt-3 pb-1">Created by me</Header>
+              <Header size={6} class="px-3 pt-3 pb-1">{m.workspace_issueSuggestions_createdByMe_label()}</Header>
               {#each visibleLinearCreated as issue (issue.id)}
                 <TooltipRich
                   side="top"
@@ -1857,7 +1859,7 @@
                       {/if}
                       <div class="flex items-center gap-2 text-xs text-subtle pt-1">
                         {#if issue.assignee}
-                          <span>Assignee: {issue.assignee}</span>
+                          <span>{m.workspace_issueSuggestions_assignee_label({ assignee: issue.assignee })}</span>
                         {/if}
                         {#if issue.createdAt}
                           <span class="ml-auto">{formatRelativeTime(issue.createdAt)}</span>
@@ -1920,7 +1922,7 @@
                     {/if}
                     <div class="flex items-center gap-2 text-xs text-subtle pt-1">
                       {#if issue.assignee}
-                        <span>Assignee: {issue.assignee}</span>
+                        <span>{m.workspace_issueSuggestions_assignee_label({ assignee: issue.assignee })}</span>
                       {/if}
                       {#if issue.createdAt}
                         <span class="ml-auto">{formatRelativeTime(issue.createdAt)}</span>
@@ -2004,7 +2006,7 @@
                   {/if}
                   <div class="flex items-center gap-2 text-xs text-subtle pt-1">
                     {#if issue.assignee}
-                      <span>Assignee: {issue.assignee}</span>
+                      <span>{m.workspace_issueSuggestions_assignee_label({ assignee: issue.assignee })}</span>
                     {/if}
                     {#if issue.createdAt}
                       <span class="ml-auto">{formatRelativeTime(issue.createdAt)}</span>
@@ -2039,7 +2041,7 @@
                     >{pr.title}</span
                   >
                   {#if pr.state === 'draft'}
-                    <span class="text-xs text-subtle shrink-0">draft</span>
+                    <span class="text-xs text-subtle shrink-0">{m.workspace_issueSuggestions_draft_label()}</span>
                   {/if}
                   {#if pr.updatedAt || pr.createdAt}
                     <span class="text-xs text-subtle shrink-0"
@@ -2076,10 +2078,10 @@
                   {/if}
                   <div class="flex items-center gap-2 text-xs text-subtle pt-1">
                     {#if pr.authorLogin}
-                      <span>Author: {pr.authorName || pr.authorLogin}</span>
+                      <span>{m.workspace_issueSuggestions_author_label({ author: pr.authorName || pr.authorLogin })}</span>
                     {/if}
                     {#if pr.assignees && pr.assignees.length > 0}
-                      <span>Assignees: {pr.assignees.join(', ')}</span>
+                      <span>{m.workspace_issueSuggestions_assignees_label({ assignees: pr.assignees.join(', ') })}</span>
                     {/if}
                     {#if pr.createdAt}
                       <span class="ml-auto">{formatRelativeTime(pr.createdAt)}</span>
@@ -2094,7 +2096,7 @@
           {#if activeIsLoadingMore}
             <div class="flex items-center justify-center gap-2 px-3 py-2 text-xs text-subtle">
               <Fa icon={faSync} class="w-2.5 h-2.5 animate-spin" />
-              <span>Loading more…</span>
+              <span>{m.workspace_issueSuggestions_loadingMore_label()}</span>
             </div>
           {/if}
           {#if activeHasMore && !activeIsLoadingMore}
@@ -2110,7 +2112,7 @@
           >
             <div class="flex items-center gap-2">
               <LinearIcon class="w-3.5 h-3.5 text-ghost" />
-              <span class="text-subtle">Connect Linear to see your issues</span>
+              <span class="text-subtle">{m.workspace_issueSuggestions_connectLinear_label()}</span>
             </div>
             <button
               type="button"
@@ -2118,7 +2120,7 @@
               onclick={() => appStore.dispatch(startLinearAuth())}
               class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {$linearIsAuthenticating$ ? 'Connecting…' : 'Connect'}
+              {$linearIsAuthenticating$ ? m.workspace_issueSuggestions_connecting_label() : m.workspace_issueSuggestions_connect_label()}
             </button>
           </div>
         {/if}
@@ -2132,9 +2134,9 @@
             <div class="flex items-center gap-2">
               <GitHubIcon class="w-3.5 h-3.5 text-ghost" />
               <span class="text-subtle"
-                >Connect GitHub to see your {activeSource === 'github-prs'
-                  ? 'pull requests'
-                  : 'issues'}</span
+                >{activeSource === 'github-prs'
+                  ? m.workspace_issueSuggestions_connectGithubPrs_label()
+                  : m.workspace_issueSuggestions_connectGithubIssues_label()}</span
               >
             </div>
             <button
@@ -2143,16 +2145,16 @@
               onclick={() => appStore.dispatch(startGitHubAuth())}
               class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {$githubAuthIsAuthenticating$ ? 'Connecting…' : 'Connect'}
+              {$githubAuthIsAuthenticating$ ? m.workspace_issueSuggestions_connecting_label() : m.workspace_issueSuggestions_connect_label()}
             </button>
           </div>
         {/if}
         <!-- Show repository hint when authenticated but no repo selected -->
         {#snippet repositoryHint()}
           <div class="px-3 py-1.5 text-xs text-subtle bg-muted/20">
-            Select a GitHub repository to see {activeSource === 'github-prs'
-              ? 'pull requests'
-              : 'issues'}
+            {activeSource === 'github-prs'
+              ? m.workspace_issueSuggestions_selectRepoPrs_label()
+              : m.workspace_issueSuggestions_selectRepoIssues_label()}
           </div>
         {/snippet}
         {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && isGitHubAuthenticated && !repositoryOwner}
@@ -2172,14 +2174,14 @@
               <div class="flex items-center justify-between px-3 py-2 text-sm">
                 <div class="flex items-center gap-2">
                   <SentryIcon class="w-3.5 h-3.5 text-ghost" />
-                  <span class="text-subtle">Connect Sentry to see your issues</span>
+                  <span class="text-subtle">{m.workspace_issueSuggestions_connectSentry_label()}</span>
                 </div>
                 <button
                   type="button"
                   onclick={() => (sentryShowForm = true)}
                   class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer"
                 >
-                  Connect
+                  {m.workspace_issueSuggestions_connect_label()}
                 </button>
               </div>
             {:else}
@@ -2188,13 +2190,13 @@
                   <input
                     type="text"
                     class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
-                    placeholder="Organization slug"
+                    placeholder={m.workspace_issueSuggestions_organizationSlug_placeholder()}
                     bind:value={sentryOrg}
                   />
                   <input
                     type="password"
                     class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
-                    placeholder="API token (sntrys_…)"
+                    placeholder={m.workspace_issueSuggestions_apiToken_placeholder()}
                     bind:value={sentryToken}
                     onkeydown={(e) => {
                       if (e.key === 'Enter' && sentryOrg.trim() && sentryToken.trim()) {
@@ -2209,14 +2211,14 @@
                       appStore.dispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()))}
                     class="shrink-0 text-xs text-primary hover:text-primary/80 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {$sentryIsConnecting$ ? 'Connecting…' : 'Connect'}
+                    {$sentryIsConnecting$ ? m.workspace_issueSuggestions_connecting_label() : m.workspace_issueSuggestions_connect_label()}
                   </button>
                 </div>
                 {#if $sentryError$}
                   <p class="text-xs text-destructive">{$sentryError$}</p>
                 {/if}
                 <p class="text-xs text-subtle opacity-50">
-                  Create a token at
+                  {m.workspace_issueSuggestions_createTokenAt_label()}
                   <button
                     type="button"
                     onclick={() =>
@@ -2226,9 +2228,11 @@
                       })}
                     class="underline cursor-pointer hover:opacity-100"
                   >
+                    <!-- i18n-ignore (domain name) -->
                     sentry.io
                   </button>
-                  with scopes: <span class="font-mono">org:read, project:read, event:read</span>
+                  <!-- i18n-ignore (API scope names) -->
+                  {m.workspace_issueSuggestions_withScopes_label()} <span class="font-mono">org:read, project:read, event:read</span>
                 </p>
               </div>
             {/if}

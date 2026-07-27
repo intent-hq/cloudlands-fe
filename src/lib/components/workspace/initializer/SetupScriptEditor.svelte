@@ -40,6 +40,7 @@
 } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import type { SetupScript } from '$store/renderer/slices/setup-scripts/setup-scripts-types';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     repoPath?: string;
@@ -65,7 +66,7 @@
     repoConfigScript = null,
     value = $bindable(''),
     expanded = $bindable(false),
-    scriptName = $bindable('Custom'),
+    scriptName = $bindable(m.workspace_setupScriptEditor_custom_name()),
     isCustomScript = $bindable(false),
     hasUnsavedChanges = $bindable(false),
     compact = false,
@@ -103,7 +104,7 @@
     const now = new Date().toISOString();
     return {
       id: uuidv4(),
-      name: params.name || 'Custom Script',
+      name: params.name || m.workspace_setupScriptEditor_customScript_name(),
       content: params.content,
       repoPath: params.repoPath,
       projectType: params.projectType,
@@ -195,9 +196,9 @@
   // Get display label for trigger button
   const displayLabel = $derived.by(() => {
     if (hasUserEdited) return customName;
-    if (!selectedScriptId) return 'Custom';
+    if (!selectedScriptId) return m.workspace_setupScriptEditor_custom_name();
     const script = scriptMap.get(selectedScriptId);
-    return script?.label || 'Custom';
+    return script?.label || m.workspace_setupScriptEditor_custom_name();
   });
 
 
@@ -231,7 +232,7 @@
           // distinct name so it isn't confused with the committed script)
           const forkName =
             selectedScriptId === REPO_CONFIG_SCRIPT_ID
-              ? `${REPO_CONFIG_SCRIPT_NAME} (edited)`
+              ? m.workspace_setupScriptEditor_repoConfigEdited_name({ name: REPO_CONFIG_SCRIPT_NAME })
               : script.label;
           const savedScript = saveOrUpdateScript({
             name: forkName,
@@ -265,15 +266,15 @@
     if (selectedScriptId === scriptId) {
       selectedScriptId = '';
       value = '';
-      customName = 'Custom';
+      customName = m.workspace_setupScriptEditor_custom_name();
       onchange?.('');
     }
 
     let undoClicked = false;
-    const toastId = toast.warning(`Deleted "${name}"`, {
+    const toastId = toast.warning(m.workspace_setupScriptEditor_deleted_toast({ name }), {
       duration: 15000,
       action: {
-        label: 'Undo',
+        label: m.workspace_setupScriptEditor_undo_label(),
         onClick: () => {
           undoClicked = true;
           appStore.dispatch(restoreScriptToUI(scriptId));
@@ -292,7 +293,7 @@
   // Clear editor content
   function handleClear() {
     value = '';
-    customName = 'Custom';
+    customName = m.workspace_setupScriptEditor_custom_name();
     hasUserEdited = false;
     selectedScriptId = '';
     onchange?.('');
@@ -314,17 +315,18 @@
       selectedScriptId !== REPO_CONFIG_SCRIPT_ID;
     if (isExistingSaved) {
       const now = new Date().toISOString();
+      const fallbackName = m.workspace_setupScriptEditor_customScript_name();
       appStore.dispatch(updateScriptContent(selectedScriptId, value, now));
-      appStore.dispatch(renameScript(selectedScriptId, customName || 'Custom Script'));
-      customName = (customName || 'Custom Script').trim() || 'Custom Script';
+      appStore.dispatch(renameScript(selectedScriptId, customName || fallbackName));
+      customName = (customName || fallbackName).trim() || fallbackName;
       hasUserEdited = false;
-      toast.success(`Saved "${customName}"`);
+      toast.success(m.workspace_setupScriptEditor_saved_toast({ name: customName }));
       onSave?.();
       return;
     }
 
     const savedScript = saveOrUpdateScript({
-      name: customName || 'Custom Script',
+      name: customName || m.workspace_setupScriptEditor_customScript_name(),
       content: value,
       repoPath,
       projectType: projectType || 'generic',
@@ -335,7 +337,7 @@
     customName = savedScript.name;
     hasUserEdited = false;
 
-    toast.success(`Saved "${savedScript.name}"`);
+    toast.success(m.workspace_setupScriptEditor_saved_toast({ name: savedScript.name }));
     onSave?.();
   }
 
@@ -404,7 +406,7 @@
         if (!matched) {
           // No match found — preserve customName from the scriptName prop
           hasUserEdited = true;
-          customName = customName || scriptName || 'Custom';
+          customName = customName || scriptName || m.workspace_setupScriptEditor_custom_name();
         }
 
         isProgrammaticChange = true;
@@ -434,9 +436,9 @@
         // Fallback to "Copy config files only" template
         selectedScriptId = COPY_CONFIG_TEMPLATE_ID;
         const script = scriptMap.get(COPY_CONFIG_TEMPLATE_ID);
-        customName = script?.label || 'Custom';
+        customName = script?.label || m.workspace_setupScriptEditor_custom_name();
       } else {
-        customName = 'Custom';
+        customName = m.workspace_setupScriptEditor_custom_name();
       }
     });
 
@@ -491,7 +493,7 @@
           class="w-full justify-start text-subtle"
           onclick={() => {
             const newScript = createScriptObject({
-              name: 'Untitled script',
+              name: m.workspace_setupScriptEditor_untitledScript_name(),
               content: '',
               repoPath,
               projectType: projectType || 'generic',
@@ -510,14 +512,14 @@
           }}
         >
           <Fa icon={faPlus} class="mr-1.5" />
-          New script
+          {m.workspace_setupScriptEditor_newScript_label()}
         </Button>
       </div>
 
       <!-- Auto-generate -->
       <div class="mb-4">
-        <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Generate</h4>
-        <p class="text-xs text-subtle px-2 mb-2">Analyze your repo and create a setup script automatically.</p>
+        <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_generate_label()}</h4>
+        <p class="text-xs text-subtle px-2 mb-2">{m.workspace_setupScriptEditor_generate_description()}</p>
         {#if showAgentPanel && repoPath}
           <div transition:slide={{ duration: 200 }}>
             <SetupScriptAgent
@@ -550,7 +552,7 @@
             disabled={!repoPath}
           >
             <Fa icon={faWandMagicSparkles} class="mr-1.5" />
-            Auto-generate from repo
+            {m.workspace_setupScriptEditor_autoGenerate_label()}
           </Button>
         {/if}
       </div>
@@ -558,13 +560,13 @@
       <!-- Repo-committed script from .intent/config.json -->
       {#if repoConfigScript}
         <div class="mb-4">
-          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Repo config</h4>
+          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_repoConfig_label()}</h4>
           <button
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === REPO_CONFIG_SCRIPT_ID ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
             onclick={() => handleScriptSelect(REPO_CONFIG_SCRIPT_ID)}
           >
             <span class="text-sm">{REPO_CONFIG_SCRIPT_NAME}</span>
-            <p class="text-xs text-subtle mt-0.5 line-clamp-1">Committed in .intent/config.json</p>
+            <p class="text-xs text-subtle mt-0.5 line-clamp-1">{m.workspace_setupScriptEditor_repoConfig_description()}</p>
           </button>
         </div>
       {/if}
@@ -572,7 +574,7 @@
       <!-- Saved scripts for this repo -->
       {#if repoScripts.length > 0}
         <div class="mb-4">
-          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Saved</h4>
+          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_saved_label()}</h4>
           {#each repoScripts as script (script.id)}
             <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
             <div
@@ -608,7 +610,7 @@
                   tabindex="0"
                   class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); startEditingName(script.id, script.name); }}
-                  title="Rename"
+                  title={m.workspace_setupScriptEditor_rename_tooltip()}
                 >
                   <Fa icon={faPencil} size="xs" />
                 </span>
@@ -618,7 +620,7 @@
                   tabindex="0"
                   class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); handleDeleteSavedScript(script.id, script.name); }}
-                  title="Delete"
+                  title={m.workspace_setupScriptEditor_delete_tooltip()}
                 >
                   <Fa icon={faTrash} size="xs" />
                 </span>
@@ -631,7 +633,7 @@
       <!-- Other saved scripts -->
       {#if otherSavedScripts.length > 0}
         <div class="mb-4">
-          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Other saved</h4>
+          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_otherSaved_label()}</h4>
           {#each otherSavedScripts as script (script.id)}
             <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
             <div
@@ -667,7 +669,7 @@
                   tabindex="0"
                   class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); startEditingName(script.id, script.name); }}
-                  title="Rename"
+                  title={m.workspace_setupScriptEditor_rename_tooltip()}
                 >
                   <Fa icon={faPencil} size="xs" />
                 </span>
@@ -677,7 +679,7 @@
                   tabindex="0"
                   class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive-foreground rounded transition-all cursor-pointer"
                   onclick={(e) => { e.stopPropagation(); handleDeleteSavedScript(script.id, script.name); }}
-                  title="Delete"
+                  title={m.workspace_setupScriptEditor_delete_tooltip()}
                 >
                   <Fa icon={faTrash} size="xs" />
                 </span>
@@ -689,7 +691,7 @@
 
       <!-- Templates -->
       <div class="mb-4">
-        <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Templates</h4>
+        <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">{m.workspace_setupScriptEditor_templates_label()}</h4>
         {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
           <button
             class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === `template-${template.id}` ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
@@ -698,7 +700,7 @@
             <div class="flex items-center gap-2">
               <span class="text-sm">{template.name}</span>
               {#if template.projectType === projectType}
-                <span class="text-ui px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0">recommended</span>
+                <span class="text-ui px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0">{m.workspace_setupScriptEditor_recommended_label()}</span>
               {/if}
             </div>
             <p class="text-xs text-subtle mt-0.5 line-clamp-1">{template.description}</p>
@@ -724,7 +726,7 @@
       </div>
       <!-- Bottom bar -->
       <div class="flex items-center gap-3 px-3 py-1.5 bg-muted/30 shrink-0">
-        <span class="text-ui font-medium uppercase tracking-wider text-muted-foreground shrink-0">Variables</span>
+        <span class="text-ui font-medium uppercase tracking-wider text-muted-foreground shrink-0">{m.workspace_setupScriptEditor_variables_label()}</span>
         <div class="flex flex-wrap gap-1.5">
           {#each SETUP_SCRIPT_VARIABLES as variable (variable.name)}
             <Tooltip.Provider delayDuration={100}>
@@ -736,7 +738,7 @@
                 </Tooltip.Trigger>
                 <Tooltip.Content side="bottom" class="max-w-xs z-[200]">
                   <p class="text-xs">{variable.description}</p>
-                  <p class="text-xs opacity-50 mt-1">e.g. <code class="text-ui">{variable.example}</code></p>
+                  <p class="text-xs opacity-50 mt-1">{m.workspace_setupScriptEditor_example_label()} <code class="text-ui">{variable.example}</code></p>
                 </Tooltip.Content>
               </Tooltip.Root>
             </Tooltip.Provider>
@@ -744,7 +746,7 @@
         </div>
         {#if value.trim()}
           <Button variant="ghost" size="sm" onclick={handleClear} class="ml-auto text-muted-foreground hover:text-foreground text-xs">
-            Clear
+            {m.workspace_setupScriptEditor_clear_label()}
           </Button>
         {/if}
       </div>
@@ -769,7 +771,7 @@
       onclick={() => (expanded = !expanded)}
     >
       <Fa icon={faTerminal} size="xs" />
-      <span class="text-sm font-normal text-subtle">Setup script</span>
+      <span class="text-sm font-normal text-subtle">{m.workspace_setupScriptEditor_setupScript_label()}</span>
       <span class="text-subtle font-normal">{displayLabel}</span>
     </Button>
 

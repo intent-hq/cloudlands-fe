@@ -41,6 +41,7 @@
   let newCommentContent = $state('');
 
   // Demo content with anchors already in place
+  // i18n-ignore (dev-only demo content)
   const demoContent = `
     <h2>Comment System Demo</h2>
     <p>This is a demonstration of the new anchor-based comment system. <!--anchor:demo-1:start-->Select any text to add a comment.<!--anchor:demo-1:end--></p>
@@ -61,9 +62,9 @@
     {
       id: 'demo-1',
       threadId: 'thread-demo-1',
-      content: 'This text is highlighted with a comment!',
+      content: 'This text is highlighted with a comment!', // i18n-ignore (dev-only demo data)
       type: 'comment' as const,
-      author: 'Demo User',
+      author: 'Demo User', // i18n-ignore (dev-only demo data)
       authorType: 'user' as const,
       status: 'open' as const,
       createdAt: new Date().toISOString(),
@@ -73,16 +74,16 @@
         startId: 'demo-1:start',
         endId: 'demo-1:end',
       },
-      anchorText: 'Select any text to add a comment.',
+      anchorText: 'Select any text to add a comment.', // i18n-ignore (dev-only demo data)
     },
     {
       id: 'demo-2',
       threadId: 'thread-demo-2',
-      content: 'This is a point comment at a specific location.',
+      content: 'This is a point comment at a specific location.', // i18n-ignore (dev-only demo data)
       type: 'suggestion' as const,
       suggestionDiff: {
-        original: 'This is a point comment at a specific location.',
-        proposed: 'This is an improved point comment at a specific location.',
+        original: 'This is a point comment at a specific location.', // i18n-ignore (dev-only demo data)
+        proposed: 'This is an improved point comment at a specific location.', // i18n-ignore (dev-only demo data)
       },
       author: 'AI Assistant',
       authorType: 'agent' as const,
@@ -148,7 +149,7 @@
 
     const { from, to } = editor.state.selection;
     if (from === to) {
-      alert('Please select some text to comment on');
+      alert('Please select some text to comment on'); // i18n-ignore (dev-only demo)
       return;
     }
 
@@ -194,7 +195,9 @@
 
 <div class="comment-demo-container">
   <div class="demo-header">
+    <!-- i18n-ignore (dev-only demo UI) -->
     <h1>New Comment System Demo</h1>
+    <!-- i18n-ignore (dev-only demo UI) -->
     <p class="text-subtle">Anchor-based comments that survive markdown round-trips</p>
   </div>
 
@@ -204,6 +207,7 @@
       <div class="editor-toolbar">
         <button onclick={handleAddComment} class="toolbar-button" disabled={!editor}>
           <Fa icon={faComment} />
+          <!-- i18n-ignore (dev-only demo UI) -->
           Add Comment
         </button>
       </div>
@@ -215,6 +219,7 @@
 
     <!-- Comments Panel -->
     <div class="comments-panel">
+      <!-- i18n-ignore (dev-only demo UI) -->
       <h3>Comments ({$comments$.length})</h3>
 
       <div class="comments-list">
@@ -229,6 +234,7 @@
                 <Fa icon={getCommentIcon(comment.type)} />
                 <span class="comment-author">{comment.author}</span>
                 {#if comment.authorType === 'agent'}
+                  <!-- i18n-ignore (dev-only demo UI) -->
                   <span class="agent-badge">AI</span>
                 {/if}
               </div>
@@ -243,6 +249,7 @@
 
             {#if comment.anchorText}
               <div class="comment-context">
+                <!-- i18n-ignore (dev-only demo UI) -->
                 <span class="context-label">On:</span>
                 <span class="context-text">"{comment.anchorText}"</span>
               </div>
@@ -251,10 +258,12 @@
             <div class="comment-actions">
               {#if comment.status === 'open'}
                 <button onclick={() => resolveComment(comment.id)} class="action-button resolve">
+                  <!-- i18n-ignore (dev-only demo UI) -->
                   <Fa icon={faCheck} /> Resolve
                 </button>
               {/if}
               <button onclick={() => deleteComment(comment.id)} class="action-button delete">
+                <!-- i18n-ignore (dev-only demo UI) -->
                 <Fa icon={faTrash} /> Delete
               </button>
             </div>
@@ -263,7 +272,9 @@
 
         {#if $comments$.length === 0}
           <div class="no-comments">
+            <!-- i18n-ignore (dev-only demo UI) -->
             <p>No comments yet</p>
+            <!-- i18n-ignore (dev-only demo UI) -->
             <p class="text-subtle">Select text and click "Add Comment" to start</p>
           </div>
         {/if}
@@ -287,35 +298,43 @@
         onkeydown={(e) => e.stopPropagation()}
         onclick={(e) => e.stopPropagation()}
       >
+        <!-- i18n-ignore (dev-only demo UI) -->
         <h3>Add Comment</h3>
 
         <div class="comment-type-selector">
           <label>
             <input type="radio" bind:group={newCommentType} value="comment" />
+            <!-- i18n-ignore (dev-only demo UI) -->
             <Fa icon={faComment} /> Comment
           </label>
           <label>
             <input type="radio" bind:group={newCommentType} value="suggestion" />
+            <!-- i18n-ignore (dev-only demo UI) -->
             <Fa icon={faLightbulb} /> Suggestion
           </label>
           <label>
             <input type="radio" bind:group={newCommentType} value="change-request" />
+            <!-- i18n-ignore (dev-only demo UI) -->
             <Fa icon={faCodePullRequest} /> Change Request
           </label>
           <label>
             <input type="radio" bind:group={newCommentType} value="question" />
+            <!-- i18n-ignore (dev-only demo UI) -->
             <Fa icon={faCircleQuestion} /> Question
           </label>
         </div>
 
+        <!-- i18n-ignore (dev-only demo UI) -->
         <textarea bind:value={newCommentContent} placeholder="Enter your comment..." rows="4"
         ></textarea>
 
         <div class="dialog-actions">
           <button onclick={() => (showCommentDialog = false)} class="cancel-button">
+            <!-- i18n-ignore (dev-only demo UI) -->
             Cancel
           </button>
           <button onclick={submitComment} class="submit-button" disabled={!newCommentContent}>
+            <!-- i18n-ignore (dev-only demo UI) -->
             Add Comment
           </button>
         </div>

@@ -25,14 +25,20 @@ import { readFileSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 
-// Enforced directories (relative to the repo root). Each extraction task adds
-// its migrated directories here. The list starts EMPTY; the settings pilot
-// extraction adds the first entry.
+// Enforced directories or individual files (relative to the repo root). Each
+// extraction task adds its migrated directories here. The list starts EMPTY;
+// the settings pilot extraction adds the first entry. Individual files are
+// listed while their parent directory is only partially migrated.
 const ENFORCED_DIRS = [
   'src/lib/components/settings',
   'src/features/settings',
   'src/routes/settings',
   'src/lib/components/ui',
+  'src/lib/components/workspace/initializer',
+  'src/lib/components/workspace/CommentSystemDemo.svelte',
+  'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
+  'src/lib/components/workspace/ContentSkeleton.svelte',
+  'src/lib/components/workspace/CreateAgentSection.svelte',
 ];
 
 const ROOT = process.cwd();
@@ -390,31 +396,39 @@ async function main() {
 
   let total = 0;
   const lines = [];
+  const checkFile = (file) => {
+    let src;
+    try {
+      src = readFileSync(file, 'utf8');
+    } catch {
+      return;
+    }
+    const rel = relative(ROOT, file).split('\\').join('/');
+    for (const v of findViolations(rel, src)) {
+      total++;
+      lines.push(`  ${YELLOW}${rel}:${v.line}${NC}  [${v.kind}] "${v.snippet}"`);
+    }
+  };
   for (const dir of dirs) {
     const abs = resolve(ROOT, dir);
-    let isDir = false;
+    let entry = null;
     try {
-      isDir = (await stat(abs)).isDirectory();
+      entry = await stat(abs);
     } catch {
       /* ignore */
     }
-    if (!isDir) {
-      console.error(`${RED}Enforced directory not found: ${dir}${NC}`);
+    if (!entry) {
+      console.error(`${RED}Enforced path not found: ${dir}${NC}`);
       process.exit(2);
     }
-    console.log(`Scanning: ${relative(ROOT, abs) || '.'}/`);
-    for await (const file of walk(abs)) {
-      let src;
-      try {
-        src = readFileSync(file, 'utf8');
-      } catch {
-        continue;
+    if (entry.isDirectory()) {
+      console.log(`Scanning: ${relative(ROOT, abs) || '.'}/`);
+      for await (const file of walk(abs)) {
+        checkFile(file);
       }
-      const rel = relative(ROOT, file).split('\\').join('/');
-      for (const v of findViolations(rel, src)) {
-        total++;
-        lines.push(`  ${YELLOW}${rel}:${v.line}${NC}  [${v.kind}] "${v.snippet}"`);
-      }
+    } else {
+      console.log(`Scanning: ${relative(ROOT, abs)}`);
+      if (isCheckedFile(abs)) checkFile(abs);
     }
   }
 

@@ -19,6 +19,7 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     onCreate?: () => void;
@@ -141,7 +142,7 @@
       onclick={() => (isExpanded = !isExpanded)}
     >
       <Fa icon={faPlus} size="xs" class="opacity-60 mr-1.25 ml-2.75" />
-      Create new agent
+      {m.workspace_createAgentSection_createNewAgent_label()}
     </Button>
   </div>
 {/if}
@@ -162,20 +163,22 @@
       >
         <AuggieAvatar seed="blank" size={22} class="-mt-1" />
         <div class="flex-1 min-w-0">
-          <div class="text-sm font-medium">Blank Agent</div>
-          <div class="text-sm text-subtle">Start fresh, no custom prompt</div>
+          <div class="text-sm font-medium">{m.workspace_createAgentSection_blankAgent_label()}</div>
+          <div class="text-sm text-subtle">{m.workspace_createAgentSection_blankAgent_description()}</div>
         </div>
       </button>
 
       <!-- Specialist Explanation -->
       <div class="px-3 pt-2">
         <p class="text-sm text-subtle">
-          <span class="text-foreground font-medium">Specialists</span> are pre-configured agent types.
+          <span class="text-foreground font-medium">{m.workspace_createAgentSection_specialists_label()}</span>
+          {m.workspace_createAgentSection_specialists_description()}
         </p>
       </div>
 
       <!-- Specialist Cards: coordinator first, then the rest -->
       <div class="pt-1.5 max-h-[280px] overflow-y-auto">
+        <!-- i18n-ignore (TS type-guard expression, not user-facing text) -->
         {#each [coordinator, ...otherSpecialists].filter((s): s is NonNullable<typeof s> => Boolean(s)) as specialist (specialist.id)}
           <button
             class="w-full px-2.5 py-2 flex items-start gap-2.5 hover:bg-muted/50 transition-colors text-left group cursor-pointer"
@@ -194,7 +197,7 @@
               </div>
               {#if specialist.id === 'spec-writer'}
                 <div class="text-xs text-subtle mt-0.5">
-                  Default for agent orchestration
+                  {m.workspace_createAgentSection_defaultForOrchestration_label()}
                 </div>
               {/if}
             </div>
@@ -211,7 +214,7 @@
           onclick={openSpecialistSettings}
         >
           <Fa icon={faGear} size="xs" />
-          <span>Customize specialists</span>
+          <span>{m.workspace_createAgentSection_customizeSpecialists_label()}</span>
         </Button>
       </div>
     </div>

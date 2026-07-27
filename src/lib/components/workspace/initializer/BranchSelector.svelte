@@ -21,6 +21,7 @@
     type IsolationMode,
   } from './isolation-mode';
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
+  import { m } from '$shared/paraglide/messages.js';
   import {
     faCheck,
     faChevronDown,
@@ -652,47 +653,45 @@
           return;
         } else if (err.message === 'GITHUB_NO_ACCESS') {
           // User is authenticated but doesn't have access to this repo
-          error = "You don't have access to this repository.";
+          error = m.workspace_branchSelector_noAccess_error();
           // githubAuthNeeded is already set to 'no-access'
           return;
         }
 
         // Check if the error already has a detailed GitHub API message
         const isDetailedGitHubError =
-          err.message.includes('private repo') ||
-          err.message.includes('authenticate with GitHub') ||
-          err.message.includes('access permissions') ||
-          err.message.includes('GitHub API error');
+          err.message.includes('private repo') || // i18n-ignore (error-message sniffing)
+          err.message.includes('authenticate with GitHub') || // i18n-ignore (error-message sniffing)
+          err.message.includes('access permissions') || // i18n-ignore (error-message sniffing)
+          err.message.includes('GitHub API error'); // i18n-ignore (error-message sniffing)
 
         if (isDetailedGitHubError) {
           // Preserve the detailed GitHub error message
           error = err.message;
         } else if (
-          err.message.includes('Git is not installed') ||
+          err.message.includes('Git is not installed') || // i18n-ignore (error-message sniffing)
           err.message.includes('ENOENT') ||
           err.message.includes('spawn git')
         ) {
-          error =
-            "Git is not installed or not available. Please install Git and ensure it's accessible from the command line.";
+          error = m.workspace_branchSelector_gitNotInstalled_error();
         } else if (err.message.includes('rate limit')) {
-          error = 'GitHub API rate limit exceeded. Please wait or enter branch manually.';
+          error = m.workspace_branchSelector_rateLimit_error();
         } else if (err.message.includes('404') || err.message.includes('not found')) {
           // Generic not found - add private repo hint for GitHub repos
           if (effectiveRepoType === 'github') {
-            error =
-              'Repository not found. If this is a private repo, GitHub authentication is required.';
+            error = m.workspace_branchSelector_repoNotFoundGithub_error();
           } else {
-            error = 'Repository not found. Check the path or enter branch manually.';
+            error = m.workspace_branchSelector_repoNotFound_error();
           }
         } else if (err.message.includes('network') || err.message.includes('fetch')) {
-          error = 'Network error. Check connection or enter branch manually.';
+          error = m.workspace_branchSelector_network_error();
         } else if (err.message.includes('permission') || err.message.includes('denied')) {
-          error = 'Permission denied. Check access or enter branch manually.';
+          error = m.workspace_branchSelector_permissionDenied_error();
         } else {
-          error = err.message || 'Failed to fetch branches';
+          error = err.message || m.workspace_branchSelector_fetchBranchesFailed_error();
         }
       } else {
-        error = 'Failed to fetch branches. You can enter a branch name manually.';
+        error = m.workspace_branchSelector_fetchBranchesFailedManual_error();
       }
 
       // Never fabricate branch names on failure — the error state renders and
@@ -982,7 +981,7 @@
           if (isConnectingGitHub) {
             clearInterval(checkAuthInterval);
             isConnectingGitHub = false;
-            error = 'GitHub connection timed out. Please try again.';
+            error = m.workspace_branchSelector_githubTimeout_error();
           }
         },
         5 * 60 * 1000,
@@ -990,7 +989,7 @@
     } catch (err) {
       logger.error('Failed to connect GitHub', err);
       isConnectingGitHub = false;
-      error = err instanceof Error ? err.message : 'Failed to connect to GitHub';
+      error = err instanceof Error ? err.message : m.workspace_branchSelector_githubConnectFailed_error();
     }
   }
 
@@ -1232,25 +1231,25 @@
           {/if}
           <span class="flex-1 text-left truncate min-w-0">
             {#if githubAuthNeeded === 'not-authenticated'}
-              <span class="text-orange-500">Connect GitHub</span>
+              <span class="text-orange-500">{m.workspace_branchSelector_connectGithub_label()}</span>
             {:else if skipIsolation && selectedBranch}
               <span>{selectedBranch}</span>
-              <span class="text-sm opacity-75 ml-1">(no {isolationLabel})</span>
+              <span class="text-sm opacity-75 ml-1">{m.workspace_branchSelector_noIsolation_label({ isolationLabel })}</span>
             {:else if selectedBranch}
               <span>{selectedBranch}</span>
             {:else if !repoPath}
-              <span>Select a repository first</span>
+              <span>{m.workspace_branchSelector_selectRepoFirst_label()}</span>
             {:else if isLoading}
               <span class="inline-block h-4 w-24 bg-muted rounded animate-pulse"></span>
             {:else}
-              <span>Select a branch</span>
+              <span>{m.workspace_branchSelector_selectBranch_label()}</span>
             {/if}
           </span>
           <!-- Branch status indicators -->
           {#if showUncommittedIndicator && selectedBranch && repoType === 'local' && !branchStatusIsLoading && branchStatusHasUncommittedChanges && isCurrentBranch}
             <div class="flex-0 flex flex-col" transition:slide={{ axis: 'x', duration: 150 }}>
               <Tooltip
-                content="Uncommitted changes won't be included"
+                content={m.workspace_branchSelector_uncommittedChanges_tooltip()}
                 side="bottom"
                 delayDuration={200}
               >
@@ -1270,10 +1269,9 @@
       >
         <!-- Header -->
         <div class="px-4 pt-2 pb-3">
-          <h2 class="text-base font-semibold text-foreground">What branch should we start from?</h2>
+          <h2 class="text-base font-semibold text-foreground">{m.workspace_branchSelector_whichBranch_label()}</h2>
           <p class="text-sm text-subtle mt-1">
-            {description ||
-              'Choose a branch for the Space to start from. We\'ll treat this branch as the "trunk" to merge back to.'}
+            {description || m.workspace_branchSelector_whichBranch_description()}
           </p>
         </div>
 
@@ -1286,7 +1284,7 @@
           >
             <GitBranchIcon size={14} class="text-primary shrink-0" />
             <span class="flex-1 min-w-0">
-              <span class="text-subtle">Use PR branch</span>
+              <span class="text-subtle">{m.workspace_branchSelector_usePrBranch_label()}</span>
               <strong class="text-foreground ml-1 truncate">{suggestedBranch}</strong>
             </span>
           </button>
@@ -1298,7 +1296,7 @@
               bind:this={searchInputElement}
               bind:value={searchValue}
               autofocus
-              placeholder="Search or enter branch name..."
+              placeholder={m.workspace_branchSelector_search_placeholder()}
               oninput={(e) => handleManualInput(e.currentTarget.value)}
               onkeydown={(e) => {
                 if (e.key === 'Enter' && searchValue) {
@@ -1322,13 +1320,13 @@
             transition:slide={{ axis: 'y', duration: 150 }}
           >
             {#if branchStatusBehind > 0}
-              <p>We'll pull the latest changes into your space.</p>
+              <p>{m.workspace_branchSelector_pullLatest_description()}</p>
             {/if}
             {#if showUncommittedIndicator && branchStatusHasUncommittedChanges && isCurrentBranch}
               <p class={branchStatusBehind > 0 ? 'mt-1.5' : ''}>
                 <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1 align-middle"
                 ></span>
-                Uncommitted changes won't be included.
+                {m.workspace_branchSelector_uncommittedNotIncluded_label()}
               </p>
             {/if}
           </div>
@@ -1348,8 +1346,8 @@
                 />
               </svg>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-foreground">Connect with GitHub</p>
-                <p class="text-sm text-subtle">Required to access private repositories</p>
+                <p class="text-sm font-medium text-foreground">{m.workspace_branchSelector_connectWithGithub_label()}</p>
+                <p class="text-sm text-subtle">{m.workspace_branchSelector_connectWithGithub_description()}</p>
               </div>
             </button>
           {:else if isConnectingGitHub}
@@ -1357,18 +1355,18 @@
             <div class="px-3 py-3 flex items-center gap-3 border-l-2 border-primary bg-primary/5">
               <Fa icon={faSpinner} class="w-5 h-5 text-ghost animate-spin" />
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-foreground">Connecting to GitHub...</p>
-                <p class="text-sm text-subtle">Complete authorization in your browser</p>
+                <p class="text-sm font-medium text-foreground">{m.workspace_branchSelector_connectingGithub_label()}</p>
+                <p class="text-sm text-subtle">{m.workspace_branchSelector_completeAuth_description()}</p>
               </div>
             </div>
           {:else if githubAuthNeeded === 'no-access'}
             <!-- User is authenticated but doesn't have access -->
             <div class="px-2 py-2 border-l-2 border-destructive bg-destructive/10">
               <div class="text-sm text-destructive-foreground">
-                You don't have access to this repository.
+                {m.workspace_branchSelector_noAccess_error()}
               </div>
               <div class="text-sm text-subtle mt-1">
-                Make sure you have permission to view this repo, or check if the URL is correct.
+                {m.workspace_branchSelector_noAccess_description()}
               </div>
             </div>
           {:else if error}
@@ -1376,7 +1374,7 @@
               <div class="text-sm text-destructive-foreground">{error}</div>
               {#if repoType === 'github'}
                 <div class="text-sm text-subtle mt-1">
-                  You can still type a branch name manually above.
+                  {m.workspace_branchSelector_typeManually_description()}
                 </div>
               {/if}
             </div>
@@ -1414,10 +1412,10 @@
                     <span class="text-sm truncate flex-1">{branch}</span>
                     <div class="flex items-center gap-1 ml-2 shrink-0">
                       {#if branch === currentBranch && branch !== defaultBranch}
-                        <span class="text-sm text-subtle">current</span>
+                        <span class="text-sm text-subtle">{m.workspace_branchSelector_current_label()}</span>
                       {/if}
                       {#if branch === defaultBranch}
-                        <span class="text-sm text-subtle">default</span>
+                        <span class="text-sm text-subtle">{m.workspace_branchSelector_default_label()}</span>
                       {/if}
                       {#if branch === selectedBranch}
                         <Fa icon={faCheck} class="text-primary" size="sm" />
@@ -1440,7 +1438,7 @@
                       size="xs"
                       class="mr-1"
                     />
-                    Dependabot updates ({dependabotBranches.length})
+                    {m.workspace_branchSelector_dependabotUpdates_label({ count: dependabotBranches.length })}
                   </Button>
 
                   {#if !dependabotBranchesCollapsed}
@@ -1480,7 +1478,7 @@
                         ? '-rotate-90'
                         : ''}"
                     />
-                    Workspace branches
+                    {m.workspace_branchSelector_workspaceBranches_label()}
                     {#if workspaceBranches.length > 0}
                       <span class="ml-auto text-sm text-subtle">
                         {workspaceBranches.length}
@@ -1524,7 +1522,7 @@
                         : '-rotate-90'}"
                     />
                     <Fa icon={faCloud} size={10} class="mr-1 opacity-50" />
-                    Remote branches
+                    {m.workspace_branchSelector_remoteBranches_label()}
                     {#if isLoadingRemote}
                       <span class="inline-block w-6 h-3 bg-muted rounded animate-pulse ml-1"></span>
                     {:else if filteredRemoteBranches.length > 0}
@@ -1562,7 +1560,7 @@
                         {/each}
                       {:else}
                         <div class="px-3 text-sm text-subtle">
-                          No additional remote branches found.
+                          {m.workspace_branchSelector_noRemoteBranches_label()}
                         </div>
                       {/if}
                     </div>
@@ -1578,13 +1576,12 @@
                 class="w-full justify-start"
               >
                 <GitBranchIcon size={14} class="text-ghost" />
-                <span class="text-sm">Use branch: <strong>{searchValue}</strong></span>
+                <span class="text-sm">{m.workspace_branchSelector_useBranch_label()} <strong>{searchValue}</strong></span>
               </Button>
             </div>
           {:else if !isLoading && !error}
             <div class="px-2 py-2 text-sm text-subtle">
-              No branches found. Either you don't have access to this repository, or it doesn't
-              exist.
+              {m.workspace_branchSelector_noBranchesFound_label()}
             </div>
           {/if}
         </div>
@@ -1625,14 +1622,13 @@
                 }}
               />
               <div class="items-start flex-1 min-w-0 text-ui font-medium -mt-0.25">
-                Work directly in your folder on the <span class="font-semibold"
-                  >{currentBranch}</span
-                > branch
+                {m.workspace_branchSelector_workDirectlyPrefix_label()}
+                <span class="font-semibold">{currentBranch}</span>
+                {m.workspace_branchSelector_workDirectlySuffix_label()}
               </div>
             </button>
             <div class="ml-9 text-sm text-subtle">
-              Stay in your repo folder (no isolated {isolationLabel}). Make sure to stay on one
-              branch while agents are running.
+              {m.workspace_branchSelector_stayInFolder_description({ isolationLabel })}
             </div>
           </div>
         {/if}

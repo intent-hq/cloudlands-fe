@@ -134,6 +134,6 @@ describe('hardcoded user-facing string gate', () => {
   it('exits 2 when an enforced directory is missing', () => {
     const result = runGate(join(tmpdir(), 'definitely-missing-dir-i18n-gate'));
     expect(result.exitCode).toBe(2);
-    expect(result.output).toContain('Enforced directory not found');
+    expect(result.output).toContain('Enforced path not found');
   });
 });

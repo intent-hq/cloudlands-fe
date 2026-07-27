@@ -12,6 +12,7 @@
     type IsolationMode,
   } from './isolation-mode';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   type RepoSelectorHandle = {
     focusInput: () => void;
@@ -119,13 +120,17 @@
   );
   const repoTriggerClass = $derived(
     isMetadataPresentation
-      ? 'group/metadata-trigger min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0!'
-      : 'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1',
+      ? // i18n-ignore (Tailwind class list)
+        'group/metadata-trigger min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0!'
+      : // i18n-ignore (Tailwind class list)
+        'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1',
   );
   const branchTriggerClass = $derived(
     isMetadataPresentation
-      ? 'group/metadata-trigger w-full min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0! overflow-hidden'
-      : 'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none overflow-hidden',
+      ? // i18n-ignore (Tailwind class list)
+        'group/metadata-trigger w-full min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0! overflow-hidden'
+      : // i18n-ignore (Tailwind class list)
+        'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none overflow-hidden',
   );
   const metadataChevronClass = 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70';
   const metadataValueClass = 'text-foreground font-normal';
@@ -259,7 +264,7 @@
   {:else if !hasRepo}
     <!-- No repo selected: show repo selector pill -->
     {#if !isMetadataPresentation}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Work on</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{m.workspace_repoAndBranchPicker_workOn_label()}</span>
     {/if}
     <RepoSelector
       bind:this={repoSelector}
@@ -276,7 +281,7 @@
     <!-- New repo mode: show create with repo selector -->
     {#if !isMetadataPresentation}
       <Fa icon={faPlus} size="sm" class="ml-0.75 mr-2 shrink-0" />
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Create new repo</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{m.workspace_repoAndBranchPicker_createNewRepo_label()}</span>
     {/if}
     <RepoSelector
       variant="ghost"
@@ -305,7 +310,7 @@
     <!-- GitHub clone flow -->
     {#if !isMetadataPresentation}
       <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Clone</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{m.workspace_repoAndBranchPicker_clone_label()}</span>
     {/if}
     <RepoSelector
       variant="ghost"
@@ -318,7 +323,9 @@
       triggerChevronClass={metadataChevronClass}
     />
     <span class="text-sm text-subtle whitespace-nowrap shrink-0 ml-1">
-      {isMetadataPresentation ? 'off' : `and create ${isolationLabel} off`}
+      {isMetadataPresentation
+        ? m.workspace_repoAndBranchPicker_off_label()
+        : m.workspace_repoAndBranchPicker_andCreateOff_label({ isolationLabel })}
     </span>
     <BranchSelector
       variant="ghost"
@@ -357,7 +364,7 @@
     <!-- Remote server flow -->
     {#if !isMetadataPresentation}
       <ServerIcon size={16} class="text-ghost ml-0.75 -mb-px mr-2 shrink-0" />
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Work on</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{m.workspace_repoAndBranchPicker_workOn_label()}</span>
     {/if}
     <RepoSelector
       variant="ghost"
@@ -376,9 +383,9 @@
       {remoteDisplayPath}
     </span>
     {#if skipIsolation}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">on</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">{m.workspace_repoAndBranchPicker_on_label()}</span>
     {:else}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">{m.workspace_repoAndBranchPicker_off_label()}</span>
     {/if}
     <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono"
       >{remoteSetup.branch || 'main'}</span
@@ -395,7 +402,7 @@
           class="-mb-0.5"
           onCheckedChange={(value) => onSkipIsolationChange?.(value)}
         />
-        <span class="text-ui text-subtle whitespace-nowrap"> Work directly in your folder </span>
+        <span class="text-ui text-subtle whitespace-nowrap"> {m.workspace_repoAndBranchPicker_workDirectly_label()} </span>
       </button>
     {/if}
   {:else if isMetadataPresentation}
@@ -414,7 +421,7 @@
     <!-- Local repo flow -->
     {#if !isMetadataPresentation}
       <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Work on</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{m.workspace_repoAndBranchPicker_workOn_label()}</span>
     {/if}
     <RepoSelector
       variant="ghost"
@@ -426,7 +433,7 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
     />
-    <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
+    <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">{m.workspace_repoAndBranchPicker_off_label()}</span>
     <BranchSelector
       variant="ghost"
       triggerClass={branchTriggerClass}

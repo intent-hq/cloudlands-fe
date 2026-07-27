@@ -17,6 +17,7 @@
   import { performanceMonitor } from '$lib/utils/performance';
   import { handleError } from '$lib/utils/error-handling';
   import { debugConfig } from '$lib/config/debug';
+  import { m } from '$shared/paraglide/messages.js';
 
   import { setWorkspaceInitializerRemoteSetups } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerRemoteSetups } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
@@ -192,25 +193,25 @@
   {#if variant === 'ghost'}
     <!-- Minimal inline variant with "Work in" + pill pattern -->
     <div class="flex items-center gap-1 text-sm text-subtle whitespace-nowrap">
-      <span>Work in</span>
+      <span>{m.workspace_remoteSetupSelector_workIn_label()}</span>
       <Select.Root bind:value={selectedSetupId}>
         <Select.Trigger
           variant="ghost"
           class="w-auto bg-background! px-2! py-0.5! rounded-none font-medium"
         >
-          {selectedSetup?.name || 'local environment'}
+          {selectedSetup?.name || m.workspace_remoteSetupSelector_localEnvironment_value()}
         </Select.Trigger>
         <Select.Content wrapperClass="py-0!" class="max-w-[400px] min-w-[300px]" portal>
         <div class="px-4 pt-2 pb-3">
-          <h2 class="text-base font-semibold text-foreground">Where should agents run?</h2>
+          <h2 class="text-base font-semibold text-foreground">{m.workspace_remoteSetupSelector_whereRun_label()}</h2>
           <p class="text-sm text-subtle mt-1">
-            Run locally by default, or connect a remote machine for agents to work in directly.
+            {m.workspace_remoteSetupSelector_whereRun_description()}
           </p>
         </div>
         <Select.Item class="rounded-b-none! cursor-pointer" value="">
           <div class="flex items-center gap-2">
             <Fa icon={faLaptop} size="sm" />
-            <span class="text-subtle">Local environment</span>
+            <span class="text-subtle">{m.workspace_remoteSetupSelector_localEnvironment_label()}</span>
           </div>
         </Select.Item>
         {#each applicableSetups as setup (setup.id)}
@@ -232,7 +233,7 @@
                   removeSetup(setup.id);
                 }}
                 class="ml-1 p-0.5 rounded text-muted-foreground hover:text-destructive-foreground hover:bg-destructive/10"
-                title="Remove setup"
+                title={m.workspace_remoteSetupSelector_removeSetup_tooltip()}
               >
                 <Fa icon={faXmark} size="xs" />
               </button>
@@ -245,7 +246,7 @@
           class="w-full text-left px-2 py-1.5 hover:bg-accent flex items-center gap-2 text-sm cursor-pointer rounded-b-sm"
         >
           <Fa icon={faPlus} size="sm" />
-          Add remote setup...
+          {m.workspace_remoteSetupSelector_addRemoteSetup_label()}
         </button>
         </Select.Content>
       </Select.Root>
@@ -260,7 +261,7 @@
     >
       <Fa icon={faChevronRight} class="mr-1" size="sm" />
       <ServerIcon size={14} class="mr-2" />
-      Configure remote setup (optional)
+      {m.workspace_remoteSetupSelector_configureRemoteSetup_label()}
     </Button>
   {:else}
     <!-- Expanded state -->
@@ -274,7 +275,7 @@
         >
           <Fa icon={faChevronDown} class="mr-1" size="sm" />
           <ServerIcon size={14} class="mr-2" />
-          Remote setup
+          {m.workspace_remoteSetupSelector_remoteSetup_label()}
         </Button>
       </div>
 
@@ -282,19 +283,19 @@
         <Select.Trigger class="w-full">
           <div class="flex items-center gap-2">
             <ServerIcon size={16} class="text-ghost" />
-            <Select.Value placeholder={selectedSetup ? selectedSetup.name : 'No remote setup'} />
+            <Select.Value placeholder={selectedSetup ? selectedSetup.name : m.workspace_remoteSetupSelector_noRemoteSetup_placeholder()} />
           </div>
         </Select.Trigger>
         <Select.Content>
           <div class="px-2 py-2">
             <p class="text-xs text-subtle mb-2">
-              Connect to a remote development environment
+              {m.workspace_remoteSetupSelector_connectRemote_description()}
             </p>
           </div>
 
           {#if applicableSetups.length > 0}
             <div class="border-t pt-1">
-              <div class="px-2 py-1 text-xs text-subtle">Recent setups for this repo</div>
+              <div class="px-2 py-1 text-xs text-subtle">{m.workspace_remoteSetupSelector_recentSetups_label()}</div>
               {#each applicableSetups as setup (setup.id)}
                 <button
                   onclick={() => selectSetup(setup)}
@@ -327,7 +328,7 @@
                       }
                     }}
                     class="p-0.5 rounded text-muted-foreground hover:text-destructive-foreground hover:bg-destructive/10 cursor-pointer"
-                    title="Remove setup"
+                    title={m.workspace_remoteSetupSelector_removeSetup_tooltip()}
                   >
                     <Fa icon={faXmark} size="xs" />
                   </span>
@@ -342,7 +343,7 @@
           {#if otherSetups.length > 0}
             <div class="border-t pt-1">
               <div class="px-2 py-1 text-xs text-subtle">
-                Other setups (different repos)
+                {m.workspace_remoteSetupSelector_otherSetups_label()}
               </div>
               {#each otherSetups as setup (setup.id)}
                 <button
@@ -371,7 +372,7 @@
               class="w-full justify-start"
             >
               <Fa icon={faPlus} class="mr-2" size="sm" />
-              Add new remote setup
+              {m.workspace_remoteSetupSelector_addNewRemoteSetup_label()}
             </Button>
           </div>
         </Select.Content>

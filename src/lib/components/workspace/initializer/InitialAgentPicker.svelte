@@ -38,6 +38,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('InitialAgentPicker');
   const specialists$ = selectSpecialists();
@@ -321,9 +322,11 @@
   );
 
   // Display label and description for the specialist selector
-  const specialistDisplayLabel = $derived(currentSpecialistInfo?.name ?? 'General');
+  const specialistDisplayLabel = $derived(
+    currentSpecialistInfo?.name ?? m.workspace_initialAgentPicker_general_label(),
+  );
   const specialistDisplayDescription = $derived(
-    currentSpecialistInfo?.description ?? 'No specialized behavior',
+    currentSpecialistInfo?.description ?? m.workspace_initialAgentPicker_noSpecializedBehavior_description(),
   );
 
   function selectTeamMode() {
@@ -425,7 +428,7 @@
     class="agent-card min-w-0 {isTeamMode ? 'agent-card-selected' : 'grayscale opacity-50'}"
     onclick={selectTeamMode}
   >
-    <div class="text-sm font-medium text-foreground">Agent orchestration</div>
+    <div class="text-sm font-medium text-foreground">{m.workspace_initialAgentPicker_teamMode_label()}</div>
     <div class="flex items-center gap-1 py-1.5">
       <AuggieAvatar seed="blank" size={22} specialist="spec-writer" />
       <span class="text-subtle text-xs mx-0.5">→</span>
@@ -433,14 +436,13 @@
       <AuggieAvatar seed="blank" size={22} specialist="verifier" />
     </div>
     <div class="text-sm text-subtle leading-snug">
-      A coordinator agent will write a spec for your task and manage the work for you across
-      different agents.
+      {m.workspace_initialAgentPicker_teamMode_description()}
     </div>
     <div
       class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={!isTeamMode}
     >
-      <span class="text-sm text-subtle">using</span>
+      <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_label()}</span>
       {#key teamModeModel}
         <ModelPicker
           selectedModel={modelWasOverridden ? selectedModel : undefined}
@@ -465,7 +467,7 @@
     role="button"
     tabindex="0"
   >
-    <div class="text-sm font-medium text-foreground">Single agent</div>
+    <div class="text-sm font-medium text-foreground">{m.workspace_initialAgentPicker_singleAgent_label()}</div>
     <!-- Specialist selector dropdown -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -526,8 +528,8 @@
             >
               <AuggieAvatar seed="blank" size={20} />
               <div class="flex flex-col min-w-0">
-                <span class="font-medium text-foreground text-sm">General</span>
-                <span class="text-xs text-subtle">No specialized behavior</span>
+                <span class="font-medium text-foreground text-sm">{m.workspace_initialAgentPicker_general_label()}</span>
+                <span class="text-xs text-subtle">{m.workspace_initialAgentPicker_noSpecializedBehavior_description()}</span>
               </div>
             </button>
 
@@ -562,7 +564,7 @@
               onclick={openSpecialistSettings}
             >
               <Fa icon={faPlus} class="ml-0.5 mr-0.5 opacity-60" size={10} />
-              <span class="text-sm">Create new or manage specialists</span>
+              <span class="text-sm">{m.workspace_initialAgentPicker_manageSpecialists_label()}</span>
             </button>
           </div>
         {/snippet}
@@ -570,14 +572,14 @@
     </div>
 
     <p class="text-sm text-subtle leading-snug">
-      Work on specific tasks with an agent of your choosing.
+      {m.workspace_initialAgentPicker_singleAgent_description()}
     </p>
 
     <div
       class="model-picker-row {!isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={isTeamMode}
     >
-      <span class="text-sm text-subtle">using</span>
+      <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_label()}</span>
       {#key singleAgentModel}
         <ModelPicker
           selectedModel={modelWasOverridden ? selectedModel : undefined}
