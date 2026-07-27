@@ -1,17 +1,10 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
   import { appClient } from '$lib/client';
-  import Fa from 'svelte-fa';
-  import {
-  faInfoCircle,
-} from '@fortawesome/free-solid-svg-icons';
   import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
   import { onMount } from 'svelte';
-  import {
-  validateBranchPrefix,
-  sanitizeBranchPrefix,
-} from '$lib/utils/workspace-validation';
+  import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
 
   // Settings state
   let worktreesLocation = $state('');
@@ -178,7 +171,9 @@
 <div class="flex flex-col bg-card rounded-xl pt-1 pb-3">
   {#if settingsError}
     <section class="px-6 py-2">
-      <p class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+      <p
+        class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2"
+      >
         {settingsError}
       </p>
     </section>
@@ -299,8 +294,14 @@
         />
         Auto-commit changes
       </label>
-      {#if showCowToggle}
-        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer group">
+    </div>
+  </section>
+
+  <!-- Copy-on-Write isolation -->
+  {#if showCowToggle}
+    <section class="px-6 py-2">
+      <div class="flex items-center gap-2">
+        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
           <input
             type="checkbox"
             bind:checked={cowIsolation}
@@ -308,25 +309,40 @@
             class="cursor-pointer"
           />
           <span>Use Copy-on-Write isolation</span>
-          <span class="text-subtle hover:text-foreground transition-colors" title="CoW workspaces + per-agent sandboxes. New workspaces are provisioned as instant copy-on-write clones of the repository, and each delegated agent runs in its own CoW sandbox whose changes are merged back automatically when it finishes. Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).">
-            <Fa icon={faInfoCircle} size="sm" />
-          </span>
         </label>
-      {/if}
-      {#if gitCredentialSettingSupported}
-        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer group">
-          <input
-            type="checkbox"
-            bind:checked={exposeGitCredential}
-            onchange={handleSave}
-            class="cursor-pointer"
-          />
-          <span>Git credentials in terminals &amp; agents</span>
-          <span class="text-subtle hover:text-foreground transition-colors" title="When on, git commands in workspace terminals and agent sessions can authenticate to github.com using your connected GitHub account, via a credential helper scoped to HTTPS github.com remotes. The token is never exposed as GITHUB_TOKEN, and your own git credential helpers always take precedence.">
-            <Fa icon={faInfoCircle} size="sm" />
-          </span>
-        </label>
-      {/if}
-    </div>
-  </section>
+        <span
+          class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-ui-sm leading-4 text-subtle"
+        >
+          Experimental
+        </span>
+      </div>
+      <p class="text-xs text-subtle mt-0.5 ml-6">
+        New workspaces are provisioned as copy-on-write clones of the repository, and each delegated
+        agent runs in its own CoW sandbox that is merged back automatically when it finishes.
+        Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on
+        Linux, ReFS/Dev Drive on Windows).
+      </p>
+    </section>
+  {/if}
+
+  <!-- Git credentials -->
+  {#if gitCredentialSettingSupported}
+    <section class="px-6 py-2">
+      <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        <input
+          type="checkbox"
+          bind:checked={exposeGitCredential}
+          onchange={handleSave}
+          class="cursor-pointer"
+        />
+        <span>Git credentials in terminals &amp; agents</span>
+      </label>
+      <p class="text-xs text-subtle mt-0.5 ml-6">
+        When on, git commands in workspace terminals and agent sessions can authenticate to
+        github.com using your connected GitHub account, via a credential helper scoped to HTTPS
+        github.com remotes. The token is never exposed as GITHUB_TOKEN, and your own git credential
+        helpers always take precedence.
+      </p>
+    </section>
+  {/if}
 </div>
