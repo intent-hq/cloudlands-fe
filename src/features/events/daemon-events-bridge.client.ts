@@ -124,7 +124,7 @@ import type {
   TaskStatus,
   Workspace,
 } from '$shared/types';
-import { WorkspaceStatus, isProposal } from '$shared/types';
+import { WorkspaceStatus, isProposal, isWorkspaceDisplayStatus } from '$shared/types';
 import {
   PROPOSAL_RESOURCE_MIME_TYPE,
   createProposalResource,
@@ -1377,36 +1377,27 @@ function handleActivityChangedEvent(event: WorkspaceEvent, workspaceId: string):
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]));
 }
 
-/** Wire values for `workspace.displayStatus` (intent-hq/intentd#600). */
-const WORKSPACE_DISPLAY_STATUS_VALUES = new Set<string>([
-  'not_started',
-  'in_progress',
-  'complete',
-  'pr_ready',
-  'pr_open',
-  'pr_merged',
-]);
-
 /**
  * `workspace:displayStatus-changed` (intent-hq/intentd#600) carries the
  * self-sufficient transition payload `{ workspaceId, displayStatus }` — the
  * daemon emits it only when its BE-owned current-cycle rollup changes, so the
  * FE mirrors the new value directly into the workspace entity without a
  * follow-up `workspace.get`. The wire values are snake_case and match the FE
- * type exactly, so no mapping is needed.
+ * type exactly, so no mapping is needed. Like the tokenUsage/context handlers,
+ * the payload's own `data.workspaceId` wins over the envelope id when present.
  */
-function handleDisplayStatusChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
+function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
   const displayStatus = data.displayStatus;
-  if (typeof displayStatus !== 'string' || !WORKSPACE_DISPLAY_STATUS_VALUES.has(displayStatus))
-    return;
+  if (!isWorkspaceDisplayStatus(displayStatus)) return;
   appStore.dispatch(
-    bulkUpdateWorkspaceEntities([
-      updateWorkspaceEntity(workspaceId, {
-        displayStatus: displayStatus as Workspace['displayStatus'],
-      }),
-    ]),
+    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { displayStatus })]),
   );
 }
 

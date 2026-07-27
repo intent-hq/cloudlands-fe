@@ -4740,11 +4740,12 @@ describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slic
     let ws = await readWorkspace();
     expect(ws.displayStatus).toBe('pr_open');
 
+    // displayStatus missing (data present but empty)
     handler({
       method: 'events.event',
       params: {
         event: {
-          id: 'evt-display-status-no-data',
+          id: 'evt-display-status-empty-data',
           workspaceId: WS_DS,
           timestamp: '2026-01-02T00:00:00.000Z',
           type: 'workspace:displayStatus-changed',
@@ -4756,6 +4757,52 @@ describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slic
 
     ws = await readWorkspace();
     expect(ws.displayStatus).toBe('pr_open');
+
+    // data key absent entirely (the `!data` early return)
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-display-status-no-data',
+          workspaceId: WS_DS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:displayStatus-changed',
+          actor: { type: 'system' },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('pr_open');
+  });
+
+  it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Envelope points at a different (nonexistent) workspace; the payload's
+    // own workspaceId targets the seeded one — the payload id must win, like
+    // the tokenUsage/context handlers.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-display-status-data-id',
+          workspaceId: 'ws-display-status-other',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:displayStatus-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_DS,
+            displayStatus: 'pr_merged',
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('pr_merged');
   });
 });
 

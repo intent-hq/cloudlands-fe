@@ -132,6 +132,32 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
   });
 
+  it('degrades an unknown wire displayStatus to the local derivation (forward compat)', async () => {
+    // A future daemon that adds a 7th wire value must not make the workspace
+    // vanish from the Status view — the guard treats the unknown value as
+    // absent and the local merged-PR derivation groups it under PR Merged.
+    const ws = makeWorkspace('ws-unknown-status', 'Future wire value', {
+      prStatus: PullRequestStatus.Merged,
+      displayStatus: 'something_new' as never,
+    });
+
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          appStore.dispatch(resetWorkspaceState());
+          appStore.dispatch(setWorkspaceEntity(ws));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+          appStore.dispatch(setAllSpacesViewMode('status'));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => {
+      expect(getGroupHeaders()).toContain('PR Merged');
+    });
+  });
+
   it('falls back to the local derivation when displayStatus is absent (older daemon)', async () => {
     const ws = makeWorkspace('ws-legacy-merged', 'Legacy merged', {
       prStatus: PullRequestStatus.Merged,
