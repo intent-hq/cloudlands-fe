@@ -28,6 +28,7 @@
    * Clicking opens a dropdown with detailed stats.
    */
 
+  import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import Header from '$lib/components/ui/Header.svelte';
@@ -55,15 +56,15 @@
     down: 'bg-red-500',
   };
 
-  const healthLabels: Record<DaemonHealth, string> = {
-    healthy: 'intentd: healthy',
-    degraded: 'intentd: degraded',
-    down: 'intentd: not running',
+  const healthLabels: Record<DaemonHealth, () => string> = {
+    healthy: () => m.layout_daemonStatus_healthy_label(),
+    degraded: () => m.layout_daemonStatus_degraded_label(),
+    down: () => m.layout_daemonStatus_down_label(),
   };
 
   // Format uptime from seconds to human-readable string
   function formatUptime(seconds: number | undefined): string {
-    if (seconds === undefined) return 'Unknown';
+    if (seconds === undefined) return m.layout_daemonStatus_unknown_label();
 
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -137,12 +138,12 @@
   {#snippet trigger({ toggle }: { toggle: () => void })}
     <Tooltip side="bottom">
       {#snippet content()}
-        <span>{healthLabels[$health$]}</span>
+        <span>{healthLabels[$health$]()}</span>
       {/snippet}
       <button
         onclick={toggle}
         class="flex items-center justify-center w-6 h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer"
-        aria-label={healthLabels[$health$]}
+        aria-label={healthLabels[$health$]()}
       >
         <div class={cn('w-2 h-2 rounded-full', healthColors[$health$])}></div>
       </button>
@@ -151,27 +152,29 @@
 
   {#snippet content()}
     <div class="w-56">
-      <Header class="px-3 pt-1.5 pb-1" size={6}>Daemon Status</Header>
+      <Header class="px-3 pt-1.5 pb-1" size={6}>{m.layout_daemonStatus_header()}</Header>
 
       {#if $health$ === 'down'}
         <!-- Down state: show placeholders -->
         <div class="px-3 py-2 space-y-1.5">
           <div class="flex justify-between text-xs">
-            <span class="text-subtle">Status</span>
-            <span class="text-red-500 font-medium">Not running</span>
+            <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
+            <span class="text-red-500 font-medium">{m.layout_daemonStatus_notRunning_label()}</span>
           </div>
           <div class="h-px bg-border my-1"></div>
           <div class="text-xs text-subtle text-center py-2">
-            Daemon is not connected
+            {m.layout_daemonStatus_notConnected_description()}
           </div>
         </div>
       {:else}
         <!-- Healthy/Degraded state: show stats -->
         <div class="px-3 py-2 space-y-1.5">
           <div class="flex justify-between text-xs">
-            <span class="text-subtle">Status</span>
+            <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
             <span class={cn('font-medium', $health$ === 'healthy' ? 'text-green-500' : 'text-yellow-500')}>
-              {$health$ === 'healthy' ? 'Healthy' : 'Degraded'}
+              {$health$ === 'healthy'
+                ? m.layout_daemonStatus_healthyState_label()
+                : m.layout_daemonStatus_degradedState_label()}
             </span>
           </div>
 
@@ -180,7 +183,7 @@
 
             <!-- Agent slots -->
             <div class="flex justify-between text-xs">
-              <span class="text-subtle">Agent slots</span>
+              <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
               <span class="font-mono">
                 {$stats$.agents}/{$stats$.maxAgents ?? '?'}
               </span>
@@ -188,13 +191,13 @@
 
             <!-- Connected clients -->
             <div class="flex justify-between text-xs">
-              <span class="text-subtle">WSS clients</span>
+              <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
               <span class="font-mono">{$stats$.clients}</span>
             </div>
 
             <!-- Transport -->
             <div class="flex justify-between text-xs">
-              <span class="text-subtle">Transport</span>
+              <span class="text-subtle">{m.layout_daemonStatus_transport_label()}</span>
               <span class="font-mono text-xs">
                 {$stats$.listenMode}{$stats$.port ? `:${$stats$.port}` : ''}
               </span>
@@ -203,7 +206,7 @@
             <!-- Version -->
             {#if $stats$.version}
               <div class="flex justify-between text-xs">
-                <span class="text-subtle">Version</span>
+                <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
                 <span class="font-mono text-xs">{$stats$.version}</span>
               </div>
             {/if}
@@ -211,7 +214,7 @@
             <!-- Protocol version -->
             {#if $stats$.protocolVersion !== undefined}
               <div class="flex justify-between text-xs">
-                <span class="text-subtle">Protocol</span>
+                <span class="text-subtle">{m.layout_daemonStatus_protocol_label()}</span>
                 <span class="font-mono text-xs">{$stats$.protocolVersion}</span>
               </div>
             {/if}
@@ -219,7 +222,7 @@
             <!-- Uptime -->
             {#if liveUptimeSeconds !== undefined}
               <div class="flex justify-between text-xs">
-                <span class="text-subtle">Uptime</span>
+                <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
                 <span class="font-mono text-xs" aria-live="off">{formatUptime(liveUptimeSeconds)}</span>
               </div>
             {/if}
@@ -227,7 +230,7 @@
             <!-- CPU (only when the daemon reports it) -->
             {#if $stats$.cpuPercent !== undefined}
               <div class="flex justify-between text-xs">
-                <span class="text-subtle">CPU</span>
+                <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
                 <span class="font-mono text-xs" aria-live="off">{formatCpu($stats$.cpuPercent)}</span>
               </div>
             {/if}
@@ -235,34 +238,38 @@
             <!-- Memory (only when the daemon reports it) -->
             {#if $stats$.memoryBytes !== undefined}
               <div class="flex justify-between text-xs">
-                <span class="text-subtle">Memory</span>
+                <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
                 <span class="font-mono text-xs" aria-live="off">{formatMemory($stats$.memoryBytes)}</span>
               </div>
             {/if}
 
             <!-- Host OS/Arch -->
             <div class="flex justify-between text-xs">
-              <span class="text-subtle">Host</span>
+              <span class="text-subtle">{m.layout_daemonStatus_host_label()}</span>
               <span class="font-mono text-xs">{$stats$.os}/{$stats$.arch}</span>
             </div>
 
             <!-- FE connection mode -->
             {#if $stats$.transport}
               <div class="flex justify-between text-xs">
-                <span class="text-subtle">Connection</span>
+                <span class="text-subtle">{m.layout_daemonStatus_connection_label()}</span>
                 <span class="font-mono text-xs">
                   {#if $stats$.transport.mode === 'sidecar-uds'}
+                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
                     sidecar (UDS)
                   {:else if $stats$.transport.target}
+                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
                     external ({$stats$.transport.target})
                   {:else}
+                    <!-- i18n-ignore (transport mode identifier, not translatable UI copy) -->
                     external (WebSocket)
                   {/if}
                 </span>
               </div>
             {:else}
               <div class="flex justify-between text-xs">
-                <span class="text-subtle">Connection</span>
+                <span class="text-subtle">{m.layout_daemonStatus_connection_label()}</span>
+                <!-- i18n-ignore (transport mode identifier) -->
                 <span class="font-mono text-xs text-subtle">unknown</span>
               </div>
             {/if}
@@ -270,7 +277,7 @@
           {:else}
             <div class="h-px bg-border my-1"></div>
             <div class="text-xs text-subtle text-center py-2">
-              No stats available
+              {m.layout_daemonStatus_noStats_label()}
             </div>
           {/if}
         </div>

@@ -77,6 +77,7 @@
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { createLogger } from '$lib/utils/client-logger';
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   // Detect platform for file manager labels
@@ -86,7 +87,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     // @ts-expect-error - userAgentData is not in all browsers
     (navigator.userAgentData?.platform === 'macOS' ||
       /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
-  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
+  const fileManagerName = isWindows
+    ? m.layout_panelTabBar_fileManagerExplorer_label()
+    : isMac
+      ? m.layout_panelTabBar_fileManagerFinder_label()
+      : m.layout_panelTabBar_fileManagerGeneric_label();
   const logger = createLogger('PanelTabBar');
   const copyBrowserUrlShortcutHint = isMac ? '⇧⌘C' : 'Ctrl+Shift+C';
   const CONTEXT_MENU_MARGIN = 8;
@@ -219,12 +224,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (tab.type === 'note' && tab.noteId) {
       // Special case for spec note
       if (isSpecNote(tab.noteId)) {
-        return 'Spec';
+        return m.chat_shared_spec_label();
       }
       // Look up the note from the store
       const note = selectNoteById.select(appStore.state, workspaceId, tab.noteId);
       if (note) {
-        return note.title || 'Untitled';
+        return note.title || m.layout_panelLayout_untitled_fallback();
       }
     }
     // For agent tabs, look up the name from the reactive workspace agents store
@@ -387,9 +392,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (!relativePath) return;
     try {
       await navigator.clipboard.writeText(toNativePath(relativePath));
-      toast.success('Path copied to clipboard');
+      toast.success(m.layout_panelTabBar_pathCopied_label());
     } catch {
-      toast.error('Failed to copy path');
+      toast.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -401,9 +406,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (!absolutePath) return;
     try {
       await navigator.clipboard.writeText(toNativePath(absolutePath));
-      toast.success('Absolute path copied to clipboard');
+      toast.success(m.layout_panelTabBar_absolutePathCopied_label());
     } catch {
-      toast.error('Failed to copy path');
+      toast.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -416,9 +421,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const fileName = path.split(/[/\\]/).pop() || path;
     try {
       await navigator.clipboard.writeText(fileName);
-      toast.success('Filename copied to clipboard');
+      toast.success(m.layout_panelTabBar_filenameCopied_label());
     } catch {
-      toast.error('Failed to copy filename');
+      toast.error(m.layout_panelTabBar_copyFilenameFailed_error());
     }
   }
 
@@ -431,7 +436,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     try {
       await invoke('shell:showItemInFolder', { path: absolutePath });
     } catch {
-      toast.error(`Failed to reveal in ${fileManagerName}`);
+      toast.error(m.layout_panelTabBar_revealFailed_error({ fileManager: fileManagerName }));
     }
   }
 
@@ -463,9 +468,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const relativePath = `.workspace/agents/${tab.agentId}.json`;
     try {
       await navigator.clipboard.writeText(toNativePath(relativePath));
-      toast.success('Path copied to clipboard');
+      toast.success(m.layout_panelTabBar_pathCopied_label());
     } catch {
-      toast.error('Failed to copy path');
+      toast.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -475,14 +480,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   async function copyAgentAbsolutePath(tab: PanelTab) {
     const absolutePath = await getAgentSessionAbsolutePath(tab);
     if (!absolutePath) {
-      toast.error('Could not resolve agent file path');
+      toast.error(m.layout_panelTabBar_agentPathUnresolved_error());
       return;
     }
     try {
       await navigator.clipboard.writeText(toNativePath(absolutePath));
-      toast.success('Absolute path copied to clipboard');
+      toast.success(m.layout_panelTabBar_absolutePathCopied_label());
     } catch {
-      toast.error('Failed to copy path');
+      toast.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -493,9 +498,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const fileName = `${tab.agentId}.json`;
     try {
       await navigator.clipboard.writeText(fileName);
-      toast.success('Filename copied to clipboard');
+      toast.success(m.layout_panelTabBar_filenameCopied_label());
     } catch {
-      toast.error('Failed to copy filename');
+      toast.error(m.layout_panelTabBar_copyFilenameFailed_error());
     }
   }
 
@@ -505,13 +510,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   async function revealAgentInFinder(tab: PanelTab) {
     const absolutePath = await getAgentSessionAbsolutePath(tab);
     if (!absolutePath) {
-      toast.error('Could not resolve agent file path');
+      toast.error(m.layout_panelTabBar_agentPathUnresolved_error());
       return;
     }
     try {
       await invoke('shell:showItemInFolder', { path: absolutePath });
     } catch {
-      toast.error(`Failed to reveal in ${fileManagerName}`);
+      toast.error(m.layout_panelTabBar_revealFailed_error({ fileManager: fileManagerName }));
     }
   }
 
@@ -542,9 +547,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const relativePath = `.workspace/notes/${tab.noteId}.md`;
     try {
       await navigator.clipboard.writeText(toNativePath(relativePath));
-      toast.success('Path copied to clipboard');
+      toast.success(m.layout_panelTabBar_pathCopied_label());
     } catch {
-      toast.error('Failed to copy path');
+      toast.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -554,14 +559,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   async function copyNoteAbsolutePath(tab: PanelTab) {
     const absolutePath = await getNoteAbsolutePath(tab);
     if (!absolutePath) {
-      toast.error('Could not resolve note file path');
+      toast.error(m.layout_panelTabBar_notePathUnresolved_error());
       return;
     }
     try {
       await navigator.clipboard.writeText(toNativePath(absolutePath));
-      toast.success('Absolute path copied to clipboard');
+      toast.success(m.layout_panelTabBar_absolutePathCopied_label());
     } catch {
-      toast.error('Failed to copy path');
+      toast.error(m.layout_panelTabBar_copyPathFailed_error());
     }
   }
 
@@ -572,9 +577,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const fileName = `${tab.noteId}.md`;
     try {
       await navigator.clipboard.writeText(fileName);
-      toast.success('Filename copied to clipboard');
+      toast.success(m.layout_panelTabBar_filenameCopied_label());
     } catch {
-      toast.error('Failed to copy filename');
+      toast.error(m.layout_panelTabBar_copyFilenameFailed_error());
     }
   }
 
@@ -584,13 +589,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   async function revealNoteInFinder(tab: PanelTab) {
     const absolutePath = await getNoteAbsolutePath(tab);
     if (!absolutePath) {
-      toast.error('Could not resolve note file path');
+      toast.error(m.layout_panelTabBar_notePathUnresolved_error());
       return;
     }
     try {
       await invoke('shell:showItemInFolder', { path: absolutePath });
     } catch {
-      toast.error(`Failed to reveal in ${fileManagerName}`);
+      toast.error(m.layout_panelTabBar_revealFailed_error({ fileManager: fileManagerName }));
     }
   }
 
@@ -601,10 +606,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (!tab.browserUrl) return;
     try {
       await writeTextToClipboard(tab.browserUrl);
-      toast.success('URL copied to clipboard');
+      toast.success(m.layout_panelTabBar_urlCopied_label());
     } catch (error) {
       logger.error('Failed to copy browser tab URL', error, { url: tab.browserUrl });
-      toast.error('Failed to copy URL');
+      toast.error(m.layout_panelTabBar_copyUrlFailed_error());
     }
   }
 
@@ -616,7 +621,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     try {
       await invoke('shell:openExternal', { url: tab.browserUrl });
     } catch {
-      toast.error('Failed to open in browser');
+      toast.error(m.layout_panelTabBar_openInBrowserFailed_error());
     }
   }
 
@@ -627,9 +632,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const title = getTabTitle(tab);
     try {
       await navigator.clipboard.writeText(title);
-      toast.success('Copied to clipboard');
+      toast.success(m.layout_panelTabBar_copied_label());
     } catch {
-      toast.error('Failed to copy');
+      toast.error(m.layout_panelTabBar_copyFailed_error());
     }
   }
 
@@ -950,7 +955,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   const activeTab = $derived(tabs.find((t) => t.id === activeTabId) || tabs[0] || null);
 
   // Get category info for active tab
-  const categoryLabel = $derived(activeTab ? getCategoryLabel(activeTab.type) : 'Panel');
+  const categoryLabel = $derived(activeTab ? getCategoryLabel(activeTab.type) : m.layout_panel_ariaLabel());
 
   /**
    * "Delegated by" parent-agent attribution for the active agent tab.
@@ -1114,6 +1119,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     >
       {#each tabs as tab, index (tab.id)}
         {@const isActive = tab.id === activeTabId}
+        <!-- i18n-ignore (scanner false positive on the < comparison) -->
         {@const shortcutKey = index < 9 ? `⌘${index + 1}` : null}
         {@const isDragOver = dragOverTabId === tab.id}
         {@const tabTitle = getTabTitle(tab)}
@@ -1237,7 +1243,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               {#if isBackgroundAgent(tab)}
                 <span
                   class="text-ui font-medium text-muted-foreground bg-muted px-1 py-0.5 rounded uppercase tracking-wider"
-                  >BG</span
+                  >{m.layout_panelTabBar_bgBadge_label()}</span
                 >
               {/if}
 
@@ -1252,7 +1258,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     isActive ? 'opacity-60 hover:opacity-100' : 'opacity-0 group-hover:opacity-60',
                   )}
                   onclick={(e) => handleTabClose(e, tab.id)}
-                  aria-label="Close tab"
+                  aria-label={m.layout_panelTabBar_closeTab_ariaLabel()}
                 >
                   <Fa icon={faXmark} size="xs" />
                 </button>
@@ -1280,13 +1286,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         >
           <DropdownMenu align="start" side="bottom">
             {#snippet trigger({ toggle }: { toggle: () => void })}
-              <Tooltip content="New..." side="bottom" delayDuration={300} class="flex">
+              <Tooltip content={m.layout_panelTabBar_new_tooltip()} side="bottom" delayDuration={300} class="flex">
                 <Button
                   variant="ghost-light"
                   size="icon-xs"
                   class="opacity-30 group-hover/tabbar:opacity-100"
                   onclick={toggle}
-                  aria-label="Create new item"
+                  aria-label={m.layout_panelTabBar_createNew_ariaLabel()}
                 >
                   <Fa icon={faPlus} size="xs" />
                 </Button>
@@ -1304,7 +1310,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     }}
                   >
                     <AuggieAvatar seed="blank" size={16} />
-                    <span>Blank Agent</span>
+                    <span>{m.layout_panelTabBar_blankAgent_label()}</span>
                   </button>
                   <!-- Specialist options -->
                   {#each visibleSpecialists as specialist (specialist.id)}
@@ -1328,7 +1334,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     }}
                   >
                     <Fa icon={faPlus} size="xs" class="text-ghost" />
-                    <span>Manage specialists</span>
+                    <span>{m.layout_panelTabBar_manageSpecialists_label()}</span>
                   </button>
                 {:else if onCreateAgent}
                   <button
@@ -1339,7 +1345,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     }}
                   >
                     <Fa icon={faRobot} size="xs" class="text-ghost" />
-                    <span>New Agent</span>
+                    <span>{m.menu_new_agent()}</span>
                   </button>
                 {/if}
                 {#if onCreateNote}
@@ -1351,7 +1357,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     }}
                   >
                     <Fa icon={faNote} size="xs" class="text-ghost" />
-                    <span>New Note</span>
+                    <span>{m.menu_new_note()}</span>
                   </button>
                 {/if}
                 {#if onCreateTerminal}
@@ -1363,7 +1369,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     }}
                   >
                     <Fa icon={faTerminal} size="xs" class="text-ghost" />
-                    <span>New Terminal</span>
+                    <span>{m.menu_new_terminal()}</span>
                   </button>
                 {/if}
                 {#if onOpenBrowser}
@@ -1375,7 +1381,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     }}
                   >
                     <Fa icon={faGlobe} size="xs" class="text-ghost" />
-                    <span>New Browser</span>
+                    <span>{m.menu_new_browser()}</span>
                   </button>
                 {/if}
               </div>
@@ -1391,12 +1397,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         class="panel-actions flex items-center gap-0.5 px-1 opacity-30 group-hover/tabbar:opacity-100 transition-opacity z-20"
       >
         <!-- Split panel buttons -->
-        <Tooltip content="Split right (⌘\)" side="bottom" delayDuration={300}>
+        <Tooltip content={m.layout_panelTabBar_splitRight_tooltip({ shortcut: '⌘\\' })} side="bottom" delayDuration={300}>
           <Button
             variant="ghost-light"
             size="icon-xs"
             onclick={() => onSplitHorizontal?.()}
-            aria-label="Split panel right"
+            aria-label={m.layout_panelTabBar_splitRight_ariaLabel()}
           >
             <svg
               class="text-subtle overflow-visible w-2.5!"
@@ -1423,12 +1429,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             </svg>
           </Button>
         </Tooltip>
-        <Tooltip content="Split down (⌘⇧\)" side="bottom" delayDuration={300}>
+        <Tooltip content={m.layout_panelTabBar_splitDown_tooltip({ shortcut: '⌘⇧\\' })} side="bottom" delayDuration={300}>
           <Button
             variant="ghost-light"
             size="icon-xs"
             onclick={() => onSplitVertical?.()}
-            aria-label="Split panel down"
+            aria-label={m.layout_panelTabBar_splitDown_ariaLabel()}
           >
             <svg
               class="text-subtle overflow-visible w-2.5!"
@@ -1457,12 +1463,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         </Tooltip>
 
         {#if onClosePanel}
-          <Tooltip content="Close panel" side="bottom" delayDuration={300}>
+          <Tooltip content={m.layout_panelTabBar_closePanel_tooltip()} side="bottom" delayDuration={300}>
             <Button
               variant="ghost-light"
               size="icon-xs"
               onclick={onClosePanel}
-              aria-label="Close panel"
+              aria-label={m.layout_panelTabBar_closePanel_tooltip()}
             >
               <Fa icon={faXmark} size="xs" />
             </Button>
@@ -1507,7 +1513,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 textClass="text-sm shrink font-medium {isFocused
                   ? 'text-foreground'
                   : 'text-subtle'}"
-                title="Click to rename"
+                title={m.ui_editableName_rename_tooltip()}
                 maxWidth={200}
               />
             {:else}
@@ -1527,11 +1533,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     : 'text-ghost'}"
                 >
                   {#if specialist && delegatedBy}
-                    {specialist} · Delegated by {delegatedBy}
+                    {m.layout_panelTabBar_specialistDelegatedBy_label({ specialist, name: delegatedBy })}
                   {:else if specialist}
-                    {specialist} agent
+                    {m.layout_panelTabBar_specialistAgent_label({ specialist })}
                   {:else if delegatedBy}
-                    Delegated by {delegatedBy}
+                    {m.layout_panelTabBar_delegatedBy_label({ name: delegatedBy })}
                   {/if}
                 </span>
               {/if}
@@ -1595,7 +1601,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     <button
       type="button"
       class="absolute inset-0 bg-transparent border-0 p-0 cursor-default"
-      aria-label="Close context menu"
+      aria-label={m.layout_panelTabBar_closeContextMenu_ariaLabel()}
       onclick={closeContextMenu}
     ></button>
     <div
@@ -1612,7 +1618,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCrosshairs} size="xs" class="text-ghost" />
-          Reveal in Sidebar
+          {m.layout_panelTabBar_revealInSidebar_label()}
         </button>
       {/if}
       <!-- Type-specific actions for file/diff tabs -->
@@ -1625,7 +1631,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Relative Path
+          {m.layout_panelTabBar_copyRelativePath_label()}
         </button>
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
@@ -1635,7 +1641,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Absolute Path
+          {m.layout_panelTabBar_copyAbsolutePath_label()}
         </button>
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
@@ -1645,7 +1651,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Filename
+          {m.layout_panelTabBar_copyFilename_label()}
         </button>
         {#if $isDaemonLocal$}
           <button
@@ -1656,7 +1662,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             }}
           >
             <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
-            Reveal in {fileManagerName}
+            {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
           </button>
         {/if}
       {/if}
@@ -1671,7 +1677,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         >
           <span class="flex items-center gap-2">
             <Fa icon={faCopy} size="xs" class="text-ghost" />
-            Copy URL
+            {m.layout_panelTabBar_copyUrl_label()}
           </span>
           <span class="text-subtle text-xs">{copyBrowserUrlShortcutHint}</span>
         </button>
@@ -1683,7 +1689,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faArrowUpRightFromSquare} size="xs" class="text-ghost" />
-          Open in Browser
+          {m.layout_panelTabBar_openInBrowser_label()}
         </button>
       {/if}
       <!-- Type-specific actions for agent tabs -->
@@ -1696,7 +1702,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Relative Path
+          {m.layout_panelTabBar_copyRelativePath_label()}
         </button>
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
@@ -1706,7 +1712,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Absolute Path
+          {m.layout_panelTabBar_copyAbsolutePath_label()}
         </button>
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
@@ -1716,7 +1722,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Filename
+          {m.layout_panelTabBar_copyFilename_label()}
         </button>
         {#if $isDaemonLocal$}
           <button
@@ -1727,7 +1733,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             }}
           >
             <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
-            Reveal in {fileManagerName}
+            {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
           </button>
         {/if}
       {/if}
@@ -1741,7 +1747,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Relative Path
+          {m.layout_panelTabBar_copyRelativePath_label()}
         </button>
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
@@ -1751,7 +1757,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Absolute Path
+          {m.layout_panelTabBar_copyAbsolutePath_label()}
         </button>
         <button
           class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
@@ -1761,7 +1767,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Filename
+          {m.layout_panelTabBar_copyFilename_label()}
         </button>
         {#if $isDaemonLocal$}
           <button
@@ -1772,7 +1778,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             }}
           >
             <Fa icon={faFolderOpen} size="xs" class="text-ghost" />
-            Reveal in {fileManagerName}
+            {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
           </button>
         {/if}
       {/if}
@@ -1786,7 +1792,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           }}
         >
           <Fa icon={faCopy} size="xs" class="text-ghost" />
-          Copy Terminal Name
+          {m.layout_panelTabBar_copyTerminalName_label()}
         </button>
       {/if}
       <div class="border-t border-border"></div>
@@ -1798,7 +1804,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           closeContextMenu();
         }}
       >
-        {isZoomed ? 'Unzoom Panel' : 'Zoom Panel'}
+        {isZoomed ? m.layout_panelTabBar_unzoomPanel_label() : m.layout_panelTabBar_zoomPanel_label()}
         <span class="text-subtle text-xs">⇧⌘↵</span>
       </button>
       <div class="border-t border-border"></div>
@@ -1834,7 +1840,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               vector-effect="non-scaling-stroke"
             />
           </svg>
-          Split right
+          {m.layout_panelTabBar_splitRight_label()}
         </span>
         <span class="text-subtle text-xs">⌘\</span>
       </button>
@@ -1869,7 +1875,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               vector-effect="non-scaling-stroke"
             />
           </svg>
-          Split down
+          {m.layout_panelTabBar_splitDown_label()}
         </span>
         <span class="text-subtle text-xs">⇧⌘\</span>
       </button>
@@ -1881,7 +1887,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           closeContextMenu();
         }}
       >
-        Close
+        {m.layout_panelTabBar_close_label()}
         <span class="text-subtle text-xs">⌘W</span>
       </button>
       <button
@@ -1891,7 +1897,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           closeContextMenu();
         }}
       >
-        Close other tabs in panel
+        {m.layout_panelTabBar_closeOtherTabs_label()}
         <span class="text-subtle text-xs"></span>
       </button>
       <button
@@ -1901,7 +1907,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           closeContextMenu();
         }}
       >
-        Close tabs to the right
+        {m.layout_panelTabBar_closeTabsToRight_label()}
         <span class="text-subtle text-xs"></span>
       </button>
       <button
@@ -1911,7 +1917,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           closeContextMenu();
         }}
       >
-        Close panel
+        {m.layout_panelTabBar_closePanel_label()}
         <span class="text-subtle text-xs"></span>
       </button>
       <button
@@ -1921,7 +1927,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           closeContextMenu();
         }}
       >
-        Close all others
+        {m.layout_panelTabBar_closeAllOthers_label()}
         <span class="text-subtle text-xs"></span>
       </button>
     </div>

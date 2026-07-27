@@ -4,6 +4,7 @@
    * Navigates to the home page on click.
    */
   import { goto } from '$app/navigation';
+  import { m } from '$shared/paraglide/messages.js';
 
   import { closeAll } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -17,5 +18,5 @@
     goto('/');
   }}
 >
-  Go to Home →
+  {m.layout_homeCard_goHome_label()}
 </button>

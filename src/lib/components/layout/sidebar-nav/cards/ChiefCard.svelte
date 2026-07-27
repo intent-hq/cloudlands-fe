@@ -10,6 +10,7 @@
     faWandMagicSparkles,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import { toast } from 'svelte-sonner';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import {
@@ -66,7 +67,7 @@
   const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
   const chiefWorkspace: Workspace = {
     id: CHIEF_WORKSPACE_ID,
-    title: 'Chief of Staff',
+    title: m.layout_chiefCard_title(),
     branch: '',
     changesets: [],
     timeline: [],
@@ -108,10 +109,9 @@
     })),
   );
   const currentPreview = $derived(activeThread ?? $chiefPreview$);
-  const title = $derived(currentPreview?.title ?? 'Start a thread');
+  const title = $derived(currentPreview?.title ?? m.layout_chiefCard_startThread_label());
   const preview = $derived(
-    currentPreview?.preview ??
-      'Ask for help with workspaces, settings, specialists, and app navigation.',
+    currentPreview?.preview ?? m.layout_chiefCard_preview_description(),
   );
 
   function ensureChiefWorkspaceRegistered() {
@@ -207,7 +207,7 @@
           source: 'chief-card',
           chiefWorkspace: true,
           specialist: CHIEF_SPECIALIST_ID,
-          specialistName: chiefSpecialist?.name ?? 'Chief of Staff',
+          specialistName: chiefSpecialist?.name ?? m.layout_chiefCard_title(),
           behaviorPrompt: chiefBehaviorPrompt,
         },
       },
@@ -222,7 +222,7 @@
       appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, session.id));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      toast.error(`Could not start Chief thread: ${message}`);
+      toast.error(m.layout_chiefCard_startFailed_error({ message }));
     } finally {
       isCreatingThread = false;
     }
@@ -235,7 +235,7 @@
       type="button"
       class="block w-full cursor-pointer rounded-sm text-left outline-none"
       onclick={openChiefPanel}
-      aria-label="Open Chief"
+      aria-label={m.layout_chiefCard_open_ariaLabel()}
     >
       <p class="truncate text-sm font-semibold text-foreground">{title}</p>
       <p class="mt-1 text-xs leading-snug text-muted-foreground line-clamp-3">{preview}</p>
@@ -259,7 +259,7 @@
         >
           {#snippet trigger({ open }: { open: boolean; value: string | string[] | undefined })}
             <span class="min-w-0 flex-1 truncate text-left text-sm font-semibold">
-              {activeThread?.title ?? 'Start a thread'}
+              {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
             </span>
             <Fa
               icon={faChevronDown}
@@ -272,7 +272,7 @@
             {@const thread = $chiefThreads$.find((candidate) => candidate.agentId === option.value)}
             <div class="flex min-w-0 flex-1 items-center gap-1.5">
               {#if thread?.isActive}
-                <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" aria-label="Active"
+                <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
                 ></span>
               {:else}
                 <span class="h-1.5 w-1.5 shrink-0"></span>
@@ -288,15 +288,15 @@
                 ? 'opacity-100'
                 : 'opacity-0'}"
               onclick={(e) => handleDeleteThread(e, option.value, option.label)}
-              aria-label="Delete thread {option.label}"
-              title="Delete thread"
+              aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: option.label })}
+              title={m.layout_chiefCard_deleteThread_tooltip()}
             >
               <Fa icon={faTrash} size="xs" />
             </span>
           {/snippet}
 
           {#snippet empty()}
-            <div class="px-3 py-4 text-center text-sm text-subtle">No Chief threads yet.</div>
+            <div class="px-3 py-4 text-center text-sm text-subtle">{m.layout_chiefCard_noThreads_label()}</div>
           {/snippet}
         </Dropdown>
       </div>
@@ -305,8 +305,8 @@
           class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           onclick={createNewThread}
           disabled={isCreatingThread}
-          aria-label="New Chief thread"
-          title="New Chief thread"
+          aria-label={m.layout_chiefCard_newThread_tooltip()}
+          title={m.layout_chiefCard_newThread_tooltip()}
         >
           <Fa
             icon={isCreatingThread ? faSpinner : faPlus}
@@ -315,7 +315,7 @@
           />
         </button>
         <Tooltip
-          content={$isCardPinned$ ? 'Unpin panel' : 'Pin panel open'}
+          content={$isCardPinned$ ? m.layout_sidebarPanel_unpin_tooltip() : m.layout_sidebarPanel_pin_tooltip()}
           side="bottom"
           sideOffset={4}
         >
@@ -325,7 +325,7 @@
               ? 'rotate-0 text-foreground'
               : 'rotate-45 text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
             onclick={() => appStore.dispatch(toggleCardPinned())}
-            aria-label={$isCardPinned$ ? 'Unpin panel' : 'Pin panel open'}
+            aria-label={$isCardPinned$ ? m.layout_sidebarPanel_unpin_tooltip() : m.layout_sidebarPanel_pin_tooltip()}
           >
             <Fa icon={faThumbtack} size="xs" />
           </button>
@@ -333,7 +333,7 @@
         <button
           class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           onclick={() => appStore.dispatch(closePanel())}
-          aria-label="Close panel"
+          aria-label={m.layout_sidebarPanel_close_ariaLabel()}
         >
           <Fa icon={faXmark} size="xs" />
         </button>
@@ -348,7 +348,7 @@
               <ChatPanel
                 workspace={chiefWorkspace}
                 agentId={activeThread.agentId}
-                agentName="Chief of Staff"
+                agentName={m.layout_chiefCard_title()}
                 isActive={true}
                 autoFocus={true}
               />
@@ -362,9 +362,9 @@
               <Fa icon={faWandMagicSparkles} size="sm" />
             </div>
             <div>
-              <p class="text-sm font-semibold text-foreground">Start a thread</p>
+              <p class="text-sm font-semibold text-foreground">{m.layout_chiefCard_startThread_label()}</p>
               <p class="mt-1 text-xs text-subtle">
-                Create a thread for help with workspaces, settings, specialists, and navigation.
+                {m.layout_chiefCard_startThreadHint_description()}
               </p>
             </div>
             <button
@@ -377,7 +377,7 @@
                 size="xs"
                 class={isCreatingThread ? 'animate-spin' : ''}
               />
-              New thread
+              {m.layout_chiefCard_newThread_label()}
             </button>
           </div>
         {/if}

@@ -421,6 +421,7 @@
         />
       </div>
 
+      <!-- i18n-ignore (scanner false positive on the < comparison) -->
       {#if i < node.children.length - 1 && !zoomedPanelId}
         {@const corners = getCornerPositions(i)}
         <div class="panel-split-handle-wrapper relative">

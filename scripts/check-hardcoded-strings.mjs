@@ -39,6 +39,7 @@ const ENFORCED_DIRS = [
   'src/lib/components/ui',
   'src/lib/components/workspace',
   'src/lib/components/chat',
+  'src/lib/components/layout',
 ];
 
 const ROOT = process.cwd();

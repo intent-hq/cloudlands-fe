@@ -10,6 +10,7 @@
    */
 
   import { page } from '$app/state';
+  import { m } from '$shared/paraglide/messages.js';
   import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
@@ -243,7 +244,7 @@
 <div
   class="window-title-bar-wrapper"
   style:height="{35 / $zoomFactor}px"
-  aria-label="Window title bar"
+  aria-label={m.layout_titleBar_ariaLabel()}
 >
   <div
     class={cn(
@@ -259,13 +260,13 @@
       {#if isWorkspaceVisible && $sidebarSide$ === 'left'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
-            <span>Sidebar</span>
+            <span>{m.layout_titleBar_sidebar_tooltip()}</span>
             <span class="text-subtle ml-1.5">⌘B</span>
           {/snippet}
           <button
             class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
             onclick={() => appStore.dispatch(toggleSidebar())}
-            aria-label="Toggle sidebar"
+            aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
           >
             <SidebarIcon size={16} side="left" />
           </button>
@@ -283,7 +284,7 @@
 
           <!-- Display text -->
           <span class="text-sm text-subtle truncate flex-1 px-2">
-            {displayText || 'Search...'}
+            {displayText || m.layout_titleBar_search_placeholder()}
           </span>
 
           <!-- Shortcut hint -->
@@ -313,13 +314,13 @@
       {#if isWorkspaceVisible && $sidebarSide$ === 'right'}
         <Tooltip side="bottom" delayDuration={300}>
           {#snippet content()}
-            <span>Sidebar</span>
+            <span>{m.layout_titleBar_sidebar_tooltip()}</span>
             <span class="text-subtle ml-1.5">⌘B</span>
           {/snippet}
           <button
             class="p-2 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
             onclick={() => appStore.dispatch(toggleSidebar())}
-            aria-label="Toggle sidebar"
+            aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
           >
             <SidebarIcon size={16} side="right" />
           </button>

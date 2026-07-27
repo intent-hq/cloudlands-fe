@@ -11,6 +11,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { goto } from '$app/navigation';
+  import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
 
@@ -57,7 +58,7 @@
     for (const ws of workspaces) {
       if (!ws.repositoryPath || repoMap.has(ws.repositoryPath)) continue;
       repoMap.set(ws.repositoryPath, {
-        name: ws.repositoryName || ws.repositoryPath.split('/').pop() || 'Unknown',
+        name: ws.repositoryName || ws.repositoryPath.split('/').pop() || m.layout_newWorkspaceCard_unknownRepo_label(),
         owner: ws.repositoryOwner,
         path: ws.repositoryPath,
         branch: ws.branch || 'main',
@@ -113,21 +114,21 @@
       onclick={openWithDraft}
     >
       <div class="flex items-center gap-2 mb-1">
-        <span class="text-ui font-semibold uppercase tracking-wider text-primary/70">Draft</span
+        <span class="text-ui font-semibold uppercase tracking-wider text-primary/70">{m.layout_newWorkspaceCard_draft_label()}</span
         >
       </div>
       <p class="text-sm text-muted-foreground line-clamp-2">{$draftPrompt$.trim()}</p>
       <span
         class="text-ui text-muted-foreground mt-1 flex items-center gap-1 group-hover:text-foreground/60 transition-colors"
       >
-        Continue editing <Fa icon={faArrowRight} size="xs" />
+        {m.layout_newWorkspaceCard_continueEditing_label()} <Fa icon={faArrowRight} size="xs" />
       </span>
     </button>
   {/if}
 
   <!-- Quick start with recent repos -->
   {#if recentRepos.length > 0}
-    <Header size={6}>Work on...</Header>
+    <Header size={6}>{m.layout_newWorkspaceCard_workOn_header()}</Header>
     <div>
       <div class="flex flex-col">
         {#each recentRepos as repo}

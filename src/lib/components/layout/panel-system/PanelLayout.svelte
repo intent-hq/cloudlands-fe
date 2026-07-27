@@ -12,6 +12,7 @@
   onDestroy,
   untrack,
 } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import {
   getPanelLayoutManager,
   type PanelTab,
@@ -185,7 +186,7 @@
       const history = terminalHistoryTracker.getHistory(t.terminalId);
       return {
         id: t.terminalId,
-        name: t.title || 'Terminal',
+        name: t.title || m.layout_panelLayout_terminal_fallback(),
         lastCommand: history?.lastCommand,
         lastOutput: history?.lastOutput,
         hasRunningProcess: history?.isExecuting || false,
@@ -260,7 +261,7 @@
         // Open the new terminal as a tab in the panel layout
         layoutManager.openTab({
           type: 'terminal',
-          title: 'Terminal',
+          title: m.layout_panelLayout_terminal_fallback(),
           terminalId: result.id,
           closable: true,
         });
@@ -376,7 +377,7 @@
    * Shows a toast with undo support.
    */
   async function handleTabRename(tab: PanelTab, newName: string) {
-    const oldName = tab.title || 'Untitled';
+    const oldName = tab.title || m.layout_panelLayout_untitled_fallback();
 
     if (tab.type === 'note' && tab.noteId) {
       // Rename note
@@ -832,7 +833,7 @@
         .map((t) => ({
           tabId: t.id,
           url: t.browserUrl || '',
-          title: t.title || 'Browser',
+          title: t.title || m.layout_panelLayout_browser_fallback(),
         }));
 
       logger.debug('Responding to browser:list-tabs-request', { count: browserTabs.length });
@@ -857,7 +858,7 @@
   });
 </script>
 
-<div class="panel-layout h-full w-full flex flex-col" aria-label="Panel layout">
+<div class="panel-layout h-full w-full flex flex-col" aria-label={m.layout_panelLayout_ariaLabel()}>
   <!-- Main panel area -->
   <div
     class="flex-1 min-h-0 overflow-hidden {$isCollapsed
@@ -907,10 +908,10 @@
   >
     <div class="text-sm font-medium text-foreground">
       {#if keyboardShortcuts.showPanelNumbers}
-        <span class="text-primary">Press 1-9</span> to jump to panel
+        <span class="text-primary">{m.layout_panelLayout_pressKeys_label()}</span> {m.layout_panelLayout_jumpToPanel_after()}
       {:else}
-        <span class="text-primary">⌘K</span> activated — press a key
-        <span class="text-subtle ml-2"> h/j/k/l navigate • z zoom • % split • x close </span>
+        <span class="text-primary">⌘K</span> {m.layout_panelLayout_leaderActivated_label()}
+        <span class="text-subtle ml-2"> {m.layout_panelLayout_leaderHints_label()} </span>
       {/if}
     </div>
   </div>

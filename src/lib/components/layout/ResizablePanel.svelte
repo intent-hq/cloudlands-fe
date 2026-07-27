@@ -18,6 +18,7 @@
   selectSidebarWidth,
 } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   let {
@@ -632,8 +633,8 @@
         ondblclick={handleDoubleClick}
         onkeydown={handleHandleKeydown}
         tabindex="0"
-        aria-label="Resize panel (double-click to reset)"
-        title="Drag to resize, double-click to reset"
+        aria-label={m.layout_resizable_resizePanel_ariaLabel()}
+        title={m.layout_resizable_dragToResize_tooltip()}
       >
         <!-- Visual indicator on hover -->
         <div
@@ -665,8 +666,8 @@
         ondblclick={handleDoubleClick}
         onkeydown={handleHandleKeydown}
         tabindex="0"
-        aria-label="Resize panel height (double-click to reset)"
-        title="Drag to resize height, double-click to reset"
+        aria-label={m.layout_resizable_resizePanelHeight_ariaLabel()}
+        title={m.layout_resizable_dragToResizeHeight_tooltip()}
       >
         <!-- Visual indicator on hover -->
         <div
