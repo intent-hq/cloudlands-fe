@@ -28,13 +28,16 @@ export interface Specialist {
    * - fast: Quick, cheap models (haiku4.5, haiku, gpt-5.1-codex-mini)
    * - balanced: General purpose (sonnet4.5, sonnet, gpt-5.2-codex)
    * - smart: High-capability (opus4.5, opus, gpt-5.1-codex-max)
+   * The fallback for provider-aware resolution when defaultModel is not set;
+   * an explicit defaultModel wins when both are provided.
    * Optional: if neither defaultModelTier nor defaultModel is provided, callers
    * should use the user's current default model.
    */
   defaultModelTier?: ModelTier;
   /**
    * Hardcoded default model ID. Used for custom specialists or backwards compatibility.
-   * If defaultModelTier is provided, this is ignored in favor of provider-aware resolution.
+   * Takes precedence over defaultModelTier: when both are provided, this explicit
+   * model wins and tier-based provider-aware resolution is skipped.
    */
   defaultModel?: string;
   defaultBehaviorPrompt: string;
