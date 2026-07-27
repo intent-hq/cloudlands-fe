@@ -2,6 +2,7 @@
   import ChevronUpDown from '$lib/components/icons/ChevronUpDown.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { cn } from '$lib/utils';
+  import { m } from '$shared/paraglide/messages.js';
   import {
   onMount,
   tick,
@@ -44,7 +45,7 @@
   let {
     value = $bindable(),
     options = [],
-    placeholder = 'Select...',
+    placeholder = m.ui_searchableCombobox_select_placeholder(),
     disabled = false,
     triggerLabel,
 
@@ -392,9 +393,13 @@
 
         <div class="overflow-auto flex-1">
           {#if effectiveIsSearching}
-            <div class="px-3 py-2 text-sm opacity-50">Searching...</div>
+            <div class="px-3 py-2 text-sm opacity-50">
+              {m.ui_searchableCombobox_searching_label()}
+            </div>
           {:else if filteredOptions.length === 0}
-            <div class="px-3 py-2 text-sm opacity-50">No results found</div>
+            <div class="px-3 py-2 text-sm opacity-50">
+              {m.ui_searchableCombobox_noResults_label()}
+            </div>
           {:else}
             {#each filteredOptions as option, index (option.value)}
               <button

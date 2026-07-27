@@ -4,6 +4,7 @@
   createReactiveCompactTime,
 } from '$lib/utils/reactive-time.svelte';
   import { formatFullDateTime } from '$lib/i18n/format';
+  import { m } from '$shared/paraglide/messages.js';
   import { onDestroy } from 'svelte';
 
   interface Props {
@@ -45,7 +46,7 @@
     if (title) return title;
 
     const d = new Date(date);
-    if (isNaN(d.getTime())) return 'Invalid date';
+    if (isNaN(d.getTime())) return m.ui_relativeTime_invalid_label();
 
     return formatFullDateTime(d);
   });

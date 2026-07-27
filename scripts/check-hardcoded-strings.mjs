@@ -32,23 +32,7 @@ const ENFORCED_DIRS = [
   'src/lib/components/settings',
   'src/features/settings',
   'src/routes/settings',
-  // UI primitives A–L (loose top-level ui/*.svelte files are covered once M–Z lands)
-  'src/lib/components/ui/auggie-avatar',
-  'src/lib/components/ui/badge',
-  'src/lib/components/ui/breadcrumb',
-  'src/lib/components/ui/button',
-  'src/lib/components/ui/button-group',
-  'src/lib/components/ui/card',
-  'src/lib/components/ui/checkbox',
-  'src/lib/components/ui/content-header',
-  'src/lib/components/ui/diff',
-  'src/lib/components/ui/dropdown',
-  'src/lib/components/ui/grouped-combobox',
-  'src/lib/components/ui/highlight',
-  'src/lib/components/ui/indicators',
-  'src/lib/components/ui/input',
-  'src/lib/components/ui/label',
-  'src/lib/components/ui/list',
+  'src/lib/components/ui',
 ];
 
 const ROOT = process.cwd();

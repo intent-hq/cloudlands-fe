@@ -26,6 +26,7 @@
 } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { toNativePath } from '$lib/utils/path-utils';
   import {
@@ -146,8 +147,8 @@
     // Add "Other..." option to pick any app
     const otherAction: ActionConfig = {
       id: 'other' as OpenAction,
-      label: 'Other',
-      shortLabel: 'Other',
+      label: m.ui_openCombo_other_label(),
+      shortLabel: m.ui_openCombo_other_label(),
       icon: null,
       faIcon: faFolderOpen,
       handlerType: 'generic',
@@ -157,8 +158,8 @@
     const specialActions: ActionConfig[] = [
       {
         id: 'copy',
-        label: 'Copy path',
-        shortLabel: 'Copy',
+        label: m.ui_openCombo_copyPath_label(),
+        shortLabel: m.ui_openCombo_copy_shortLabel(),
         icon: null,
         faIcon: faCopy,
         // shortcut: '⌘⇧C',
@@ -167,8 +168,8 @@
         ? [
             {
               id: 'copy-branch' as const,
-              label: 'Copy branch name',
-              shortLabel: 'Branch',
+              label: m.ui_openCombo_copyBranch_label(),
+              shortLabel: m.ui_openCombo_copyBranch_shortLabel(),
               icon: null,
               faIcon: faCodeBranch,
             },
@@ -214,13 +215,13 @@
       // Handle special actions first
       if (actionId === 'copy') {
         await navigator.clipboard.writeText(toNativePath(filePath));
-        toast.success('Path copied to clipboard');
+        toast.success(m.ui_openCombo_pathCopied_label());
         return;
       }
       if (actionId === 'copy-branch') {
         if (branchName) {
           await navigator.clipboard.writeText(branchName);
-          toast.success('Branch name copied to clipboard');
+          toast.success(m.ui_openCombo_branchCopied_label());
         }
         return;
       }
@@ -232,6 +233,7 @@
         );
         if (result?.success) {
           dropdownOpen = false;
+          // i18n-ignore (IPC sentinel string from the main process, not UI copy)
         } else if (result?.error && result.error !== 'No application selected') {
           // Surface bridge-absent / spawn failures as a toast so the "Other"
           // action fails loudly instead of silently no-oping.
@@ -270,7 +272,9 @@
       }
     } catch (error) {
       logger.error(`Failed to execute action ${actionId}:`, error);
-      toast.error(error instanceof Error ? error.message : `Failed to open in ${actionId}`);
+      toast.error(
+        error instanceof Error ? error.message : m.ui_openCombo_openFailed_error({ name: actionId }),
+      );
     }
   }
 
@@ -296,7 +300,7 @@
           type="button"
           onclick={toggle}
           class="cursor-pointer"
-          title="Open in {currentAction.label}"
+          title={m.ui_openCombo_openIn_tooltip({ name: currentAction.label })}
         >
           {@render children()}
         </button>
@@ -306,7 +310,7 @@
           variant="ghost-light"
           size="icon-xs"
           onclick={toggle}
-          tooltip="Open in..."
+          tooltip={m.ui_openCombo_openInApp_tooltip()}
           tooltipSide="bottom"
         >
           <Fa icon={faArrowUpRightFromSquare} size="xs" />
@@ -320,7 +324,7 @@
             type="button"
             class="flex items-center gap-1.5 px-2 py-1 text-xs {bgClass} transition-colors cursor-pointer"
             onclick={handlePrimaryClick}
-            title="Open in {currentAction.label}"
+            title={m.ui_openCombo_openIn_tooltip({ name: currentAction.label })}
           >
             {#if currentAction.iconBase64}
               <img
@@ -340,7 +344,7 @@
             {:else}
               <Fa icon={faCode} class="w-3.5 h-3.5 opacity-60" />
             {/if}
-            <span class="text-subtle">Open</span>
+            <span class="text-subtle">{m.ui_openCombo_open_label()}</span>
           </button>
           <button
             type="button"
