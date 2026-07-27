@@ -132,6 +132,7 @@ function setAvailability(
     opencode: { available: false, authenticated: undefined },
     droid: { available: false, authenticated: undefined },
     grok: { available: false, authenticated: undefined },
+    unsloth: { available: false, authenticated: undefined },
     mock: { available: false, authenticated: undefined },
     pi: { available: false, authenticated: undefined },
   };

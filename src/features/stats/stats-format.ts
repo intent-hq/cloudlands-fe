@@ -128,6 +128,7 @@ const PROVIDER_SHORT_NAMES: Record<string, string> = {
   pi: 'Pi',
   droid: 'Droid',
   grok: 'Grok',
+  unsloth: 'Unsloth',
   unknown: 'Unknown',
 };
 

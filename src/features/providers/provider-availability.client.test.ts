@@ -55,6 +55,7 @@ function createAvailabilityResult(
       pi: { available: availableProviders.pi ?? false },
       droid: { available: availableProviders.droid ?? false },
       grok: { available: availableProviders.grok ?? false },
+      unsloth: { available: availableProviders.unsloth ?? false },
     },
     hiddenProviders,
   };

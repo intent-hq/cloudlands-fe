@@ -36,6 +36,7 @@ const ALL_CHANNELS: Array<[string, string]> = [
   ["grok", "grok:get-models"],
   ["opencode", "opencode:get-models"],
   ["pi", "pi:get-models"],
+  ["unsloth", "unsloth:get-models"],
 ];
 
 describe("model-catalog-bridge-seeder", () => {

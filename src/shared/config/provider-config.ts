@@ -220,6 +220,27 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     loginDocsUrl: 'https://docs.x.ai/build/enterprise#authentication',
   },
 
+  unsloth: {
+    id: 'unsloth',
+    displayName: 'Unsloth',
+    // Unsloth rides the opencode binary (`opencode acp`) as its ACP runtime.
+    // The daemon owns the managed local server lifecycle and injects the
+    // `provider.unsloth-studio` block via OPENCODE_CONFIG_CONTENT at spawn
+    // time — the FE never builds that env itself.
+    command: 'opencode',
+    baseArgs: ['acp'],
+    // Local models — no login/auth surface. The managed server's endpoint
+    // and apiKey are generated daemon-side.
+    supportsAuthenticate: false,
+    supportsSetMode: false,
+    supportsMcpConfig: false,
+    supportsRulesFile: false,
+    isDefault: false,
+    canBeDisabled: true,
+    ipcChannelPrefix: 'unsloth',
+    loginDocsUrl: 'https://docs.unsloth.ai',
+  },
+
   mock: {
     id: 'mock',
     displayName: 'Mock (E2E)',
@@ -314,6 +335,7 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   cortex: 'cortex',
   droid: 'droid',
   grok: 'grok',
+  unsloth: 'unsloth',
 };
 
 /**
@@ -470,9 +492,9 @@ export const PROVIDER_MODEL_TIERS: Record<
   },
   codex: { fast: 'gpt-5.3-codex/medium', balanced: 'gpt-5.3-codex/high', smart: 'gpt-5.3-codex/xhigh' },
   cortex: { fast: 'claude-sonnet-4-5', balanced: 'claude-opus-4-5', smart: 'claude-opus-4-5' },
-  // Note: opencode, droid, and grok models are dynamic and fetched via the
-  // daemon's models.list catalog at runtime. Do NOT add hardcoded
-  // opencode/droid/grok entries here — model names change frequently.
+  // Note: opencode, droid, grok, and unsloth models are dynamic and fetched
+  // via the daemon's models.list catalog at runtime. Do NOT add hardcoded
+  // opencode/droid/grok/unsloth entries here — model names change frequently.
   // Tier resolution for these providers falls back to using the parent agent's model.
 };
 

@@ -89,6 +89,12 @@
     </svg>
   {:else if providerId === 'grok'}
     <GrokLogo class={className} {size} />
+  {:else if providerId === 'unsloth'}
+    <!-- Unsloth's brand mark is the sloth emoji (per their brand guidelines) -->
+    <span
+      class="inline-flex items-center justify-center leading-none"
+      style={`font-size: ${size - 2}px; width: ${size}px; height: ${size}px;`}>🦥</span
+    >
   {:else if providerId === 'cortex'}
     <svg
       class={className}

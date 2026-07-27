@@ -78,6 +78,7 @@ function getProviderStatus(
     opencode: availability.providers.opencode,
     droid: availability.providers.droid,
     grok: availability.providers.grok,
+    unsloth: availability.providers.unsloth,
     mock: availability.providers.mock,
     pi: availability.providers.pi,
   };
@@ -115,6 +116,7 @@ function getUsableProviderIds(availability: ProviderAvailabilityResult): string[
   if (isProviderUsable(availability, 'grok')) ids.push('grok');
   if (isProviderUsable(availability, 'cortex')) ids.push('cortex');
   if (isProviderUsable(availability, 'pi')) ids.push('pi');
+  if (isProviderUsable(availability, 'unsloth')) ids.push('unsloth');
   return ids;
 }
 
