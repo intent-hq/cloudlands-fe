@@ -19,6 +19,7 @@
   type Workspace,
 } from '$shared/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
+  import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { toggleSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-slice';
@@ -422,12 +423,13 @@
     {/if}
 
     <!-- repo -->
-    <div class="text-subtle text-xs truncate pl-1.5 -mt-1">
+    <div class="flex min-w-0 items-center gap-1 text-subtle text-xs pl-1.5 -mt-1">
       {#if workspace?.repositoryOwner && workspace?.repositoryName}
-        {workspace.repositoryOwner}/{workspace.repositoryName}
+        <span class="min-w-0 truncate">{workspace.repositoryOwner}/{workspace.repositoryName}</span>
       {:else if workspace?.repositoryPath}
-        {workspace.repositoryPath.split('/').pop()}
+        <span class="min-w-0 truncate">{workspace.repositoryPath.split('/').pop()}</span>
       {/if}
+      <CheckoutModePill checkoutMode={workspace?.checkoutMode} />
     </div>
 
     <!-- branch -->
