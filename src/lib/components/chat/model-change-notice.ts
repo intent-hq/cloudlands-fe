@@ -1,11 +1,13 @@
 /**
- * Daemon-persisted model-change transcript notice (see the monorepo's
- * docs/PROTOCOL.md and the intentd "model-change transcript notice" work).
- * When a turn commits under a different model/provider than the previous
- * turn, intentd appends an informational non-user/non-assistant row with
- * metadata `{ type: "model_changed", from, to, fromProvider, toProvider }`.
- * The row is never sent to the provider; the FE renders it as a centered
- * inline notice in the transcript.
+ * Daemon-persisted model-change transcript notice (PROTOCOL.md §5.5,
+ * `agent.setModel`). When a turn starts under a different model/provider
+ * identity than the last committed turn, intentd persists an informational
+ * `role: "system"` row with metadata
+ * `{ type: "model_changed", from: string | null, to: string | null,
+ *    fromProvider: string, toProvider: string }` —
+ * `from`/`to` are spawn-resolved raw model ids (no provider prefix) and
+ * `null` means "provider default model". The row is transcript-only (never
+ * replayed to providers); the FE renders it as a centered inline notice.
  */
 import { getProviderConfig } from '$shared/config/provider-config';
 
@@ -15,8 +17,9 @@ interface MessageLike {
 }
 
 export interface ModelChangeNoticeInfo {
-  from?: string;
-  to?: string;
+  /** Spawn-resolved model id; null = provider default model. */
+  from: string | null;
+  to: string | null;
   fromProvider?: string;
   toProvider?: string;
 }
@@ -35,17 +38,18 @@ export function getModelChangeNotice(
   const asString = (value: unknown): string | undefined =>
     typeof value === 'string' && value.length > 0 ? value : undefined;
   return {
-    from: asString(metadata['from']),
-    to: asString(metadata['to']),
+    from: asString(metadata['from']) ?? null,
+    to: asString(metadata['to']) ?? null,
     fromProvider: asString(metadata['fromProvider']),
     toProvider: asString(metadata['toProvider']),
   };
 }
 
-function describeSide(providerId: string | undefined, model: string | undefined): string {
+function describeSide(providerId: string | undefined, model: string | null): string {
   const providerName = providerId ? getProviderConfig(providerId).displayName : undefined;
   if (providerName && model) return `${providerName} / ${model}`;
-  return providerName ?? model ?? '';
+  if (providerName) return `${providerName} default model`;
+  return model ?? '';
 }
 
 /**

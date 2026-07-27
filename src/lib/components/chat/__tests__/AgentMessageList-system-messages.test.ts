@@ -143,13 +143,16 @@ describe('AgentMessageList - System Messages', () => {
   });
 
   it('renders a model_changed system message as a centered model-change notice', () => {
-    // Daemon-persisted notice row shape (metadata { type: "model_changed", ... });
-    // see the intentd model-change transcript notice work.
+    // Daemon-persisted notice row shape (PROTOCOL.md §5.5, agent.setModel):
+    // role "system", one text-block fallback, metadata
+    // { type: "model_changed", from, to, fromProvider, toProvider }.
     const messages: AgentMessage[] = [
       {
         id: 'msg-1',
         role: 'system',
-        contentBlocks: [{ type: 'text', text: 'Switched from sonnet4.6 to gpt-5-codex' }],
+        contentBlocks: [
+          { type: 'text', text: 'Model changed from auggie:sonnet4.6 to codex:gpt-5-codex.' },
+        ],
         timestamp: new Date().toISOString(),
         metadata: {
           type: 'model_changed',
@@ -167,6 +170,32 @@ describe('AgentMessageList - System Messages', () => {
     expect(screen.getByRole('status')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText(/Switched from .*sonnet4\.6.* to .*gpt-5-codex/)).toBeTruthy();
+  });
+
+  it('renders "default model" when model_changed from/to are null (provider default)', () => {
+    // from/to are null when the spawn resolved no explicit model id.
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [
+          { type: 'text', text: 'Model changed from auggie (default model) to codex:gpt-5-codex.' },
+        ],
+        timestamp: new Date().toISOString(),
+        metadata: {
+          type: 'model_changed',
+          from: null,
+          to: 'gpt-5-codex',
+          fromProvider: 'auggie',
+          toProvider: 'codex',
+        },
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.getByText(/Switched from .*default model.* to .*gpt-5-codex/)).toBeTruthy();
   });
 
   it('falls back to the message text when model_changed metadata fields are missing', () => {
