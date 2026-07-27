@@ -119,4 +119,12 @@ describe('ProvidersCard (mock BE)', () => {
     expect(screen.getByText('No provider usage in this period')).toBeTruthy();
     expect(container.textContent).not.toContain('NaN');
   });
+
+  it('surfaces (not masks) a loaded payload missing the required byProvider field', () => {
+    const malformed = { ...USAGE_RESULT, byProvider: undefined } as unknown as UsageStatsResult;
+
+    expect(() =>
+      render(ProvidersCard, { props: { data: malformed, label: 'JUL 2026' } }),
+    ).toThrow();
+  });
 });

@@ -20,7 +20,10 @@
 
   let { data, label }: { data: UsageStatsResult | null; label: string } = $props();
 
-  const ranked = $derived(rankProviders(data?.byProvider ?? []));
+  // Empty only while data has not loaded; a loaded payload missing the
+  // required `byProvider` field (PROTOCOL §5.36) throws in `rankProviders`
+  // rather than being masked as an empty period.
+  const ranked = $derived(data ? rankProviders(data.byProvider) : []);
   const top = $derived(ranked[0] ?? null);
 </script>
 
