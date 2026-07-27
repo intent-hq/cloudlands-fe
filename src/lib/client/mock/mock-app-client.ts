@@ -137,6 +137,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
       linesAdded: 0,
       linesDeleted: 0,
       byModel: [],
+      byProvider: [],
       byHourOfDay: [],
       byMonth: [],
       availablePeriods: { months: [], years: [] },

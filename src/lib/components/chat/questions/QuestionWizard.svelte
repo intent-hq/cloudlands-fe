@@ -1,6 +1,6 @@
 <!--
   Sequential Agent Q&A wizard rendered in the composer slot (pixel mock t2:
-  borderless grey well with a green attention border — no card chrome). Walks
+  borderless grey well — no card chrome). Walks
   the pending questions one at a time; choose-one advances on selection,
   multi-select keeps a Next button, Enter in the free-form field advances,
   Skip clears + advances, Back returns with the previous answer pre-selected.
@@ -133,7 +133,7 @@
 </script>
 
 <div
-  class="rounded-lg border border-primary/50 bg-muted/55 dark:bg-muted"
+  class="rounded-lg bg-muted/55 dark:bg-muted"
   data-question-wizard
 >
   {#if collapsed}

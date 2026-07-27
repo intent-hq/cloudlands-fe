@@ -209,16 +209,18 @@ export const selectWorkflowStage = store.createSelector<
   const hasUnpushedCommits =
     (gitStatus?.localCommits?.filter((c) => !c.isPushed).length ?? 0) > 0;
   const existingPR = gitStatus?.existingPR;
+  const hasOpenTasks = taskStats.total > 0 && taskStats.completed < taskStats.total;
 
   if (existingPR) {
-    if (existingPR.state === "merged") {
-      // PR merged: only show new work if there are uncommitted changes, else done.
-      if (!hasUncommittedChanges) {
+    if (existingPR.state === "merged" || existingPR.state === "closed") {
+      // PR merged/closed: open tasks, uncommitted/staged changes, or unpushed
+      // commits mean there is still new work. The just-merged branch's own
+      // commits never read as unpushed here: per-commit `isPushed` is computed
+      // against origin/<branch>, and those commits were pushed to open the PR.
+      if (!hasUncommittedChanges && !hasStagedChanges && !hasUnpushedCommits && !hasOpenTasks) {
         return "all-done";
       }
-      // Otherwise fall through to check the uncommitted-change states.
-    } else if (existingPR.state === "closed") {
-      return "all-done";
+      // Otherwise fall through to the task-based and git-change states.
     } else if (existingPR.state === "open") {
       if (activePR?.reviewDecision === "APPROVED") {
         return "pr-approved";
@@ -338,11 +340,16 @@ export const selectWorkspaceProgressHeadline = store.createSelector<
         subtext: "",
       };
 
-    case "commits-unpushed":
+    case "commits-unpushed": {
+      // Only an open/draft PR can be updated by a push; after a merge/close the
+      // remaining commits need a new PR.
+      const prIsUpdatable =
+        existingPR?.state === "open" || existingPR?.state === "draft";
       return {
         headline: `${unpushedCommits.length} commit${unpushedCommits.length === 1 ? "" : "s"} to push`,
-        subtext: existingPR ? "Push to update PR." : "Push to create a PR.",
+        subtext: prIsUpdatable ? "Push to update PR." : "Push to create a PR.",
       };
+    }
 
     case "pr-open": {
       const parts: string[] = [];

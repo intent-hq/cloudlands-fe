@@ -1086,15 +1086,23 @@
     return () => clearInterval(interval);
   });
 
+  // Generation counter guarding the remote-URL probe against out-of-order
+  // async responses after rapid repo switches
+  let remoteUrlProbeGeneration = 0;
+
   // Fetch remote URL when local repo path changes
   $effect(() => {
     const path = repoPath;
     const type = repoType;
+    const generation = ++remoteUrlProbeGeneration;
+
+    // Clear synchronously so a repo switch never briefly shows the previous
+    // repo's detected owner/repo
+    detectedGitHubOwner = null;
+    detectedGitHubRepo = null;
 
     // Only fetch for local repos with valid paths
     if (type !== 'local' || !path || (!path.startsWith('/') && !path.startsWith('~'))) {
-      detectedGitHubOwner = null;
-      detectedGitHubRepo = null;
       return;
     }
 
@@ -1107,6 +1115,10 @@
               repoPath: path,
             })
             : undefined;
+        // Drop stale responses: the repo changed while this probe was in flight
+        if (generation !== remoteUrlProbeGeneration) {
+          return;
+        }
         if (response?.success && response.data?.owner && response.data?.repo) {
           detectedGitHubOwner = response.data.owner;
           detectedGitHubRepo = response.data.repo;
@@ -1115,14 +1127,9 @@
             owner: response.data.owner,
             repo: response.data.repo,
           });
-        } else {
-          detectedGitHubOwner = null;
-          detectedGitHubRepo = null;
         }
       } catch (err) {
         logger.debug('Failed to get remote URL for repo', { path, error: err });
-        detectedGitHubOwner = null;
-        detectedGitHubRepo = null;
       }
     })();
   });
@@ -1640,9 +1647,10 @@
           try {
             const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
               await import('$store/renderer/slices/scripts/scripts-selectors');
+            const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
             const scriptId = mention.id;
             const state = appStore.state;
-            const outputLines = selectScriptOutput.select(state, scriptId);
+            const outputLines = scriptOutputToLines(selectScriptOutput.select(state, scriptId));
             const script = selectScriptById.select(state, scriptId);
             const runtime = selectScriptRuntime.select(state, scriptId);
 
@@ -1657,10 +1665,7 @@
               content += `URL: ${runtime.detectedUrl}\n`;
             }
             if (outputLines.length > 0) {
-              const lastLines = outputLines
-                .slice(-100)
-                .map((l: any) => l.text)
-                .join('\n');
+              const lastLines = outputLines.slice(-100).join('\n');
               content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
             } else {
               content += '\nNo output yet.';
@@ -2650,6 +2655,8 @@
                 {skipIsolation}
                 {isNewRepo}
                 {remoteSetup}
+                {detectedGitHubOwner}
+                {detectedGitHubRepo}
                 suggestedBranch={selectedPRBranch}
                 onRepoChange={handleRepoChange}
                 onBranchChange={handleBranchChange}

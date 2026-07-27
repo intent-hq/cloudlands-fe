@@ -6,7 +6,7 @@
  * counts degrade gracefully instead of rendering "0M". All helpers are pure
  * and NaN-safe: a zero-data period renders zeroes, never NaN.
  */
-import type { UsageModelStats, UsageTokenTotals } from '$lib/client/app-client';
+import type { UsageModelStats, UsageProviderStats, UsageTokenTotals } from '$lib/client/app-client';
 
 /** Sum of the 4 separate token counters (Spec D6). */
 export function totalTokens(t: UsageTokenTotals): number {
@@ -82,4 +82,57 @@ export function rankModels(byModel: UsageModelStats[], limit = 4): RankedModel[]
     .sort((a, b) => b.tokens - a.tokens)
     .slice(0, limit)
     .map((m) => ({ ...m, share: grand > 0 ? m.tokens / grand : 0 }));
+}
+
+export interface RankedProvider {
+  /** Raw provider id as sent on the wire (`claude-code`, `codex`, …). */
+  provider: string;
+  /** Sum of the provider's 4 token counters. */
+  tokens: number;
+  /** Fraction of the grand total across ALL providers (not just the top 4). */
+  share: number;
+  runs: number;
+}
+
+/**
+ * Top `limit` providers by total tokens — same total/share/sort semantics as
+ * `rankModels` over the `byProvider` rollup. The daemon already sorts
+ * `byProvider` desc by total tokens; re-sorting here keeps the card correct
+ * regardless. Zero-token providers are dropped; shares are fractions of the
+ * grand total across all providers.
+ */
+export function rankProviders(byProvider: UsageProviderStats[], limit = 4): RankedProvider[] {
+  const totals = byProvider.map((p) => ({
+    provider: p.provider,
+    runs: p.runs,
+    tokens: totalTokens(p),
+  }));
+  const grand = totals.reduce((acc, p) => acc + p.tokens, 0);
+  return totals
+    .filter((p) => p.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens)
+    .slice(0, limit)
+    .map((p) => ({ ...p, share: grand > 0 ? p.tokens / grand : 0 }));
+}
+
+/**
+ * Short app-style display names for the raw provider ids carried on the wire.
+ * Dependency-light on purpose (no import of the main-process provider config);
+ * unrecognized ids pass through as-is.
+ */
+const PROVIDER_SHORT_NAMES: Record<string, string> = {
+  auggie: 'Auggie',
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  opencode: 'OpenCode',
+  pi: 'Pi',
+  droid: 'Droid',
+  grok: 'Grok',
+  unsloth: 'Unsloth',
+  unknown: 'Unknown',
+};
+
+/** Pretty-print a raw provider id (`claude-code` → "Claude Code"). */
+export function providerDisplayName(providerId: string): string {
+  return PROVIDER_SHORT_NAMES[providerId] ?? providerId;
 }

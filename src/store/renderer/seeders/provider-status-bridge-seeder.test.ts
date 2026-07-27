@@ -45,6 +45,7 @@ const NO_TOOLS = {
     pi: { available: false },
     droid: { available: false },
     grok: { available: false },
+    unsloth: { available: false },
     "codex-acp": { available: false },
     npx: { available: false },
   },
@@ -107,7 +108,17 @@ describe("provider-status-bridge-seeder", () => {
 
       expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
       expect(mockedRequest).toHaveBeenCalledWith("host.toolAvailability", {
-        tools: ["claude", "codex", "opencode", "pi", "droid", "grok", "codex-acp", "npx"],
+        tools: [
+          "claude",
+          "codex",
+          "opencode",
+          "pi",
+          "droid",
+          "grok",
+          "unsloth",
+          "codex-acp",
+          "npx",
+        ],
       });
       // The auth sweep carries no providerId / force — the daemon's cache
       // is respected on the aggregate path.
@@ -219,6 +230,71 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data?.providers.droid).toEqual({ available: true, authenticated: false });
       // Wire `null` = unknown → no authenticated field (no indicator).
       expect(response.data?.providers.grok).toEqual({ available: true });
+    });
+
+    it("keys unsloth availability off both opencode AND the unsloth CLI (available ⇒ authenticated)", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            opencode: { available: true, path: "/usr/local/bin/opencode" },
+            unsloth: { available: true, path: "/usr/local/bin/unsloth" },
+          },
+        },
+        "host.providerAuthStatus": authSweep(),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      // Local-only provider: no login surface, so available ⇒ authenticated.
+      expect(response.data?.providers.unsloth).toEqual({
+        available: true,
+        authenticated: true,
+      });
+      // opencode itself keeps its own (unknown) auth verdict.
+      expect(response.data?.providers.opencode).toEqual({ available: true });
+    });
+
+    it("reports unsloth unavailable when opencode is present but the unsloth CLI is missing", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            opencode: { available: true, path: "/usr/local/bin/opencode" },
+          },
+        },
+        "host.providerAuthStatus": authSweep(),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.unsloth).toEqual({ available: false });
+      expect(response.data?.providers.opencode).toEqual({ available: true });
+    });
+
+    it("reports unsloth unavailable when the unsloth CLI is present but opencode is missing", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            unsloth: { available: true, path: "/usr/local/bin/unsloth" },
+          },
+        },
+        "host.providerAuthStatus": authSweep(),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.unsloth).toEqual({ available: false });
     });
 
     it("does not attach verdicts to unavailable providers", async () => {
@@ -608,6 +684,65 @@ describe("provider-status-bridge-seeder", () => {
         success: true,
         providerId: "droid",
         data: { available: true, authenticated: false },
+      });
+    });
+
+    it("rechecks unsloth off both opencode AND the unsloth CLI — local-only, so available ⇒ authenticated", async () => {
+      routeDaemon({
+        "host.findBinary": (params: unknown) => {
+          const name = (params as { name?: string }).name;
+          return name === "opencode" || name === "unsloth"
+            ? { available: true, path: `/usr/local/bin/${name}` }
+            : { available: false };
+        },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "opencode" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "unsloth" });
+      expect(mockedRequest).not.toHaveBeenCalledWith(
+        "host.providerAuthStatus",
+        expect.anything(),
+      );
+      expect(response).toEqual({
+        success: true,
+        providerId: "unsloth",
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it("rechecks unsloth as unavailable when opencode is missing", async () => {
+      routeDaemon({
+        "host.findBinary": (params: unknown) =>
+          (params as { name?: string }).name === "unsloth"
+            ? { available: true, path: "/usr/local/bin/unsloth" }
+            : { available: false },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "unsloth",
+        data: { available: false },
+      });
+    });
+
+    it("rechecks unsloth as unavailable when the unsloth CLI is missing", async () => {
+      routeDaemon({
+        "host.findBinary": (params: unknown) =>
+          (params as { name?: string }).name === "opencode"
+            ? { available: true, path: "/usr/local/bin/opencode" }
+            : { available: false },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "unsloth");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "unsloth",
+        data: { available: false },
       });
     });
 

@@ -25,6 +25,8 @@
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
+import { MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
+import { meetsMinimumVersion } from "$shared/utils/version-compare";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { openExternalUrl } from "$lib/utils/open-external";
 import { EDITOR_REGISTRY } from "$shared/editors/editor-registry";
@@ -112,6 +114,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.GET_DIRECTORY_STATUS, async (arg) => {
 interface HostFindBinaryResult {
   available: boolean;
   path?: string;
+  version?: string;
 }
 
 /**
@@ -130,6 +133,40 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_RTK, async () => {
     return { success: true, data: { available: result?.available === true } };
   } catch {
     return { success: true, data: { available: false } };
+  }
+});
+
+/**
+ * `system:check-node` → daemon `host.findBinary` (name `node`).
+ *
+ * Dedicated lightweight probe for the host-requirements gate (the full
+ * `auggie:status` bridge also checks node, but pays for the whole auggie
+ * status sweep). `host.findBinary` best-effort version-probes the resolved
+ * binary, so one RPC yields `{ available, version? }`; the version is
+ * normalized (leading `v` stripped) and compared against
+ * MINIMUM_NODE_VERSION. Mirrors `CHECK_GIT`: a missing node binary — or a
+ * failed probe — is never an RPC error; it folds to `{ available:false,
+ * versionOk:false }`.
+ */
+registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_NODE, async () => {
+  try {
+    const result = await backendRequest<HostFindBinaryResult>("host.findBinary", {
+      name: "node",
+    });
+    if (result?.available !== true) {
+      return { success: true, data: { available: false, versionOk: false } };
+    }
+    const version = result.version?.trim().replace(/^v/, "");
+    return {
+      success: true,
+      data: {
+        available: true,
+        version,
+        versionOk: version ? meetsMinimumVersion(version, MINIMUM_NODE_VERSION) : false,
+      },
+    };
+  } catch {
+    return { success: true, data: { available: false, versionOk: false } };
   }
 });
 
@@ -450,7 +487,15 @@ registerMockIpcHandler(IPC_CHANNELS.EXTERNAL_EDITORS.DETECT_INSTALLED, async () 
         bundleId: def.bundleId,
         shortcut: def.shortcut,
         priority: def.priority,
-        installed: entry.installed === true,
+        // The file manager is always present: the daemon's macOS bundle probe
+        // looks for /Applications/Finder.app, which never exists (Finder lives
+        // in /System/Library/CoreServices), so `finder` came back
+        // installed:false and the "Reveal in Finder" row vanished from every
+        // Open-In menu. The reveal launches via `host.exec` (shell-reveal-
+        // bridge-seeder), not the bundle path, and the legacy Electron handler
+        // (external-editors.ipc.ts) hard-coded finder as installed — mirror
+        // that here; locality gating still hides it on remote daemons.
+        installed: entry.installed === true || def.handlerType === "finder",
       });
     }
     return { success: true, data };

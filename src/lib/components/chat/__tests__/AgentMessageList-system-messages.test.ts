@@ -141,4 +141,100 @@ describe('AgentMessageList - System Messages', () => {
     // extractAllContent should combine both text blocks
     expect(screen.getByText(/Part 1\. Part 2\./i)).toBeTruthy();
   });
+
+  it('renders a model_changed system message as a centered model-change notice', () => {
+    // Daemon-persisted notice row shape (PROTOCOL.md §5.5, agent.setModel):
+    // role "system", one text-block fallback, metadata
+    // { type: "model_changed", from, to, fromProvider, toProvider }.
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [
+          { type: 'text', text: 'Model changed from auggie:sonnet4.6 to codex:gpt-5-codex.' },
+        ],
+        timestamp: new Date().toISOString(),
+        metadata: {
+          type: 'model_changed',
+          from: 'sonnet4.6',
+          to: 'gpt-5-codex',
+          fromProvider: 'auggie',
+          toProvider: 'codex',
+        },
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    // Rendered as a status divider, not an interruption alert
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText(/Switched from .*sonnet4\.6.* to .*gpt-5-codex/)).toBeTruthy();
+  });
+
+  it('renders "default model" when model_changed from/to are null (provider default)', () => {
+    // from/to are null when the spawn resolved no explicit model id.
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [
+          { type: 'text', text: 'Model changed from auggie (default model) to codex:gpt-5-codex.' },
+        ],
+        timestamp: new Date().toISOString(),
+        metadata: {
+          type: 'model_changed',
+          from: null,
+          to: 'gpt-5-codex',
+          fromProvider: 'auggie',
+          toProvider: 'codex',
+        },
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.getByText(/Switched from .*default model.* to .*gpt-5-codex/)).toBeTruthy();
+  });
+
+  it('renders no model-change notice when the transcript has no model_changed row', () => {
+    // A reverted-before-send switch persists nothing, so an ordinary
+    // transcript must contain no status divider.
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'Hello' }],
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: 'msg-2',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'Response' }],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('falls back to the message text when model_changed metadata fields are missing', () => {
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: 'Model changed to gpt-5-codex' }],
+        timestamp: new Date().toISOString(),
+        metadata: { type: 'model_changed' },
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.getByText(/Model changed to gpt-5-codex/)).toBeTruthy();
+  });
 });

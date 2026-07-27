@@ -164,12 +164,134 @@ describe("selectWorkflowStage", () => {
     );
   });
 
+  it("returns 'all-done' when the PR is merged and all tasks are complete", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+    });
+    const input = makeInput({
+      gitStatus,
+      taskStats: makeTaskStats({ total: 2, completed: 2 }),
+      completionRatio: 1,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, input)).toBe("all-done");
+  });
+
+  it("returns 'tasks-ready' when the PR is merged but unstarted tasks remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+    });
+    const input = makeInput({ gitStatus, taskStats: makeTaskStats({ total: 3 }) });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, input)).toBe("tasks-ready");
+  });
+
+  it("returns 'tasks-in-progress' when the PR is merged but open tasks remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+    });
+    const input = makeInput({
+      gitStatus,
+      taskStats: makeTaskStats({ total: 4, completed: 2, inProgress: 1 }),
+      completionRatio: 0.5,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, input)).toBe("tasks-in-progress");
+  });
+
+  it("returns 'changes-unstaged' when the PR is merged with uncommitted changes and no tasks", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+      uncommittedCount: 2,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
+      "changes-unstaged",
+    );
+  });
+
+  it("returns 'changes-staged' when the PR is merged but staged changes remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+      stagedCount: 1,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
+      "changes-staged",
+    );
+  });
+
+  it("returns 'commits-unpushed' when the PR is merged but unpushed commits remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+      localCommits: [
+        { hash: "a", message: "m", author: "a", date: "d", filesChanged: 1, isPushed: false },
+      ],
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
+      "commits-unpushed",
+    );
+  });
+
+  it("returns 'all-done' when the PR is merged and all local commits are pushed", () => {
+    // The just-merged branch's own commits (pushed to open the PR) must not
+    // read as new work after the merge.
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+      localCommits: [
+        { hash: "a", message: "m", author: "a", date: "d", filesChanged: 1, isPushed: true },
+      ],
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
+      "all-done",
+    );
+  });
+
   it("returns 'all-done' when the PR is closed", () => {
     const gitStatus = makeGitStatus({
       existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "closed" },
     });
     expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
       "all-done",
+    );
+  });
+
+  it("returns a task stage when the PR is closed but open tasks remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "closed" },
+    });
+    const input = makeInput({
+      gitStatus,
+      taskStats: makeTaskStats({ total: 3, completed: 1, inProgress: 1 }),
+      completionRatio: 1 / 3,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, input)).toBe("tasks-in-progress");
+  });
+
+  it("returns 'changes-unstaged' when the PR is closed but uncommitted changes remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "closed" },
+      uncommittedCount: 2,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
+      "changes-unstaged",
+    );
+  });
+
+  it("returns 'changes-staged' when the PR is closed but staged changes remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "closed" },
+      stagedCount: 1,
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
+      "changes-staged",
+    );
+  });
+
+  it("returns 'commits-unpushed' when the PR is closed but unpushed commits remain", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "closed" },
+      localCommits: [
+        { hash: "a", message: "m", author: "a", date: "d", filesChanged: 1, isPushed: false },
+      ],
+    });
+    expect(selectWorkflowStage.select(mockState(), WS_ID, makeInput({ gitStatus }))).toBe(
+      "commits-unpushed",
     );
   });
 
@@ -251,6 +373,45 @@ describe("selectWorkspaceProgressHeadline", () => {
     ).headline;
     expect(headline).toBe("PR #7 open, awaiting review.");
     expect(headline).not.toContain("undefined");
+  });
+
+  it("suggests creating a PR for unpushed commits with no existing PR", () => {
+    const gitStatus = makeGitStatus({
+      localCommits: [
+        { hash: "a", message: "m", author: "a", date: "d", filesChanged: 1, isPushed: false },
+      ],
+    });
+    expect(selectWorkspaceProgressHeadline.select(mockState(), WS_ID, makeInput({ gitStatus }))).toEqual({
+      headline: "1 commit to push",
+      subtext: "Push to create a PR.",
+    });
+  });
+
+  it("suggests updating the PR for unpushed commits with an updatable PR", () => {
+    // An open PR resolves to the pr-open stage, so a draft PR (also updatable
+    // by a push) is the state that reaches commits-unpushed with a live PR.
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "draft" },
+      localCommits: [
+        { hash: "a", message: "m", author: "a", date: "d", filesChanged: 1, isPushed: false },
+      ],
+    });
+    expect(
+      selectWorkspaceProgressHeadline.select(mockState(), WS_ID, makeInput({ gitStatus })).subtext,
+    ).toBe("Push to update PR.");
+  });
+
+  it("suggests creating a new PR for unpushed commits after the PR merged", () => {
+    const gitStatus = makeGitStatus({
+      existingPR: { number: 42, url: "u", htmlUrl: "h", title: "t", state: "merged" },
+      localCommits: [
+        { hash: "a", message: "m", author: "a", date: "d", filesChanged: 1, isPushed: false },
+      ],
+    });
+    expect(selectWorkspaceProgressHeadline.select(mockState(), WS_ID, makeInput({ gitStatus }))).toEqual({
+      headline: "1 commit to push",
+      subtext: "Push to create a PR.",
+    });
   });
 
   it("includes approver and CI info in the pr-approved headline", () => {

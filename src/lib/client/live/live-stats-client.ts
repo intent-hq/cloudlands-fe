@@ -8,13 +8,8 @@
  * grouping (Spec D8). Errors are NOT folded: the overlay renders an explicit
  * error state rather than a fabricated zeroed dataset.
  */
-import type {
-  AppClient,
-  StatsClient,
-  UsageStatsPeriod,
-  UsageStatsResult,
-} from "../app-client";
-import { backendRequest } from "./backend-transport";
+import type { AppClient, StatsClient, UsageStatsPeriod, UsageStatsResult } from '../app-client';
+import { backendRequest } from './backend-transport';
 
 export class LiveStatsClient implements StatsClient {
   async getUsage(
@@ -26,12 +21,23 @@ export class LiveStatsClient implements StatsClient {
     // request should mirror the documented shape).
     const params: Record<string, unknown> = { period, tzOffsetMinutes };
     if (key !== undefined) params.key = key;
-    return backendRequest<UsageStatsResult>("stats.getUsage", params);
+    const result = await backendRequest<UsageStatsResult>('stats.getUsage', params);
+    // Validate the required rollups at ingest instead of defaulting them
+    // downstream (AGENTS.md: no defensive defaults to mask missing fields).
+    // A rejection here flows through `usageStatsFailed` and renders as the
+    // overlay's error state.
+    for (const field of ['byModel', 'byProvider'] as const) {
+      if (!Array.isArray(result[field])) {
+        throw new Error(
+          `stats.getUsage result is missing the required \`${field}\` array ` +
+            `(PROTOCOL §5.36) — the daemon is likely outdated and predates this field`,
+        );
+      }
+    }
+    return result;
   }
 }
 
 // Tied to AppClient["stats"] so the seam composition catches drift in CI.
-const _interfaceCheck: AppClient["stats"] | undefined = undefined as
-  | LiveStatsClient
-  | undefined;
+const _interfaceCheck: AppClient['stats'] | undefined = undefined as LiveStatsClient | undefined;
 void _interfaceCheck;

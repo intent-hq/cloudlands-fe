@@ -239,6 +239,11 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'grok:get-models',
   },
 
+  // Unsloth Integration (local GGUF models via the daemon's managed server)
+  UNSLOTH: {
+    GET_MODELS: 'unsloth:get-models',
+  },
+
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
@@ -287,6 +292,7 @@ export const IPC_CHANNELS = {
     EXECUTE_COMMAND: 'system:execute-command',
     EXECUTE_COMMAND_STREAMING: 'system:execute-command-streaming',
     CHECK_GIT: 'system:check-git',
+    CHECK_NODE: 'system:check-node',
     CHECK_RTK: 'system:check-rtk',
     LIST_FONTS: 'system:list-fonts',
   },

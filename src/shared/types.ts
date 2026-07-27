@@ -214,6 +214,29 @@ export interface NavigationItem {
 
 export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
 
+/** Canonical wire values for the BE-owned current-cycle `workspace.displayStatus`
+ *  (intent-hq/intentd#600). Single source of truth — the union type, the runtime
+ *  guard, and every consumer set derive from this array. */
+export const WORKSPACE_DISPLAY_STATUS_VALUES = [
+  'not_started',
+  'in_progress',
+  'complete',
+  'pr_ready',
+  'pr_open',
+  'pr_merged',
+] as const;
+
+export type WorkspaceDisplayStatus = (typeof WORKSPACE_DISPLAY_STATUS_VALUES)[number];
+
+/** Runtime guard for BE-sent displayStatus values. Unknown wire values (a future
+ *  daemon's 7th value, or a malformed one) must be treated as absent so the FE
+ *  degrades to its local derivation instead of rendering an unknown group. */
+export function isWorkspaceDisplayStatus(value: unknown): value is WorkspaceDisplayStatus {
+  return (
+    typeof value === 'string' && (WORKSPACE_DISPLAY_STATUS_VALUES as readonly string[]).includes(value)
+  );
+}
+
 export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system
@@ -237,6 +260,10 @@ export interface Workspace {
   statusMessage?: string;
   /** BE-derived in-flight agent state (green dot). Read-only; computed from agent runtime. */
   activity?: 'idle' | 'agent_running';
+  /** BE-owned current-cycle display status (intent-hq/intentd#600). Precedence is
+   *  daemon-side: open/draft PR → open tasks → merged PR → complete. Optional on
+   *  decode — absent on older daemons, where the FE falls back to its local derivation. */
+  displayStatus?: WorkspaceDisplayStatus;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
@@ -953,6 +980,11 @@ export interface AgentMetadata {
   originalAgentId?: string; // Original agent ID if this is a restored/migrated agent
   triggerType?: string; // Type of trigger (e.g., 'commit', 'pr', 'review')
   taskNoteId?: NoteId; // Phase 1C: Task note this agent is working on
+  // Agent sandbox (CoW workspace clone) fields — set by the daemon on
+  // sandboxed agents (agent.list / agent.get carry them in `metadata`).
+  sandboxPath?: string; // Absolute daemon-host path of the sandbox directory
+  sandboxId?: string; // Sandbox identifier
+  sandboxBranch?: string; // Git branch checked out inside the sandbox
   // Allow additional properties for flexibility with proper typing
   [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
 }
@@ -1003,15 +1035,24 @@ export interface ContextReference {
 
 export interface ToolUseBlock {
   type: 'tool_use';
+  /** Addressable block id (`{messageId}:{blockIndex}`, PROTOCOL §7.1) */
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /** Provider tool-call id — tool_result blocks reference it via `tool_use_id` (PROTOCOL §7.1) */
+  toolCallId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ToolResultBlock {
   type: 'tool_result';
+  /** Addressable block id (PROTOCOL §7.1) */
+  id?: string;
   tool_use_id: string;
-  content: string;
+  /** Tool result payload (PROTOCOL §7.1) */
+  output?: unknown;
+  /** Legacy payload field — superseded by `output` */
+  content?: string;
   is_error?: boolean;
 }
 

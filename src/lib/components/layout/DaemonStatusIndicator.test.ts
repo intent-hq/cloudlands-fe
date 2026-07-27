@@ -305,6 +305,180 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
+  describe('unsloth server section', () => {
+    const healthyDaemonHealth = {
+      health: 'healthy' as const,
+      stats: {
+        clients: 1,
+        agents: 0,
+        listenMode: 'uds',
+        port: null,
+        os: 'macos',
+        arch: 'aarch64',
+      },
+      lastUpdated: new Date().toISOString(),
+      polling: false,
+    };
+    const runningUnslothStatus = {
+      running: true,
+      repoId: 'unsloth/Qwen3-4B-GGUF',
+      port: 52415,
+      pid: 12345,
+      uptimeSecs: 125,
+      phase: 'ready',
+      cpuPercent: 250.5,
+      memoryBytes: 4294967296,
+      attachedAgentCount: 2,
+    };
+
+    it('dispatches pollUnslothStatus when the dropdown opens', async () => {
+      mockStoreState = { daemonHealth: { ...healthyDaemonHealth } };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      const unslothPolls = mockDispatch.mock.calls.filter(
+        ([action]) => action?.type === 'daemonHealth/pollUnslothStatus',
+      );
+      expect(unslothPolls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('renders the unsloth section when a server is running', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthyDaemonHealth, unslothStatus: runningUnslothStatus },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('Unsloth Server')).toBeTruthy();
+      // Model row shows the shortened repo name.
+      expect(screen.getByText('Qwen3-4B-GGUF')).toBeTruthy();
+      expect(screen.getByText('ready')).toBeTruthy();
+      expect(screen.getByText('52415')).toBeTruthy();
+      expect(screen.getByText('2m 5s')).toBeTruthy();
+      expect(screen.getByText('250.5%')).toBeTruthy();
+      expect(screen.getByText('4.00 GB')).toBeTruthy();
+      expect(screen.getByText('Attached agents')).toBeTruthy();
+      expect(screen.getByText('2')).toBeTruthy();
+      expect(screen.getByText('Stop server')).toBeTruthy();
+    });
+
+    it('hides the unsloth section when no server is running ({ running: false } degrade)', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          ...healthyDaemonHealth,
+          unslothStatus: { running: false, attachedAgentCount: 0 },
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.queryByText('Unsloth Server')).toBeNull();
+      expect(screen.queryByText('Stop server')).toBeNull();
+    });
+
+    it('hides the unsloth section when no status has been polled yet', async () => {
+      mockStoreState = { daemonHealth: { ...healthyDaemonHealth, unslothStatus: null } };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.queryByText('Unsloth Server')).toBeNull();
+    });
+
+    it('opens a confirm dialog on Stop server and dispatches stopUnslothRequested on confirm', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthyDaemonHealth, unslothStatus: runningUnslothStatus },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('Stop server'));
+
+      // Confirmation dialog with the attached-agent warning (2 agents attached).
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toBeTruthy();
+      expect(screen.getByText('Stop Unsloth Server')).toBeTruthy();
+      expect(screen.getByText(/2 agents are currently attached/)).toBeTruthy();
+
+      // Nothing dispatched until confirm.
+      const stopCalls = () =>
+        mockDispatch.mock.calls.filter(
+          ([action]) => action?.type === 'daemonHealth/stopUnslothRequested',
+        ).length;
+      expect(stopCalls()).toBe(0);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Stop Server' }));
+      expect(stopCalls()).toBe(1);
+    });
+
+    it('cancel in the confirm dialog does not dispatch stopUnslothRequested', async () => {
+      mockStoreState = {
+        daemonHealth: { ...healthyDaemonHealth, unslothStatus: runningUnslothStatus },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('Stop server'));
+      await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      const stopCalls = mockDispatch.mock.calls.filter(
+        ([action]) => action?.type === 'daemonHealth/stopUnslothRequested',
+      );
+      expect(stopCalls.length).toBe(0);
+    });
+
+    it('shows a no-warning description when no agents are attached', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          ...healthyDaemonHealth,
+          unslothStatus: { ...runningUnslothStatus, attachedAgentCount: 0 },
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('Stop server'));
+
+      expect(screen.getByText(/restarts automatically/)).toBeTruthy();
+      expect(screen.queryByText(/currently attached/)).toBeNull();
+    });
+
+    it('disables the stop button while a stop is in flight', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          ...healthyDaemonHealth,
+          unslothStatus: runningUnslothStatus,
+          unslothStopping: true,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      const stopButton = screen.getByText('Stopping…').closest('button');
+      expect(stopButton?.disabled).toBe(true);
+    });
+  });
+
   describe('1s polling while dropdown is open', () => {
     afterEach(() => {
       vi.useRealTimers();

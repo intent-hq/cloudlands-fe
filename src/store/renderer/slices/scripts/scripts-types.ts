@@ -8,12 +8,25 @@ import type { ScriptWithState } from '$features/scripts/types';
 export type { WorkspaceScript, ScriptRuntimeState, ScriptWithState } from '$features/scripts/types';
 
 /**
- * Output line type for display.
+ * One decoded `script:output` chunk (PROTOCOL §6.5). `text` is the UTF-8
+ * decoding of the raw PTY bytes, stored verbatim — never line-split — so
+ * xterm can replay the exact byte stream (spinner `\r` redraws, ANSI
+ * sequences split across chunk boundaries, the daemon's in-band
+ * `--- Restarting … ---` separators).
  */
-export type ScriptOutputLine = {
+export type ScriptOutputChunk = {
   text: string;
-  stream: 'stdout' | 'stderr';
   timestamp: string;
+};
+
+/**
+ * Bounded ring buffer of raw output chunks for one script. `dropped` counts
+ * chunks evicted from the front so viewers can track their position in the
+ * stream across evictions.
+ */
+export type ScriptOutputBuffer = {
+  chunks: ScriptOutputChunk[];
+  dropped: number;
 };
 
 /**
@@ -22,8 +35,8 @@ export type ScriptOutputLine = {
 export type ScriptsWorkspaceState = {
   /** Script definitions with runtime state keyed by script ID */
   scripts: Record<string, ScriptWithState>;
-  /** Output buffers keyed by script ID */
-  outputBuffers: Record<string, ScriptOutputLine[]>;
+  /** Raw-chunk output ring buffers keyed by script ID */
+  outputBuffers: Record<string, ScriptOutputBuffer>;
   /** Whether the workspace scripts have been initialized */
   initialized: boolean;
   /** Whether scripts are currently loading */

@@ -188,9 +188,6 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
       return { providerId: providerId || 'auggie', modelId: rest.join(':') };
     },
     resolvePreferredModel: () => undefined,
-    getAlwaysEnabledProviders: () => [
-      { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: true },
-    ],
     ACP_PROVIDERS: {
       auggie: { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: true },
       codex: { id: 'codex', displayName: 'OpenAI Codex', canBeDisabled: true },
@@ -1138,5 +1135,147 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
       .filter((action) => action.type === selectModel.type);
     expect(selectModelActions[0]?.payload).toEqual(['model-1']);
     expect(dispatchedTypes()).not.toContain(setWorkspaceModel.type);
+  });
+});
+
+describe('ModelPicker confirmModelChange gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+    ];
+    providerWarnings$.set({});
+    codexManagedInstallStatus$.set(null);
+    mockAgentSession$.set(undefined);
+    vi.mocked(getModelsForProvider).mockResolvedValue([
+      { value: 'model-1', label: 'Model 1', description: 'A model' },
+      { value: 'model-2', label: 'Model 2', description: 'Another model' },
+    ]);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: await vi.mocked(getModelsForProvider)(providerId),
+    }));
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('applies the pick when the gate resolves true', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(true);
+
+    render(ModelPicker, {
+      props: { selectedModel: 'model-1', onModelChange, confirmModelChange, portal: false },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
+
+    await waitFor(() => {
+      expect(onModelChange).toHaveBeenCalledWith('model-2');
+    });
+    expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
+  });
+
+  it('reverts the pick and skips onModelChange when the gate resolves false', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(false);
+
+    render(ModelPicker, {
+      props: { selectedModel: 'model-1', onModelChange, confirmModelChange, portal: false },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
+
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onModelChange).not.toHaveBeenCalled();
+    // The trigger still shows the original model after the revert.
+    const trigger = screen
+      .getAllByRole('button')
+      .find((b) => b.textContent?.includes('Model 1') || b.textContent?.includes('Model 2'));
+    expect(trigger?.textContent).toContain('Model 1');
+    expect(trigger?.textContent).not.toContain('Model 2');
+  });
+
+  it('gates switching from an explicit model to "Default model" and passes null as the target', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(true);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-1',
+        onModelChange,
+        confirmModelChange,
+        portal: false,
+        showDefaultOption: true,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
+
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+    });
+    // Confirming applies the pick: the trigger now shows "Default model".
+    await waitFor(() => {
+      const trigger = screen
+        .getAllByRole('button')
+        .find((b) => b.textContent?.includes('Default model') || b.textContent?.includes('Model 1'));
+      expect(trigger?.textContent).toContain('Default model');
+    });
+  });
+
+  it('reverts an explicit-to-default pick when the gate resolves false', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(false);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'model-1',
+        onModelChange,
+        confirmModelChange,
+        portal: false,
+        showDefaultOption: true,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
+
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onModelChange).not.toHaveBeenCalled();
+    const trigger = screen
+      .getAllByRole('button')
+      .find((b) => b.textContent?.includes('Model 1') || b.textContent?.includes('Default model'));
+    expect(trigger?.textContent).toContain('Model 1');
+  });
+
+  it('does not invoke the gate when re-selecting the current model', async () => {
+    const onModelChange = vi.fn();
+    const confirmModelChange = vi.fn().mockResolvedValue(true);
+
+    render(ModelPicker, {
+      props: { selectedModel: 'model-1', onModelChange, confirmModelChange, portal: false },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 1/ }));
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(confirmModelChange).not.toHaveBeenCalled();
+    expect(onModelChange).toHaveBeenCalledWith('model-1');
   });
 });

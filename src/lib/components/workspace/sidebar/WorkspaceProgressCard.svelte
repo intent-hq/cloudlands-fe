@@ -23,6 +23,7 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import TaskStatusIndicator from '$lib/components/workspace/TaskStatusIndicator.svelte';
+  import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import TaskAgentStatus from '$lib/components/tiptap/TaskAgentStatus.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -835,7 +836,7 @@
       <div class="text-sm font-semibold text-foreground truncate">
         {$workspace?.title || 'Untitled'}
       </div>
-      <div class="text-sm text-subtle truncate mt-0.5 flex items-center gap-1">
+      <div class="text-sm text-subtle truncate mt-0.5 flex items-baseline gap-1">
         <Tooltip
           side="bottom"
           align="start"
@@ -844,6 +845,7 @@
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick={true}
+          class="min-w-0"
         >
           {#snippet content()}
             <span>
@@ -875,7 +877,7 @@
           {/snippet}
           <button
             type="button"
-            class="cursor-pointer bg-transparent border-none p-0 text-inherit font-inherit hover:underline"
+            class="min-w-0 truncate cursor-pointer bg-transparent border-none p-0 text-inherit font-inherit hover:underline"
             onclick={copyRepoPath}
           >
             {#if $workspace?.repositoryOwner && $workspace?.repositoryName}
@@ -885,6 +887,7 @@
             {/if}
           </button>
         </Tooltip>
+        <CheckoutModePill checkoutMode={$workspace?.checkoutMode} />
         {#if $workspace?.branch}
           <span class="mx-1">·</span>
           <span>{$workspace.branch}</span>
@@ -1003,7 +1006,7 @@
         </div>
       </div>
       <!-- repo -->
-      <div class="w-full flex items-center -mt-1.5 gap-1">
+      <div class="w-full flex items-baseline -mt-1.5 gap-1">
         <Tooltip
           side="bottom"
           align="start"
@@ -1012,6 +1015,7 @@
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick={true}
+          class="min-w-0"
         >
           {#snippet content()}
             <span>
@@ -1053,6 +1057,7 @@
             {/if}
           </button>
         </Tooltip>
+        <CheckoutModePill checkoutMode={$workspace?.checkoutMode} />
       </div>
     </div>
 

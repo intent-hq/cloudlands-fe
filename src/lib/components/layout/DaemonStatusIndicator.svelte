@@ -32,21 +32,31 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import {
     selectDaemonHealth,
     selectDaemonHealthStats,
     selectDaemonHealthLastUpdated,
+    selectUnslothStatus,
+    selectUnslothStopping,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
-  import { pollSystemStatus } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import {
+    pollSystemStatus,
+    pollUnslothStatus,
+    stopUnslothRequested,
+  } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
   const stats$ = selectDaemonHealthStats();
   const lastUpdated$ = selectDaemonHealthLastUpdated();
+  const unslothStatus$ = selectUnslothStatus();
+  const unslothStopping$ = selectUnslothStopping();
 
   let dropdownOpen = $state(false);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
+  let stopUnslothDialogOpen = $state(false);
 
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
@@ -104,6 +114,7 @@
   $effect(() => {
     if (dropdownOpen) {
       appStore.dispatch(pollSystemStatus());
+      appStore.dispatch(pollUnslothStatus());
     }
   });
 
@@ -119,6 +130,7 @@
       const interval = setInterval(() => {
         if ($health$ !== 'down') {
           appStore.dispatch(pollSystemStatus());
+          appStore.dispatch(pollUnslothStatus());
         }
         liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
       }, 1000);
@@ -131,6 +143,26 @@
       liveUptimeSeconds = undefined;
     }
   });
+
+  // Short model label for the unsloth row: the repo name without the org
+  // prefix (e.g. "unsloth/Qwen3-4B-GGUF" → "Qwen3-4B-GGUF").
+  const unslothModelLabel = $derived(
+    $unslothStatus$?.repoId ? ($unslothStatus$.repoId.split('/').pop() ?? $unslothStatus$.repoId) : '',
+  );
+
+  const stopUnslothDescription = $derived.by(() => {
+    const count = $unslothStatus$?.attachedAgentCount ?? 0;
+    const model = $unslothStatus$?.repoId ?? 'the managed Unsloth server';
+    if (count > 0) {
+      const agents = count === 1 ? '1 agent is' : `${count} agents are`;
+      return `${agents} currently attached to ${model}. Stopping the server will break in-flight requests from those agents.`;
+    }
+    return `This stops the managed Unsloth server for ${model}. It restarts automatically the next time an unsloth agent is created.`;
+  });
+
+  function confirmStopUnsloth() {
+    appStore.dispatch(stopUnslothRequested());
+  }
 </script>
 
 <DropdownMenu align="end" side="bottom" bind:open={dropdownOpen} contentClass="px-0" portal={true}>
@@ -273,8 +305,103 @@
               No stats available
             </div>
           {/if}
+
+          <!-- Managed Unsloth server (only when one is running) -->
+          {#if $unslothStatus$?.running}
+            <div class="h-px bg-border my-1"></div>
+
+            <Header class="pt-1 pb-0.5" size={6}>Unsloth Server</Header>
+
+            <!-- Model (HF repo id, shortened) -->
+            {#if $unslothStatus$.repoId}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Model</span>
+                <Tooltip side="left">
+                  {#snippet content()}
+                    <span>{$unslothStatus$.repoId}</span>
+                  {/snippet}
+                  <span class="font-mono text-xs truncate max-w-32">{unslothModelLabel}</span>
+                </Tooltip>
+              </div>
+            {/if}
+
+            <!-- Phase -->
+            {#if $unslothStatus$.phase}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Phase</span>
+                <span
+                  class={cn(
+                    'font-mono text-xs',
+                    $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-yellow-500',
+                  )}
+                >
+                  {$unslothStatus$.phase}
+                </span>
+              </div>
+            {/if}
+
+            <!-- Port -->
+            {#if $unslothStatus$.port !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Port</span>
+                <span class="font-mono text-xs">{$unslothStatus$.port}</span>
+              </div>
+            {/if}
+
+            <!-- Uptime -->
+            {#if $unslothStatus$.uptimeSecs !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Uptime</span>
+                <span class="font-mono text-xs" aria-live="off">{formatUptime($unslothStatus$.uptimeSecs)}</span>
+              </div>
+            {/if}
+
+            <!-- CPU (process tree) -->
+            {#if $unslothStatus$.cpuPercent !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">CPU</span>
+                <span class="font-mono text-xs" aria-live="off">{formatCpu($unslothStatus$.cpuPercent)}</span>
+              </div>
+            {/if}
+
+            <!-- Memory (process tree) -->
+            {#if $unslothStatus$.memoryBytes !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Memory</span>
+                <span class="font-mono text-xs" aria-live="off">{formatMemory($unslothStatus$.memoryBytes)}</span>
+              </div>
+            {/if}
+
+            <!-- Attached agents (omitted when the agent manager is not attached) -->
+            {#if $unslothStatus$.attachedAgentCount !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Attached agents</span>
+                <span class="font-mono text-xs">{$unslothStatus$.attachedAgentCount}</span>
+              </div>
+            {/if}
+
+            <!-- Stop action -->
+            <button
+              class="w-full text-left text-xs text-red-500 hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+              disabled={$unslothStopping$}
+              onclick={() => {
+                stopUnslothDialogOpen = true;
+              }}
+            >
+              {$unslothStopping$ ? 'Stopping…' : 'Stop server'}
+            </button>
+          {/if}
         </div>
       {/if}
     </div>
   {/snippet}
 </DropdownMenu>
+
+<BulkActionConfirmDialog
+  bind:open={stopUnslothDialogOpen}
+  title="Stop Unsloth Server"
+  description={stopUnslothDescription}
+  confirmText="Stop Server"
+  variant="destructive"
+  onConfirm={confirmStopUnsloth}
+/>

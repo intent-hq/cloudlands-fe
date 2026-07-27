@@ -31,6 +31,12 @@
  *                 resolves, a warning is attached.
  *  - opencode / pi / droid / grok: binary presence via
  *                 `host.toolAvailability` / `host.findBinary`.
+ *  - unsloth:     rides the opencode binary (the daemon injects the managed
+ *                 local server's config via OPENCODE_CONFIG_CONTENT) AND the
+ *                 daemon-managed server lifecycle shells out to the `unsloth`
+ *                 CLI directly — presence requires BOTH `opencode` and
+ *                 `unsloth` to resolve; local-only — no login surface, so
+ *                 available ⇒ authenticated.
  *  - auth (all):  `host.providerAuthStatus` — `true`/`false` verdicts attach
  *                 to available providers; the wire `null` (unknown) folds to
  *                 undefined so no indicator renders.
@@ -94,6 +100,7 @@ const PROVIDER_BINARIES: Record<string, string> = {
   pi: "pi",
   droid: "droid",
   grok: "grok",
+  unsloth: "unsloth",
 };
 
 /** The codex ACP adapter binary — only consulted for the codex warning. */
@@ -213,6 +220,14 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const pi: ProviderStatus = { available: tool(PROVIDER_BINARIES.pi).available === true };
   const droid: ProviderStatus = { available: tool(PROVIDER_BINARIES.droid).available === true };
   const grok: ProviderStatus = { available: tool(PROVIDER_BINARIES.grok).available === true };
+  // unsloth rides the opencode binary AND requires the unsloth CLI itself
+  // (the daemon-managed server lifecycle shells out to `unsloth run`
+  // directly); local-only, so available ⇒ authenticated (the daemon's
+  // managed server injects its own API key).
+  const unsloth: ProviderStatus = {
+    available: opencode.available && tool(PROVIDER_BINARIES.unsloth).available === true,
+  };
+  if (unsloth.available) unsloth.authenticated = true;
   const cortex: ProviderStatus = { available: false };
   const mock: ProviderStatus = { available: false };
 
@@ -232,8 +247,9 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       opencode.available ||
       pi.available ||
       droid.available ||
-      grok.available,
-    providers: { auggie, claudeCode, codex, cortex, mock, opencode, pi, droid, grok },
+      grok.available ||
+      unsloth.available,
+    providers: { auggie, claudeCode, codex, cortex, mock, opencode, pi, droid, grok, unsloth },
     hiddenProviders,
   };
 }
@@ -257,6 +273,19 @@ async function checkSingleProvider(providerId: string): Promise<ProviderStatus> 
     // Feature-code / env-var gated — the renderer cannot verify either, so
     // they stay unavailable (main's default-deny gating).
     return { available: false };
+  }
+  if (providerId === "unsloth") {
+    // Rides the opencode binary AND requires the unsloth CLI itself;
+    // local-only so available ⇒ authenticated.
+    const [opencodeFound, unslothFound] = await Promise.all([
+      backendRequest<HostCheckResult>("host.findBinary", { name: PROVIDER_BINARIES.opencode }),
+      backendRequest<HostCheckResult>("host.findBinary", { name: PROVIDER_BINARIES.unsloth }),
+    ]);
+    const status: ProviderStatus = {
+      available: opencodeFound?.available === true && unslothFound?.available === true,
+    };
+    if (status.available) status.authenticated = true;
+    return status;
   }
 
   const binary = PROVIDER_BINARIES[providerId];

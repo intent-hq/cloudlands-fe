@@ -100,6 +100,7 @@
       opencode: 'opencode',
       droid: 'droid',
       grok: 'grok',
+      unsloth: 'unsloth',
       cortex: 'cortex',
       pi: 'pi',
     };

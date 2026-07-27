@@ -1,17 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import type { UsageModelStats } from '$lib/client/app-client';
+import type { UsageModelStats, UsageProviderStats } from '$lib/client/app-client';
 import {
   formatDuration,
   formatInt,
   formatShare,
   formatTokens,
+  providerDisplayName,
   rankModels,
+  rankProviders,
   totalTokens,
 } from './stats-format';
 
 function model(name: string, tokens: Partial<UsageModelStats> = {}): UsageModelStats {
   return {
     model: name,
+    runs: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    ...tokens,
+  };
+}
+
+function provider(id: string, tokens: Partial<UsageProviderStats> = {}): UsageProviderStats {
+  return {
+    provider: id,
     runs: 0,
     inputTokens: 0,
     outputTokens: 0,
@@ -141,5 +155,68 @@ describe('rankModels', () => {
   it('carries runs through for the MOST USED callout', () => {
     const ranked = rankModels([model('a', { inputTokens: 10, runs: 7 })]);
     expect(ranked[0].runs).toBe(7);
+  });
+});
+
+describe('rankProviders', () => {
+  it('ranks by summed total tokens desc and caps at 4', () => {
+    const ranked = rankProviders([
+      provider('auggie', { inputTokens: 100 }),
+      provider('claude-code', { outputTokens: 500 }),
+      provider('codex', { cacheReadTokens: 300 }),
+      provider('droid', { cacheCreationTokens: 50 }),
+      provider('pi', { inputTokens: 40 }),
+    ]);
+    expect(ranked.map((p) => p.provider)).toEqual(['claude-code', 'codex', 'auggie', 'droid']);
+    expect(ranked.map((p) => p.tokens)).toEqual([500, 300, 100, 50]);
+  });
+
+  it('computes shares against the grand total across ALL providers', () => {
+    const ranked = rankProviders([
+      provider('a', { inputTokens: 600 }),
+      provider('b', { inputTokens: 300 }),
+      provider('c', { inputTokens: 50 }),
+      provider('d', { inputTokens: 30 }),
+      provider('e', { inputTokens: 20 }),
+    ]);
+    expect(ranked).toHaveLength(4);
+    expect(ranked[0].share).toBeCloseTo(0.6);
+    expect(ranked.reduce((acc, p) => acc + p.share, 0)).toBeLessThan(1);
+  });
+
+  it('degrades gracefully below 4 providers and drops zero-token rows', () => {
+    const ranked = rankProviders([provider('auggie', { inputTokens: 10 }), provider('zero')]);
+    expect(ranked.map((p) => p.provider)).toEqual(['auggie']);
+    expect(ranked[0].share).toBe(1);
+  });
+
+  it('returns empty (not NaN shares) for a zero-data period', () => {
+    expect(rankProviders([])).toEqual([]);
+    expect(rankProviders([provider('auggie')])).toEqual([]);
+  });
+
+  it('carries runs through for the MOST USED callout', () => {
+    const ranked = rankProviders([provider('auggie', { inputTokens: 10, runs: 7 })]);
+    expect(ranked[0].runs).toBe(7);
+  });
+});
+
+describe('providerDisplayName', () => {
+  it('maps raw provider ids to short app-style names', () => {
+    expect(providerDisplayName('auggie')).toBe('Auggie');
+    expect(providerDisplayName('claude-code')).toBe('Claude Code');
+    expect(providerDisplayName('codex')).toBe('Codex');
+    expect(providerDisplayName('opencode')).toBe('OpenCode');
+    expect(providerDisplayName('pi')).toBe('Pi');
+    expect(providerDisplayName('droid')).toBe('Droid');
+    expect(providerDisplayName('grok')).toBe('Grok');
+  });
+
+  it('renders pre-migration/unattributable usage as Unknown', () => {
+    expect(providerDisplayName('unknown')).toBe('Unknown');
+  });
+
+  it('passes unrecognized ids through as-is', () => {
+    expect(providerDisplayName('some-new-agent')).toBe('some-new-agent');
   });
 });

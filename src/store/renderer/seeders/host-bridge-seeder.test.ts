@@ -161,6 +161,77 @@ describe("host-bridge-seeder", () => {
     });
   });
 
+  describe("system:check-node → daemon host.findBinary", () => {
+    it("forwards { name:'node' } and folds a meeting version to {available:true, versionOk:true, version}", async () => {
+      // PROTOCOL host.findBinary: `{ available, path?, version? }` — the
+      // version is best-effort. Node reports `v22.1.0`; the bridge strips the
+      // leading `v` and compares against MINIMUM_NODE_VERSION (22.0.0).
+      mockedRequest.mockResolvedValueOnce({
+        available: true,
+        path: "/usr/local/bin/node",
+        version: "v22.1.0",
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_NODE);
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "node" });
+      expect(response).toEqual({
+        success: true,
+        data: { available: true, version: "22.1.0", versionOk: true },
+      });
+    });
+
+    it("marks a too-old node versionOk:false while keeping the version for messaging", async () => {
+      mockedRequest.mockResolvedValueOnce({
+        available: true,
+        path: "/usr/bin/node",
+        version: "v18.19.0",
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_NODE);
+
+      expect(response).toEqual({
+        success: true,
+        data: { available: true, version: "18.19.0", versionOk: false },
+      });
+    });
+
+    it("folds a version-less probe (binary resolves, --version failed) to versionOk:false", async () => {
+      // host_ops.rs: a binary that resolves but does not answer `--version`
+      // is still available:true with no `version` field.
+      mockedRequest.mockResolvedValueOnce({ available: true, path: "/usr/bin/node" });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_NODE);
+
+      expect(response).toEqual({
+        success: true,
+        data: { available: true, version: undefined, versionOk: false },
+      });
+    });
+
+    it("folds a daemon-reported missing binary to {available:false, versionOk:false}", async () => {
+      mockedRequest.mockResolvedValueOnce({ available: false });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_NODE);
+
+      expect(response).toEqual({
+        success: true,
+        data: { available: false, versionOk: false },
+      });
+    });
+
+    it("folds an RPC failure to {available:false, versionOk:false} — never an error", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("transport down"));
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_NODE);
+
+      expect(response).toEqual({
+        success: true,
+        data: { available: false, versionOk: false },
+      });
+    });
+  });
+
   describe("editor-open intents → daemon host.openInEditor (PROTOCOL §5.14)", () => {
     it("vscode:open with a string path sends host.openInEditor {editorId:'vscode', path}", async () => {
       mockedRequest.mockResolvedValueOnce({ ok: true });
@@ -301,6 +372,27 @@ describe("host-bridge-seeder", () => {
       const warp = response.data[1];
       expect(warp.installed).toBe(false);
       expect(warp.category).toBe("terminal");
+    });
+
+    it("forces the file manager installed even when the daemon bundle probe misses it (regression: Finder lives in /System/Library/CoreServices, not /Applications)", async () => {
+      mockedRequest.mockResolvedValueOnce({
+        editors: [
+          { id: "finder", installed: false },
+          { id: "vscode", installed: false },
+        ],
+      });
+
+      const response = await mockInvoke<{
+        success: boolean;
+        data: Array<Record<string, unknown>>;
+      }>(IPC_CHANNELS.EXTERNAL_EDITORS.DETECT_INSTALLED);
+
+      expect(response.success).toBe(true);
+      const finder = response.data.find((e) => e.id === "finder");
+      expect(finder?.installed).toBe(true);
+      // Non-finder entries still honor the daemon's detection facts.
+      const vscode = response.data.find((e) => e.id === "vscode");
+      expect(vscode?.installed).toBe(false);
     });
 
     it("folds an RPC failure to {success:false, error} so fetchEditorsFailure carries the message", async () => {

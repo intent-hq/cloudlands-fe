@@ -1,8 +1,9 @@
 /**
  * ACP Provider Configuration
  *
- * Defines configurations for different ACP-compatible agents.
- * Each provider can have its own CLI command, arguments, and model handling.
+ * UI-facing metadata for ACP-compatible agents (display names, CLI command
+ * hints, auth/login metadata). Provider spawning and model normalization are
+ * owned by the intentd daemon.
  *
  * This file is in shared/config so it can be imported by both main and renderer processes.
  */
@@ -15,40 +16,12 @@ export interface ACPProviderConfig {
   id: string;
   /** Display name shown in UI (e.g., 'Auggie', 'OpenCode') */
   displayName: string;
-  /** CLI command to spawn the agent */
+  /** CLI command for the provider's agent binary (used in UI hints and PATH checks) */
   command: string;
-  /** Default arguments for ACP mode */
-  baseArgs: string[];
-  /** Flag for model selection (e.g., '--model'). Providers that pass model config through
-   *  other mechanisms (env vars, custom args) should leave this undefined. */
-  modelFlag?: string;
-  /** Default agent name for ACP session (e.g., 'build' for OpenCode) */
-  defaultAgent?: string;
-  /** Provider-specific support flags */
-  supportsAuthenticate?: boolean;
-  supportsSetMode?: boolean;
-  /** Whether this provider supports MCP server configuration via CLI args */
-  supportsMcpConfig?: boolean;
-  /** Whether this provider supports rules files via CLI args */
-  supportsRulesFile?: boolean;
-  /** Flag for rules file (e.g., '--rules') */
-  rulesFlag?: string;
-  /** Flag for MCP config file (e.g., '--mcp-config') */
-  mcpConfigFlag?: string;
-  /** Flag for quiet mode (e.g., '--quiet') */
-  quietFlag?: string;
-  /** Optional provider-specific mode map overrides */
-  modeMap?: Record<string, string>;
-  /** Optional: filter available models for this provider */
-  supportedModels?: string[];
-  /** Optional: provider icon path */
-  iconPath?: string;
   /** Whether this provider is the default/primary provider */
   isDefault?: boolean;
   /** Whether this provider can be disabled in settings */
   canBeDisabled?: boolean;
-  /** IPC channel prefix for this provider (e.g., 'auggie', 'opencode') */
-  ipcChannelPrefix?: string;
   /** Authentication error patterns to detect auth failures */
   authErrorPatterns?: string[];
   /** Login command hint for authentication errors */
@@ -57,12 +30,6 @@ export interface ACPProviderConfig {
   requiresEnvVar?: string;
   /** If set, this provider is only visible when this feature code is activated */
   requiresFeatureCode?: string;
-  /**
-   * CLI args to check auth status (e.g., ['auth', 'status']). Exit 0 =
-   * authenticated. Unused in this build — auth verdicts come from the
-   * daemon's `host.providerAuthStatus` — kept for upstream parity.
-   */
-  authCheckArgs?: string[];
   /** URL to login/auth docs for this provider */
   loginDocsUrl?: string;
 }
@@ -76,18 +43,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     id: 'auggie',
     displayName: 'Augment Auggie',
     command: 'auggie',
-    baseArgs: ['--acp', '--allow-indexing'],
-    modelFlag: '--model',
-    supportsAuthenticate: true,
-    supportsSetMode: true,
-    supportsMcpConfig: true,
-    supportsRulesFile: true,
-    rulesFlag: '--rules',
-    mcpConfigFlag: '--mcp-config',
-    quietFlag: '--quiet',
     isDefault: true,
     canBeDisabled: true,
-    ipcChannelPrefix: 'auggie',
     authErrorPatterns: ['authentication required', 'auggie login', 'please run `auggie login`'],
     loginCommandHint: 'auggie login',
   },
@@ -96,32 +53,16 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     id: 'claude-code',
     displayName: 'Anthropic Claude Code',
     command: 'claude-agent-acp',
-    // Claude Code ACP adapter runs without additional flags
-    baseArgs: [],
-    supportsAuthenticate: false,
-    supportsSetMode: false,
-    supportsMcpConfig: false,
-    supportsRulesFile: false,
     isDefault: false,
     canBeDisabled: true,
-    ipcChannelPrefix: 'claude-code',
-    authCheckArgs: ['auth', 'status'],
     loginDocsUrl: 'https://code.claude.com/docs/en/quickstart#step-2-log-in-to-your-account',
   },
   codex: {
     id: 'codex',
     displayName: 'OpenAI Codex',
     command: 'codex-acp',
-    // Codex ACP adapter runs without additional flags
-    baseArgs: [],
-    supportsAuthenticate: false,
-    supportsSetMode: false,
-    supportsMcpConfig: false,
-    supportsRulesFile: false,
     isDefault: false,
     canBeDisabled: true,
-    ipcChannelPrefix: 'codex',
-    authCheckArgs: ['login', 'status'],
     loginDocsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
   },
 
@@ -129,15 +70,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     id: 'cortex',
     displayName: 'Snowflake Cortex',
     command: 'cortex-acp',
-    // Cortex ACP adapter runs without additional flags
-    baseArgs: [],
-    supportsAuthenticate: false,
-    supportsSetMode: false,
-    supportsMcpConfig: false,
-    supportsRulesFile: false,
     isDefault: false,
     canBeDisabled: true,
-    ipcChannelPrefix: 'cortex',
     requiresFeatureCode: 'cortex',
   },
 
@@ -145,21 +79,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     id: 'opencode',
     displayName: 'OpenCode',
     command: 'opencode',
-    baseArgs: ['acp'],
-    // OpenCode does not implement the ACP `authenticate` JSON-RPC method.
-    // User credentials are supplied via `opencode auth login`, env vars
-    // (ANTHROPIC_API_KEY, OPENAI_API_KEY, AWS_PROFILE, etc.), or a project .env file.
-    supportsAuthenticate: false,
-    supportsSetMode: false,
-    supportsMcpConfig: false,
-    supportsRulesFile: false,
     isDefault: false,
     canBeDisabled: true,
-    ipcChannelPrefix: 'opencode',
-    // Readiness is verified by listing models: `opencode models` returns a
-    // non-empty list only when at least one provider is credentialed (from any
-    // source: auth.json, env vars, or .env).
-    authCheckArgs: ['models'],
     loginDocsUrl: 'https://opencode.ai/docs#configure',
   },
 
@@ -167,14 +88,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     id: 'pi',
     displayName: 'Pi',
     command: 'pi-acp',
-    baseArgs: [],
-    supportsAuthenticate: false,
-    supportsSetMode: false,
-    supportsMcpConfig: false,
-    supportsRulesFile: false,
     isDefault: false,
     canBeDisabled: true,
-    ipcChannelPrefix: 'pi',
     loginDocsUrl: 'https://pi.dev/docs/latest/quickstart',
   },
 
@@ -182,20 +97,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     id: 'droid',
     displayName: 'Factory Droid',
     command: 'droid',
-    baseArgs: ['exec', '--output-format', 'acp'],
-    modelFlag: '--model',
-    // Droid does not implement the ACP `authenticate` JSON-RPC method.
-    // Users log in via the droid CLI / Factory docs.
-    supportsAuthenticate: false,
-    supportsSetMode: false,
-    supportsMcpConfig: false,
-    supportsRulesFile: false,
     isDefault: false,
     canBeDisabled: true,
-    ipcChannelPrefix: 'droid',
-    // Droid has no `models`/`auth status` CLI subcommand. Readiness is
-    // verified by the daemon via an ACP probe (initialize + session/new
-    // returning a non-empty model list) — see `host.providerAuthStatus`.
     loginDocsUrl: 'https://docs.factory.ai/cli/getting-started/overview',
   },
 
@@ -203,35 +106,29 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     id: 'grok',
     displayName: 'Grok Build',
     command: 'grok',
-    baseArgs: ['agent', 'stdio'],
-    // Grok's ACP stdio mode selects models after session creation via
-    // `session/set_model`, so there is no CLI model flag here.
-    supportsAuthenticate: false,
-    supportsSetMode: false,
-    supportsMcpConfig: false,
-    supportsRulesFile: false,
     isDefault: false,
     canBeDisabled: true,
-    ipcChannelPrefix: 'grok',
     loginCommandHint: 'grok login',
-    // `grok models` prints auth/readiness details to stdout. Unused in this
-    // build (readiness is owned by the daemon); kept for upstream parity.
-    authCheckArgs: ['models'],
     loginDocsUrl: 'https://docs.x.ai/build/enterprise#authentication',
+  },
+
+  unsloth: {
+    id: 'unsloth',
+    displayName: 'Unsloth',
+    // Unsloth rides the opencode binary as its ACP runtime; the daemon owns
+    // the managed local server lifecycle and spawn-time configuration.
+    command: 'opencode',
+    isDefault: false,
+    canBeDisabled: true,
+    loginDocsUrl: 'https://docs.unsloth.ai',
   },
 
   mock: {
     id: 'mock',
     displayName: 'Mock (E2E)',
     command: 'node',
-    baseArgs: [],
-    supportsAuthenticate: true,
-    supportsSetMode: false,
-    supportsMcpConfig: false,
-    supportsRulesFile: false,
     isDefault: false,
     canBeDisabled: true,
-    ipcChannelPrefix: 'mock',
     requiresEnvVar: 'MOCK_AGENT_SCRIPT_PATH',
   },
 };
@@ -314,6 +211,7 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   cortex: 'cortex',
   droid: 'droid',
   grok: 'grok',
+  unsloth: 'unsloth',
 };
 
 /**
@@ -353,49 +251,6 @@ export function parseCompoundModelId(compoundModelId: string): {
 }
 
 /**
- * Create a compound model ID from provider and model
- */
-export function createCompoundModelId(providerId: string, modelId: string): string {
-  return `${providerId}:${modelId}`;
-}
-
-/**
- * Build environment variables for a provider.
- *
- * Most providers handle model/agent configuration via CLI args (set in
- * provider-registry.ts). Providers whose subcommands don't accept model
- * flags use this function to pass configuration through env vars instead.
- *
- * - cortex: sets ELECTRON_RUN_AS_NODE=1 so the Electron binary runs as Node.js
- * - opencode: sets OPENCODE_CONFIG_CONTENT with the selected model, because
- *   the `opencode acp` subcommand doesn't support --model
- *
- * Called from provider-registry.ts getACPWithProvider() and
- * agent-backend-handler.service.ts handleSetModel().
- */
-export function buildProviderEnv(
-  providerId: string,
-  _model?: string,
-   
-  _agent?: string,
-): Record<string, string> {
-  // Cortex uses process.execPath (Electron binary) as the command for running
-  // the cortex-acp adapter script. ELECTRON_RUN_AS_NODE=1 makes Electron
-  // behave as Node.js so the script actually executes.
-  if (providerId === 'cortex') {
-    return { ELECTRON_RUN_AS_NODE: '1' };
-  }
-  // OpenCode's `acp` subcommand doesn't accept a --model flag.
-  // Pass the selected model via OPENCODE_CONFIG_CONTENT, which is the
-  // highest-precedence config source and only overrides the `model` key —
-  // the user's other OpenCode settings are preserved.
-  if (providerId === 'opencode' && _model) {
-    return { OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: _model }) };
-  }
-  return {};
-}
-
-/**
  * Check if an error message indicates the provider needs authentication
  * Uses the provider's configured auth error patterns
  */
@@ -407,33 +262,6 @@ export function isProviderAuthenticationError(providerId: string, errorMessage: 
 
   const errorLower = errorMessage.toLowerCase();
   return config.authErrorPatterns.some((pattern) => errorLower.includes(pattern.toLowerCase()));
-}
-
-/**
- * Get the authentication error message for a provider
- */
-export function getProviderAuthErrorMessage(providerId: string, isRemote: boolean): string {
-  const config = getProviderConfig(providerId);
-  const loginCmd = config.loginCommandHint || `${config.command} login`;
-
-  if (isRemote) {
-    return `${config.displayName} needs to be authenticated on the remote server. Run "${loginCmd}" in a terminal connected to the remote environment.`;
-  }
-  return `${config.displayName} needs to be authenticated. Run "${loginCmd}" in a terminal.`;
-}
-
-/**
- * Get providers that can be disabled in settings
- */
-export function getDisableableProviders(): ACPProviderConfig[] {
-  return Object.values(ACP_PROVIDERS).filter((p) => p.canBeDisabled);
-}
-
-/**
- * Get providers that are always enabled
- */
-export function getAlwaysEnabledProviders(): ACPProviderConfig[] {
-  return Object.values(ACP_PROVIDERS).filter((p) => !p.canBeDisabled);
 }
 
 /**
@@ -470,9 +298,9 @@ export const PROVIDER_MODEL_TIERS: Record<
   },
   codex: { fast: 'gpt-5.3-codex/medium', balanced: 'gpt-5.3-codex/high', smart: 'gpt-5.3-codex/xhigh' },
   cortex: { fast: 'claude-sonnet-4-5', balanced: 'claude-opus-4-5', smart: 'claude-opus-4-5' },
-  // Note: opencode, droid, and grok models are dynamic and fetched via the
-  // daemon's models.list catalog at runtime. Do NOT add hardcoded
-  // opencode/droid/grok entries here — model names change frequently.
+  // Note: opencode, droid, grok, and unsloth models are dynamic and fetched
+  // via the daemon's models.list catalog at runtime. Do NOT add hardcoded
+  // opencode/droid/grok/unsloth entries here — model names change frequently.
   // Tier resolution for these providers falls back to using the parent agent's model.
 };
 
@@ -545,130 +373,6 @@ export function getModelTierFromModel(
 export function isModelValidForProvider(model: string, targetProviderId: string): boolean {
   const { providerId: modelProvider } = parseCompoundModelId(model);
   return modelProvider === targetProviderId;
-}
-
-/**
- * Normalize a model identifier for fuzzy comparison.
- * Lowercases, strips a leading 'claude-' brand prefix, and removes all
- * non-alphanumeric characters (dashes, dots, slashes).
- *
- * Examples:
- *   'sonnet'              -> 'sonnet'
- *   'sonnet-4.6'          -> 'sonnet46'
- *   'claude-sonnet-4-6'   -> 'sonnet46'
- *   'gpt-5.3-codex/high'  -> 'gpt53codexhigh'
- */
-function normalizeForFuzzyMatch(id: string): string {
-  return id
-    .toLowerCase()
-    .replace(/^claude-/, '')
-    .replace(/[^a-z0-9]/g, '');
-}
-
-/**
- * Attempt to normalize a bare or fuzzy model name to the qualified provider:alias
- * form expected by the coordinator / LLM tool layer.
- *
- * Returns the qualified compound model ID when the candidate matches a known
- * tier model for `targetProviderId`, or undefined if no reasonable match is found.
- *
- * Matching rules (applied in order for the target provider's tier models):
- *   1. Exact match (case-insensitive)
- *   2. Normalized exact match (see normalizeForFuzzyMatch)
- *   3. Normalized prefix match where a short alias expands to a longer tier
- *      model (e.g., 'sonnet' -> 'sonnet4.5' for auggie). The direction is
- *      one-way: the candidate must be a prefix of a tier model. A longer
- *      candidate that merely starts with a tier model (e.g., 'gpt-5.3-codex/highest'
- *      starting with 'gpt-5.3-codex/high') is NOT silently rewritten.
- *
- * Candidates that already contain a ':' are treated as already-qualified and
- * returned unchanged.
- */
-export function normalizeModelOverride(
-  candidate: string,
-  targetProviderId: string,
-): string | undefined {
-  if (!candidate) return undefined;
-  if (candidate.includes(':')) return candidate;
-
-  const tierModels = PROVIDER_MODEL_TIERS[targetProviderId];
-  if (!tierModels) return undefined;
-
-  const tierValues = Array.from(new Set(Object.values(tierModels)));
-  const normalizedCandidate = normalizeForFuzzyMatch(candidate);
-  if (!normalizedCandidate) return undefined;
-
-  // 1. Exact (case-insensitive) match
-  const exact = tierValues.find((m) => m.toLowerCase() === candidate.toLowerCase());
-  if (exact) return createCompoundModelId(targetProviderId, exact);
-
-  // 2. Normalized exact match
-  const normExact = tierValues.find((m) => normalizeForFuzzyMatch(m) === normalizedCandidate);
-  if (normExact) return createCompoundModelId(targetProviderId, normExact);
-
-  // 3. Normalized prefix match — prefer the longest matching tier model so that
-  //    'sonnet' resolves to 'sonnet4.5' (auggie) and not 'haiku4.5'. Only the
-  //    short-alias → full tier direction is honored; see JSDoc above.
-  const prefixMatches = tierValues
-    .filter((m) => {
-      const n = normalizeForFuzzyMatch(m);
-      return n.startsWith(normalizedCandidate);
-    })
-    .sort((a, b) => normalizeForFuzzyMatch(b).length - normalizeForFuzzyMatch(a).length);
-  if (prefixMatches.length > 0) {
-    return createCompoundModelId(targetProviderId, prefixMatches[0]);
-  }
-
-  return undefined;
-}
-
-/**
- * Fuzzy-match a candidate model name against an explicit pool of known model IDs.
- *
- * Unlike {@link normalizeModelOverride} (which uses `PROVIDER_MODEL_TIERS` as its pool),
- * this helper takes the pool as a parameter so callers can supply the provider's live
- * model list fetched from the CLI. The tier table is a curated UX hint; the live list
- * is the source of truth.
- *
- * Matching rules (applied in order against `pool`):
- *   1. Exact match (case-insensitive)
- *   2. Normalized exact match (see {@link normalizeForFuzzyMatch})
- *   3. Normalized prefix match where the candidate is a prefix of a pool entry
- *      (one-way; a longer candidate that starts with a shorter pool entry is NOT
- *      rewritten — see the JSDoc on `normalizeModelOverride` for the rationale).
- *      Among multiple prefix matches, the longest pool entry wins so `sonnet`
- *      resolves to `sonnet4.6` rather than `sonnet4.5` when both are present.
- *
- * Returns the bare pool entry that matched, or `undefined` if no match.
- * Callers are responsible for qualifying it with a provider prefix if needed.
- */
-export function fuzzyMatchModelInPool(
-  candidate: string,
-  pool: readonly string[],
-): string | undefined {
-  if (!candidate || pool.length === 0) return undefined;
-
-  const normalizedCandidate = normalizeForFuzzyMatch(candidate);
-  if (!normalizedCandidate) return undefined;
-
-  // 1. Exact (case-insensitive) match
-  const exact = pool.find((m) => m.toLowerCase() === candidate.toLowerCase());
-  if (exact) return exact;
-
-  // 2. Normalized exact match
-  const normExact = pool.find((m) => normalizeForFuzzyMatch(m) === normalizedCandidate);
-  if (normExact) return normExact;
-
-  // 3. Normalized prefix match — prefer the longest matching pool entry so that
-  //    'sonnet' resolves to 'sonnet4.6' rather than 'sonnet4.5' when both are
-  //    present. Only the short-alias → full-name direction is honored.
-  const prefixMatches = pool
-    .filter((m) => normalizeForFuzzyMatch(m).startsWith(normalizedCandidate))
-    .slice()
-    .sort((a, b) => normalizeForFuzzyMatch(b).length - normalizeForFuzzyMatch(a).length);
-  if (prefixMatches.length > 0) return prefixMatches[0];
-
-  return undefined;
 }
 
 /**

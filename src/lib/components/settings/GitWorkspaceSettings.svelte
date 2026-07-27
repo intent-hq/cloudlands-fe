@@ -1,17 +1,10 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
   import { appClient } from '$lib/client';
-  import Fa from 'svelte-fa';
-  import {
-  faInfoCircle,
-} from '@fortawesome/free-solid-svg-icons';
   import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
   import { onMount } from 'svelte';
-  import {
-  validateBranchPrefix,
-  sanitizeBranchPrefix,
-} from '$lib/utils/workspace-validation';
+  import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
 
   // Settings state
   let worktreesLocation = $state('');
@@ -19,10 +12,16 @@
   let autoFetch = $state(false);
   let autoCommit = $state(true);
   let cowIsolation = $state(false);
+  let exposeGitCredential = $state(true);
   let defaultShell = $state('auto');
   let branchPrefix = $state('');
   let branchPrefixError = $state('');
   let settingsError = $state('');
+
+  // The git-credential toggle is only shown when the daemon reports the
+  // setting (older daemons don't have it); we also never write the path back
+  // to a daemon that didn't report it.
+  let gitCredentialSettingSupported = $state(false);
 
   // CoW toggle is visible only when the machine supports it — a direct probe
   // of the workspaces root via `system.capabilities` (PROTOCOL §5.7), with no
@@ -39,6 +38,7 @@
     autoCommit: 'git.autoCommit',
     cowIsolation: 'workspace.cowIsolation',
     branchPrefix: 'workspace.branchPrefix',
+    exposeGitCredential: 'sourceControl.github.exposeGitCredentialToChildren',
   } as const;
 
   // Last-loaded/saved value per daemon path so saves only send changed
@@ -90,6 +90,9 @@
       [SETTING_PATHS.autoCommit]: autoCommit,
       [SETTING_PATHS.cowIsolation]: cowIsolation,
       [SETTING_PATHS.branchPrefix]: branchPrefix,
+      ...(gitCredentialSettingSupported
+        ? { [SETTING_PATHS.exposeGitCredential]: exposeGitCredential }
+        : {}),
     };
   }
 
@@ -108,6 +111,10 @@
     autoCommit = byPath.get(SETTING_PATHS.autoCommit) !== false;
     cowIsolation = byPath.get(SETTING_PATHS.cowIsolation) === true;
     branchPrefix = stringValue(byPath.get(SETTING_PATHS.branchPrefix));
+    gitCredentialSettingSupported = byPath.has(SETTING_PATHS.exposeGitCredential);
+    // Security-sensitive: only an explicit boolean `true` counts as enabled, so
+    // malformed/unexpected values fail safe to off.
+    exposeGitCredential = byPath.get(SETTING_PATHS.exposeGitCredential) === true;
     loadedValues = currentValues();
   }
 
@@ -153,6 +160,7 @@
     sshKeyPath = '';
     autoFetch = false;
     autoCommit = true;
+    exposeGitCredential = true;
     defaultShell = 'auto';
     branchPrefix = '';
     branchPrefixError = '';
@@ -163,7 +171,9 @@
 <div class="flex flex-col bg-card rounded-xl pt-1 pb-3">
   {#if settingsError}
     <section class="px-6 py-2">
-      <p class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+      <p
+        class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2"
+      >
         {settingsError}
       </p>
     </section>
@@ -284,20 +294,57 @@
         />
         Auto-commit changes
       </label>
-      {#if showCowToggle}
-        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer group">
+    </div>
+  </section>
+
+  <!-- Copy-on-Write isolation -->
+  {#if showCowToggle}
+    <section class="px-6 py-2">
+      <div class="flex items-center gap-2">
+        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
           <input
             type="checkbox"
             bind:checked={cowIsolation}
             onchange={handleSave}
             class="cursor-pointer"
+            aria-describedby="cow-isolation-description"
           />
           <span>Use Copy-on-Write isolation</span>
-          <span class="text-subtle hover:text-foreground transition-colors" title="CoW workspaces + per-agent sandboxes. New workspaces are provisioned as instant copy-on-write clones of the repository, and each delegated agent runs in its own CoW sandbox whose changes are merged back automatically when it finishes. Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).">
-            <Fa icon={faInfoCircle} size="sm" />
-          </span>
         </label>
-      {/if}
-    </div>
-  </section>
+        <span
+          class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-ui-sm leading-4 text-subtle"
+        >
+          Experimental
+        </span>
+      </div>
+      <p id="cow-isolation-description" class="text-xs text-subtle mt-0.5 ml-6">
+        New workspaces are provisioned as copy-on-write clones of the repository, and each delegated
+        agent runs in its own CoW sandbox that is merged back automatically when it finishes.
+        Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on
+        Linux, ReFS/Dev Drive on Windows).
+      </p>
+    </section>
+  {/if}
+
+  <!-- Git credentials -->
+  {#if gitCredentialSettingSupported}
+    <section class="px-6 py-2">
+      <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        <input
+          type="checkbox"
+          bind:checked={exposeGitCredential}
+          onchange={handleSave}
+          class="cursor-pointer"
+          aria-describedby="git-credentials-description"
+        />
+        <span>Git credentials in terminals &amp; agents</span>
+      </label>
+      <p id="git-credentials-description" class="text-xs text-subtle mt-0.5 ml-6">
+        When on, git commands in workspace terminals and agent sessions can authenticate to
+        github.com using your connected GitHub account, via a credential helper scoped to HTTPS
+        github.com remotes. The token is never exposed as GITHUB_TOKEN, and your own git credential
+        helpers always take precedence.
+      </p>
+    </section>
+  {/if}
 </div>

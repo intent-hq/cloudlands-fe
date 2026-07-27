@@ -124,7 +124,7 @@ import type {
   TaskStatus,
   Workspace,
 } from '$shared/types';
-import { WorkspaceStatus, isProposal } from '$shared/types';
+import { WorkspaceStatus, isProposal, isWorkspaceDisplayStatus } from '$shared/types';
 import {
   PROPOSAL_RESOURCE_MIME_TYPE,
   createProposalResource,
@@ -184,10 +184,7 @@ import {
   appendScriptOutput,
   updateRuntimeState,
 } from '$store/renderer/slices/scripts/scripts-slice';
-import type {
-  ScriptOutputLine,
-  ScriptRuntimeState,
-} from '$store/renderer/slices/scripts/scripts-types';
+import type { ScriptRuntimeState } from '$store/renderer/slices/scripts/scripts-types';
 import {
   clearServerErrorMessage,
   setServerErrorMessage,
@@ -1378,6 +1375,30 @@ function handleActivityChangedEvent(event: WorkspaceEvent, workspaceId: string):
 }
 
 /**
+ * `workspace:displayStatus-changed` (intent-hq/intentd#600) carries the
+ * self-sufficient transition payload `{ workspaceId, displayStatus }` — the
+ * daemon emits it only when its BE-owned current-cycle rollup changes, so the
+ * FE mirrors the new value directly into the workspace entity without a
+ * follow-up `workspace.get`. The wire values are snake_case and match the FE
+ * type exactly, so no mapping is needed. Like the tokenUsage/context handlers,
+ * the payload's own `data.workspaceId` wins over the envelope id when present.
+ */
+function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  const displayStatus = data.displayStatus;
+  if (!isWorkspaceDisplayStatus(displayStatus)) return;
+  appStore.dispatch(
+    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { displayStatus })]),
+  );
+}
+
+/**
  * Reconcile workspace.activity when a missed edge is detected. The daemon only
  * emits `workspace:activity-changed` on the 0↔1 edge; for coordinator-only
  * workspaces that edge can fire before the FE bridge subscribed or before the
@@ -1566,19 +1587,34 @@ function handleSettingsChangedEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * Decode a base64 `chunk` (PROTOCOL §6.5 `script:output` payload) into a
- * UTF-8 string. Runs in the renderer, so `atob` is available; the two-step
- * conversion via `Uint8Array` preserves multibyte characters that a naive
- * `atob(...).split('')` would corrupt.
+ * Per-script streaming UTF-8 decoders keyed by `workspaceId:scriptId`.
+ * `decode(bytes, { stream: true })` carries a multibyte character split
+ * across two `script:output` chunks over the boundary instead of emitting
+ * U+FFFD for each half. Entries are dropped when the script leaves the
+ * `running` state (PTY stream ended) and on test reset; a decoder holds at
+ * most 3 buffered bytes, so the map stays negligible either way.
  */
-function decodeBase64Chunk(chunk: string): string | null {
+const scriptOutputDecoders = new Map<string, TextDecoder>();
+
+/**
+ * Decode a base64 `chunk` (PROTOCOL §6.5 `script:output` payload) into a
+ * UTF-8 string using the script's streaming decoder. Runs in the renderer,
+ * so `atob` is available; the two-step conversion via `Uint8Array` preserves
+ * multibyte characters that a naive `atob(...).split('')` would corrupt.
+ */
+function decodeBase64Chunk(decoderKey: string, chunk: string): string | null {
   try {
     const binary = atob(chunk);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
-    return new TextDecoder('utf-8').decode(bytes);
+    let decoder = scriptOutputDecoders.get(decoderKey);
+    if (!decoder) {
+      decoder = new TextDecoder('utf-8');
+      scriptOutputDecoders.set(decoderKey, decoder);
+    }
+    return decoder.decode(bytes, { stream: true });
   } catch {
     return null;
   }
@@ -1586,11 +1622,11 @@ function decodeBase64Chunk(chunk: string): string | null {
 
 /**
  * `script:output` (§6.5) carries `{ scriptId, chunk }` where `chunk` is the
- * base64 of raw PTY bytes. Split on `\r?\n` into `ScriptOutputLine[]` and
- * feed the scripts slice's `appendScriptOutput`; the trailing empty string
- * from a chunk that ends on a newline is dropped so the reference viewer's
- * `.join('\n')` reconstruction stays lossless. Streams are collapsed to
- * `stdout` because the daemon PTY is a single unified stream (§5.8).
+ * base64 of raw PTY bytes. The decoded text is appended to the scripts
+ * slice verbatim — never line-split — so xterm can replay the exact PTY
+ * stream (spinner `\r` redraws, ANSI sequences split across chunks, the
+ * daemon's in-band restart separators). The daemon PTY is a single unified
+ * stream (§5.8).
  */
 function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1598,17 +1634,11 @@ function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): vo
   const scriptId = data.scriptId;
   const chunk = data.chunk;
   if (typeof scriptId !== 'string' || typeof chunk !== 'string') return;
-  const text = decodeBase64Chunk(chunk);
-  if (text === null) return;
-  const parts = text.split(/\r?\n/);
-  const timestamp = new Date().toISOString();
-  const lines: ScriptOutputLine[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    if (i === parts.length - 1 && parts[i] === '') continue;
-    lines.push({ text: parts[i], stream: 'stdout', timestamp });
-  }
-  if (lines.length === 0) return;
-  appStore.dispatch(appendScriptOutput(workspaceId, scriptId, lines));
+  const text = decodeBase64Chunk(`${workspaceId}:${scriptId}`, chunk);
+  if (text === null || text === '') return;
+  appStore.dispatch(
+    appendScriptOutput(workspaceId, scriptId, { text, timestamp: new Date().toISOString() }),
+  );
 }
 
 /**
@@ -1623,6 +1653,8 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   if (!data) return;
   const { scriptId, ...rest } = data as { scriptId?: unknown } & Record<string, unknown>;
   if (typeof scriptId !== 'string') return;
+  // PTY stream ended — drop the streaming decoder so a later run starts fresh.
+  if (rest.status !== 'running') scriptOutputDecoders.delete(`${workspaceId}:${scriptId}`);
   appStore.dispatch(updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>));
 }
 
@@ -2013,6 +2045,13 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'workspace:activity-changed') {
     handleActivityChangedEvent(event, workspaceId);
   }
+  // `workspace:displayStatus-changed` (intent-hq/intentd#600) — merge the
+  // BE-owned current-cycle status onto the workspace entity so the sidebar
+  // status grouping updates live without a refetch. Side effect, never an
+  // early return.
+  if (type === 'workspace:displayStatus-changed') {
+    handleDisplayStatusChangedEvent(event, workspaceId);
+  }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
@@ -2276,6 +2315,10 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   // state changes (idle ↔ agent_running) so the FE can update the workspace
   // entity without a refetch.
   'workspace:activity-changed',
+  // `workspace:displayStatus-changed` (intent-hq/intentd#600) — BE-owned
+  // current-cycle display status transitions so the sidebar grouping updates
+  // without a refetch.
+  'workspace:displayStatus-changed',
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',
@@ -2437,4 +2480,5 @@ export function __resetDaemonEventsBridgeForTests(): void {
     clearTimeout(timer);
   }
   tasksRefreshTimersByWorkspace.clear();
+  scriptOutputDecoders.clear();
 }
