@@ -2,11 +2,16 @@
   import type {
     ContentBlock,
     ToolUseBlock,
-    ToolResultBlock,
     Proposal,
     ProposalActionDetail,
   } from '$shared/types';
   import { isProposal } from '$shared/types';
+  import {
+    buildToolResultsMap,
+    findToolResult,
+    getToolResultPayload,
+    getToolResultText,
+  } from './tool-result-pairing';
   import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
   import { isQuestionResourceBlock } from '$shared/types/question-resource';
   import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
@@ -112,54 +117,10 @@
     return groupContentBlocks(blocks, isStreaming);
   });
 
-  // Build a map of tool results from tool_result blocks
-  // Handles both normal matching by tool_use_id AND position-based fallback
-  // for error results with empty tool_use_id
-  const toolResultsMap = $derived.by(() => {
-    const map = new Map<string, ToolResultBlock>();
-    const blocks = content || [];
-
-    // First pass: collect results with valid tool_use_id
-    for (const block of blocks) {
-      if (block.type === 'tool_result') {
-        const resultBlock = block as ToolResultBlock;
-        if (resultBlock.tool_use_id) {
-          map.set(resultBlock.tool_use_id, resultBlock);
-        }
-      }
-    }
-
-    // Second pass: match error results with empty tool_use_id to preceding tool_use
-    // This handles the case where error results don't have proper IDs
-    // SAFEGUARD: Only match if there's no other tool_use between the error and its target
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      if (block.type === 'tool_result') {
-        const resultBlock = block as ToolResultBlock;
-        const isError = resultBlock.is_error || (resultBlock as any).isError;
-        // Only do position-based matching for error results with empty ID
-        if (isError && !resultBlock.tool_use_id) {
-          // Find the immediately preceding tool_use that doesn't have a result
-          // Stop if we encounter another tool_use (to avoid misattribution)
-          for (let j = i - 1; j >= 0; j--) {
-            const prevBlock = blocks[j];
-            if (prevBlock.type === 'tool_use') {
-              const toolBlock = prevBlock as ToolUseBlock;
-              if (!map.has(toolBlock.id)) {
-                // Match this error result to the preceding tool_use
-                map.set(toolBlock.id, resultBlock);
-              }
-              // Always break on first tool_use found - either we matched it or it
-              // already has a result, in which case we can't safely attribute this error
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    return map;
-  });
+  // Build a map of tool results from tool_result blocks, paired by
+  // toolCallId ↔ tool_use_id per PROTOCOL.md §7.1, with position-based
+  // fallback for error results with empty tool_use_id
+  const toolResultsMap = $derived.by(() => buildToolResultsMap(content || []));
 
   // Compute tool states based on results
   const toolStates = $derived.by(() => {
@@ -167,16 +128,16 @@
     for (const block of content || []) {
       if (block.type === 'tool_use') {
         const toolBlock = block as ToolUseBlock;
-        const result = toolResultsMap.get(toolBlock.id);
+        const result = findToolResult(toolResultsMap, toolBlock);
         if (result) {
           // Check both snake_case and camelCase for error flag
-          const isError = result.is_error || (result as any).isError;
-          // Also detect errors from content text
-          const contentText = typeof result.content === 'string' ? result.content : '';
+          const isError = result.is_error || result.isError;
+          // Also detect errors from the result payload text (§7.1 `output`,
+          // legacy `content` fallback; e.g., "Error:" prefix or "Tool Error:")
+          // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
+          const contentText = getToolResultText(result);
           const hasErrorInContent =
-            contentText.includes('❌') ||
-            contentText.startsWith('Error:') ||
-            contentText.includes('Tool Error:');
+            contentText.startsWith('Error:') || contentText.includes('Tool Error:');
           states.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
         } else if (!isStreaming) {
           // Not streaming and no result - mark as completed
@@ -488,23 +449,24 @@
     </div>
   {:else if block.type === 'tool_use'}
     {@const toolBlock = block as ToolUseBlock}
-    {@const toolResult = toolResultsMap.get(toolBlock.id)}
+    {@const toolResult = findToolResult(toolResultsMap, toolBlock)}
     {@const toolState = toolStates.get(toolBlock.id) || 'completed'}
-    {@const resultContent = toolResult ? toolResult.content : null}
+    {@const resultContent = getToolResultPayload(toolResult)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
       <ToolCall toolUse={toolBlock} {toolState} result={resultContent} {workspaceId} />
     </div>
   {:else if block.type === 'tool_result'}
+    {@const resultPayload = getToolResultPayload(block)}
     <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
       <div class="px-3 py-2 bg-muted/50 border-b border-border">
         <span class="text-xs text-subtle">Tool Result</span>
       </div>
       <div class="p-3">
-        {#if typeof block.content === 'string'}
-          <CodeBlock code={block.content} />
-        {:else if Array.isArray(block.content)}
+        {#if typeof resultPayload === 'string'}
+          <CodeBlock code={resultPayload} />
+        {:else if Array.isArray(resultPayload)}
           <!-- Recursively render nested content blocks -->
-          {#each block.content as any[] as nestedBlock, nestedIndex (nestedBlock.id || `nested-${blockIndex}-${nestedIndex}-${nestedBlock.type}`)}
+          {#each resultPayload as any[] as nestedBlock, nestedIndex (nestedBlock.id || `nested-${blockIndex}-${nestedIndex}-${nestedBlock.type}`)}
             {#if nestedBlock.type === 'text' && nestedBlock.text}
               <div class="w-full">
                 <MarkdownViewer
@@ -515,9 +477,9 @@
               </div>
             {:else if nestedBlock.type === 'tool_use'}
               {@const nestedToolBlock = nestedBlock as ToolUseBlock}
-              {@const nestedToolResult = toolResultsMap.get(nestedToolBlock.id)}
+              {@const nestedToolResult = findToolResult(toolResultsMap, nestedToolBlock)}
               {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
-              {@const nestedResultContent = nestedToolResult ? nestedToolResult.content : null}
+              {@const nestedResultContent = getToolResultPayload(nestedToolResult)}
               <ToolCall
                 toolUse={nestedToolBlock}
                 toolState={nestedToolState}

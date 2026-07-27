@@ -1003,15 +1003,24 @@ export interface ContextReference {
 
 export interface ToolUseBlock {
   type: 'tool_use';
+  /** Addressable block id (`{messageId}:{blockIndex}`, PROTOCOL §7.1) */
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /** Provider tool-call id — tool_result blocks reference it via `tool_use_id` (PROTOCOL §7.1) */
+  toolCallId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ToolResultBlock {
   type: 'tool_result';
+  /** Addressable block id (PROTOCOL §7.1) */
+  id?: string;
   tool_use_id: string;
-  content: string;
+  /** Tool result payload (PROTOCOL §7.1) */
+  output?: unknown;
+  /** Legacy payload field — superseded by `output` */
+  content?: string;
   is_error?: boolean;
 }
 
