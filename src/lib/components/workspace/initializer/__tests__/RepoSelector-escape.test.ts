@@ -148,6 +148,33 @@ describe('RepoSelector Escape handling (escape-layer stack)', () => {
   });
 });
 
+describe('RepoSelector trigger suffix rendering', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders a dimmed (owner/repo) suffix after the repo name when triggerSuffix is set', () => {
+    const { container } = render(RepoSelector, {
+      props: { value: '/Users/dev/app', triggerSuffix: 'acme/app' },
+    });
+
+    const suffix = screen.getByText('(acme/app)');
+    expect(suffix).toBeTruthy();
+    expect(suffix.className).toContain('text-subtle');
+    const trigger = container.querySelector('button');
+    expect(trigger!.textContent?.replace(/\s+/g, ' ').trim()).toBe('app (acme/app)');
+  });
+
+  it('renders no suffix (and no empty parens) when triggerSuffix is not set', () => {
+    const { container } = render(RepoSelector, {
+      props: { value: '/Users/dev/app' },
+    });
+
+    const trigger = container.querySelector('button');
+    expect(trigger!.textContent?.replace(/\s+/g, ' ').trim()).toBe('app');
+  });
+});
+
 describe('RepoSelector Recent list owner rendering', () => {
   afterEach(() => {
     mockRepos.recentRepos = [];
