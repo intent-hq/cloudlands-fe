@@ -91,6 +91,7 @@
 
 <div class="message-list">
   {#each filteredMessages as message, index (message.id)}
+    {@const modelChangeNotice = getModelChangeNotice(message)}
     <div
       id="message-{message.id}"
       class="message-wrapper group/message"
@@ -103,7 +104,15 @@
       <!-- Fallback path: AgentMessageList does not receive `agentId` via props/context,
            so we can't use ChatMessage's Redux-backed subscription here. Pass the
            message object directly. -->
-      {#if message.role === 'user'}
+      {#if modelChangeNotice}
+        <!-- Daemon-persisted model-change notice - centered inline divider.
+             Discriminated on metadata.type before role branching so it renders
+             regardless of the exact role the daemon persists. -->
+        <ModelChangeNotice
+          notice={modelChangeNotice}
+          fallbackText={extractAllContent(message) || undefined}
+        />
+      {:else if message.role === 'user'}
         <ChatMessage {message} onCopy={() => handleCopy(extractAllContent(message))} />
       {:else if message.role === 'assistant'}
         <div class="assistant-message-container">
@@ -120,14 +129,8 @@
           {/if}
         </div>
       {:else if message.role === 'system'}
-        {@const modelChangeNotice = getModelChangeNotice(message)}
-        {#if modelChangeNotice}
-          <!-- Daemon-persisted model-change notice - centered inline divider -->
-          <ModelChangeNotice notice={modelChangeNotice} fallbackText={extractAllContent(message)} />
-        {:else}
-          <!-- System message - render as interruption notice banner -->
-          <InterruptionNotice message={extractAllContent(message)} />
-        {/if}
+        <!-- System message - render as interruption notice banner -->
+        <InterruptionNotice message={extractAllContent(message)} />
       {/if}
     </div>
   {/each}

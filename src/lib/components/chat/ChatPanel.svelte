@@ -3481,7 +3481,7 @@
                           <div data-message-id={noticeMessage.id} class="px-2">
                             <ModelChangeNotice
                               {notice}
-                              fallbackText={extractAllContent(noticeMessage)}
+                              fallbackText={extractAllContent(noticeMessage) || undefined}
                             />
                           </div>
                         {/if}

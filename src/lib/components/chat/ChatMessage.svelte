@@ -918,7 +918,7 @@
   <div class="text-subtle text-sm p-2">Loading...</div>
 {:else if modelChangeNotice}
   <!-- Daemon-persisted model-change notice row - centered inline divider -->
-  <ModelChangeNotice notice={modelChangeNotice} fallbackText={extractAllContent(message)} />
+  <ModelChangeNotice notice={modelChangeNotice} fallbackText={extractAllContent(message) || undefined} />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
