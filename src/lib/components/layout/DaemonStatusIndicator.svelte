@@ -372,11 +372,13 @@
               </div>
             {/if}
 
-            <!-- Attached agents -->
-            <div class="flex justify-between text-xs">
-              <span class="text-subtle">Attached agents</span>
-              <span class="font-mono text-xs">{$unslothStatus$.attachedAgentCount}</span>
-            </div>
+            <!-- Attached agents (omitted when the agent manager is not attached) -->
+            {#if $unslothStatus$.attachedAgentCount !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Attached agents</span>
+                <span class="font-mono text-xs">{$unslothStatus$.attachedAgentCount}</span>
+              </div>
+            {/if}
 
             <!-- Stop action -->
             <button

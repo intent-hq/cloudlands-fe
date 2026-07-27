@@ -497,6 +497,13 @@ describe('daemonHealthReducer', () => {
       expect(next.unslothStatus).toEqual(notRunning);
     });
 
+    it('unslothStatusSuccess stores the bare { running: false } payload (agent manager not attached)', () => {
+      const state = { ...initialState, unslothPolling: true };
+      const bare: UnslothStatusWirePayload = { running: false };
+      const next = daemonHealthReducer(state, unslothStatusSuccess(bare));
+      expect(next.unslothStatus).toEqual(bare);
+    });
+
     it('unslothStatusFailure clears the stored status (no stale server rows)', () => {
       const state = {
         ...initialState,

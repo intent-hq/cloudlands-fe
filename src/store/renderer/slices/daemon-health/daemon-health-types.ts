@@ -43,12 +43,14 @@ export interface SystemStatusWirePayload {
 }
 
 /**
- * unsloth.status wire payload (protocol 2.5, intentd traits.rs / PROTOCOL §5.7):
+ * unsloth.status wire payload (protocol 2.5, intentd traits.rs / PROTOCOL §5.37):
  * `{ running, repoId?, port?, pid?, uptimeSecs?, phase?, cpuPercent?,
- * memoryBytes?, attachedAgentCount }`. `running: false` means no managed
+ * memoryBytes?, attachedAgentCount? }`. `running: false` means no managed
  * server is up and every per-server field is omitted. `attachedAgentCount`
- * is always present regardless of `running` (a stopped-but-attached state is
- * possible mid-restart).
+ * is reported regardless of `running` when the daemon's agent manager is
+ * attached (a stopped-but-attached state is possible mid-restart), but a
+ * daemon without an attached agent manager reports exactly `{ running:
+ * false }` — so the field is optional.
  */
 export interface UnslothStatusWirePayload {
   running: boolean;
@@ -66,8 +68,8 @@ export interface UnslothStatusWirePayload {
   cpuPercent?: number;
   /** Resident memory (bytes) summed across the server's process tree. */
   memoryBytes?: number;
-  /** Currently-tracked agents spawned with the unsloth provider. */
-  attachedAgentCount: number;
+  /** Currently-tracked agents spawned with the unsloth provider. Omitted when the agent manager is not attached. */
+  attachedAgentCount?: number;
 }
 
 /**
