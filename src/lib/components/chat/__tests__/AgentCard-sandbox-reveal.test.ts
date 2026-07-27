@@ -28,6 +28,9 @@ import { AgentStatus } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 
 const mockedInvoke = vi.mocked(invoke);
+// Preserve the test-setup default implementation so a full reset (which also
+// drops leftover one-off stubs like mockRejectedValueOnce) can restore it.
+const defaultInvokeImpl = mockedInvoke.getMockImplementation();
 
 const SANDBOX_PATH = '/Users/dev/.dev/intentd/sandboxes/agent-abc/monorepo';
 
@@ -80,7 +83,11 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
   });
 
   afterEach(() => {
-    mockedInvoke.mockClear();
+    // Full reset (not just mockClear): drops any unconsumed one-off stubs
+    // (e.g. mockRejectedValueOnce from a test that bailed early) so behavior
+    // never leaks between tests; then restore the test-setup default impl.
+    mockedInvoke.mockReset();
+    if (defaultInvokeImpl) mockedInvoke.mockImplementation(defaultInvokeImpl);
     appStore.dispatch(removeSession(agentId));
   });
 
