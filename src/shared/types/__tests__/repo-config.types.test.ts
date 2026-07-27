@@ -48,11 +48,19 @@ describe('RepoConfigSchema', () => {
     expect(() => RepoConfigSchema.parse({ cowCloneExclude: [42] })).toThrow();
   });
 
-  it('round-trips cowCloneExclude and unknown keys without stripping (parity with daemon serde flatten)', () => {
+  it('round-trips cowCloneExclude and unknown top-level keys without stripping (parity with daemon serde flatten on RepoConfig)', () => {
     const raw = {
       setupScript: 'pnpm install',
       cowCloneExclude: ['node_modules', '.cache'],
       futureField: { nested: true },
+    };
+
+    const roundTripped = JSON.parse(JSON.stringify(RepoConfigSchema.parse(raw)));
+    expect(roundTripped).toEqual(raw);
+  });
+
+  it('preserves unknown keys inside script entries (FE-only superset: daemon RepoScript has no serde flatten and drops them)', () => {
+    const raw = {
       scripts: [{ name: 'dev', command: 'pnpm dev', mode: 'service', futureScriptField: 'x' }],
     };
 

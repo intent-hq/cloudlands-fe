@@ -29,6 +29,11 @@ export type RepoScriptCategory = z.infer<typeof RepoScriptCategorySchema>;
 /**
  * Per-repository script definition (parity with intentd `RepoScript`).
  * Scripts can be seeded into workspace script storage.
+ *
+ * Note: `.passthrough()` here is deliberately *more* preserving than the
+ * daemon — `RepoScript` in `model.rs` has no `#[serde(flatten)] extra`, so
+ * the daemon drops unknown keys inside script entries on round-trip. The FE
+ * keeps them (the safer choice for a file other tools may edit).
  */
 export const RepoScriptSchema = z
   .object({
