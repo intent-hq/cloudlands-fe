@@ -27,6 +27,7 @@
   faCopy,
 } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
@@ -107,11 +108,13 @@
   const completedSteps = $derived(steps.filter((s) => s === 'done').length);
   const currentStep = $derived(Math.min(completedSteps + 1, totalSteps));
   const allDone = $derived(completedSteps === totalSteps);
-  const title = $derived(allDone ? 'Workspace ready to go!' : 'Setting up workspace…');
+  const title = $derived(
+    allDone ? m.onboarding_setupCard_ready_title() : m.onboarding_setupCard_settingUp_title(),
+  );
 
   function copyToClipboard(text: string, label: string) {
     navigator.clipboard.writeText(text);
-    toast.success(`Copied ${label}`);
+    toast.success(m.onboarding_setupCard_copied_label({ label }));
   }
 
   function shortenPath(p: string): string {
@@ -214,21 +217,21 @@
     {/if}
     {#snippet repoNameCopyable()}
       {#if repoPath}
-        {@render copyableRef(repoName, 'original folder', repoPath)}
+        {@render copyableRef(repoName, m.onboarding_setupCard_originalFolder_label(), repoPath)}
       {:else}
         {repoName}
       {/if}
     {/snippet}
     {#snippet repoActive()}
       {#if skipIsolation}
-        Opening {@render repoNameCopyable()}…
+        {m.onboarding_setupCard_opening_before()} {@render repoNameCopyable()}{m.onboarding_setupCard_opening_after()}
       {:else}
-        Creating an isolated copy of {@render repoNameCopyable()}
+        {m.onboarding_setupCard_creatingIsolatedCopy_before()} {@render repoNameCopyable()}
       {/if}
     {/snippet}
     {#snippet repoDone()}
       {#if skipIsolation}
-        Working directly on <code class="text-sm bg-secondary py-1 px-1.5">{displayBranch}</code> {#if worktreePath}{' '}at
+        {m.onboarding_setupCard_workingDirectlyOn_before()} <code class="text-sm bg-secondary py-1 px-1.5">{displayBranch}</code> {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
           <OpenComboButton
             filePath={worktreePath}
             isDirectory={true}
@@ -242,8 +245,8 @@
             >
           </OpenComboButton>{/if}.
       {:else}
-        We created an isolated copy of {@render repoNameCopyable()}
-        {#if worktreePath}{' '}at
+        {m.onboarding_setupCard_createdIsolatedCopy_before()} {@render repoNameCopyable()}
+        {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
           <OpenComboButton
             filePath={worktreePath}
             isDirectory={true}
@@ -266,18 +269,18 @@
     {#snippet branchActive()}
       {#if skipIsolation}
         {#if branch}
-          Working directly on branch <span class="">{branch}</span>…
+          {m.onboarding_setupCard_workingOnBranchNamed_before()} <span class="">{branch}</span>{m.onboarding_setupCard_workingOnBranchActive_after()}
         {:else}
-          Working directly on branch…
+          {m.onboarding_setupCard_workingOnBranch_label()}
         {/if}
       {:else if branch}
-        Creating a new branch <span class="">{branch}</span> off
+        {m.onboarding_setupCard_creatingBranch_before()} <span class="">{branch}</span> {m.onboarding_setupCard_creatingBranch_middle()}
         <button
           class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
-          onclick={() => copyToClipboard(baseRef, 'base ref')}>{baseRef}</button
-        >…
+          onclick={() => copyToClipboard(baseRef, m.onboarding_setupCard_baseRef_label())}>{baseRef}</button
+        >{m.onboarding_setupCard_creatingBranch_after()}
       {:else}
-        Creating a new branch…
+        {m.onboarding_setupCard_creatingBranchNoName_label()}
       {/if}
     {/snippet}
     {#snippet copyableRef(text: string, label: string, copyValue?: string)}
@@ -294,16 +297,16 @@
     {#snippet branchDone()}
       {#if skipIsolation}
         {#if branch}
-          Working directly on branch {@render copyableRef(branch, 'branch name')}.
+          {m.onboarding_setupCard_workingOnBranchNamed_before()} {@render copyableRef(branch, m.onboarding_setupCard_branchName_label())}{m.onboarding_setupCard_workingOnBranchDone_after()}
         {:else}
-          Working directly on branch.
+          {m.onboarding_setupCard_workingDirectlyOnBranch_label()}
         {/if}
       {:else if branch}
-        Working in a new branch
-        {@render copyableRef(branch, 'branch name')}, off
-        {@render copyableRef(baseRef, 'base ref')}.
+        {m.onboarding_setupCard_workingInNewBranch_before()}
+        {@render copyableRef(branch, m.onboarding_setupCard_branchName_label())}{m.onboarding_setupCard_workingInNewBranch_middle()}
+        {@render copyableRef(baseRef, m.onboarding_setupCard_baseRef_label())}{m.onboarding_setupCard_workingInNewBranch_after()}
       {:else}
-        Branch created.
+        {m.onboarding_setupCard_branchCreated_label()}
       {/if}
     {/snippet}
 
@@ -312,15 +315,15 @@
       {@render stepRow(setupScriptStatus, faTerminal, 'ml-[0.5px]', setupActive, setupDone)}
     {/if}
     {#snippet setupActive()}
-      Running the {#if projectType}<span class="">{projectType}</span>{:else}project{/if} setup script…
+      {m.onboarding_setupCard_runningSetup_before()} {#if projectType}<span class="">{projectType}</span>{:else}{m.onboarding_setupCard_project_label()}{/if} {m.onboarding_setupCard_runningSetup_after()}
     {/snippet}
     {#snippet setupDone()}
-      We ran the {#if projectType}<span class="">{projectType}</span>{:else}project{/if} setup script{#if onFocusSetupTerminal}{' '}in
+      {m.onboarding_setupCard_ranSetup_before()} {#if projectType}<span class="">{projectType}</span>{:else}{m.onboarding_setupCard_project_label()}{/if} {m.onboarding_setupCard_ranSetup_middle()}{#if onFocusSetupTerminal}{' '}{m.onboarding_setupCard_ranSetupIn_label()}
         <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
           {#snippet trigger()}
             <button
               class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
-              onclick={onFocusSetupTerminal}>a terminal tab</button
+              onclick={onFocusSetupTerminal}>{m.onboarding_setupCard_terminalTab_label()}</button
             >
           {/snippet}
           {#snippet content()}
@@ -330,9 +333,9 @@
             {/if}
           {/snippet}
           {#snippet footer()}
-            <span class="text-xs text-muted-foreground opacity-50">Click to open terminal →</span>
+            <span class="text-xs text-muted-foreground opacity-50">{m.onboarding_setupCard_openTerminal_footer()}</span>
           {/snippet}
-        </TooltipRich>{/if}.
+        </TooltipRich>{/if}{m.onboarding_setupCard_ranSetup_after()}
     {/snippet}
 
     <!-- Step 4: Agent -->
@@ -353,36 +356,34 @@
           {/if}
         {/snippet}
         {#snippet footer()}
-          <span class="text-xs text-muted-foreground opacity-50"> Click to edit in settings → </span>
+          <span class="text-xs text-muted-foreground opacity-50"> {m.onboarding_setupCard_editInSettings_footer()} </span>
         {/snippet}
       </TooltipRich>
     {/snippet}
     {#snippet agentActive()}
       {#if !hasPrompt && specialistId}
-        Your {@render specialistWithTooltip()} agent is ready — say something to get started.
+        {m.onboarding_setupCard_agentReadyNamed_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_agentReadyNamed_after()}
       {:else if !hasPrompt}
-        Your agent is ready — say something to get started.
+        {m.onboarding_setupCard_agentReady_label()}
       {:else if specialistId === 'spec-writer'}
-        Starting up! This {@render specialistWithTooltip()} agent will take a look around and put together
-        a spec.
+        {m.onboarding_setupCard_specStartingUp_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_specStartingUp_after()}
       {:else if specialistId}
-        Starting up! This {@render specialistWithTooltip()} agent is on it.
+        {m.onboarding_setupCard_startingUpNamed_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_startingUpNamed_after()}
       {:else}
-        Starting up! Your agent is getting oriented.
+        {m.onboarding_setupCard_startingUp_label()}
       {/if}
     {/snippet}
     {#snippet agentDone()}
       {#if !hasPrompt && specialistId}
-        Your {@render specialistWithTooltip()} agent is ready — say something to get started.
+        {m.onboarding_setupCard_agentReadyNamed_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_agentReadyNamed_after()}
       {:else if !hasPrompt}
-        Your agent is ready — say something to get started.
+        {m.onboarding_setupCard_agentReady_label()}
       {:else if specialistId === 'spec-writer'}
-        Let's get to work! This {@render specialistWithTooltip()} agent will take a look around and put
-        together a spec.
+        {m.onboarding_setupCard_specDone_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_specDone_after()}
       {:else if specialistId}
-        This {@render specialistWithTooltip()} agent is on it.
+        {m.onboarding_setupCard_agentDoneNamed_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_agentDoneNamed_after()}
       {:else}
-        Your agent is getting oriented.
+        {m.onboarding_setupCard_agentOrienting_label()}
       {/if}
     {/snippet}
   </div>

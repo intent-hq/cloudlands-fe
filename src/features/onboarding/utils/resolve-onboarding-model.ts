@@ -49,6 +49,7 @@ import {
 } from '$features/providers/provider-availability.client';
 import type { StoreState } from '$store/renderer/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('resolve-onboarding-model');
@@ -242,7 +243,7 @@ export async function resolveOnboardingModel(state: StoreState): Promise<Resolve
       });
     } else {
       throw new Error(
-        `Selected provider '${activeProvider}' is not available. Please install and authenticate it, or pick a different provider.`,
+        m.onboarding_resolveModel_providerUnavailable_error({ provider: activeProvider }),
       );
     }
   } else {
@@ -337,9 +338,7 @@ export async function resolveOnboardingModel(state: StoreState): Promise<Resolve
   // `DEFAULT_AGENT_MODEL = 'opus4.6'`, producing an invalid compound like
   // `{ provider: 'opencode', model: 'opus4.6' }` that fails at spawn time.
   if (!finalModel && provider !== defaultProviderId) {
-    throw new Error(
-      `Could not resolve a model for provider '${provider}'. Please ensure ${provider} is installed and authenticated, then try again.`,
-    );
+    throw new Error(m.onboarding_resolveModel_noModel_error({ provider }));
   }
 
   return {

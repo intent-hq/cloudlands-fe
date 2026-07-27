@@ -5,6 +5,7 @@
    * Folder picker + project name input. Creates a new directory.
    */
   import { onMount } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import Input from '$lib/components/ui/input/input.svelte';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
@@ -55,8 +56,7 @@
 
 <div class="space-y-3">
   <p class="text-base text-muted-foreground pb-3">
-    Start fresh from scratch. We'll create a new directory and get it set up based on your
-    description in the next step.
+    {m.onboarding_newProjectTab_startFresh_description()}
   </p>
   <!-- Combined path input -->
   <div
@@ -66,13 +66,13 @@
       type="button"
       class="flex items-center gap-1.5 shrink-0 px-3 py-3 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer border-r border-border/30"
       onclick={handleSelectParentFolder}
-      title="Change parent folder"
+      title={m.onboarding_newProjectTab_changeParent_tooltip()}
     >
       <Fa icon={faFolder} class="text-subtle/50 -mb-px" size={20} />
       <span class="truncate max-w-48">
         {parentPath
           ? `${parentPath.replace(/^\/Users\/[^/]+/, '~').replace(/\/$/, '')}/`
-          : 'Select folder…'}
+          : m.onboarding_newProjectTab_selectFolder_label()}
       </span>
     </button>
     <Input
@@ -82,7 +82,7 @@
       value={projectName}
       noFocusStyle
       oninput={(e) => onProjectNameChange(e.currentTarget.value)}
-      placeholder="my-project"
+      placeholder={m.onboarding_newProjectTab_projectName_placeholder()}
       class="flex-1 border-none! bg-transparent! rounded-none! shadow-none! ring-0! focus:ring-0! px-2! py-3!"
     />
   </div>
@@ -93,9 +93,9 @@
 
 <DirectoryPickerModal
   open={pickerOpen}
-  title="Select Parent Folder"
+  title={m.onboarding_newProjectTab_selectParentFolder_title()}
   initialPath={parentPath}
-  selectLabel="Select folder"
+  selectLabel={m.onboarding_dirPicker_selectFolder_label()}
   onSelect={handlePickerSelect}
   onClose={() => (pickerOpen = false)}
 />

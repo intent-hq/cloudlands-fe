@@ -47,6 +47,10 @@ const ENFORCED_DIRS = [
   'src/routes/+page.svelte',
   'src/routes/+layout.svelte',
   'src/routes/+error.svelte',
+  'src/features/onboarding',
+  'src/features/github-auth',
+  'src/features/linear-auth',
+  'src/features/sentry-auth',
 ];
 
 const ROOT = process.cwd();

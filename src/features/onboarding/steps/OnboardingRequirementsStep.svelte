@@ -26,6 +26,7 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -91,7 +92,7 @@
       case 'macos':
         return {
           command: 'xcode-select --install',
-          note: "Installs Apple's command-line tools, which include git.",
+          note: m.onboarding_requirementsStep_gitMacos_note(),
           docsUrl: 'https://git-scm.com/downloads/mac',
         };
       case 'windows':
@@ -102,7 +103,7 @@
       case 'linux':
         return {
           command: 'sudo apt-get install git',
-          note: "Use your distribution's package manager if not on apt.",
+          note: m.onboarding_requirementsStep_gitLinux_note(),
           docsUrl: 'https://git-scm.com/downloads/linux',
         };
       default:
@@ -115,7 +116,7 @@
       case 'macos':
         return {
           command: 'brew install node',
-          note: 'Requires Homebrew — or download the installer from nodejs.org.',
+          note: m.onboarding_requirementsStep_nodeMacos_note(),
           docsUrl: 'https://nodejs.org/en/download',
         };
       case 'windows':
@@ -125,7 +126,7 @@
         };
       case 'linux':
         return {
-          note: 'Install via your distribution, nvm, or the downloads page.',
+          note: m.onboarding_requirementsStep_nodeLinux_note(),
           docsUrl: 'https://nodejs.org/en/download',
         };
       default:
@@ -136,15 +137,15 @@
   async function copyCommand(command: string) {
     try {
       await navigator.clipboard.writeText(command);
-      toast.success('Copied to clipboard');
+      toast.success(m.onboarding_requirementsStep_copiedToClipboard_label());
     } catch {
-      toast.error('Could not copy command');
+      toast.error(m.onboarding_requirementsStep_copyFailed_error());
     }
   }
 
   function openDocs(url: string) {
     void handleLink(url, {}).catch(() => {
-      toast.error('Could not open the link');
+      toast.error(m.onboarding_requirementsStep_openLinkFailed_error());
     });
   }
 
@@ -161,7 +162,7 @@
     role="status"
   >
     <Fa icon={faCircleNotch} class="animate-spin" />
-    <span>Checking for git and Node.js on your machine…</span>
+    <span>{m.onboarding_requirementsStep_checking_label()}</span>
   </div>
 {:else}
   <div class="flex flex-col gap-4" data-testid="requirements-step-results">
@@ -177,6 +178,7 @@
         {/if}
         <div class="flex-1 min-w-0">
           <p class="font-medium">
+            <!-- i18n-ignore (brand/tool name) -->
             Git
             {#if $git$.available && $git$.version}
               <span class="text-muted-foreground font-normal text-sm">{$git$.version}</span>
@@ -184,7 +186,7 @@
           </p>
           {#if !$git$.available}
             <p class="text-sm text-muted-foreground">
-              Git is required to create and manage workspaces, but it wasn't found.
+              {m.onboarding_requirementsStep_gitMissing_description()}
             </p>
           {/if}
         </div>
@@ -197,7 +199,7 @@
               type="button"
               class="install-command-button"
               onclick={() => copyCommand(command)}
-              title="Click to copy"
+              title={m.onboarding_requirementsStep_clickToCopy_tooltip()}
             >
               <code>{command}</code>
               <Fa icon={faPaste} class="copy-icon" size="sm" />
@@ -208,7 +210,7 @@
           {/if}
           <button type="button" class="docs-link" onclick={() => openDocs(gitGuidance.docsUrl)}>
             <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
-            Install git
+            {m.onboarding_requirementsStep_installGit_label()}
           </button>
         </div>
       {/if}
@@ -226,6 +228,7 @@
         {/if}
         <div class="flex-1 min-w-0">
           <p class="font-medium">
+            <!-- i18n-ignore (brand/tool name) -->
             Node.js
             {#if $node$.ok && $node$.version}
               <span class="text-muted-foreground font-normal text-sm">v{$node$.version}</span>
@@ -234,9 +237,14 @@
           {#if !$node$.ok}
             <p class="text-sm text-muted-foreground">
               {#if $node$.version}
-                Node.js {minimumNodeMajor}+ is required. You have {$node$.version} installed.
+                {m.onboarding_requirementsStep_nodeTooOld_description({
+                  minimum: minimumNodeMajor,
+                  version: $node$.version,
+                })}
               {:else}
-                Node.js {minimumNodeMajor}+ is required, but it wasn't found.
+                {m.onboarding_requirementsStep_nodeMissing_description({
+                  minimum: minimumNodeMajor,
+                })}
               {/if}
             </p>
           {/if}
@@ -250,7 +258,7 @@
               type="button"
               class="install-command-button"
               onclick={() => copyCommand(command)}
-              title="Click to copy"
+              title={m.onboarding_requirementsStep_clickToCopy_tooltip()}
             >
               <code>{command}</code>
               <Fa icon={faPaste} class="copy-icon" size="sm" />
@@ -261,7 +269,7 @@
           {/if}
           <button type="button" class="docs-link" onclick={() => openDocs(nodeGuidance.docsUrl)}>
             <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
-            Install Node.js
+            {m.onboarding_requirementsStep_installNode_label()}
           </button>
         </div>
       {/if}
@@ -274,10 +282,10 @@
         {:else}
           <Fa icon={faArrowRotateRight} class="mr-1" size="sm" />
         {/if}
-        Check again
+        {m.onboarding_requirementsStep_checkAgain_label()}
       </Button>
       <p class="text-xs text-muted-foreground">
-        We re-check automatically when you come back to the app.
+        {m.onboarding_requirementsStep_recheck_description()}
       </p>
     </div>
   </div>
