@@ -151,10 +151,21 @@
   // async responses after rapid repo switches
   let remoteUrlProbeGeneration = 0;
 
+  // Key of the last-probed selection. The effect re-runs on every
+  // projectSelection reassignment (including branch-only changes); when the
+  // repo path/type are unchanged, keep the detected owner/repo and skip the
+  // clear + re-probe so the suffix doesn't flicker (reviewer note on #447)
+  let lastRemoteUrlProbeKey: string | null = null;
+
   // Fetch remote URL when a local repo is selected
   $effect(() => {
     const path = projectSelection?.repoPath;
     const type = projectSelection?.type;
+    const probeKey = `${type ?? ''}\u0000${path ?? ''}`;
+    if (probeKey === lastRemoteUrlProbeKey) {
+      return;
+    }
+    lastRemoteUrlProbeKey = probeKey;
     const generation = ++remoteUrlProbeGeneration;
 
     // Clear synchronously so a repo switch never briefly shows the previous

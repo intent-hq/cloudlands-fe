@@ -594,4 +594,30 @@ describe('onboarding remote-URL probe race (cloudlands-fe#443)', () => {
     probeB.resolve(remoteUrlResponse('owner-b', 'repo-b'));
     await waitFor(() => expect(textOf(result, 'github-repo-info')).toContain('owner-b/repo-b'));
   });
+
+  it('keeps the detected owner/repo and does not re-probe on a branch-only selection change (#447 follow-up)', async () => {
+    // First probe resolves; any accidental re-probe would hang forever, so a
+    // buggy clear+re-probe leaves the suffix blank instead of flickering back.
+    mocks.getRemoteUrl
+      .mockImplementationOnce(async () => remoteUrlResponse('owner-a', 'repo-a'))
+      .mockImplementation(() => new Promise(() => {}));
+
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => expect(textOf(result, 'github-repo-info')).toContain('owner-a/repo-a'));
+    expect(mocks.getRemoteUrl).toHaveBeenCalledTimes(1);
+
+    // Branch-only change: same repo path and type, different branch.
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: { onProjectChange: (selection: unknown) => void };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.onProjectChange({ type: 'local', repoPath: '/repo/a', branch: 'other', isValid: true });
+    await flush();
+
+    // The suffix must persist (no blank/flicker) and the probe must not re-run.
+    expect(textOf(result, 'github-repo-info')).toContain('owner-a/repo-a');
+    expect(mocks.getRemoteUrl).toHaveBeenCalledTimes(1);
+  });
 });
