@@ -415,6 +415,7 @@ export const IPC_CHANNELS = {
   // Dialog
   DIALOG: {
     MESSAGE: 'dialog:message',
+    OPEN: 'dialog:open',
   },
 
   // Shell

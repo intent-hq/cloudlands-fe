@@ -47,6 +47,10 @@ vi.mock('$lib/electron-bridge', () => ({
   shell: { open: vi.fn(() => Promise.resolve()) },
 }));
 
+vi.mock('$lib/directory-picker-service', () => ({
+  pickDirectory: vi.fn(async ({ openModal }: { openModal: () => void }) => openModal()),
+}));
+
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
   initializeGitHubAuth: () => ({ type: 'githubAuth/initialize' }),
 }));
