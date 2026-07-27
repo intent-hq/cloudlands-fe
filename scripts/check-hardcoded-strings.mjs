@@ -34,11 +34,7 @@ const ENFORCED_DIRS = [
   'src/features/settings',
   'src/routes/settings',
   'src/lib/components/ui',
-  'src/lib/components/workspace/initializer',
-  'src/lib/components/workspace/CommentSystemDemo.svelte',
-  'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
-  'src/lib/components/workspace/ContentSkeleton.svelte',
-  'src/lib/components/workspace/CreateAgentSection.svelte',
+  'src/lib/components/workspace',
 ];
 
 const ROOT = process.cwd();

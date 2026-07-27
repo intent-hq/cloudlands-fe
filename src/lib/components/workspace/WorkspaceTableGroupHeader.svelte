@@ -10,6 +10,7 @@
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     label: string;
@@ -77,8 +78,8 @@
             onBulkArchive?.();
           }}
           class="opacity-20 group-hover/header:opacity-100 transition-opacity hover:text-muted-foreground"
-          aria-label="Archive all spaces in this repo"
-          tooltip="Archive all spaces in this repo"
+          aria-label={m.workspace_tableGroupHeader_archiveAll_label()}
+          tooltip={m.workspace_tableGroupHeader_archiveAll_label()}
         >
           <Fa icon={faBoxArchive} size="sm" />
         </Button>
@@ -92,8 +93,8 @@
             onBulkDeleteArchived?.();
           }}
           class="opacity-20 group-hover/header:opacity-100 transition-opacity hover:text-destructive-foreground hover:!bg-destructive/10"
-          aria-label="Delete all archived spaces in this repo"
-          tooltip="Delete all archived spaces in this repo"
+          aria-label={m.workspace_tableGroupHeader_deleteArchived_label()}
+          tooltip={m.workspace_tableGroupHeader_deleteArchived_label()}
         >
           <Fa icon={faTrash} size="sm" />
         </Button>

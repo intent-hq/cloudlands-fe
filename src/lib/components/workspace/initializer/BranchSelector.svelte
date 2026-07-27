@@ -155,6 +155,12 @@
   });
   const isolationLabel = $derived(isolationNoun(isolationMode));
 
+  // Whole-sentence message split around the styled branch name so translators
+  // control word order; '\u0000' marks the branch slot.
+  const workDirectlyParts = $derived(
+    m.workspace_branchSelector_workDirectlyOnBranch_label({ branch: '\u0000' }).split('\u0000'),
+  );
+
   // Branch status state - managed internally and exposed via callback
   let branchStatusBehind = $state(0);
   let branchStatusHasUncommittedChanges = $state(false);
@@ -1622,9 +1628,8 @@
                 }}
               />
               <div class="items-start flex-1 min-w-0 text-ui font-medium -mt-0.25">
-                {m.workspace_branchSelector_workDirectlyPrefix_label()}
-                <span class="font-semibold">{currentBranch}</span>
-                {m.workspace_branchSelector_workDirectlySuffix_label()}
+                {workDirectlyParts[0]}<span class="font-semibold">{currentBranch}</span
+                >{workDirectlyParts[1]}
               </div>
             </button>
             <div class="ml-9 text-sm text-subtle">

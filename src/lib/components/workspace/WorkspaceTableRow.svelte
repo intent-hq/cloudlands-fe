@@ -23,6 +23,7 @@
   import { writable } from 'svelte/store';
   import Button from '../ui/button/button.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
   import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 
@@ -231,7 +232,9 @@
             {@const tooltipText = prTooltipContent}
             <Tooltip content={tooltipText} side="bottom" sideOffset={4} disabled={!tooltipText}>
               <span class="text-ui font-medium px-1.5 py-0.5 rounded-full shrink-0 {statusColor}">
-                PR{prDisplayNumber ? ` #${prDisplayNumber}` : ''}
+                {m.workspace_card_prBadge_label({
+                  number: prDisplayNumber ? ` #${prDisplayNumber}` : '',
+                })}
               </span>
             </Tooltip>
           {/if}

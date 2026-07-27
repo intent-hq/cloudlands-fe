@@ -23,6 +23,8 @@
   faStop,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import {
   readable,
   writable,
@@ -108,20 +110,24 @@
 <TimelineDivider>
   <div class="w-full flex gap-1" data-testid="commit-export-divider">
     <DividerButton
-      tooltipContents={!hasStaged ? 'No staged changes to commit' : ''}
+      tooltipContents={!hasStaged ? m.workspace_commitDrawer_noStaged_tooltip() : ''}
       onclick={() => {
         commitDrawerOpen = !commitDrawerOpen;
       }}
       expanded={commitDrawerOpen}
       disabled={!hasStaged}
     >
-      Commit
+      {m.workspace_commitDrawer_commit_label()}
     </DividerButton>
   </div>
   <DividerPanel open={commitDrawerOpen}>
     {#if hasStaged}
       <p class="text-xs text-subtle">
-        {stagedChanges.length} staged file{stagedChanges.length === 1 ? '' : 's'} will be committed.
+        {stagedChanges.length === 1
+          ? m.workspace_commitDrawer_stagedWillCommit_one()
+          : m.workspace_commitDrawer_stagedWillCommit_many({
+              count: formatInteger(stagedChanges.length),
+            })}
       </p>
     {/if}
     <div class="relative">
@@ -135,7 +141,7 @@
             onCommit();
           }
         }}
-        placeholder="Commit message..."
+        placeholder={m.workspace_commitDrawer_commitMessage_placeholder()}
         doesExpandToFit
         minHeight={60}
         maxHeight={150}
@@ -156,10 +162,14 @@
       >
         {#if isCommitting || (isGenerating && $commitWhenReady$)}
           <Fa icon={faSpinner} size="xs" class="animate-spin" />
-          <span>{isCommitting ? 'Committing...' : 'Will commit when done...'}</span>
+          <span
+            >{isCommitting
+              ? m.workspace_commitDrawer_committing_label()
+              : m.workspace_commitDrawer_willCommitWhenDone_label()}</span
+          >
         {:else}
           <Fa icon={faCodeCommit} size="xs" class="opacity-50" />
-          <span>Commit</span>
+          <span>{m.workspace_commitDrawer_commit_label()}</span>
         {/if}
       </Button>
       <!-- Auto-fill button with eye/stop icons when generating -->
@@ -172,7 +182,7 @@
             onclick={handleStopGenerating}
           >
             <Fa icon={faSpinner} size="xs" class="animate-spin" />
-            <span class="mr-1">Auto-fill</span>
+            <span class="mr-1">{m.workspace_prCreator_autoFill_label()}</span>
             <Fa icon={faStop} size="xs" />
           </Button>
           {#if commitAgentId}
@@ -181,7 +191,7 @@
               size="icon-xs"
               class="rounded-none h-7!"
               onclick={viewCommitThoughtProcess}
-              tooltip="View thought process"
+              tooltip={m.workspace_prSection_viewThoughtProcess_tooltip()}
               tooltipSide="top"
               tooltipDelayDuration={0}
             >
@@ -198,7 +208,7 @@
             {#if $commitWhenReady$}
               <Fa icon={faCheck} size="xs" />
             {/if}
-            Auto-commit when done
+            {m.workspace_commitDrawer_autoCommitWhenDone_label()}
           </Button>
         </div>
       {:else}
@@ -210,7 +220,7 @@
             onclick={handleAutoFill}
           >
             <Fa icon={faRobot} size="xs" class="opacity-50" />
-            <span>Auto-fill</span>
+            <span>{m.workspace_prCreator_autoFill_label()}</span>
           </Button>
           {#if commitAgentId}
             <Button
@@ -218,7 +228,7 @@
               size="icon-xs"
               class="rounded-l-none border-l-0 h-7!"
               onclick={viewCommitThoughtProcess}
-              tooltip="View thought process"
+              tooltip={m.workspace_prSection_viewThoughtProcess_tooltip()}
               tooltipSide="top"
               tooltipDelayDuration={0}
             >

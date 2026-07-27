@@ -32,6 +32,7 @@
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { toast } from '$lib/components/ui/toast';
+  import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
   faCheck,
@@ -183,14 +184,14 @@
 
     if (hasStaged) {
       if (!commitMessage.trim()) {
-        toast.error('Please enter a commit message for staged changes');
+        toast.error(m.workspace_mergePanel_commitMessageRequired_error());
         return;
       }
       const commitResult = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage: commitMessage.trim(),
       });
       if (!commitResult.success) {
-        toast.error(commitResult.error || 'Failed to commit staged changes');
+        toast.error(commitResult.error || m.workspace_mergePanel_commitFailed_error());
         return;
       }
     }
@@ -224,26 +225,30 @@
           } catch { console.error('Failed to update baseCommitSha after auto-rebase'); }
         }
         if (result.result?.autoRebased) {
-          toast.success(`Changes rebased and merged into ${targetBranch}`);
+          toast.success(m.workspace_mergePanel_rebasedAndMerged_label({ branch: targetBranch }));
         } else {
-          toast.success(`Changes merged into ${targetBranch}`);
+          toast.success(m.workspace_mergePanel_merged_label({ branch: targetBranch }));
         }
         celebrateMerge();
       } else {
         const errorMsg = result.error || '';
+        // i18n-ignore (matching backend error strings)
         const needsRebase = errorMsg.includes('Conflicts detected') || errorMsg.includes('behind') || errorMsg.includes('Please rebase');
         if (needsRebase && !options?.rebaseFirst) {
-          toast.error('Conflicts detected', {
-            description: 'Rebase your branch in the terminal to resolve conflicts.',
-            action: { label: 'Rebase in Terminal', onClick: () => onOpenRebaseTerminal?.() },
+          toast.error(m.workspace_mergePanel_conflicts_error(), {
+            description: m.workspace_mergePanel_conflicts_description(),
+            action: {
+              label: m.workspace_mergePanel_rebaseInTerminal_label(),
+              onClick: () => onOpenRebaseTerminal?.(),
+            },
             duration: 10000,
           });
         } else {
-          toast.error(result.error || 'Failed to merge');
+          toast.error(result.error || m.workspace_mergePanel_mergeFailed_error());
         }
       }
     } catch {
-      toast.error('Failed to merge to trunk');
+      toast.error(m.workspace_mergePanel_mergeToTrunkFailed_error());
     } finally {
       isMergingToTrunk = false;
     }
@@ -252,7 +257,7 @@
   async function handleMergePROnGitHub(options?: { mergeMethod?: 'merge' | 'squash' | 'rebase' }) {
     if (!workspaceId) return;
     const openPR = pullRequests.find((pr) => pr.status === 'open' || pr.status === 'draft');
-    if (!openPR) { toast.error('No open pull request to merge'); return; }
+    if (!openPR) { toast.error(m.workspace_mergePanel_noOpenPr_error()); return; }
 
     mergeOptions.mergingPR = true;
     try {
@@ -272,13 +277,13 @@
             Promise.resolve(appStore.dispatch(refreshPRStatusRequested(workspaceId, true, false))),
           ]);
         } catch { /* Refresh failed but merge succeeded */ }
-        toast.success(`PR #${openPR.number} merged on GitHub`);
+        toast.success(m.workspace_mergePanel_prMergedOnGithub_label({ number: openPR.number }));
         celebrateMerge();
       } else {
-        toast.error(result.error || 'Failed to merge PR on GitHub');
+        toast.error(result.error || m.workspace_mergePanel_prMergeFailed_error());
       }
     } catch {
-      toast.error('Failed to merge PR on GitHub');
+      toast.error(m.workspace_mergePanel_prMergeFailed_error());
     } finally {
       mergeOptions.mergingPR = false;
     }
@@ -308,7 +313,7 @@
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
       onclick={() => (mergeOptions.viaPR = true)}
     >
-      Via PR
+      {m.workspace_mergePanel_viaPr_label()}
     </button>
     <button
       class="px-2.5 py-1 text-xs font-medium transition-colors border-l border-border {!mergeOptions.viaPR
@@ -316,7 +321,7 @@
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
       onclick={() => (mergeOptions.viaPR = false)}
     >
-      Via git
+      {m.workspace_mergePanel_viaGit_label()}
     </button>
   </div>
 {/if}
@@ -328,7 +333,7 @@
   )}
   {#if openPR}
     <p class="text-xs text-subtle">
-      PR #{openPR.number} will be merged on GitHub into
+      {m.workspace_mergePanel_prMergedInto_before({ number: openPR.number })}
       <span class="font-medium text-foreground"
         >{targetBranch || trunkBranch || 'main'}</span
       >.
@@ -338,8 +343,10 @@
     {@const totalCommitsGH = allCommits.length + (hasStaged ? 1 : 0)}
     {#if totalCommitsGH > 1}
       <Tooltip
-        content="Combine all {totalCommitsGH} commits into one called &quot;Squashed commit from {$workspace?.branch ||
-          'branch'}&quot;. Keeps the target branch history clean."
+        content={m.workspace_mergePanel_squash_tooltip({
+          count: totalCommitsGH,
+          branch: $workspace?.branch || 'branch',
+        })}
         side="top"
         align="start"
         contentClass="w-[14rem]"
@@ -355,7 +362,7 @@
             for="squash-merge-github-toggle"
             class="text-xs text-subtle cursor-pointer select-none"
           >
-            Squash commits
+            {m.workspace_mergePanel_squashCommits_label()}
           </label>
         </div>
       </Tooltip>
@@ -363,8 +370,7 @@
 
     {#if hasStaged}
       <p class="text-xs text-amber-500">
-        You have staged changes that haven't been committed. They won't be included in
-        this merge.
+        {m.workspace_mergePanel_stagedNotIncluded_label()}
       </p>
     {/if}
 
@@ -378,10 +384,14 @@
       >
         {#if mergeOptions.mergingPR}
           <Fa icon={faSpinner} size="xs" class="animate-spin" />
-          <span>Merging on GitHub...</span>
+          <span>{m.workspace_mergePanel_mergingOnGithub_label()}</span>
         {:else}
           <Fa icon={faCodeMerge} size="xs" class="opacity-50" />
-          <span>{mergeOptions.squash ? 'Squash & Merge PR' : 'Merge PR'}</span>
+          <span
+            >{mergeOptions.squash
+              ? m.workspace_mergePanel_squashMergePr_label()
+              : m.workspace_mergePanel_mergePr_label()}</span
+          >
         {/if}
       </Button>
     </div>
@@ -389,15 +399,21 @@
 {:else}
   <!-- Git merge -->
   {@const mergeStaged = hasStaged
-    ? `${stagedChanges.length} staged file${stagedChanges.length === 1 ? '' : 's'}`
+    ? stagedChanges.length === 1
+      ? m.workspace_prSection_stagedFiles_one()
+      : m.workspace_prSection_stagedFiles_many({ count: stagedChanges.length })
     : ''}
   {@const mergeCommits = hasCommits
-    ? `${allCommits.length} commit${allCommits.length === 1 ? '' : 's'}`
+    ? allCommits.length === 1
+      ? m.workspace_prSection_commits_one()
+      : m.workspace_prSection_commits_many({ count: allCommits.length })
     : ''}
   {@const mergeParts = [mergeStaged, mergeCommits].filter(Boolean)}
   {#if mergeParts.length > 0}
     <p class="text-xs text-subtle">
-      {mergeParts.join(' and ')} will be merged into
+      {m.workspace_mergePanel_willBeMergedInto_before({
+        parts: mergeParts.join(m.workspace_prSection_and_separator()),
+      })}
       <span class="font-medium text-foreground"
         >{targetBranch || trunkBranch || 'trunk'}</span
       >.
@@ -407,7 +423,7 @@
   <!-- Commit message for staged changes -->
   {#if hasStaged}
     <div>
-      <span class="text-xs text-subtle mb-1 block">Commit Message</span>
+      <span class="text-xs text-subtle mb-1 block">{m.workspace_mergePanel_commitMessage_label()}</span>
       <div class="relative">
         <Textarea
           value={commitMessage}
@@ -418,7 +434,7 @@
               handleMergeToTrunk({ squash: mergeOptions.squash, localOnly: !mergeOptions.pushAfter });
             }
           }}
-          placeholder="Commit message for staged changes..."
+          placeholder={m.workspace_mergePanel_commitMessage_placeholder()}
           doesExpandToFit
           minHeight={60}
           maxHeight={150}
@@ -431,7 +447,7 @@
 
   <!-- Target Branch -->
   <div>
-    <span class="text-xs text-subtle mb-1 block">Target Branch</span>
+    <span class="text-xs text-subtle mb-1 block">{m.workspace_prSection_targetBranch_label()}</span>
     <BranchSelector
       variant="default"
       value={targetBranch}
@@ -448,8 +464,10 @@
   <div class="flex flex-col gap-1.5">
     {#if totalCommitsToMerge > 1}
       <Tooltip
-        content="Combine all {totalCommitsToMerge} commits into one called &quot;Squashed commit from {$workspace?.branch ||
-          'branch'}&quot;. Keeps the target branch history clean."
+        content={m.workspace_mergePanel_squash_tooltip({
+          count: totalCommitsToMerge,
+          branch: $workspace?.branch || 'branch',
+        })}
         side="top"
         align="start"
         contentClass="w-[14rem]"
@@ -465,7 +483,7 @@
             for="squash-merge-toggle"
             class="text-xs text-subtle cursor-pointer select-none"
           >
-            Squash commits
+            {m.workspace_mergePanel_squashCommits_label()}
           </label>
         </div>
       </Tooltip>
@@ -473,8 +491,8 @@
     {#if hasRemote}
       <Tooltip
         content={mergeOptions.pushAfter
-          ? 'Changes will be pushed to the remote repository after merging. Uncheck to only merge locally.'
-          : 'Changes will only be merged on your machine, and you can push later.'}
+          ? m.workspace_mergePanel_pushAfter_tooltip()
+          : m.workspace_mergePanel_localOnly_tooltip()}
         side="top"
         align="start"
         contentClass="w-[14rem]"
@@ -490,7 +508,7 @@
             for="push-after-merge-toggle"
             class="text-xs text-subtle cursor-pointer select-none"
           >
-            Push to remote
+            {m.workspace_mergePanel_pushToRemote_label()}
           </label>
         </div>
       </Tooltip>
@@ -511,10 +529,18 @@
     >
       {#if isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
         <Fa icon={faSpinner} size="xs" class="animate-spin" />
-        <span>{isMergingToTrunk ? 'Merging...' : 'Will merge when done...'}</span>
+        <span
+          >{isMergingToTrunk
+            ? m.workspace_mergePanel_merging_label()
+            : m.workspace_mergePanel_willMergeWhenDone_label()}</span
+        >
       {:else}
         <Fa icon={faCodeMerge} size="xs" class="opacity-50" />
-        <span>{mergeOptions.squash ? 'Squash & Merge' : 'Merge'}</span>
+        <span
+          >{mergeOptions.squash
+            ? m.workspace_mergePanel_squashMerge_label()
+            : m.workspace_prSection_merge_label()}</span
+        >
       {/if}
     </Button>
     <!-- Auto-fill button -->
@@ -528,7 +554,7 @@
             onclick={handleStopGeneratingMerge}
           >
             <Fa icon={faSpinner} size="xs" class="animate-spin" />
-            <span class="mr-1">Auto-fill</span>
+            <span class="mr-1">{m.workspace_prCreator_autoFill_label()}</span>
             <Fa icon={faStop} size="xs" />
           </Button>
           {#if mergeAgentId}
@@ -537,7 +563,7 @@
               size="icon-xs"
               class="rounded-none h-7!"
               onclick={viewMergeThoughtProcess}
-              tooltip="View thought process"
+              tooltip={m.workspace_prSection_viewThoughtProcess_tooltip()}
               tooltipSide="top"
               tooltipDelayDuration={0}
             >
@@ -554,7 +580,7 @@
             {#if $mergeWhenReady$}
               <Fa icon={faCheck} size="xs" />
             {/if}
-            Auto-merge when done
+            {m.workspace_mergePanel_autoMergeWhenDone_label()}
           </Button>
         </div>
       {:else}
@@ -566,7 +592,7 @@
             onclick={handleAutoFillMerge}
           >
             <Fa icon={faRobot} size="xs" class="opacity-50" />
-            <span>Auto-fill</span>
+            <span>{m.workspace_prCreator_autoFill_label()}</span>
           </Button>
           {#if mergeAgentId}
             <Button
@@ -574,7 +600,7 @@
               size="icon-xs"
               class="rounded-l-none border-l-0 h-7!"
               onclick={viewMergeThoughtProcess}
-              tooltip="View thought process"
+              tooltip={m.workspace_prSection_viewThoughtProcess_tooltip()}
               tooltipSide="top"
               tooltipDelayDuration={0}
             >

@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/core';
 import { toast } from 'svelte-sonner';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { m } from '$shared/paraglide/messages.js';
 import type { LoggerLike } from './logger.types';
 
 /** PROTOCOL §5.2 `note.saveAsset` result — `url` round-trips through `note.readAsset`. */
@@ -45,8 +46,8 @@ export async function uploadImageAndInsert(params: {
     logger.info('Image inserted into note', { assetId: result.assetId });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.error('Failed to upload image', { error: message });
-    toast.error('Failed to upload image', { description: message });
+    logger.error('Failed to upload image', { error: message }); // i18n-ignore (log line)
+    toast.error(m.workspace_noteWithComments_imageUploadFailed_error(), { description: message });
   }
 }
 

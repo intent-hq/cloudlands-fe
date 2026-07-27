@@ -12,6 +12,8 @@
     type WebConflictPromptRequest,
   } from './file-conflict-prompt';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
   import { refreshFileExplorer } from '$store/renderer/slices/file-explorer/file-explorer-slice';
@@ -108,7 +110,7 @@
       if (response.success) {
         logger.info('File renamed successfully', { oldPath, newPath });
         const fileName = newPath.split('/').pop() || newPath;
-        toast.success(`Renamed to "${fileName}"`);
+        toast.success(m.workspace_filesPanel_renamedTo_label({ fileName }));
         // Notify parent so it can update any open panels with this file
         logger.info('Calling onFileRenamed callback', {
           hasCallback: !!onFileRenamed,
@@ -123,7 +125,7 @@
       }
     } catch (error) {
       logger.error('Failed to rename file', error as Error, { oldPath, newPath });
-      toast.error('Failed to rename file', {
+      toast.error(m.workspace_filesPanel_renameFailed_error(), {
         description: (error as Error).message,
       });
     }
@@ -157,7 +159,9 @@
     let progressToastId: string | number | undefined;
 
     if (hasMultipleItems) {
-      progressToastId = toast.loading(`Copying ${files.length} items...`);
+      progressToastId = toast.loading(
+        m.workspace_filesPanel_copyingItems_label({ count: formatInteger(files.length) }),
+      );
     }
 
     // Track skipped files separately from failed files
@@ -293,22 +297,44 @@
     } else if (successCount > 0 && failedCount === 0 && skippedCount > 0) {
       const message = formatSuccessMessage(successCount, folderCount, files);
       toast.success(message, {
-        description: `${skippedCount} ${skippedCount === 1 ? 'file' : 'files'} skipped`,
+        description:
+          skippedCount === 1
+            ? m.workspace_filesPanel_filesSkipped_one()
+            : m.workspace_filesPanel_filesSkipped_many({ count: formatInteger(skippedCount) }),
       });
     } else if (successCount > 0 && failedCount > 0) {
-      let description = `Failed: ${failedFiles.join(', ')}`;
+      let description: string = m.workspace_filesPanel_failedList_label({
+        files: failedFiles.join(', '),
+      });
       if (skippedCount > 0) {
-        description += ` (${skippedCount} skipped)`;
+        description += m.workspace_filesPanel_skippedSuffix_label({
+          count: formatInteger(skippedCount),
+        });
       }
-      toast.warning(`Added ${successCount} items, ${failedCount} failed`, {
-        description,
-      });
+      toast.warning(
+        m.workspace_filesPanel_addedItemsFailed_label({
+          added: formatInteger(successCount),
+          failed: formatInteger(failedCount),
+        }),
+        {
+          description,
+        },
+      );
     } else if (failedCount > 0) {
-      toast.error(`Failed to add ${failedCount === 1 ? 'item' : 'items'}`, {
-        description: failedFiles.join(', '),
-      });
+      toast.error(
+        failedCount === 1
+          ? m.workspace_filesPanel_addFailed_one()
+          : m.workspace_filesPanel_addFailed_many(),
+        {
+          description: failedFiles.join(', '),
+        },
+      );
     } else if (skippedCount > 0) {
-      toast.info(`${skippedCount} ${skippedCount === 1 ? 'file was' : 'files were'} skipped`);
+      toast.info(
+        skippedCount === 1
+          ? m.workspace_filesPanel_wereSkipped_one()
+          : m.workspace_filesPanel_wereSkipped_many({ count: formatInteger(skippedCount) }),
+      );
     }
 
     // Refresh the file tree to show newly added files/folders
@@ -326,21 +352,32 @@
   // Helper to format success message based on what was added
   function formatSuccessMessage(successCount: number, folderCount: number, files: File[]): string {
     if (successCount === 1) {
-      const itemType = folderCount === 1 ? 'folder' : 'file';
-      return `Added ${itemType} "${files[0].name}"`;
+      return folderCount === 1
+        ? m.workspace_filesPanel_addedFolder_label({ name: files[0].name })
+        : m.workspace_filesPanel_addedFile_label({ name: files[0].name });
     }
 
     const fileCount = successCount - folderCount;
     const parts: string[] = [];
 
     if (folderCount > 0) {
-      parts.push(`${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`);
+      parts.push(
+        folderCount === 1
+          ? m.workspace_filesPanel_folders_one()
+          : m.workspace_filesPanel_folders_many({ count: formatInteger(folderCount) }),
+      );
     }
     if (fileCount > 0) {
-      parts.push(`${fileCount} ${fileCount === 1 ? 'file' : 'files'}`);
+      parts.push(
+        fileCount === 1
+          ? m.workspace_filesPanel_files_one()
+          : m.workspace_filesPanel_files_many({ count: formatInteger(fileCount) }),
+      );
     }
 
-    return `Added ${parts.join(' and ')}`;
+    return m.workspace_filesPanel_added_label({
+      parts: parts.join(m.workspace_prSection_and_separator()),
+    });
   }
 
   let fileTreeRef: FileTreeView | null = $state(null);
@@ -387,7 +424,7 @@
       />
     </div>
   {:else}
-    <div class="px-4 py-3 text-sm text-subtle">No space folder linked</div>
+    <div class="px-4 py-3 text-sm text-subtle">{m.workspace_filesPanel_noFolderLinked_label()}</div>
   {/if}
 </div>
 

@@ -2,6 +2,8 @@
   import { arc as d3Arc } from 'd3';
   import type { Note, TaskStatus, WorkspaceTaskStats } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import {
   extractSpecTaskIds,
   EXCLUDED_STATUSES,
@@ -177,7 +179,12 @@
     taskStats.total > 0 ? Math.round((taskStats.completed / taskStats.total) * 100) : 0,
   );
   const progressText = $derived(
-    taskStats.total > 0 ? `${taskStats.completed} of ${taskStats.total}` : 'No tasks',
+    taskStats.total > 0
+      ? m.workspace_radialFlame_progress_label({
+          completed: formatInteger(taskStats.completed),
+          total: formatInteger(taskStats.total),
+        })
+      : m.workspace_specTaskDonut_noTasks_label(),
   );
 
   const arcGenerator = $derived(

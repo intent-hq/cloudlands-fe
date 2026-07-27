@@ -6,6 +6,7 @@
   import TaskStatusIcon from '../tiptap/TaskStatusIcon.svelte';
 
   import { updateTaskNoteStatus } from '$features/tasks/tasks-write-service';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   let {
@@ -36,13 +37,27 @@
   ];
 
   const statusLabels: Record<TaskStatus, string> = {
-    not_started: 'Not Started',
-    waiting: 'Waiting',
-    discussion_needed: 'Discussion Needed',
-    in_progress: 'In Progress',
-    review_required: 'Review Required',
-    complete: 'Complete',
-    cancelled: 'Cancelled',
+    get not_started() {
+      return m.workspace_taskStatus_notStarted_label();
+    },
+    get waiting() {
+      return m.workspace_taskStatus_waiting_label();
+    },
+    get discussion_needed() {
+      return m.workspace_taskStatus_discussionNeeded_label();
+    },
+    get in_progress() {
+      return m.workspace_taskStatus_inProgress_label();
+    },
+    get review_required() {
+      return m.workspace_taskStatus_reviewRequired_label();
+    },
+    get complete() {
+      return m.workspace_taskStatus_complete_label();
+    },
+    get cancelled() {
+      return m.workspace_taskStatus_cancelled_label();
+    },
   };
 
   const statusColors: Record<TaskStatus, string> = {

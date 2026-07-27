@@ -33,6 +33,7 @@
   import { toggleSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+  import { m } from '$shared/paraglide/messages.js';
   import { goto } from '$app/navigation';
   import { onDestroy, tick, onMount } from 'svelte';
   import { writable } from 'svelte/store';
@@ -323,15 +324,15 @@
   async function handleArchive() {
     if (!$workspace) return;
     const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || 'space';
+    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
 
     const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(`Archived space ${workspaceTitle}`, {
+      toast.warning(m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }), {
         duration: 15000,
         action: {
-          label: 'Undo',
+          label: m.workspace_multiSelectSidebar_undo_label(),
           onClick: async () => {
             const undoResult = await workspaceClient.unarchive($workspace.id);
             if (undoResult.ok) {
@@ -342,21 +343,21 @@
       });
       goto('/');
     } else {
-      toast.error('Failed to archive space');
+      toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
     }
   }
 
   async function handleUnarchive() {
     if (!$workspace) return;
     const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || 'space';
+    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
 
     const result = await workspaceClient.unarchive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.success(`Unarchived space ${workspaceTitle}`);
+      toast.success(m.workspace_progressCard_unarchivedSpace_toast({ title: workspaceTitle }));
     } else {
-      toast.error('Failed to unarchive space');
+      toast.error(m.workspace_progressCard_unarchiveFailed_error());
     }
   }
 
@@ -468,7 +469,10 @@
   }
 
   const sidebarSideAction: MenuAction = $derived({
-    label: $sidebarSide$ === 'left' ? 'Move sidebar to right' : 'Move sidebar to left',
+    label:
+      $sidebarSide$ === 'left'
+        ? m.workspace_sidebarHeader_moveSidebarRight_label()
+        : m.workspace_sidebarHeader_moveSidebarLeft_label(),
     iconSnippet: sidebarSideIconSnippet,
     dividerBefore: true,
     onClick: () => {
@@ -559,7 +563,7 @@
         if (currentReadyIndex >= deduped.length) {
           currentReadyIndex = Math.max(0, deduped.length - 1);
         }
-        readyLogger.info('Ready tasks updated from backend', { count: deduped.length });
+        readyLogger.info('Ready tasks updated from backend', { count: deduped.length }); // i18n-ignore (log line)
       }
     });
 
@@ -848,23 +852,23 @@
           {#snippet content()}
             <span>
               {#if $workspace?.skipWorktree}
-                Working directly in your repo at
+                {m.workspace_progressCard_workingDirectlyAt_before()}
                 <span class="underline underline-offset-2 break-all"
                   >{workspacePath.split('/').slice(-2).join('/')}</span
                 >.
               {:else}
-                We have an isolated copy of your repo in the
+                {m.workspace_progressCard_isolatedCopy_before()}
                 <span class="underline underline-offset-2"
-                  >{$workspace?.id || 'workspace'}/repo</span
+                  ><!-- i18n-ignore (file path) -->{$workspace?.id || 'workspace'}/repo</span
                 >
-                folder.
+                {m.workspace_progressCard_isolatedCopy_after()}
               {/if}
               <br /><span class="text-subtle"
-                >Click to copy the path, or open in an app from the <Fa
+                >{m.workspace_progressCard_clickToCopy_before()} <Fa
                   icon={faEllipsisV}
                   class="inline mx-0.5"
                   size="xs"
-                /> menu to the right.</span
+                /> {m.workspace_progressCard_clickToCopy_after()}</span
               >
             </span>
             {#if copiedRepoPath}
@@ -934,7 +938,7 @@
                outline-none min-w-20 w-full leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150"
-              placeholder="Untitled"
+              placeholder={m.workspace_links_untitled_label()}
             />
           {:else}
             <button
@@ -946,11 +950,11 @@
                disabled:cursor-default disabled:opacity-50 truncate min-w-0"
               class:opacity-50={!$workspace?.title}
               onclick={startEditingTitle}
-              title="Click to edit space title"
+              title={m.workspace_sidebarHeader_editTitle_tooltip()}
               disabled={!$workspace}
             >
               {#if $workspace}
-                {$workspace.title || 'Untitled'}
+                {$workspace.title || m.workspace_links_untitled_label()}
               {/if}
             </button>
           {/if}
@@ -1016,23 +1020,23 @@
           {#snippet content()}
             <span>
               {#if $workspace?.skipWorktree}
-                Working directly in your repo at
+                {m.workspace_progressCard_workingDirectlyAt_before()}
                 <span class="underline underline-offset-2 break-all"
                   >{workspacePath.split('/').slice(-2).join('/')}</span
                 >.
               {:else}
-                We have an isolated copy of your repo in the
+                {m.workspace_progressCard_isolatedCopy_before()}
                 <span class="underline underline-offset-2"
-                  >{$workspace?.id || 'workspace'}/repo</span
+                  ><!-- i18n-ignore (file path) -->{$workspace?.id || 'workspace'}/repo</span
                 >
-                folder.
+                {m.workspace_progressCard_isolatedCopy_after()}
               {/if}
               <br /><span class="text-subtle"
-                >Click to copy the path, or open in an app from the <Fa
+                >{m.workspace_progressCard_clickToCopy_before()} <Fa
                   icon={faEllipsisV}
                   class="inline mx-0.5"
                   size="xs"
-                /> menu to the right.</span
+                /> {m.workspace_progressCard_clickToCopy_after()}</span
               >
             </span>
             {#if copiedRepoPath}
@@ -1165,13 +1169,13 @@
               onkeydown={handleStatusMessageKeydown}
               disabled={isSavingStatusMessage}
               maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
-              aria-label="Workspace status"
+              aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
               class="text-xs text-foreground bg-none
                    px-0.5 py-1 rounded
                    outline-none w-full leading-snug
                    focus:ring-none! focus:outline-none!
                    transition-all duration-150 disabled:opacity-50"
-              placeholder="Add workspace status"
+              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
             />
           {:else if $workspace && currentStatusMessage}
             <button

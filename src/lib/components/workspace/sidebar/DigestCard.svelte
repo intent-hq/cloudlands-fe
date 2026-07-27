@@ -7,6 +7,8 @@
   import Fa from 'svelte-fa';
   import { faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import SpecTaskDonut from './SpecTaskDonut.svelte';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     notes?: Note[];
@@ -49,13 +51,19 @@
       {#if hasPRs}
         {@const pr = pullRequests[0]}
         <Fa icon={faCodePullRequest} size="xs" />
-        <span>PR #{pr.number}</span>
+        <span>{m.workspace_digestCard_prNumber_label({ number: pr.number })}</span>
       {:else if totalChanges > 0}
-        <span>{totalChanges} local change{totalChanges === 1 ? '' : 's'}</span>
+        <span
+          >{totalChanges === 1
+            ? m.workspace_digestCard_localChanges_one()
+            : m.workspace_digestCard_localChanges_many({
+                count: formatInteger(totalChanges),
+              })}</span
+        >
       {:else if localCommits.length > 0}
-        <span>{localCommits.length} to push</span>
+        <span>{m.workspace_digestCard_toPush_label({ count: formatInteger(localCommits.length) })}</span>
       {:else}
-        <span>No changes</span>
+        <span>{m.workspace_digestCard_noChanges_label()}</span>
       {/if}
     </div>
   </div>

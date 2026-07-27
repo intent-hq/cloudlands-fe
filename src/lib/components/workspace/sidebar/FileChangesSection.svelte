@@ -38,6 +38,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { toast } from '$lib/components/ui/toast';
+  import { m } from '$shared/paraglide/messages.js';
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -235,16 +236,17 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   function getAgentDisplayName(group: AgentChangeGroup): string {
-    if (!group.agentId) return 'Manual Changes';
+    if (!group.agentId) return m.workspace_fileChanges_manualChangesTitle_label();
     const sessions = selectAllWorkspaceAgents.select(appStore.state, workspaceId);
     const session = sessions.find((s) => {
       const id = typeof s.id === 'object' ? (s.id as any).id || String(s.id) : String(s.id);
       return id === group.agentId;
     });
+    // i18n-ignore (default agent name sentinel from backend)
     if (session?.name && session.name !== 'New Workspace Agent') {
       return session.name;
     }
-    return 'Agent';
+    return m.workspace_fileChanges_agent_label();
   }
 
   function getGroupCommitState(
@@ -339,7 +341,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         // off legacy IPC (out of scope for this wave).
         const result = await stageFilesViaSeam(workspaceId, paths);
         if (!result.success) {
-          toast.error('Stage failed', { description: result.error || 'Unknown error' });
+          toast.error(m.workspace_fileChanges_stageFailed_error(), {
+            description: result.error || m.workspace_prSection_unknownError_label(),
+          });
         }
       }
     } finally {
@@ -359,7 +363,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         // Unstage through the AppClient seam (git.unstage).
         const result = await unstageFilesViaSeam(workspaceId, paths);
         if (!result.success) {
-          toast.error('Unstage failed', { description: result.error || 'Unknown error' });
+          toast.error(m.workspace_fileChanges_unstageFailed_error(), {
+            description: result.error || m.workspace_prSection_unknownError_label(),
+          });
         }
       }
     } finally {
@@ -379,7 +385,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     // Stage through the AppClient seam (git.stage).
     const stageResult = await stageFilesViaSeam(workspaceId, filesToStage);
     if (!stageResult.success) {
-      toast.error('Stage failed', { description: stageResult.error || 'Unknown error' });
+      toast.error(m.workspace_fileChanges_stageFailed_error(), {
+        description: stageResult.error || m.workspace_prSection_unknownError_label(),
+      });
     }
     clearSelection();
     await tick();
@@ -412,7 +420,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     // Unstage through the AppClient seam (git.unstage).
     const unstageResult = await unstageFilesViaSeam(workspaceId, filesToUnstage);
     if (!unstageResult.success) {
-      toast.error('Unstage failed', { description: unstageResult.error || 'Unknown error' });
+      toast.error(m.workspace_fileChanges_unstageFailed_error(), {
+        description: unstageResult.error || m.workspace_prSection_unknownError_label(),
+      });
     }
     clearSelection();
     await tick();
@@ -445,7 +455,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     // Revert through the AppClient seam (git.discard; DESTRUCTIVE).
     const revertResult = await discardFilesViaSeam(workspaceId, filesToRevert);
     if (!revertResult.success) {
-      toast.error('Revert failed', { description: revertResult.error || 'Unknown error' });
+      toast.error(m.workspace_fileChanges_revertFailed_error(), {
+        description: revertResult.error || m.workspace_prSection_unknownError_label(),
+      });
     }
     clearSelection();
   }
@@ -459,7 +471,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     // Stage through the AppClient seam (git.stage).
     const result = await stageFilesViaSeam(workspaceId, paths);
     if (!result.success) {
-      toast.error('Stage failed', { description: result.error || 'Unknown error' });
+      toast.error(m.workspace_fileChanges_stageFailed_error(), {
+        description: result.error || m.workspace_prSection_unknownError_label(),
+      });
     }
   }
 
@@ -472,7 +486,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     // Unstage through the AppClient seam (git.unstage).
     const result = await unstageFilesViaSeam(workspaceId, paths);
     if (!result.success) {
-      toast.error('Unstage failed', { description: result.error || 'Unknown error' });
+      toast.error(m.workspace_fileChanges_unstageFailed_error(), {
+        description: result.error || m.workspace_prSection_unknownError_label(),
+      });
     }
   }
 
@@ -483,7 +499,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       return;
     }
     const paths = group.files.map((f) => f.path);
-    const commitMessage = group.agentName || 'Agent changes';
+    const commitMessage = group.agentName || m.workspace_fileChanges_agentChanges_label();
     try {
       const stageResult = await stageFilesViaSeam(workspaceId, paths);
       if (!stageResult.success) {
@@ -502,12 +518,15 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           console.warn('Failed to refresh stores after group commit:', e);
         }
       } else {
-        toast.error('Commit failed', { description: result.error || 'Unknown error' });
+        toast.error(m.workspace_fileChanges_commitFailed_error(), {
+          description: result.error || m.workspace_prSection_unknownError_label(),
+        });
       }
     } catch (error) {
       logger.error('Failed to commit agent group', error as Error);
-      toast.error('Commit failed', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+      toast.error(m.workspace_fileChanges_commitFailed_error(), {
+        description:
+          error instanceof Error ? error.message : m.workspace_prSection_unknownError_label(),
       });
     }
   }
@@ -538,8 +557,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         await commitSingleGroup(next.group, next.section);
       } catch (error) {
         logger.error('Group commit failed', error as Error);
-        toast.error('Commit failed', {
-          description: error instanceof Error ? error.message : 'Unknown error',
+        toast.error(m.workspace_fileChanges_commitFailed_error(), {
+          description:
+            error instanceof Error ? error.message : m.workspace_prSection_unknownError_label(),
         });
       }
     }
@@ -553,8 +573,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const paths = group.files.map((f) => f.path);
     const pathSet = new Set(paths);
     const message = group.agentId
-      ? getAgentDisplayName(group) || group.agentName || 'Agent changes'
-      : 'Manual changes';
+      ? getAgentDisplayName(group) || group.agentName || m.workspace_fileChanges_agentChanges_label()
+      : m.workspace_fileChanges_manualChanges_label();
     const otherStagedPaths = stagedChanges
       .filter((c) => !pathSet.has(c.relativePath))
       .map((c) => c.relativePath);
@@ -595,8 +615,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 <!-- UNSTAGED SECTION -->
 <div>
   <TimelineSection
-    title="Unstaged"
-    subtitle="New"
+    title={m.workspace_fileChanges_unstaged_label()}
+    subtitle={m.workspace_fileChanges_new_label()}
     active={hasUnstaged}
     activeColor="bg-amber-500"
   >
@@ -605,8 +625,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       <div class="flex items-center justify-between gap-2 -my-0.5">
         <Tooltip
           content={$autoCommitEnabled
-            ? 'Agent changes will be committed automatically when finished'
-            : 'Agent changes need to be committed manually'}
+            ? m.workspace_fileChanges_autoCommitOn_tooltip()
+            : m.workspace_fileChanges_autoCommitOff_tooltip()}
           side="right"
           contentClass="w-[12rem]"
           disableHoverableContent={false}
@@ -839,7 +859,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         loading={isStaging}
         data-testid="stage-all-button"
       >
-        Stage all
+        {m.workspace_fileChanges_stageAll_label()}
       </DividerButton>
     {/if}
     {#if hasStaged}
@@ -849,7 +869,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         loading={isStaging}
         arrowUp
       >
-        Unstage all
+        {m.workspace_fileChanges_unstageAll_label()}
       </DividerButton>
     {/if}
   </TimelineDivider>
@@ -858,8 +878,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 <!-- STAGED SECTION -->
 <div>
   <TimelineSection
-    title="Staged"
-    subtitle="Approved"
+    title={m.workspace_fileChanges_staged_label()}
+    subtitle={m.workspace_fileChanges_approved_label()}
     active={hasStaged}
     activeColor="bg-emerald-500"
   >

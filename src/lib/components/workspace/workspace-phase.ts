@@ -30,6 +30,8 @@
 
 import type { Workspace } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
+import { formatInteger } from '$lib/i18n/format';
 
 export type WorkspacePhase = 'planning' | 'building' | 'reviewing' | 'shipped';
 
@@ -49,20 +51,36 @@ export interface WorkspacePhaseStats {
 
 export const PHASE_META: Record<WorkspacePhase, { label: string; description: string }> = {
   planning: {
-    label: 'Planning',
-    description: 'The Coordinator will research and create a Spec. You can edit and iterate on it.',
+    get label() {
+      return m.workspace_phase_planning_label();
+    },
+    get description() {
+      return m.workspace_phase_planning_description();
+    },
   },
   building: {
-    label: 'Building',
-    description: 'Once approved, the Coordinator will delegate the work and verify it.',
+    get label() {
+      return m.workspace_phase_building_label();
+    },
+    get description() {
+      return m.workspace_phase_building_description();
+    },
   },
   reviewing: {
-    label: 'Reviewing',
-    description: 'Once the work is done, review and ship the changes.',
+    get label() {
+      return m.workspace_phase_reviewing_label();
+    },
+    get description() {
+      return m.workspace_phase_reviewing_description();
+    },
   },
   shipped: {
-    label: 'Shipped',
-    description: 'All set! No un-merged changes.',
+    get label() {
+      return m.workspace_phase_shipped_label();
+    },
+    get description() {
+      return m.workspace_phase_shipped_description();
+    },
   },
 };
 
@@ -109,8 +127,10 @@ export function deriveWorkspacePhase(
     const pr = prs.find((p) => p.status === PullRequestStatus.Merged);
     return {
       phase: 'shipped',
-      label: 'Shipped',
-      subtitle: pr ? `PR #${pr.number} merged` : 'All set!',
+      label: m.workspace_phase_shipped_label(),
+      subtitle: pr
+        ? m.workspace_phase_prMerged_label({ number: pr.number })
+        : m.workspace_phase_allSet_label(),
       isActive: false,
     };
   }
@@ -121,38 +141,47 @@ export function deriveWorkspacePhase(
       ) || workspace.activePullRequest;
     return {
       phase: 'reviewing',
-      label: 'Reviewing',
-      subtitle: pr ? `PR #${pr.number} open` : 'PR open',
+      label: m.workspace_phase_reviewing_label(),
+      subtitle: pr
+        ? m.workspace_phase_prOpenNumber_label({ number: pr.number })
+        : m.workspace_phase_prOpen_label(),
       isActive: false,
     };
   }
   if (allDone) {
     return {
       phase: 'reviewing',
-      label: 'Reviewing',
-      subtitle: hasFiles ? 'Review changes and create a PR' : 'Time to review and ship',
+      label: m.workspace_phase_reviewing_label(),
+      subtitle: hasFiles
+        ? m.workspace_phase_reviewAndCreatePr_label()
+        : m.workspace_phase_timeToReviewAndShip_label(),
       isActive: false,
     };
   }
   if (t > 0 && (ip > 0 || c > 0 || active)) {
     return {
       phase: 'building',
-      label: 'Building',
+      label: m.workspace_phase_building_label(),
       subtitle:
         ip > 0
-          ? `${ip} task${ip === 1 ? '' : 's'} being implemented`
-          : `${c} of ${t} tasks complete`,
+          ? ip === 1
+            ? m.workspace_phase_tasksBeingImplemented_one()
+            : m.workspace_phase_tasksBeingImplemented_many({ count: formatInteger(ip) })
+          : m.workspace_phase_tasksComplete_label({
+              completed: formatInteger(c),
+              total: formatInteger(t),
+            }),
       isActive: active,
     };
   }
   return {
     phase: 'planning',
-    label: 'Planning',
+    label: m.workspace_phase_planning_label(),
     subtitle: specCreating
-      ? 'Coordinator is researching...'
+      ? m.workspace_phase_coordinatorResearching_label()
       : t > 0 || opts?.hasSpecContent
-        ? 'Spec ready for review'
-        : 'Describe what you want to build',
+        ? m.workspace_phase_specReady_label()
+        : m.workspace_phase_describeWhatToBuild_label(),
     isActive: specCreating || active,
   };
 }

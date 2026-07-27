@@ -9,18 +9,23 @@
  */
 import { dialog } from '$lib/electron-bridge';
 import { getPlatform } from '$lib/utils/platform-capabilities';
+import { m } from '$shared/paraglide/messages.js';
 
 /** How a drop conflict is resolved; order matches FILE_CONFLICT_BUTTONS. */
 export type ConflictResolution = 'skip' | 'rename' | 'overwrite';
 
-export const FILE_CONFLICT_TITLE = 'File Already Exists';
+export const FILE_CONFLICT_TITLE: string = m.workspace_fileConflict_title();
 
 /** Button labels; the index doubles as the wire-level button index. */
-export const FILE_CONFLICT_BUTTONS = ['Skip', 'Rename', 'Overwrite'] as const;
+export const FILE_CONFLICT_BUTTONS: readonly [string, string, string] = [
+  m.workspace_fileConflict_skip_label(),
+  m.workspace_fileConflict_rename_label(),
+  m.workspace_fileConflict_overwrite_label(),
+] as const;
 
 /** Body text shown for a conflicting drop of `fileName`. */
 export function fileConflictMessage(fileName: string): string {
-  return `A file named "${fileName}" already exists at this location. What would you like to do?`;
+  return m.workspace_fileConflict_message({ fileName });
 }
 
 /** Map a button index to its resolution (0=skip, 1=rename, 2=overwrite; unknown=skip). */

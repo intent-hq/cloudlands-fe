@@ -24,6 +24,7 @@
   getGroupKey,
 } from './utils/workspace-grouping';
   import { formatInteger, formatRelativeTime } from '$lib/i18n/format';
+  import { m } from '$shared/paraglide/messages.js';
   interface Props {
     workspaces: Workspace[];
     collapsed?: boolean;
@@ -54,7 +55,7 @@
 
     const grouped = workspaces.reduce(
       (acc, workspace) => {
-        const { key } = getGroupKey(workspace, linksRepoPathLookup, 'No Repository');
+        const { key } = getGroupKey(workspace, linksRepoPathLookup, 'No Repository'); // i18n-ignore (internal group key, displayed as "Other")
         if (!acc[key]) {
           acc[key] = [];
         }
@@ -154,8 +155,8 @@
             size="icon-xs"
             class="opacity-0 group-hover:opacity-100 transition-opacity"
             onclick={() => handleCreateWorkspaceForRepo(repoName, repoWorkspaces)}
-            aria-label="Create new space for {repoName}"
-            title="Create new space for {repoName}"
+            aria-label={m.workspace_links_createSpaceFor_label({ repo: repoName })}
+            title={m.workspace_links_createSpaceFor_label({ repo: repoName })}
           >
             <Fa icon={faPlus} size="xs" />
           </Button>
@@ -174,7 +175,10 @@
               <div class="flex justify-start w-full">
                 <span class="truncate flex-1 flex items-center gap-1.5">
                   {#if isRemoteWorkspace(workspace)}
-                    <div aria-label="Remote space" title="Remote space">
+                    <div
+                      aria-label={m.workspace_links_remoteSpace_label()}
+                      title={m.workspace_links_remoteSpace_label()}
+                    >
                       <Fa icon={faServer} size="xs" class="text-primary flex-shrink-0" />
                     </div>
                   {/if}
@@ -183,7 +187,7 @@
                       {workspace.title}
                     </span>
                   {:else}
-                    <span class="truncate text-subtle"> Untitled </span>
+                    <span class="truncate text-subtle"> {m.workspace_links_untitled_label()} </span>
                   {/if}
                 </span>
                 {#if stats.additions > 0 || stats.deletions > 0}
@@ -217,7 +221,7 @@
   {#if workspacesByRepo['No Repository']}
     <div class="space-y-px">
       <div class="px-5 py-1 mt-2">
-        <span class="text-xs font-medium text-subtle">Other</span>
+        <span class="text-xs font-medium text-subtle">{m.workspace_links_other_label()}</span>
       </div>
       {#each workspacesByRepo['No Repository'] as workspace (workspace.id)}
         {@const isActive = isWorkspaceActive(workspace.id)}
@@ -231,7 +235,10 @@
           >
             <span class="truncate flex-1 flex items-center gap-1.5">
               {#if isRemoteWorkspace(workspace)}
-                <div aria-label="Remote space" title="Remote space">
+                <div
+                  aria-label={m.workspace_links_remoteSpace_label()}
+                  title={m.workspace_links_remoteSpace_label()}
+                >
                   <Fa icon={faServer} size="xs" class="text-primary flex-shrink-0" />
                 </div>
               {/if}
@@ -240,7 +247,7 @@
                   {workspace.title}
                 </span>
               {:else}
-                <span class="truncate text-subtle"> Untitled </span>
+                <span class="truncate text-subtle"> {m.workspace_links_untitled_label()} </span>
               {/if}
             </span>
             {#if stats.additions > 0 || stats.deletions > 0}

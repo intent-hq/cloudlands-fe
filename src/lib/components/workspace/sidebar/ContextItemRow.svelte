@@ -17,6 +17,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     item: ContextItem;
@@ -112,7 +113,7 @@
     if (hasExternalLink) {
       items.push({
         id: 'open-external',
-        label: 'Open in Browser',
+        label: m.workspace_contextItem_openInBrowser_label(),
         icon: faExternalLink,
         onClick: () => {
           onExternalOpen?.(item);
@@ -126,7 +127,7 @@
       items.push({ type: 'separator' });
       items.push({
         id: 'remove',
-        label: 'Remove from Context',
+        label: m.workspace_contextItem_removeFromContext_label(),
         icon: faTrash,
         destructive: true,
         onClick: () => {
@@ -171,7 +172,7 @@
       >
       {#if item.type === 'note' && item.isSpec}
         <span class="text-xs px-1 py-0.5 rounded bg-primary/10 text-primary font-medium"
-          >SPEC</span
+          >{m.workspace_contextItem_spec_label()}</span
         >
       {/if}
     </div>

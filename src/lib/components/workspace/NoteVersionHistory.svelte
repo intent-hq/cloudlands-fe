@@ -9,6 +9,7 @@
   import { fetchNoteVersions } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { selectNoteVersions } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     workspace,
@@ -110,13 +111,13 @@
       class:selected={selectedVersionIndex === null}
       onclick={() => (selectedVersionIndex = null)}
     >
-      <span class="text-ui font-mono font-medium">Current</span>
+      <span class="text-ui font-mono font-medium">{m.workspace_noteVersionHistory_current_label()}</span>
     </button>
 
     {#if loading}
-      <div class="px-2.5 py-1.5 text-ui text-subtle">Loading…</div>
+      <div class="px-2.5 py-1.5 text-ui text-subtle">{m.workspace_noteVersionHistory_loading_label()}</div>
     {:else if error}
-      <div class="px-2.5 py-1.5 text-ui text-destructive-foreground">Error</div>
+      <div class="px-2.5 py-1.5 text-ui text-destructive-foreground">{m.workspace_noteVersionHistory_error_label()}</div>
     {:else}
       {#each versions as version, index (version.versionId)}
         <button
@@ -147,7 +148,7 @@
         </div>
         <Button variant="ghost-light" size="xs" onclick={handleRestore}>
           <Fa icon={faRotateLeft} class="text-ghost" size="10" />
-          Restore
+          {m.workspace_noteVersionHistory_restore_label()}
         </Button>
       </div>
     {/if}

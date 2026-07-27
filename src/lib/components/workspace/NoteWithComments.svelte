@@ -10,6 +10,8 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import {
   untrack,
   onMount,
@@ -128,6 +130,7 @@
       if (/^#{1,6}\s/.test(trimmed)) patterns.add('heading');
       if (/^[-*+]\s/.test(trimmed)) patterns.add('unordered-list');
       if (/^\d+\.\s/.test(trimmed)) patterns.add('ordered-list');
+      // i18n-ignore (markdown syntax regex, not user-facing text)
       if (/^```/.test(trimmed)) patterns.add('code-fence');
       if (/^>\s/.test(trimmed)) patterns.add('blockquote');
       if (/^[-*]\s\[[ x]\]\s/i.test(trimmed)) patterns.add('task-list');
@@ -736,7 +739,7 @@
   function debounceUpdate() {
     // NOTE: intentionally NOT gated on isUpdatingFromExternal (monorepo#535).
     // Programmatic applies never reach this handler — they carry the
-    // `external-update` transaction meta, which editor-config's onUpdate
+    // external-update transaction meta, which editor-config's onUpdate
     // filters out — so gating on the flag's fixed 200ms reset tail only
     // dropped real keystrokes (no edit flag, no save timer → the keystroke was
     // overwritten by the next external apply and never persisted).
@@ -754,7 +757,7 @@
     userTypingTimeout = setTimeout(() => {
       isUserTyping = false;
       // Re-queue external updates skipped during the typing window
-      // (monorepo#534): isUserTyping is a non-reactive `let`, so nothing else
+      // (monorepo#534): isUserTyping is a non-reactive "let", so nothing else
       // re-runs the pipeline once typing stops — and the debounced save would
       // otherwise erase the divergence from Redux while the daemon still holds
       // the external change.
@@ -1647,11 +1650,11 @@
     isInitializing = true;
 
     // Redux-driven convergence: the reactive $effect below (watching the
-    // taskAgentAssociations slice via `selectAssociationsForNote`) reconciles
-    // the editor's `delegatedAgentId` markup and the pruned-away rows when
-    // the daemon emits `task:agent-linked`/`task:agent-unlinked` (§6.5).
+    // taskAgentAssociations slice via selectAssociationsForNote) reconciles
+    // the editor's delegatedAgentId markup and the pruned-away rows when
+    // the daemon emits task:agent-linked/task:agent-unlinked (§6.5).
     // A stale in-editor agent id is dropped when its association leaves the
-    // slice, so the legacy `agent-associations-removed` / `task-association-changed`
+    // slice, so the legacy agent-associations-removed / task-association-changed
     // window events (dead since the saga runtime was removed) are no longer needed.
 
     // Listen for scroll position save requests (before navigation)
@@ -1873,7 +1876,7 @@
 <div
   class="workspace-spec-with-comments h-full overflow-hidden flex flex-col px-0 note-font-{$noteFontStyle}"
   role="application"
-  aria-label="Space specification editor"
+  aria-label={m.workspace_noteWithComments_editor_ariaLabel()}
   tabindex="-1"
 >
   <!-- Search Bar -->
@@ -1881,7 +1884,7 @@
     <PanelFindBar
       bind:query={searchQuery}
       bind:inputRef={searchInputRef}
-      placeholder="Find in note..."
+      placeholder={m.workspace_noteWithComments_findInNote_placeholder()}
       currentMatchIndex={currentSearchIndex}
       totalMatches={searchMatchCount}
       resultVariant="muted"
@@ -1964,9 +1967,9 @@
             <div
               class="mb-3 rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 px-4 py-2 text-sm text-yellow-800 dark:text-yellow-200"
             >
-              This note is too large for the rich editor ({Math.round(
-                plainTextFallbackContent.length / 1024,
-              )}KB). Showing as plain text.
+              {m.workspace_noteWithComments_tooLarge_label({
+                sizeKb: formatInteger(Math.round(plainTextFallbackContent.length / 1024)),
+              })}
             </div>
             <pre
               class="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground">{plainTextFallbackContent}</pre>

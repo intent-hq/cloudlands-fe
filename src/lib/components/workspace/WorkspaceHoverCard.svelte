@@ -45,6 +45,8 @@
 
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     workspace: Workspace | null;
@@ -116,7 +118,7 @@
       id: `legacy-pr-${workspace.prNumber ?? 'workspace'}`,
       number: workspace.prNumber ?? 0,
       url: workspace.prUrl ?? '',
-      title: 'Pull request',
+      title: m.workspace_hoverCard_pullRequest_label(),
       status: workspace.prStatus,
       createdAt: workspace.updatedAt,
       updatedAt: workspace.updatedAt,
@@ -174,7 +176,7 @@
     }
     if (summary.ahead > 0) return `${pluralize(summary.ahead, 'commit')} ahead remote`;
     if (summary.behind > 0) return `${pluralize(summary.behind, 'commit')} behind remote`;
-    if (summary.hasUnpushed) return 'Local commits not pushed';
+    if (summary.hasUnpushed) return m.workspace_hoverCard_unpushedCommits_label();
     return null;
   }
 
@@ -214,9 +216,21 @@
 
     const waiting = Math.max(0, progress.total - progress.completed - progress.inProgress);
     return [
-      { label: 'Complete', status: 'complete', weight: progress.completed },
-      { label: 'In progress', status: 'in_progress', weight: progress.inProgress },
-      { label: 'Not started', status: 'not_started', weight: waiting },
+      {
+        label: m.workspace_hoverCard_segmentComplete_label(),
+        status: 'complete',
+        weight: progress.completed,
+      },
+      {
+        label: m.workspace_hoverCard_segmentInProgress_label(),
+        status: 'in_progress',
+        weight: progress.inProgress,
+      },
+      {
+        label: m.workspace_hoverCard_segmentNotStarted_label(),
+        status: 'not_started',
+        weight: waiting,
+      },
     ].filter((segment) => segment.weight > 0);
   }
 
@@ -343,22 +357,22 @@
   // Format last activity time using shared workspace display recency semantics.
   let lastActivityText = $derived(
     !workspace
-      ? 'No recent activity'
+      ? m.workspace_hoverCard_noRecentActivity_label()
       : (() => {
           const activityDate = getWorkspaceActivityDisplayTime(workspace);
-          return formatRelativeDate(activityDate) ?? 'No recent activity';
+          return formatRelativeDate(activityDate) ?? m.workspace_hoverCard_noRecentActivity_label();
         })(),
   );
 
   // Get repository display name
   let repoDisplayName = $derived(
     !workspace
-      ? 'Loading...'
+      ? m.workspace_hoverCard_loading_label()
       : workspace?.repositoryName
         ? workspace.repositoryOwner
           ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
           : workspace.repositoryName
-        : 'Local repository',
+        : m.workspace_hoverCard_localRepository_label(),
   );
 
   let statusMessage = $derived(workspace?.statusMessage?.trim());
@@ -436,12 +450,17 @@
   let gitSummaryText = $derived(workspace ? formatGitSummary($workspaceGitSummary$) : null);
 
   let changeSummaryText = $derived.by(() => {
-    if (!workspace) return hasChanges && lineStats ? 'Changes' : null;
+    if (!workspace)
+      return hasChanges && lineStats ? m.workspace_multiSelectSidebar_changesTab_label() : null;
     const summary = $workspaceDiffSummary$;
     if (summary && summary.totalFiles > 0) {
       return `${pluralize(summary.totalFiles, 'file')} +${summary.totalAdditions} -${summary.totalDeletions}`;
     }
-    if (hasChanges && lineStats) return `Local changes +${lineStats.additions} -${lineStats.deletions}`;
+    if (hasChanges && lineStats)
+      return m.workspace_hoverCard_localChanges_label({
+        additions: lineStats.additions,
+        deletions: lineStats.deletions,
+      });
     return null;
   });
 
@@ -480,7 +499,10 @@
       </div>
       {#if taskSummaryText}
         <div class="mt-2 flex flex-col gap-1.5">
-          <div class="flex h-2.5 w-full gap-px rounded-xs overflow-hidden" aria-label="Workspace task progress">
+          <div
+            class="flex h-2.5 w-full gap-px rounded-xs overflow-hidden"
+            aria-label={m.workspace_hoverCard_taskProgress_ariaLabel()}
+          >
             {#each taskProgressSegments as segment, index (`${segment.label}-${index}`)}
               <div
                 class="min-w-[3px] flex-1 {getTaskStatusColor(segment.status)}"
@@ -506,7 +528,11 @@
 
       {#if runningAgents.length > 0}
         <div class="mt-1 flex w-full min-w-0 flex-col pb-2">
-          <div class="-mx-1 min-w-0 w-full flex flex-col" role="list" aria-label="Running agents">
+          <div
+            class="-mx-1 min-w-0 w-full flex flex-col"
+            role="list"
+            aria-label={m.workspace_hoverCard_runningAgents_ariaLabel()}
+          >
             {#each runningAgents.slice(0, 3) as agent (agent.id)}
               <div
                 class="flex min-h-6 items-center justify-between gap-2 px-1.75 py-0.25 text-left min-w-0 w-full"
@@ -530,7 +556,9 @@
             {/each}
             {#if runningAgents.length > 3}
               <div class="px-1.75 pt-0.75 text-ui text-subtle font-medium">
-                +{runningAgents.length - 3} more
+                {m.workspace_hoverCard_moreAgents_label({
+                  count: formatInteger(runningAgents.length - 3),
+                })}
               </div>
             {/if}
           </div>
@@ -549,7 +577,10 @@
       {/if}
 
       {#if activePullRequest}
-        <div class="relative min-w-0 -mx-1 flex w-full items-center gap-2 px-1 py-0.5" aria-label="Pull request">
+        <div
+          class="relative min-w-0 -mx-1 flex w-full items-center gap-2 px-1 py-0.5"
+          aria-label={m.workspace_hoverCard_pullRequest_label()}
+        >
           <Fa
             icon={getPullRequestStatusIcon(pullRequestDisplayStatus)}
             size="xs"
@@ -557,7 +588,7 @@
           />
           <span class="flex min-w-0 flex-1 items-center gap-2 text-left">
             <span class="min-w-0 flex-1 truncate text-sm text-foreground">
-              {activePullRequest.title || 'Pull request'}
+              {activePullRequest.title || m.workspace_hoverCard_pullRequest_label()}
             </span>
             {#if activePullRequest.number}
               <span class="shrink-0 text-ui text-subtle">#{activePullRequest.number}</span>
@@ -579,7 +610,7 @@
       {#if changeSummaryLineText}
         <div
           class="-mx-1 flex w-full min-w-0 items-center px-1 py-0.5"
-          aria-label="Workspace changes"
+          aria-label={m.workspace_hoverCard_changes_ariaLabel()}
         >
           <span class="min-w-0 truncate text-sm font-medium leading-5 text-foreground">
             {changeSummaryLineText}
@@ -589,7 +620,9 @@
 
 
       <div class="flex items-center justify-between gap-3">
-        <span class="min-w-0 truncate text-right">Last updated {lastActivityText}</span>
+        <span class="min-w-0 truncate text-right"
+          >{m.workspace_hoverCard_lastUpdated_label({ time: lastActivityText })}</span
+        >
       </div>
     </div>
   {:else if isLoading}

@@ -14,6 +14,7 @@ import type { Workspace } from '$shared/types';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { stripMarkdownFormatting } from '$shared/utils-client';
 import { taskNoteUrl } from '$shared/constants/intent-links';
+import { m } from '$shared/paraglide/messages.js';
 
 import type { LoggerLike } from './logger.types';
 import {
@@ -57,7 +58,7 @@ export async function runAssignAgentTaskMenuAction({
   storeDispatch: (action: AssignAgentStoreAction) => void;
   logger: LoggerLike;
 }): Promise<void> {
-  const taskText = taskData.text || 'Unknown task';
+  const taskText = taskData.text || m.workspace_taskMenu_unknownTask_label();
   const taskPosition = parseInt(taskData.position) || 0;
   const occurrenceTaskKey = getTaskAssociationKeyAtPosition(editor, taskPosition, taskText);
 
