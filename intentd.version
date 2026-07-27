@@ -1,4 +1,4 @@
 # Exact intentd version bundled as the sidecar (see README "intentd sidecar pin").
 # Bump by PR: update this version to a released intent-hq/intentd tag (vX.Y.Z or
 # vX.Y.Z-beta.N), then verify with `node scripts/fetch-sidecar.cjs`.
-0.2.9
+0.2.10
