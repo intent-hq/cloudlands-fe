@@ -96,3 +96,17 @@ export { AgentActivationState, isPendingAgentSession } from './agent-session';
 
 // Export comment types
 export type { NoteComment, NoteCommentsData } from './comment.types';
+
+// Export repo-committed `.intent/config.json` types (daemon parity)
+export type {
+  RepoConfig,
+  RepoScript,
+  RepoScriptMode,
+  RepoScriptCategory,
+} from './repo-config.types';
+export {
+  RepoConfigSchema,
+  RepoScriptSchema,
+  RepoScriptModeSchema,
+  RepoScriptCategorySchema,
+} from './repo-config.types';
