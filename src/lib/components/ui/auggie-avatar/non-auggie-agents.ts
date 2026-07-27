@@ -6,6 +6,7 @@ export const KNOWN_NON_AUGGIE_PROVIDER_IDS = new Set([
   'grok',
   'cortex',
   'pi',
+  'unsloth',
 ]);
 
 export function isKnownNonAuggieProvider(providerId: string | undefined): providerId is string {

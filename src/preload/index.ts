@@ -203,6 +203,7 @@ const ALLOWED_CHANNELS = [
   "droid:check-availability",
   "droid:get-models",
   "grok:get-models",
+  "unsloth:get-models",
   "providers:get-availability",
   "providers:get-paths",
   "providers:check-single",

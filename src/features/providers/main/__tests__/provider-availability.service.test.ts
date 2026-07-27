@@ -53,7 +53,17 @@ vi.mock('../../../feature-codes/main/feature-codes.service', () => ({
 
 /** host.providerDiscovery body with every provider uninstalled. */
 const EMPTY_DISCOVERY = {
-  providers: ['auggie', 'claude-code', 'codex', 'cortex', 'opencode', 'pi', 'droid', 'grok'].map(
+  providers: [
+    'auggie',
+    'claude-code',
+    'codex',
+    'cortex',
+    'opencode',
+    'pi',
+    'droid',
+    'grok',
+    'unsloth',
+  ].map(
     (id) => ({
       id,
       displayName: id,
@@ -246,6 +256,28 @@ describe('provider availability service', () => {
 
     expect(result.providers.grok.available).toBe(true);
     expect(result.providers.grok.authenticated).toBeUndefined();
+  });
+
+  it('reports unsloth availability from discovery with available ⇒ authenticated', async () => {
+    // Unsloth rides the opencode binary; it is local-only (no login surface),
+    // so an available provider is always authenticated.
+    routeBackend({
+      'host.providerDiscovery': {
+        ...EMPTY_DISCOVERY,
+        providers: EMPTY_DISCOVERY.providers.map((p) =>
+          p.id === 'unsloth'
+            ? { ...p, installed: true, resolvedPath: '/home/user/.opencode/bin/opencode' }
+            : p,
+        ),
+      },
+      'host.providerAuthStatus': authSweep(),
+    });
+
+    const { getProviderAvailability } = await import('../provider-availability.service');
+    const result = await getProviderAvailability();
+
+    expect(result.providers.unsloth.available).toBe(true);
+    expect(result.providers.unsloth.authenticated).toBe(true);
   });
 
   it('sweeps auth verdicts from host.providerAuthStatus on the aggregate path', async () => {
