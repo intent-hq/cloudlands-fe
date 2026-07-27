@@ -4,6 +4,52 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.5.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.4.0...v2.5.0) (2026-07-27)
+
+
+### 🚀 Features
+
+* agent Q&A — question cards, sequential answer wizard, flattened Q:/A: replies (intent-hq/monorepo[#732](https://github.com/intent-hq/cloudlands-fe/issues/732)) ([832e44d](https://github.com/intent-hq/cloudlands-fe/commit/832e44dc9ebae1efb29f6771336293e28b57a8f3))
+* animate delegation-list reordering with FLIP ([#430](https://github.com/intent-hq/cloudlands-fe/issues/430)) ([6adcbbd](https://github.com/intent-hq/cloudlands-fe/commit/6adcbbdd52d9abc100624a488d0f867ccc0aeb18))
+* completion-aware ordering and monochrome avatars in delegation list ([#427](https://github.com/intent-hq/cloudlands-fe/issues/427)) ([b2c7c9e](https://github.com/intent-hq/cloudlands-fe/commit/b2c7c9e8d66625619b8e36d6843e76e3bc6d4b2d))
+* consume structured base-ref-unresolvable error code in ProposalCard ([#394](https://github.com/intent-hq/cloudlands-fe/issues/394)) ([ab1d6fa](https://github.com/intent-hq/cloudlands-fe/commit/ab1d6fa61b4f557d5167d1630189c856dee1ba45))
+* detect repo-config setup script for GitHub repos in new-workspace modal ([#417](https://github.com/intent-hq/cloudlands-fe/issues/417)) ([4614876](https://github.com/intent-hq/cloudlands-fe/commit/4614876467dfe54691cb9820b0a8f41c0842d67b))
+* distinguish sidecar start-failure messaging and show last-run logs in the daemon dialog ([#402](https://github.com/intent-hq/cloudlands-fe/issues/402)) ([0e6de6c](https://github.com/intent-hq/cloudlands-fe/commit/0e6de6c2ce6fd9f468ddef1f566ad3f1202029c4))
+* drop lines-changed row and add adjustable working hours (D15) ([#432](https://github.com/intent-hq/cloudlands-fe/issues/432)) ([3c717ca](https://github.com/intent-hq/cloudlands-fe/commit/3c717ca4f41dcc60c06bbdce430447ee63e06aa3))
+* link out Auggie setup instructions and show explicit refresh feedback ([#406](https://github.com/intent-hq/cloudlands-fe/issues/406)) ([8ee92a2](https://github.com/intent-hq/cloudlands-fe/commit/8ee92a23869096132b3e88ee026c6cec16bee9d6))
+* pre-flight clone destination validation on the onboarding GitHub tab ([#415](https://github.com/intent-hq/cloudlands-fe/issues/415)) ([84087f1](https://github.com/intent-hq/cloudlands-fe/commit/84087f14e8aed5840601a15de36a78f261bb3b38))
+* re-probe repo config on branch change (intent-hq/monorepo[#835](https://github.com/intent-hq/cloudlands-fe/issues/835)) ([35d18a8](https://github.com/intent-hq/cloudlands-fe/commit/35d18a8e14422200c83811c42d6e826ff590890f))
+* remove legacy workspace import from settings ([b770b65](https://github.com/intent-hq/cloudlands-fe/commit/b770b6504ea9aa76666adfc6c7228fd8da7af9d5))
+* render agent-initiated (harness-wake) streams as implicit turns ([7e80fe3](https://github.com/intent-hq/cloudlands-fe/commit/7e80fe3c8d11d9217e4149d614f13ada4cc1d4f8))
+* show owner-qualified repo names in RepoSelector recent list ([#431](https://github.com/intent-hq/cloudlands-fe/issues/431)) ([d2c6c79](https://github.com/intent-hq/cloudlands-fe/commit/d2c6c79655872e6c994414ab725888c714785105))
+* use indicator Toggle for Custom MCP Servers master toggle ([#405](https://github.com/intent-hq/cloudlands-fe/issues/405)) ([e3076e3](https://github.com/intent-hq/cloudlands-fe/commit/e3076e36660f8597ac4dcca59666165e65805736))
+* wire per-workspace typed channels (notes/tasks/agents/comments) for live-state ([#400](https://github.com/intent-hq/cloudlands-fe/issues/400)) ([c7d4d3a](https://github.com/intent-hq/cloudlands-fe/commit/c7d4d3ad7e469c62ddaee69b1d8b30d0fc2d35d9))
+* wire the typed workspace.subscribe channel for live workspace state (monorepo[#775](https://github.com/intent-hq/cloudlands-fe/issues/775)) ([7286733](https://github.com/intent-hq/cloudlands-fe/commit/7286733f68573bc4eb2ebcdf1b69ffe4da67542f))
+
+
+### 🐛 Bug Fixes
+
+* accept canonical skipIsolation key in workspace:updated changes delta ([#399](https://github.com/intent-hq/cloudlands-fe/issues/399)) ([641a48e](https://github.com/intent-hq/cloudlands-fe/commit/641a48efbe992aeffc9c60d594d533bf5467f94f))
+* add ariaLabel to remaining settings indicator toggles ([#816](https://github.com/intent-hq/cloudlands-fe/issues/816)) ([#412](https://github.com/intent-hq/cloudlands-fe/issues/412)) ([dbd3ebb](https://github.com/intent-hq/cloudlands-fe/commit/dbd3ebbbea730aa54fd3fbc517fc0275ac3b0415))
+* add ariaLabel to settings indicator toggles ([#812](https://github.com/intent-hq/cloudlands-fe/issues/812)) ([#409](https://github.com/intent-hq/cloudlands-fe/issues/409)) ([7ce9fa1](https://github.com/intent-hq/cloudlands-fe/commit/7ce9fa1bce057adb7f622db28538c685e873b60b))
+* deliver Q&A trailingBlocks live on agent:stream:end; render questions wizard-only (intent-hq/monorepo[#732](https://github.com/intent-hq/cloudlands-fe/issues/732)) ([a93df49](https://github.com/intent-hq/cloudlands-fe/commit/a93df49bf535dcd9891d5da5c7fc50bc00d08c72))
+* enlarge working-hours stepper arrow click targets ([#434](https://github.com/intent-hq/cloudlands-fe/issues/434)) ([560ddb8](https://github.com/intent-hq/cloudlands-fe/commit/560ddb84c27bca26cae82b200debcf5d21f041f7))
+* gate CoW toggle on system.capabilities; pass cowSupported/checkoutMode through schemas ([#408](https://github.com/intent-hq/cloudlands-fe/issues/408)) ([104a451](https://github.com/intent-hq/cloudlands-fe/commit/104a4517156729c39864a57e93c1abea154e88d8))
+* harden path-type fields against non-string tool inputs ([#426](https://github.com/intent-hq/cloudlands-fe/issues/426)) ([1995d78](https://github.com/intent-hq/cloudlands-fe/commit/1995d78de66f06960766ed946bada3d3c3c5ce8b))
+* harden unescapeContent against non-string tool input values ([#423](https://github.com/intent-hq/cloudlands-fe/issues/423)) ([250e139](https://github.com/intent-hq/cloudlands-fe/commit/250e13961d391a277f493d5213e852fc737808f8))
+* hide port Save button when persisted value is retyped ([#814](https://github.com/intent-hq/cloudlands-fe/issues/814)) ([#411](https://github.com/intent-hq/cloudlands-fe/issues/411)) ([2d2ad8f](https://github.com/intent-hq/cloudlands-fe/commit/2d2ad8f8798c23ac9775c01b62e4f406f47d06cd))
+* hide step counter, progress segments, and Back for single-question Q&A wizard ([#428](https://github.com/intent-hq/cloudlands-fe/issues/428)) ([bd302f5](https://github.com/intent-hq/cloudlands-fe/commit/bd302f5ea1f6793b5e5081d03dd90ff5443771cc))
+* let typed ~ paths reach the daemon when the home listing is unavailable (monorepo[#824](https://github.com/intent-hq/cloudlands-fe/issues/824)) ([#416](https://github.com/intent-hq/cloudlands-fe/issues/416)) ([fa30a41](https://github.com/intent-hq/cloudlands-fe/commit/fa30a413817472d2a1ee576bd9af502dfef5ed52))
+* map repo-not-found and access-denied daemon clone codes (intent-hq/monorepo[#842](https://github.com/intent-hq/cloudlands-fe/issues/842)) ([#425](https://github.com/intent-hq/cloudlands-fe/issues/425)) ([fccea8b](https://github.com/intent-hq/cloudlands-fe/commit/fccea8b221e33c524c50b513d2d23baafeaa09d7))
+* map the daemon askpass-missing clone code, retire the auth-required prose exception (monorepo[#837](https://github.com/intent-hq/cloudlands-fe/issues/837)) ([525e821](https://github.com/intent-hq/cloudlands-fe/commit/525e8210c3e3d4e6c989379f42d8f086fa456e28))
+* recognize agent:reportToParent wakes in event-wake summaries ([#413](https://github.com/intent-hq/cloudlands-fe/issues/413)) ([42f50b5](https://github.com/intent-hq/cloudlands-fe/commit/42f50b5a9bccf43e04f854bec72096cb9525c9be))
+* render overlapping comment ranges as stacked per-comment spans ([#404](https://github.com/intent-hq/cloudlands-fe/issues/404)) ([35e024c](https://github.com/intent-hq/cloudlands-fe/commit/35e024cef58f47c3c4f16b0d0750bf36759b9693))
+* restyle WebSocket API port input with shared Input component ([#407](https://github.com/intent-hq/cloudlands-fe/issues/407)) ([bb73828](https://github.com/intent-hq/cloudlands-fe/commit/bb73828c55786ae7d2878242f1a610a6d7b0b6a7))
+* stop repo selection resetting the chosen clone destination ([#823](https://github.com/intent-hq/cloudlands-fe/issues/823)) ([#414](https://github.com/intent-hq/cloudlands-fe/issues/414)) ([fce0935](https://github.com/intent-hq/cloudlands-fe/commit/fce0935582e9b6b19a720cd3020a18d6e5072a68))
+* stop spawn-time model picks from mutating the global default model ([#429](https://github.com/intent-hq/cloudlands-fe/issues/429)) ([32581ab](https://github.com/intent-hq/cloudlands-fe/commit/32581ab26eca29d8a90653c91a14e55050021047))
+* surface daemon clone failure detail in onboarding instead of "Internal error" (monorepo[#826](https://github.com/intent-hq/cloudlands-fe/issues/826)) ([9148b9d](https://github.com/intent-hq/cloudlands-fe/commit/9148b9df3b58dbd9f0e57ac3ff0a32b158870b76))
+* vertically center stats overlay content when it fits the viewport ([#410](https://github.com/intent-hq/cloudlands-fe/issues/410)) ([885067e](https://github.com/intent-hq/cloudlands-fe/commit/885067eba9d094e6fe04f3ba5c9fa16b95f0e4cb))
+
 ## [2.4.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.3.0...v2.4.0) (2026-07-25)
 
 
