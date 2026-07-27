@@ -51,6 +51,10 @@ const ENFORCED_DIRS = [
   'src/features/github-auth',
   'src/features/linear-auth',
   'src/features/sentry-auth',
+  'src/lib/components/modals',
+  'src/lib/components/shared',
+  'src/lib/components/common',
+  'src/lib/components/error',
 ];
 
 const ROOT = process.cwd();

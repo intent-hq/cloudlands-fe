@@ -12,6 +12,7 @@
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   const logger = createLogger('AgentAttributionBadge');
@@ -70,7 +71,7 @@
 
   // Truncate agent name for display
   const displayName = $derived.by(() => {
-    const name = attribution.agentName || 'Agent';
+    const name = attribution.agentName || m.shared_agentAttribution_agent_fallback();
     if (name.length > 20) {
       return name.slice(0, 18) + '…';
     }
@@ -88,10 +89,10 @@
       : 'px-2 py-1 text-sm'}
     {className}"
   onclick={handleClick}
-  title="View agent turn #{attribution.turnNumber}"
+  title={m.shared_agentAttribution_viewTurn_tooltip({ turnNumber: attribution.turnNumber })}
 >
   {#if !compact}
-    <span class="text-subtle">edited by</span>
+    <span class="text-subtle">{m.shared_agentAttribution_editedBy_label()}</span>
   {/if}
   <AuggieAvatar agentId={attribution.agentId} size={avatarSize} />
   {#if !compact}

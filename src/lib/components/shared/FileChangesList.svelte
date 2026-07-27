@@ -9,6 +9,8 @@
   import type { FileOperation } from '$shared/types';
   import LineChangesBadge from './LineChangesBadge.svelte';
   import type { Snippet } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     fileChanges: FileOperation[];
@@ -83,7 +85,11 @@
 <div class={cn('flex flex-col', className)}>
   {#if showStats && stats.total > 0}
     <div class="flex items-center gap-2 px-2 py-1 text-xs text-subtle">
-      <span>{stats.total} {stats.total === 1 ? 'file' : 'files'}</span>
+      <span
+        >{stats.total === 1
+          ? m.shared_fileChangesList_fileCount_one({ count: formatInteger(stats.total) })
+          : m.shared_fileChangesList_fileCount_many({ count: formatInteger(stats.total) })}</span
+      >
       {#if stats.created > 0}
         <span class="text-green-600">+{stats.created}</span>
       {/if}
@@ -136,7 +142,7 @@
 
     {#if remainingCount > 0}
       <div class="px-2 py-1 text-xs text-subtle">
-        ...and {remainingCount} more
+        {m.shared_fileChangesList_more_label({ count: formatInteger(remainingCount) })}
       </div>
     {/if}
   </div>

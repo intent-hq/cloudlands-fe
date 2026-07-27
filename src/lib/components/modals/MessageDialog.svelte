@@ -3,6 +3,7 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import Fa from 'svelte-fa';
   import { faXmark, faExclamationTriangle, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -94,7 +95,7 @@
             variant="ghost"
             size="icon"
             onclick={() => select(cancelIndex)}
-            aria-label="Close message dialog"
+            aria-label={m.modals_message_close_ariaLabel()}
           >
             <Fa icon={faXmark} />
           </Button>

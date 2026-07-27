@@ -7,6 +7,7 @@
    */
 
   import { cn } from '$lib/utils';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     additions?: number;
@@ -69,7 +70,7 @@
     )}
   >
     {#if loading}
-      <span class="text-subtle animate-pulse"> Calculating... </span>
+      <span class="text-subtle animate-pulse"> {m.shared_lineChangeStats_calculating_label()} </span>
     {:else}
       {#if additions > 0 || showZero}
         <span class="text-green-600 dark:text-green-400 flex items-center gap-0.5">
@@ -86,7 +87,7 @@
       {/if}
 
       {#if !additions && !deletions && !showZero}
-        <span class="text-subtle"> No changes </span>
+        <span class="text-subtle"> {m.shared_lineChangeStats_noChanges_label()} </span>
       {/if}
     {/if}
   </div>
