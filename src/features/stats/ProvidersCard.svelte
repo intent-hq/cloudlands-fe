@@ -20,9 +20,10 @@
 
   let { data, label }: { data: UsageStatsResult | null; label: string } = $props();
 
-  // Empty only while data has not loaded; a loaded payload missing the
-  // required `byProvider` field (PROTOCOL §5.36) throws in `rankProviders`
-  // rather than being masked as an empty period.
+  // `byProvider` is validated at ingest (`LiveStatsClient` rejects a
+  // stats.getUsage result missing it — PROTOCOL §5.36), so a wire mismatch
+  // surfaces as the overlay's error state, never a render-path throw; empty
+  // here means "not loaded yet" or a genuinely empty period.
   const ranked = $derived(data ? rankProviders(data.byProvider) : []);
   const top = $derived(ranked[0] ?? null);
 </script>

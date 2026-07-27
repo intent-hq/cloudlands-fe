@@ -7,17 +7,17 @@
  * untransformed. Errors are NOT folded: the overlay renders an explicit
  * error state.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock("./backend-transport", () => ({
+vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
+  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
 }));
 
-import { backendRequest } from "./backend-transport";
-import { LiveStatsClient } from "./live-stats-client";
+import { backendRequest } from './backend-transport';
+import { LiveStatsClient } from './live-stats-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -31,7 +31,7 @@ const USAGE_RESULT = {
   linesDeleted: 1790,
   byModel: [
     {
-      model: "claude-sonnet-4.5",
+      model: 'claude-sonnet-4.5',
       runs: 12,
       inputTokens: 100,
       outputTokens: 40,
@@ -41,7 +41,7 @@ const USAGE_RESULT = {
   ],
   byProvider: [
     {
-      provider: "claude-code",
+      provider: 'claude-code',
       runs: 12,
       inputTokens: 100,
       outputTokens: 40,
@@ -63,57 +63,65 @@ const USAGE_RESULT = {
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
   })),
-  availablePeriods: { months: ["2026-06", "2026-07"], years: ["2026"] },
+  availablePeriods: { months: ['2026-06', '2026-07'], years: ['2026'] },
 };
 
-describe("LiveStatsClient (fake transport)", () => {
+describe('LiveStatsClient (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("getUsage forwards stats.getUsage with period/key/tzOffsetMinutes for month", async () => {
+  it('getUsage forwards stats.getUsage with period/key/tzOffsetMinutes for month', async () => {
     mockedRequest.mockResolvedValueOnce(USAGE_RESULT);
     const client = new LiveStatsClient();
 
-    const result = await client.getUsage("month", "2026-07", -420);
+    const result = await client.getUsage('month', '2026-07', -420);
 
-    expect(mockedRequest).toHaveBeenCalledWith("stats.getUsage", {
-      period: "month",
-      key: "2026-07",
+    expect(mockedRequest).toHaveBeenCalledWith('stats.getUsage', {
+      period: 'month',
+      key: '2026-07',
       tzOffsetMinutes: -420,
     });
     expect(result).toEqual(USAGE_RESULT);
   });
 
-  it("getUsage sends the year key for period year", async () => {
+  it('getUsage sends the year key for period year', async () => {
     mockedRequest.mockResolvedValueOnce(USAGE_RESULT);
     const client = new LiveStatsClient();
 
-    await client.getUsage("year", "2026", 60);
+    await client.getUsage('year', '2026', 60);
 
-    expect(mockedRequest).toHaveBeenCalledWith("stats.getUsage", {
-      period: "year",
-      key: "2026",
+    expect(mockedRequest).toHaveBeenCalledWith('stats.getUsage', {
+      period: 'year',
+      key: '2026',
       tzOffsetMinutes: 60,
     });
   });
 
-  it("getUsage omits key entirely for the 24h rolling window (Spec D11)", async () => {
+  it('getUsage omits key entirely for the 24h rolling window (Spec D11)', async () => {
     mockedRequest.mockResolvedValueOnce(USAGE_RESULT);
     const client = new LiveStatsClient();
 
-    await client.getUsage("24h", undefined, 0);
+    await client.getUsage('24h', undefined, 0);
 
-    expect(mockedRequest).toHaveBeenCalledWith("stats.getUsage", {
-      period: "24h",
+    expect(mockedRequest).toHaveBeenCalledWith('stats.getUsage', {
+      period: '24h',
       tzOffsetMinutes: 0,
     });
     const params = mockedRequest.mock.calls[0][1] as Record<string, unknown>;
-    expect("key" in params).toBe(false);
+    expect('key' in params).toBe(false);
   });
 
-  it("propagates transport/daemon errors (overlay renders an error state)", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("uds boom"));
+  it('propagates transport/daemon errors (overlay renders an error state)', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('uds boom'));
     const client = new LiveStatsClient();
 
-    await expect(client.getUsage("month", "2026-07", 0)).rejects.toThrow("uds boom");
+    await expect(client.getUsage('month', '2026-07', 0)).rejects.toThrow('uds boom');
+  });
+
+  it('rejects a result missing a required rollup with a descriptive error', async () => {
+    const { byModel: _omitted, ...malformed } = USAGE_RESULT;
+    mockedRequest.mockResolvedValueOnce(malformed);
+    const client = new LiveStatsClient();
+
+    await expect(client.getUsage('month', '2026-07', 0)).rejects.toThrow(/byModel/);
   });
 });

@@ -120,11 +120,14 @@ describe('ProvidersCard (mock BE)', () => {
     expect(container.textContent).not.toContain('NaN');
   });
 
-  it('surfaces (not masks) a loaded payload missing the required byProvider field', () => {
-    const malformed = { ...USAGE_RESULT, byProvider: undefined } as unknown as UsageStatsResult;
+  it('rejects at ingest (not render) when the payload lacks the required byProvider field', async () => {
+    const { byProvider: _omitted, ...malformed } = USAGE_RESULT;
+    mockedRequest.mockResolvedValueOnce(malformed);
 
-    expect(() =>
-      render(ProvidersCard, { props: { data: malformed, label: 'JUL 2026' } }),
-    ).toThrow();
+    // The descriptive rejection flows through `usageStatsFailed` into the
+    // overlay's error state instead of throwing during card render.
+    await expect(new LiveStatsClient().getUsage('month', '2026-07', 0)).rejects.toThrow(
+      /byProvider/,
+    );
   });
 });
