@@ -147,14 +147,22 @@
   let detectedGitHubOwner = $state<string | null>(null);
   let detectedGitHubRepo = $state<string | null>(null);
 
+  // Generation counter guarding the remote-URL probe against out-of-order
+  // async responses after rapid repo switches
+  let remoteUrlProbeGeneration = 0;
+
   // Fetch remote URL when a local repo is selected
   $effect(() => {
     const path = projectSelection?.repoPath;
     const type = projectSelection?.type;
+    const generation = ++remoteUrlProbeGeneration;
+
+    // Clear synchronously so a repo switch never briefly shows the previous
+    // repo's detected owner/repo
+    detectedGitHubOwner = null;
+    detectedGitHubRepo = null;
 
     if (type !== 'local' || !path || (!path.startsWith('/') && !path.startsWith('~'))) {
-      detectedGitHubOwner = null;
-      detectedGitHubRepo = null;
       return;
     }
 
@@ -166,16 +174,16 @@
                 repoPath: path,
               })
             : undefined;
+        // Drop stale responses: the repo changed while this probe was in flight
+        if (generation !== remoteUrlProbeGeneration) {
+          return;
+        }
         if (response?.success && response.data?.owner && response.data?.repo) {
           detectedGitHubOwner = response.data.owner;
           detectedGitHubRepo = response.data.repo;
-        } else {
-          detectedGitHubOwner = null;
-          detectedGitHubRepo = null;
         }
       } catch {
-        detectedGitHubOwner = null;
-        detectedGitHubRepo = null;
+        // Ignore probe failures — the detected owner/repo is already cleared
       }
     })();
   });
