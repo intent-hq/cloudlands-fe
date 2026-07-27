@@ -264,7 +264,7 @@
     const lastActivity = session.lastActivity || session.updatedAt;
     return {
       id: session.id,
-      name: session.name || 'Agent',
+      name: session.name || m.workspace_fileChanges_agent_label(),
       status: session.isStreaming ? 'streaming' : session.isProcessing ? 'processing' : session.status,
       specialist: session.metadata?.specialist as WorkspaceAgentInfo['specialist'],
       lastActivity: lastActivity instanceof Date ? lastActivity.toISOString() : lastActivity,

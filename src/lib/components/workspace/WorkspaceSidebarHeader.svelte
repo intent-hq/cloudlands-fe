@@ -73,7 +73,7 @@
   function startEditingTitle() {
     if (!workspace) return;
     isEditingTitle = true;
-    editedTitle = workspace.title || 'Untitled';
+    editedTitle = workspace.title || m.workspace_links_untitled_label();
     tick().then(() => {
       if (titleInputRef) {
         titleInputRef.focus();
@@ -104,7 +104,7 @@
       saveTitle();
     } else if (e.key === 'Escape') {
       isEditingTitle = false;
-      editedTitle = workspace?.title || 'Untitled';
+      editedTitle = workspace?.title || m.workspace_links_untitled_label();
     }
   }
 

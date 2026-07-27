@@ -84,7 +84,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     // workspace agent list for an ID lookup.
     const _workspaceAgents = $workspaceAgents$;
     const session = selectAgentSession.select(appStore.state, agentId);
-    return session?.name || 'Agent';
+    return session?.name || m.workspace_fileChanges_agent_label();
   }
 
   // Track which agents we've already tried to load
@@ -125,7 +125,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // Handle running an agent for this note (creates agent and sends initial message)
   function handleRunAgent() {
-    appStore.dispatch(runAgentForNoteRequested(workspaceId, note.id, note.title || 'Task'));
+    appStore.dispatch(
+      runAgentForNoteRequested(workspaceId, note.id, note.title || m.workspace_noteCodeChanges_task_label()),
+    );
   }
 
   async function getAggregateChanges(): Promise<ChatFileChange[]> {
@@ -215,7 +217,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 >
                   <AuggieAvatar size={22} {agentId} />
                   <span class="truncate font-medium text-subtle -mt-0.5"
-                    >{getAgentName(agentId) || m.workspace_fileChanges_agent_label()}</span
+                    >{getAgentName(agentId)}</span
                   >
                 </button>
               {/each}

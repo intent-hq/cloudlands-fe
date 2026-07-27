@@ -1117,7 +1117,7 @@
         const note = noteId
           ? selectNoteById.select(appStore.state, workspace.id, noteId)
           : null;
-        const noteLabel = note?.title || noteId || 'Note';
+        const noteLabel = note?.title || noteId || m.workspace_addContext_note_label();
 
         if (selectedText) {
         } else {

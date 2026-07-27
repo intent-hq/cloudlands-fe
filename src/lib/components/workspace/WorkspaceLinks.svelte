@@ -136,8 +136,8 @@
   }
 
   function formatDate(dateInput: string | Date | number | undefined): string {
-    if (!dateInput) return 'Never';
-    return formatRelativeTime(dateInput, { style: 'narrow' }) || 'Never';
+    if (!dateInput) return m.workspace_links_never_label();
+    return formatRelativeTime(dateInput, { style: 'narrow' }) || m.workspace_links_never_label();
   }
 </script>
 

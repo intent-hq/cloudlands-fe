@@ -71,7 +71,7 @@
   });
 
   function formatRelativeTime(dateStr: string): string {
-    return formatDistanceToNow(dateStr) || 'Unknown';
+    return formatDistanceToNow(dateStr) || m.workspace_noteVersionHistory_unknown_label();
   }
 
   function normalizeForDiff(content: string): string {

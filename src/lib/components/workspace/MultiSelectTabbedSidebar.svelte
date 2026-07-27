@@ -591,7 +591,7 @@
 
   function handleOpenNoteInPanel(noteId: string) {
     const note = $notes.find((n) => n.id === noteId);
-    const title = note?.title || 'Note';
+    const title = note?.title || m.workspace_addContext_note_label();
     panelLayoutManager.openTab({
       type: 'note',
       title,

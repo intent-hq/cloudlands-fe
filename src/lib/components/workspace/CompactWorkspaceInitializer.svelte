@@ -1502,7 +1502,7 @@
         : undefined;
 
       // Get agent name and specialist ID from selected specialist
-      let agentName = 'Agent';
+      let agentName: string = m.workspace_fileChanges_agent_label();
       let specialistId: string | undefined;
 
       if (selectedSpecialist) {
@@ -1510,7 +1510,7 @@
         const specialist = selectSpecialists
           .select(appStore.state)
           .find((s) => s.id === selectedSpecialist);
-        agentName = specialist?.name ?? 'Agent';
+        agentName = specialist?.name ?? m.workspace_fileChanges_agent_label();
         specialistId = selectedSpecialist;
       }
 
