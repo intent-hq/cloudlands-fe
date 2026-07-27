@@ -9,6 +9,7 @@
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** The system message content (text from the message) */
@@ -17,7 +18,8 @@
     class?: string;
   }
 
-  let { message = 'This conversation was interrupted because intentd restarted.', class: className = '' }: Props = $props();
+  let { message = m.chat_interruptionNotice_default_message(), class: className = '' }: Props =
+    $props();
 </script>
 
 <div

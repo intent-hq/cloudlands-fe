@@ -1,5 +1,6 @@
 import type { DropdownGroup, DropdownOption } from '$lib/components/ui/dropdown';
 import { ACP_PROVIDERS, getProviderConfig } from '$shared/config/provider-config';
+import { m } from '$shared/paraglide/messages.js';
 
 import {
   formatProviderLoadError,
@@ -85,7 +86,9 @@ export function buildGroupedModelOptions({
         options: [
           {
             value: `provider-loading:${pid}`,
-            label: `Loading ${providerConfig.displayName} models…`,
+            label: m.chat_modelPicker_loadingProviderModels_label({
+              provider: providerConfig.displayName,
+            }),
             disabled: true,
             class: 'cursor-default disabled:opacity-100',
             data: { providerLoading: true },

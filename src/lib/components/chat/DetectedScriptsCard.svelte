@@ -1,6 +1,8 @@
 <script lang="ts">
   import { faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface DetectedScript {
     name: string;
@@ -20,7 +22,7 @@
   <!-- Header -->
   <div class="flex items-center gap-2 px-4 py-2.5 border-b border-border/50 bg-muted/40">
     <Fa icon={faWandMagicSparkles} size="sm" class="text-primary/70" />
-    <span class="text-sm font-semibold text-foreground">Detected Scripts</span>
+    <span class="text-sm font-semibold text-foreground">{m.chat_detectedScripts_title()}</span>
   </div>
 
   <!-- Script list -->
@@ -35,13 +37,13 @@
               <span
                 class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400"
               >
-                service
+                {m.chat_detectedScripts_service_badge()}
               </span>
             {:else}
               <span
                 class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground"
               >
-                command
+                {m.chat_detectedScripts_command_badge()}
               </span>
             {/if}
             <!-- Category badge -->
@@ -64,7 +66,9 @@
   <!-- Footer -->
   <div class="px-4 py-2 border-t border-border/50 bg-muted/20">
     <span class="text-xs text-muted-foreground">
-      {scripts.length} script{scripts.length !== 1 ? 's' : ''} detected
+      {scripts.length === 1
+        ? m.chat_detectedScripts_count_one({ count: formatInteger(scripts.length) })
+        : m.chat_detectedScripts_count_many({ count: formatInteger(scripts.length) })}
     </span>
   </div>
 </div>

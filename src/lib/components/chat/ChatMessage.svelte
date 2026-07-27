@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import {
     faFile,
     faCodeCompare,
@@ -36,6 +37,8 @@
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -382,7 +385,7 @@
             const json = JSON.parse(decoded);
             provider = json.provider || 'browser';
             identifier = json.identifier || '';
-            title = json.title || identifier || 'Context';
+            title = json.title || identifier || m.chat_shared_context_fallback();
             url = json.url;
           } catch {
             // Fall back to treating as pipe-separated format
@@ -487,7 +490,7 @@
       if (refType === 'linear' || refType === 'linear-issue' || provider === 'linear') {
         pills.push({
           type: 'linear',
-          label: ref.identifier || ref.title || 'Linear Issue',
+          label: ref.identifier || ref.title || m.chat_chatMessage_linearIssue_fallback(),
           icon: faFile,
           url: ref.url,
           content: ref.title || ref.description,
@@ -499,7 +502,7 @@
         const fixedUrl = fixGitHubUrl(provider, ref.identifier, ref.url, ref.metadata);
         pills.push({
           type: 'github',
-          label: ref.identifier || ref.title || 'GitHub Issue',
+          label: ref.identifier || ref.title || m.chat_chatMessage_githubIssue_fallback(),
           icon: faFile,
           url: fixedUrl,
           content: ref.title || ref.description,
@@ -509,7 +512,7 @@
       else if (refType === 'sentry' || refType === 'sentry-issue' || provider === 'sentry') {
         pills.push({
           type: 'sentry',
-          label: ref.identifier || ref.title || 'Sentry Issue',
+          label: ref.identifier || ref.title || m.chat_chatMessage_sentryIssue_fallback(),
           icon: faFile,
           url: ref.url,
           content: ref.title || ref.description,
@@ -519,7 +522,7 @@
       else if (refType === 'note') {
         pills.push({
           type: 'note',
-          label: ref.title || ref.identifier || 'Note',
+          label: ref.title || ref.identifier || m.chat_shared_note_fallback(),
           icon: faNoteSticky,
           noteId: ref.noteId || ref.identifier,
           content: ref.content || ref.description,
@@ -529,7 +532,7 @@
       else if (refType === 'spec') {
         pills.push({
           type: 'spec',
-          label: 'Spec',
+          label: m.chat_shared_spec_label(),
           icon: faClipboard,
           content: ref.content || ref.description,
         });
@@ -538,7 +541,7 @@
       else if (refType === 'file') {
         pills.push({
           type: 'file',
-          label: ref.path?.split('/').pop() || ref.title || 'File',
+          label: ref.path?.split('/').pop() || ref.title || m.chat_shared_file_fallback(),
           icon: faFile,
           path: ref.path,
           content: ref.content,
@@ -548,7 +551,7 @@
       else if (refType === 'diff') {
         pills.push({
           type: 'diff',
-          label: ref.path?.split('/').pop() || 'Diff',
+          label: ref.path?.split('/').pop() || m.chat_shared_diff_fallback(),
           icon: faCodeCompare,
           path: ref.path,
           content: ref.content,
@@ -558,7 +561,7 @@
       else if (ref.url) {
         pills.push({
           type: 'external',
-          label: ref.title || ref.identifier || 'External Link',
+          label: ref.title || ref.identifier || m.chat_chatMessage_externalLink_fallback(),
           icon: faFile,
           url: ref.url,
           content: ref.content || ref.description,
@@ -627,7 +630,9 @@
   // Open image in lightbox
   function openImageLightbox(imageBlock: ContentBlock & { data: string; mimeType: string }, openerElement: HTMLButtonElement, index: number = 0) {
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
-    lightboxImageName = imageBlock.fileName || `Attached Image ${index + 1}`;
+    lightboxImageName =
+      imageBlock.fileName ||
+      m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(index + 1) });
     lightboxOpenerElement = openerElement;
     lightboxOpen = true;
   }
@@ -746,6 +751,7 @@
           const isError = (block as any).is_error || (block as any).isError || false;
           const content =
             (block as any).content || (block as any).output || (block as any).text || '';
+          // i18n-ignore (plain-text clipboard transcript serialization)
           const prefix = isError ? '❌ Tool Error' : '✅ Tool Result';
           parts.push(`${prefix}:\n${safeStringify(content)}`);
           // Track the tool_use_id to avoid duplication from toolResults array
@@ -782,6 +788,7 @@
         if (result.toolCallId && processedToolIds.has(result.toolCallId)) continue;
         const isError = result.isError || false;
         const content = result.content || '';
+        // i18n-ignore (plain-text clipboard transcript serialization)
         const prefix = isError ? '❌ Tool Error' : '✅ Tool Result';
         parts.push(`${prefix}:\n${safeStringify(content)}`);
       }
@@ -824,7 +831,7 @@
             id: `file-${message.id}-${index}`,
             type: 'file',
             label: block.fileName,
-            description: block.mimeType || 'File',
+            description: block.mimeType || m.chat_shared_file_fallback(),
             fileData: block.data,
             fileMimeType: block.mimeType,
           });
@@ -909,7 +916,7 @@
 
 {#if !message}
   <!-- Guard against null message prop -->
-  <div class="text-subtle text-sm p-2">Loading...</div>
+  <div class="text-subtle text-sm p-2">{m.chat_chatMessage_loading_label()}</div>
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
@@ -935,7 +942,7 @@
             editMode={true}
             selectedModel={editSelectedModel}
             onmodelChange={(model) => (editSelectedModel = model)}
-            placeholder="Edit your message..."
+            placeholder={m.chat_chatMessage_edit_placeholder()}
             onsubmit={() => (showEditConfirm = true)}
             oncancel={handleCancelEdit}
           />
@@ -1089,11 +1096,14 @@
                       e.currentTarget.click();
                     }
                   }}
-                  aria-label="View attached image {i + 1} of {imageBlocks.length} full size"
+                  aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
+                    number: formatInteger(i + 1),
+                    total: formatInteger(imageBlocks.length),
+                  })}
                 >
                   <img
                     src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
-                    alt="Attached image {i + 1}"
+                    alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
                     class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
                   />
                 </button>
@@ -1117,7 +1127,7 @@
                     link.click();
                     document.body.removeChild(link);
                   }}
-                  title={`Download ${fileBlock.fileName}`}
+                  title={m.chat_chatMessage_download_title({ name: `${fileBlock.fileName}` })}
                 >
                   <Fa icon={faFile} class="w-3 h-3" />
                   <span class="truncate max-w-[150px]">{fileBlock.fileName}</span>
@@ -1133,7 +1143,7 @@
               title={message.error}
             >
               <Fa icon={faCircleExclamation} class="size-2.5 mt-px" />
-              <span>Failed to send</span>
+              <span>{m.chat_chatMessage_failedToSend_label()}</span>
             </div>
           {/if}
         </div>
@@ -1152,7 +1162,7 @@
         {#if shouldShowStoppedIndicator}
           <div class="flex items-center gap-2 text-subtle font-medium text-sm mt-5">
             <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
-            <span>Stopped</span>
+            <span>{m.chat_chatMessage_stopped_label()}</span>
           </div>
         {/if}
 

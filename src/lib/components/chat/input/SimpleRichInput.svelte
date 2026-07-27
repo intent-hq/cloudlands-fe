@@ -110,11 +110,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import type { ContextItem } from './context-api';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   export type { ContextItem };
 
   let {
     value = $bindable(''),
-    placeholder = 'Ask anything or type @ for context',
+    placeholder = m.chat_richInput_askAnything_placeholder(),
     disabled = false,
     editableWhileDisabled = false,
     workspace,
@@ -453,7 +455,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   });
   const providerChangeLocked = $derived(isProviderChangeLocked);
   const effectiveModelLocked = $derived(isModelLocked || providerChangeLocked);
-  const providerAndModelLockedTitle = 'Start a new agent to change provider or model.';
+  const providerAndModelLockedTitle = m.chat_richInput_providerLocked_title();
   const modelLockedTitle = $derived.by(() => {
     if (!providerChangeLocked) {
       return undefined;
@@ -513,7 +515,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         }));
       }
       toast.error(
-        error instanceof Error ? error.message : `Failed to switch to ${getProviderConfig(newProvider).displayName}.`,
+        error instanceof Error
+          ? error.message
+          : m.chat_richInput_switchFailed_error({
+              provider: getProviderConfig(newProvider).displayName,
+            }),
       );
     } finally {
       modelPickerRef?.clearPendingUpdate();
@@ -564,7 +570,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         }
 
         value = result.enhanced;
-        toast.success('Prompt enhanced');
+        toast.success(m.chat_richInput_promptEnhanced_toast());
       }
     } catch (error) {
       // Don't show error if it was cancelled
@@ -574,8 +580,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       logger.error('Failed to enhance prompt:', error);
       toast.error(
         error instanceof Error && error.message
-          ? `Failed to enhance prompt: ${error.message}`
-          : 'Failed to enhance prompt',
+          ? m.chat_richInput_enhanceFailedDetail_error({ detail: error.message })
+          : m.chat_richInput_enhanceFailed_error(),
       );
     } finally {
       // Only reset isEnhancing if this request wasn't cancelled
@@ -737,17 +743,19 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         addedCount.value++;
       } catch (error) {
         logger.error('Failed to add image to context', { fileName: file.name, error });
-        toast.error(`Failed to add image: ${file.name}`);
+        toast.error(m.chat_richInput_addImageFailed_error({ name: file.name }));
       }
     }
 
     if (addedCount.value > 0) {
       logger.debug(`Added ${addedCount.value} image(s) to context`);
-      toast.success(`Added ${addedCount.value} image(s) to context`);
+      toast.success(
+        m.chat_richInput_addedImages_toast({ count: formatInteger(addedCount.value) }),
+      );
     }
 
     if (oversizedFiles.length > 0) {
-      toast.error(`Files too large (max 10MB): ${oversizedFiles.join(', ')}`);
+      toast.error(m.chat_richInput_filesTooLarge_error({ names: oversizedFiles.join(', ') }));
     }
   }
 
@@ -771,7 +779,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
     contextItems = [...contextItems, contextItem];
     oncontextAdd?.(contextItem);
-    toast.success(`Added ${fileName} to context`);
+    toast.success(m.chat_richInput_addedFile_toast({ name: fileName }));
   }
 
 
@@ -904,7 +912,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   ondrop={handleDrop}
   onpaste={handlePaste}
   role="region"
-  aria-label="Chat input with file drop support"
+  aria-label={m.chat_richInput_dropSupport_ariaLabel()}
   data-testid="message-input"
 >
   <!-- Drop zone overlay -->
@@ -914,7 +922,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     >
       <div class="flex flex-col items-center gap-2 text-primary">
         <Fa icon={faPaperclip} class="w-6 h-6" />
-        <span class="text-sm font-medium">Drop files here</span>
+        <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
       </div>
     </div>
   {/if}
@@ -926,7 +934,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       : 'top-[-0.5px] -translate-y-1/2'}"
     onmousedown={startResize}
     ondblclick={handleResizeDoubleClick}
-    aria-label="Resize input area (double-click to reset)"
+    aria-label={m.chat_richInput_resize_ariaLabel()}
     tabindex="-1"
   >
     <div class="resize-handle-bar w-full h-full flex items-center justify-center">
@@ -955,7 +963,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               />
             {/snippet}
             {#snippet content()}
-              <Header size={6}>Selected text</Header>
+              <Header size={6}>{m.chat_richInput_selectedText_label()}</Header>
               <div class="mt-1 text-xs whitespace-pre-wrap max-w-80 overflow-auto line-clamp-6">
                 {item.content}
               </div>
@@ -1113,38 +1121,38 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     </div>
 
     <div class="flex items-end gap-px min-w-0 shrink-0 -mb-0.5">
-      <TooltipShortcut label="Attach files" side="top">
+      <TooltipShortcut label={m.chat_richInput_attachFiles_label()} side="top">
         <Button
           variant="ghost-light"
           size="icon-sm"
           {disabled}
           onclick={handleFileSelect}
-          aria-label="Attach files"
+          aria-label={m.chat_richInput_attachFiles_label()}
         >
           <Fa icon={faPaperclip} size="sm" />
         </Button>
       </TooltipShortcut>
 
       {#if isEnhancing}
-        <TooltipShortcut label="Stop enhancing" side="top">
+        <TooltipShortcut label={m.chat_richInput_stopEnhancing_label()} side="top">
           <Button
             variant="ghost-light"
             size="icon-sm"
             onclick={handleCancelEnhance}
-            aria-label="Stop enhancing"
+            aria-label={m.chat_richInput_stopEnhancing_label()}
             class="text-destructive-foreground"
           >
             <Fa icon={faStop} size="sm" />
           </Button>
         </TooltipShortcut>
       {:else}
-        <TooltipShortcut label="Enhance prompt" shortcut="cmd+/" side="top">
+        <TooltipShortcut label={m.chat_richInput_enhancePrompt_label()} shortcut="cmd+/" side="top">
           <Button
             variant="ghost-light"
             size="icon-sm"
             onclick={handleEnhancePrompt}
             disabled={disabled || !value.trim()}
-            aria-label="Enhance prompt"
+            aria-label={m.chat_richInput_enhancePrompt_label()}
           >
             <Fa icon={faMagicWandSparkles} size="sm" />
           </Button>
@@ -1155,12 +1163,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         <!-- Stop button — visible whenever the agent is responding/running,
              mirroring the Thinking indicator so users can interrupt across
              the pre-first-chunk, streaming, and waiting-on-subagents windows. -->
-        <TooltipShortcut label="Stop" shortcut="Escape" side="top">
+        <TooltipShortcut label={m.chat_richInput_stop_label()} shortcut="Escape" side="top">
           <Button
             variant="ghost"
             size="icon-sm"
             onclick={() => onstop?.()}
-            aria-label="Stop streaming"
+            aria-label={m.chat_richInput_stopStreaming_ariaLabel()}
             class="text-destructive-foreground"
           >
             <Fa icon={faStop} size="sm" />
@@ -1177,12 +1185,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <button
               class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-primary not-disabled:hover:bg-background overflow-visible"
               onclick={handleSubmit}
-              aria-label="Queue message"
+              aria-label={m.chat_richInput_queueMessage_ariaLabel()}
             >
               <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
                 <span
                   class="text-[0.66rem] leading-none whitespace-nowrap text-subtle flex flex-col"
-                  >Queue</span
+                  >{m.chat_richInput_queue_label()}</span
                 >
                 <div class="text-subtle text-[0.6rem]">↵</div>
               </div>
@@ -1197,13 +1205,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <button
               class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer transition-colors text-destructive-foreground not-disabled:hover:bg-background"
               onclick={handleForceSubmit}
-              aria-label="Interrupt and send"
+              aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
               data-testid="interrupt-btn"
             >
               <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
                 <span
                   class="text-[0.66rem] leading-none whitespace-nowrap text-subtle flex flex-col"
-                  >Send</span
+                  >{m.chat_richInput_send_label()}</span
                 >
                 <div class="text-subtle text-[0.6rem]">⌘↵</div>
               </div>
@@ -1215,7 +1223,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         <!-- Edit mode: Cancel and Save buttons -->
         <div class="flex items-center gap-1">
           <div class="absolute top-0.5 right-0.5">
-            <TooltipShortcut label="Cancel" shortcut="Escape" side="top">
+            <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
               <Button
                 variant="ghost"
                 size="xs"
@@ -1226,7 +1234,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               </Button>
             </TooltipShortcut>
           </div>
-          <TooltipShortcut label="Save & resend" shortcut="cmd+Enter" side="top">
+          <TooltipShortcut
+            label={m.chat_richInput_saveAndResend_label()}
+            shortcut="cmd+Enter"
+            side="top"
+          >
             <Button
               variant="ghost"
               size="icon-sm"
@@ -1239,14 +1251,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           </TooltipShortcut>
         </div>
       {:else}
-        <TooltipShortcut label="Send" shortcut="Enter" side="top">
+        <TooltipShortcut label={m.chat_richInput_send_label()} shortcut="Enter" side="top">
           <Button
             variant="ghost"
             size="icon-sm"
             class="text-primary disabled:text-subtle"
             onclick={handleSubmit}
             disabled={disabled || !canSend}
-            aria-label="Send message"
+            aria-label={m.chat_richInput_sendMessage_ariaLabel()}
           >
             <Fa icon={faPaperPlane} size="sm" />
           </Button>

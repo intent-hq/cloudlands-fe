@@ -2,6 +2,7 @@ import {
   getProviderConfig,
   isProviderAuthenticationError,
 } from '$shared/config/provider-config';
+import { m } from '$shared/paraglide/messages.js';
 
 export type ProviderLoadError = {
   providerId: string;
@@ -14,7 +15,7 @@ export type ProviderLoadError = {
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string' && error) return error;
-  return 'Failed to load models';
+  return m.chat_modelPicker_loadFailed_label();
 }
 
 function stripProviderPrefix(message: string, providerId: string, providerName: string): string {
@@ -37,7 +38,7 @@ export function getProviderErrorHint(providerId: string, message: string): strin
 
   if (isProviderAuthenticationError(providerId, message)) {
     const loginCommand = config.loginCommandHint || `${config.command} login`;
-    return `Run "${loginCommand}" in a terminal.`;
+    return m.chat_modelPicker_runLoginHint_label({ command: loginCommand });
   }
 
   if (
@@ -46,12 +47,15 @@ export function getProviderErrorHint(providerId: string, message: string): strin
     lowerMessage.includes('not available')
   ) {
     if (providerId === 'auggie') {
-      return 'Install via "npm install -g @augmentcode/auggie" or use the Auggie setup flow.';
+      return m.chat_modelPicker_installAuggieHint_label();
     }
     if (config.loginDocsUrl) {
-      return `See setup docs: ${config.loginDocsUrl}`;
+      return m.chat_modelPicker_setupDocsHint_label({ url: config.loginDocsUrl });
     }
-    return `Install the ${config.displayName} CLI and make sure "${config.command}" is on PATH.`;
+    return m.chat_modelPicker_installCliHint_label({
+      provider: config.displayName,
+      command: config.command,
+    });
   }
 
   return undefined;

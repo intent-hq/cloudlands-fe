@@ -4,6 +4,7 @@
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import { fade } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     messages?: AgentMessage[];
@@ -135,7 +136,7 @@
 
   {#if messages.length === 0 && !isStreaming}
     <div class="empty-state">
-      <p>No messages yet. Start a conversation!</p>
+      <p>{m.chat_agentMessageList_empty_label()}</p>
     </div>
   {/if}
 </div>

@@ -226,6 +226,8 @@
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import CombinedInlineDiffItem from './CombinedInlineDiffItem.svelte';
   import { LOCKED_TOOLTIP } from '$lib/utils/agent-lock-utils';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   import {
   openWorkspaceCommitChangeset,
@@ -700,6 +702,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const hasAlreadyLoaded = untrack(() => hasEverLoaded);
     if (!hasAlreadyLoaded) {
       logger.debug(
+        // i18n-ignore (log line)
         `[ChatChangesPanel:${instanceId}] Setting isEnrichingChanges=true (initial load)`,
         {
           showStagingControls: currentShowStagingControls,
@@ -708,6 +711,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       isEnrichingChanges = true;
     } else {
       logger.debug(
+        // i18n-ignore (log line)
         `[ChatChangesPanel:${instanceId}] Refreshing content in-place (hasEverLoaded=true)`,
         {
           showStagingControls: currentShowStagingControls,
@@ -1379,7 +1383,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         if (lastGroup && lastGroup.hash === '') {
           lastGroup.changes.push(change);
         } else {
-          groups.push({ hash: '', message: 'Working changes', changes: [change] });
+          groups.push({
+            hash: '',
+            message: m.chat_changesPanel_workingChanges_label(),
+            changes: [change],
+          });
         }
       }
     }
@@ -1703,12 +1711,15 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
    */
   function validatePatch(hunkPatch: string): string | undefined {
     if (!hunkPatch || typeof hunkPatch !== 'string') {
+      // i18n-ignore (log-only diagnostic, surfaced via logger.warn)
       return 'Invalid patch: empty or not a string';
     }
     if (!hunkPatch.includes('@@')) {
+      // i18n-ignore (log-only diagnostic, surfaced via logger.warn)
       return 'Invalid patch: missing hunk header (@@)';
     }
     if (!hunkPatch.includes('diff --git') && !hunkPatch.includes('---')) {
+      // i18n-ignore (log-only diagnostic, surfaced via logger.warn)
       return 'Invalid patch: missing file header';
     }
     return undefined;
@@ -1718,7 +1729,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   async function handleStageHunk(filePath: string, hunkPatch: string) {
     const workspaceId = $activeWorkspaceId;
     if (!workspaceId) {
-      toast.error('No space available');
+      toast.error(m.chat_changesPanel_noSpaceAvailable_error());
       return;
     }
 
@@ -1726,7 +1737,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const validationError = validatePatch(hunkPatch);
     if (validationError) {
       logger.warn('Invalid patch for staging', { filePath, error: validationError });
-      toast.error('Failed to stage: invalid patch data');
+      toast.error(m.chat_changesPanel_stageInvalidPatch_error());
       return;
     }
 
@@ -1735,7 +1746,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
     const result = await gitClient.stageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
     if (result.ok) {
-      toast.success('Hunk staged');
+      toast.success(m.chat_changesPanel_hunkStaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Performant update: only refresh the affected file's diff
@@ -1747,14 +1758,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         }
       });
     } else {
-      toast.error(result.error || 'Failed to stage hunk');
+      toast.error(result.error || m.chat_changesPanel_stageHunkFailed_error());
     }
   }
 
   async function handleUnstageHunk(filePath: string, hunkPatch: string) {
     const workspaceId = $activeWorkspaceId;
     if (!workspaceId) {
-      toast.error('No space available');
+      toast.error(m.chat_changesPanel_noSpaceAvailable_error());
       return;
     }
 
@@ -1762,7 +1773,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const validationError = validatePatch(hunkPatch);
     if (validationError) {
       logger.warn('Invalid patch for unstaging', { filePath, error: validationError });
-      toast.error('Failed to unstage: invalid patch data');
+      toast.error(m.chat_changesPanel_unstageInvalidPatch_error());
       return;
     }
 
@@ -1771,7 +1782,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
     const result = await gitClient.unstageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
     if (result.ok) {
-      toast.success('Hunk unstaged');
+      toast.success(m.chat_changesPanel_hunkUnstaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Performant update: only refresh the affected file's diff
@@ -1783,7 +1794,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         }
       });
     } else {
-      toast.error(result.error || 'Failed to unstage hunk');
+      toast.error(result.error || m.chat_changesPanel_unstageHunkFailed_error());
     }
   }
 
@@ -2455,7 +2466,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     <PanelFindBar
       bind:query={allChangesSearchQuery}
       bind:inputRef={allChangesSearchInputRef}
-      placeholder="Find in changes..."
+      placeholder={m.chat_changesPanel_findInChanges_placeholder()}
       currentMatchIndex={allChangesSearchIndex}
       totalMatches={allChangesSearchResults.length}
       emptyResultText="No results"
@@ -2504,21 +2515,33 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       </div>
     {:else if mergedChanges.length === 0}
       <div class="flex items-center justify-center h-full text-subtle py-6">
-        No changes to display
+        {m.chat_changesPanel_noChanges_label()}
       </div>
     {:else}
       <!-- Sticky summary bar: "N files changed" -->
       <div class="sticky top-0 z-20 -mx-5 px-5">
         <div class="flex items-center justify-between py-2 bg-background/95 backdrop-blur-sm border-b border-border">
           <div class="flex items-center gap-1.5 text-xs font-medium text-subtle whitespace-nowrap">
-            <span>{totalFileCount} file{totalFileCount === 1 ? '' : 's'} changed</span>
+            <span
+              >{totalFileCount === 1
+                ? m.chat_changesPanel_filesChanged_one({ count: formatInteger(totalFileCount) })
+                : m.chat_changesPanel_filesChanged_many({
+                    count: formatInteger(totalFileCount),
+                  })}</span
+            >
             <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" class="opacity-80" />
             {#if groupByCommit && commitCount > 0}
-              <span>, {commitCount} commit{commitCount === 1 ? '' : 's'}</span>
+              <span
+                >{commitCount === 1
+                  ? m.chat_changesPanel_commitCount_one({ count: formatInteger(commitCount) })
+                  : m.chat_changesPanel_commitCount_many({
+                      count: formatInteger(commitCount),
+                    })}</span
+              >
             {/if}
             {#if viewedCount > 0}
               <span class="text-subtle">·</span>
-              <span>{viewedCount} viewed</span>
+              <span>{m.chat_changesPanel_viewedCount_label({ count: formatInteger(viewedCount) })}</span>
             {/if}
           </div>
           <div class="flex items-center gap-2">
@@ -2529,14 +2552,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                   class="px-2 py-0.5 text-xs rounded cursor-pointer transition-colors {!groupByCommit ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                   onclick={() => (groupByCommit = false)}
                 >
-                  Combined
+                  {m.chat_changesPanel_combined_label()}
                 </button>
                 <button
                   type="button"
                   class="px-2 py-0.5 text-xs rounded cursor-pointer transition-colors {groupByCommit ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
                   onclick={() => (groupByCommit = true)}
                 >
-                  By commit
+                  {m.chat_changesPanel_byCommit_label()}
                 </button>
               </div>
             {/if}
@@ -2592,13 +2615,21 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                         <span>{formatRelativeTime(group.date)}</span>
                         <span class="text-ghost">·</span>
                       {/if}
-                      <span>{group.changes.length} file{group.changes.length === 1 ? '' : 's'}</span>
+                      <span
+                        >{group.changes.length === 1
+                          ? m.chat_changesPanel_fileCount_one({
+                              count: formatInteger(group.changes.length),
+                            })
+                          : m.chat_changesPanel_fileCount_many({
+                              count: formatInteger(group.changes.length),
+                            })}</span
+                      >
                     </span>
                     <button
                       type="button"
                       class="text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
                       onclick={() => handleOpenCommit(group.hash)}
-                      title="Open commit"
+                      title={m.chat_changesPanel_openCommit_title()}
                     >
                       <Fa icon={faArrowUpRightFromSquare} class="w-2.5 h-2.5" />
                     </button>
@@ -2664,14 +2695,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             type="button"
             class="text-sm font-medium text-foreground hover:text-accent-foreground hover:underline underline-offset-2 text-left cursor-pointer transition-colors leading-snug"
             onclick={openCommitInBrowser}
-            title="Open on GitHub"
+            title={m.chat_changesPanel_openOnGitHub_title()}
           >
-            {commitInfo?.message?.split('\n')[0] || 'Untitled commit'}
+            {commitInfo?.message?.split('\n')[0] || m.chat_changesPanel_untitledCommit_fallback()}
             <Fa icon={faArrowUpRightFromSquare} class="inline-block w-2.5 h-2.5 ml-1 opacity-40" />
           </button>
         {:else}
           <p class="text-sm font-medium text-foreground leading-snug">
-            {commitInfo?.message?.split('\n')[0] || 'Untitled commit'}
+            {commitInfo?.message?.split('\n')[0] || m.chat_changesPanel_untitledCommit_fallback()}
           </p>
         {/if}
 
@@ -2690,7 +2721,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               type="button"
               class="inline-flex items-center gap-0.5 font-mono hover:text-foreground transition-colors"
               onclick={copyCommitSha}
-              title={copiedSha ? 'Copied!' : 'Copy full SHA'}
+              title={copiedSha
+                ? m.chat_changesPanel_copied_title()
+                : m.chat_changesPanel_copyFullSha_title()}
             >
               {commitInfo.hash.substring(0, 7)}
               <Fa icon={copiedSha ? faCheck : faCopy} class="w-2 h-2 opacity-50" />
@@ -2721,12 +2754,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               {@const agentName =
                 agentSession?.name && agentSession.name !== 'New Workspace Agent'
                   ? agentSession.name
-                  : 'Agent'}
+                  : m.chat_shared_agentName_fallback()}
               <button
                 type="button"
                 class="flex items-center gap-1 text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer min-w-0"
                 onclick={(e) => handleOpenAgentFromCommit(e)}
-                title="Open agent"
+                title={m.chat_changesPanel_openAgent_title()}
               >
                 <span class="shrink-0">
                   <AuggieAvatar agentId={displayAgentId ?? undefined} size={14} />
@@ -2736,12 +2769,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             {/if}
             {#if commitInfo?.linkedNoteId && onOpenNote}
               {@const linkedNote = selectNoteById.select(appStore.state, $activeWorkspaceId ?? '', commitInfo.linkedNoteId)}
-              {@const noteName = linkedNote?.title || 'Note'}
+              {@const noteName = linkedNote?.title || m.chat_changesPanel_note_fallback()}
               <button
                 type="button"
                 class="flex items-center gap-1 text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer min-w-0"
                 onclick={(e) => onOpenNote?.(commitInfo?.linkedNoteId!, e)}
-                title="Open linked note"
+                title={m.chat_changesPanel_openLinkedNote_title()}
               >
                 <Fa icon={faNote} class="w-2.5 h-2.5 shrink-0" />
                 <span class="truncate">{noteName}</span>
@@ -2820,7 +2853,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <Button
               variant="ghost-light"
               size="icon-xs"
-              tooltip={locked ? LOCKED_TOOLTIP : 'Stage unstaged changes'}
+              tooltip={locked ? LOCKED_TOOLTIP : m.chat_changesPanel_stageUnstaged_tooltip()}
               disabled={locked}
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
@@ -2832,7 +2865,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <Button
               variant="ghost-light"
               size="icon-xs"
-              tooltip={locked ? LOCKED_TOOLTIP : 'Unstage staged changes'}
+              tooltip={locked ? LOCKED_TOOLTIP : m.chat_changesPanel_unstageStaged_tooltip()}
               disabled={locked}
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
@@ -2844,7 +2877,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <Button
               variant="ghost-light"
               size="icon-xs"
-              tooltip={locked ? LOCKED_TOOLTIP : 'Revert unstaged changes'}
+              tooltip={locked ? LOCKED_TOOLTIP : m.chat_changesPanel_revertUnstaged_tooltip()}
               disabled={locked}
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
@@ -2857,7 +2890,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <Button
               variant="ghost-light"
               size="icon-xs"
-              tooltip={locked ? LOCKED_TOOLTIP : 'Unstage file'}
+              tooltip={locked ? LOCKED_TOOLTIP : m.chat_changesPanel_unstageFile_tooltip()}
               disabled={locked}
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
@@ -2870,7 +2903,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <Button
               variant="ghost-light"
               size="icon-xs"
-              tooltip={locked ? LOCKED_TOOLTIP : 'Stage file'}
+              tooltip={locked ? LOCKED_TOOLTIP : m.chat_changesPanel_stageFile_tooltip()}
               disabled={locked}
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
@@ -2882,7 +2915,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <Button
               variant="ghost-light"
               size="icon-xs"
-              tooltip={locked ? LOCKED_TOOLTIP : 'Revert changes'}
+              tooltip={locked ? LOCKED_TOOLTIP : m.chat_changesPanel_revertChanges_tooltip()}
               disabled={locked}
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
@@ -2896,7 +2929,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         <Button
           variant="ghost-light"
           size="icon-xs"
-          tooltip="View current diff"
+          tooltip={m.chat_changesPanel_viewCurrentDiff_tooltip()}
           onclick={(e: MouseEvent) => {
             e.stopPropagation();
             openCurrentDiff(change.filePath, e);
@@ -2907,7 +2940,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         <Button
           variant="ghost-light"
           size="icon-xs"
-          tooltip="Open file"
+          tooltip={m.chat_changesPanel_openFile_tooltip()}
           onclick={(e: MouseEvent) => {
             e.stopPropagation();
             openFile(change.filePath, e);
@@ -2919,7 +2952,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         <!-- Always-visible viewed checkbox -->
         <label
           class="shrink-0 flex items-center gap-1.5 cursor-pointer ml-1"
-          title={isViewed ? 'Mark as not viewed' : 'Mark as viewed'}
+          title={isViewed
+            ? m.chat_changesPanel_markNotViewed_title()
+            : m.chat_changesPanel_markViewed_title()}
           onclick={(e: MouseEvent) => e.stopPropagation()}
         >
           <input
@@ -2936,7 +2971,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
             {/if}
           </span>
-          <span class="text-xs text-subtle">Viewed</span>
+          <span class="text-xs text-subtle">{m.chat_changesPanel_viewed_label()}</span>
         </label>
       </div>
 
@@ -2987,7 +3022,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           <!-- Placeholder while waiting for visibility -->
           <div class="flex items-center justify-center h-[300px] text-subtle">
             <Fa icon={faSpinner} class="animate-spin mr-2" />
-            Loading diff...
+            {m.chat_changesPanel_loadingDiff_label()}
           </div>
         {/if}
       </div>

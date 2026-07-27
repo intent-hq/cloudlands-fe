@@ -27,6 +27,7 @@
   selectEffectiveModel,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     session: AgentSession | PendingAgentSession | null;
@@ -87,29 +88,29 @@
   }
 
   function getAgentTitle(): string {
-    if (!session) return 'Chat';
+    if (!session) return m.chat_chatHeader_chat_fallback();
 
     if (isPendingAgentSession(session)) {
-      return session.name || 'New Chat';
+      return session.name || m.chat_chatHeader_newChat_fallback();
     }
 
-    return session.name || 'Chat';
+    return session.name || m.chat_chatHeader_chat_fallback();
   }
 
   function getAgentStatus(): string {
     if (!session) return '';
 
     if (isPendingAgentSession(session)) {
-      return 'Initializing...';
+      return m.chat_chatHeader_initializing_label();
     }
 
     switch (session.status) {
       case AgentStatus.Active:
-        return 'Active';
+        return m.chat_chatHeader_statusActive_label();
       case AgentStatus.Idle:
-        return 'Idle';
+        return m.chat_chatHeader_statusIdle_label();
       case AgentStatus.Error:
-        return 'Error';
+        return m.chat_chatHeader_statusError_label();
       default:
         return session.status || '';
     }
@@ -154,7 +155,8 @@
                     <div class="font-semibold">{specialistInfo.name}</div>
                     <div class="text-xs text-subtle">{specialistInfo.description}</div>
                     <div class="text-xs text-subtle mt-1">
-                      Model: <span class="font-mono">{specialistEffectiveModel}</span>
+                      {m.chat_chatHeader_model_label()}
+                      <span class="font-mono">{specialistEffectiveModel}</span>
                     </div>
                   </div>
                 </Tooltip.Content>
@@ -216,7 +218,7 @@
           ? 'bg-muted text-primary'
           : ''}"
         onclick={onSearchToggle}
-        title="Search messages"
+        title={m.chat_chatHeader_searchMessages_title()}
       >
         <Fa icon={faSearch} />
       </button>
@@ -224,7 +226,7 @@
       <button
         class="p-2 bg-transparent border-none text-muted-foreground cursor-pointer rounded-md transition-all duration-200 hover:bg-muted hover:text-destructive-foreground"
         onclick={onDelete}
-        title="Delete chat"
+        title={m.chat_chatHeader_deleteChat_title()}
       >
         <Fa icon={faTrash} />
       </button>

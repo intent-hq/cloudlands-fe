@@ -22,6 +22,7 @@
 } from '$lib/components/tiptap/ContextMention';
   import { PasteChip } from '$lib/components/tiptap/PasteChip';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
   import type { ContextItem } from './context-api';
   import { isFileDragEvent } from './drop-guard';
   import MentionHoverPreview from './MentionHoverPreview.svelte';
@@ -199,7 +200,7 @@
 
   let {
     value = '',
-    placeholder = 'Ask anything or type @ for context',
+    placeholder = m.chat_richInput_askAnything_placeholder(),
     disabled = false,
     editableWhileDisabled = false,
     class: className = '',

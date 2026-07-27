@@ -31,6 +31,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import {
   addSearchedItem,
@@ -321,14 +322,14 @@
   });
 </script>
 
-<TooltipShortcut label="Context from open panels" shortcut={['@']} side="top">
+<TooltipShortcut label={m.chat_contextPicker_fromPanels_label()} shortcut={['@']} side="top">
   <Button
     bind:ref={triggerRef}
     variant="ghost-light"
     size="icon-xs"
     onclick={toggleOpen}
     {disabled}
-    aria-label="Add Context"
+    aria-label={m.chat_contextPicker_addContext_ariaLabel()}
     aria-haspopup="true"
     aria-expanded={isOpen}
     class={cn('shrink-0 relative', className)}
@@ -355,13 +356,13 @@
       )}
       style={popoverStyle}
       role="dialog"
-      aria-label="Select context panels"
+      aria-label={m.chat_contextPicker_selectPanels_ariaLabel()}
     >
       <!-- Header -->
       <div class="px-3 py-2">
-        <div class="font-medium">Context</div>
+        <div class="font-medium">{m.chat_contextPicker_context_title()}</div>
         <div class="text-xs text-subtle">
-          Select files and notes to include in your message
+          {m.chat_contextPicker_selectFiles_description()}
         </div>
       </div>
 
@@ -375,7 +376,7 @@
           <Input
             bind:this={searchInputRef}
             type="text"
-            placeholder="Add files or notes..."
+            placeholder={m.chat_contextPicker_addFiles_placeholder()}
             value={searchQuery}
             oninput={handleSearchInput}
             class="pl-7"
@@ -408,7 +409,9 @@
               {/each}
             </div>
           {:else if searchResults.length === 0}
-            <div class="px-3 py-4 text-center text-sm text-subtle">No results found</div>
+            <div class="px-3 py-4 text-center text-sm text-subtle">
+              {m.chat_contextPicker_noResults_label()}
+            </div>
           {:else}
             <div class="py-1">
               {#each searchResults as result (result.id)}
@@ -472,9 +475,13 @@
                     />
                     <span class="flex-1 truncate text-left">{panel.label}</span>
                     {#if isCurrentAgent}
-                      <span class="text-ui text-muted-foreground uppercase">You</span>
+                      <span class="text-ui text-muted-foreground uppercase"
+                        >{m.chat_contextPicker_you_badge()}</span
+                      >
                     {:else if panel.isActive}
-                      <span class="text-ui text-muted-foreground uppercase">Active</span>
+                      <span class="text-ui text-muted-foreground uppercase"
+                        >{m.chat_contextPicker_active_badge()}</span
+                      >
                     {/if}
                   </button>
                 {/each}
@@ -500,7 +507,7 @@
             </div>
           {:else}
             <div class="px-3 py-4 text-center text-sm text-subtle">
-              No other panels open. Search above to find files, notes, and more.
+              {m.chat_contextPicker_noPanels_label()}
             </div>
           {/if}
         {/if}

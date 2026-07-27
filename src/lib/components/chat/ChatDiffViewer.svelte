@@ -8,6 +8,7 @@
   import { DiffViewer } from '$lib/components/ui/diff';
   import type { DiffAction } from '$lib/components/ui/diff';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     diff: string;
@@ -21,12 +22,12 @@
 
   function handleApply() {
     onApply?.();
-    toast.success('Diff applied successfully');
+    toast.success(m.chat_diffViewer_applied_toast());
   }
 
   function handleReject() {
     onReject?.();
-    toast.info('Diff rejected');
+    toast.info(m.chat_diffViewer_rejected_toast());
   }
 
   // Build actions array for PureDiff
@@ -34,14 +35,14 @@
     const result: DiffAction[] = [];
     if (onApply) {
       result.push({
-        label: 'Apply',
+        label: m.chat_diffViewer_apply_label(),
         variant: 'success',
         onClick: handleApply,
       });
     }
     if (onReject) {
       result.push({
-        label: 'Reject',
+        label: m.chat_diffViewer_reject_label(),
         variant: 'danger',
         onClick: handleReject,
       });
@@ -52,7 +53,7 @@
 
 <DiffViewer
   patch={diff}
-  fileName={filePath || 'Suggested Changes'}
+  fileName={filePath || m.chat_diffViewer_suggestedChanges_fallback()}
   {language}
   {actions}
   collapsible={true}

@@ -10,6 +10,7 @@
   import Fa from 'svelte-fa';
   import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
   import { classifyTool } from './tool-classifier';
+  import { m } from '$shared/paraglide/messages.js';
 
   /** MCP sources that have brand icons in McpIcon (mirrors ToolCall.svelte) */
   const BRANDED_MCP_ICONS = new Set([
@@ -40,7 +41,7 @@
   const label = $derived.by(() => {
     const parts = [toolDisplay.verb, toolDisplay.subject].filter(Boolean);
     const text = parts.join(' ').trim();
-    return text || toolDisplay.verb || 'Tool';
+    return text || toolDisplay.verb || m.chat_previewToolLabel_tool_fallback();
   });
 </script>
 

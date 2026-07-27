@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import {
   tick,
   untrack,
@@ -76,6 +77,8 @@
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import {
   faCheck,
   faChevronDown,
@@ -559,10 +562,12 @@
     if (hasExplicitModel) {
       return localModel
         ? (getModelLabel(localModel) ?? parseCompoundModelId(localModel).modelId)
-        : 'Default model';
+        : m.chat_modelPicker_defaultModel_label();
     }
 
-    return defaultModelId ? (getModelLabel(defaultModelId) ?? 'Default model') : 'Default model';
+    return defaultModelId
+      ? (getModelLabel(defaultModelId) ?? m.chat_modelPicker_defaultModel_label())
+      : m.chat_modelPicker_defaultModel_label();
   });
 
   const triggerProviderId = $derived.by(() => {
@@ -586,7 +591,9 @@
     return availableModels.some((m) => m.value === localModel);
   });
 
-  const lockedButtonTitle = $derived(lockedTitle?.trim() || `Model locked: ${currentModelLabel}`);
+  const lockedButtonTitle = $derived(
+    lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: currentModelLabel }),
+  );
   const shouldShowLockIconWhenLocked = $derived(isCompact || showLockIconWhenLocked);
 
   const buttonSize = $derived(isCompact ? 'icon' : size);
@@ -603,8 +610,12 @@
 
   const useDefaultOption: DropdownOption = {
     value: USE_DEFAULT_VALUE,
-    label: 'Default model',
-    description: 'Let the specialist choose the best model',
+    get label() {
+      return m.chat_modelPicker_defaultModel_label();
+    },
+    get description() {
+      return m.chat_modelPicker_defaultModel_description();
+    },
   };
 
   const flatModelOptions = $derived<DropdownOption[]>([
@@ -664,8 +675,10 @@
 
   const codexManagedInstallProgressText = $derived.by(() => {
     const progress = $codexManagedInstallStatus$?.downloadProgress;
-    if (typeof progress !== 'number') return 'This may take a moment.';
-    return `Download progress: ${Math.round(progress * 100)}%.`;
+    if (typeof progress !== 'number') return m.chat_modelPicker_installMoment_label();
+    return m.chat_modelPicker_downloadProgress_label({
+      percent: formatInteger(Math.round(progress * 100)),
+    });
   });
 
   const blockingLoadError = $derived.by<ProviderLoadError | null>(() => {
@@ -683,7 +696,7 @@
 
     return {
       providerId: 'multiple',
-      providerName: 'Model providers',
+      providerName: m.chat_modelPicker_modelProviders_label(),
       message: providerLoadWarnings.map((error) => error.displayText).join('; '),
       displayText: providerLoadWarnings.map((error) => error.displayText).join('; '),
     };
@@ -762,15 +775,17 @@
   const warningMessage = $derived.by(() => {
     if (isSelectedModelUnavailable) {
       return {
-        title: `${localModel || 'Selected model'} is no longer available`,
-        description: 'Pick another model to continue.',
+        title: m.chat_modelPicker_noLongerAvailable_title({
+          model: localModel || m.chat_modelPicker_selectedModel_fallback(),
+        }),
+        description: m.chat_modelPicker_pickAnother_description(),
       };
     }
     const fallbackInfo = $fallbackInfo$;
     if (fallbackInfo) {
       return {
-        title: `${fallbackInfo.fromModel} is no longer available`,
-        description: `Switched to ${fallbackInfo.toModel}.`,
+        title: m.chat_modelPicker_noLongerAvailable_title({ model: fallbackInfo.fromModel }),
+        description: m.chat_modelPicker_switchedTo_description({ model: fallbackInfo.toModel }),
       };
     }
     return null;
@@ -819,7 +834,7 @@
     }
 
     // Get the name of the unavailable model for the notification
-    const unavailableModelName = localModel || 'Selected model';
+    const unavailableModelName = localModel || m.chat_modelPicker_selectedModel_fallback();
 
     const unavailableProvider = localModel
       ? parseCompoundModelId(localModel).providerId
@@ -864,7 +879,10 @@
 
       // Show toast notification explaining the switch
       toast.info(
-        `${unavailableModelName} is no longer available. Switched to ${fallbackModelName}.`,
+        m.chat_modelPicker_unavailableSwitched_toast({
+          from: unavailableModelName,
+          to: fallbackModelName,
+        }),
         {
           duration: 5000,
         },
@@ -942,8 +960,8 @@
       }
 
       const providerName = getProviderConfig(currentProvider).displayName;
-      toast.warning(`No models available for ${providerName}`, {
-        description: 'Try refreshing or switch to another provider.',
+      toast.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
+        description: m.chat_modelPicker_tryRefreshing_description(),
       });
     })();
   });
@@ -1029,7 +1047,7 @@
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={true}
-    placeholder="Search models..."
+    placeholder={m.chat_modelPicker_searchModels_placeholder()}
     class="min-w-0"
     headerClass="border-b-0!"
     triggerClass={cn(
@@ -1143,7 +1161,7 @@
             {/if}
             {#if effortLevels && effortLevels.length > 0}
               <div class="text-xs text-subtle/60 truncate hidden">
-                Effort: {effortLevels.join(' · ')}
+                {m.chat_modelPicker_effort_label({ levels: effortLevels.join(' · ') })}
               </div>
             {/if}
           </div>
@@ -1157,7 +1175,7 @@
           <div
             class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
           ></div>
-          <span>Loading more models…</span>
+          <span>{m.chat_modelPicker_loadingMore_label()}</span>
         </div>
       {/if}
       {#if nonBlockingProviderWarnings.length > 0}
@@ -1183,11 +1201,13 @@
   </Dropdown>
 
   <ModelPickerProviderNotice
-    warning={isCodexManagedInstallInstalling ? 'Codex managed setup in progress' : codexFallbackWarning?.message}
+    warning={isCodexManagedInstallInstalling
+      ? m.chat_modelPicker_codexSetupInProgress_label()
+      : codexFallbackWarning?.message}
     docsUrl={isCodexManagedInstallInstalling ? undefined : codexFallbackWarning?.docsUrl}
     show={(showProviderWarningNotice ?? variant === 'default') &&
       (isCodexManagedInstallInstalling || Boolean(codexFallbackWarning))}
-    title={isCodexManagedInstallInstalling ? 'Setting up Codex…' : undefined}
+    title={isCodexManagedInstallInstalling ? m.chat_modelPicker_settingUpCodex_title() : undefined}
     description={isCodexManagedInstallInstalling ? codexManagedInstallProgressText : undefined}
     variant={isCodexManagedInstallInstalling ? 'progress' : 'warning'}
   />

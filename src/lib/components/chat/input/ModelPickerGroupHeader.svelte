@@ -8,6 +8,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import type { DropdownGroup } from '$lib/components/ui/dropdown';
   import { cn } from '$lib/utils';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     group: DropdownGroup;
@@ -30,7 +31,7 @@
     )}
     role="button"
     tabindex="-1"
-    aria-label="{group.label} models"
+    aria-label={m.chat_modelPicker_groupModels_ariaLabel({ group: group.label })}
     aria-expanded={!collapsed}
     onclick={() => onToggle(group.key)}
     onkeydown={(e) => {
@@ -53,8 +54,8 @@
           e.stopPropagation();
           onRefresh(group.key);
         }}
-        title="Refresh {group.label} models"
-        aria-label="Refresh {group.label} models"
+        title={m.chat_modelPicker_refreshGroup_title({ group: group.label })}
+        aria-label={m.chat_modelPicker_refreshGroup_title({ group: group.label })}
         disabled={refreshing}
       >
         <Fa
