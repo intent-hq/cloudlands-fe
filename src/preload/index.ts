@@ -321,6 +321,7 @@ const ALLOWED_CHANNELS = [
   "notification:requestPermission",
   "notification:show",
   "dialog:message",
+  "dialog:open",
   "shell:open",
   "shell:openPath",
   "shell:openExternal",

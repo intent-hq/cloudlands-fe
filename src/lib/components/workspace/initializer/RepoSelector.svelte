@@ -17,7 +17,6 @@
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
 
-
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     setWorkspaceInitializerDefaultParentPath,
@@ -44,9 +43,14 @@
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
+  import { pickDirectory } from '$lib/directory-picker-service';
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
+  import {
+    isolationNoun,
+    resolveEffectiveIsolationMode,
+    type IsolationMode,
+  } from './isolation-mode';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
@@ -193,12 +197,11 @@
   let activeTab = $state<TabId>('local');
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // FOLDER-PICKER MODAL STATE
+  // FOLDER-PICKER STATE
   // ═══════════════════════════════════════════════════════════════════════════
-  // BE-driven folder browsing via `host.listDirectory` (DirectoryPickerModal),
-  // replacing the retired native-dialog round-trip. One modal is
-  // open at a time; `folderPickerPurpose` routes the picked path back to the
-  // right destination (folder pick / new-repo parent / github-clone parent).
+  // One picker is open at a time. Local Electron uses the native dialog; remote
+  // and web flows use DirectoryPickerModal. `folderPickerPurpose` routes the
+  // picked path back to the right destination.
   type FolderPickerPurpose = 'select-repo' | 'new-repo-parent' | 'github-clone-parent';
   let folderPickerOpen = $state(false);
   let folderPickerPurpose = $state<FolderPickerPurpose>('select-repo');
@@ -920,15 +923,32 @@
     isOpen = false;
   }
 
-  // Open the BE-driven folder picker to choose a repository folder.
-  function handleSelectFolder() {
-    folderPickerPurpose = 'select-repo';
-    folderPickerTitle = 'Select Repository Folder';
-    folderPickerInitialPath = typeof selectedValue === 'string' ? selectedValue : undefined;
-    folderPickerOpen = true;
+  function openFolderPicker(
+    purpose: FolderPickerPurpose,
+    title: string,
+    initialPath: string | undefined,
+  ): void {
+    folderPickerPurpose = purpose;
+    folderPickerTitle = title;
+    folderPickerInitialPath = initialPath;
+    void pickDirectory({
+      title,
+      defaultPath: initialPath,
+      openModal: () => (folderPickerOpen = true),
+      onSelect: handleFolderPickerSelect,
+    });
   }
 
-  // Apply a path picked via DirectoryPickerModal for the "select-repo" flow.
+  // Open the appropriate folder picker to choose a repository folder.
+  function handleSelectFolder() {
+    openFolderPicker(
+      'select-repo',
+      'Select Repository Folder',
+      typeof selectedValue === 'string' ? selectedValue : undefined,
+    );
+  }
+
+  // Apply a picked path for the "select-repo" flow.
   async function applyPickedRepoFolder(path: string): Promise<void> {
     try {
       // Check directory status first
@@ -978,13 +998,14 @@
 
   // Toggle the inline create new repo form
 
-  // Open the BE-driven folder picker to choose a parent folder for a new repo.
+  // Open the appropriate folder picker to choose a parent folder for a new repo.
   function handleSelectNewRepoParent() {
     isDialogOpen = true;
-    folderPickerPurpose = 'new-repo-parent';
-    folderPickerTitle = 'Select Parent Folder for New Repository';
-    folderPickerInitialPath = newRepoParentPath || undefined;
-    folderPickerOpen = true;
+    openFolderPicker(
+      'new-repo-parent',
+      'Select Parent Folder for New Repository',
+      newRepoParentPath || undefined,
+    );
   }
 
   // Confirm and create the new repo selection
@@ -1025,16 +1046,17 @@
   // GITHUB CLONE FOLDER HANDLERS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Open the BE-driven folder picker to choose a clone target folder.
+  // Open the appropriate folder picker to choose a clone target folder.
   function handleSelectGitHubCloneParent() {
     isDialogOpen = true;
-    folderPickerPurpose = 'github-clone-parent';
-    folderPickerTitle = 'Select Folder to Clone Repository Into';
-    folderPickerInitialPath = githubCloneParentPath || undefined;
-    folderPickerOpen = true;
+    openFolderPicker(
+      'github-clone-parent',
+      'Select Folder to Clone Repository Into',
+      githubCloneParentPath || undefined,
+    );
   }
 
-  // Dispatch a picked path from DirectoryPickerModal to the right destination.
+  // Dispatch a picked path to the right destination.
   async function handleFolderPickerSelect(path: string): Promise<void> {
     folderPickerOpen = false;
     const purpose = folderPickerPurpose;
@@ -1545,9 +1567,8 @@
 {/if}
 
 <!--
-  BE-driven folder picker. One modal serves all three folder-selection flows
-  (repo folder, new-repo parent, github clone parent); the picked path is
-  routed back to the right destination via `folderPickerPurpose`.
+  Remote/web fallback picker. One modal serves all three folder-selection
+  flows; the picked path is routed via `folderPickerPurpose`.
 -->
 <DirectoryPickerModal
   open={folderPickerOpen}
