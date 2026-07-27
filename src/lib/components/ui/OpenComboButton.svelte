@@ -24,6 +24,7 @@
   selectInstalledEditorsFiltered,
   selectOpenAction,
 } from '$store/renderer/slices/external-editors/external-editors-selectors';
+  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -109,6 +110,7 @@
 
   const openAction = selectOpenAction();
   const installedEditors$ = selectInstalledEditorsFiltered();
+  const isDaemonLocal$ = selectIsDaemonLocal();
 
   let dropdownOpen = $state(false);
 
@@ -177,6 +179,14 @@
     ];
 
     if (!canOpenExternalEditors) {
+      return specialActions;
+    }
+
+    // "Other…" shows a LOCAL app picker and spawns a local app against the
+    // daemon-host path, so it is meaningless on a remote daemon. Same locality
+    // gate as selectInstalledEditorsFiltered (monorepo#883); omitting it also
+    // makes the `actions[0]` primary-action fallback land on "Copy path".
+    if (!$isDaemonLocal$) {
       return specialActions;
     }
 
