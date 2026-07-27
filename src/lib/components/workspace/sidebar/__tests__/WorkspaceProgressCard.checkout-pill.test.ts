@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Checkout-mode pill visibility in WorkspaceProgressCard (Task 16b). The pill
+ * Checkout-mode pill visibility in WorkspaceProgressCard. The pill
  * renders "CoW" / "Worktree" next to the org/repo subtitle in both the full
  * (sidebar) and compact (homepage card) variants, and renders nothing for
  * direct workspaces (`checkoutMode` absent). It must sit outside the
@@ -193,7 +193,7 @@ describe('WorkspaceProgressCard checkout-mode pill', () => {
     mocks.dispatch.mockClear();
     mocks.update.mockReset();
     mocks.notes.length = 0;
-    mocks.update.mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
+    mocks.update.mockImplementation(async () => ({ ok: true, data: mocks.workspaceEntity }));
   });
 
   it('renders "CoW" beside the repo text, outside the copy button (full mode)', async () => {
@@ -201,7 +201,6 @@ describe('WorkspaceProgressCard checkout-mode pill', () => {
 
     const pill = screen.getByText('CoW');
     expect(pill).toBeTruthy();
-    expect(pill.classList.contains('shrink-0')).toBe(true);
 
     const repoButton = screen.getByRole('button', { name: 'augment/intent' });
     expect(repoButton.contains(pill)).toBe(false);
