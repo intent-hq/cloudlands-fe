@@ -175,14 +175,19 @@ async function checkGrokAvailability(): Promise<ProviderStatus> {
 /**
  * Check if unsloth is available. Unsloth rides the opencode binary as its
  * ACP runtime (the daemon injects the managed local server's config via
- * OPENCODE_CONFIG_CONTENT), so availability keys off the opencode binary on
- * the daemon host. Like grok, there is no FE-side resolver module — the
+ * OPENCODE_CONFIG_CONTENT), but the daemon-managed server lifecycle also
+ * shells out to the `unsloth` CLI directly (`unsloth run`, `unsloth start
+ * opencode`) — so availability requires BOTH binaries to resolve on the
+ * daemon host. Like grok, there is no FE-side resolver module — the
  * aggregate path uses the daemon's provider discovery and this fallback
  * covers the RPC-degraded / single-recheck path.
  */
 async function checkUnslothAvailability(): Promise<ProviderStatus> {
-  const opencodePath = await findBinary('opencode', { cache: false });
-  return { available: opencodePath !== null };
+  const [opencodePath, unslothPath] = await Promise.all([
+    findBinary('opencode', { cache: false }),
+    findBinary('unsloth', { cache: false }),
+  ]);
+  return { available: opencodePath !== null && unslothPath !== null };
 }
 
 /**
