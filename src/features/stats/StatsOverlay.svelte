@@ -232,7 +232,7 @@
       {/if}
     </div>
 
-    <div class="stats-hint mt-[26px] mb-auto text-xs">
+    <div class="stats-hint mt-[26px] mb-auto rounded-full px-3.5 py-1.5 text-xs">
       Hover a card to export it as a 1080×1920 PNG story.
     </div>
   </div>
@@ -311,7 +311,10 @@
   }
 
   .stats-hint {
-    color: hsl(240 5% 46%);
+    background: hsl(240 12% 11%);
+    border: 1px solid hsl(256 6% 24%);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    color: hsl(240 5% 58%);
   }
 
   .stats-error {
