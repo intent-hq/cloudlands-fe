@@ -1,6 +1,7 @@
 <script lang="ts">
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { ParsedToolResult } from './tool-result-parser';
+  import { extractPayloadText } from './tool-result-pairing';
   import Fa from 'svelte-fa';
   import {
   faCopy,
@@ -120,6 +121,20 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     }
     return entries.length > 0 ? entries : null;
   });
+
+  // Extract display text from an error result payload (§7.1 shapes: string,
+  // MCP content-item array, `{ output }` fallback), else the raw JSON
+  // representation
+  const errorText = $derived.by(() => {
+    if (result == null) return null;
+    const text = extractPayloadText(result);
+    if (text !== null) return text;
+    try {
+      return JSON.stringify(result, null, 2);
+    } catch {
+      return String(result);
+    }
+  });
 </script>
 
 <div class="flex flex-col text-sm">
@@ -136,16 +151,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           {/each}
         </div>
       {/if}
-      {#if result}
+      {#if errorText}
         <div class="px-3 py-2 flex items-start gap-2">
           <Fa icon={faExclamationTriangle} size="xs" class="text-red-500/70 mt-0.5 shrink-0" />
           <pre
-            class="m-0 whitespace-pre-wrap font-mono text-xs text-red-600 dark:text-red-400">{typeof result ===
-            'string'
-              ? result
-              : JSON.stringify(result, null, 2)}</pre>
+            class="m-0 whitespace-pre-wrap font-mono text-xs text-red-600 dark:text-red-400">{errorText}</pre>
         </div>
-      {:else if !inputEntries}
+      {:else}
         <div class="px-3 py-2 flex items-start gap-2">
           <Fa icon={faExclamationTriangle} size="xs" class="text-red-500/70 mt-0.5 shrink-0" />
           <span class="text-xs text-subtle">No error details available</span>
