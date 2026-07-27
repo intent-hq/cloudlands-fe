@@ -972,6 +972,38 @@ describe('ModelPicker unlocked agent provider handling', () => {
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
   });
 
+  it('retries the disabled agent provider fetch', async () => {
+    let codexAttempts = 0;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        codexAttempts += 1;
+        if (codexAttempts === 1) throw new Error('Codex unavailable');
+        return {
+          models: [{ value: 'codex:gpt-6-codex', label: 'GPT-6 Codex', description: 'Smarter' }],
+        };
+      }
+      return { models: [] };
+    });
+    enabledProviderIds$.set(['auggie']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-6-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => expect(codexAttempts).toBe(1));
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => expect(codexAttempts).toBe(2));
+    expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
+  });
+
   it('shows all enabled providers when providerId is explicitly passed', async () => {
     enabledProviderIds$.set(['auggie', 'codex']);
 

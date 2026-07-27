@@ -278,32 +278,39 @@
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
   // both fetches can run concurrently and must not cancel each other.
   let agentFetchGeneration = 0;
+  async function fetchAgentProviderModels(providerId: string) {
+    const currentGen = ++agentFetchGeneration;
+    agentProviderLoading = true;
+    agentProviderError = null;
+
+    try {
+      const result = await getModelsForProviderForLoadingState(providerId);
+      if (agentFetchGeneration !== currentGen) return;
+      agentProviderModels = result.models;
+      setProviderWarningState(providerId, result.warning);
+    } catch (err) {
+      if (agentFetchGeneration !== currentGen) return;
+      const providerError = formatProviderLoadError(providerId, err);
+      agentProviderError = providerError.displayText;
+      setProviderErrorState(providerId, providerError.displayText);
+    } finally {
+      if (agentFetchGeneration === currentGen) {
+        agentProviderLoading = false;
+      }
+    }
+  }
+
   $effect(() => {
     const epid = effectiveProviderId;
-    const currentGen = ++agentFetchGeneration;
     if (!usesAgentProviderFetch) {
+      ++agentFetchGeneration;
       agentProviderModels = null;
       agentProviderLoading = false;
       agentProviderError = null;
       return;
     }
 
-    agentProviderLoading = true;
-    agentProviderError = null;
-    getModelsForProviderForLoadingState(epid)
-      .then((result) => {
-        if (agentFetchGeneration !== currentGen) return;
-        agentProviderModels = result.models;
-        setProviderWarningState(epid, result.warning);
-        agentProviderLoading = false;
-      })
-      .catch((err) => {
-        if (agentFetchGeneration !== currentGen) return;
-        const providerError = formatProviderLoadError(epid, err);
-        agentProviderError = providerError.displayText;
-        setProviderErrorState(epid, providerError.displayText);
-        agentProviderLoading = false;
-      });
+    void fetchAgentProviderModels(epid);
   });
 
   let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -377,7 +384,11 @@
 
   async function handleRetry() {
     lastFetchedProviderIds = '';
-    fetchAllProviderModels($enabledProviderIds$);
+    const requests = [fetchAllProviderModels($enabledProviderIds$)];
+    if (usesAgentProviderFetch) {
+      requests.push(fetchAgentProviderModels(effectiveProviderId));
+    }
+    await Promise.all(requests);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -386,7 +397,11 @@
     isRefreshing = true;
     try {
       lastFetchedProviderIds = '';
-      await fetchAllProviderModels($enabledProviderIds$);
+      const requests = [fetchAllProviderModels($enabledProviderIds$)];
+      if (usesAgentProviderFetch) {
+        requests.push(fetchAgentProviderModels(effectiveProviderId));
+      }
+      await Promise.all(requests);
     } finally {
       isRefreshing = false;
     }
