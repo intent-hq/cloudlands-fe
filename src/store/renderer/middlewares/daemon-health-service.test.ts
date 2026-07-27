@@ -13,11 +13,14 @@ import {
   pollSystemStatus,
   spawnSidecarRequested,
   fetchSidecarRunLogRequested,
+  pollUnslothStatus,
+  stopUnslothRequested,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type {
   BackendTransportInfo,
   SidecarRunLog,
   SystemStatusWirePayload,
+  UnslothStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
 // Mock the lazily-imported toast lib so the version-mismatch notice is observable.
@@ -701,6 +704,207 @@ describe('daemon-health-service', () => {
     await vi.waitFor(() => {
       expect(pollCount).toBeGreaterThanOrEqual(2);
       expect(appStore.state.daemonHealth.health).toBe('degraded');
+    });
+  });
+
+  describe('unsloth status + stop (protocol 2.5)', () => {
+    const runningStatus: UnslothStatusWirePayload = {
+      running: true,
+      repoId: 'unsloth/Qwen3-4B-GGUF',
+      port: 52415,
+      pid: 12345,
+      uptimeSecs: 42,
+      phase: 'ready',
+      cpuPercent: 250.5,
+      memoryBytes: 4294967296,
+      attachedAgentCount: 2,
+    };
+
+    function registerSystemStatusHandler(
+      unslothHandler: (params: unknown) => { ok: boolean; result?: unknown; error?: unknown },
+      stopHandler?: (params: unknown) => { ok: boolean; result?: unknown; error?: unknown },
+    ) {
+      registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'connected' }));
+      registerMockIpcHandler(
+        BACKEND.REQUEST,
+        async (payload: { method?: string; params?: unknown }) => {
+          if (payload.method === 'system.status') {
+            return {
+              ok: true,
+              result: {
+                running: true,
+                listenMode: 'uds',
+                transports: ['uds'],
+                port: null,
+                clients: 0,
+                agents: 0,
+                protocolVersion: '2.5',
+                host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+              } as SystemStatusWirePayload,
+            };
+          }
+          if (payload.method === 'unsloth.status') return unslothHandler(payload.params);
+          if (payload.method === 'unsloth.stop' && stopHandler) return stopHandler(payload.params);
+          return { ok: false, error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' } };
+        },
+      );
+    }
+
+    it('polls unsloth.status on pollUnslothStatus with no params and stores the payload', async () => {
+      const unslothSpy = vi.fn((params: unknown) => {
+        // unsloth.status takes no params (traits.rs / PROTOCOL §5.7).
+        expect(params).toBeUndefined();
+        return { ok: true, result: runningStatus };
+      });
+      registerSystemStatusHandler(unslothSpy);
+
+      appStore.dispatch({ type: '__BOOT__' });
+      await vi.advanceTimersByTimeAsync(100);
+
+      // No background polling: boot alone must not call unsloth.status.
+      expect(unslothSpy).not.toHaveBeenCalled();
+
+      appStore.dispatch(pollUnslothStatus());
+      expect(appStore.state.daemonHealth.unslothPolling).toBe(true);
+      await vi.advanceTimersByTimeAsync(100);
+
+      await vi.waitFor(() => {
+        expect(unslothSpy).toHaveBeenCalledTimes(1);
+        expect(appStore.state.daemonHealth.unslothStatus).toEqual(runningStatus);
+      });
+      expect(appStore.state.daemonHealth.unslothPolling).toBe(false);
+    });
+
+    it('stores the { running: false } degrade shape', async () => {
+      const notRunning: UnslothStatusWirePayload = { running: false, attachedAgentCount: 0 };
+      registerSystemStatusHandler(() => ({ ok: true, result: notRunning }));
+
+      appStore.dispatch({ type: '__BOOT__' });
+      await vi.advanceTimersByTimeAsync(100);
+      appStore.dispatch(pollUnslothStatus());
+      await vi.advanceTimersByTimeAsync(100);
+
+      await vi.waitFor(() => {
+        expect(appStore.state.daemonHealth.unslothStatus).toEqual(notRunning);
+      });
+    });
+
+    it('clears the stored status when the poll fails (older daemon without the method)', async () => {
+      let fail = false;
+      registerSystemStatusHandler(() =>
+        fail
+          ? { ok: false, error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' } }
+          : { ok: true, result: runningStatus },
+      );
+
+      appStore.dispatch({ type: '__BOOT__' });
+      await vi.advanceTimersByTimeAsync(100);
+      appStore.dispatch(pollUnslothStatus());
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.waitFor(() => {
+        expect(appStore.state.daemonHealth.unslothStatus).toEqual(runningStatus);
+      });
+
+      fail = true;
+      appStore.dispatch(pollUnslothStatus());
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.waitFor(() => {
+        expect(appStore.state.daemonHealth.unslothStatus).toBeNull();
+      });
+      expect(appStore.state.daemonHealth.unslothPolling).toBe(false);
+    });
+
+    it('invokes unsloth.stop on stopUnslothRequested and re-polls unsloth.status', async () => {
+      const notRunning: UnslothStatusWirePayload = { running: false, attachedAgentCount: 2 };
+      let stopped = false;
+      const stopSpy = vi.fn((params: unknown) => {
+        // unsloth.stop takes no params (traits.rs / PROTOCOL §5.7).
+        expect(params).toBeUndefined();
+        stopped = true;
+        return { ok: true, result: { stopped: true } };
+      });
+      const unslothSpy = vi.fn(() => ({
+        ok: true,
+        result: stopped ? notRunning : runningStatus,
+      }));
+      registerSystemStatusHandler(unslothSpy, stopSpy);
+
+      appStore.dispatch({ type: '__BOOT__' });
+      await vi.advanceTimersByTimeAsync(100);
+      appStore.dispatch(pollUnslothStatus());
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.waitFor(() => {
+        expect(appStore.state.daemonHealth.unslothStatus).toEqual(runningStatus);
+      });
+
+      appStore.dispatch(stopUnslothRequested());
+      expect(appStore.state.daemonHealth.unslothStopping).toBe(true);
+      await vi.advanceTimersByTimeAsync(100);
+
+      await vi.waitFor(() => {
+        expect(stopSpy).toHaveBeenCalledTimes(1);
+        expect(appStore.state.daemonHealth.unslothStopping).toBe(false);
+        // The follow-up re-poll refreshed the stored status.
+        expect(appStore.state.daemonHealth.unslothStatus).toEqual(notRunning);
+      });
+      expect(appStore.state.daemonHealth.unslothStopError).toBeNull();
+    });
+
+    it('stores the error when unsloth.stop fails', async () => {
+      registerSystemStatusHandler(
+        () => ({ ok: true, result: runningStatus }),
+        () => ({ ok: false, error: { code: 'INTERNAL', message: 'kill failed' } }),
+      );
+
+      appStore.dispatch({ type: '__BOOT__' });
+      await vi.advanceTimersByTimeAsync(100);
+
+      appStore.dispatch(stopUnslothRequested());
+      await vi.advanceTimersByTimeAsync(100);
+
+      await vi.waitFor(() => {
+        expect(appStore.state.daemonHealth.unslothStopping).toBe(false);
+        expect(appStore.state.daemonHealth.unslothStopError).toBeTruthy();
+      });
+    });
+
+    it('guards against overlapping in-flight unsloth polls', async () => {
+      let pollCount = 0;
+      let resolvePoll: ((value: unknown) => void) | null = null;
+      registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'connected' }));
+      registerMockIpcHandler(BACKEND.REQUEST, async (payload: { method?: string }) => {
+        if (payload.method === 'unsloth.status') {
+          pollCount++;
+          await new Promise((resolve) => {
+            resolvePoll = resolve;
+          });
+          return { ok: true, result: runningStatus };
+        }
+        return { ok: false, error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' } };
+      });
+
+      appStore.dispatch({ type: '__BOOT__' });
+      await vi.advanceTimersByTimeAsync(100);
+
+      appStore.dispatch(pollUnslothStatus());
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.waitFor(() => {
+        expect(pollCount).toBe(1);
+      });
+
+      // Dispatches while the first poll is in flight must not overlap.
+      appStore.dispatch(pollUnslothStatus());
+      appStore.dispatch(pollUnslothStatus());
+      await vi.advanceTimersByTimeAsync(100);
+      expect(pollCount).toBe(1);
+
+      resolvePoll!(undefined);
+      await vi.advanceTimersByTimeAsync(100);
+      appStore.dispatch(pollUnslothStatus());
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.waitFor(() => {
+        expect(pollCount).toBe(2);
+      });
     });
   });
 });

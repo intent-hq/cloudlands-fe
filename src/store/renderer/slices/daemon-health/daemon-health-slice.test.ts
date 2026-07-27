@@ -18,11 +18,18 @@ import {
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
   fetchSidecarRunLogFailed,
+  pollUnslothStatus,
+  unslothStatusSuccess,
+  unslothStatusFailure,
+  stopUnslothRequested,
+  stopUnslothSucceeded,
+  stopUnslothFailed,
 } from './daemon-health-slice';
 import type {
   BackendTransportInfo,
   SidecarRunLog,
   SystemStatusWirePayload,
+  UnslothStatusWirePayload,
 } from './daemon-health-types';
 
 describe('daemonHealthReducer', () => {
@@ -44,6 +51,10 @@ describe('daemonHealthReducer', () => {
       sidecarRunLog: null,
       sidecarRunLogPending: false,
       sidecarRunLogError: null,
+      unslothStatus: null,
+      unslothPolling: false,
+      unslothStopping: false,
+      unslothStopError: null,
     });
   });
 
@@ -447,6 +458,83 @@ describe('daemonHealthReducer', () => {
       const state = { ...initialState, health: 'healthy' as const, polling: true };
       const next = daemonHealthReducer(state, systemStatusFailure());
       expect(next.health).toBe('healthy');
+    });
+  });
+
+  describe('unsloth status', () => {
+    const runningStatus: UnslothStatusWirePayload = {
+      running: true,
+      repoId: 'unsloth/Qwen3-4B-GGUF',
+      port: 52415,
+      pid: 12345,
+      uptimeSecs: 42,
+      phase: 'ready',
+      cpuPercent: 250.5,
+      memoryBytes: 4294967296,
+      attachedAgentCount: 2,
+    };
+
+    it('pollUnslothStatus sets the unslothPolling flag', () => {
+      const next = daemonHealthReducer(initialState, pollUnslothStatus());
+      expect(next.unslothPolling).toBe(true);
+    });
+
+    it('unslothStatusSuccess stores the running wire payload as-is', () => {
+      const state = { ...initialState, unslothPolling: true };
+      const next = daemonHealthReducer(state, unslothStatusSuccess(runningStatus));
+      expect(next.unslothPolling).toBe(false);
+      expect(next.unslothStatus).toEqual(runningStatus);
+    });
+
+    it('unslothStatusSuccess stores the { running: false } degrade shape', () => {
+      const state = {
+        ...initialState,
+        unslothPolling: true,
+        unslothStatus: runningStatus,
+      };
+      const notRunning: UnslothStatusWirePayload = { running: false, attachedAgentCount: 0 };
+      const next = daemonHealthReducer(state, unslothStatusSuccess(notRunning));
+      expect(next.unslothStatus).toEqual(notRunning);
+    });
+
+    it('unslothStatusFailure clears the stored status (no stale server rows)', () => {
+      const state = {
+        ...initialState,
+        unslothPolling: true,
+        unslothStatus: runningStatus,
+      };
+      const next = daemonHealthReducer(state, unslothStatusFailure());
+      expect(next.unslothPolling).toBe(false);
+      expect(next.unslothStatus).toBeNull();
+    });
+  });
+
+  describe('unsloth stop', () => {
+    it('stopUnslothRequested sets stopping and clears a prior error', () => {
+      const state = { ...initialState, unslothStopError: 'previous failure' };
+      const next = daemonHealthReducer(state, stopUnslothRequested());
+      expect(next.unslothStopping).toBe(true);
+      expect(next.unslothStopError).toBeNull();
+    });
+
+    it('stopUnslothSucceeded clears the stopping flag', () => {
+      const state = { ...initialState, unslothStopping: true };
+      const next = daemonHealthReducer(state, stopUnslothSucceeded(true));
+      expect(next.unslothStopping).toBe(false);
+      expect(next.unslothStopError).toBeNull();
+    });
+
+    it('stopUnslothSucceeded with stopped: false (no-op) also clears the flag', () => {
+      const state = { ...initialState, unslothStopping: true };
+      const next = daemonHealthReducer(state, stopUnslothSucceeded(false));
+      expect(next.unslothStopping).toBe(false);
+    });
+
+    it('stopUnslothFailed clears the flag and stores the error', () => {
+      const state = { ...initialState, unslothStopping: true };
+      const next = daemonHealthReducer(state, stopUnslothFailed('transport error'));
+      expect(next.unslothStopping).toBe(false);
+      expect(next.unslothStopError).toBe('transport error');
     });
   });
 });
