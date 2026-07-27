@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import {
   AppPathSchema,
   AppSetBadgeSchema,
+  AppSetLanguagePreferenceSchema,
   DeepLinkHandleSchema,
   DialogMessageSchema,
   EmptySchema,
@@ -565,6 +566,28 @@ export function setupSystemIPC() {
         }
       },
       APP_CHANNELS.SET_BADGE,
+    ),
+  );
+
+  // Sync the renderer's language preference to the main-process locale service.
+  // On change, notify listeners (index.ts rebuilds the application menu).
+  ipcMain.handle(
+    APP_CHANNELS.SET_LANGUAGE_PREFERENCE,
+    createSafeValidatedHandler(
+      AppSetLanguagePreferenceSchema,
+      async (_event, validated) => {
+        try {
+          const { setMainLanguagePreference } = await import('../../../main/main-locale');
+          const changed = setMainLanguagePreference(validated.preference);
+          if (changed) {
+            app.emit('main-locale-changed');
+          }
+          return { success: true };
+        } catch (error) {
+          return { success: false, error: (error as Error).message };
+        }
+      },
+      APP_CHANNELS.SET_LANGUAGE_PREFERENCE,
     ),
   );
 

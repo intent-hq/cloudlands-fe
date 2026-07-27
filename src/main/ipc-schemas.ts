@@ -1057,6 +1057,10 @@ export const AppSetBadgeSchema = z.object({
   count: z.number().int().min(0, 'Badge count must be non-negative'),
 });
 
+export const AppSetLanguagePreferenceSchema = z.object({
+  preference: z.string().min(1),
+});
+
 export const AppPathSchema = z.object({
   name: z.enum([
     'home',

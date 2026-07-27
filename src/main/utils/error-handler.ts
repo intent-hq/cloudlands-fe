@@ -1,5 +1,6 @@
 import { dialog } from 'electron';
 import { Logger } from './logger';
+import { m } from '../../shared/paraglide/messages.js';
 
 export class AppError extends Error {
   constructor(
@@ -65,12 +66,12 @@ export class ErrorHandler {
       this.showErrorDialog(`${errorMessage}\n\n${error.stack}`);
     } else {
       // Show generic error in production for non-operational errors
-      this.showErrorDialog('An unexpected error occurred. Please check the logs for details.');
+      this.showErrorDialog(m.dialog_unexpected_error());
     }
   }
 
   private showErrorDialog(message: string): void {
-    dialog.showErrorBox('Error', message);
+    dialog.showErrorBox(m.dialog_error_title(), message);
   }
 
   async handleAsync<T>(fn: () => Promise<T>, context?: string): Promise<T | null> {

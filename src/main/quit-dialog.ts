@@ -33,7 +33,9 @@ export function formatAgentNameList(agents: RespondingAgent[]): string {
   const names = agents.map((agent) => agent.name);
   const shown = names.slice(0, MAX_LISTED_AGENT_NAMES);
   const remaining = names.length - shown.length;
-  return remaining > 0 ? `${shown.join(', ')}, and ${remaining} more` : shown.join(', ');
+  return remaining > 0
+    ? m.quit_dialog_agent_list_more({ names: shown.join(', '), count: remaining })
+    : shown.join(', ');
 }
 
 /**
@@ -47,16 +49,22 @@ export function buildQuitDialogOptions(
 ): MessageBoxOptions {
   const count = agents.length;
   const plural = count > 1;
+  const working = plural
+    ? m.quit_dialog_agents_working_many({ count })
+    : m.quit_dialog_agents_working_one();
 
   if (mode === 'external') {
     // Non-destructive framing: the external daemon is not ours to stop, so
     // closing the app leaves intentd and its agents running in the background.
+    const names = formatAgentNameList(agents);
     return {
       type: 'info',
-      title: 'Agents Keep Running',
-      message: `${count} agent${plural ? 's are' : ' is'} still working.`,
-      detail: `Intent will close, but intentd and your ${count} running agent${plural ? 's' : ''} (${formatAgentNameList(agents)}) continue${plural ? '' : 's'} in the background. Reconnect anytime by reopening the app.`,
-      buttons: ['Close', 'Cancel'],
+      title: m.quit_dialog_external_title(),
+      message: working,
+      detail: plural
+        ? m.quit_dialog_external_detail_many({ count, names })
+        : m.quit_dialog_external_detail_one({ names }),
+      buttons: [m.quit_dialog_close_button(), m.quit_dialog_cancel_button()],
       defaultId: 0,
       cancelId: 1,
     };
@@ -70,7 +78,7 @@ export function buildQuitDialogOptions(
   return {
     type: 'info',
     title: m.quit_dialog_sidecar_title(),
-    message: `${count} agent${plural ? 's are' : ' is'} still working.`,
+    message: working,
     detail: m.quit_dialog_sidecar_detail(),
     buttons: [m.quit_dialog_quit_button(), m.quit_dialog_cancel_button()],
     defaultId: 0,

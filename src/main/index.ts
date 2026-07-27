@@ -278,8 +278,10 @@ import { setupWorkspaceIPC } from '../features/workspace/main/workspace.ipc';
 import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-summary.ipc';
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
+import { setMainLanguagePreference, getMainLanguagePreference } from './main-locale';
 import { buildQuitDialogOptions } from './quit-dialog';
 import { listRespondingAgents } from './running-agents';
+import { m } from '../shared/paraglide/messages.js';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { cleanupStaleTempFiles } from '../shared/main/temp-files';
@@ -496,6 +498,11 @@ app.whenReady().then(async () => {
   const isDevMode = process.env.NODE_ENV === 'development';
   const isMacOS = process.platform === 'darwin';
 
+  // Resolve the main-process locale from the OS now that app.getLocale() is
+  // available (the renderer syncs any explicit preference later over
+  // app:set-language-preference).
+  setMainLanguagePreference(getMainLanguagePreference());
+
   // Build version string with commit hash
   const commitHash = BUILD_CONFIG.GIT_COMMIT_HASH;
   const versionWithCommit = commitHash ? `${app.getVersion()} (${commitHash})` : app.getVersion();
@@ -603,21 +610,21 @@ app.whenReady().then(async () => {
     // Add "No Recent Spaces" if empty
     if (recentWorkspacesSubmenu.length === 0) {
       recentWorkspacesSubmenu.push({
-        label: 'No Recent Spaces',
+        label: m.menu_no_recent_spaces(),
         enabled: false,
       });
     }
 
     const fileMenuItems: Electron.MenuItemConstructorOptions[] = [
       {
-        label: 'New Window',
+        label: m.menu_new_window(),
         accelerator: 'CmdOrCtrl+Shift+N',
         click: () => {
           createWindow();
         },
       },
       {
-        label: 'New Workspace',
+        label: m.menu_new_workspace(),
         accelerator: 'CmdOrCtrl+N',
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -628,7 +635,7 @@ app.whenReady().then(async () => {
       },
       { type: 'separator' },
       {
-        label: 'New Agent',
+        label: m.menu_new_agent(),
         accelerator: 'CmdOrCtrl+T',
         enabled: inWorkspace,
         // Don't register accelerator - let renderer handle Cmd+T first
@@ -642,7 +649,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'New Note',
+        label: m.menu_new_note(),
         accelerator: 'CmdOrCtrl+Alt+N',
         enabled: inWorkspace,
         click: () => {
@@ -653,7 +660,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'New Terminal',
+        label: m.menu_new_terminal(),
         accelerator: 'CmdOrCtrl+Alt+T',
         enabled: inWorkspace,
         click: () => {
@@ -664,7 +671,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'New Browser',
+        label: m.menu_new_browser(),
         accelerator: 'CmdOrCtrl+Alt+B',
         enabled: inWorkspace,
         click: () => {
@@ -676,7 +683,7 @@ app.whenReady().then(async () => {
       },
       { type: 'separator' },
       {
-        label: 'Open Recent',
+        label: m.menu_open_recent(),
         submenu: recentWorkspacesSubmenu,
       },
       { type: 'separator' },
@@ -685,7 +692,7 @@ app.whenReady().then(async () => {
     // Add Settings on Windows (before Close Window)
     if (!isMacOS) {
       fileMenuItems.push({
-        label: 'Settings...',
+        label: m.menu_settings(),
         accelerator: 'CmdOrCtrl+,',
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -699,7 +706,7 @@ app.whenReady().then(async () => {
 
     fileMenuItems.push(
       {
-        label: 'Close Tab',
+        label: m.menu_close_tab(),
         accelerator: 'CmdOrCtrl+W',
         enabled: inWorkspace,
         // Don't register accelerator - let renderer handle Cmd+W first for tabs
@@ -712,7 +719,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'Close Window',
+        label: m.menu_close_window(),
         accelerator: 'CmdOrCtrl+Shift+W',
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -723,7 +730,7 @@ app.whenReady().then(async () => {
       },
       { type: 'separator' },
       {
-        label: 'Reopen Closed Tab',
+        label: m.menu_reopen_closed_tab(),
         accelerator: 'CmdOrCtrl+Shift+T',
         enabled: inWorkspace,
         click: () => {
@@ -739,13 +746,13 @@ app.whenReady().then(async () => {
     if (!isMacOS) {
       fileMenuItems.push({ type: 'separator' });
       fileMenuItems.push({
-        label: 'Exit',
+        label: m.menu_exit(),
         role: 'quit',
       });
     }
 
     return {
-      label: 'File',
+      label: m.menu_file(),
       submenu: fileMenuItems,
     };
   };
@@ -759,10 +766,10 @@ app.whenReady().then(async () => {
     // Build the Window menu items
     const windowMenuItems: Electron.MenuItemConstructorOptions[] = [
       { role: 'minimize', accelerator: 'CmdOrCtrl+M' },
-      { role: 'zoom', label: 'Fill' },
+      { role: 'zoom', label: m.menu_window_fill() },
       { type: 'separator' },
       {
-        label: 'Select Previous Tab',
+        label: m.menu_select_previous_tab(),
         accelerator: 'CmdOrCtrl+Shift+[',
         enabled: inWorkspace,
         click: () => {
@@ -773,7 +780,7 @@ app.whenReady().then(async () => {
         },
       },
       {
-        label: 'Select Next Tab',
+        label: m.menu_select_next_tab(),
         accelerator: 'CmdOrCtrl+Shift+]',
         enabled: inWorkspace,
         click: () => {
@@ -788,7 +795,7 @@ app.whenReady().then(async () => {
 
     // Add 'Bring All to Front' only on macOS (role: 'front' is macOS-only)
     if (isMacOS) {
-      windowMenuItems.push({ role: 'front', label: 'Bring All to Front' });
+      windowMenuItems.push({ role: 'front', label: m.menu_bring_all_to_front() });
     }
 
     // Add workspaces with open windows to the Window menu
@@ -839,11 +846,11 @@ app.whenReady().then(async () => {
     // Add About on Windows (macOS uses the app menu)
     if (!isMacOS) {
       helpMenuItems.push({
-        label: `About ${appName}`,
+        label: m.menu_about_app({ appName }),
         click: () => {
           const aboutMessage = [
             `${aboutPanelInfo.applicationName}`,
-            `Version: ${aboutPanelInfo.applicationVersion}`,
+            m.dialog_about_version({ version: aboutPanelInfo.applicationVersion }),
             aboutPanelInfo.providerVersion ? `${aboutPanelInfo.providerVersion}` : '',
             `${aboutPanelInfo.copyright}`,
           ]
@@ -854,20 +861,20 @@ app.whenReady().then(async () => {
           if (mainWindow && !mainWindow.isDestroyed()) {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
-              title: `About ${appName}`,
+              title: m.menu_about_app({ appName }),
               message: aboutMessage,
             });
           } else {
             dialog.showMessageBox({
               type: 'info',
-              title: `About ${appName}`,
+              title: m.menu_about_app({ appName }),
               message: aboutMessage,
             });
           }
         },
       });
       helpMenuItems.push({
-        label: 'Check for Updates...',
+        label: m.menu_check_for_updates(),
         click: async () => {
           const mainWindow = getMainWindow();
           logger.info('[Menu] Check for Updates clicked', {
@@ -905,7 +912,7 @@ app.whenReady().then(async () => {
         },
       });
       helpMenuItems.push({
-        label: "Install 'intent' command in PATH...",
+        label: m.menu_install_cli(),
         click: async () => {
           const mainWindow = getMainWindow();
           try {
@@ -914,26 +921,26 @@ app.whenReady().then(async () => {
               if (mainWindow && !mainWindow.isDestroyed()) {
                 dialog.showMessageBox(mainWindow, {
                   type: 'info',
-                  title: 'CLI Installation',
-                  message: result.message || 'CLI installed successfully',
+                  title: m.dialog_cli_install_title(),
+                  message: result.message || m.dialog_cli_install_success(),
                 });
               } else {
                 dialog.showMessageBox({
                   type: 'info',
-                  title: 'CLI Installation',
-                  message: result.message || 'CLI installed successfully',
+                  title: m.dialog_cli_install_title(),
+                  message: result.message || m.dialog_cli_install_success(),
                 });
               }
             } else {
               dialog.showErrorBox(
-                'CLI Installation Failed',
-                result?.message || 'Failed to install CLI',
+                m.dialog_cli_install_failed_title(),
+                result?.message || m.dialog_cli_install_failed_message(),
               );
             }
           } catch (error) {
             dialog.showErrorBox(
-              'CLI Installation Error',
-              error instanceof Error ? error.message : 'An error occurred',
+              m.dialog_cli_install_error_title(),
+              error instanceof Error ? error.message : m.dialog_cli_install_error_fallback(),
             );
           }
         },
@@ -943,7 +950,7 @@ app.whenReady().then(async () => {
 
     // Add Export Debug Logs (cross-platform)
     helpMenuItems.push({
-      label: 'Export Debug Logs',
+      label: m.menu_export_debug_logs(),
       click: async () => {
         try {
           // Create the debug bundle
@@ -959,7 +966,7 @@ app.whenReady().then(async () => {
           // Show save dialog
           const { filePath, canceled } = await dialog.showSaveDialog({
             defaultPath: suggestedFilename,
-            filters: [{ name: 'ZIP Files', extensions: ['zip'] }],
+            filters: [{ name: m.dialog_zip_files_filter(), extensions: ['zip'] }],
           });
 
           if (canceled || !filePath) {
@@ -991,9 +998,9 @@ app.whenReady().then(async () => {
       template.push({
         label: appName,
         submenu: [
-          { role: 'about', label: `About ${appName}` },
+          { role: 'about', label: m.menu_about_app({ appName }) },
           {
-            label: 'Check for Updates...',
+            label: m.menu_check_for_updates(),
             click: async () => {
               const mainWindow = getMainWindow();
               logger.info('[Menu] Check for Updates clicked', {
@@ -1034,7 +1041,7 @@ app.whenReady().then(async () => {
           },
           { type: 'separator' },
           {
-            label: 'Settings...',
+            label: m.menu_settings(),
             accelerator: 'CmdOrCtrl+,',
             click: () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1044,7 +1051,7 @@ app.whenReady().then(async () => {
             },
           },
           {
-            label: "Install 'intent' command in PATH...",
+            label: m.menu_install_cli(),
             click: async () => {
               const mainWindow = getMainWindow();
               try {
@@ -1053,26 +1060,26 @@ app.whenReady().then(async () => {
                   if (mainWindow && !mainWindow.isDestroyed()) {
                     dialog.showMessageBox(mainWindow, {
                       type: 'info',
-                      title: 'CLI Installation',
-                      message: result.message || 'CLI installed successfully',
+                      title: m.dialog_cli_install_title(),
+                      message: result.message || m.dialog_cli_install_success(),
                     });
                   } else {
                     dialog.showMessageBox({
                       type: 'info',
-                      title: 'CLI Installation',
-                      message: result.message || 'CLI installed successfully',
+                      title: m.dialog_cli_install_title(),
+                      message: result.message || m.dialog_cli_install_success(),
                     });
                   }
                 } else {
                   dialog.showErrorBox(
-                    'CLI Installation Failed',
-                    result?.message || 'Failed to install CLI',
+                    m.dialog_cli_install_failed_title(),
+                    result?.message || m.dialog_cli_install_failed_message(),
                   );
                 }
               } catch (error) {
                 dialog.showErrorBox(
-                  'CLI Installation Error',
-                  error instanceof Error ? error.message : 'An error occurred',
+                  m.dialog_cli_install_error_title(),
+                  error instanceof Error ? error.message : m.dialog_cli_install_error_fallback(),
                 );
               }
             },
@@ -1080,11 +1087,11 @@ app.whenReady().then(async () => {
           { type: 'separator' },
           { role: 'services' },
           { type: 'separator' },
-          { role: 'hide', label: `Hide ${appName}` },
+          { role: 'hide', label: m.menu_hide_app({ appName }) },
           { role: 'hideOthers' },
           { role: 'unhide' },
           { type: 'separator' },
-          { role: 'quit', label: `Quit ${appName}` },
+          { role: 'quit', label: m.menu_quit_app({ appName }) },
         ],
       });
     }
@@ -1094,10 +1101,10 @@ app.whenReady().then(async () => {
       fileMenu,
       { role: 'editMenu' },
       {
-        label: 'View',
+        label: m.menu_view(),
         submenu: [
           {
-            label: 'Reload',
+            label: m.menu_reload(),
             accelerator: 'CmdOrCtrl+R',
             // Don't register the accelerator - let the renderer handle Cmd+R
             // so browser panels can refresh instead of reloading the whole app
@@ -1114,7 +1121,7 @@ app.whenReady().then(async () => {
           { role: 'toggleDevTools' },
           { type: 'separator' },
           {
-            label: 'Actual Size',
+            label: m.menu_actual_size(),
             accelerator: 'CmdOrCtrl+0',
             click: () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1128,7 +1135,7 @@ app.whenReady().then(async () => {
             },
           },
           {
-            label: 'Zoom In',
+            label: m.menu_zoom_in(),
             accelerator: 'CmdOrCtrl+=',
             click: () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1143,7 +1150,7 @@ app.whenReady().then(async () => {
             },
           },
           {
-            label: 'Zoom Out',
+            label: m.menu_zoom_out(),
             accelerator: 'CmdOrCtrl+-',
             click: () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -1162,11 +1169,11 @@ app.whenReady().then(async () => {
         ],
       },
       {
-        label: 'Window',
+        label: m.menu_window(),
         submenu: windowMenuItems,
       },
       {
-        label: 'Help',
+        label: m.menu_help(),
         submenu: helpMenuItems,
       },
     );
@@ -1188,6 +1195,12 @@ app.whenReady().then(async () => {
       rebuildMenu();
       menuRebuildTimeout = null;
     }, 1000);
+  });
+
+  // Rebuild menu when the main-process locale changes (renderer synced a new
+  // language preference over app:set-language-preference)
+  app.on('main-locale-changed', () => {
+    rebuildMenu();
   });
 
   // Rebuild menu when workspace state changes (enables/disables tab menu items)

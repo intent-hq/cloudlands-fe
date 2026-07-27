@@ -20,6 +20,7 @@ import {
   Notification,
 } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
 import type {
@@ -90,20 +91,21 @@ async function refreshPrefs(): Promise<NotificationPrefs> {
 }
 
 /**
- * Map specialist ID to display name
+ * Map specialist ID to localized display name (message functions so the
+ * active main-process locale is applied at notification time)
  */
-const SPECIALIST_DISPLAY_NAMES: Record<string, string> = {
-  'spec-writer': 'Coordinator',
-  implementor: 'Implementor',
-  verifier: 'Verifier',
+const SPECIALIST_DISPLAY_NAMES: Record<string, () => string> = {
+  'spec-writer': () => m.notification_specialist_coordinator(),
+  implementor: () => m.notification_specialist_implementor(),
+  verifier: () => m.notification_specialist_verifier(),
 };
 
 /**
  * Get display name for a specialist type
  */
 function getSpecialistDisplayName(specialist?: string): string {
-  if (!specialist) return 'Agent';
-  return SPECIALIST_DISPLAY_NAMES[specialist] || 'Agent';
+  if (!specialist) return m.notification_specialist_agent();
+  return SPECIALIST_DISPLAY_NAMES[specialist]?.() || m.notification_specialist_agent();
 }
 
 /**
@@ -419,8 +421,10 @@ export class NotificationService {
       const truncatedChatName =
         chatName && chatName.length > 40 ? `${chatName.slice(0, 37)}...` : chatName;
       return {
-        title: truncatedChatName ? `Assistant — ${truncatedChatName}` : 'Assistant',
-        body: taskTitle ? 'Task completed' : 'Finished',
+        title: truncatedChatName
+          ? m.notification_assistant_titled({ chatName: truncatedChatName })
+          : m.notification_assistant_title(),
+        body: taskTitle ? m.notification_body_task_completed() : m.notification_body_finished(),
       };
     }
 
@@ -457,7 +461,7 @@ export class NotificationService {
     }
 
     // Build body
-    const body = taskTitle ? 'Task completed' : 'Finished';
+    const body = taskTitle ? m.notification_body_task_completed() : m.notification_body_finished();
 
     return { title, body };
   }
@@ -588,14 +592,17 @@ export class NotificationService {
         logger.warn('Desktop notifications are not supported on this platform');
         return {
           success: false,
-          error: 'Desktop notifications are not supported on this platform',
+          error: m.notification_not_supported(),
         };
       }
 
       const focusWindow =
         BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
 
-      this.showNotification({ title: 'Agent', body: 'Test notification' }, focusWindow ?? undefined);
+      this.showNotification(
+        { title: m.notification_specialist_agent(), body: m.notification_test_body() },
+        focusWindow ?? undefined,
+      );
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

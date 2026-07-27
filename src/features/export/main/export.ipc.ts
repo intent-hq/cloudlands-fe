@@ -14,6 +14,7 @@ import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';
 import { exportChatToHtml } from '../chat-html-exporter';
+import { m } from '../../../shared/paraglide/messages.js';
 
 const logger = new Logger('ChatExportIPC');
 
@@ -61,7 +62,7 @@ export function registerChatExportHandlers(): void {
           // Show save dialog
           const { filePath, canceled } = await dialog.showSaveDialog({
             defaultPath: suggestedFilename,
-            filters: [{ name: 'HTML Files', extensions: ['html'] }],
+            filters: [{ name: m.dialog_html_files_filter(), extensions: ['html'] }],
           });
 
           if (canceled || !filePath) {

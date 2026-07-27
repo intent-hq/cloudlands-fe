@@ -19,6 +19,7 @@ import {
   type ActivityLogPresetPreference,
 } from "../slices/user-preferences/user-preferences-slice";
 import { getActiveLocale } from "$lib/i18n/locale";
+import { isElectron } from "$lib/electron-bridge";
 
 const mem = new Map<string, string>();
 function installMemoryLocalStorage(): void {
@@ -120,6 +121,24 @@ describe("userPreferencesPersistenceService (real store)", () => {
     appStore.dispatch(setLanguagePreference("system"));
     expect(safeLocalStorage.getJSON("language-preference")).toBe("system");
     expect(getActiveLocale()).toBe("en");
+  });
+
+  it("syncs the language preference to the main process over IPC", () => {
+    // test-setup mocks isElectron() to false globally; the sync is electron-only.
+    vi.mocked(isElectron).mockReturnValue(true);
+    try {
+      appStore.dispatch(setLanguagePreference("de"));
+      expect(window.electronAPI.invoke).toHaveBeenCalledWith("app:set-language-preference", {
+        preference: "de",
+      });
+
+      appStore.dispatch(setLanguagePreference("system"));
+      expect(window.electronAPI.invoke).toHaveBeenCalledWith("app:set-language-preference", {
+        preference: "system",
+      });
+    } finally {
+      vi.mocked(isElectron).mockReturnValue(false);
+    }
   });
 
   it("uses legacy font settings storage keys", () => {

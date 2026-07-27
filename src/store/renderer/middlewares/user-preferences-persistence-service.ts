@@ -4,7 +4,9 @@
  * spellcheck, showArchived, groupByRepo, hasCompletedProviderSetup, agent font
  * style, note font style, code font family, and activity-log presets
  * (GAPs 9-15, 17). It also owns the language preference: hydration, persistence,
- * and applying it to the Paraglide runtime via the renderer locale service.
+ * applying it to the Paraglide runtime via the renderer locale service, and
+ * syncing it to the Electron main process (`app:set-language-preference`) so
+ * native menus/dialogs/notifications follow the same locale.
  *
  * Beta-updates and notification settings are handled by sibling middlewares and
  * are excluded here to avoid overlap.
@@ -21,6 +23,7 @@
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import { applyLanguagePreference } from "$lib/i18n/locale";
+import { isElectron } from "$lib/electron-bridge";
 import {
   setSpellcheckEnabled,
   toggleSpellcheck,
@@ -217,10 +220,17 @@ export function createUserPreferencesPersistenceMiddleware(): StoreMiddleware {
           break;
         }
 
-        // Language preference persistence
+        // Language preference persistence + main-process sync (fire-and-forget)
         case setLanguagePreference.type: {
           const state = api.getState().userPreferences;
           safeLocalStorage.setJSON(LANGUAGE_PREFERENCE_STORAGE_KEY, state.languagePreference);
+          if (isElectron() && typeof window !== "undefined" && window.electronAPI?.invoke) {
+            void window.electronAPI
+              .invoke("app:set-language-preference", { preference: state.languagePreference })
+              .catch(() => {
+                // Non-fatal: main keeps its current locale until the next sync.
+              });
+          }
           break;
         }
       }
