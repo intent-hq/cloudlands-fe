@@ -1,6 +1,7 @@
 <script lang="ts">
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { ParsedToolResult } from './tool-result-parser';
+  import { extractPayloadText } from './tool-result-pairing';
   import Fa from 'svelte-fa';
   import {
   faCopy,
@@ -121,14 +122,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     return entries.length > 0 ? entries : null;
   });
 
-  // Extract display text from an error result payload: nested `output` string
-  // when present, else the raw string / JSON representation
+  // Extract display text from an error result payload (§7.1 shapes: string,
+  // MCP content-item array, `{ output }` fallback), else the raw JSON
+  // representation
   const errorText = $derived.by(() => {
     if (result == null) return null;
-    if (typeof result === 'string') return result;
-    if (typeof result === 'object' && typeof (result as { output?: unknown }).output === 'string') {
-      return (result as { output: string }).output;
-    }
+    const text = extractPayloadText(result);
+    if (text !== null) return text;
     try {
       return JSON.stringify(result, null, 2);
     } catch {

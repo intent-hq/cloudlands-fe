@@ -80,6 +80,22 @@ describe('ToolDetails error display', () => {
     expect(container.textContent).not.toContain('No error details available');
   });
 
+  it('renders the text items from an MCP content-item array error result (§7.1)', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: {},
+        result: [{ type: 'text', text: 'Error: exploded while running' }],
+        parsedResult: null,
+        isError: true,
+      },
+    });
+
+    expect(container.textContent).toContain('Error: exploded while running');
+    // The text item is extracted, not shown as a JSON blob
+    expect(container.textContent).not.toContain('"type"');
+    expect(container.textContent).not.toContain('No error details available');
+  });
+
   it('renders object results without an output string as pretty-printed JSON', () => {
     const { container } = render(ToolDetails, {
       props: {

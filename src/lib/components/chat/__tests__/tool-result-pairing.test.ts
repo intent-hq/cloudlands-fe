@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 import type { ContentBlock } from '$shared/types';
 import {
   buildToolResultsMap,
+  extractPayloadText,
   findToolResult,
   getToolResultPayload,
   getToolResultText,
@@ -141,9 +142,41 @@ describe('getToolResultPayload / getToolResultText — §7.1 output extraction',
     expect(getToolResultPayload({ type: 'tool_result', tool_use_id: 'tc_1' })).toBeNull();
   });
 
-  it('returns string payloads as text and empty string for non-strings', () => {
+  it('returns string payloads as text and empty string for non-text payloads', () => {
     expect(getToolResultText(toolResult('b', 'tc_1', 'Error: nope'))).toBe('Error: nope');
     expect(getToolResultText(toolResult('b', 'tc_1', { nested: true }))).toBe('');
     expect(getToolResultText(undefined)).toBe('');
+  });
+
+  it('extracts text from MCP content-item array payloads (§7.1)', () => {
+    const arrayResult = toolResult('b', 'tc_1', [
+      { type: 'text', text: 'Error: exploded' },
+      { type: 'image', data: 'aaaa' },
+      { type: 'text', text: 'second line' },
+    ]);
+    expect(getToolResultText(arrayResult)).toBe('Error: exploded\nsecond line');
+  });
+});
+
+describe('extractPayloadText — §7.1 payload shapes', () => {
+  it('returns strings as-is and reads the fallback `output` object shape', () => {
+    expect(extractPayloadText('plain')).toBe('plain');
+    expect(extractPayloadText({ output: 'from output' })).toBe('from output');
+  });
+
+  it('joins text items from MCP content-item arrays', () => {
+    expect(
+      extractPayloadText([
+        { type: 'text', text: 'one' },
+        { type: 'text', text: 'two' },
+      ]),
+    ).toBe('one\ntwo');
+  });
+
+  it('returns null when no text can be extracted', () => {
+    expect(extractPayloadText(null)).toBeNull();
+    expect(extractPayloadText(undefined)).toBeNull();
+    expect(extractPayloadText([{ type: 'image', data: 'aaaa' }])).toBeNull();
+    expect(extractPayloadText({ code: -1 })).toBeNull();
   });
 });

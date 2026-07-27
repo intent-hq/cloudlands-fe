@@ -77,10 +77,37 @@ export function getToolResultPayload(result: ContentBlock | null | undefined): u
 }
 
 /**
+ * Extract display text from a tool-result payload (§7.1 shapes): a plain
+ * string, an MCP content-item array (`[{ type: 'text', text }]`, text items
+ * joined with newlines), or the fallback object carrying an `output` string.
+ * Returns `null` when no text can be extracted.
+ */
+export function extractPayloadText(payload: unknown): string | null {
+  if (payload === null || payload === undefined) return null;
+  if (typeof payload === 'string') return payload;
+  if (Array.isArray(payload)) {
+    const texts = payload
+      .filter(
+        (item): item is { type: 'text'; text: string } =>
+          !!item &&
+          typeof item === 'object' &&
+          (item as { type?: unknown }).type === 'text' &&
+          typeof (item as { text?: unknown }).text === 'string',
+      )
+      .map((item) => item.text);
+    return texts.length > 0 ? texts.join('\n') : null;
+  }
+  if (typeof payload === 'object') {
+    const output = (payload as { output?: unknown }).output;
+    if (typeof output === 'string') return output;
+  }
+  return null;
+}
+
+/**
  * String form of the result payload for error-text sniffing. Returns `''`
- * when the payload is absent or not a string.
+ * when no text can be extracted from the payload.
  */
 export function getToolResultText(result: ContentBlock | null | undefined): string {
-  const payload = getToolResultPayload(result);
-  return typeof payload === 'string' ? payload : '';
+  return extractPayloadText(getToolResultPayload(result)) ?? '';
 }
