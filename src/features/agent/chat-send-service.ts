@@ -45,20 +45,27 @@ import type { StoreMiddleware } from "$lib/store-shim/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
+  chatLastAttemptedMessageSet,
   chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
   chatStopInitiated,
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
-import { agentSessionStopChatRequested } from "$store/renderer/slices/agent-session/agent-session-slice";
+import {
+  agentSessionRetryLastMessageRequested,
+  agentSessionStopChatRequested,
+} from "$store/renderer/slices/agent-session/agent-session-slice";
 import { clearChatDraft } from "$store/renderer/slices/transient-ui/transient-ui-slice";
 import {
   removeQueuedMessageFromAgentQueue,
   removeQueuedMessageRequested,
   replaceAgentQueue,
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
-import type { SendMessagePayload } from "$store/renderer/slices/chat-state/chat-state-types";
+import type {
+  LastAttemptedMessage,
+  SendMessagePayload,
+} from "$store/renderer/slices/chat-state/chat-state-types";
 import { CHIEF_WORKSPACE_ID } from "$store/renderer/slices/sidebar-nav/sidebar-nav-types";
 import {
   getChiefThreadTitle,
@@ -220,6 +227,16 @@ async function dispatchToLifecycle(
   // Immediate loading-state dispatch so the UI doesn't have to wait for the
   // first lifecycle dispatch to surface the spinner / streaming indicator.
   appStore.dispatch(chatSendStarted(agentId, wsId));
+  // Record the exact content this attempt carries so the error banner's
+  // "Try again" resends it verbatim if the turn fails (#941). `content`
+  // already includes the workspace-context prefix, so a retry must not
+  // re-prefix it.
+  appStore.dispatch(
+    chatLastAttemptedMessageSet(agentId, {
+      text: content,
+      ...(options.noteIds !== undefined ? { options: { noteIds: options.noteIds } } : {}),
+    }),
+  );
   appStore.dispatch(clearChatDraft(wsId, agentId));
 
   try {
@@ -337,6 +354,56 @@ async function dispatchQueueRemoval(agentId: string, messageId: string): Promise
 }
 
 /**
+ * Service the error banner's "Try again": resend the recorded
+ * `lastAttemptedMessage` through the normal lifecycle send path (#941). The
+ * recorded text already carries the workspace-context prefix from the
+ * original attempt, so it is passed WITHOUT a `workspaceContextStr` to avoid
+ * double-prefixing. When nothing was recorded (e.g. a fresh window after the
+ * failure), the action resolves as a no-op with user feedback instead of
+ * silently doing nothing.
+ */
+async function dispatchRetryLastMessage(
+  action: ReturnType<typeof agentSessionRetryLastMessageRequested>,
+): Promise<void> {
+  const [agentId, wsId] = action.payload;
+  const state = appStore.state as {
+    chatState?: {
+      byAgentId: Record<string, { lastAttemptedMessage: LastAttemptedMessage | null }>;
+    };
+  };
+  const lastAttempted = state.chatState?.byAgentId[agentId]?.lastAttemptedMessage;
+  if (!lastAttempted || lastAttempted.text.trim().length === 0) {
+    logger.warn("Retry requested but no lastAttemptedMessage is recorded", { agentId, wsId });
+    try {
+      const { toast } = await import("svelte-sonner");
+      toast.info("Nothing to retry — send a message to start a new turn.");
+    } catch (error) {
+      logger.error("Failed to surface retry no-op feedback", error);
+    }
+    appStore.dispatch(action.success(undefined as void));
+    return;
+  }
+  try {
+    await dispatchToLifecycle(
+      agentId,
+      wsId,
+      lastAttempted.text,
+      undefined,
+      { noteIds: lastAttempted.options?.noteIds },
+      false,
+    );
+    appStore.dispatch(action.success(undefined as void));
+  } catch (error) {
+    // dispatchToLifecycle surfaces its own failures via chatSendFailed and
+    // should not throw; reject the promise if it unexpectedly does.
+    logger.error("Retry-last-message dispatch threw", error);
+    appStore.dispatch(
+      action.failure(error instanceof Error ? error : new Error(String(error))),
+    );
+  }
+}
+
+/**
  * Service the Stop button: cancel the agent's in-flight stream via
  * `agent.stop` (§5.5) and settle the async action's promise. A missing
  * session resolves immediately (nothing to stop). A non-success stop result
@@ -379,9 +446,10 @@ async function dispatchStopChat(
 }
 
 /**
- * Middleware that gives `sendMessage`, `removeQueuedMessageRequested`, and
- * `agentSessionStopChatRequested` a real consumer. Fire-and-forget — dispatch
- * stays synchronous and never throws.
+ * Middleware that gives `sendMessage`, `removeQueuedMessageRequested`,
+ * `agentSessionStopChatRequested`, and `agentSessionRetryLastMessageRequested`
+ * a real consumer. Fire-and-forget — dispatch stays synchronous and never
+ * throws.
  */
 export function createChatSendMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
@@ -467,6 +535,19 @@ export function createChatSendMiddleware(): StoreMiddleware {
       const [agentId] = stopAction.payload ?? [];
       if (typeof agentId === "string" && agentId.length > 0) {
         void dispatchStopChat(stopAction);
+      }
+    } else if (
+      (action as { type?: unknown }).type === agentSessionRetryLastMessageRequested.type
+    ) {
+      const retryAction = action as ReturnType<typeof agentSessionRetryLastMessageRequested>;
+      const [agentId, wsId] = retryAction.payload ?? [];
+      if (
+        typeof agentId === "string" &&
+        agentId.length > 0 &&
+        typeof wsId === "string" &&
+        wsId.length > 0
+      ) {
+        void dispatchRetryLastMessage(retryAction);
       }
     }
 

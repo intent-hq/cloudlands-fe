@@ -53,10 +53,22 @@ vi.mock("$lib/client", () => ({
     },
   },
 }));
+// The retry no-op path lazily `import("svelte-sonner")` for user feedback;
+// stub it so no real toast component is mounted.
+vi.mock("svelte-sonner", () => ({
+  toast: Object.assign(vi.fn(), {
+    warning: vi.fn(),
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    dismiss: vi.fn(),
+  }),
+}));
 
 import { store as appStore } from "$store/renderer/store";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
 import {
+  agentSessionRetryLastMessageRequested,
   agentSessionStopChatRequested,
   bulkUpsertSessions,
   clearAllSessions,
@@ -66,7 +78,10 @@ import {
   removeQueuedMessageRequested,
   replaceAgentQueue,
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
-import { sendMessage } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  chatLastAttemptedMessageSet,
+  sendMessage,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
 import { CHIEF_WORKSPACE_ID } from "$store/renderer/slices/sidebar-nav/sidebar-nav-types";
@@ -940,5 +955,67 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     await flush();
 
     expect(agentsRename).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // #941: retry-after-failure resends the recorded lastAttemptedMessage
+  // -------------------------------------------------------------------------
+
+  it("#941: the lifecycle send records lastAttemptedMessage with the final content (context prefix included)", async () => {
+    appStore.dispatch(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: "do work",
+        workspaceContextStr: "CTX",
+        noteIds: ["note-1"],
+      }),
+    );
+    await flush();
+    await flush();
+
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "CTX\n\ndo work",
+      options: { noteIds: ["note-1"] },
+    });
+  });
+
+  it("#941: agentSessionRetryLastMessageRequested resends the recorded message through the lifecycle send without re-prefixing", async () => {
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "CTX\n\nedited text",
+        options: { noteIds: ["note-1"] },
+      }),
+    );
+
+    const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [agentIdArg, contentArg, workspaceArg, optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { noteIds?: string[] },
+    ];
+    expect(agentIdArg).toBe(AGENT);
+    // The recorded text already carries the context prefix — resent verbatim.
+    expect(contentArg).toBe("CTX\n\nedited text");
+    expect(workspaceArg.id).toBe(WS);
+    expect(optionsArg.noteIds).toEqual(["note-1"]);
+  });
+
+  it("#941: retry with no recorded lastAttemptedMessage resolves as a no-op with user feedback", async () => {
+    const { toast } = await import("svelte-sonner");
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, null));
+
+    const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+    await flush();
+
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).not.toHaveBeenCalled();
+    expect(toast.info).toHaveBeenCalledTimes(1);
   });
 });
