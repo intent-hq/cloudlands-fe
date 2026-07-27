@@ -175,6 +175,11 @@ export const selectEffectiveModel = store.createSelector((state, specialistId: s
         return '';
     // Wave 2: File specialists already have the correct model baked in.
     // No need to check userOverrides — they're deprecated.
+    // Explicit model wins over tier resolution, mirroring the daemon's
+    // model-first precedence (resolve_model, PROTOCOL §5.11).
+    if (specialist.defaultModel) {
+        return specialist.defaultModel;
+    }
     // Resolve the model tier to an actual model ID for the active provider
     if (specialist.defaultModelTier) {
         const providerId = selectEffectiveCodingAgent.select(state, specialistId);
