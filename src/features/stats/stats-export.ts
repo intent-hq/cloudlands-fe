@@ -11,7 +11,7 @@ import { toPng } from 'html-to-image';
 import type { StatsMode } from './stats-period';
 
 /** Card identifiers used in export filenames (match `data-stats-card`). */
-export type StatsCardName = 'passport' | 'models' | 'by-hour' | 'by-month';
+export type StatsCardName = 'passport' | 'models' | 'providers' | 'by-hour' | 'by-month';
 
 /** Export dimensions from the design reference: 360×640 at 3× = 1080×1920. */
 export const EXPORT_OPTIONS = { pixelRatio: 3, width: 360, height: 640 } as const;
