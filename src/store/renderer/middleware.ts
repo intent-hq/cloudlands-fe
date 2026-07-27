@@ -50,6 +50,7 @@ import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-st
 import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
 import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
 import { createDirectoryPickerReadMiddleware } from "$features/onboarding/directory-picker-read-service";
+import { createLegacyImportMiddleware } from "$features/settings/legacy-import-service";
 import { createStatsReadMiddleware } from "$features/stats/stats-read-service";
 import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
 import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
@@ -318,6 +319,9 @@ function buildMiddleware(): StoreMiddleware[] {
     // to the `directoryPicker` slice — keeping `backendRequest` out of the Svelte
     // component (per the `intent/no-component-async-data-fetch` rule).
     createDirectoryPickerReadMiddleware(),
+    // Route Settings legacy-import requests through the client service and
+    // reflect the asynchronous result in the legacyImport slice.
+    createLegacyImportMiddleware(),
     // Give the usage-stats overlay a real read handler so
     // `loadUsageStatsRequested` fetches via `stats.getUsage` and dispatches the
     // result back to the `stats` slice — keeping the wire call out of the
