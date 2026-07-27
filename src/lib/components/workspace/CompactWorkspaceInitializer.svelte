@@ -1086,15 +1086,23 @@
     return () => clearInterval(interval);
   });
 
+  // Generation counter guarding the remote-URL probe against out-of-order
+  // async responses after rapid repo switches
+  let remoteUrlProbeGeneration = 0;
+
   // Fetch remote URL when local repo path changes
   $effect(() => {
     const path = repoPath;
     const type = repoType;
+    const generation = ++remoteUrlProbeGeneration;
+
+    // Clear synchronously so a repo switch never briefly shows the previous
+    // repo's detected owner/repo
+    detectedGitHubOwner = null;
+    detectedGitHubRepo = null;
 
     // Only fetch for local repos with valid paths
     if (type !== 'local' || !path || (!path.startsWith('/') && !path.startsWith('~'))) {
-      detectedGitHubOwner = null;
-      detectedGitHubRepo = null;
       return;
     }
 
@@ -1107,6 +1115,10 @@
               repoPath: path,
             })
             : undefined;
+        // Drop stale responses: the repo changed while this probe was in flight
+        if (generation !== remoteUrlProbeGeneration) {
+          return;
+        }
         if (response?.success && response.data?.owner && response.data?.repo) {
           detectedGitHubOwner = response.data.owner;
           detectedGitHubRepo = response.data.repo;
@@ -1115,14 +1127,9 @@
             owner: response.data.owner,
             repo: response.data.repo,
           });
-        } else {
-          detectedGitHubOwner = null;
-          detectedGitHubRepo = null;
         }
       } catch (err) {
         logger.debug('Failed to get remote URL for repo', { path, error: err });
-        detectedGitHubOwner = null;
-        detectedGitHubRepo = null;
       }
     })();
   });
