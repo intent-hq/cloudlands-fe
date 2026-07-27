@@ -2650,6 +2650,8 @@
                 {skipIsolation}
                 {isNewRepo}
                 {remoteSetup}
+                {detectedGitHubOwner}
+                {detectedGitHubRepo}
                 suggestedBranch={selectedPRBranch}
                 onRepoChange={handleRepoChange}
                 onBranchChange={handleBranchChange}
