@@ -68,7 +68,9 @@ import {
   XCODE_CHANNELS,
 } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
+import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
+import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 
 // ESM-compatible __dirname
@@ -2301,6 +2303,37 @@ export function setupSystemIPC() {
         error: error instanceof Error ? error.message : String(error),
       });
       return { success: true, data: { available: false } };
+    }
+  });
+
+  // Check Node.js availability + minimum version — delegated to the daemon
+  // host (host.findBinary best-effort version-probes the resolved binary) so
+  // detection matches the runtime agents actually use. Mirrors CHECK_GIT: a
+  // missing binary or failed probe folds to available:false, never an error.
+  ipcMain.handle(SYSTEM_CHANNELS.CHECK_NODE, async () => {
+    try {
+      const result = await getBackendClient().request<{ available: boolean; version?: string }>(
+        'host.findBinary',
+        { name: 'node' },
+      );
+      if (result?.available !== true) {
+        return { success: true, data: { available: false, versionOk: false } };
+      }
+      const version =
+        typeof result.version === 'string' ? result.version.trim().replace(/^v/, '') : undefined;
+      return {
+        success: true,
+        data: {
+          available: true,
+          version,
+          versionOk: version ? meetsMinimumVersion(version, MINIMUM_NODE_VERSION) : false,
+        },
+      };
+    } catch (error) {
+      logger.warn('host.findBinary node failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { success: true, data: { available: false, versionOk: false } };
     }
   });
 

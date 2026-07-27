@@ -28,6 +28,7 @@ import { createBackgroundAgentSettingsPersistenceMiddleware } from "$features/se
 import { createModelReloadMiddleware } from "$features/settings/model-reload-service";
 import { createProviderSettingsPersistenceMiddleware } from "$features/settings/provider-settings-persistence-service";
 import { createProviderAvailabilityCheckMiddleware } from "$features/providers/provider-availability-check-service";
+import { createHostRequirementsCheckMiddleware } from "$features/system/host-requirements-check-service";
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
@@ -204,6 +205,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // installed / not-installed / error state (and `hasCheckedOnce` flips)
     // instead of spinning on "Checking…" forever.
     createProviderAvailabilityCheckMiddleware(),
+    // Give the host-requirements triggers (`ensureHostRequirementsChecked`,
+    // `checkHostRequirementsRequested`) a real handler so the git + node
+    // probes (system:check-git / system:check-node → daemon host.*) land the
+    // hostRequirements slice in a terminal state for the onboarding gate —
+    // failures fold to not-available, never stuck on "checking".
+    createHostRequirementsCheckMiddleware(),
     // Give the (post-saga) `agentStreamUpdateReceived` action a real consumer
     // so a streaming agent's text/tool blocks grow live in the chat panel
     // (placeholder on first event, in-place block update on subsequent events,

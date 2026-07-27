@@ -287,6 +287,7 @@ export const IPC_CHANNELS = {
     EXECUTE_COMMAND: 'system:execute-command',
     EXECUTE_COMMAND_STREAMING: 'system:execute-command-streaming',
     CHECK_GIT: 'system:check-git',
+    CHECK_NODE: 'system:check-node',
     CHECK_RTK: 'system:check-rtk',
     LIST_FONTS: 'system:list-fonts',
   },

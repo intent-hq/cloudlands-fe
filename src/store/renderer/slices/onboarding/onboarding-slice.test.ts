@@ -1,9 +1,10 @@
 /**
  * Onboarding reducer tests — step ordering and advance logic.
  *
- * The GitHub device-token step sits between agent-CLI selection ('welcome')
- * and project selection ('project'); `nextStep` must walk the full order and
- * `goToStep` must accept every step including 'github'.
+ * The 'requirements' gate precedes 'welcome', and the GitHub device-token
+ * step sits between agent-CLI selection ('welcome') and project selection
+ * ('project'); `nextStep` must walk the full order and `goToStep` must
+ * accept every step including 'github'.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -17,12 +18,19 @@ import {
 import { STEP_ORDER, type OnboardingStep } from './onboarding-types';
 
 describe('onboarding step ordering', () => {
-  it('places the github step between welcome and project', () => {
-    expect(STEP_ORDER).toEqual(['welcome', 'github', 'project', 'configuring', 'ready']);
+  it('places requirements before welcome and github between welcome and project', () => {
+    expect(STEP_ORDER).toEqual([
+      'requirements',
+      'welcome',
+      'github',
+      'project',
+      'configuring',
+      'ready',
+    ]);
   });
 
-  it('starts at welcome', () => {
-    expect(initialState.step).toBe('welcome');
+  it('starts at requirements', () => {
+    expect(initialState.step).toBe('requirements');
   });
 
   it('nextStep advances through every step in order and stops at the last', () => {
@@ -39,6 +47,11 @@ describe('onboarding step ordering', () => {
     expect(after.step).toBe('ready');
   });
 
+  it('goToStep advances from requirements to welcome', () => {
+    const state = onboardingReducer(initialState, goToStep('welcome'));
+    expect(state.step).toBe('welcome');
+  });
+
   it('goToStep jumps directly to the github step', () => {
     const state = onboardingReducer(initialState, goToStep('github'));
     expect(state.step).toBe('github');
@@ -51,8 +64,8 @@ describe('onboarding step ordering', () => {
     expect(skipped.step).toBe('project');
   });
 
-  it('resetOnboarding returns to welcome', () => {
+  it('resetOnboarding returns to requirements', () => {
     const onGitHub = onboardingReducer(initialState, goToStep('github'));
-    expect(onboardingReducer(onGitHub, resetOnboarding()).step).toBe('welcome');
+    expect(onboardingReducer(onGitHub, resetOnboarding()).step).toBe('requirements');
   });
 });

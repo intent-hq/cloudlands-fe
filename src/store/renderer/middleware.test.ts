@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => {
   const providerSettingsPersistenceMiddleware = createPassthroughMiddleware();
   const modelReloadMiddleware = createPassthroughMiddleware();
   const providerAvailabilityCheckMiddleware = createPassthroughMiddleware();
+  const hostRequirementsCheckMiddleware = createPassthroughMiddleware();
   const agentStreamMiddleware = createPassthroughMiddleware();
   const agentCreationMiddleware = createPassthroughMiddleware();
   const agentMutationMiddleware = createPassthroughMiddleware();
@@ -98,6 +99,7 @@ const mocks = vi.hoisted(() => {
     createProviderSettingsPersistenceMiddleware: vi.fn(() => providerSettingsPersistenceMiddleware),
     createModelReloadMiddleware: vi.fn(() => modelReloadMiddleware),
     createProviderAvailabilityCheckMiddleware: vi.fn(() => providerAvailabilityCheckMiddleware),
+    createHostRequirementsCheckMiddleware: vi.fn(() => hostRequirementsCheckMiddleware),
     createAgentStreamMiddleware: vi.fn(() => agentStreamMiddleware),
     createAgentCreationMiddleware: vi.fn(() => agentCreationMiddleware),
     createAgentMutationMiddleware: vi.fn(() => agentMutationMiddleware),
@@ -171,6 +173,7 @@ const mocks = vi.hoisted(() => {
     providerSettingsPersistenceMiddleware,
     modelReloadMiddleware,
     providerAvailabilityCheckMiddleware,
+    hostRequirementsCheckMiddleware,
     agentStreamMiddleware,
     agentCreationMiddleware,
     agentMutationMiddleware,
@@ -260,6 +263,9 @@ vi.mock("$features/settings/model-reload-service", () => ({
 }));
 vi.mock("$features/providers/provider-availability-check-service", () => ({
   createProviderAvailabilityCheckMiddleware: mocks.createProviderAvailabilityCheckMiddleware,
+}));
+vi.mock("$features/system/host-requirements-check-service", () => ({
+  createHostRequirementsCheckMiddleware: mocks.createHostRequirementsCheckMiddleware,
 }));
 vi.mock("$features/agent/agent-stream-service", () => ({
   createAgentStreamMiddleware: mocks.createAgentStreamMiddleware,
@@ -464,6 +470,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
+      mocks.hostRequirementsCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -538,6 +545,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
+      mocks.hostRequirementsCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -612,6 +620,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
+      mocks.hostRequirementsCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -687,6 +696,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
+      mocks.hostRequirementsCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -779,6 +789,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
+      mocks.hostRequirementsCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
