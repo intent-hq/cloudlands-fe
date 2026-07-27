@@ -572,14 +572,6 @@
 
       <!-- General Tab -->
       {#if activeTab === 'general'}
-        <!-- Data -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Data
-          </h2>
-          <LegacyImportSettings />
-        </div>
-
         <!-- Updates -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
@@ -638,6 +630,14 @@
               </div>
             </section>
           </div>
+        </div>
+
+        <!-- Data -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Data
+          </h2>
+          <LegacyImportSettings />
         </div>
 
         <!-- Developer Section (only in dev mode) -->
