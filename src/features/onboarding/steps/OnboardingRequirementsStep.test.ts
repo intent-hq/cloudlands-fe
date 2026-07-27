@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 
 import type { HostRequirementsState } from '$store/renderer/slices/host-requirements/host-requirements-types';
+import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -102,7 +103,10 @@ describe('OnboardingRequirementsStep', () => {
 
     const nodeCard = container.querySelector('[data-testid="requirement-node"]');
     expect(nodeCard).toBeTruthy();
-    expect(nodeCard!.textContent).toContain('22.0.0+');
+    // Major-only display form derived from MINIMUM_NODE_VERSION ("22+"),
+    // never the full "22.0.0+" string.
+    expect(nodeCard!.textContent).toContain(`Node.js ${MINIMUM_NODE_VERSION.split('.')[0]}+`);
+    expect(nodeCard!.textContent).not.toContain(`${MINIMUM_NODE_VERSION}+`);
     await waitFor(() => expect(nodeCard!.textContent).toContain('brew install node'));
   });
 
@@ -113,6 +117,7 @@ describe('OnboardingRequirementsStep', () => {
     };
     const { container } = render(OnboardingRequirementsStep);
     const nodeCard = container.querySelector('[data-testid="requirement-node"]');
+    expect(nodeCard!.textContent).toContain(`Node.js ${MINIMUM_NODE_VERSION.split('.')[0]}+`);
     expect(nodeCard!.textContent).toContain('You have 18.19.0 installed');
   });
 

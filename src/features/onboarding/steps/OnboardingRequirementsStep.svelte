@@ -48,6 +48,10 @@
   const hasCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
   const daemonStats$ = selectDaemonHealthStats();
 
+  // Major-only display form of the node minimum ("22"), derived from
+  // MINIMUM_NODE_VERSION (auggie.ipc idiom) — never hardcoded.
+  const minimumNodeMajor = MINIMUM_NODE_VERSION.split('.')[0];
+
   // Daemon-host OS (`system.status` host.os, PROTOCOL §5.7) mirrored into the
   // daemon-health stats by its polling service. `null` (no poll landed yet /
   // older intentd) folds to generic docs-link-only guidance.
@@ -230,9 +234,9 @@
           {#if !$node$.ok}
             <p class="text-sm text-muted-foreground">
               {#if $node$.version}
-                Node.js {MINIMUM_NODE_VERSION}+ is required. You have {$node$.version} installed.
+                Node.js {minimumNodeMajor}+ is required. You have {$node$.version} installed.
               {:else}
-                Node.js {MINIMUM_NODE_VERSION}+ is required, but it wasn't found.
+                Node.js {minimumNodeMajor}+ is required, but it wasn't found.
               {/if}
             </p>
           {/if}
