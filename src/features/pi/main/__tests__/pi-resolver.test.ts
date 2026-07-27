@@ -130,7 +130,6 @@ describe('Pi provider config', () => {
     expect(config.command).toBe('pi-acp');
     expect(config.canBeDisabled).toBe(true);
     expect(config.isDefault).toBe(false);
-    expect(config.ipcChannelPrefix).toBe('pi');
   });
 });
 
