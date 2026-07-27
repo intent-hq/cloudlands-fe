@@ -434,6 +434,61 @@ describe('SimpleRichInput provider switch sync', () => {
     expect(setModelMock).not.toHaveBeenCalled();
     expect(onmodelChange).not.toHaveBeenCalled();
     expect(mockReduxDispatch).not.toHaveBeenCalled();
+    // Revert-before-send leaves no trace: the picker still shows the
+    // original model, exactly as if the switch was never attempted.
+    expect(screen.getByTestId('model-picker-model').textContent).toBe('gpt5.4');
+  });
+
+  it('same-provider switch shows the model-only dialog and applies without the provider flow', async () => {
+    const onmodelChange = vi.fn();
+    const workspace = {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any;
+
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        workspace,
+        agentId: 'agent-1',
+        selectedModel: 'gpt5.4',
+        providerId: 'auggie',
+        requiresModelSwitchConfirmation: true,
+        onmodelChange,
+      },
+    });
+
+    const triggerInput = screen.getByTestId('model-picker-trigger-input');
+    const triggerButton = screen.getByTestId('model-picker-trigger');
+
+    // Same-provider switch (auggie → auggie) → the milder model-only dialog
+    fireEvent.input(triggerInput, { target: { value: 'auggie:sonnet4.5' } });
+    await fireEvent.click(triggerButton);
+
+    const dialog = await waitFor(() => {
+      const el = document.body.querySelector('[role="dialog"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(dialog.textContent).toContain('Switch model mid-conversation?');
+    expect(dialog.textContent).not.toContain('Switch provider mid-conversation?');
+
+    const confirmButton = Array.from(dialog.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Switch model',
+    );
+    expect(confirmButton).toBeTruthy();
+    await fireEvent.click(confirmButton!);
+
+    await waitFor(() => {
+      expect(onmodelChange).toHaveBeenCalledWith('auggie:sonnet4.5');
+    });
+    // Same provider — no cross-provider switch flow, no setModel wire call here
+    // (the real ModelPicker dispatches the model update itself).
+    expect(setModelMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('model-picker-model').textContent).toBe('auggie:sonnet4.5');
   });
 
   it('does not show the dialog before the conversation has started', async () => {

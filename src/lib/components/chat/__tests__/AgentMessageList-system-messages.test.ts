@@ -198,6 +198,29 @@ describe('AgentMessageList - System Messages', () => {
     expect(screen.getByText(/Switched from .*default model.* to .*gpt-5-codex/)).toBeTruthy();
   });
 
+  it('renders no model-change notice when the transcript has no model_changed row', () => {
+    // A reverted-before-send switch persists nothing, so an ordinary
+    // transcript must contain no status divider.
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'Hello' }],
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: 'msg-2',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'Response' }],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('falls back to the message text when model_changed metadata fields are missing', () => {
     const messages: AgentMessage[] = [
       {
