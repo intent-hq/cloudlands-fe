@@ -460,6 +460,77 @@ describe('Specialist Configuration', () => {
       expect(resolved?.model).toBe(getDefaultModelForProvider('auggie', 'smart'));
     });
 
+    // Regression (monorepo#944): model-first precedence — an explicit model in
+    // the file wins even when modelTier is also declared; tier-only files still
+    // resolve via provider-aware tier resolution.
+    it('resolves to the explicit model when a file declares BOTH model and modelTier', async () => {
+      const dir = await ensureSpecialistsDirectory();
+      const content = [
+        '---',
+        'name: "Both Fields"',
+        'description: "Declares both model and modelTier"',
+        'codingAgent: "auggie"',
+        'model: "sonnet4.5"',
+        'modelTier: "smart"',
+        '---',
+        '',
+        'Behavior prompt.',
+      ].join('\n');
+      await fs.writeFile(path.join(dir, 'both-fields.md'), content, 'utf-8');
+      await refreshSpecialistsFromFiles();
+
+      const resolved = resolveSpecialistForAgent('both-fields', 'auggie');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.model).toBe('sonnet4.5');
+      expect(resolved?.model).not.toBe(getDefaultModelForProvider('auggie', 'smart'));
+      // The declared tier is still surfaced on the output field
+      expect(resolved?.modelTier).toBe('smart');
+    });
+
+    it('still tier-resolves when a file declares only modelTier', async () => {
+      await writeSpecialistFile({
+        id: 'tier-only',
+        name: 'Tier Only',
+        description: 'Declares only modelTier',
+        codingAgent: 'auggie',
+        modelTier: 'fast',
+        behaviorPrompt: 'Behavior prompt.',
+      });
+      await refreshSpecialistsFromFiles();
+
+      const resolved = resolveSpecialistForAgent('tier-only', 'auggie');
+
+      expect(resolved).not.toBeNull();
+      expect(resolved?.model).toBe(getDefaultModelForProvider('auggie', 'fast'));
+      expect(resolved?.modelTier).toBe('fast');
+    });
+
+    it('getAllEffectiveSpecialists keeps the explicit model when both fields are declared', async () => {
+      const dir = await ensureSpecialistsDirectory();
+      const content = [
+        '---',
+        'name: "Both Fields List"',
+        'description: "Declares both model and modelTier"',
+        'codingAgent: "auggie"',
+        'model: "sonnet4.5"',
+        'modelTier: "smart"',
+        '---',
+        '',
+        'Behavior prompt.',
+      ].join('\n');
+      await fs.writeFile(path.join(dir, 'both-fields-list.md'), content, 'utf-8');
+      await refreshSpecialistsFromFiles();
+
+      const mod = await import('../../src/features/agent/main/specialists.service');
+      const all = mod.getAllEffectiveSpecialists('auggie');
+      const found = all.find((s) => s.id === 'both-fields-list');
+
+      expect(found).toBeDefined();
+      expect(found?.model).toBe('sonnet4.5');
+      expect(found?.modelTier).toBe('smart');
+    });
+
     it('resolves file-based specialist overrides correctly', async () => {
       // Write a user file that overrides the bundled implementor specialist
       await ensureSpecialistsDirectory();
