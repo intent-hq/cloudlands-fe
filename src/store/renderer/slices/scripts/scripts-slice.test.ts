@@ -4,7 +4,8 @@ import {
   it,
 } from 'vitest';
 import {
-  MAX_OUTPUT_LINES,
+  MAX_OUTPUT_CHARS,
+  MAX_OUTPUT_CHUNKS,
   appendScriptOutput,
   disposeScripts,
   emptyWorkspaceState,
@@ -16,7 +17,7 @@ import {
   upsertScript,
 } from './scripts-slice';
 import type {
-  ScriptOutputLine,
+  ScriptOutputChunk,
   ScriptRuntimeState,
   ScriptWithState,
   WorkspaceScript,
@@ -61,11 +62,10 @@ function makeScriptEntry(
   return { ...makeScript(overrides), runtime };
 }
 
-function makeLine(index: number): ScriptOutputLine {
+function makeChunk(index: number, text = `chunk ${index}\n`): ScriptOutputChunk {
   return {
-    text: `line ${index}`,
-    stream: 'stdout',
-    timestamp: `2026-01-01T00:00:${String(index).padStart(2, '0')}.000Z`,
+    text,
+    timestamp: `2026-01-01T00:00:${String(index % 60).padStart(2, '0')}.000Z`,
   };
 }
 
@@ -153,7 +153,7 @@ describe('scriptsReducer', () => {
       undefined,
       setScriptsData(WS, [makeScriptEntry({ id: 'script-1' })]),
     );
-    state = scriptsReducer(state, setScriptOutput(WS, 'script-1', [makeLine(1)]));
+    state = scriptsReducer(state, setScriptOutput(WS, 'script-1', [makeChunk(1)]));
 
     state = scriptsReducer(state, removeScript(WS, 'script-1'));
 
@@ -161,17 +161,47 @@ describe('scriptsReducer', () => {
     expect(state.byWorkspaceId[WS].outputBuffers['script-1']).toBeUndefined();
   });
 
-  it('sets and appends output buffers with max line trimming', () => {
+  it('appends raw chunks verbatim — no line splitting, no injected newlines', () => {
     let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
-    state = scriptsReducer(state, setScriptOutput(WS, 'script-1', [makeLine(1)]));
-
-    const manyLines = Array.from({ length: MAX_OUTPUT_LINES + 1 }, (_, index) =>
-      makeLine(index + 2),
+    state = scriptsReducer(
+      state,
+      appendScriptOutput(WS, 'script-1', makeChunk(1, 'partial line, no newl')),
     );
-    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', manyLines));
+    state = scriptsReducer(
+      state,
+      appendScriptOutput(WS, 'script-1', makeChunk(2, 'ine\r\nnext\r')),
+    );
 
-    expect(state.byWorkspaceId[WS].outputBuffers['script-1']).toHaveLength(MAX_OUTPUT_LINES);
-    expect(state.byWorkspaceId[WS].outputBuffers['script-1'][0].text).toBe('line 3');
+    const buffer = state.byWorkspaceId[WS].outputBuffers['script-1'];
+    expect(buffer.chunks.map((c) => c.text)).toEqual(['partial line, no newl', 'ine\r\nnext\r']);
+    expect(buffer.dropped).toBe(0);
+    expect(buffer.chunks.map((c) => c.text).join('')).toBe('partial line, no newline\r\nnext\r');
+  });
+
+  it('evicts oldest chunks past the chunk cap and counts them as dropped', () => {
+    let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
+    state = scriptsReducer(state, setScriptOutput(WS, 'script-1', [makeChunk(1)]));
+
+    for (let i = 0; i < MAX_OUTPUT_CHUNKS + 1; i++) {
+      state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(i + 2)));
+    }
+
+    const buffer = state.byWorkspaceId[WS].outputBuffers['script-1'];
+    expect(buffer.chunks).toHaveLength(MAX_OUTPUT_CHUNKS);
+    expect(buffer.dropped).toBe(2);
+    expect(buffer.chunks[0].text).toBe('chunk 3\n');
+  });
+
+  it('evicts oldest chunks past the char cap but always keeps the newest chunk', () => {
+    const big = 'x'.repeat(MAX_OUTPUT_CHARS);
+    let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
+    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(1, big)));
+    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(2, big)));
+
+    const buffer = state.byWorkspaceId[WS].outputBuffers['script-1'];
+    expect(buffer.chunks).toHaveLength(1);
+    expect(buffer.dropped).toBe(1);
+    expect(buffer.chunks[0].timestamp).toBe(makeChunk(2).timestamp);
   });
 
   it('disposes workspace scripts state', () => {
