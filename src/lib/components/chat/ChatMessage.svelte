@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import {
     faFile,
     faCodeCompare,
@@ -15,6 +16,8 @@
   import { extractAllContent } from '$shared/types';
   import RulesInspector from './RulesInspector.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
+  import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import { getModelChangeNotice } from './model-change-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { slide } from 'svelte/transition';
   import type { ContextItem } from './input/context-api';
@@ -199,6 +202,9 @@
         : (String(message.role).toLowerCase() as 'user' | 'assistant' | 'system')
       : 'assistant',
   );
+
+  // Daemon-persisted model-change transcript row (metadata type "model_changed")
+  let modelChangeNotice = $derived(getModelChangeNotice(message));
 
   let shouldShowStoppedIndicator = $derived.by(() => {
     return resolveShouldShowStoppedIndicator({
@@ -910,6 +916,9 @@
 {#if !message}
   <!-- Guard against null message prop -->
   <div class="text-subtle text-sm p-2">Loading...</div>
+{:else if modelChangeNotice}
+  <!-- Daemon-persisted model-change notice row - centered inline divider -->
+  <ModelChangeNotice notice={modelChangeNotice} fallbackText={extractAllContent(message)} />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div

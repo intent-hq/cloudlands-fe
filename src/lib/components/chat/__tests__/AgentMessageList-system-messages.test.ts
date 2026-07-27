@@ -141,4 +141,48 @@ describe('AgentMessageList - System Messages', () => {
     // extractAllContent should combine both text blocks
     expect(screen.getByText(/Part 1\. Part 2\./i)).toBeTruthy();
   });
+
+  it('renders a model_changed system message as a centered model-change notice', () => {
+    // Daemon-persisted notice row shape (metadata { type: "model_changed", ... });
+    // see the intentd model-change transcript notice work.
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: 'Switched from sonnet4.6 to gpt-5-codex' }],
+        timestamp: new Date().toISOString(),
+        metadata: {
+          type: 'model_changed',
+          from: 'sonnet4.6',
+          to: 'gpt-5-codex',
+          fromProvider: 'auggie',
+          toProvider: 'codex',
+        },
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    // Rendered as a status divider, not an interruption alert
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText(/Switched from .*sonnet4\.6.* to .*gpt-5-codex/)).toBeTruthy();
+  });
+
+  it('falls back to the message text when model_changed metadata fields are missing', () => {
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: 'Model changed to gpt-5-codex' }],
+        timestamp: new Date().toISOString(),
+        metadata: { type: 'model_changed' },
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.getByText(/Model changed to gpt-5-codex/)).toBeTruthy();
+  });
 });

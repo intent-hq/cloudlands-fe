@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import {
   tick,
   untrack,
@@ -99,6 +100,16 @@
   interface Props {
     selectedModel?: string | null;
     onModelChange?: (model: string) => void;
+    /**
+     * Optional go/no-go gate invoked before a user-picked model change is
+     * applied. Called with the current and target model ids when they differ;
+     * returning (or resolving) false reverts the dropdown selection and skips
+     * the change entirely. Auto-fallback selections bypass this gate.
+     */
+    confirmModelChange?: (
+      from: string | null | undefined,
+      to: string,
+    ) => boolean | Promise<boolean>;
     providerId?: string;
     isCompact?: boolean;
     isLocked?: boolean;
@@ -125,6 +136,7 @@
   let {
     selectedModel,
     onModelChange = () => {},
+    confirmModelChange,
     providerId,
     isCompact = false,
     isLocked = false,
@@ -704,8 +716,13 @@
     }),
   );
 
-  // The value to bind to the dropdown (convert undefined to USE_DEFAULT_VALUE)
-  const dropdownValue = $derived(localModel ?? USE_DEFAULT_VALUE);
+  // The value bound to the dropdown (convert undefined to USE_DEFAULT_VALUE).
+  // Bound state rather than derived so a rejected confirmModelChange can
+  // revert the dropdown's internal selection back to the current model.
+  let dropdownValue = $state(untrack(() => localModel ?? USE_DEFAULT_VALUE));
+  $effect(() => {
+    dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+  });
 
   // Display groups — same as groupedModelOptions but with collapsed groups' options hidden
   const displayGroups = $derived(
@@ -960,8 +977,22 @@
     clearFallbackInfo();
   }
 
-  function handleModelChange(value: string | string[]) {
+  async function handleModelChange(value: string | string[]) {
     const modelValue = value as string;
+    // Gate user-picked changes to a *different* model behind the optional
+    // confirmation callback (mid-conversation switch warning). Re-selecting
+    // the current model or picking "Default model" is never gated.
+    const isActualChange =
+      modelValue !== USE_DEFAULT_VALUE &&
+      (!localModel || normalizeModelIdForMatch(modelValue) !== normalizeModelIdForMatch(localModel));
+    if (isActualChange && confirmModelChange) {
+      const confirmed = await confirmModelChange(localModel, modelValue);
+      if (!confirmed) {
+        // Revert the dropdown's internal selection back to the current model.
+        dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+        return;
+      }
+    }
     // User explicitly selected a model in the dropdown — clear any fallback warning
     clearFallbackInfo();
     // Convert USE_DEFAULT_VALUE back to undefined
@@ -1021,7 +1052,7 @@
   {/snippet}
 
   <Dropdown
-    value={dropdownValue}
+    bind:value={dropdownValue}
     defaultHighlightValue={defaultModelId}
     bind:open={dropdownOpen}
     groups={displayGroups}

@@ -3,6 +3,8 @@
   import ChatMessage from './ChatMessage.svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
+  import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import { getModelChangeNotice } from './model-change-notice';
   import { fade } from 'svelte/transition';
 
   interface Props {
@@ -118,8 +120,14 @@
           {/if}
         </div>
       {:else if message.role === 'system'}
-        <!-- System message - render as interruption notice banner -->
-        <InterruptionNotice message={extractAllContent(message)} />
+        {@const modelChangeNotice = getModelChangeNotice(message)}
+        {#if modelChangeNotice}
+          <!-- Daemon-persisted model-change notice - centered inline divider -->
+          <ModelChangeNotice notice={modelChangeNotice} fallbackText={extractAllContent(message)} />
+        {:else}
+          <!-- System message - render as interruption notice banner -->
+          <InterruptionNotice message={extractAllContent(message)} />
+        {/if}
       {/if}
     </div>
   {/each}

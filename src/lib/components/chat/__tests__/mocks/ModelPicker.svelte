@@ -6,6 +6,9 @@
   export let showLockIconWhenLocked: boolean = true;
   export let deferUpdate: boolean = false;
   export let onModelChange: ((model: string) => void) | undefined = undefined;
+  export let confirmModelChange:
+    | ((from: string | null | undefined, to: string) => boolean | Promise<boolean>)
+    | undefined = undefined;
   export let workspaceId: string | undefined = undefined;
   export let agentId: string | undefined = undefined;
   export let portal: boolean = false;
@@ -17,11 +20,14 @@
   export function clearFallbackWarning() {}
   export function clearPendingUpdate() {}
 
-  function handleTriggerModelChange() {
+  async function handleTriggerModelChange() {
     const input = document.querySelector('[data-testid="model-picker-trigger-input"]') as HTMLInputElement;
-    if (input && onModelChange) {
-      onModelChange(input.value);
+    if (!input || !onModelChange) return;
+    if (confirmModelChange) {
+      const confirmed = await confirmModelChange(selectedModel, input.value);
+      if (!confirmed) return;
     }
+    onModelChange(input.value);
   }
 </script>
 

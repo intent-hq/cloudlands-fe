@@ -193,6 +193,8 @@
   import { getAgentProvider } from '$shared/types/agent-session';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
+  import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import { getModelChangeNotice } from './model-change-notice';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
   shouldShowEndOfListStreamingStatus,
@@ -1291,7 +1293,8 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Provider/model lock — prevents changing provider or model after any message
+  // Once the conversation has started, provider/model switches require a
+  // confirmation dialog (mid-conversation switch warning) instead of a lock.
   let canChangeProvider = $derived(
     resolveCanChangeAgentProvider({
       session: $agentSession$ ?? null,
@@ -1417,6 +1420,8 @@
   interface ConversationTurn {
     userMessage: AgentMessage | null;
     assistantMessages: AgentMessage[];
+    /** Daemon-persisted model-change notice rows (after the user row, before assistant output) */
+    noticeMessages: AgentMessage[];
   }
 
   function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
@@ -1429,13 +1434,21 @@
         if (currentTurn) {
           turns.push(currentTurn);
         }
-        currentTurn = { userMessage: message, assistantMessages: [] };
+        currentTurn = { userMessage: message, assistantMessages: [], noticeMessages: [] };
       } else if (message.role === 'assistant') {
         if (currentTurn) {
           currentTurn.assistantMessages.push(message);
         } else {
           // Orphan assistant message (no preceding user message)
-          turns.push({ userMessage: null, assistantMessages: [message] });
+          turns.push({ userMessage: null, assistantMessages: [message], noticeMessages: [] });
+        }
+      } else if (getModelChangeNotice(message)) {
+        // Model-change transcript notice (non-user/non-assistant role) —
+        // rendered inline within its turn as a centered divider
+        if (currentTurn) {
+          currentTurn.noticeMessages.push(message);
+        } else {
+          turns.push({ userMessage: null, assistantMessages: [], noticeMessages: [message] });
         }
       }
     }
@@ -3461,6 +3474,19 @@
                         </div>
                       {/if}
 
+                      <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
+                      {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
+                        {@const notice = getModelChangeNotice(noticeMessage)}
+                        {#if notice}
+                          <div data-message-id={noticeMessage.id} class="px-2">
+                            <ModelChangeNotice
+                              {notice}
+                              fallbackText={extractAllContent(noticeMessage)}
+                            />
+                          </div>
+                        {/if}
+                      {/each}
+
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
                       {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ }, )}
                         <div class="mb-8">
@@ -3740,7 +3766,7 @@
         selectedModel={hydratedInputModel}
         compactMode={isCompactMode}
         editorClassName={isChiefWorkspace ? 'px-1.5!' : 'px-2!'}
-        isProviderChangeLocked={!canChangeProvider}
+        requiresModelSwitchConfirmation={!canChangeProvider}
         providerId={inputProviderId}
       />
     {/if}
