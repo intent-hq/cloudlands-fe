@@ -19,10 +19,16 @@
   let autoFetch = $state(false);
   let autoCommit = $state(true);
   let cowIsolation = $state(false);
+  let exposeGitCredential = $state(true);
   let defaultShell = $state('auto');
   let branchPrefix = $state('');
   let branchPrefixError = $state('');
   let settingsError = $state('');
+
+  // The git-credential toggle is only shown when the daemon reports the
+  // setting (older daemons don't have it); we also never write the path back
+  // to a daemon that didn't report it.
+  let gitCredentialSettingSupported = $state(false);
 
   // CoW toggle is visible only when the machine supports it — a direct probe
   // of the workspaces root via `system.capabilities` (PROTOCOL §5.7), with no
@@ -39,6 +45,7 @@
     autoCommit: 'git.autoCommit',
     cowIsolation: 'workspace.cowIsolation',
     branchPrefix: 'workspace.branchPrefix',
+    exposeGitCredential: 'sourceControl.github.exposeGitCredentialToChildren',
   } as const;
 
   // Last-loaded/saved value per daemon path so saves only send changed
@@ -90,6 +97,9 @@
       [SETTING_PATHS.autoCommit]: autoCommit,
       [SETTING_PATHS.cowIsolation]: cowIsolation,
       [SETTING_PATHS.branchPrefix]: branchPrefix,
+      ...(gitCredentialSettingSupported
+        ? { [SETTING_PATHS.exposeGitCredential]: exposeGitCredential }
+        : {}),
     };
   }
 
@@ -108,6 +118,10 @@
     autoCommit = byPath.get(SETTING_PATHS.autoCommit) !== false;
     cowIsolation = byPath.get(SETTING_PATHS.cowIsolation) === true;
     branchPrefix = stringValue(byPath.get(SETTING_PATHS.branchPrefix));
+    gitCredentialSettingSupported = byPath.has(SETTING_PATHS.exposeGitCredential);
+    // Security-sensitive: only an explicit boolean `true` counts as enabled, so
+    // malformed/unexpected values fail safe to off.
+    exposeGitCredential = byPath.get(SETTING_PATHS.exposeGitCredential) === true;
     loadedValues = currentValues();
   }
 
@@ -153,6 +167,7 @@
     sshKeyPath = '';
     autoFetch = false;
     autoCommit = true;
+    exposeGitCredential = true;
     defaultShell = 'auto';
     branchPrefix = '';
     branchPrefixError = '';
@@ -294,6 +309,20 @@
           />
           <span>Use Copy-on-Write isolation</span>
           <span class="text-subtle hover:text-foreground transition-colors" title="CoW workspaces + per-agent sandboxes. New workspaces are provisioned as instant copy-on-write clones of the repository, and each delegated agent runs in its own CoW sandbox whose changes are merged back automatically when it finishes. Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).">
+            <Fa icon={faInfoCircle} size="sm" />
+          </span>
+        </label>
+      {/if}
+      {#if gitCredentialSettingSupported}
+        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer group">
+          <input
+            type="checkbox"
+            bind:checked={exposeGitCredential}
+            onchange={handleSave}
+            class="cursor-pointer"
+          />
+          <span>Git credentials in terminals &amp; agents</span>
+          <span class="text-subtle hover:text-foreground transition-colors" title="When on, git commands in workspace terminals and agent sessions can authenticate to github.com using your connected GitHub account, via a credential helper scoped to HTTPS github.com remotes. The token is never exposed as GITHUB_TOKEN, and your own git credential helpers always take precedence.">
             <Fa icon={faInfoCircle} size="sm" />
           </span>
         </label>
