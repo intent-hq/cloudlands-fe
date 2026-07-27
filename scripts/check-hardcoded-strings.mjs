@@ -40,6 +40,12 @@ const ENFORCED_DIRS = [
   'src/lib/components/workspace',
   'src/lib/components/chat',
   'src/lib/components/layout',
+  'src/features/layout',
+  'src/routes/workspace',
+  'src/routes/agent',
+  'src/routes/+page.svelte',
+  'src/routes/+layout.svelte',
+  'src/routes/+error.svelte',
 ];
 
 const ROOT = process.cwd();

@@ -38,6 +38,7 @@ import {
   faRobot,
 } from '@fortawesome/free-solid-svg-icons';
 import { faNote } from '$lib/icons/faNote';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * Register all tab types
@@ -50,8 +51,8 @@ export function registerAllTabTypes(): void {
     type: 'browser',
     component: BrowserTabType,
     icon: faGlobe,
-    defaultTitle: 'Browser',
-    categoryLabel: 'Browser',
+    get defaultTitle() { return m.layout_tabTypes_browser_title(); },
+    get categoryLabel() { return m.layout_tabTypes_browser_category(); },
     sidebarTabId: 'browser',
     renameable: false,
   });
@@ -61,8 +62,8 @@ export function registerAllTabTypes(): void {
     type: 'terminal',
     component: TerminalTabType,
     icon: faTerminal,
-    defaultTitle: 'Terminal',
-    categoryLabel: 'Terminal',
+    get defaultTitle() { return m.layout_tabTypes_terminal_title(); },
+    get categoryLabel() { return m.layout_tabTypes_terminal_category(); },
     sidebarTabId: 'terminals',
     renameable: false,
   });
@@ -72,8 +73,8 @@ export function registerAllTabTypes(): void {
     type: 'code-review',
     component: CodeReviewTabType,
     icon: faCodeCommit,
-    defaultTitle: 'Code Review',
-    categoryLabel: 'Code Review',
+    get defaultTitle() { return m.layout_tabTypes_codeReview_title(); },
+    get categoryLabel() { return m.layout_tabTypes_codeReview_category(); },
     renameable: false,
   });
 
@@ -82,8 +83,8 @@ export function registerAllTabTypes(): void {
     type: 'agent-overview',
     component: AgentOverviewTabType,
     icon: faRobot,
-    defaultTitle: 'Agent Overview',
-    categoryLabel: 'Agents',
+    get defaultTitle() { return m.layout_tabTypes_agentOverview_title(); },
+    get categoryLabel() { return m.layout_tabTypes_agents_category(); },
     renameable: false,
   });
 
@@ -92,8 +93,8 @@ export function registerAllTabTypes(): void {
     type: 'agent',
     component: AgentTabType,
     icon: faComment,
-    defaultTitle: 'Agent',
-    categoryLabel: 'Agents',
+    get defaultTitle() { return m.layout_tabTypes_agent_title(); },
+    get categoryLabel() { return m.layout_tabTypes_agents_category(); },
     sidebarTabId: 'agents',
     renameable: true,
   });
@@ -103,8 +104,8 @@ export function registerAllTabTypes(): void {
     type: 'note',
     component: NoteTabType,
     icon: faNote,
-    defaultTitle: 'Note',
-    categoryLabel: 'Context',
+    get defaultTitle() { return m.layout_tabTypes_note_title(); },
+    get categoryLabel() { return m.layout_tabTypes_context_category(); },
     sidebarTabId: 'notes',
     renameable: true,
   });
@@ -114,8 +115,8 @@ export function registerAllTabTypes(): void {
     type: 'file',
     component: FileTabType,
     icon: faFile,
-    defaultTitle: 'File',
-    categoryLabel: 'Files',
+    get defaultTitle() { return m.layout_tabTypes_file_title(); },
+    get categoryLabel() { return m.layout_tabTypes_files_category(); },
     sidebarTabId: 'files',
     renameable: true,
   });
@@ -125,8 +126,8 @@ export function registerAllTabTypes(): void {
     type: 'diff',
     component: DiffTabType,
     icon: faCodeBranch,
-    defaultTitle: 'Diff',
-    categoryLabel: 'Changes',
+    get defaultTitle() { return m.layout_tabTypes_diff_title(); },
+    get categoryLabel() { return m.layout_tabTypes_changes_category(); },
     sidebarTabId: 'files',
     renameable: false,
   });
@@ -136,8 +137,8 @@ export function registerAllTabTypes(): void {
     type: 'changes',
     component: ChangesTabType,
     icon: faPencil,
-    defaultTitle: 'Changes',
-    categoryLabel: 'Changes',
+    get defaultTitle() { return m.layout_tabTypes_changes_title(); },
+    get categoryLabel() { return m.layout_tabTypes_changes_category(); },
     sidebarTabId: 'changes',
     renameable: false,
   });
@@ -147,8 +148,8 @@ export function registerAllTabTypes(): void {
     type: 'local-changes',
     component: LocalChangesTabType,
     icon: faPencil,
-    defaultTitle: 'Local Changes',
-    categoryLabel: 'Changes',
+    get defaultTitle() { return m.layout_tabTypes_localChanges_title(); },
+    get categoryLabel() { return m.layout_tabTypes_changes_category(); },
     sidebarTabId: 'changes',
     renameable: false,
   });
@@ -158,8 +159,8 @@ export function registerAllTabTypes(): void {
     type: 'chat-changes',
     component: ChatChangesTabType,
     icon: faPencil,
-    defaultTitle: 'Chat Changes',
-    categoryLabel: 'Changes',
+    get defaultTitle() { return m.layout_tabTypes_chatChanges_title(); },
+    get categoryLabel() { return m.layout_tabTypes_changes_category(); },
     renameable: false,
   });
 
@@ -168,8 +169,8 @@ export function registerAllTabTypes(): void {
     type: 'activity-changes',
     component: ActivityChangesTabType,
     icon: faCodeBranch,
-    defaultTitle: 'Activity Changes',
-    categoryLabel: 'Changes',
+    get defaultTitle() { return m.layout_tabTypes_activityChanges_title(); },
+    get categoryLabel() { return m.layout_tabTypes_changes_category(); },
     renameable: false,
   });
 
@@ -178,8 +179,8 @@ export function registerAllTabTypes(): void {
     type: 'settings',
     component: SettingsTabType,
     icon: faGear,
-    defaultTitle: 'Settings',
-    categoryLabel: 'Settings',
+    get defaultTitle() { return m.layout_tabTypes_settings_title(); },
+    get categoryLabel() { return m.layout_tabTypes_settings_category(); },
     renameable: false,
   });
 
@@ -188,8 +189,8 @@ export function registerAllTabTypes(): void {
     type: 'overview',
     component: OverviewTabType,
     icon: faHouse,
-    defaultTitle: 'Overview',
-    categoryLabel: 'Overview',
+    get defaultTitle() { return m.layout_tabTypes_overview_title(); },
+    get categoryLabel() { return m.layout_tabTypes_overview_category(); },
     renameable: false,
   });
 }

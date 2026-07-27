@@ -38,6 +38,7 @@
   faCompressAlt,
 } from '@fortawesome/free-solid-svg-icons';
   import { appClient } from '$lib/client';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
@@ -162,7 +163,9 @@
       if (changesAllExpanded) changesPanelRef?.expandAll();
       else changesPanelRef?.collapseAll();
     }}
-    tooltip={changesAllExpanded ? 'Collapse all files' : 'Expand all files'}
+    tooltip={changesAllExpanded
+      ? m.layout_diffHeader_collapseAllFiles_tooltip()
+      : m.layout_diffHeader_expandAllFiles_tooltip()}
     tooltipSide="bottom"
     aria-pressed={changesAllExpanded}
     class={changesAllExpanded ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -173,7 +176,9 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleLineWrapping())}
-    tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
+    tooltip={$lineWrapping
+      ? m.layout_diffHeader_wrappingOn_tooltip()
+      : m.layout_diffHeader_wrapLines_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$lineWrapping}
     class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -185,8 +190,8 @@
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleFoldUnchanged())}
     tooltip={$foldUnchanged
-      ? 'Folding unchanged lines. Click to disable.'
-      : 'Click to fold unchanged lines'}
+      ? m.layout_diffHeader_foldingOn_tooltip()
+      : m.layout_diffHeader_foldLines_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$foldUnchanged}
     class={$foldUnchanged ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -197,7 +202,9 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleDiffSideBySide())}
-    tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
+    tooltip={$diffSideBySide
+      ? m.layout_diffHeader_unifiedView_tooltip()
+      : m.layout_diffHeader_splitView_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$diffSideBySide}
     class={$diffSideBySide ? headerToggleActiveClass : headerToggleInactiveClass}
