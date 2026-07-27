@@ -297,6 +297,7 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
         'workspace:tokenUsage-changed',
         'workspace:context-changed',
         'workspace:activity-changed',
+        'workspace:displayStatus-changed',
         'workspace:updated',
         'workspace:created',
         'workspace:deleted',
@@ -2346,6 +2347,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         'workspace:tokenUsage-changed',
         'workspace:context-changed',
         'workspace:activity-changed',
+        'workspace:displayStatus-changed',
         'workspace:updated',
         'workspace:created',
         'workspace:deleted',
@@ -4628,6 +4630,135 @@ describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', 
     expect(ws.activity).toBe('idle');
   });
 });
+
+describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slice)', () => {
+  const WS_DS = 'ws-display-status-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_DS,
+        title: 'Display status ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    displayStatus?: string;
+  }> {
+    const { getItem } =
+      await import('$lib/store-shim/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_DS) ?? {}) as never;
+  }
+
+  function displayStatusChangedNotification(displayStatus: string) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-display-status-${displayStatus}`,
+          workspaceId: WS_DS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:displayStatus-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_DS,
+            displayStatus,
+          },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:displayStatus-changed in the bridge firehose filter', async () => {
+    await primeBridge();
+    expect(backendRequestSpy).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: expect.arrayContaining(['workspace:displayStatus-changed']),
+    });
+  });
+
+  it('merges every wire displayStatus value onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    for (const value of [
+      'not_started',
+      'in_progress',
+      'complete',
+      'pr_ready',
+      'pr_open',
+      'pr_merged',
+    ]) {
+      handler(displayStatusChangedNotification(value));
+      const ws = await readWorkspace();
+      expect(ws.displayStatus).toBe(value);
+    }
+  });
+
+  it('is a no-op when the displayStatus value is not a wire value', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(displayStatusChangedNotification('in_progress'));
+    let ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('in_progress');
+
+    handler(displayStatusChangedNotification('InProgress'));
+    ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('in_progress');
+  });
+
+  it('is a no-op when data or displayStatus is missing', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(displayStatusChangedNotification('pr_open'));
+    let ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('pr_open');
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-display-status-no-data',
+          workspaceId: WS_DS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:displayStatus-changed',
+          actor: { type: 'system' },
+          data: {},
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('pr_open');
+  });
+});
+
 
 describe('daemonEventsBridge (completion-watch refresh routing)', () => {
   beforeEach(() => {

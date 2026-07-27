@@ -237,6 +237,10 @@ export interface Workspace {
   statusMessage?: string;
   /** BE-derived in-flight agent state (green dot). Read-only; computed from agent runtime. */
   activity?: 'idle' | 'agent_running';
+  /** BE-owned current-cycle display status (intent-hq/intentd#600). Precedence is
+   *  daemon-side: open/draft PR → open tasks → merged PR → complete. Optional on
+   *  decode — absent on older daemons, where the FE falls back to its local derivation. */
+  displayStatus?: 'not_started' | 'in_progress' | 'complete' | 'pr_ready' | 'pr_open' | 'pr_merged';
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;

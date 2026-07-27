@@ -119,6 +119,11 @@
   });
 
   function getDisplayStatus(ws: Workspace): WorkspaceDisplayStatus {
+    // BE-owned current-cycle status (workspace.displayStatus, intent-hq/intentd#600):
+    // render it verbatim when present. The daemon owns the precedence (open/draft
+    // PR → open tasks → merged PR → complete), so a merged PR never masks open
+    // work. Everything below is the fallback for daemons without the field.
+    if (ws.displayStatus) return ws.displayStatus;
     const pullRequests = ws.pullRequests || [];
     const activePR = selectWorkspaceActivePullRequest.select(appStore.state, ws.id);
     const hasMergedPR =
