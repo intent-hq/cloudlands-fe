@@ -234,10 +234,7 @@ import {
   getModelsForProvider,
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
-import {
-  selectModel,
-  setWorkspaceModel,
-} from '$store/renderer/slices/model/model-slice';
+import { selectModel } from '$store/renderer/slices/model/model-slice';
 import ModelPicker from './ModelPicker.svelte';
 
 describe('ModelPicker locked state', () => {
@@ -1078,7 +1075,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
   const dispatchedTypes = () =>
     mockSvelteDispatch.mock.calls.map(([action]) => (action as { type?: string }).type);
 
-  it('spawn context (no flags): a pick dispatches neither selectModel nor any per-workspace update', async () => {
+  it('spawn context (no flags): a pick dispatches neither selectModel nor any agent-session update', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     const onModelChange = vi.fn();
 
@@ -1090,12 +1087,11 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
 
     expect(onModelChange).toHaveBeenCalledWith('model-1');
     expect(dispatchedTypes()).not.toContain(selectModel.type);
-    expect(dispatchedTypes()).not.toContain(setWorkspaceModel.type);
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
   });
 
-  it('chat-input context (updateGlobalStore): a pick updates workspace + agent but never the global default', async () => {
+  it('chat-input context (updateGlobalStore): a pick updates the agent but never the global default', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
 
@@ -1111,9 +1107,8 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await pickModelOne();
 
     await waitFor(() => {
-      expect(dispatchedTypes()).toContain(setWorkspaceModel.type);
+      expect(dispatchedTypes()).toContain('agentSession/updateSession');
     });
-    expect(dispatchedTypes()).toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith('agent-1', 'model-1', 'ws-1');
     // The global default (selectModel → model.providerDefaults /
     // providers.active persistence) must never fire from the chat input.
@@ -1134,7 +1129,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
       .map(([action]) => action as { type?: string; payload?: unknown })
       .filter((action) => action.type === selectModel.type);
     expect(selectModelActions[0]?.payload).toEqual(['model-1']);
-    expect(dispatchedTypes()).not.toContain(setWorkspaceModel.type);
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
   });
 });
 

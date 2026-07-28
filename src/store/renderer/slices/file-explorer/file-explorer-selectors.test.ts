@@ -150,9 +150,9 @@ function mockWorkspace(overrides: Partial<Workspace> = {}): Workspace {
 
 function mockInitializationState(
   overrides: Partial<FileExplorerWorkspaceState> = {},
-  workspaceOverrides: Partial<Workspace> | null = {},
+  workspacePatch: Partial<Workspace> | null = {},
 ): StoreState {
-  const workspace = workspaceOverrides === null ? undefined : mockWorkspace(workspaceOverrides);
+  const workspace = workspacePatch === null ? undefined : mockWorkspace(workspacePatch);
   return {
     workspace: {
       activeWorkspaceId: WS_ID,

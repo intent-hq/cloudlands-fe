@@ -57,7 +57,6 @@
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
-  import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
@@ -880,8 +879,6 @@
         /* ignore */
       }
 
-      if (effectiveModel)
-        appStore.dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
       appStore.dispatch(setWorkspaceEntity(workspace));
 
       // Save the setup script to the store for future reuse.

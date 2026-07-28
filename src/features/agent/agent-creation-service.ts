@@ -98,7 +98,7 @@ async function loadCreationDeps() {
     agentFactory: factoryMod.agentFactory,
     selectWorkspaceById: wsSel.selectWorkspaceById,
     selectAllWorkspaceAgents: waSel.selectAllWorkspaceAgents,
-    selectWorkspaceDefaultModel: modelSel.selectWorkspaceDefaultModel,
+    selectSelectedModel: modelSel.selectSelectedModel,
     selectActiveProviderId: provSel.selectActiveProviderId,
     selectSpecialists: specSel.selectSpecialists,
     selectEffectiveCodingAgent: specSel.selectEffectiveCodingAgent,
@@ -175,7 +175,7 @@ async function handleCreateAgentRequested(wsId: string, agentType?: string): Pro
   if (!workspace) return;
 
   const agents = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
-  const model = deps.selectWorkspaceDefaultModel.select(appStore.state, wsId);
+  const model = deps.selectSelectedModel.select(appStore.state);
   const globalProvider = deps.selectActiveProviderId.select(appStore.state);
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
@@ -214,7 +214,7 @@ async function handleCreateAgentWithSpecialist(
   if (!workspace) return;
 
   const agents = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
-  let model = deps.selectWorkspaceDefaultModel.select(appStore.state, wsId);
+  let model = deps.selectSelectedModel.select(appStore.state);
   const globalProvider = deps.selectActiveProviderId.select(appStore.state);
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
@@ -303,7 +303,7 @@ async function handleRunAgentForNote(
   }
 
   const provider = getWorkspaceInitialAgentProvider(wsId, deps);
-  const fallbackModel = deps.selectWorkspaceDefaultModel.select(appStore.state, wsId);
+  const fallbackModel = deps.selectSelectedModel.select(appStore.state);
 
   try {
     const result = await deps.agentFactory.createAgent(workspace, {
@@ -452,7 +452,7 @@ async function handleLaunchAgent(
     const deps = await loadCreationDeps();
     // No client-minted agent id: the daemon assigns the id on `agent.create`
     // and the factory adopts it from the response.
-    const model = config.model ?? deps.selectWorkspaceDefaultModel.select(appStore.state, wsId);
+    const model = config.model ?? deps.selectSelectedModel.select(appStore.state);
     const activeProvider = deps.selectActiveProviderId.select(appStore.state);
     const provider =
       config.provider ??

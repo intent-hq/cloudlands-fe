@@ -43,7 +43,6 @@
   setLoadingStateForProvider,
   setModelFallbackInfo,
   setModelPickerGroupCollapsed,
-  setWorkspaceModel,
 } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
   import { selectManagedInstallStatusByProvider } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
@@ -125,7 +124,7 @@
     triggerClass?: string;
     defaultModelId?: string;
     showDefaultOption?: boolean;
-    // Gates workspace/agent-session updates (setWorkspaceModel, updateAgentSessionFields, agent.setModel).
+    // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
     // Gates the global selectModel dispatch (persisted default); Settings default picker only.
     updateGlobalDefault?: boolean;
@@ -493,11 +492,6 @@
 
       if (updateGlobalDefault) appStore.dispatch(selectModel(model));
       if (!updateGlobalStore) return;
-
-      if (workspaceId) {
-        appStore.dispatch(setWorkspaceModel({ workspaceId, model }));
-        logger.debug('Updated workspace model:', { workspaceId, model });
-      }
 
       if (agentId && workspaceId) {
         appStore.dispatch(updateAgentSessionFields(agentId, { model }));

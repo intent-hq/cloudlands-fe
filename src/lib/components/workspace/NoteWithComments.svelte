@@ -93,7 +93,7 @@
   pruneTaskAgentAssociationsForNote,
 } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { selectAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
-  import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
+  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 
 
   import {
@@ -895,7 +895,7 @@
     if (action === 'assign-agent') {
       const state = appStore.state;
       const parentNote = noteId ? selectNoteById.select(state, workspace.id, noteId) : null;
-      const model = selectWorkspaceDefaultModel.select(state, workspace.id);
+      const model = selectSelectedModel.select(state);
       void runAssignAgentTaskMenuAction({
         editor,
         workspace,
