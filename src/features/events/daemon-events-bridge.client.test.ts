@@ -4536,6 +4536,34 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     // The wire null must drop the stale timestamp rather than retain it.
     expect(ws.archivedAt).toBeUndefined();
   });
+
+  it('merges a statusImageAssetId delta onto the entity (agent setStatusImage parity)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §5.1: the daemon serializes the applied `workspace.update`
+    // delta with the content-addressed status screenshot asset id.
+    handler(updatedNotification({ statusImageAssetId: 'asset-abc123' }));
+
+    const ws = await readWorkspace();
+    expect(ws.statusImageAssetId).toBe('asset-abc123');
+    // Unrelated fields on the entity stay intact.
+    expect(ws.branch).toBe('main');
+  });
+
+  it('clears statusImageAssetId on an explicit null in the delta', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ statusImageAssetId: 'asset-abc123' }));
+    handler(updatedNotification({ statusImageAssetId: null }));
+
+    const ws = await readWorkspace();
+    // The wire null must drop the stale asset reference rather than retain it.
+    expect(ws.statusImageAssetId).toBeUndefined();
+  });
 });
 
 describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', () => {
