@@ -82,6 +82,7 @@ import {
 import {
   chatLastAttemptedMessageSet,
   chatReset,
+  chatSendFailed,
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
@@ -1298,6 +1299,55 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     await action.promise;
     expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
     expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("message B");
+  });
+
+  it("a successful enqueue clears a stale failure banner and the drain keeps it clear (queued-retry regression)", async () => {
+    // Reported sequence: a turn failed (banner up), the user retries while
+    // the daemon still reports the agent busy, so the retry routes through
+    // queue-on-send. The ACCEPTED enqueue must dismiss the banner immediately
+    // — pre-fix it stayed up (and suppressed the streaming indicator) until
+    // some later turn's stream events happened to clear it.
+    appStore.dispatch(chatSendFailed(AGENT, "previous turn failed"));
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+
+    const queuedRetry: QueuedMessage = {
+      id: "qm-retry",
+      content: "try again",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queuedRetry }),
+    );
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "try again" }));
+    await flush();
+    await flush();
+
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toBeNull();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.modelUnavailable).toBeNull();
+
+    // The daemon drains the entry — the promotion must not resurface the
+    // error, and the retry payload becomes the active record.
+    appStore.dispatch(replaceAgentQueue(AGENT, []));
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toBeNull();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "try again",
+    });
+  });
+
+  it("a REJECTED enqueue keeps setting the error (#969 — success-only clear)", async () => {
+    appStore.dispatch(chatSendFailed(AGENT, "previous turn failed"));
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: false, error: "queue rejected" }),
+    );
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "try again" }));
+    await flush();
+    await flush();
+
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toBe("queue rejected");
   });
 
   it("#999: removing a queued message drops its parked record without promotion", async () => {
