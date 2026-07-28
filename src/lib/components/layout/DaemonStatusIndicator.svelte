@@ -386,6 +386,7 @@
               class="w-full text-left text-xs text-red-500 hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
               disabled={$unslothStopping$}
               onclick={() => {
+                dropdownOpen = false;
                 stopUnslothDialogOpen = true;
               }}
             >

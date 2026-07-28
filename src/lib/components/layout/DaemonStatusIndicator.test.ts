@@ -417,6 +417,10 @@ describe('DaemonStatusIndicator', () => {
       // region's containing block (same assertion as ChatMessage-edit-confirm).
       expect(dialog.closest('.portal-container')?.parentElement).toBe(document.body);
 
+      // The dropdown closes when the dialog opens, so it can't sit above the
+      // dialog's dim overlay or swallow the first Escape.
+      expect(screen.queryByText('Unsloth Server')).toBeNull();
+
       // Nothing dispatched until confirm.
       const stopCalls = () =>
         mockDispatch.mock.calls.filter(
