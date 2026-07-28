@@ -49,6 +49,7 @@ import {
   selectAgentIsThinking,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import { selectTranscriptHydration } from "$store/renderer/slices/chat-state/chat-state-selectors";
+import { addMessage } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { loadChatTranscript } from "./chat-read-service";
 import {
   clearPendingAgentDeletions,
@@ -234,28 +235,34 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(["prior"]);
   });
 
-  it("coalesces concurrent loads for the same agent into one fetch", async () => {
+  it("coalesces concurrent loads into one shared fetch plus a single rerun", async () => {
     agentsApi.get.mockResolvedValue(makeSession() as never);
     agentsApi.getConversation.mockResolvedValue(conversation([makeMessage("c", "shared")]) as never);
 
+    // Requests arriving while a load is in flight collapse into ONE pending
+    // rerun (monorepo#1019): 3 concurrent calls → the shared initial fetch
+    // plus exactly one follow-up fetch, never one per caller.
     await Promise.all([
       loadChatTranscript(AGENT),
       loadChatTranscript(AGENT),
       loadChatTranscript(AGENT),
     ]);
 
-    expect(agentsApi.getConversation).toHaveBeenCalledTimes(1);
+    expect(agentsApi.getConversation).toHaveBeenCalledTimes(2);
   });
 
   it("dispatching initializeChatRequested triggers a load (middleware wiring)", async () => {
-    agentsApi.get.mockResolvedValueOnce(makeSession() as never);
+    // Own agent id: keeps this wiring assertion independent of transcript
+    // state that earlier tests left behind for the shared AGENT.
+    const agentId = "agent-middleware-wiring";
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
     agentsApi.getConversation.mockResolvedValueOnce(conversation([makeMessage("via-action", "x")]) as never);
 
-    appStore.dispatch(initializeChatRequested(AGENT, { wsId: WS }));
+    appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
     await flush();
 
-    expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT, 200, undefined);
-    expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(["via-action"]);
+    expect(agentsApi.getConversation).toHaveBeenCalledWith(agentId, 200, undefined);
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(["via-action"]);
   });
 
   it("hydrating a COMPLETED session renders BE state as-is (Idle => not Thinking, composer ungated)", async () => {
@@ -720,8 +727,8 @@ describe("chatReadService (fake seam, real store)", () => {
 
     // All complete with settled status
     expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("settled");
-    // Only one network call happened (coalesced)
-    expect(agentsApi.getConversation).toHaveBeenCalledTimes(1);
+    // The shared initial fetch plus the single coalesced rerun (monorepo#1019)
+    expect(agentsApi.getConversation).toHaveBeenCalledTimes(2);
   });
 
   it("failed hydration for existing conversation marks settled with empty messages", async () => {
@@ -755,6 +762,145 @@ describe("chatReadService (fake seam, real store)", () => {
     // had messages)" from "existing session (hydration failed)". This test
     // exercises the service-level hydration lifecycle; the ChatPanel guard
     // logic is tested separately in component tests.
+  });
+
+  // Regression (monorepo#1019): a refetch requested while a load was already
+  // in flight returned the in-flight (already stale) promise as-is and was
+  // swallowed — a turn that finalized after paging began never appeared until
+  // the workspace was re-entered. Fix: mid-flight requests mark exactly ONE
+  // pending rerun; when the current load settles, one follow-up load runs and
+  // its (fresher) messages win.
+  it("reruns a load requested mid-flight exactly once (second fetch's messages win)", async () => {
+    const agentId = "agent-rerun-midflight";
+    const userTurn: AgentMessage = {
+      id: "rerun-user",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "run it" }],
+    };
+    const finalizedAssistant: AgentMessage = {
+      id: "rerun-asst",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:01.000Z",
+      contentBlocks: [{ type: "text", text: "done" }],
+    };
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    let resolveFirstFetch!: (value: unknown) => void;
+    agentsApi.getConversation
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirstFetch = resolve;
+        }) as never,
+      )
+      .mockResolvedValueOnce(conversation([userTurn, finalizedAssistant]) as never);
+
+    const first = loadChatTranscript(agentId);
+    await flush(); // agent.get resolved; first paging call now pending
+
+    // Multiple requests arrive mid-flight — they must collapse into ONE rerun.
+    const second = loadChatTranscript(agentId);
+    const third = loadChatTranscript(agentId);
+
+    // First fetch resolves STALE: the turn finalized after the read began.
+    resolveFirstFetch(conversation([userTurn]));
+    await first;
+    await Promise.all([second, third]);
+
+    // Exactly one follow-up load ran (2 fetches total, not 1, not 3).
+    expect(agentsApi.getConversation).toHaveBeenCalledTimes(2);
+    // The second fetch's messages won: the assistant row is present.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "rerun-user",
+      "rerun-asst",
+    ]);
+  });
+
+  // Regression (monorepo#1019, secondary clobber path): a hydration dispatch
+  // replaced the message list wholesale, so an assistant message the live
+  // stream appended to the store AFTER the (slower, staler) hydration read
+  // began was wiped. Fix: merge by message id with the store's CURRENT
+  // messages before dispatching, retaining store-only messages.
+  it("retains a live-appended assistant message that a stale hydration would clobber", async () => {
+    const agentId = "agent-stale-clobber";
+    const userTurn: AgentMessage = {
+      id: "clobber-user",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "run it" }],
+    };
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValueOnce(conversation([userTurn]) as never);
+    await loadChatTranscript(agentId);
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "clobber-user",
+    ]);
+
+    // A second (stale) hydration starts; its fetch is persisted-only [user].
+    let resolveStaleFetch!: (value: unknown) => void;
+    agentsApi.getConversation.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStaleFetch = resolve;
+      }) as never,
+    );
+    const staleLoad = loadChatTranscript(agentId);
+    await flush(); // agent.get resolved; paging now blocked
+
+    // While the hydration read is in flight, the live stream appends the
+    // assistant row to the store.
+    const liveAssistant: AgentMessage = {
+      id: "clobber-asst",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:02.000Z",
+      contentBlocks: [{ type: "text", text: "the answer" }],
+    };
+    appStore.dispatch(addMessage(agentId, liveAssistant));
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "clobber-user",
+      "clobber-asst",
+    ]);
+
+    resolveStaleFetch(conversation([userTurn]));
+    await staleLoad;
+
+    // The live-appended assistant message survived the hydration dispatch.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "clobber-user",
+      "clobber-asst",
+    ]);
+  });
+
+  // Regression (PR #505 review): the merge guard must retain ONLY messages
+  // appended DURING the read (absent from the pre-read baseline). Pre-read
+  // rows the fetch dropped — a BE-side truncation (edit/regenerate refetch
+  // convergence, iOS editAndRegenerate, daemon agent.replaceMessages) — must
+  // be dropped so the refetch can SHRINK the transcript, not ghost forever.
+  it("shrinks the transcript when a refetch returns a BE-truncated set (pre-baseline rows dropped)", async () => {
+    const agentId = "agent-truncation-converge";
+    const userTurn: AgentMessage = {
+      id: "trunc-user",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "keep me" }],
+    };
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation([userTurn, makeMessage("trunc-asst-old", "dropped by BE")]) as never,
+    );
+    await loadChatTranscript(agentId);
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "trunc-user",
+      "trunc-asst-old",
+    ]);
+
+    // BE truncated the transcript (e.g. edit/regenerate); the refetch returns
+    // [user] only. trunc-asst-old is in the pre-read baseline and absent from
+    // the fetch → it must be dropped, not retained as a ghost.
+    agentsApi.getConversation.mockResolvedValueOnce(conversation([userTurn]) as never);
+    await loadChatTranscript(agentId);
+
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "trunc-user",
+    ]);
   });
 });
 
