@@ -47,7 +47,7 @@ export const emptyChatAgentState: ChatAgentState = {
 
 /**
  * Bounded turn-record cap (#999): enqueue-mode records append FIFO; anything
- * beyond this is dropped oldest-first. Generously above the daemon's
+ * beyond this drops the oldest PENDING record. Generously above the daemon's
  * practical queue depth — the cap only guards against a pathological leak.
  */
 const MAX_TURN_RETRY_RECORDS = 20;
@@ -147,8 +147,7 @@ function reduceAgentIdleReconcile(state: ChatStateSlice, agentId: string): ChatS
   const preserve = shouldPreserveLastAttemptedMessage(agent);
   const keptRecords = agent.turnRetryRecords.filter(
     (record) =>
-      record.phase === 'pending' ||
-      (preserve && record.turnKey === agent.lastAttemptedTurnKey),
+      record.phase === 'pending' || (preserve && record.turnKey === agent.lastAttemptedTurnKey),
   );
   const recordsChanged = keptRecords.length !== agent.turnRetryRecords.length;
 
@@ -219,7 +218,7 @@ function reduceChunkReceived(
  * Known approximation: a harness-driven wake that starts while user messages
  * are still queued is attributed to the oldest queued record; the daemon
  * carries no turn correlation on `agent:stream:start` beyond messageId, which
- * the client cannot pair with a QueuedMessage.
+ * the client cannot pair with a QueuedMessage. Tracked as monorepo#1022.
  */
 function promoteOldestPendingRecord(
   agent: ChatAgentState,
@@ -533,20 +532,27 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       statusEvents: [],
     }),
   )
-  .with(chatLastAttemptedMessageSet, (state, { payload: [agentId, lastAttemptedMessage] }) =>
+  .with(chatLastAttemptedMessageSet, (state, { payload: [agentId, lastAttemptedMessage] }) => {
     // Unscoped pointer set (#999): the payload has no turn key, so any prior
-    // scoping no longer describes it.
-    updateAgent(state, agentId, { lastAttemptedMessage, lastAttemptedTurnKey: null }),
-  )
+    // scoping no longer describes it. Pending records are dropped too: the
+    // edit-regenerate flow hard-cancels with queue-DISCARD semantics
+    // (PROTOCOL §5.5), so a still-queued record's turn will never drain —
+    // leaving it here would let the discard's empty `agent:queue:updated`
+    // snapshot promote the stale payload over the just-recorded one.
+    const agent = getAgent(state, agentId);
+    return updateAgent(state, agentId, {
+      lastAttemptedMessage,
+      lastAttemptedTurnKey: null,
+      turnRetryRecords: agent.turnRetryRecords.filter((record) => record.phase !== 'pending'),
+    });
+  })
   .with(chatTurnAttemptRecorded, (state, { payload: [agentId, record] }) => {
     const agent = getAgent(state, agentId);
     const fresh: TurnRetryRecord = {
       turnKey: record.turnKey,
       attempt: record.attempt,
       phase: 'pending',
-      ...(record.queuedMessageId !== undefined
-        ? { queuedMessageId: record.queuedMessageId }
-        : {}),
+      ...(record.queuedMessageId !== undefined ? { queuedMessageId: record.queuedMessageId } : {}),
     };
     if (record.mode === 'send') {
       // Direct send: the agent was idle, so previous turns are over — reset
@@ -559,14 +565,19 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     }
     // Enqueue: append FIFO (bounded) WITHOUT touching the banner pointer —
     // the in-flight turn still owns it (#969); this record is promoted when
-    // its drain's stream `started` is observed.
+    // its drain's stream `started` is observed. The cap evicts the oldest
+    // PENDING record only: a promoted 'streaming' record backs the current
+    // banner pointer's turn-scoped idle finalize and must survive even a
+    // pathological enqueue flood. The fresh record is always pending, so an
+    // eviction candidate always exists.
     const appended = [...agent.turnRetryRecords, fresh];
-    return updateAgent(state, agentId, {
-      turnRetryRecords:
-        appended.length > MAX_TURN_RETRY_RECORDS
-          ? appended.slice(appended.length - MAX_TURN_RETRY_RECORDS)
-          : appended,
-    });
+    if (appended.length > MAX_TURN_RETRY_RECORDS) {
+      appended.splice(
+        appended.findIndex((record) => record.phase === 'pending'),
+        1,
+      );
+    }
+    return updateAgent(state, agentId, { turnRetryRecords: appended });
   })
   .with(chatSendFailed, (state, { payload: [agentId, error] }) =>
     updateAgent(state, agentId, {
@@ -641,7 +652,8 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(streamTimedOut, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
-      error: 'The agent response timed out before it finished. Try again or check the provider status.',
+      error:
+        'The agent response timed out before it finished. Try again or check the provider status.',
     }),
   )
   .with(chatRebindStarted, (state, { payload: [agentId] }) =>
@@ -696,8 +708,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     });
     if (!dequeuedChanged) return state;
     const betweenTurns =
-      agent.error === null &&
-      !records.some((record) => record.phase === 'streaming');
+      agent.error === null && !records.some((record) => record.phase === 'streaming');
     const promoted = betweenTurns
       ? records.find((record) => record.phase === 'pending' && record.dequeued)
       : undefined;
@@ -716,9 +727,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     // never drain as this record's turn, so drop the record (#999).
     const agent = state.byAgentId[agentId];
     if (!agent) return state;
-    const records = agent.turnRetryRecords.filter(
-      (record) => record.queuedMessageId !== messageId,
-    );
+    const records = agent.turnRetryRecords.filter((record) => record.queuedMessageId !== messageId);
     if (records.length === agent.turnRetryRecords.length) return state;
     return updateAgent(state, agentId, { turnRetryRecords: records });
   })

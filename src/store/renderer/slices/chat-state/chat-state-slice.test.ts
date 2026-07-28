@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
 import {
   chatStateReducer,
@@ -43,10 +39,7 @@ import {
   removeQueuedMessageFromAgentQueue,
 } from '../agent-queue/agent-queue-slice';
 import type { QueuedMessage } from '$shared/types';
-import type {
-  AgentIdleEvent,
-  AgentStatusChangedEvent,
-} from '$features/events/types';
+import type { AgentIdleEvent, AgentStatusChangedEvent } from '$features/events/types';
 
 const AGENT = 'agent-1';
 
@@ -55,23 +48,24 @@ function asStoreState(chatState: ReturnType<typeof chatStateReducer>): StoreStat
 }
 
 function stateWithModelUnavailable() {
-  return chatStateReducer(initialState, agentStreamUpdateReceived({
-    agentId: AGENT,
-    handlerSessionId: AGENT,
-    source: 'sendMessage',
-    eventType: 'complete',
-    completeMessage: {
-      role: 'assistant',
-      metadata: {
-        modelUnavailable: true,
-        failedModel: 'slow-model',
-        nextAvailableModel: 'fast-model',
+  return chatStateReducer(
+    initialState,
+    agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+      completeMessage: {
+        role: 'assistant',
+        metadata: {
+          modelUnavailable: true,
+          failedModel: 'slow-model',
+          nextAvailableModel: 'fast-model',
+        },
       },
-    },
-  }));
+    }),
+  );
 }
-
-
 
 describe('chatStateReducer', () => {
   it('returns initial state', () => {
@@ -114,7 +108,9 @@ describe('chatStateReducer', () => {
     expect(agent.error).toBeNull();
     expect(agent.receivedFirstChunk).toBe(false);
     expect(agent.lastMessageTime).toBe(action.payload.timestamp);
-    expect(selectChatLastMessageTime.select(asStoreState(state), AGENT)).toBe(action.payload.timestamp);
+    expect(selectChatLastMessageTime.select(asStoreState(state), AGENT)).toBe(
+      action.payload.timestamp,
+    );
   });
 
   it('chatSendStarted clears stale model-unavailable recovery state', () => {
@@ -130,7 +126,10 @@ describe('chatStateReducer', () => {
   });
 
   it('chatSendFailed clears stale model-unavailable state so send errors are visible', () => {
-    const state = chatStateReducer(stateWithModelUnavailable(), chatSendFailed(AGENT, 'network error'));
+    const state = chatStateReducer(
+      stateWithModelUnavailable(),
+      chatSendFailed(AGENT, 'network error'),
+    );
     const agent = state.byAgentId[AGENT];
     expect(agent.error).toBe('network error');
     expect(agent.modelUnavailable).toBeNull();
@@ -219,12 +218,15 @@ describe('chatStateReducer', () => {
     // confirmed by the follow-up `agent:idle`, which performs the clear (#941
     // semantics ride the idle finalize, see the #973 describe below).
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'sent' }));
-    s = chatStateReducer(s, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'complete',
-    }));
+    s = chatStateReducer(
+      s,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+      }),
+    );
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'sent' });
   });
 
@@ -237,12 +239,15 @@ describe('chatStateReducer', () => {
     // banner's "Try again" resolves as a no-op.
     const attempted = { text: 'failed mid-turn', options: { model: 'slow-model' } };
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-    s = chatStateReducer(s, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'complete',
-    }));
+    s = chatStateReducer(
+      s,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+      }),
+    );
     s = chatStateReducer(s, chatSendFailed(AGENT, 'session/prompt failed: provider error'));
     const agent = s.byAgentId[AGENT];
     expect(agent.error).toBe('session/prompt failed: provider error');
@@ -254,33 +259,39 @@ describe('chatStateReducer', () => {
     // no agent:idle or agent:failed follows (PROTOCOL §7.2) — clear here so
     // the abandoned payload does not stay resident (#965).
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'stopped' }));
-    s = chatStateReducer(s, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'complete',
-      stopReason: 'interrupted',
-    }));
+    s = chatStateReducer(
+      s,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+        stopReason: 'interrupted',
+      }),
+    );
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
   });
 
   it('agentStreamUpdateReceived(complete, model-unavailable) preserves lastAttemptedMessage for retry-with-model (#964)', () => {
     const attempted = { text: 'sent', options: { noteIds: ['note-1'] } };
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-    s = chatStateReducer(s, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'complete',
-      completeMessage: {
-        role: 'assistant',
-        metadata: {
-          modelUnavailable: true,
-          failedModel: 'slow-model',
-          nextAvailableModel: 'fast-model',
+    s = chatStateReducer(
+      s,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+        completeMessage: {
+          role: 'assistant',
+          metadata: {
+            modelUnavailable: true,
+            failedModel: 'slow-model',
+            nextAvailableModel: 'fast-model',
+          },
         },
-      },
-    }));
+      }),
+    );
     const agent = s.byAgentId[AGENT];
     expect(agent.lastAttemptedMessage).toEqual(attempted);
     expect(agent.modelUnavailable).toEqual({
@@ -305,13 +316,16 @@ describe('chatStateReducer', () => {
   it('agentStreamUpdateReceived(complete with timeout finishReason) preserves lastAttemptedMessage for retry (#941)', () => {
     const attempted = { text: 'edited text' };
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-    s = chatStateReducer(s, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'complete',
-      finishReason: 'timeout',
-    }));
+    s = chatStateReducer(
+      s,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+        finishReason: 'timeout',
+      }),
+    );
     expect(s.byAgentId[AGENT].error).toContain('timed out');
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
   });
@@ -319,25 +333,31 @@ describe('chatStateReducer', () => {
   it('agentStreamUpdateReceived(timeout) preserves lastAttemptedMessage for retry (#941)', () => {
     const attempted = { text: 'edited text' };
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-    s = chatStateReducer(s, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'timeout',
-    }));
+    s = chatStateReducer(
+      s,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'timeout',
+      }),
+    );
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
   });
 
   it('agentStreamUpdateReceived(error) preserves lastAttemptedMessage for retry (#941)', () => {
     const attempted = { text: 'edited text' };
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-    s = chatStateReducer(s, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'error',
-      error: 'stream failed',
-    }));
+    s = chatStateReducer(
+      s,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'error',
+        error: 'stream failed',
+      }),
+    );
     expect(s.byAgentId[AGENT].error).toBe('stream failed');
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
   });
@@ -357,81 +377,105 @@ describe('chatStateReducer', () => {
   });
 
   it('agentStreamUpdateReceived(started) clears the previous terminal error for retry recovery', () => {
-    const failed = chatStateReducer(initialState, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'error',
-      error: 'Stream timeout after 10 minutes',
-    }));
-    const restarted = chatStateReducer(failed, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'started',
-    }));
+    const failed = chatStateReducer(
+      initialState,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'error',
+        error: 'Stream timeout after 10 minutes',
+      }),
+    );
+    const restarted = chatStateReducer(
+      failed,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'started',
+      }),
+    );
 
     expect(restarted.byAgentId[AGENT].error).toBeNull();
   });
 
   it('agentStreamUpdateReceived(started) clears stale model-unavailable recovery state', () => {
-    const modelUnavailable = chatStateReducer(initialState, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'complete',
-      completeMessage: {
-        role: 'assistant',
-        metadata: {
-          modelUnavailable: true,
-          failedModel: 'slow-model',
-          nextAvailableModel: 'fast-model',
+    const modelUnavailable = chatStateReducer(
+      initialState,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+        completeMessage: {
+          role: 'assistant',
+          metadata: {
+            modelUnavailable: true,
+            failedModel: 'slow-model',
+            nextAvailableModel: 'fast-model',
+          },
         },
-      },
-    }));
-    const restarted = chatStateReducer(modelUnavailable, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'started',
-    }));
+      }),
+    );
+    const restarted = chatStateReducer(
+      modelUnavailable,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'started',
+      }),
+    );
 
     expect(restarted.byAgentId[AGENT].modelUnavailable).toBeNull();
   });
 
   it('agentStreamUpdateReceived(started) resets per-stream first-chunk status state for retries', () => {
     let state = chatStateReducer(initialState, chatSendStarted(AGENT));
-    state = chatStateReducer(state, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'chunk',
-      chunk: 'partial before failure',
-    }));
-    state = chatStateReducer(state, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'error',
-      error: 'failed mid-stream',
-    }));
-    state = chatStateReducer(state, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'started',
-    }));
+    state = chatStateReducer(
+      state,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'chunk',
+        chunk: 'partial before failure',
+      }),
+    );
+    state = chatStateReducer(
+      state,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'error',
+        error: 'failed mid-stream',
+      }),
+    );
+    state = chatStateReducer(
+      state,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'started',
+      }),
+    );
 
     expect(state.byAgentId[AGENT].receivedFirstChunk).toBe(false);
     expect(state.byAgentId[AGENT].statusEvents).toEqual([]);
 
-    state = chatStateReducer(state, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'chunk',
-      chunk: 'retry first chunk',
-    }));
+    state = chatStateReducer(
+      state,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'chunk',
+        chunk: 'retry first chunk',
+      }),
+    );
 
     expect(state.byAgentId[AGENT].statusEvents).toHaveLength(1);
     expect(state.byAgentId[AGENT].statusEvents[0]).toMatchObject({ phase: 'streaming' });
@@ -472,27 +516,33 @@ describe('chatStateReducer', () => {
 
   it('agentStreamUpdateReceived(complete) clears streaming metadata and derives model unavailable info', () => {
     let state = chatStateReducer(initialState, chatSendStarted(AGENT));
-    state = chatStateReducer(state, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'chunk',
-      chunk: 'hello',
-    }));
-    const completed = chatStateReducer(state, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'complete',
-      completeMessage: {
-        role: 'assistant',
-        metadata: {
-          modelUnavailable: true,
-          failedModel: 'slow-model',
-          nextAvailableModel: 'fast-model',
+    state = chatStateReducer(
+      state,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'chunk',
+        chunk: 'hello',
+      }),
+    );
+    const completed = chatStateReducer(
+      state,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+        completeMessage: {
+          role: 'assistant',
+          metadata: {
+            modelUnavailable: true,
+            failedModel: 'slow-model',
+            nextAvailableModel: 'fast-model',
+          },
         },
-      },
-    }));
+      }),
+    );
     const agent = completed.byAgentId[AGENT];
     expect(agent.streamingStartTime).toBeNull();
     expect(agent.receivedFirstChunk).toBe(false);
@@ -505,13 +555,16 @@ describe('chatStateReducer', () => {
 
   it('agentStreamUpdateReceived(error) clears streaming metadata and stores error', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'error',
-      error: 'stream failed',
-    }));
+    const s2 = chatStateReducer(
+      s1,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'error',
+        error: 'stream failed',
+      }),
+    );
     const agent = s2.byAgentId[AGENT];
     expect(agent.streamingStartTime).toBeNull();
     expect(agent.statusEvents).toEqual([]);
@@ -519,13 +572,16 @@ describe('chatStateReducer', () => {
   });
 
   it('agentStreamUpdateReceived(error) clears stale model-unavailable state', () => {
-    const state = chatStateReducer(stateWithModelUnavailable(), agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'error',
-      error: 'stream failed',
-    }));
+    const state = chatStateReducer(
+      stateWithModelUnavailable(),
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'error',
+        error: 'stream failed',
+      }),
+    );
     const agent = state.byAgentId[AGENT];
     expect(agent.error).toBe('stream failed');
     expect(agent.modelUnavailable).toBeNull();
@@ -533,12 +589,15 @@ describe('chatStateReducer', () => {
 
   it('agentStreamUpdateReceived(timeout) clears streaming metadata and shows a timeout error', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'timeout',
-    }));
+    const s2 = chatStateReducer(
+      s1,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'timeout',
+      }),
+    );
     const agent = s2.byAgentId[AGENT];
     expect(agent.streamingStartTime).toBeNull();
     expect(agent.error).toContain('timed out');
@@ -546,13 +605,16 @@ describe('chatStateReducer', () => {
 
   it('agentStreamUpdateReceived(complete with timeout finishReason) preserves a clear failure message', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'complete',
-      finishReason: 'timeout',
-    }));
+    const s2 = chatStateReducer(
+      s1,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+        finishReason: 'timeout',
+      }),
+    );
     const agent = s2.byAgentId[AGENT];
     expect(agent.streamingStartTime).toBeNull();
     expect(agent.error).toContain('timed out');
@@ -610,15 +672,23 @@ describe('chatStateReducer', () => {
 
   it('streamStatusReceived resets receivedFirstChunk when resetFirstChunk is true', () => {
     let s = chatStateReducer(initialState, chatSendStarted(AGENT));
-    s = chatStateReducer(s, agentStreamUpdateReceived({
-      agentId: AGENT,
-      handlerSessionId: AGENT,
-      source: 'sendMessage',
-      eventType: 'chunk',
-      chunk: 'hello',
-    }));
+    s = chatStateReducer(
+      s,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'chunk',
+        chunk: 'hello',
+      }),
+    );
     expect(s.byAgentId[AGENT].receivedFirstChunk).toBe(true);
-    const event = { phase: 'tool_use', message: 'running', level: 'info' as const, timestamp: 2000 };
+    const event = {
+      phase: 'tool_use',
+      message: 'running',
+      level: 'info' as const,
+      timestamp: 2000,
+    };
     s = chatStateReducer(s, streamStatusReceived(AGENT, event, true));
     expect(s.byAgentId[AGENT].receivedFirstChunk).toBe(false);
   });
@@ -720,12 +790,15 @@ describe('chatStateReducer', () => {
       // case the drained final turn's idle clears).
       let s = chatStateReducer(initialState, chatSendStarted(AGENT));
       s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'sent ok' }));
-      s = chatStateReducer(s, agentStreamUpdateReceived({
-        agentId: AGENT,
-        handlerSessionId: AGENT,
-        source: 'sendMessage',
-        eventType: 'complete',
-      }));
+      s = chatStateReducer(
+        s,
+        agentStreamUpdateReceived({
+          agentId: AGENT,
+          handlerSessionId: AGENT,
+          source: 'sendMessage',
+          eventType: 'complete',
+        }),
+      );
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'sent ok' });
       s = chatStateReducer(s, agentIdleEvent(AGENT));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
@@ -753,20 +826,23 @@ describe('chatStateReducer', () => {
     it('agent:idle preserves the record while a retry-with-model banner is pending (#964)', () => {
       const attempted = { text: 'model-unavailable send' };
       let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-      s = chatStateReducer(s, agentStreamUpdateReceived({
-        agentId: AGENT,
-        handlerSessionId: AGENT,
-        source: 'sendMessage',
-        eventType: 'complete',
-        completeMessage: {
-          role: 'assistant',
-          metadata: {
-            modelUnavailable: true,
-            failedModel: 'slow-model',
-            nextAvailableModel: 'fast-model',
+      s = chatStateReducer(
+        s,
+        agentStreamUpdateReceived({
+          agentId: AGENT,
+          handlerSessionId: AGENT,
+          source: 'sendMessage',
+          eventType: 'complete',
+          completeMessage: {
+            role: 'assistant',
+            metadata: {
+              modelUnavailable: true,
+              failedModel: 'slow-model',
+              nextAvailableModel: 'fast-model',
+            },
           },
-        },
-      }));
+        }),
+      );
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
       s = chatStateReducer(s, agentIdleEvent(AGENT));
       expect(s.byAgentId[AGENT].modelUnavailable).not.toBeNull();
@@ -1179,6 +1255,51 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
     });
 
+    it('edit-while-queued: unscoped set drops pending records so the discarded queue cannot resurrect a stale payload', () => {
+      // A streams; B is enqueued. The user then edit-regenerates a past
+      // message: agent.editAndRegenerate hard-cancels with queue-DISCARD
+      // semantics (PROTOCOL §5.5) and edit-regenerate-service records the
+      // edited text via the unscoped chatLastAttemptedMessageSet.
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('started', { assistantMessageId: 'msg-A' }));
+      s = chatStateReducer(
+        s,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-B',
+          attempt: { text: 'message B' },
+          mode: 'enqueue',
+          queuedMessageId: 'qm-B',
+        }),
+      );
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'edited text' }));
+      // B's pending record is gone — the discard means its turn never drains.
+      // A's observed 'streaming' record survives (it is not resurrectable —
+      // only pending records can be promoted by a queue snapshot).
+      expect(s.byAgentId[AGENT].turnRetryRecords).toEqual([
+        {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          phase: 'streaming',
+          messageId: 'msg-A',
+        },
+      ]);
+      // The discard's empty agent:queue:updated snapshot arrives after
+      // chatSendStarted cleared error (betweenTurns holds) — with no stale
+      // pending record left, it cannot promote B over the edited text.
+      s = chatStateReducer(s, chatSendStarted(AGENT, 'ws-1', 2000));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      const agent = s.byAgentId[AGENT];
+      expect(agent.lastAttemptedMessage).toEqual({ text: 'edited text' });
+      expect(agent.lastAttemptedTurnKey).toBeNull();
+    });
+
     it('enqueue records are bounded FIFO (cap drops oldest)', () => {
       let s = initialState;
       for (let i = 0; i < 25; i++) {
@@ -1196,8 +1317,44 @@ describe('chatStateReducer', () => {
       expect(records[0].turnKey).toBe('turn-5');
       expect(records[19].turnKey).toBe('turn-24');
     });
-  });
 
+    it("cap evicts only 'pending' records — a promoted 'streaming' record survives an enqueue flood", () => {
+      // Direct send A, promoted to 'streaming' by its stream started.
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('started', { assistantMessageId: 'msg-A' }));
+      // 25 enqueues while A streams — well past the 20-record cap.
+      for (let i = 0; i < 25; i++) {
+        s = chatStateReducer(
+          s,
+          chatTurnAttemptRecorded(AGENT, {
+            turnKey: `turn-${i}`,
+            attempt: { text: `message ${i}` },
+            mode: 'enqueue',
+            queuedMessageId: `qm-${i}`,
+          }),
+        );
+      }
+      const records = s.byAgentId[AGENT].turnRetryRecords;
+      expect(records).toHaveLength(20);
+      // The promoted record backing the banner pointer is never evicted…
+      expect(records[0]).toMatchObject({ turnKey: 'turn-A', phase: 'streaming' });
+      expect(s.byAgentId[AGENT].lastAttemptedTurnKey).toBe('turn-A');
+      // …so its turn-scoped idle finalize still works: A fails, the banner
+      // holds A, and the idle reconcile preserves it.
+      s = chatStateReducer(s, streamEvent('error', { error: 'provider error' }));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'message A' });
+      // Only the oldest PENDING records were evicted (turn-0 … turn-5).
+      expect(records[1].turnKey).toBe('turn-6');
+      expect(records[19].turnKey).toBe('turn-24');
+    });
+  });
 });
 
 describe('chatState selectors', () => {
@@ -1212,7 +1369,9 @@ describe('chatState selectors', () => {
   });
 
   it('selectChatAgentState returns empty state for unknown', () => {
-    expect(selectChatAgentState.select(asStoreState(initialState), 'x')).toEqual(emptyChatAgentState);
+    expect(selectChatAgentState.select(asStoreState(initialState), 'x')).toEqual(
+      emptyChatAgentState,
+    );
   });
 
   it('selectChatLastMessageTime returns 0 by default', () => {
@@ -1251,6 +1410,4 @@ describe('chatState selectors', () => {
   it('selectTranscriptHydration returns undefined by default', () => {
     expect(selectTranscriptHydration.select(asStoreState(initialState), AGENT)).toBeUndefined();
   });
-
 });
-
