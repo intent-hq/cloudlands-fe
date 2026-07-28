@@ -14,8 +14,10 @@
 export interface ACPProviderConfig {
   /** Unique identifier for the provider (e.g., 'auggie', 'opencode') */
   id: string;
-  /** Display name shown in UI (e.g., 'Auggie', 'OpenCode') */
+  /** Display name shown in UI (e.g., 'Augment Auggie', 'OpenCode') */
   displayName: string;
+  /** Short display name for compact UI like the usage-stats cards (e.g., 'Auggie', 'Claude Code') */
+  shortName: string;
   /** CLI command for the provider's agent binary (used in UI hints and PATH checks) */
   command: string;
   /** Whether this provider is the default/primary provider */
@@ -42,6 +44,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   auggie: {
     id: 'auggie',
     displayName: 'Augment Auggie',
+    shortName: 'Auggie',
     command: 'auggie',
     isDefault: true,
     canBeDisabled: true,
@@ -52,6 +55,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   'claude-code': {
     id: 'claude-code',
     displayName: 'Anthropic Claude Code',
+    shortName: 'Claude Code',
     command: 'claude-agent-acp',
     isDefault: false,
     canBeDisabled: true,
@@ -60,6 +64,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   codex: {
     id: 'codex',
     displayName: 'OpenAI Codex',
+    shortName: 'Codex',
     command: 'codex-acp',
     isDefault: false,
     canBeDisabled: true,
@@ -69,6 +74,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   cortex: {
     id: 'cortex',
     displayName: 'Snowflake Cortex',
+    shortName: 'Cortex',
     command: 'cortex-acp',
     isDefault: false,
     canBeDisabled: true,
@@ -78,6 +84,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   opencode: {
     id: 'opencode',
     displayName: 'OpenCode',
+    shortName: 'OpenCode',
     command: 'opencode',
     isDefault: false,
     canBeDisabled: true,
@@ -87,6 +94,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   pi: {
     id: 'pi',
     displayName: 'Pi',
+    shortName: 'Pi',
     command: 'pi-acp',
     isDefault: false,
     canBeDisabled: true,
@@ -96,6 +104,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   droid: {
     id: 'droid',
     displayName: 'Factory Droid',
+    shortName: 'Droid',
     command: 'droid',
     isDefault: false,
     canBeDisabled: true,
@@ -105,6 +114,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   grok: {
     id: 'grok',
     displayName: 'Grok Build',
+    shortName: 'Grok',
     command: 'grok',
     isDefault: false,
     canBeDisabled: true,
@@ -115,6 +125,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   unsloth: {
     id: 'unsloth',
     displayName: 'Unsloth',
+    shortName: 'Unsloth',
     // Unsloth rides the opencode binary as its ACP runtime; the daemon owns
     // the managed local server lifecycle and spawn-time configuration.
     command: 'opencode',
@@ -126,6 +137,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
   mock: {
     id: 'mock',
     displayName: 'Mock (E2E)',
+    shortName: 'Mock',
     command: 'node',
     isDefault: false,
     canBeDisabled: true,
