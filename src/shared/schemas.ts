@@ -113,6 +113,7 @@ export const WorkspaceSchema = z.object({
   conversationInfo: z.array(z.any()),
   status: z.nativeEnum(WorkspaceStatus),
   statusMessage: WorkspaceStatusMessageSchema.optional(),
+  statusImageAssetId: z.string().optional(), // Agent-authored status screenshot asset id (intent-hq/monorepo#997)
   activity: z.enum(['idle', 'agent_running']).optional(), // BE-derived in-flight agent state
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

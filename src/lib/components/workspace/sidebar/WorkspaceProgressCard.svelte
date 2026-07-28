@@ -26,6 +26,7 @@
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import TaskAgentStatus from '$lib/components/tiptap/TaskAgentStatus.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
     type MenuAction,
@@ -268,6 +269,19 @@
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
+
+  // Agent-authored status screenshot (intent-hq/monorepo#997). Content-addressed
+  // asset id served via the workspace-asset:// protocol; a failed load hides the
+  // image until the asset id changes (the URL comparison resets naturally).
+  const statusImageUrl = $derived(
+    $workspace?.statusImageAssetId
+      ? `workspace-asset://${$workspace.id}/${$workspace.statusImageAssetId}`
+      : '',
+  );
+  let failedStatusImageUrl = $state('');
+  const showStatusImage = $derived(!!statusImageUrl && statusImageUrl !== failedStatusImageUrl);
+  let statusImageLightboxOpen = $state(false);
+  let statusImageButtonRef: HTMLButtonElement | null = $state(null);
 
   // Copy workspace repo path to clipboard
   let copiedRepoPath = $state(false);
@@ -1201,6 +1215,35 @@
             </button>
           {/if}
         </div>
+      {/if}
+
+      <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
+      {#if showStatusImage}
+        <div class="px-0.5 py-1">
+          <button
+            bind:this={statusImageButtonRef}
+            type="button"
+            class="block w-full cursor-zoom-in bg-transparent border-none p-0
+                 focus-visible:outline focus-visible:outline-1
+                 focus-visible:outline-primary/50 focus-visible:outline-offset-1"
+            onclick={() => (statusImageLightboxOpen = true)}
+            title="Click to view full size"
+            aria-label="View workspace status screenshot"
+          >
+            <img
+              src={statusImageUrl}
+              alt="Workspace status screenshot"
+              class="w-full max-h-48 object-contain rounded-md border border-border"
+              onerror={() => (failedStatusImageUrl = statusImageUrl)}
+            />
+          </button>
+        </div>
+        <ImageLightbox
+          bind:open={statusImageLightboxOpen}
+          imageUrl={statusImageUrl}
+          imageName="Workspace status screenshot"
+          openerElement={statusImageButtonRef}
+        />
       {/if}
 
       <!-- Ready Tasks Section (excludes spec from display) -->
