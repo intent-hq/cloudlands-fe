@@ -5,19 +5,23 @@
   import { setLanguagePreference } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { selectLanguagePreference } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { getAvailableLocales, getLocaleEndonym } from '$lib/i18n/locale';
-  import { SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
+  import { PSEUDO_LOCALE, SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
 
   const languagePreference = selectLanguagePreference();
 
   // Catalog-driven: options come straight from the compiled Paraglide locales,
   // so new catalogs added to messages/ appear here automatically. Each locale
-  // is labeled with its endonym (its own name in that language).
+  // is labeled with its endonym (its own name in that language). The generated
+  // pseudo-locale (en-XA) is a QA tool, offered in dev builds only.
   const options = [
     { value: SYSTEM_LANGUAGE_PREFERENCE, label: m.settings_language_system_option() },
-    ...getAvailableLocales().map((locale) => ({
-      value: locale as string,
-      label: getLocaleEndonym(locale),
-    })),
+    ...getAvailableLocales()
+      .filter((locale) => (locale as string) !== PSEUDO_LOCALE || import.meta.env.DEV)
+      .map((locale) => ({
+        value: locale as string,
+        // i18n-ignore (dev-only pseudo-locale label)
+        label: (locale as string) === PSEUDO_LOCALE ? 'Pseudo (en-XA)' : getLocaleEndonym(locale),
+      })),
   ];
 
   const selectedLabel = $derived(
