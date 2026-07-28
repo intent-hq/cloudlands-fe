@@ -50,7 +50,7 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
 
     const mockScriptPath = path.resolve(process.cwd(), 'e2e', 'mock-acp-agent.js');
     const launched = await launchPackagedApp({
-      extraEnv: { MOCK_AGENT_SCRIPT_PATH: mockScriptPath, DEFAULT_PROVIDER_OVERRIDE: 'mock' },
+      extraEnv: { MOCK_AGENT_SCRIPT_PATH: mockScriptPath },
     });
     app = launched.app;
     page = launched.page;

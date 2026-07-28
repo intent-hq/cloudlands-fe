@@ -18,7 +18,8 @@
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
-import { getProviderConfig } from '$shared/config/provider-config';
+import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('ProviderModelsClient');
@@ -76,12 +77,12 @@ function toErrorMessage(error: unknown): string {
 }
 
 function toProviderError(providerId: string, message: string): Error {
-  // Only prefix with the display name for known providers — getProviderConfig()
-  // falls back to the default provider for unknown IDs, which would mislabel
-  // the error with a different provider's name.
+  // Only prefix with the display name for known providers — the catalog
+  // lookup falls back to the default provider for unknown IDs, which would
+  // mislabel the error with a different provider's name.
   const providerName =
     providerId in PROVIDER_MODEL_CHANNELS
-      ? getProviderConfig(providerId).displayName || providerId
+      ? selectProviderDisplayName.select(appStore.state, providerId) || providerId
       : providerId;
   return new Error(
     message.startsWith(`${providerName}:`) ? message : `${providerName}: ${message}`,

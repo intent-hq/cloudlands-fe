@@ -13,7 +13,7 @@
  */
 
 import type { AgentId, WorkspaceId } from './branded-ids';
-import { parseCompoundModelId } from '$shared/config/provider-config';
+import { parseCompoundModelId } from '$shared/utils/compound-model-id';
 import type { AgentMessage } from './agent-message';
 import { AgentStatus } from './agent.types';
 import type { AgentMetadata } from '../types';
@@ -357,9 +357,14 @@ export function isPendingAgentSession(
  * Resolve the provider for an agent session, with fallback chain.
  * Checks top-level `provider`, then `metadata.provider`, then `config.provider`.
  * Filters out the legacy 'acp' value (protocol name, not a real provider).
- * Falls back to inferring provider from the model ID if available.
+ * Falls back to inferring provider from the model ID if available —
+ * `defaultProviderId` (the registry default from the provider catalog)
+ * attributes bare model ids.
  */
-export function getAgentProvider(session: AgentSession): string | undefined {
+export function getAgentProvider(
+  session: AgentSession,
+  defaultProviderId: string,
+): string | undefined {
   const explicit =
     session.provider ?? session.metadata?.provider ?? (session as any).config?.provider;
 
@@ -370,9 +375,11 @@ export function getAgentProvider(session: AgentSession): string | undefined {
 
   // Fallback: infer provider from model ID.
   // parseCompoundModelId handles both compound ('opencode:haiku4.5' -> 'opencode')
-  // and bare ('haiku4.5' -> default provider) model IDs.
+  // and bare ('haiku4.5' -> default provider) model IDs. An empty resolution
+  // (bare id before catalog hydration, or a malformed ':model' prefix) is
+  // "unknown", never an empty-string provider id.
   if (session.model) {
-    return parseCompoundModelId(session.model).providerId;
+    return parseCompoundModelId(session.model, defaultProviderId).providerId || undefined;
   }
 
   return undefined;

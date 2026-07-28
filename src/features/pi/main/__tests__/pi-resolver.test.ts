@@ -34,7 +34,7 @@ import {
   installPiMcpAdapter,
   PI_ACP_NPX_PACKAGE,
 } from '../pi-resolver';
-import { ACP_PROVIDERS } from '../../../../shared/config/provider-config';
+
 
 describe('pi-resolver', () => {
   beforeEach(() => {
@@ -122,16 +122,9 @@ describe('pi-resolver', () => {
   });
 });
 
-describe('Pi provider config', () => {
-  it('ACP_PROVIDERS.pi is present with the expected shape', () => {
-    const config = ACP_PROVIDERS['pi'];
-    expect(config).toBeDefined();
-    expect(config.id).toBe('pi');
-    expect(config.command).toBe('pi-acp');
-    expect(config.canBeDisabled).toBe(true);
-    expect(config.isDefault).toBe(false);
-  });
-});
+// The pi registry row (id/command/canBeDisabled/isDefault) is compiled into
+// the intentd daemon and served via providers.catalog (PROTOCOL §5.38); its
+// shape is pinned by the daemon's own tests, not by FE snapshots.
 
 
 describe('isPiMcpAdapterInstalled (host.exec seam)', () => {

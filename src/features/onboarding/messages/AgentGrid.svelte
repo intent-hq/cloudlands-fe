@@ -11,7 +11,10 @@
    */
   import { onMount } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { ACP_PROVIDERS, getDefaultProviderId } from '$shared/config/provider-config';
+  import {
+  selectCatalogDefaultProviderId,
+  selectProviderCatalogEntries,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { AUGGIE_CHANNELS } from '$shared/ipc/channels';
   import ProviderCard from './ProviderCard.svelte';
   import type { ProviderBrandColors } from './ProviderCard.svelte';
@@ -158,8 +161,13 @@
     },
   };
 
-  /** Randomized provider order computed once per component mount */
-  const randomizedProviderOrder = shuffleArray(Object.values(ACP_PROVIDERS));
+  const catalogEntries$ = selectProviderCatalogEntries();
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
+
+  /** Randomized provider order — shuffled once when the catalog rows land
+   *  (rows are static per daemon connection, so this is once per mount in
+   *  practice). */
+  const randomizedProviderOrder = $derived.by(() => shuffleArray($catalogEntries$));
 
   /** Visible providers (not hidden by env var / feature code gates),
    *  tier-ordered (confirmed-logged-in → installed-not-logged-in-or-unknown →
@@ -233,7 +241,7 @@
   const selectedProviderId = $derived(
     resolveOnboardingSelectedProvider({
       activeProviderId: $activeProviderId$,
-      defaultProviderId: getDefaultProviderId(),
+      defaultProviderId: $defaultProviderId$,
       readyProviderIds,
     }),
   );

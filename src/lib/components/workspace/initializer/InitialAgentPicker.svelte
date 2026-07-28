@@ -27,11 +27,12 @@
   getProviderAvailability,
   type ProviderAvailabilityResult,
 } from '$features/providers/provider-availability.client';
+  import { parseCompoundModelId } from '$shared/utils/compound-model-id';
   import {
-  ACP_PROVIDERS,
-  getDefaultProviderId,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
+  selectCatalogDefaultProviderId,
+  selectProviderCatalogEntries,
+  selectProviderModelTiers,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { resolveEffectiveModelForSpecialist } from '$lib/utils/effective-model-resolution';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
@@ -41,6 +42,8 @@
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('InitialAgentPicker');
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const catalogEntries$ = selectProviderCatalogEntries();
   const specialists$ = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
@@ -79,7 +82,7 @@
     selectedModel = $bindable<string | undefined>(undefined),
     modelWasOverridden = $bindable<boolean>(false),
     isTeamMode = $bindable<boolean>(true),
-    selectedProvider = $bindable<string>($activeProviderId$ ?? getDefaultProviderId()),
+    selectedProvider = $bindable<string>($activeProviderId$ || $defaultProviderId$),
     onSpecialistChange,
     onModelChange,
     onTeamModeChange,
@@ -112,10 +115,10 @@
     return false;
   }
 
-  // Available providers derived from availability check - dynamically from ACP_PROVIDERS
+  // Available providers derived from availability check - dynamically from the catalog
   const availableProviders = $derived.by(() => {
     if (!providerAvailability) return [];
-    return Object.values(ACP_PROVIDERS)
+    return $catalogEntries$
       .filter((provider) => getProviderAvailable(provider.id))
       .map((provider) => ({ id: provider.id }));
   });
@@ -166,7 +169,10 @@
   $effect(() => {
     const provider = selectedProvider;
     if (selectedModel) {
-      const { providerId: modelProvider } = parseCompoundModelId(selectedModel);
+      const { providerId: modelProvider } = parseCompoundModelId(
+        selectedModel,
+        $defaultProviderId$,
+      );
       if (modelProvider !== provider) {
         logger.debug('Clearing stale model override (provider mismatch):', {
           selectedModel,
@@ -230,6 +236,8 @@
       specialistId: specialist,
       selectedProvider,
       availableModelValues: $availableModels$.map((m) => m.value),
+      defaultProviderId: $defaultProviderId$,
+      selectedProviderTiers: selectProviderModelTiers.select(state, selectedProvider),
       globalSelectedModel: $selectedModel$,
       effectiveCodingAgent: specialist
         ? selectEffectiveCodingAgent.select(state, specialist)
@@ -294,7 +302,7 @@
     specialist: string | null; // only used by single-agent mode, but keep it uniform
   }
 
-  const defaultProvider = $activeProviderId$ ?? getDefaultProviderId();
+  const defaultProvider = $activeProviderId$ || $defaultProviderId$;
 
   let lastTeamMode = $state<ModeSnapshot>({
     model: undefined,
@@ -388,7 +396,7 @@
     selectedModel = undefined;
     modelWasOverridden = false;
     // Reset provider to default when clearing model override
-    const defaultProv = $activeProviderId$ ?? getDefaultProviderId();
+    const defaultProv = $activeProviderId$ || $defaultProviderId$;
     if (selectedProvider !== defaultProv) {
       selectedProvider = defaultProv;
       onProviderChange?.(defaultProv);
@@ -405,7 +413,7 @@
 
     // Update provider to match the selected model's provider
     if (model) {
-      const { providerId } = parseCompoundModelId(model);
+      const { providerId } = parseCompoundModelId(model, $defaultProviderId$);
       if (providerId !== selectedProvider) {
         selectedProvider = providerId;
         onProviderChange?.(providerId);

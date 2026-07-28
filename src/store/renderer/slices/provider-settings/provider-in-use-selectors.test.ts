@@ -9,9 +9,20 @@ import {
 } from "./provider-in-use-selectors";
 import { initialState as specialistsInitialState } from "../specialists/specialists-slice";
 import { initialState as modelInitialState } from "../model/model-slice";
+import {
+  initialState as providerCatalogInitialState,
+  providerCatalogLoaded,
+  providerCatalogReducer,
+} from "../provider-catalog/provider-catalog-slice";
+import { MOCK_PROVIDER_CATALOG } from "../../../../test/fixtures/provider-catalog.fixture";
 import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
 import type { FileSpecialist } from "../specialists/specialists-slice";
 import type { StoreState } from "../../types";
+
+const providerCatalog = providerCatalogReducer(
+  providerCatalogInitialState,
+  providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+);
 
 function fileSpecialist(overrides: Partial<FileSpecialist> & { id: string }): FileSpecialist {
   return {
@@ -35,6 +46,7 @@ function mockState({
   fileSpecialists?: FileSpecialist[];
 } = {}): StoreState {
   return {
+    providerCatalog,
     providerSettings: { activeProviderId, enabledProviders: {} },
     model: { ...modelInitialState, providerModels },
     specialists: {

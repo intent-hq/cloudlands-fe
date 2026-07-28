@@ -4,14 +4,8 @@
  * (CompactWorkspaceInitializer), so the agent is created with exactly the
  * model the picker displayed.
  */
-import {
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  parseCompoundModelId,
-  PROVIDER_MODEL_TIERS,
-  resolvePreferredModel,
-  type ModelTier,
-} from '$shared/config/provider-config';
+import type { ProviderModelTier, ProviderModelTiersTable } from '$shared/provider-catalog';
+import { parseCompoundModelId, resolvePreferredModel } from '$shared/utils/compound-model-id';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 
 export interface EffectiveSpecialistModelInput {
@@ -21,6 +15,13 @@ export interface EffectiveSpecialistModelInput {
   selectedProvider: string;
   /** Model values available for the loaded provider */
   availableModelValues: string[];
+  /** Registry default provider id (selectCatalogDefaultProviderId) */
+  defaultProviderId: string;
+  /**
+   * Static tier table for the form's selected provider
+   * (selectProviderModelTiers), undefined for dynamic-model providers.
+   */
+  selectedProviderTiers?: ProviderModelTiersTable;
   /** Global model-store selection, used as the no-specialist fallback preference */
   globalSelectedModel?: string;
   /** Effective coding agent for the specialist (from selectEffectiveCodingAgent) */
@@ -28,7 +29,7 @@ export interface EffectiveSpecialistModelInput {
   /** Effective model for the specialist (from selectEffectiveModel) */
   effectiveModel?: string;
   /** Merged specialist info used for local tier/default-model fallbacks */
-  specialistInfo?: { defaultModelTier?: ModelTier; defaultModel?: string };
+  specialistInfo?: { defaultModelTier?: ProviderModelTier; defaultModel?: string };
 }
 
 /**
@@ -70,6 +71,8 @@ export function resolveEffectiveModelForSpecialist(
     specialistId,
     selectedProvider,
     availableModelValues,
+    defaultProviderId,
+    selectedProviderTiers,
     globalSelectedModel,
     effectiveCodingAgent,
     effectiveModel,
@@ -90,17 +93,15 @@ export function resolveEffectiveModelForSpecialist(
 
     // User changed provider within the form — resolve the specialist's model
     // tier against the locally-selected provider.
-    if (specialistInfo?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
-      const baseModel = getDefaultModelForProvider(
-        selectedProvider,
-        specialistInfo.defaultModelTier,
-      );
-      const defaultProviderId = getDefaultProviderId();
+    const baseModel = specialistInfo?.defaultModelTier
+      ? selectedProviderTiers?.[specialistInfo.defaultModelTier]
+      : undefined;
+    if (baseModel) {
       const resolvedModel =
         selectedProvider !== defaultProviderId ? `${selectedProvider}:${baseModel}` : baseModel;
       // Validate the tier-resolved model exists in the available models.
-      // PROVIDER_MODEL_TIERS may have hardcoded model names that don't match
-      // the actual models returned by the provider (e.g. opencode CLI).
+      // Static tier tables may carry model names that don't match the actual
+      // models returned by the provider (e.g. opencode CLI).
       if (valuesSet.has(resolvedModel)) {
         return resolvedModel;
       }
@@ -113,7 +114,8 @@ export function resolveEffectiveModelForSpecialist(
     // provider; fall through to the provider's own available models instead.
     if (
       specialistInfo?.defaultModel &&
-      parseCompoundModelId(specialistInfo.defaultModel).providerId === selectedProvider
+      parseCompoundModelId(specialistInfo.defaultModel, defaultProviderId).providerId ===
+        selectedProvider
     ) {
       return specialistInfo.defaultModel;
     }
@@ -153,9 +155,10 @@ export function resolveSubmitModel(
 export function resolveSubmitProvider(
   resolvedModel: string | undefined,
   selectedProvider: string,
+  defaultProviderId: string,
 ): string {
   if (!resolvedModel) return selectedProvider;
-  return parseCompoundModelId(resolvedModel).providerId || selectedProvider;
+  return parseCompoundModelId(resolvedModel, defaultProviderId).providerId || selectedProvider;
 }
 
 /**
@@ -171,9 +174,10 @@ export function resolveSubmitProvider(
 export function dropCrossProviderFallbackModel(
   resolvedModel: string | undefined,
   selectedProvider: string,
+  defaultProviderId: string,
 ): string | undefined {
   if (!resolvedModel) return undefined;
-  return parseCompoundModelId(resolvedModel).providerId === selectedProvider
+  return parseCompoundModelId(resolvedModel, defaultProviderId).providerId === selectedProvider
     ? resolvedModel
     : undefined;
 }

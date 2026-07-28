@@ -20,12 +20,14 @@ import {
   GITHUB_DEPENDENT_SPECIALIST_IDS,
 } from '$lib/constants/specialists';
 import {
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  getModelTierFromModel,
-  PROVIDER_MODEL_TIERS,
-  type ModelTier,
-} from '$shared/config/provider-config';
+  getModelTierFromCatalog,
+  type ProviderModelTier as ModelTier,
+} from '$shared/provider-catalog';
+import {
+  getCachedDefaultProviderId,
+  getCachedProviderCatalog,
+  getCachedProviderCatalogEntry,
+} from '../../../main/utils/provider-catalog-accessor';
 import {
   loadSpecialistFiles,
   loadProjectSpecialistFiles,
@@ -262,7 +264,27 @@ function resolveSpecialistCodingAgent(
   explicitCodingAgent: string | undefined,
   fallbackCodingAgent?: string,
 ): string {
-  return explicitCodingAgent || fallbackCodingAgent || getDefaultProviderId();
+  // Last resort is the daemon registry's default. Before catalog hydration
+  // this degrades to '' (unknown) rather than baking in a provider id —
+  // callers always pass the active provider as fallbackCodingAgent in
+  // practice, and tier lookups on '' safely resolve to undefined.
+  return explicitCodingAgent || fallbackCodingAgent || getCachedDefaultProviderId() || '';
+}
+
+/**
+ * Reverse-map a model id to a capability tier via the cached catalog rows.
+ * Returns undefined before catalog hydration (callers then keep the explicit
+ * model / tier from the file, same as an unknown model today).
+ */
+function getModelTierFromModel(modelId: string, preferredProviderId?: string): ModelTier | undefined {
+  const catalog = getCachedProviderCatalog();
+  if (!catalog) return undefined;
+  return getModelTierFromCatalog(catalog.providers, modelId, preferredProviderId);
+}
+
+/** The static tier table for a provider from the cached catalog, if any. */
+function getProviderTiers(providerId: string): Record<ModelTier, string> | undefined {
+  return getCachedProviderCatalogEntry(providerId)?.modelTiers;
 }
 
 /**
@@ -304,8 +326,9 @@ export function getEffectiveSpecialist(
     // resolution only applies when the file does not declare a model.
     if (!hasExplicitModel) {
       if (tier) {
-        if (codingAgent in PROVIDER_MODEL_TIERS) {
-          resolvedModel = getDefaultModelForProvider(codingAgent, tier);
+        const tiers = getProviderTiers(codingAgent);
+        if (tiers) {
+          resolvedModel = tiers[tier];
         }
       }
     }
@@ -337,8 +360,9 @@ export function getEffectiveSpecialist(
         : undefined);
     let resolvedModel = hardcoded.defaultModel || '';
     if (hardcoded.defaultModelTier && hardcodedTier) {
-      if (codingAgent in PROVIDER_MODEL_TIERS) {
-        resolvedModel = getDefaultModelForProvider(codingAgent, hardcodedTier);
+      const tiers = getProviderTiers(codingAgent);
+      if (tiers) {
+        resolvedModel = tiers[hardcodedTier];
       }
     }
     return {
@@ -387,8 +411,9 @@ export function getAllEffectiveSpecialists(
       // resolution only applies when the file does not declare a model.
       if (!hasExplicitModel) {
         if (tier) {
-          if (codingAgent in PROVIDER_MODEL_TIERS) {
-            resolvedModel = getDefaultModelForProvider(codingAgent, tier);
+          const tiers = getProviderTiers(codingAgent);
+          if (tiers) {
+            resolvedModel = tiers[tier];
           }
         }
       }
@@ -417,8 +442,9 @@ export function getAllEffectiveSpecialists(
       (s.defaultModel ? getModelTierFromModel(s.defaultModel, codingAgent) : undefined);
     let resolvedModel = s.defaultModel || '';
     if (s.defaultModelTier && hardcodedTier) {
-      if (codingAgent in PROVIDER_MODEL_TIERS) {
-        resolvedModel = getDefaultModelForProvider(codingAgent, hardcodedTier);
+      const tiers = getProviderTiers(codingAgent);
+      if (tiers) {
+        resolvedModel = tiers[hardcodedTier];
       }
     }
     return {

@@ -118,8 +118,21 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import { resolveOnboardingModel } from './resolve-onboarding-model';
+import {
+  initialState as providerCatalogInitialState,
+  providerCatalogLoaded,
+  providerCatalogReducer,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.fixture';
 
-const fakeState = {} as StoreState;
+// The resolver reads the default provider + tier tables straight off
+// state.providerCatalog (real selectors, not mocked) — hydrate it.
+const fakeState = {
+  providerCatalog: providerCatalogReducer(
+    providerCatalogInitialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  ),
+} as StoreState;
 
 function setAvailability(
   overrides: Partial<Record<keyof ProviderAvailabilityResult['providers'], { available: boolean; authenticated?: boolean }>>,

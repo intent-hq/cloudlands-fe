@@ -47,7 +47,19 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import(
     '$store/renderer/utils/test-helpers/store-mock'
   );
-  return createAppStoreMockModule({ state: () => ({}) });
+  // The picker reads the default provider / catalog rows via the
+  // providerCatalog slice — hydrate the §5.38-shaped mock catalog.
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
+  );
+  const { MOCK_PROVIDER_CATALOG } = await import(
+    '../../../../../test/fixtures/provider-catalog.fixture'
+  );
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  );
+  return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
 });
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({

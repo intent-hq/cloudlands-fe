@@ -34,10 +34,21 @@ async function buildState(fileSpecialists: object[]) {
   const { createCollection } = await import(
     '$lib/store-shim/utils/collections/collection-utils'
   );
+  const { initialState: providerCatalogInitialState, providerCatalogReducer, providerCatalogLoaded } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } = await import(
+    '../../../test/fixtures/provider-catalog.fixture'
+  );
   return {
+    providerCatalog: providerCatalogReducer(
+      providerCatalogInitialState,
+      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+    ),
     providerSettings: {
       activeProviderId: 'auggie',
       enabledProviders: { 'claude-code': true, codex: true },
+      defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
+      nonDisableableProviderIds: [],
     },
     model: { ...modelInitialState, providerModels: {} },
     specialists: {
@@ -73,8 +84,10 @@ describe('AdditionalAgentsSettings disable guard', () => {
   async function renderToggles() {
     const AdditionalAgentsSettings = (await import('./AdditionalAgentsSettings.svelte')).default;
     const result = render(AdditionalAgentsSettings);
-    const { ACP_PROVIDERS } = await import('$shared/config/provider-config');
-    const providers = Object.values(ACP_PROVIDERS).filter((p) => p.canBeDisabled);
+    const { MOCK_PROVIDER_CATALOG } = await import(
+      '../../../test/fixtures/provider-catalog.fixture'
+    );
+    const providers = MOCK_PROVIDER_CATALOG.providers.filter((p) => p.canBeDisabled);
     const toggles = await waitFor(() => {
       const found = result.getAllByRole('switch', { hidden: true });
       expect(found.length).toBe(providers.length);

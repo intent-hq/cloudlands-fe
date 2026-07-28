@@ -17,6 +17,23 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   onBackendNotification: vi.fn(() => () => {}),
 }));
 
+// providerDisplayName resolves shortName via the providerCatalog slice —
+// provide a hydrated §5.38-shaped mock state instead of booting the store.
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import(
+    '$store/renderer/utils/test-helpers/store-mock'
+  );
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
+  );
+  const { MOCK_PROVIDER_CATALOG } = await import('../../test/fixtures/provider-catalog.fixture');
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  );
+  return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
+});
+
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { LiveStatsClient } from '$lib/client/live/live-stats-client';
 import ProvidersCard from './ProvidersCard.svelte';

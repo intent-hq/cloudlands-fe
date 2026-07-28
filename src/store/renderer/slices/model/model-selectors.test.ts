@@ -3,8 +3,8 @@ import {
   expect,
   it,
 } from 'vitest';
-import { getDefaultProviderId } from '$shared/config/provider-config';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { initialState as modelInitialState } from './model-slice';
 import { initialState as providerSettingsInitialState } from '../provider-settings/provider-settings-slice';
 import { selectSelectedModel } from './model-selectors';
@@ -12,7 +12,7 @@ import type { ModelState } from './model-types';
 import type { ProviderSettingsState } from '../provider-settings/provider-settings-slice';
 import type { StoreState } from '../../types';
 
-const defaultProviderId = getDefaultProviderId();
+const defaultProviderId = MOCK_PROVIDER_CATALOG.defaultProviderId;
 
 function mockState(
   model: Partial<ModelState> = {},

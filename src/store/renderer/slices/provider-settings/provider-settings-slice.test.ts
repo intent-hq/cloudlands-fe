@@ -6,7 +6,7 @@ import {
 import {
   ensureEnabledIfUnset,
   hydrateActiveProvider,
-  initialState,
+  initialState as bareInitialState,
   loadEnabledProvidersFromStorage,
   providerSettingsReducer,
   setActiveProvider,
@@ -14,11 +14,32 @@ import {
   toggleProvider,
   type ProviderSettingsState,
 } from "./provider-settings-slice";
+import { providerCatalogLoaded } from "../provider-catalog/provider-catalog-slice";
+import { MOCK_PROVIDER_CATALOG } from "../../../../test/fixtures/provider-catalog.fixture";
+
+// Most cases exercise the slice after catalog hydration (boot-time contract:
+// the provider-catalog seeder lands before any user toggles).
+const initialState = providerSettingsReducer(
+  bareInitialState,
+  providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+);
 
 describe("providerSettingsReducer", () => {
   it("should return initial state", () => {
     const state = providerSettingsReducer(undefined, { type: "@@INIT" });
-    expect(state).toEqual(initialState);
+    expect(state).toEqual(bareInitialState);
+  });
+
+  it("snapshots catalog metadata and adopts the registry default as active", () => {
+    expect(bareInitialState.activeProviderId).toBe("");
+    expect(initialState.activeProviderId).toBe(MOCK_PROVIDER_CATALOG.defaultProviderId);
+    expect(initialState.defaultProviderId).toBe(MOCK_PROVIDER_CATALOG.defaultProviderId);
+    // Hydration must not clobber a settings-hydrated active provider.
+    const hydratedFirst = providerSettingsReducer(
+      { ...bareInitialState, activeProviderId: "codex" },
+      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+    );
+    expect(hydratedFirst.activeProviderId).toBe("codex");
   });
 
   describe("active provider actions", () => {
