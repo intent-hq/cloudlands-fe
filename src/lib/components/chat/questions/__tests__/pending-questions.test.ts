@@ -7,13 +7,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { derivePendingQuestions } from '../pending-questions';
+import { deriveWizardPendingQuestions } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { StoreState } from '$store/renderer/types';
-import {
-  selectAgentIsResponding,
-  selectAgentIsRunning,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
 const QUESTION = {
   attachmentId: 'tar-abc123def456',
@@ -153,23 +151,9 @@ function stateWith(session: AgentSession): StoreState {
   } as unknown as StoreState;
 }
 
-/**
- * Mirrors ChatPanel.svelte's `pendingQuestions` derivation: the gate fed into
- * `derivePendingQuestions` is the agent's OWN active turn
- * (`selectAgentIsResponding`), NOT the broad `selectAgentIsRunning` gate —
- * `isRunning` stays true while the agent merely waits on delegated agents,
- * which must not suppress the wizard.
- */
-function deriveWizardPendingQuestions(
-  state: StoreState,
-  agentId: string,
-  messages: AgentMessage[],
-  showingPendingUserMessage = false,
-) {
-  const isResponding = selectAgentIsResponding.select(state, agentId);
-  return derivePendingQuestions(messages, isResponding, showingPendingUserMessage);
-}
-
+// The suite exercises the REAL production gate — deriveWizardPendingQuestions
+// from ../wizard-gate, the same function ChatPanel.svelte calls — so reverting
+// the gate to the broad running selector fails the regression test below.
 describe('wizard gate while waiting on delegated agents', () => {
   const AGENT_ID = 'agent-coordinator';
   // Coordinator asked a question, ended its own turn, and is now paused on

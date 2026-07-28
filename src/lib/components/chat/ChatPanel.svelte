@@ -135,7 +135,7 @@
   import QuestionWizard, {
   type QuestionAnswer,
 } from './questions/QuestionWizard.svelte';
-  import { derivePendingQuestions } from './questions/pending-questions';
+  import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { flattenAnswersToMessage } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
@@ -476,14 +476,23 @@
   // user message (and not streaming) replace the composer with the sequential
   // wizard. Derivation is purely transcript-based (wire contract), so
   // restored sessions re-surface unanswered questions automatically.
-  // Gated on the agent's OWN active turn ($agentIsResponding$), NOT the broad
-  // $agentIsRunning$ gate — an agent paused on delegated agents
-  // (isWaitingForOtherAgents) has ended its turn and its questions must
-  // surface; the composer is already usable in that state.
+  // The gate (own active turn, NOT the broad running gate — an agent paused
+  // on delegated agents has ended its turn and its questions must surface)
+  // lives in deriveWizardPendingQuestions so the regression suite exercises
+  // the real production gate.
   const pendingQuestions = $derived.by(() => {
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
-    return derivePendingQuestions($agentMessages$, $agentIsResponding$, showingPendingUserMessage);
+    // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
+    // that do not change the transcript; the shared helper re-reads the same
+    // value from store state.
+    void $agentIsResponding$;
+    return deriveWizardPendingQuestions(
+      appStore.state,
+      agentId,
+      $agentMessages$,
+      showingPendingUserMessage,
+    );
   });
 
   // Ignore = collapse, not dismiss — transient component state, never
