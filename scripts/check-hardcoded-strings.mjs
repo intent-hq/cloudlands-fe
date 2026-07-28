@@ -72,6 +72,14 @@ const ENFORCED_DIRS = [
   'src/lib/components/markdown',
   'src/features/notes',
   'src/features/comments',
+  'src/features/log',
+  'src/features/stats',
+  'src/features/daemon-status',
+  'src/features/browser',
+  'src/lib/components/browser',
+  'src/lib/components/debug',
+  'src/features/debug',
+  'src/features/debug-export',
 ];
 
 const ROOT = process.cwd();

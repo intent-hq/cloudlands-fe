@@ -26,6 +26,7 @@ import {
 } from '../../events/types';
 import { FileSystemLogRepository } from './log.repository';
 import type { LogRepository } from './log.repository';
+import { m } from '../../../shared/paraglide/messages.js';
 
 import { EventStore } from '../../events/main/event-store';
 import { LOG_CHANNELS } from '../../../shared/ipc/channels';
@@ -228,7 +229,7 @@ export function setupLogIPC() {
           mainLogger.error('[LOG] Failed to track file change', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
           };
         }
       },
@@ -270,7 +271,7 @@ export function setupLogIPC() {
           mainLogger.error('[LOG] Failed to track agent event', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
           };
         }
       },
@@ -314,7 +315,7 @@ export function setupLogIPC() {
           mainLogger.error('[LOG] Failed to track MCP call', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
           };
         }
       },
@@ -337,7 +338,7 @@ export function setupLogIPC() {
         mainLogger.error('[LOG] Failed to get events', error as Error);
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
         };
       }
     },
@@ -359,7 +360,7 @@ export function setupLogIPC() {
         mainLogger.error('[LOG] Failed to clear events', error as Error);
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
         };
       }
     },
@@ -391,7 +392,7 @@ export function setupLogIPC() {
           mainLogger.error('[LOG] Failed to get log paths', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
           };
         }
       },
@@ -473,7 +474,7 @@ export function setupLogIPC() {
         mainLogger.error('[LOG] Failed to read log file', error as Error);
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
         };
       }
     },
@@ -493,7 +494,7 @@ export function setupLogIPC() {
         mainLogger.error('[LOG] Failed to clear logs', error as Error);
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
         };
       }
     },
@@ -585,7 +586,7 @@ export function setupLogIPC() {
         mainLogger.error('[LOG] Failed to get log summary', error as Error);
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
         };
       }
     },
@@ -614,7 +615,7 @@ export function setupLogIPC() {
           mainLogger.error('[LOG] Failed to persist renderer logs', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.log_ipc_unknown_error(),
           };
         }
       },

@@ -97,6 +97,7 @@
   }
 
   function handleReset() {
+    // i18n-ignore (dev-only debug UI)
     if (confirm('Reset all debug flags to defaults?')) {
       debugConfig.reset();
       flags = debugConfig.getAll();
@@ -189,6 +190,7 @@
       sessionStorage.setItem(`workspace-${simulatedWorkspaceId}-show-animation`, 'true');
       sessionStorage.setItem(
         `workspace-${simulatedWorkspaceId}-initial-prompt`,
+        // i18n-ignore (dev-only simulated data)
         'Help me refactor the authentication module',
       );
 
@@ -225,7 +227,7 @@
     const sessions = selectAllWorkspaceAgents.select(appStore.state, workspace.id);
     availableAgents = sessions.map((s) => ({
       id: s.id,
-      name: s.name || 'Unnamed Agent',
+      name: s.name || 'Unnamed Agent', // i18n-ignore (dev-only debug UI)
       status: s.status || 'unknown',
     }));
 
@@ -244,7 +246,7 @@
   async function triggerBackendResume() {
     const workspace = selectActiveWorkspace.select(appStore.state);
     if (!workspace?.id || !selectedAgentId) {
-      backendResumeError = 'No space or agent selected';
+      backendResumeError = 'No space or agent selected'; // i18n-ignore (dev-only debug UI)
       backendResumeStatus = 'error';
       return;
     }
@@ -263,6 +265,7 @@
         {
           workspaceId: workspace.id,
           agentId: selectedAgentId,
+          // i18n-ignore (dev-only debug test message)
           message: `[DEBUG TEST] Backend-initiated wake at ${new Date().toLocaleTimeString()}. Testing frontend handshake flow.`,
         },
       );
@@ -272,7 +275,7 @@
         logger.info('[Debug] Backend resume triggered successfully');
       } else {
         backendResumeStatus = 'error';
-        backendResumeError = result.error || 'Unknown error';
+        backendResumeError = result.error || 'Unknown error'; // i18n-ignore (dev-only debug UI)
         logger.error('[Debug] Backend resume failed', { error: result.error });
       }
     } catch (error) {
@@ -295,6 +298,7 @@
         <!-- Creation Simulation -->
         <div class="space-y-2">
           <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <!-- i18n-ignore (dev-only debug UI) -->
             Workspace Creation
           </h4>
 
@@ -312,17 +316,21 @@
           >
             {#if isSimulatingCreation}
               <Fa icon={faStop} size="xs" />
+              <!-- i18n-ignore (dev-only debug UI) -->
               <span>Back to Creation Page</span>
             {:else}
               <Fa icon={faPlay} size="xs" />
+              <!-- i18n-ignore (dev-only debug UI) -->
               <span>Simulate Creation</span>
             {/if}
           </button>
 
           <p class="text-xs text-subtle leading-tight">
             {#if isSimulatingCreation}
+              <!-- i18n-ignore (dev-only debug UI) -->
               Currently viewing simulated workspace. Click to return.
             {:else}
+              <!-- i18n-ignore (dev-only debug UI) -->
               Navigate to fake workspace with animation and auto-created agent.
             {/if}
           </p>
@@ -331,10 +339,12 @@
         <!-- Animation Settings -->
         <div class="space-y-2">
           <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <!-- i18n-ignore (dev-only debug UI) -->
             Animations
           </h4>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="creation-animation" class="text-sm">Creation Animation</Label>
             <Switch
               id="creation-animation"
@@ -344,6 +354,7 @@
           </div>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="page-transitions" class="text-sm">Page Transitions</Label>
             <Switch
               id="page-transitions"
@@ -353,6 +364,7 @@
           </div>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="component-transitions" class="text-sm">Component Transitions</Label>
             <Switch
               id="component-transitions"
@@ -362,6 +374,7 @@
           </div>
 
           <div class="space-y-1">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="animation-duration" class="text-sm">Animation Duration (ms)</Label>
             <Input
               id="animation-duration"
@@ -378,9 +391,11 @@
 
         <!-- UI Behavior -->
         <div class="space-y-3">
+          <!-- i18n-ignore (dev-only debug UI) -->
           <h4 class="text-sm font-medium text-subtle">UI Behavior</h4>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="performance-metrics" class="text-sm">Performance Metrics</Label>
             <Switch
               id="performance-metrics"
@@ -390,6 +405,7 @@
           </div>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="log-state" class="text-sm">Log State Changes</Label>
             <Switch
               id="log-state"
@@ -401,9 +417,11 @@
 
         <!-- Features -->
         <div class="space-y-3">
+          <!-- i18n-ignore (dev-only debug UI) -->
           <h4 class="text-sm font-medium text-subtle">Features</h4>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="autofocus" class="text-sm">Enable Autofocus</Label>
             <Switch
               id="autofocus"
@@ -413,6 +431,7 @@
           </div>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="branch-caching" class="text-sm">Branch Caching</Label>
             <Switch
               id="branch-caching"
@@ -422,6 +441,7 @@
           </div>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="form-persistence" class="text-sm">Form Persistence</Label>
             <Switch
               id="form-persistence"
@@ -433,9 +453,11 @@
 
         <!-- Testing Helpers -->
         <div class="space-y-3">
+          <!-- i18n-ignore (dev-only debug UI) -->
           <h4 class="text-sm font-medium text-subtle">Testing</h4>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="slow-network" class="text-sm">Simulate Slow Network</Label>
             <Switch
               id="slow-network"
@@ -445,6 +467,7 @@
           </div>
 
           <div class="flex items-center justify-between">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="simulate-errors" class="text-sm">Simulate Errors</Label>
             <Switch
               id="simulate-errors"
@@ -454,6 +477,7 @@
           </div>
 
           <div class="space-y-1">
+            <!-- i18n-ignore (dev-only debug UI) -->
             <Label for="network-delay" class="text-sm">Network Delay (ms)</Label>
             <Input
               id="network-delay"
@@ -473,15 +497,18 @@
         <div class="space-y-3">
           <h4 class="text-sm font-medium text-subtle flex items-center gap-2">
             <Fa icon={faWaveSquare} size="xs" />
+            <!-- i18n-ignore (dev-only debug UI) -->
             Backend Resume Test
           </h4>
 
           <p class="text-xs text-subtle">
+            <!-- i18n-ignore (dev-only debug UI) -->
             Test backend-initiated agent resume with frontend handshake.
           </p>
 
           <div class="space-y-2">
             <Button size="sm" variant="outline" onclick={loadAvailableAgents} class="w-full h-8">
+              <!-- i18n-ignore (dev-only debug UI) -->
               Load Agents
             </Button>
 
@@ -503,18 +530,22 @@
                 class="w-full h-8"
               >
                 {#if backendResumeStatus === 'loading'}
+                  <!-- i18n-ignore (dev-only debug UI) -->
                   Triggering...
                 {:else}
+                  <!-- i18n-ignore (dev-only debug UI) -->
                   Trigger Backend Resume
                 {/if}
               </Button>
             {:else}
               <p class="text-xs text-subtle italic">
+                <!-- i18n-ignore (dev-only debug UI) -->
                 Click "Load Agents" to see available agents
               </p>
             {/if}
 
             {#if backendResumeStatus === 'success'}
+              <!-- i18n-ignore (dev-only debug UI) -->
               <p class="text-xs text-green-500">✓ Resume triggered successfully</p>
             {:else if backendResumeStatus === 'error'}
               <p class="text-xs text-red-500">✗ {backendResumeError}</p>
@@ -525,8 +556,11 @@
         <!-- Keyboard Shortcut Info -->
         <div class="pt-3 border-t border-border">
           <p class="text-xs text-subtle">
+            <!-- i18n-ignore (dev-only debug UI) -->
             Press <kbd class="px-1 py-0.5 bg-muted rounded text-xs">{isMac ? 'Cmd' : 'Ctrl'}</kbd> +
+            <!-- i18n-ignore (dev-only debug UI) -->
             <kbd class="px-1 py-0.5 bg-muted rounded text-xs">Shift</kbd> +
+            <!-- i18n-ignore (dev-only debug UI) -->
             <kbd class="px-1 py-0.5 bg-muted rounded text-xs">D</kbd> to toggle
           </p>
         </div>
@@ -538,10 +572,12 @@
       type="button"
       class="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/50 shrink-0 hover:bg-muted/70 transition-colors cursor-pointer"
       onclick={() => (isCollapsed = !isCollapsed)}
+      data-i18n-ignore="dev-only debug UI"
       title="Click to {isCollapsed ? 'expand' : 'collapse'}"
     >
       <div class="flex items-center gap-2">
         <Fa icon={faBug} class="text-orange-500" size="sm" />
+        <!-- i18n-ignore (dev-only debug UI) -->
         <h3 class="font-medium text-sm">Debug Panel</h3>
         <Fa
           icon={isCollapsed ? faChevronUp : faChevronDown}
@@ -557,6 +593,7 @@
             e.stopPropagation();
             handleReset();
           }}
+          data-i18n-ignore="dev-only debug UI"
           title="Reset to defaults"
           class="h-7 w-7 p-0"
         >

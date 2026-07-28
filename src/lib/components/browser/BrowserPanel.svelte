@@ -30,6 +30,7 @@
   import Fa from 'svelte-fa';
   import Button from '../ui/button/button.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -81,7 +82,7 @@
   function handleSubmit() {
     const normalized = normalizeUrl(urlInput);
     if (!normalized) {
-      inputError = 'Please enter a valid URL';
+      inputError = m.browser_panel_invalidUrl_error();
       return;
     }
 
@@ -160,7 +161,7 @@
     <div class="relative">
       <Input
         type="text"
-        placeholder="Enter URL..."
+        placeholder={m.browser_panel_url_placeholder()}
         bind:value={urlInput}
         onkeydown={handleKeydown}
         noFocusStyle
@@ -172,7 +173,7 @@
         class="absolute right-1 top-1/2 -translate-y-1/2"
         onclick={handleSubmit}
         disabled={!urlInput}
-        title="Open URL"
+        title={m.browser_panel_openUrl_tooltip()}
       >
         <Fa icon={faGlobe} size="sm" />
       </Button>
@@ -185,14 +186,14 @@
   <!-- Recent URLs -->
   {#if $recentUrls$.length > 0}
     <div class="flex items-center justify-between px-4 py-1">
-      <span class="text-ui uppercase tracking-wider text-muted-foreground">Recent</span>
+      <span class="text-ui uppercase tracking-wider text-muted-foreground">{m.browser_panel_recent_label()}</span>
       <button
         type="button"
         class="text-ui text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={handleClearAll}
-        title="Clear all"
+        title={m.browser_panel_clearAll_tooltip()}
       >
-        Clear
+        {m.browser_panel_clear_label()}
       </button>
     </div>
     <ListContainer class="px-3" spacing="compact">
@@ -211,7 +212,7 @@
             type="button"
             class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-destructive-foreground transition-all cursor-pointer"
             onclick={(e) => handleDeleteUrl(e, entry.url)}
-            title="Remove"
+            title={m.browser_panel_remove_tooltip()}
           >
             <Fa icon={faTimes} size="xs" />
           </button>

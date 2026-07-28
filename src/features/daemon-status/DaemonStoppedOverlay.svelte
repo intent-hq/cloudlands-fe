@@ -38,6 +38,7 @@
     spawnSidecarRequested,
     fetchSidecarRunLogRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import { m } from '$shared/paraglide/messages.js';
 
   const health$ = selectDaemonHealth();
   const transport$ = selectDaemonTransport();
@@ -131,34 +132,41 @@
     <div class="mx-4 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl">
       <h2 id="daemon-stopped-title" class="text-lg font-semibold text-foreground">
         {#if isSidecarFailure}
-          {$sidecarStartupFailed$ ? 'intentd failed to start' : 'intentd stopped unexpectedly'}
+          {$sidecarStartupFailed$
+            ? m.daemonStatus_overlay_startupFailedTitle_label()
+            : m.daemonStatus_overlay_stoppedUnexpectedlyTitle_label()}
         {:else if !$hasEverConnected$}
-          Cannot connect to intentd
+          {m.daemonStatus_overlay_cannotConnectTitle_label()}
         {:else}
-          intentd is stopped
+          {m.daemonStatus_overlay_stoppedTitle_label()}
         {/if}
       </h2>
 
       <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
         {#if isSidecarFailure}
           {#if $sidecarStartupFailed$}
-            The app runs its own intentd daemon, and it failed to
-            start{$sidecarStartupFailedReason$ ? ` (${$sidecarStartupFailedReason$})` : ''}.
+            {$sidecarStartupFailedReason$
+              ? m.daemonStatus_overlay_startupFailedWithReason_description({
+                  reason: $sidecarStartupFailedReason$,
+                })
+              : m.daemonStatus_overlay_startupFailed_description()}
           {:else}
-            The app-managed intentd daemon stopped and could not be restarted after repeated
-            attempts{$sidecarGaveUpReason$ ? ` (${$sidecarGaveUpReason$})` : ''}.
+            {$sidecarGaveUpReason$
+              ? m.daemonStatus_overlay_gaveUpWithReason_description({
+                  reason: $sidecarGaveUpReason$,
+                })
+              : m.daemonStatus_overlay_gaveUp_description()}
           {/if}
         {:else if isExternalMode}
           {#if $hasEverConnected$}
-            The connection to the external intentd daemon was lost. It may have been stopped or
-            crashed.
+            {m.daemonStatus_overlay_externalLost_description()}
           {:else}
-            Could not connect to the external intentd daemon. It may not be running.
+            {m.daemonStatus_overlay_externalNeverConnected_description()}
           {/if}
         {:else if $hasEverConnected$}
-          The connection to the intentd daemon was lost. The app is restarting it automatically.
+          {m.daemonStatus_overlay_lost_description()}
         {:else}
-          Could not connect to the intentd daemon. The app is starting it automatically.
+          {m.daemonStatus_overlay_neverConnected_description()}
         {/if}
       </p>
 
@@ -166,7 +174,7 @@
         <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
           <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500 align-middle"
           ></span>
-          <span class="ml-1.5 align-middle">Retrying connection…</span>
+          <span class="ml-1.5 align-middle">{m.daemonStatus_overlay_retrying_label()}</span>
         </p>
       {/if}
 
@@ -179,7 +187,9 @@
             onclick={handleSpawnSidecar}
             data-testid="daemon-stopped-spawn-sidecar"
           >
-            {$spawnPending$ ? 'Starting intentd…' : 'Try starting intentd again'}
+            {$spawnPending$
+              ? m.daemonStatus_overlay_startingIntentd_label()
+              : m.daemonStatus_overlay_tryStartAgain_label()}
           </button>
 
           {#if $spawnError$}
@@ -195,7 +205,9 @@
             onclick={handleShowRunLog}
             data-testid="daemon-stopped-show-logs"
           >
-            {$runLogPending$ ? 'Loading logs…' : 'Show logs from last run'}
+            {$runLogPending$
+              ? m.daemonStatus_overlay_loadingLogs_label()
+              : m.daemonStatus_overlay_showRunLog_label()}
           </button>
 
           {#if $runLogError$}
@@ -207,9 +219,12 @@
               {#if $runLog$.available}
                 <p class="text-xs text-muted-foreground" data-testid="daemon-stopped-run-log-meta">
                   {#if $runLog$.spawnError}
-                    Spawn error: {$runLog$.spawnError}
+                    {m.daemonStatus_overlay_spawnErrorMeta_label({ error: $runLog$.spawnError })}
                   {:else}
-                    Exit code: {$runLog$.exitCode ?? 'none'} · Signal: {$runLog$.signal ?? 'none'}
+                    {m.daemonStatus_overlay_exitMeta_label({
+                      exitCode: $runLog$.exitCode ?? m.daemonStatus_overlay_none_label(),
+                      signal: $runLog$.signal ?? m.daemonStatus_overlay_none_label(),
+                    })}
                   {/if}
                 </p>
                 <pre
@@ -217,7 +232,7 @@
                   data-testid="daemon-stopped-run-log-lines">{$runLog$.lines.join('\n')}</pre>
               {:else}
                 <p class="text-xs text-muted-foreground">
-                  No sidecar run has been captured this session.
+                  {m.daemonStatus_overlay_noRunCaptured_label()}
                 </p>
               {/if}
             </div>
@@ -232,7 +247,9 @@
             onclick={handleSpawnSidecar}
             data-testid="daemon-stopped-spawn-sidecar"
           >
-            {$spawnPending$ ? 'Starting sidecar…' : 'Start app-managed sidecar'}
+            {$spawnPending$
+              ? m.daemonStatus_overlay_startingSidecar_label()
+              : m.daemonStatus_overlay_startSidecar_label()}
           </button>
 
           {#if $spawnError$}
@@ -242,8 +259,7 @@
           {/if}
 
           <p class="mt-2 text-xs text-muted-foreground">
-            Note: the app-managed sidecar may use a different data directory than the stopped
-            daemon, so your workspaces and agents may differ until the original daemon is back.
+            {m.daemonStatus_overlay_dataDirNote_label()}
           </p>
         </div>
       {/if}

@@ -37,6 +37,7 @@
   } from '$store/renderer/slices/stats/stats-selectors';
   import { loadUsageStatsRequested } from '$store/renderer/slices/stats/stats-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
   import {
     exportCardPng,
     exportFileName,
@@ -111,7 +112,7 @@
     } catch (error) {
       console.error('stats PNG export failed', error);
       const { toast } = await import('svelte-sonner');
-      toast.error('PNG export failed', {
+      toast.error(m.stats_overlay_exportFailed_error(), {
         description: error instanceof Error ? error.message : String(error),
       });
     }
@@ -133,14 +134,14 @@
     class="fixed inset-0 z-50 flex flex-col items-center overflow-y-auto px-8 py-12 pointer-events-none"
     role="dialog"
     aria-modal="true"
-    aria-label="Usage stats"
+    aria-label={m.stats_overlay_dialog_ariaLabel()}
     transition:fade={{ duration: 150 }}
   >
     <!-- Close affordance -->
     <button
       class="stats-close pointer-events-auto fixed top-10 right-5 z-10 flex h-8 w-8 items-center justify-center rounded-lg cursor-pointer"
       onclick={close}
-      aria-label="Close usage stats"
+      aria-label={m.stats_overlay_close_ariaLabel()}
     >
       <Fa icon={faXmark} size={14} />
     </button>
@@ -197,7 +198,7 @@
                   {/if}
                 </button>
               {:else}
-                <div class="px-[9px] py-1.5 text-xs stats-muted">No data yet</div>
+                <div class="px-[9px] py-1.5 text-xs stats-muted">{m.stats_overlay_noData_label()}</div>
               {/each}
             </div>
           {/if}
@@ -233,7 +234,7 @@
     </div>
 
     <div class="stats-hint mt-[26px] mb-auto rounded-full px-3.5 py-1.5 text-xs">
-      Hover a card to export it as a 1080×1920 PNG story.
+      {m.stats_overlay_exportHint_label()}
     </div>
   </div>
 {/if}
@@ -242,9 +243,9 @@
   <button
     class="stats-export-btn absolute top-3.5 right-3.5 z-[2] flex h-[30px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium cursor-pointer"
     onclick={(event) => exportCard(event.currentTarget, card)}
-    aria-label="Export {card} card as PNG"
+    aria-label={m.stats_overlay_exportCard_ariaLabel({ card })}
   >
-    <Fa icon={faDownload} size={11} /> PNG
+    <Fa icon={faDownload} size={11} /> {m.stats_overlay_png_label()}
   </button>
 {/snippet}
 

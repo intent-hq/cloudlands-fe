@@ -79,7 +79,7 @@ export function registerDebugExportHandlers(): void {
           });
           return {
             success: false,
-            error: errorMsg || 'Failed to export debug bundle',
+            error: errorMsg || m.debugExport_ipc_exportFailed_error(),
           };
         }
       },
