@@ -25,7 +25,6 @@ export type {
 // ============================================================================
 
 export const GLOBAL_MODEL_KEY = 'workspaces-selected-model';
-export const WORKSPACE_MODELS_KEY = 'workspaces-workspace-models';
 export const PROVIDER_MODELS_KEY = 'workspaces-provider-models';
 
 export const MAX_AUTO_RETRIES = 3;
@@ -70,7 +69,6 @@ function buildLoadingState(
 export const initialState: ModelState = {
   availableModels: createCollection<AuggieModel, 'value'>('value'),
   loadingState: {},
-  workspaceModels: {},
   providerModels: {},
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
@@ -103,17 +101,6 @@ export const clearLoadingStateForProvider = createAction<[providerId: string]>(
 
 export const setRetryAttempt =
   createAction<[payload: { providerId: string; attempt: number }]>('model/setRetryAttempt');
-
-export const setWorkspaceModel =
-  createAction<[payload: { workspaceId: string; model: string }]>('model/setWorkspaceModel');
-
-export const clearWorkspaceModel = createAction<[workspaceId: string]>('model/clearWorkspaceModel');
-
-export const clearAllWorkspaceModels = createAction('model/clearAllWorkspaceModels');
-
-export const loadWorkspaceModelsFromStorage = createAction<[models: Record<string, string>]>(
-  'model/loadWorkspaceModelsFromStorage',
-);
 
 export const loadProviderModelsFromStorage = createAction<[models: Record<string, string>]>(
   'model/loadProviderModelsFromStorage',
@@ -205,22 +192,6 @@ export const modelReducer = createReducer<ModelState>(initialState)
       },
     };
   })
-  .with(setWorkspaceModel, (state, { payload: [{ workspaceId, model }] }) => ({
-    ...state,
-    workspaceModels: { ...state.workspaceModels, [workspaceId]: model },
-  }))
-  .with(clearWorkspaceModel, (state, { payload: [workspaceId] }) => {
-    const { [workspaceId]: _, ...rest } = state.workspaceModels;
-    return { ...state, workspaceModels: rest };
-  })
-  .with(clearAllWorkspaceModels, (state) => ({
-    ...state,
-    workspaceModels: {},
-  }))
-  .with(loadWorkspaceModelsFromStorage, (state, { payload: [models] }) => ({
-    ...state,
-    workspaceModels: models,
-  }))
   .with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
     ...state,
     providerModels: normalizeProviderModels(models),

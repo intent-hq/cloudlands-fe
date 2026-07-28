@@ -177,9 +177,9 @@ function buildMiddleware(): StoreMiddleware[] {
     createSettingsHydrationMiddleware(),
     // Give the (post-saga) `selectModel` trigger a real handler (map to
     // `setSelectedModel` for the active provider) and persist model picks to
-    // the daemon settings catalog (`model.providerDefaults` /
-    // `model.workspaceOverrides`, PROTOCOL §5.12) so the selection survives a
-    // reload — the hydration middleware above reads the same paths on boot.
+    // the daemon settings catalog (`model.providerDefaults`, PROTOCOL §5.12)
+    // so the selection survives a reload — the hydration middleware above
+    // reads the same path on boot.
     createModelSelectionPersistenceMiddleware(),
     // Persist background-agent settings (default model + per-type overrides)
     // to the daemon settings catalog (`backgroundAgents.defaultModel` /
