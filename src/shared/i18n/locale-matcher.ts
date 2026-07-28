@@ -17,6 +17,13 @@
 /** Sentinel preference meaning "follow the OS locale". */
 export const SYSTEM_LANGUAGE_PREFERENCE = 'system';
 
+/**
+ * Generated pseudo-English QA catalog (accented/expanded, built from en.json
+ * by scripts/generate-pseudo-locale.mjs). Only ever active by explicit
+ * selection — system-locale best-matching never resolves to it.
+ */
+export const PSEUDO_LOCALE = 'en-XA';
+
 interface LikelySubtags {
   language: string;
   script: string;
@@ -70,9 +77,7 @@ export function matchLocale(
     const candidates = available.filter((candidate) => {
       const subtags = likelySubtags(candidate);
       return (
-        subtags !== null &&
-        subtags.language === wanted.language &&
-        subtags.script === wanted.script
+        subtags !== null && subtags.language === wanted.language && subtags.script === wanted.script
       );
     });
     if (candidates.length > 0) {
@@ -104,5 +109,11 @@ export function resolveLocale(
     const exact = findExact(preference, available);
     if (exact) return exact;
   }
-  return matchLocale(systemLocales, available, fallback);
+  // The pseudo-locale is explicit-selection only: a system locale of en-US
+  // must never best-match the en-XA QA catalog.
+  return matchLocale(
+    systemLocales,
+    available.filter((candidate) => candidate !== PSEUDO_LOCALE),
+    fallback,
+  );
 }
