@@ -19,8 +19,6 @@ import {
   chatStreamingReconciled,
   streamCompleted,
   streamTimedOut,
-  chatStallDetected,
-  chatStuckStateCleared,
   chatModelUnavailableCleared,
   chatRebindStarted,
   chatRebindEnded,
@@ -29,18 +27,20 @@ import {
   transcriptHydrationStarted,
   transcriptHydrationSettled,
   chatLastAttemptedMessageSet,
-  chatIdleReconcileSuppressionSet,
 } from './chat-state-slice';
 import {
   selectChatAgentState,
   selectChatError,
-  selectChatIsStalled,
   selectChatLastMessageTime,
   selectTranscriptHydration,
 } from './chat-state-selectors';
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
+import type {
+  AgentIdleEvent,
+  AgentStatusChangedEvent,
+} from '$features/events/types';
 
 const AGENT = 'agent-1';
 
@@ -107,7 +107,6 @@ describe('chatStateReducer', () => {
     const agent = state.byAgentId[AGENT];
     expect(agent.error).toBeNull();
     expect(agent.receivedFirstChunk).toBe(false);
-    expect(agent.isStalled).toBe(false);
     expect(agent.lastMessageTime).toBe(action.payload.timestamp);
     expect(selectChatLastMessageTime.select(asStoreState(state), AGENT)).toBe(action.payload.timestamp);
   });
@@ -307,7 +306,6 @@ describe('chatStateReducer', () => {
     const s2 = chatStateReducer(s1, action);
     const agent = s2.byAgentId[AGENT];
     expect(agent.error).toBeNull();
-    expect(agent.isStalled).toBe(false);
     expect(agent.lastChunkTime).toBe(action.payload[0].timestamp);
   });
 
@@ -404,7 +402,6 @@ describe('chatStateReducer', () => {
     const s2 = chatStateReducer(s1, action);
     const agent = s2.byAgentId[AGENT];
     expect(agent.receivedFirstChunk).toBe(true);
-    expect(agent.isStalled).toBe(false);
     expect(agent.lastChunkReceivedAt).toBe(action.payload[0].timestamp);
     expect(agent.statusEvents).toHaveLength(1);
     expect(agent.statusEvents[0]).toMatchObject({ phase: 'streaming' });
@@ -512,20 +509,6 @@ describe('chatStateReducer', () => {
     const agent = s2.byAgentId[AGENT];
     expect(agent.streamingStartTime).toBeNull();
     expect(agent.error).toContain('timed out');
-  });
-
-  it('chatStallDetected sets isStalled', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, chatStallDetected(AGENT));
-    expect(s2.byAgentId[AGENT].isStalled).toBe(true);
-  });
-
-  it('chatStuckStateCleared resets stuck state', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, chatStallDetected(AGENT));
-    const s3 = chatStateReducer(s2, chatStuckStateCleared(AGENT));
-    const agent = s3.byAgentId[AGENT];
-    expect(agent.isStalled).toBe(false);
   });
 
   it('chatModelUnavailableCleared clears info', () => {
@@ -657,15 +640,30 @@ describe('chatStateReducer', () => {
   });
 
   describe('idle-reconcile finalize clears lastAttemptedMessage (#973)', () => {
+    // PROTOCOL.md-shaped agent:idle event fixture (canonical status fields
+    // are required on lifecycle payloads; explicit null when not known).
     function agentIdleEvent(agentId: string) {
-      return eventReceived('ws-1', {
+      const event: AgentIdleEvent = {
         id: 'evt-idle-1',
         type: 'agent:idle',
         timestamp: '2026-01-01T00:00:00.000Z',
         workspaceId: 'ws-1',
         actor: { type: 'agent', id: agentId },
-        data: { agentId, status: 'idle' },
-      } as any);
+        data: {
+          agentId,
+          agentName: 'Test Agent',
+          reason: 'stream_complete',
+          finishReason: 'end_turn',
+          status: 'idle',
+          activationState: null,
+          isActive: false,
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: null,
+        },
+      };
+      return eventReceived('ws-1', event);
     }
 
     it('agent:idle reconcile after a missed terminal complete clears the record', () => {
@@ -710,15 +708,6 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
     });
 
-    it('agent:idle under the #969 suppression marker consumes the marker and preserves the record', () => {
-      const attempted = { text: 'fresh queued turn' };
-      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-      s = chatStateReducer(s, chatIdleReconcileSuppressionSet(AGENT, true));
-      s = chatStateReducer(s, agentIdleEvent(AGENT));
-      expect(s.byAgentId[AGENT].idleReconcileSuppressed).toBe(false);
-      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
-    });
-
     it('agent:idle for an agent with no chat-state entry does not materialize one', () => {
       const state = chatStateReducer(initialState, chatSendStarted(AGENT));
       const next = chatStateReducer(state, agentIdleEvent('agent-never-opened'));
@@ -735,41 +724,26 @@ describe('chatStateReducer', () => {
     it('non-idle eventReceived does not touch the record', () => {
       const attempted = { text: 'pending' };
       const state = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-      const next = chatStateReducer(state, eventReceived('ws-1', {
+      const statusChangedEvent: AgentStatusChangedEvent = {
         id: 'evt-2',
         type: 'agent:status-changed',
         timestamp: '2026-01-01T00:00:00.000Z',
         workspaceId: 'ws-1',
         actor: { type: 'agent', id: AGENT },
-        data: { agentId: AGENT, status: 'running' },
-      } as any));
+        data: {
+          agentId: AGENT,
+          previousStatus: 'idle',
+          status: 'responding',
+          activationState: null,
+          isActive: true,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+          stopReason: null,
+        },
+      };
+      const next = chatStateReducer(state, eventReceived('ws-1', statusChangedEvent));
       expect(next).toBe(state);
-    });
-
-    it('chatStuckStateCleared clears the record when no failure state is pending', () => {
-      let s = chatStateReducer(initialState, chatSendStarted(AGENT));
-      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'stuck turn' }));
-      s = chatStateReducer(s, chatStuckStateCleared(AGENT));
-      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
-    });
-
-    it('chatStuckStateCleared preserves the record while a failure banner is visible', () => {
-      const attempted = { text: 'failed send' };
-      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-      s = chatStateReducer(s, chatSendFailed(AGENT, 'boom'));
-      s = chatStateReducer(s, chatStuckStateCleared(AGENT));
-      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
-    });
-
-    it('chatStuckStateCleared preserves the record while a retry-with-model banner is pending', () => {
-      const attempted = { text: 'model-unavailable send' };
-      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
-      s = chatStateReducer(s, streamCompleted(AGENT, {
-        lastAttemptedMessage: attempted,
-        modelUnavailable: { failedModel: 'opus', nextAvailableModel: 'sonnet' },
-      }));
-      s = chatStateReducer(s, chatStuckStateCleared(AGENT));
-      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
     });
   });
 
@@ -784,10 +758,6 @@ describe('chatState selectors', () => {
   it('selectChatError returns error message', () => {
     const state = chatStateReducer(initialState, chatInitFailed(AGENT, 'bad'));
     expect(selectChatError.select(asStoreState(state), AGENT)).toBe('bad');
-  });
-
-  it('selectChatIsStalled returns false by default', () => {
-    expect(selectChatIsStalled.select(asStoreState(initialState), AGENT)).toBe(false);
   });
 
   it('selectChatAgentState returns empty state for unknown', () => {

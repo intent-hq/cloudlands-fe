@@ -21,7 +21,6 @@ import {
   chatSendFailed,
   chatInterrupted,
   chatStopCompleted,
-  chatStuckStateCleared,
   streamCompleted,
   streamTimedOut,
   chatStreamingReconciled,
@@ -84,12 +83,6 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
     expect(getSession(s, AGENT).isProcessing).toBe(false);
   });
 
-  it('chatStuckStateCleared clears both flags atomically', () => {
-    const s = agentSessionReducer(midStreamState(), chatStuckStateCleared(AGENT));
-    expect(getSession(s, AGENT).isStreaming).toBe(false);
-    expect(getSession(s, AGENT).isProcessing).toBe(false);
-  });
-
   it('streamTimedOut clears both flags atomically', () => {
     const s = agentSessionReducer(midStreamState(), streamTimedOut(AGENT));
     expect(getSession(s, AGENT).isStreaming).toBe(false);
@@ -107,7 +100,6 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
       streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: null }),
       chatSendFailed(AGENT, 'fail'),
       chatStopCompleted(AGENT),
-      chatStuckStateCleared(AGENT),
       streamTimedOut(AGENT),
       chatInterrupted(AGENT),
     ];

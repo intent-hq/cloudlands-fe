@@ -28,7 +28,6 @@ export const emptyChatAgentState: ChatAgentState = {
   error: null,
   lastChunkTime: null,
   receivedFirstChunk: false,
-  isStalled: false,
   streamingStartTime: null,
   lastAttemptedMessage: null,
   modelUnavailable: null,
@@ -37,7 +36,6 @@ export const emptyChatAgentState: ChatAgentState = {
   isRebinding: false,
   lastMessageTime: 0,
   lastChunkReceivedAt: 0,
-  idleReconcileSuppressed: false,
 };
 
 export const initialState: ChatStateSlice = {
@@ -92,10 +90,10 @@ function getModelUnavailableInfo(value: unknown): ModelUnavailableInfo | null {
 }
 
 /**
- * Preserve-on-failure predicate shared by the reconcile finalize paths (#973),
- * mirroring the clear-on-success semantics of the observed terminal `complete`
- * event (see reduceAgentStreamUpdate: cleared unless failureMessage ||
- * modelUnavailable). A reconcile cannot observe how the missed turn ended, so
+ * Preserve-on-failure predicate for the `agent:idle` reconcile finalize path
+ * (#973), mirroring the clear-on-success semantics of the observed terminal
+ * `complete` event (see reduceAgentStreamUpdate: cleared unless failureMessage
+ * || modelUnavailable). A reconcile cannot observe how the missed turn ended, so
  * it reads the persisted flags instead: `error` set means the failure banner
  * is visible and its "Try again" still needs the record (#941); `modelUnavailable`
  * set means a "Retry with <model>" banner is pending (#964). Those two banners
@@ -119,12 +117,10 @@ function reduceAgentIdleReconcile(state: ChatStateSlice, agentId: string): ChatS
   const agent = state.byAgentId[agentId];
   // agent:idle fires for every agent in subscribed workspaces; never
   // materialize a chat-state entry for a chat that was never opened.
+  // NOTE: no queued-turn suppression is needed here — the daemon withholds
+  // `agent:idle` while ready-to-send messages remain queued (#969), so an
+  // observed idle always belongs to the finished turn.
   if (!agent) return state;
-  if (agent.idleReconcileSuppressed) {
-    // #969 marker: a queued turn just began, so this idle belongs to the
-    // prior turn. Consume the marker and leave the fresh turn's state alone.
-    return updateAgent(state, agentId, { idleReconcileSuppressed: false });
-  }
   if (agent.lastAttemptedMessage === null || shouldPreserveLastAttemptedMessage(agent)) {
     return state;
   }
@@ -148,7 +144,6 @@ function reduceChunkReceived(
   if (!isTextChunk) {
     return updateAgent(state, agentId, {
       lastChunkTime: timestamp,
-      isStalled: false,
       lastChunkReceivedAt: timestamp,
     });
   }
@@ -156,7 +151,6 @@ function reduceChunkReceived(
   const agent = getAgent(state, agentId);
   return updateAgent(state, agentId, {
     lastChunkTime: timestamp,
-    isStalled: false,
     receivedFirstChunk: true,
     lastChunkReceivedAt: timestamp,
     statusEvents: !agent.receivedFirstChunk
@@ -184,7 +178,6 @@ function reduceAgentStreamUpdate(
       modelUnavailable: null,
       lastChunkTime: timestamp,
       receivedFirstChunk: false,
-      isStalled: false,
       statusEvents: [],
     });
   }
@@ -201,7 +194,6 @@ function reduceAgentStreamUpdate(
       streamingStartTime: null,
       lastChunkTime: null,
       receivedFirstChunk: false,
-      isStalled: false,
       statusEvents: [],
       // Preserve the retry payload when the turn FAILED so the error
       // banner's "Try again" can resend it (#941), and when the turn ended
@@ -265,17 +257,6 @@ export const chatLastAttemptedMessageSet = createAction<
   [agentId: string, lastAttemptedMessage: LastAttemptedMessage | null]
 >('chatState/lastAttemptedMessageSet');
 
-/**
- * Set the idle-reconcile suppression marker. Dispatched true by
- * handleQueueProcessing right after chatSendStarted (a queued turn began, so
- * the prior turn's incoming `agent:idle` must not clear the fresh flags) and
- * false by the reducer's `agent:idle` reconcile handler once it has consumed
- * the marker (#973).
- */
-export const chatIdleReconcileSuppressionSet = createAction<
-  [agentId: string, suppressed: boolean]
->('chatState/idleReconcileSuppressionSet');
-
 /** Send failed (activation or network error) */
 export const chatSendFailed =
   createAction<[agentId: string, error: string]>('chatState/sendFailed');
@@ -336,12 +317,6 @@ export const chatStatusEventsHydrated = createAction<
 
 /** Stream timed out */
 export const streamTimedOut = createAction<[agentId: string]>('chatState/streamTimedOut');
-
-/** Stall detected by stall detection saga */
-export const chatStallDetected = createAction<[agentId: string]>('chatState/stallDetected');
-
-/** State reconciliation: clear stuck processing state */
-export const chatStuckStateCleared = createAction<[agentId: string]>('chatState/stuckStateCleared');
 
 /** Clear error */
 export const chatErrorCleared = createAction<[agentId: string]>('chatState/errorCleared');
@@ -416,29 +391,22 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       lastMessageTime: timestamp,
       lastChunkTime: null,
       receivedFirstChunk: false,
-      isStalled: false,
       statusEvents: [],
-      idleReconcileSuppressed: false,
     }),
   )
   .with(chatLastAttemptedMessageSet, (state, { payload: [agentId, lastAttemptedMessage] }) =>
     updateAgent(state, agentId, { lastAttemptedMessage }),
-  )
-  .with(chatIdleReconcileSuppressionSet, (state, { payload: [agentId, suppressed] }) =>
-    updateAgent(state, agentId, { idleReconcileSuppressed: suppressed }),
   )
   .with(chatSendFailed, (state, { payload: [agentId, error] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
       modelUnavailable: null,
-      idleReconcileSuppressed: false,
     }),
   )
   .with(chatInterrupted, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
-      idleReconcileSuppressed: false,
     }),
   )
   .with(chatModelUnavailableCleared, (state, { payload: [agentId] }) =>
@@ -454,7 +422,6 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, {
       isInterrupting: false,
       streamingStartTime: null,
-      idleReconcileSuppressed: false,
     }),
   )
   .with(chatReset, (state, { payload: [agentId] }) =>
@@ -478,11 +445,9 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       streamingStartTime: null,
       lastChunkTime: null,
       receivedFirstChunk: false,
-      isStalled: false,
       statusEvents: [],
       lastAttemptedMessage: data.lastAttemptedMessage,
       modelUnavailable: data.modelUnavailable,
-      idleReconcileSuppressed: false,
     }),
   )
   .with(streamStatusReceived, (state, { payload: [agentId, statusEvent, resetFirstChunk] }) => {
@@ -502,28 +467,8 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, {
       streamingStartTime: null,
       error: 'The agent response timed out before it finished. Try again or check the provider status.',
-      idleReconcileSuppressed: false,
     }),
   )
-  .with(chatStallDetected, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, { isStalled: true }),
-  )
-  .with(chatStuckStateCleared, (state, { payload: [agentId] }) => {
-    const agent = getAgent(state, agentId);
-    return updateAgent(state, agentId, {
-      isStalled: false,
-      streamingStartTime: null,
-      lastChunkTime: null,
-      receivedFirstChunk: false,
-      idleReconcileSuppressed: false,
-      // #973: a stuck-state reconcile stands in for the missed terminal
-      // event — clear the retry payload with the same preserve-on-failure
-      // semantics as streamCompleted.
-      lastAttemptedMessage: shouldPreserveLastAttemptedMessage(agent)
-        ? agent.lastAttemptedMessage
-        : null,
-    });
-  })
   .with(chatRebindStarted, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, { isRebinding: true }),
   )
@@ -543,7 +488,8 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     if (event.type !== 'agent:idle') return state;
     const data: unknown = event.data;
     if (!isRecord(data)) return state;
-    const agentId = data.agentId ?? data.sessionId;
+    // PROTOCOL.md: agent:idle always carries data.agentId.
+    const agentId = data.agentId;
     if (typeof agentId !== 'string' || agentId.length === 0) return state;
     return reduceAgentIdleReconcile(state, agentId);
   })

@@ -3,11 +3,7 @@
 
   Streaming status indicator:
   - Normal: Spinner with "Thinking"
-  - Stalled: Warning with status page link and Stop button (driven by chat sagas)
   - Error/Timeout: clear failed state with Try Again button
-
-  Stall detection is handled entirely by chat sagas (which have context about
-  running tools, stream start time, etc.) and surfaced via the `isStalled` prop.
 -->
 <script lang="ts">
   import { fade } from 'svelte/transition';
@@ -41,8 +37,6 @@
      * error surface shows recreate-aware copy instead of the raw error.
      */
     sessionCorrupted?: boolean;
-    /** Whether the stream appears stalled (no chunks received recently) */
-    isStalled?: boolean;
     /** Model unavailable info - when set, shows retry with suggested model */
     modelUnavailable?: {
       failedModel: string;
@@ -60,8 +54,6 @@
     onRetryWithModel?: (model: string) => void;
     /** Callback to stop streaming */
     onStop?: () => void;
-    /** Display name of the model provider (e.g. "Claude Code") for contextual messages */
-    providerName?: string | null;
     /** Seed for spinner colors (typically agent ID) */
     seed?: string;
     /** Additional class names */
@@ -78,13 +70,10 @@
     streamingContentLength = 0,
     error = null,
     sessionCorrupted = false,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    isStalled = false,
     modelUnavailable = null,
     statusEvents = [],
     streamingStartTime = null,
     hasPendingPermission = false,
-    providerName = null,
     onRetry,
     onRetryWithModel,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -210,25 +199,12 @@
     return completed.reverse();
   });
 
-  // Provider status page URLs — used in stalled messages
-  const PROVIDER_STATUS_URLS: Record<string, string> = {
-    'Augment Auggie': 'https://status.augmentcode.com/',
-    'Anthropic Claude Code': 'https://status.anthropic.com/',
-    'OpenAI Codex': 'https://status.openai.com/',
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let providerStatusUrl = $derived(
-    providerName ? (PROVIDER_STATUS_URLS[providerName] ?? null) : null,
-  );
-
   // Determine current status
-  type Status = 'normal' | 'stalled' | 'error' | 'model-unavailable';
+  type Status = 'normal' | 'error' | 'model-unavailable';
 
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
     if (error) return 'error';
-    // if (isStalled) return 'stalled'; // All stall detection is handled by chat sagas
     return 'normal';
   });
 
@@ -238,27 +214,11 @@
     error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
 
-  // Whether we've received any streaming data — used to distinguish
-  // "no data" (network/provider unknown) from "mid-stream silence" (agent working)
-
-  // Status message - differentiated by whether we've received data:
-  // - No data: neutral messages (could be network, provider, or agent)
-  // - Has data: agent-specific messages (connection was working, agent is slow)
+  // Status message: the raw error when one is set, otherwise "Thinking"
   let statusMessage = $derived.by(() => {
     if (error) {
       return error;
     }
-
-    // if (status === 'stalled') {
-    //   if (hasReceivedData) {
-    //     return providerName
-    //       ? `Your model provider, ${providerName}, is taking longer than usual to respond.`
-    //       : 'Agent is taking longer than usual to respond.';
-    //   } else {
-    //     return 'No response received. Check your network connection or try again.';
-    //   }
-    // }
-
     return 'Thinking';
   });
 
