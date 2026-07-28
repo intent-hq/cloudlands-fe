@@ -471,11 +471,11 @@ export default defineConfig(({ mode }) => {
         'jsdom',
         // Large editor packages (handled separately)
         'monaco-editor',
-        'monaco-editor/esm/vs/editor/editor.worker',
-        'monaco-editor/esm/vs/language/json/json.worker',
-        'monaco-editor/esm/vs/language/css/css.worker',
-        'monaco-editor/esm/vs/language/html/html.worker',
-        'monaco-editor/esm/vs/language/typescript/ts.worker',
+        'monaco-editor/editor/editor.worker',
+        'monaco-editor/language/json/json.worker',
+        'monaco-editor/language/css/css.worker',
+        'monaco-editor/language/html/html.worker',
+        'monaco-editor/language/typescript/ts.worker',
         // TipTap and ProseMirror (complex dependency graphs)
         '@tiptap/core',
         '@tiptap/starter-kit',
