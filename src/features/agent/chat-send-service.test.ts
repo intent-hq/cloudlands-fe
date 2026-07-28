@@ -69,6 +69,7 @@ import { store as appStore } from "$store/renderer/store";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
 import {
   agentSessionRetryLastMessageRequested,
+  agentSessionRetryWithModelRequested,
   agentSessionStopChatRequested,
   bulkUpsertSessions,
   clearAllSessions,
@@ -1010,6 +1011,67 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     appStore.dispatch(chatLastAttemptedMessageSet(AGENT, null));
 
     const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+    await flush();
+
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).not.toHaveBeenCalled();
+    expect(toast.info).toHaveBeenCalledTimes(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // #964: retry-with-model resends the recorded message with the suggested
+  // model as a one-shot send-option override
+  // -------------------------------------------------------------------------
+
+  it("#964: agentSessionRetryWithModelRequested resends the recorded message with the suggested model", async () => {
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "CTX\n\nedited text",
+        options: { noteIds: ["note-1"] },
+      }),
+    );
+
+    const action = agentSessionRetryWithModelRequested(AGENT, WS, "fast-model");
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [agentIdArg, contentArg, workspaceArg, optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { noteIds?: string[]; model?: string },
+    ];
+    expect(agentIdArg).toBe(AGENT);
+    // The recorded text already carries the context prefix — resent verbatim.
+    expect(contentArg).toBe("CTX\n\nedited text");
+    expect(workspaceArg.id).toBe(WS);
+    expect(optionsArg.noteIds).toEqual(["note-1"]);
+    // The suggested model rides the lifecycle send options; the lifecycle
+    // resolves the wire model as options.model ?? session.model.
+    expect(optionsArg.model).toBe("fast-model");
+  });
+
+  it("#964: retry-with-model records the model on lastAttemptedMessage so a later Try again keeps it", async () => {
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "edited text" }));
+
+    const action = agentSessionRetryWithModelRequested(AGENT, WS, "fast-model");
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "edited text",
+      options: { model: "fast-model" },
+    });
+  });
+
+  it("#964: retry-with-model with no recorded lastAttemptedMessage resolves as a no-op with user feedback", async () => {
+    const { toast } = await import("svelte-sonner");
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, null));
+
+    const action = agentSessionRetryWithModelRequested(AGENT, WS, "fast-model");
     appStore.dispatch(action);
     await action.promise;
     await flush();

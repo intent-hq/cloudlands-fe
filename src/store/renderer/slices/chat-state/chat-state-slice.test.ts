@@ -197,6 +197,44 @@ describe('chatStateReducer', () => {
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
   });
 
+  it('agentStreamUpdateReceived(complete, model-unavailable) preserves lastAttemptedMessage for retry-with-model (#964)', () => {
+    const attempted = { text: 'sent', options: { noteIds: ['note-1'] } };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+      completeMessage: {
+        role: 'assistant',
+        metadata: {
+          modelUnavailable: true,
+          failedModel: 'slow-model',
+          nextAvailableModel: 'fast-model',
+        },
+      },
+    }));
+    const agent = s.byAgentId[AGENT];
+    expect(agent.lastAttemptedMessage).toEqual(attempted);
+    expect(agent.modelUnavailable).toEqual({
+      failedModel: 'slow-model',
+      nextAvailableModel: 'fast-model',
+    });
+  });
+
+  it('streamCompleted passes through modelUnavailable instead of clearing it (#964)', () => {
+    const info = { failedModel: 'slow-model', nextAvailableModel: 'fast-model' };
+    const attempted = { text: 'sent' };
+    let s = stateWithModelUnavailable();
+    s = chatStateReducer(
+      s,
+      streamCompleted(AGENT, { lastAttemptedMessage: attempted, modelUnavailable: info }),
+    );
+    const agent = s.byAgentId[AGENT];
+    expect(agent.modelUnavailable).toEqual(info);
+    expect(agent.lastAttemptedMessage).toEqual(attempted);
+  });
+
   it('agentStreamUpdateReceived(complete with timeout finishReason) preserves lastAttemptedMessage for retry (#941)', () => {
     const attempted = { text: 'edited text' };
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
