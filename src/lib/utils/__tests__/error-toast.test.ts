@@ -95,6 +95,8 @@ describe('showErrorToast', () => {
     showErrorToast(error);
 
     const [, options] = toastCustomMock.mock.calls[0];
+    // Content-only component — the severity tint rides the wrapper class.
+    expect(options.class).toBe('!border-destructive/50');
     await options.componentProps.onDebug();
 
     expect(selectWorkspaceDefaultModelMock).toHaveBeenCalledWith(legacyState, 'ws-1');

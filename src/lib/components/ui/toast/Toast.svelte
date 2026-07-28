@@ -30,7 +30,11 @@
   :global([data-sonner-toast]) {
     background: hsl(var(--card)) !important;
     color: hsl(var(--foreground)) !important;
-    border: 1px solid hsl(var(--border)) !important;
+    /* Width/style stay !important, but color must NOT be — per-toast Tailwind
+       classes (e.g. !border-destructive/50 on custom toasts) override it. */
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: hsl(var(--border));
     border-radius: 0 !important;
     backdrop-filter: blur(8px);
     min-width: 360px;
