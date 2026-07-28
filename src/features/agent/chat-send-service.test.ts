@@ -2,17 +2,19 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentMessage, AgentSession, QueuedMessage, Workspace } from "$shared/types";
 
-// FAKE seams: agent-stream-lifecycle.sendMessage, appClient.agents.queue, and
-// appClient.agents.removeQueued are all spied so no IPC/daemon call (and never
-// the real backend pipeline) happens. The service runs against the REAL
-// configured store so the middleware wiring, workspace resolution, the
-// BE-state in-flight read, the chatSendStarted dispatch, the queue-on-send
-// branch, and the queue-removal optimistic-delete branch are exercised end to
-// end. vi.hoisted() keeps the spies in scope of the hoisted vi.mock factories.
+// FAKE seams: agent-stream-lifecycle.sendMessage, appClient.agents.queue,
+// appClient.agents.removeQueued, and appClient.agents.sendQueuedNow are all
+// spied so no IPC/daemon call (and never the real backend pipeline) happens.
+// The service runs against the REAL configured store so the middleware wiring,
+// workspace resolution, the BE-state in-flight read, the chatSendStarted
+// dispatch, the queue-on-send branch, the queue-removal optimistic-delete
+// branch, and the atomic Send-now branch are exercised end to end.
+// vi.hoisted() keeps the spies in scope of the hoisted vi.mock factories.
 const {
   lifecycleSendMessage,
   agentsQueue,
   agentsRemoveQueued,
+  agentsSendQueuedNow,
   agentsStop,
   agentsRename,
   loadChatTranscriptSpy,
@@ -22,6 +24,9 @@ const {
     Promise.resolve({ success: true } as { success: boolean; queuedMessage?: unknown }),
   ),
   agentsRemoveQueued: vi.fn(() =>
+    Promise.resolve({ success: true } as { success: boolean; error?: string }),
+  ),
+  agentsSendQueuedNow: vi.fn(() =>
     Promise.resolve({ success: true } as { success: boolean; error?: string }),
   ),
   agentsStop: vi.fn(() =>
@@ -48,6 +53,7 @@ vi.mock("$lib/client", () => ({
     agents: {
       queue: agentsQueue,
       removeQueued: agentsRemoveQueued,
+      sendQueuedNow: agentsSendQueuedNow,
       stop: agentsStop,
       rename: agentsRename,
     },
@@ -624,17 +630,16 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // STAB-68: queuedMessageId triggers queue removal before the lifecycle send
+  // Send now (monorepo#1032, supersedes STAB-68's remove-then-send):
+  // queuedMessageId routes to the atomic agent.sendQueuedMessageNow seam
   // -------------------------------------------------------------------------
 
-  it("STAB-68: queuedMessageId triggers queue removal BEFORE the lifecycle send (correct wire ordering)", async () => {
-    // Regression test for STAB-68: when user clicks "Send now" on a queued
-    // message, ChatPanel dispatches sendMessage with queuedMessageId. The
-    // middleware MUST remove the queued entry (optimistic local delete +
-    // agent.removeQueuedMessage wire call) and AWAIT it BEFORE dispatching
-    // the lifecycle send with priority: "interrupt". Without the await, the
-    // daemon's interrupt turn completes, queue drains, and the same message
-    // is delivered a second time.
+  it("Send now: queuedMessageId makes ONE atomic sendQueuedNow call — no removal, no lifecycle send", async () => {
+    // When user clicks "Send now" on a queued message, ChatPanel dispatches
+    // sendMessage with queuedMessageId. The middleware must make a single
+    // agent.sendQueuedMessageNow wire call (§5.5) — the daemon dequeues +
+    // interrupt-delivers transactionally — and must NOT call
+    // agent.removeQueuedMessage or the lifecycle send.
     const seeded: QueuedMessage[] = [
       { id: "q-replay", content: "send me now", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
     ];
@@ -645,88 +650,86 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
         wsId: WS,
         text: "send me now",
         queuedMessageId: "q-replay",
-        forceSubmit: true,
-        skipQueueCheck: true,
       }),
     );
     await flush();
     await flush();
 
-    // Order assertion: agent.removeQueuedMessage MUST be called BEFORE lifecycle.sendMessage
-    expect(agentsRemoveQueued).toHaveBeenCalledTimes(1);
-    expect(agentsRemoveQueued).toHaveBeenCalledWith(AGENT, "q-replay");
-    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(agentsSendQueuedNow).toHaveBeenCalledTimes(1);
+    expect(agentsSendQueuedNow).toHaveBeenCalledWith({
+      agentId: AGENT,
+      workspaceId: WS,
+      messageId: "q-replay",
+    });
+    expect(agentsRemoveQueued).not.toHaveBeenCalled();
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
 
-    // Critical: removal call order MUST be < lifecycle send call order
-    expect(agentsRemoveQueued.mock.invocationCallOrder[0]).toBeLessThan(
-      lifecycleSendMessage.mock.invocationCallOrder[0],
-    );
-
-    // The lifecycle send must still pass priority: "interrupt"
-    const optionsArg = lifecycleSendMessage.mock.calls[0]?.[3] as
-      | { priority?: string }
-      | undefined;
-    expect(optionsArg?.priority).toBe("interrupt");
-
-    // The local queue must be cleared immediately (optimistic removal)
-    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
+    // No optimistic queue mutation: the shrink flows back via
+    // agent:queue:updated, so the local queue is untouched here.
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual(seeded);
   });
 
-  it("STAB-68: queue removal failure does NOT block the lifecycle send (removal is idempotent)", async () => {
-    // Even if the daemon reports a non-success or the seam throws, the
-    // middleware must log it and proceed with the send — the worst case
-    // matches today's behavior (duplicate delivery), and the BE's idempotency
-    // contract means a failed removal cannot corrupt state.
+  it("Send now: a daemon rejection (-32602 entry already gone) surfaces chatSendFailed without touching the queue", async () => {
+    // NOT idempotent (§5.5): a missing entry folds into
+    // {success:false,error} at the seam. The middleware surfaces it via
+    // chatSendFailed and does not roll back any local state (there is none).
+    // The ACTIVE retry record is CLEARED, not set: a lifecycle "Try again"
+    // could double-deliver a still-queued entry (retry + drain) or re-deliver
+    // an already-drained one, so the banner must not offer a stale retry.
     const seeded: QueuedMessage[] = [
-      { id: "q-fail", content: "fail and send", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
+      { id: "q-fail", content: "fail send now", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
     ];
     appStore.dispatch(replaceAgentQueue(AGENT, seeded));
-    agentsRemoveQueued.mockImplementationOnce(() =>
-      Promise.resolve({ success: false, error: "not found" }),
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "stale prior send" }));
+    agentsSendQueuedNow.mockImplementationOnce(() =>
+      Promise.resolve({ success: false, error: "not found: queued message" }),
     );
 
     appStore.dispatch(
       sendMessage(AGENT, {
         wsId: WS,
-        text: "fail and send",
+        text: "fail send now",
         queuedMessageId: "q-fail",
-        forceSubmit: true,
-        skipQueueCheck: true,
       }),
     );
     await flush();
     await flush();
 
-    // The removal was attempted
-    expect(agentsRemoveQueued).toHaveBeenCalledWith(AGENT, "q-fail");
-
-    // The lifecycle send MUST still happen
-    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
-    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("fail and send");
+    expect(agentsSendQueuedNow).toHaveBeenCalledWith({
+      agentId: AGENT,
+      workspaceId: WS,
+      messageId: "q-fail",
+    });
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toBe(
+      "not found: queued message",
+    );
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toBeNull();
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual(seeded);
   });
 
-  it("STAB-68: queue removal throwing does NOT block the lifecycle send", async () => {
+  it("Send now: a thrown seam call dispatches chatSendFailed (transport failure)", async () => {
     const seeded: QueuedMessage[] = [
-      { id: "q-throw", content: "throw and send", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
+      { id: "q-throw", content: "throw send now", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
     ];
     appStore.dispatch(replaceAgentQueue(AGENT, seeded));
-    agentsRemoveQueued.mockImplementationOnce(() => Promise.reject(new Error("ipc boom")));
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "stale prior send" }));
+    agentsSendQueuedNow.mockImplementationOnce(() => Promise.reject(new Error("ipc boom")));
 
     appStore.dispatch(
       sendMessage(AGENT, {
         wsId: WS,
-        text: "throw and send",
+        text: "throw send now",
         queuedMessageId: "q-throw",
-        forceSubmit: true,
-        skipQueueCheck: true,
       }),
     );
     await flush();
     await flush();
 
-    expect(agentsRemoveQueued).toHaveBeenCalledWith(AGENT, "q-throw");
-    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
-    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("throw and send");
+    expect(agentsSendQueuedNow).toHaveBeenCalledTimes(1);
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toContain("ipc boom");
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toBeNull();
   });
 
   // -------------------------------------------------------------------------

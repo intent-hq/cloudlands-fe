@@ -330,7 +330,7 @@ export interface WorkspacesClient {
 /**
  * Image content block attached to a message (PROTOCOL §5.5:
  * `{ type: "image", data, mimeType }`). Shared shape for the optional
- * `imageBlocks` params on `agents.queue` and `agents.force`.
+ * `imageBlocks` param on `agents.queue`.
  */
 export interface ImageBlock {
   type: "image";
@@ -390,9 +390,9 @@ export interface AgentsClient {
   }): Promise<MutationResult>;
   /**
    * Queue a message behind the agent's in-flight turn (`agent.queueMessage`,
-   * §5.5). Optional `imageBlocks` (same shape as `force`) are only forwarded
-   * when supplied so queued attachments survive queue-on-send. The daemon
-   * returns `{ success, queuedMessage }`, surfaced as `queuedMessage` on the
+   * §5.5). Optional `imageBlocks` are only forwarded when supplied so queued
+   * attachments survive queue-on-send. The daemon returns
+   * `{ success, queuedMessage }`, surfaced as `queuedMessage` on the
    * MutationResult. Transport / daemon errors fold into
    * `{ success: false, error }` — this method never throws.
    */
@@ -419,18 +419,21 @@ export interface AgentsClient {
     editing?: boolean,
   ): Promise<MutationResult>;
   /**
-   * Force-send a queued message (`agent.forceMessage`, §5.5): the daemon stops
-   * the current stream, dequeues the message, and delivers it immediately —
-   * atomically. Optional `imageBlocks` / `noteIds` are only forwarded when
-   * supplied. Transport / daemon errors fold into `{ success: false, error }`.
+   * Send a queued message immediately (`agent.sendQueuedMessageNow`, §5.5):
+   * the daemon atomically dequeues the persisted entry and delivers its
+   * content as an interrupt send — there is no client-side remove-then-send
+   * window. Responds `{ success, queued: false, messageId }` on delivery; if
+   * the send slot is unavailable (turn startup race) the daemon restores the
+   * entry at the queue FRONT and responds `{ success: true, queued: true }` —
+   * not delivered now, and the re-add reconciles via `agent:queue:updated`.
+   * NOT idempotent: a missing entry (already drained/removed) rejects with
+   * `-32602`, folded into `{ success: false, error }` like the other
+   * mutations.
    */
-  force(params: {
+  sendQueuedNow(params: {
     agentId: string;
-    messageId: string;
-    content: string;
     workspaceId: string;
-    imageBlocks?: ImageBlock[];
-    noteIds?: string[];
+    messageId: string;
   }): Promise<MutationResult>;
   /**
    * Read the agent's persisted message queue (`agent.getQueue`, §5.5/§6.6).
