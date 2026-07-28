@@ -715,7 +715,7 @@ describe('chatStateReducer', () => {
       expect(next.byAgentId['agent-never-opened']).toBeUndefined();
     });
 
-    it('agent:idle with no record and no marker is a state-identity no-op', () => {
+    it('agent:idle with no record is a state-identity no-op', () => {
       const state = chatStateReducer(initialState, chatSendStarted(AGENT));
       const next = chatStateReducer(state, agentIdleEvent(AGENT));
       expect(next).toBe(state);
