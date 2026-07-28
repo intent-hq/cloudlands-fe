@@ -224,7 +224,9 @@ describe('chatStateReducer', () => {
       let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'A' }));
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'A' });
-      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({ 'qm-1': { text: 'B' } });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' } },
+      });
     });
 
     it('replaceAgentQueue promotes a drained record into lastAttemptedMessage', () => {
@@ -242,7 +244,9 @@ describe('chatStateReducer', () => {
       // qm-1 drains, qm-2 is still queued.
       s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-2')]));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
-      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({ 'qm-2': { text: 'C' } });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-2': { seq: 2, record: { text: 'C' } },
+      });
     });
 
     it('replaceAgentQueue promotes the LAST-enqueued record when several ids vanish in one snapshot', () => {
@@ -252,6 +256,16 @@ describe('chatStateReducer', () => {
       s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'C' });
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('promotion picks the highest seq even with integer-like ids (Record key order trap)', () => {
+      // JS Records iterate integer-like keys FIRST regardless of insertion
+      // order — '2' enqueued before '1' would be mis-ordered by key
+      // iteration. The per-record seq must decide the promotion instead.
+      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, '2', { text: 'first' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, '1', { text: 'second' }));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'second' });
     });
 
     it('replaceAgentQueue with no parked records is a no-op (state identity preserved)', () => {
@@ -301,7 +315,9 @@ describe('chatStateReducer', () => {
       };
       s = chatStateReducer(s, eventReceived('ws-1', idleEvent));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
-      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({ 'qm-1': { text: 'B' } });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' } },
+      });
     });
   });
 

@@ -6,6 +6,7 @@ import type {
   StatusEvent,
   LastAttemptedMessage,
   ModelUnavailableInfo,
+  QueuedRetryRecord,
   SendMessagePayload,
   InitializeChatOptions,
   StreamStatusContext,
@@ -144,12 +145,13 @@ function reduceAgentIdleReconcile(state: ChatStateSlice, agentId: string): ChatS
  * `agent:idle` is withheld while ready-to-send entries remain, so the stale
  * record was never success-cleared between turns). When several recorded ids
  * vanish in one snapshot (missed events), the LAST-enqueued of them is the
- * most recent turn — `Record` preserves insertion order, which matches the
- * FIFO enqueue/drain order, so the last drained key wins. A queue-clear
- * (force-send / edit-and-regenerate, PROTOCOL §5.5) also lands here: the
- * cleared entries never run, but both flows immediately overwrite
- * `lastAttemptedMessage` with their own payload, so the transient promotion
- * is harmless and the dropped records stop a stale-payload leak.
+ * most recent turn — the per-record `seq` (a monotonic enqueue counter, see
+ * QueuedRetryRecord) decides, because `Record` key iteration order is not
+ * insertion order for integer-like keys. A queue-clear (force-send /
+ * edit-and-regenerate, PROTOCOL §5.5) also lands here: the cleared entries
+ * never run, but both flows immediately overwrite `lastAttemptedMessage`
+ * with their own payload, so the transient promotion is harmless and the
+ * dropped records stop a stale-payload leak.
  */
 function reduceQueueSnapshotDiff(
   state: ChatStateSlice,
@@ -158,18 +160,20 @@ function reduceQueueSnapshotDiff(
 ): ChatStateSlice {
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
-  const recordIds = Object.keys(agent.queuedRetryRecords);
-  if (recordIds.length === 0) return state;
+  if (Object.keys(agent.queuedRetryRecords).length === 0) return state;
   const presentIds = new Set(queue.map((message) => message.id));
-  const drainedIds = recordIds.filter((id) => !presentIds.has(id));
-  if (drainedIds.length === 0) return state;
-  const promotedId = drainedIds[drainedIds.length - 1];
-  const remaining: Record<string, LastAttemptedMessage> = {};
-  for (const [id, record] of Object.entries(agent.queuedRetryRecords)) {
-    if (!drainedIds.includes(id)) remaining[id] = record;
+  let promoted: QueuedRetryRecord | null = null;
+  const remaining: Record<string, QueuedRetryRecord> = {};
+  for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
+    if (presentIds.has(id)) {
+      remaining[id] = parked;
+    } else if (promoted === null || parked.seq > promoted.seq) {
+      promoted = parked;
+    }
   }
+  if (promoted === null) return state;
   return updateAgent(state, agentId, {
-    lastAttemptedMessage: agent.queuedRetryRecords[promotedId],
+    lastAttemptedMessage: promoted.record,
     queuedRetryRecords: remaining,
   });
 }
@@ -489,9 +493,16 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   )
   .with(chatQueuedRetryRecordSet, (state, { payload: [agentId, messageId, record] }) => {
     const agent = getAgent(state, agentId);
+    // Monotonic enqueue sequence: promotion order cannot rely on Record key
+    // order (integer-like keys iterate first, breaking insertion order).
+    const seq =
+      Object.values(agent.queuedRetryRecords).reduce(
+        (max, parked) => Math.max(max, parked.seq),
+        0,
+      ) + 1;
     return updateAgent(state, agentId, {
       agentId,
-      queuedRetryRecords: { ...agent.queuedRetryRecords, [messageId]: record },
+      queuedRetryRecords: { ...agent.queuedRetryRecords, [messageId]: { seq, record } },
     });
   })
   .with(replaceAgentQueue, (state, { payload: [agentId, messages] }) =>

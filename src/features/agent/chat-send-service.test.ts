@@ -1197,7 +1197,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       text: "message A",
     });
     expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({
-      "qm-B": { text: "message B" },
+      "qm-B": { seq: 1, record: { text: "message B" } },
     });
 
     appStore.dispatch(
@@ -1317,7 +1317,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     await flush();
     await flush();
     expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({
-      "qm-B": { text: "message B" },
+      "qm-B": { seq: 1, record: { text: "message B" } },
     });
 
     // User deletes the queued entry — B will never drain, so its record is

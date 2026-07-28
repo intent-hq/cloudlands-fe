@@ -18,6 +18,18 @@ export interface LastAttemptedMessage {
   options?: SendMessageOptions;
 }
 
+/**
+ * A parked, turn-scoped retry payload for a daemon-queued send (#999).
+ * `seq` is a per-agent monotonic enqueue sequence (derived in the reducer as
+ * max existing seq + 1) — promotion picks the highest drained seq, because
+ * `Record` key iteration order is NOT insertion order for integer-like keys,
+ * so key order alone cannot encode FIFO enqueue order.
+ */
+export interface QueuedRetryRecord {
+  seq: number;
+  record: LastAttemptedMessage;
+}
+
 export interface ModelUnavailableInfo {
   failedModel: string;
   nextAvailableModel: string;
@@ -74,7 +86,7 @@ export interface ChatAgentState {
    * in-flight turn's. User-removed entries drop their record instead of
    * promoting.
    */
-  queuedRetryRecords: Record<string, LastAttemptedMessage>;
+  queuedRetryRecords: Record<string, QueuedRetryRecord>;
   modelUnavailable: ModelUnavailableInfo | null;
   statusEvents: StatusEvent[];
   /** Workspace ID last recorded by the rebind tracker (mirrors WorkspaceRebindTracker). */
