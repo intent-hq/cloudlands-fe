@@ -155,6 +155,7 @@ function reduceAgentStreamUpdate(
   }
   if (payload.eventType === 'complete' || payload.eventType === 'timeout') {
     const failureMessage = getStreamFailureMessage(payload);
+    const modelUnavailable = getModelUnavailableInfo(payload.completeMessage);
     return updateAgent(state, payload.agentId, {
       streamingStartTime: null,
       lastChunkTime: null,
@@ -162,12 +163,13 @@ function reduceAgentStreamUpdate(
       isStalled: false,
       statusEvents: [],
       // Preserve the retry payload when the turn FAILED so the error
-      // banner's "Try again" can resend it (#941); clear it only on a
-      // successful completion.
-      lastAttemptedMessage: failureMessage
+      // banner's "Try again" can resend it (#941), and when the turn ended
+      // model-unavailable so "Retry with <model>" has a message to resend
+      // (#964); clear it only on a genuinely successful completion.
+      lastAttemptedMessage: failureMessage || modelUnavailable
         ? getAgent(state, payload.agentId).lastAttemptedMessage
         : null,
-      modelUnavailable: getModelUnavailableInfo(payload.completeMessage),
+      modelUnavailable,
       error: failureMessage,
     });
   }

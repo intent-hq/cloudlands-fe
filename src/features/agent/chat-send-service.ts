@@ -54,6 +54,7 @@ import {
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   agentSessionRetryLastMessageRequested,
+  agentSessionRetryWithModelRequested,
   agentSessionStopChatRequested,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { clearChatDraft } from "$store/renderer/slices/transient-ui/transient-ui-slice";
@@ -80,6 +81,7 @@ const logger = createLogger("ChatSendService");
 type LifecycleSendOptions = {
   imageBlocks?: SendMessagePayload["imageBlocks"];
   noteIds?: string[];
+  model?: string;
   priority?: "interrupt";
 };
 
@@ -230,11 +232,16 @@ async function dispatchToLifecycle(
   // Record the exact content this attempt carries so the error banner's
   // "Try again" resends it verbatim if the turn fails (#941). `content`
   // already includes the workspace-context prefix, so a retry must not
-  // re-prefix it.
+  // re-prefix it. A model override (retry-with-model, #964) is recorded too,
+  // so a subsequent "Try again" keeps using the suggested model.
+  const recordedOptions = {
+    ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
+    ...(options.model !== undefined ? { model: options.model } : {}),
+  };
   appStore.dispatch(
     chatLastAttemptedMessageSet(agentId, {
       text: content,
-      ...(options.noteIds !== undefined ? { options: { noteIds: options.noteIds } } : {}),
+      ...(Object.keys(recordedOptions).length > 0 ? { options: recordedOptions } : {}),
     }),
   );
   appStore.dispatch(clearChatDraft(wsId, agentId));
@@ -243,6 +250,9 @@ async function dispatchToLifecycle(
     await deps.sendMessage(agentId, content, workspace, {
       imageBlocks: options.imageBlocks,
       noteIds: options.noteIds,
+      // One-shot model override (retry-with-model, #964): the lifecycle send
+      // resolves the wire model as options.model ?? session.model.
+      model: options.model,
       // Pass priority: "interrupt" when force-send is active (STAB-38 fix).
       // The daemon will preempt the in-flight turn instead of queueing.
       priority: options.priority,
@@ -389,7 +399,7 @@ async function dispatchRetryLastMessage(
       wsId,
       lastAttempted.text,
       undefined,
-      { noteIds: lastAttempted.options?.noteIds },
+      { noteIds: lastAttempted.options?.noteIds, model: lastAttempted.options?.model },
       false,
     );
     appStore.dispatch(action.success(undefined as void));
@@ -397,6 +407,60 @@ async function dispatchRetryLastMessage(
     // dispatchToLifecycle surfaces its own failures via chatSendFailed and
     // should not throw; reject the promise if it unexpectedly does.
     logger.error("Retry-last-message dispatch threw", error);
+    appStore.dispatch(
+      action.failure(error instanceof Error ? error : new Error(String(error))),
+    );
+  }
+}
+
+/**
+ * Service the model-unavailable banner's "Retry with <model>": resend the
+ * recorded `lastAttemptedMessage` through the normal lifecycle send path with
+ * the suggested model as a one-shot send-option override (#964) — the
+ * lifecycle send resolves the wire model as `options.model ?? session.model`,
+ * so no session mutation is needed. Mirrors `dispatchRetryLastMessage`
+ * otherwise: no `workspaceContextStr` (the recorded text already carries the
+ * prefix), and a no-op with user feedback when nothing was recorded.
+ */
+async function dispatchRetryWithModel(
+  action: ReturnType<typeof agentSessionRetryWithModelRequested>,
+): Promise<void> {
+  const [agentId, wsId, model] = action.payload;
+  const state = appStore.state as {
+    chatState?: {
+      byAgentId: Record<string, { lastAttemptedMessage: LastAttemptedMessage | null }>;
+    };
+  };
+  const lastAttempted = state.chatState?.byAgentId[agentId]?.lastAttemptedMessage;
+  if (!lastAttempted || lastAttempted.text.trim().length === 0) {
+    logger.warn("Retry-with-model requested but no lastAttemptedMessage is recorded", {
+      agentId,
+      wsId,
+      model,
+    });
+    try {
+      const { toast } = await import("svelte-sonner");
+      toast.info("Nothing to retry — send a message to start a new turn.");
+    } catch (error) {
+      logger.error("Failed to surface retry no-op feedback", error);
+    }
+    appStore.dispatch(action.success(undefined as void));
+    return;
+  }
+  try {
+    await dispatchToLifecycle(
+      agentId,
+      wsId,
+      lastAttempted.text,
+      undefined,
+      { noteIds: lastAttempted.options?.noteIds, model },
+      false,
+    );
+    appStore.dispatch(action.success(undefined as void));
+  } catch (error) {
+    // dispatchToLifecycle surfaces its own failures via chatSendFailed and
+    // should not throw; reject the promise if it unexpectedly does.
+    logger.error("Retry-with-model dispatch threw", error);
     appStore.dispatch(
       action.failure(error instanceof Error ? error : new Error(String(error))),
     );
@@ -447,9 +511,9 @@ async function dispatchStopChat(
 
 /**
  * Middleware that gives `sendMessage`, `removeQueuedMessageRequested`,
- * `agentSessionStopChatRequested`, and `agentSessionRetryLastMessageRequested`
- * a real consumer. Fire-and-forget — dispatch stays synchronous and never
- * throws.
+ * `agentSessionStopChatRequested`, `agentSessionRetryLastMessageRequested`,
+ * and `agentSessionRetryWithModelRequested` a real consumer. Fire-and-forget —
+ * dispatch stays synchronous and never throws.
  */
 export function createChatSendMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
@@ -548,6 +612,21 @@ export function createChatSendMiddleware(): StoreMiddleware {
         wsId.length > 0
       ) {
         void dispatchRetryLastMessage(retryAction);
+      }
+    } else if (
+      (action as { type?: unknown }).type === agentSessionRetryWithModelRequested.type
+    ) {
+      const retryAction = action as ReturnType<typeof agentSessionRetryWithModelRequested>;
+      const [agentId, wsId, model] = retryAction.payload ?? [];
+      if (
+        typeof agentId === "string" &&
+        agentId.length > 0 &&
+        typeof wsId === "string" &&
+        wsId.length > 0 &&
+        typeof model === "string" &&
+        model.length > 0
+      ) {
+        void dispatchRetryWithModel(retryAction);
       }
     }
 
