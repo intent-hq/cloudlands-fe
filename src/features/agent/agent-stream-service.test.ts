@@ -203,7 +203,10 @@ describe("agentStreamService (real store)", () => {
     const idleEvent: AgentIdleEvent = {
       id: "evt-idle-stream-1",
       type: "agent:idle",
-      timestamp: "2026-01-01T00:00:00.000Z",
+      // The idle FOLLOWS the send (a legitimate finalize) — stamp it after
+      // simulateSendInFlight's chatSendStarted so the staleness guard that
+      // skips pre-send idles (delayed-idle clobber fix) does not fire.
+      timestamp: new Date(Date.now() + 1000).toISOString(),
       workspaceId: WS,
       actor: { type: "agent", id: AGENT },
       data: {
