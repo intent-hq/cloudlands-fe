@@ -77,7 +77,7 @@
         error?: string;
       }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
       if (!result.success) {
-        throw new Error(result.error || 'Failed to check provider availability');
+        throw new Error(result.error || m.lib_auggieSetup_providerCheckFailed_error());
       }
       providerAvailability = result.data ?? null;
       providerCheckError = null;

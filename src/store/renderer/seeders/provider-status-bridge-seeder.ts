@@ -56,6 +56,7 @@ import { ACP_PROVIDERS } from "$shared/config/provider-config";
 import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
 import { CODEX_ADAPTER_MISSING_WARNING } from "$shared/constants/codex";
+import { m } from "$shared/paraglide/messages.js";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import {
   PROVIDER_AUTH_STATUS_METHOD,
@@ -341,7 +342,7 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
       ? arg
       : ((arg as { providerId?: unknown } | undefined)?.providerId as string) || "";
   if (!providerId || !(providerId in ACP_PROVIDERS)) {
-    return { success: false, providerId, error: `Unknown provider: ${providerId}` };
+    return { success: false, providerId, error: m.providers_bridge_unknownProvider_error({ providerId }) };
   }
   try {
     return { success: true, providerId, data: await checkSingleProvider(providerId) };
@@ -424,9 +425,9 @@ registerMockIpcHandler(AUGGIE_CHANNELS.STATUS, async () => {
   } catch (error) {
     return {
       success: false,
-      error: `Auggie CLI check failed: ${
-        error instanceof Error ? error.message : String(error)
-      }. Please try again.`,
+      error: m.providers_bridge_auggieCheckFailed_error({
+        details: error instanceof Error ? error.message : String(error),
+      }),
       data: status,
     };
   }
@@ -489,7 +490,7 @@ registerMockIpcHandler(AUGGIE_CHANNELS.INSTALL, async () => ({
   success: true,
   data: {
     instructions: [
-      `Install the Auggie CLI on the daemon host (requires Node.js ${MINIMUM_NODE_VERSION}+), then click "Check again":`,
+      m.providers_bridge_auggieInstallOnDaemon_instruction({ version: MINIMUM_NODE_VERSION }),
     ],
     command: AUGGIE_INSTALL_COMMAND,
   },
@@ -515,9 +516,7 @@ registerMockIpcHandler(AUGGIE_CHANNELS.AUTHENTICATE, async () => {
       return {
         success: true,
         data: {
-          instructions: [
-            'Auggie CLI is not installed on the daemon host — install it first, then click "Check again":',
-          ],
+          instructions: [m.providers_bridge_auggieNotInstalledOnDaemon_instruction()],
           command: AUGGIE_INSTALL_COMMAND,
         },
       };
@@ -525,9 +524,7 @@ registerMockIpcHandler(AUGGIE_CHANNELS.AUTHENTICATE, async () => {
     return {
       success: true,
       data: {
-        instructions: [
-          'Log in by running this command in a terminal on the daemon host, then click "Check again":',
-        ],
+        instructions: [m.providers_bridge_auggieLoginOnDaemon_instruction()],
         command: "auggie login",
       },
     };

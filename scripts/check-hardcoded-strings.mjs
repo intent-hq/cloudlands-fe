@@ -174,6 +174,14 @@ const ENFORCED_DIRS = [
   'src/features/tools',
   'src/features/user-activity',
   'src/features/workspace',
+  // shared error catalog + the extracted seeder file. The rest of src/shared,
+  // src/store, src/main, src/lib/utils, and src/lib/client stay unenforced for
+  // now (recorded coordinator scope exception in the spec); shared/errors/
+  // recovery.ts is a known follow-up.
+  'src/shared/errors/index.ts',
+  'src/shared/errors/localization.ts',
+  'src/shared/errors/messages.ts',
+  'src/store/renderer/seeders/provider-status-bridge-seeder.ts',
 ];
 
 const ROOT = process.cwd();

@@ -137,7 +137,7 @@ export async function sendMessage(
       dispatchRedux(restoreAction);
       let session = await restoreAction.promise;
       if (!session) {
-        throw new Error(`Session not found: ${agentId}`);
+        throw new Error(m.agent_streamLifecycle_sessionNotFound_error({ agentId }));
       }
       session = { ...session, isStreaming: session.isStreaming ?? false };
 
@@ -180,7 +180,7 @@ export async function sendMessage(
               hasRepositoryPath: !!workspace.repositoryPath,
               hasPath: !!workspace.path,
             });
-            throw new Error('Space not ready for agent activation. Please wait for space to load.');
+            throw new Error(m.agent_streamLifecycle_spaceNotReady_error());
           }
         } else if (session && session.status === 'pending' && session.backendSessionId) {
           // Agent was already activated but status wasn't updated - fix it
