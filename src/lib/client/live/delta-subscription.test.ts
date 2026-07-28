@@ -361,6 +361,7 @@ describe("createDeltaSubscription", () => {
 
         // Quiet period: a lone event still refetches immediately (leading edge).
         push("events.event", { type: "x:changed" });
+        await vi.advanceTimersByTimeAsync(0);
         expect(fetchAll).toHaveBeenCalledTimes(3);
         dispose();
       } finally {

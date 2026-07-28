@@ -316,15 +316,20 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   // Legacy-event refetch coalescing (intent-hq/monorepo#1010): single-flight
   // tracking plus one trailing follow-up per coalesce window, so an event
   // storm while not live costs at most ~1 fetchAll per (window + fetch)
-  // instead of one per event.
-  let refetchInFlight = false;
+  // instead of one per event. A counter (not a boolean) because refetchEmit
+  // is also invoked directly by the initial/reconnect/resnapshot bridges,
+  // whose fetches can overlap a legacy-driven one.
+  let refetchesInFlight = 0;
   let refetchFollowUpWanted = false;
   let refetchFollowUpTimer: ReturnType<typeof setTimeout> | undefined;
 
   const refetchEmit = () => {
     const epoch = refetchEpoch;
-    refetchInFlight = true;
-    fetchAll()
+    refetchesInFlight += 1;
+    // Promise.resolve().then(fetchAll) so a synchronously-throwing fetchAll
+    // still flows through .finally and cannot strand the in-flight counter.
+    Promise.resolve()
+      .then(fetchAll)
       .then((items) => {
         if (!disposed && !live && epoch === refetchEpoch) handler(items);
       })
@@ -332,7 +337,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
         // Refresh failures are non-fatal for the subscription.
       })
       .finally(() => {
-        refetchInFlight = false;
+        refetchesInFlight -= 1;
         if (!refetchFollowUpWanted || disposed) return;
         // Events arrived mid-flight: their changes may postdate the fetch
         // that just settled, so run exactly one trailing refetch after the
@@ -350,7 +355,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   // events landing while that follow-up is pending are already covered by it.
   const coalescedRefetchEmit = () => {
     if (refetchFollowUpTimer !== undefined) return;
-    if (refetchInFlight) {
+    if (refetchesInFlight > 0) {
       refetchFollowUpWanted = true;
       return;
     }
