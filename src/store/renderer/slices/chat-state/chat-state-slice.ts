@@ -6,6 +6,7 @@ import type {
   StatusEvent,
   LastAttemptedMessage,
   ModelUnavailableInfo,
+  QueuedRetryRecord,
   SendMessagePayload,
   InitializeChatOptions,
   StreamStatusContext,
@@ -17,6 +18,11 @@ import {
 } from '../workspace-agents/workspace-agents-stream-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
+import {
+  removeQueuedMessageFromAgentQueue,
+  replaceAgentQueue,
+} from '../agent-queue/agent-queue-slice';
+import type { QueuedMessage } from '$shared/types';
 
 // ============================================================================
 // Initial State
@@ -30,6 +36,7 @@ export const emptyChatAgentState: ChatAgentState = {
   receivedFirstChunk: false,
   streamingStartTime: null,
   lastAttemptedMessage: null,
+  queuedRetryRecords: {},
   modelUnavailable: null,
   statusEvents: [],
   trackedWorkspaceId: null,
@@ -125,6 +132,83 @@ function reduceAgentIdleReconcile(state: ChatStateSlice, agentId: string): ChatS
     return state;
   }
   return updateAgent(state, agentId, { lastAttemptedMessage: null });
+}
+
+/**
+ * Turn-scoped retry-record promotion (#999): when an `agent:queue:updated`
+ * snapshot no longer contains a recorded id, the daemon has dequeued that
+ * entry to run it (agent_manager.rs `try_drain_queue` publishes the shrunk
+ * snapshot right after `dequeue_message`) — so its payload becomes the ACTIVE
+ * turn's retry record. Promoting into `lastAttemptedMessage` means a failure
+ * in the drained turn pairs "Try again" with the drained message instead of
+ * the previous in-flight turn's already-succeeded payload (the #984 residual:
+ * `agent:idle` is withheld while ready-to-send entries remain, so the stale
+ * record was never success-cleared between turns). When several recorded ids
+ * vanish in one snapshot (missed events), the LAST-enqueued of them is the
+ * most recent turn — the per-record `seq` (a monotonic enqueue counter, see
+ * QueuedRetryRecord) decides, because `Record` key iteration order is not
+ * insertion order for integer-like keys.
+ *
+ * Queue-CLEAR flows (`agent.forceMessage` and `agent.editAndRegenerate`,
+ * PROTOCOL §5.5 — both call `clear_queue` and publish an empty snapshot;
+ * interrupt-priority ⌘Enter sends preserve the queue) also land here. The
+ * cleared entries never run, so promotion must be SKIPPED for them: both
+ * flows record their own `lastAttemptedMessage`, but Electron does not
+ * guarantee ordering between the event channel and the RPC response, so a
+ * late-arriving empty snapshot could otherwise clobber the fresh record
+ * with a discarded entry's payload. The clear-queue signature — an EMPTY
+ * incoming snapshot with more than one recorded id vanishing at once — is
+ * distinguishable from a genuine drain, which removes exactly one entry per
+ * cycle; on that signature the records are dropped without promotion.
+ */
+function reduceQueueSnapshotDiff(
+  state: ChatStateSlice,
+  agentId: string,
+  queue: QueuedMessage[],
+): ChatStateSlice {
+  const agent = state.byAgentId[agentId];
+  if (!agent) return state;
+  if (Object.keys(agent.queuedRetryRecords).length === 0) return state;
+  const presentIds = new Set(queue.map((message) => message.id));
+  let promoted: QueuedRetryRecord | null = null;
+  let drainedCount = 0;
+  const remaining: Record<string, QueuedRetryRecord> = {};
+  for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
+    if (presentIds.has(id)) {
+      remaining[id] = parked;
+    } else {
+      drainedCount += 1;
+      if (promoted === null || parked.seq > promoted.seq) {
+        promoted = parked;
+      }
+    }
+  }
+  if (promoted === null) return state;
+  if (queue.length === 0 && drainedCount > 1) {
+    return updateAgent(state, agentId, { queuedRetryRecords: remaining });
+  }
+  return updateAgent(state, agentId, {
+    lastAttemptedMessage: promoted.record,
+    queuedRetryRecords: remaining,
+  });
+}
+
+/**
+ * User-initiated queued-message removal (#999): the entry will never drain,
+ * so its retry record is dropped WITHOUT promotion. The "Send now" replay
+ * (send path with `queuedMessageId`) also flows through here first — its
+ * direct lifecycle send then records its own `lastAttemptedMessage`.
+ */
+function reduceQueuedRecordRemoved(
+  state: ChatStateSlice,
+  agentId: string,
+  messageId: string,
+): ChatStateSlice {
+  const agent = state.byAgentId[agentId];
+  if (!agent || !(messageId in agent.queuedRetryRecords)) return state;
+  const remaining = { ...agent.queuedRetryRecords };
+  delete remaining[messageId];
+  return updateAgent(state, agentId, { queuedRetryRecords: remaining });
 }
 
 function getStreamFailureMessage(payload: AgentStreamUpdatePayload): string | null {
@@ -271,6 +355,17 @@ export const chatLastAttemptedMessageSet = createAction<
   [agentId: string, lastAttemptedMessage: LastAttemptedMessage | null]
 >('chatState/lastAttemptedMessageSet');
 
+/**
+ * Record a retry payload for a successfully daemon-queued send, keyed by the
+ * returned QueuedMessage id (#999). The record stays parked until the queue
+ * snapshot shows the entry drained (promotion into `lastAttemptedMessage`,
+ * see reduceQueueSnapshotDiff) or removed (dropped). Dispatched by
+ * chat-send-service's queue-on-send success branch.
+ */
+export const chatQueuedRetryRecordSet = createAction<
+  [agentId: string, messageId: string, record: LastAttemptedMessage]
+>('chatState/queuedRetryRecordSet');
+
 /** Send failed (activation or network error) */
 export const chatSendFailed =
   createAction<[agentId: string, error: string]>('chatState/sendFailed');
@@ -410,6 +505,26 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   )
   .with(chatLastAttemptedMessageSet, (state, { payload: [agentId, lastAttemptedMessage] }) =>
     updateAgent(state, agentId, { lastAttemptedMessage }),
+  )
+  .with(chatQueuedRetryRecordSet, (state, { payload: [agentId, messageId, record] }) => {
+    const agent = getAgent(state, agentId);
+    // Monotonic enqueue sequence: promotion order cannot rely on Record key
+    // order (integer-like keys iterate first, breaking insertion order).
+    const seq =
+      Object.values(agent.queuedRetryRecords).reduce(
+        (max, parked) => Math.max(max, parked.seq),
+        0,
+      ) + 1;
+    return updateAgent(state, agentId, {
+      agentId,
+      queuedRetryRecords: { ...agent.queuedRetryRecords, [messageId]: { seq, record } },
+    });
+  })
+  .with(replaceAgentQueue, (state, { payload: [agentId, messages] }) =>
+    reduceQueueSnapshotDiff(state, agentId, messages),
+  )
+  .with(removeQueuedMessageFromAgentQueue, (state, { payload: [agentId, messageId] }) =>
+    reduceQueuedRecordRemoved(state, agentId, messageId),
   )
   .with(chatSendFailed, (state, { payload: [agentId, error] }) =>
     updateAgent(state, agentId, {
