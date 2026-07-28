@@ -182,6 +182,13 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
 
+      # Compile the Paraglide i18n catalog before dist:mac so the npm `prebuild`
+      # type-check can resolve $shared/paraglide/messages.js on a clean checkout
+      # (intent-hq/monorepo#1046). Kept here in addition to the package.json
+      # `prebuild` fix so the workflow_dispatch fallback can rebuild older tags.
+      - name: Generate i18n catalog
+        run: pnpm run generate:i18n
+
       - name: Build and package macOS app
         run: pnpm run dist:mac
         env:
