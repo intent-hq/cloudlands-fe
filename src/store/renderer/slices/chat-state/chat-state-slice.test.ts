@@ -290,6 +290,44 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
     });
 
+    it('parking a record does not clear the error; the drain promotion does (stale-banner regression)', () => {
+      // Pre-fix staleness mechanism: a failed turn's banner survived a
+      // successful queued retry because nothing on the promotion path cleared
+      // it — the drained turn started with the previous turn's error still up
+      // (which also suppressed the streaming indicator).
+      let s = chatStateReducer(initialState, chatSendFailed(AGENT, 'boom'));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'retry' }));
+      expect(s.byAgentId[AGENT].error).toBe('boom');
+      // Drain snapshot: the promoted record's turn is now active — clean slate.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].error).toBeNull();
+      expect(s.byAgentId[AGENT].modelUnavailable).toBeNull();
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'retry' });
+    });
+
+    it('drain promotion clears stale modelUnavailable state', () => {
+      let s = chatStateReducer(stateWithModelUnavailable(), chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'retry' }));
+      expect(s.byAgentId[AGENT].modelUnavailable).not.toBeNull();
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].modelUnavailable).toBeNull();
+    });
+
+    it('the clear-queue signature does NOT clear the error (discarded entries never run)', () => {
+      let s = chatStateReducer(initialState, chatSendFailed(AGENT, 'boom'));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].error).toBe('boom');
+    });
+
+    it('the pure text-sync path does NOT clear the error (no drain happened)', () => {
+      let s = chatStateReducer(initialState, chatSendFailed(AGENT, 'boom'));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'before' }));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [{ ...queuedEntry('qm-1'), content: 'after' }]));
+      expect(s.byAgentId[AGENT].error).toBe('boom');
+      expect(s.byAgentId[AGENT].queuedRetryRecords['qm-1'].record.text).toBe('after');
+    });
+
     it('replaceAgentQueue with no parked records is a no-op (state identity preserved)', () => {
       const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
       const s2 = chatStateReducer(s1, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));

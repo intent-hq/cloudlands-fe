@@ -45,7 +45,9 @@ import type { StoreMiddleware } from '$lib/store-shim/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import {
+  chatErrorCleared,
   chatLastAttemptedMessageSet,
+  chatModelUnavailableCleared,
   chatQueuedRetryRecordSet,
   chatSendFailed,
   chatSendStarted,
@@ -242,6 +244,15 @@ async function dispatchToLifecycle(
         appStore.dispatch(chatSendFailed(agentId, errMsg));
         return;
       }
+      // A successful enqueue means the daemon ACCEPTED the (re)send — clear
+      // any stale failure banner so the BE-owned busy flags can surface the
+      // streaming indicator again (a retry routed through queue-on-send
+      // otherwise leaves "Response failed" up until the queued turn's own
+      // stream events clear it, if ever). Only the SUCCESS branch clears:
+      // the enqueue-failure branches below must keep setting the error
+      // (#969).
+      appStore.dispatch(chatErrorCleared(agentId));
+      appStore.dispatch(chatModelUnavailableCleared(agentId));
       const queuedMessage = result.queuedMessage;
       if (queuedMessage) {
         // #999: park the retry payload against the queued entry's id BEFORE

@@ -294,9 +294,16 @@ function reduceQueueSnapshotDiff(
   if (queue.length === 0 && drainedCount > 1) {
     return updateAgent(state, agentId, { queuedRetryRecords: remaining });
   }
+  // A genuine drain promotion means the daemon dequeued the entry to RUN it
+  // — the promoted record's turn is now the active turn, so a stale failure
+  // banner from a previous turn must not persist over it (it also suppresses
+  // the streaming indicator). The clear-queue signature branch above and the
+  // pure text-sync path deliberately do NOT clear: those entries never run.
   return updateAgent(state, agentId, {
     lastAttemptedMessage: promoted.record,
     queuedRetryRecords: remaining,
+    error: null,
+    modelUnavailable: null,
   });
 }
 
