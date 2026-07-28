@@ -30,6 +30,7 @@ import {
   chatQueuedRetryRecordSet,
   chatQueuedRetryRecordParked,
   chatQueuedRetryRecordUpdated,
+  chatQueuedRetryRecordsCleared,
 } from './chat-state-slice';
 import {
   removeQueuedMessageFromAgentQueue,
@@ -391,6 +392,42 @@ describe('chatStateReducer', () => {
       // Nor does it materialize state for an unopened chat.
       const s3 = chatStateReducer(initialState, chatQueuedRetryRecordUpdated(AGENT, 'qm-1', 'edited'));
       expect(s3.byAgentId[AGENT]).toBeUndefined();
+    });
+
+    it('chatQueuedRetryRecordsCleared drops ALL parked records without promotion (#999 discard)', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'edited' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'discarded' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordsCleared(AGENT));
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'edited' });
+      // The daemon's late empty clear_queue snapshot finds nothing to promote.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'edited' });
+    });
+
+    it('chatQueuedRetryRecordsCleared with no parked records is a state-identity no-op', () => {
+      const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+      const s2 = chatStateReducer(s1, chatQueuedRetryRecordsCleared(AGENT));
+      expect(s2).toBe(s1);
+      // Nor does it materialize state for an unopened chat.
+      const s3 = chatStateReducer(initialState, chatQueuedRetryRecordsCleared('agent-unopened'));
+      expect(s3.byAgentId['agent-unopened']).toBeUndefined();
+    });
+
+    it('parking beyond the cap evicts the oldest-seq records first (#973-family memory bound)', () => {
+      // Records whose entries never drain cleanly (missed snapshots, agent
+      // deletion) must not accumulate unboundedly — each can carry MB-scale
+      // base64 imageBlocks. The park reducer caps the map at 20, evicting
+      // the oldest (lowest-seq) parked records first.
+      let s = chatStateReducer(initialState, chatSendStarted(AGENT));
+      for (let i = 1; i <= 25; i += 1) {
+        s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, `qm-${i}`, { text: `message ${i}` }));
+      }
+      const records = s.byAgentId[AGENT].queuedRetryRecords;
+      expect(Object.keys(records)).toHaveLength(20);
+      expect(records['qm-5']).toBeUndefined();
+      expect(records['qm-6']).toEqual({ seq: 6, record: { text: 'message 6' } });
+      expect(records['qm-25']).toEqual({ seq: 25, record: { text: 'message 25' } });
     });
 
     it('agent:idle success-clear does not disturb parked records', () => {
@@ -901,11 +938,11 @@ describe('chatStateReducer', () => {
   describe('idle-reconcile finalize clears lastAttemptedMessage (#973)', () => {
     // PROTOCOL.md-shaped agent:idle event fixture (canonical status fields
     // are required on lifecycle payloads; explicit null when not known).
-    function agentIdleEvent(agentId: string) {
+    function agentIdleEvent(agentId: string, timestamp = '2026-01-01T00:00:00.000Z') {
       const event: AgentIdleEvent = {
         id: 'evt-idle-1',
         type: 'agent:idle',
-        timestamp: '2026-01-01T00:00:00.000Z',
+        timestamp,
         workspaceId: 'ws-1',
         actor: { type: 'agent', id: agentId },
         data: {
@@ -929,8 +966,12 @@ describe('chatStateReducer', () => {
       // The live success flow — the disposition-neutral terminal `complete`
       // defers the clear to `agent:idle`, which always follows a successful
       // turn on the same firehose (ready-to-send suppression aside, in which
-      // case the drained final turn's idle clears).
-      let s = chatStateReducer(initialState, chatSendStarted(AGENT));
+      // case the drained final turn's idle clears). The send predates the
+      // idle (coherent timeline — the idle belongs to this turn).
+      let s = chatStateReducer(
+        initialState,
+        chatSendStarted(AGENT, 'ws-1', Date.parse('2025-12-31T23:59:00.000Z')),
+      );
       s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'sent ok' }));
       s = chatStateReducer(s, agentStreamUpdateReceived({
         agentId: AGENT,
@@ -947,8 +988,70 @@ describe('chatStateReducer', () => {
       // Turn started, record set, terminal `complete` never observed (window
       // reload mid-turn / dropped subscription) — the agent:idle reconcile is
       // the finalize and must not leave the MB-scale payload resident.
-      let s = chatStateReducer(initialState, chatSendStarted(AGENT));
+      let s = chatStateReducer(
+        initialState,
+        chatSendStarted(AGENT, 'ws-1', Date.parse('2025-12-31T23:59:00.000Z')),
+      );
       s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'sent mid-reload' }));
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+    });
+
+    it('a STALE agent:idle (emitted before the newest send) does not clear the newer record', () => {
+      // Turn N's `agent:idle` can arrive over the event channel AFTER send
+      // N+1 already dispatched chatSendStarted + re-set lastAttemptedMessage
+      // (transit delay). The idle's daemon-stamped timestamp predates the
+      // newer send's lastMessageTime, so the finalize must be skipped — if
+      // N+1 then fails, its "Try again" still needs the record.
+      let s = chatStateReducer(
+        initialState,
+        chatSendStarted(AGENT, 'ws-1', Date.parse('2026-01-01T00:00:10.000Z')),
+      );
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'send N+1' }));
+      // Turn N's idle, emitted 5s BEFORE send N+1 started.
+      s = chatStateReducer(s, agentIdleEvent(AGENT, '2026-01-01T00:00:05.000Z'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'send N+1' });
+    });
+
+    it('a stale agent:idle skip is a state-identity no-op', () => {
+      let s = chatStateReducer(
+        initialState,
+        chatSendStarted(AGENT, 'ws-1', Date.parse('2026-01-01T00:00:10.000Z')),
+      );
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'send N+1' }));
+      const next = chatStateReducer(s, agentIdleEvent(AGENT, '2026-01-01T00:00:05.000Z'));
+      expect(next).toBe(s);
+    });
+
+    it('an idle stamped AFTER the last send still clears (legitimate drain finalize)', () => {
+      let s = chatStateReducer(
+        initialState,
+        chatSendStarted(AGENT, 'ws-1', Date.parse('2026-01-01T00:00:05.000Z')),
+      );
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'sent' }));
+      s = chatStateReducer(s, agentIdleEvent(AGENT, '2026-01-01T00:00:10.000Z'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+    });
+
+    it('an idle with an unparseable timestamp falls back to clearing (reconcile safety)', () => {
+      // A malformed timestamp must not strand an MB-scale payload — the
+      // pre-guard #973 semantics apply.
+      let s = chatStateReducer(
+        initialState,
+        chatSendStarted(AGENT, 'ws-1', Date.parse('2026-01-01T00:00:10.000Z')),
+      );
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'sent' }));
+      s = chatStateReducer(s, agentIdleEvent(AGENT, 'not-a-timestamp'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+    });
+
+    it('reload reconcile (lastMessageTime 0) still clears on any idle (#973)', () => {
+      // Fresh state after a window reload has lastMessageTime 0 — every idle
+      // timestamp postdates it, so the reconcile finalize is preserved.
+      let s = chatStateReducer(
+        initialState,
+        chatInitialized(AGENT, { isStreaming: false, lastAttemptedMessage: { text: 'pre-reload' } }),
+      );
       s = chatStateReducer(s, agentIdleEvent(AGENT));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
     });

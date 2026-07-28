@@ -11,6 +11,7 @@ import type {
   InitializeChatOptions,
   StreamStatusContext,
 } from './chat-state-types';
+import { MAX_QUEUED_RETRY_RECORDS } from './chat-state-types';
 import { sanitizeStatusEvent } from './chat-state-serialization';
 import {
   agentStreamUpdateReceived,
@@ -109,7 +110,11 @@ function deepEqual(a: unknown, b: unknown): boolean {
  * Park a retry record under a queued-entry id with the next monotonic enqueue
  * seq (promotion order cannot rely on Record key order — integer-like keys
  * iterate first, breaking insertion order). Shared by the queue-on-send park
- * (#999) and the lifecycle auto-queue park (#1011).
+ * (#999) and the lifecycle auto-queue park (#1011). Bounded at
+ * MAX_QUEUED_RETRY_RECORDS (#973-family memory): records stranded by missed
+ * snapshots or per-agent deletion would otherwise accumulate for the app
+ * session, each potentially carrying MB-scale base64 imageBlocks — parking
+ * beyond the cap evicts the oldest (lowest-seq) records first.
  */
 function parkRetryRecord(
   agent: ChatAgentState,
@@ -121,7 +126,15 @@ function parkRetryRecord(
       (max, parked) => Math.max(max, parked.seq),
       0,
     ) + 1;
-  return { ...agent.queuedRetryRecords, [messageId]: { seq, record } };
+  const next = { ...agent.queuedRetryRecords, [messageId]: { seq, record } };
+  const ids = Object.keys(next);
+  if (ids.length > MAX_QUEUED_RETRY_RECORDS) {
+    ids.sort((a, b) => next[a].seq - next[b].seq);
+    for (const id of ids.slice(0, ids.length - MAX_QUEUED_RETRY_RECORDS)) {
+      delete next[id];
+    }
+  }
+  return next;
 }
 
 function getModelUnavailableInfo(value: unknown): ModelUnavailableInfo | null {
@@ -159,16 +172,33 @@ function shouldPreserveLastAttemptedMessage(agent: ChatAgentState): boolean {
  * the only path that never cleared `lastAttemptedMessage`, leaving a
  * potentially MB-scale base64 payload (imageBlocks, #965) resident for the
  * app session.
+ *
+ * Staleness guard: the daemon withholds `agent:idle` while ready-to-send
+ * messages remain queued (#969), so an observed idle always belongs to the
+ * finished turn DAEMON-side — but client-side transit delay means turn N's
+ * idle can arrive AFTER send N+1 already re-set `lastAttemptedMessage`
+ * (chatSendStarted cleared the error, so the preserve predicate can't help).
+ * The idle's daemon-stamped `timestamp` predates that newer send's
+ * `lastMessageTime` in exactly that case, so the finalize is skipped — the
+ * newer turn's record must survive for its own failure banner. An
+ * unparseable timestamp falls back to clearing (the pre-guard #973
+ * semantics), and a fresh post-reload state has `lastMessageTime` 0, which
+ * every idle postdates — the reload reconcile is preserved.
  */
-function reduceAgentIdleReconcile(state: ChatStateSlice, agentId: string): ChatStateSlice {
+function reduceAgentIdleReconcile(
+  state: ChatStateSlice,
+  agentId: string,
+  eventTimestamp: string,
+): ChatStateSlice {
   const agent = state.byAgentId[agentId];
   // agent:idle fires for every agent in subscribed workspaces; never
   // materialize a chat-state entry for a chat that was never opened.
-  // NOTE: no queued-turn suppression is needed here — the daemon withholds
-  // `agent:idle` while ready-to-send messages remain queued (#969), so an
-  // observed idle always belongs to the finished turn.
   if (!agent) return state;
   if (agent.lastAttemptedMessage === null || shouldPreserveLastAttemptedMessage(agent)) {
+    return state;
+  }
+  const idleTime = Date.parse(eventTimestamp);
+  if (!Number.isNaN(idleTime) && idleTime < agent.lastMessageTime) {
     return state;
   }
   return updateAgent(state, agentId, { lastAttemptedMessage: null });
@@ -453,6 +483,22 @@ export const chatQueuedRetryRecordUpdated = createAction<
   [agentId: string, messageId: string, text: string]
 >('chatState/queuedRetryRecordUpdated');
 
+/**
+ * Drop ALL parked retry records without promotion (#999). Dispatched at a
+ * flow site that KNOWS the daemon discarded the whole queue —
+ * `agent.editAndRegenerate` calls `clear_queue` (PROTOCOL §5.5) — so the
+ * discarded entries never run and their records must not be promoted. The
+ * snapshot-diff clear-queue signature (empty snapshot + >1 vanishing id)
+ * cannot catch a SINGLE-entry discard (indistinguishable from a genuine
+ * drain), and Electron does not order the event channel against the RPC
+ * response: a late-arriving empty snapshot would promote the discarded
+ * entry's payload over the flow's freshly recorded `lastAttemptedMessage`.
+ * Dropping the records first makes that snapshot a no-op.
+ */
+export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
+  'chatState/queuedRetryRecordsCleared',
+);
+
 /** Send failed (activation or network error) */
 export const chatSendFailed =
   createAction<[agentId: string, error: string]>('chatState/sendFailed');
@@ -624,6 +670,11 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       },
     });
   })
+  .with(chatQueuedRetryRecordsCleared, (state, { payload: [agentId] }) => {
+    const agent = state.byAgentId[agentId];
+    if (!agent || Object.keys(agent.queuedRetryRecords).length === 0) return state;
+    return updateAgent(state, agentId, { queuedRetryRecords: {} });
+  })
   .with(replaceAgentQueue, (state, { payload: [agentId, messages] }) =>
     reduceQueueSnapshotDiff(state, agentId, messages),
   )
@@ -724,7 +775,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     // PROTOCOL.md: agent:idle always carries data.agentId.
     const agentId = data.agentId;
     if (typeof agentId !== 'string' || agentId.length === 0) return state;
-    return reduceAgentIdleReconcile(state, agentId);
+    return reduceAgentIdleReconcile(state, agentId, event.timestamp);
   })
   .with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
     if (agentIds.length === 0) return state;

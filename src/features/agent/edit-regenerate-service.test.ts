@@ -31,8 +31,11 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
   chatLastAttemptedMessageSet,
+  chatQueuedRetryRecordSet,
+  chatReset,
   chatSendFailed,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
+import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import type { ChatAgentState } from "$store/renderer/slices/chat-state/chat-state-types";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -181,6 +184,72 @@ describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real s
     await action.promise;
 
     expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "edited text" });
+  });
+
+  it("drops parked queued-retry records on success so a late clear-queue snapshot cannot promote a discarded entry (#999)", async () => {
+    // agent.editAndRegenerate calls clear_queue daemon-side and publishes an
+    // EMPTY queue snapshot. With exactly ONE parked record the empty snapshot
+    // is indistinguishable from a genuine drain (the drainedCount>1 signature
+    // cannot fire), so without the flow-site clear the DISCARDED entry's
+    // payload would be promoted over the fresh edited text.
+    const WS = "ws-edit-discard";
+    const AGENT = "agent-edit-discard";
+    appStore.dispatch(chatReset(AGENT));
+    seedSession(AGENT, WS, [
+      makeMessage("m1", "user", "pre-edit text"),
+      makeMessage("m2", "assistant", "reply"),
+    ]);
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "queued discarded" }));
+    editAndRegenerate.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await action.promise;
+
+    // The flow site knows deterministically the queue was discarded — all
+    // parked records are dropped without promotion.
+    expect(readChatState(AGENT)?.queuedRetryRecords).toEqual({});
+    // The daemon's late-arriving empty clear_queue snapshot finds nothing to
+    // promote; the edited text stays the retry payload.
+    appStore.dispatch(replaceAgentQueue(AGENT, []));
+    expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "edited text" });
+  });
+
+  it("drops ALL parked records on a multi-entry queue discard (#999)", async () => {
+    const WS = "ws-edit-discard-multi";
+    const AGENT = "agent-edit-discard-multi";
+    appStore.dispatch(chatReset(AGENT));
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "pre-edit text")]);
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "queued 1" }));
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-2", { text: "queued 2" }));
+    editAndRegenerate.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(readChatState(AGENT)?.queuedRetryRecords).toEqual({});
+    appStore.dispatch(replaceAgentQueue(AGENT, []));
+    expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "edited text" });
+  });
+
+  it("leaves parked records untouched on a non-success result (#999)", async () => {
+    const WS = "ws-edit-discard-fail";
+    const AGENT = "agent-edit-discard-fail";
+    appStore.dispatch(chatReset(AGENT));
+    seedSession(AGENT, WS, [makeMessage("m1", "user", "pre-edit text")]);
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "still queued" }));
+    editAndRegenerate.mockResolvedValueOnce({ success: false, error: "bad message id" });
+
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("bad message id");
+
+    // No daemon-side clear happened — the queue (and its parked record)
+    // survives, so a later genuine drain still promotes it.
+    expect(readChatState(AGENT)?.queuedRetryRecords).toEqual({
+      "qm-1": { seq: 1, record: { text: "still queued" } },
+    });
   });
 
   it("leaves a previously recorded lastAttemptedMessage untouched on a non-success result (#941)", async () => {
