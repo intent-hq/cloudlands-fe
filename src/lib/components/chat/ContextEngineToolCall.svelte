@@ -20,6 +20,8 @@
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -68,7 +70,11 @@
   );
 
   const sourceLabel = $derived(
-    isCommitRetrieval ? 'commit history' : isConversationRetrieval ? 'conversations' : 'codebase',
+    isCommitRetrieval
+      ? m.chat_contextEngine_sourceCommitHistory_label()
+      : isConversationRetrieval
+        ? m.chat_contextEngine_sourceConversations_label()
+        : m.chat_contextEngine_sourceCodebase_label(),
   );
 
   // Get the query/information request (cast to String to handle non-string values safely)
@@ -215,13 +221,14 @@
           <Fa icon={faMagnifyingGlass} size={12} />
         </div> -->
         <span class="shrink-0 text-primary/80 {toolState === 'running' ? 'animate-pulse' : ''}">
-          Search {sourceLabel}
+          {m.chat_contextEngine_search_label({ source: sourceLabel })}
         </span>
 
         <div class="ml-auto flex items-center gap-1.5">
           <div
             class="flex items-center justify-center leading-none font-medium whitespace-nowrap text-primary/70 px-3d py-1.25 rounded-full text-[0.66rem] uppercase tracking-widest"
           >
+            <!-- i18n-ignore (brand name) -->
             Augment Context Engine
           </div>
 
@@ -318,7 +325,7 @@
               {#if result}
                 {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
               {:else}
-                Tool call failed
+                {m.chat_contextEngine_toolCallFailed_label()}
               {/if}
             </div>
           </div>
@@ -368,7 +375,13 @@
               <div
                 class="text-center text-xs text-subtle py-1.5 border-t border-border/20 mt-1"
               >
-                +{snippetCount - 6} more {snippetCount - 6 === 1 ? 'file' : 'files'}
+                {snippetCount - 6 === 1
+                  ? m.chat_contextEngine_moreFiles_one({
+                      count: formatInteger(snippetCount - 6),
+                    })
+                  : m.chat_contextEngine_moreFiles_many({
+                      count: formatInteger(snippetCount - 6),
+                    })}
               </div>
             {/if}
           </div>

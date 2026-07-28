@@ -2,11 +2,8 @@
  * Workspace validation utilities
  */
 
-import type {
-  Workspace,
-  CreateWorkspaceRequest,
-  UpdateWorkspaceRequest,
-} from '../../shared/types';
+import { m } from '../../shared/paraglide/messages.js';
+import type { Workspace, CreateWorkspaceRequest, UpdateWorkspaceRequest } from '../../shared/types';
 
 export function validateWorkspace(workspace: Partial<Workspace>): string[] {
   const errors: string[] = [];
@@ -14,7 +11,7 @@ export function validateWorkspace(workspace: Partial<Workspace>): string[] {
   // Title is optional - workspaces can be created without a title
 
   if (!workspace.path) {
-    errors.push('Workspace path is required');
+    errors.push(m.workspaceValidation_pathRequired_error());
   }
 
   return errors;
@@ -24,11 +21,11 @@ export function validateWorkspaceId(id: string): string[] {
   const errors: string[] = [];
 
   if (!id) {
-    errors.push('Workspace ID is required');
+    errors.push(m.workspaceValidation_idRequired_error());
   }
 
   if (id && !id.match(/^[a-zA-Z0-9-_]+$/)) {
-    errors.push('Workspace ID contains invalid characters');
+    errors.push(m.workspaceValidation_idInvalidChars_error());
   }
 
   return errors;
@@ -51,7 +48,7 @@ export function validateWorkspaceTitle(title: string | undefined): string[] {
   // Title is optional - blank titles are allowed
 
   if (title && title.length > 100) {
-    errors.push('Workspace title is too long (max 100 characters)');
+    errors.push(m.workspaceValidation_titleTooLong_error());
   }
 
   return errors;
@@ -75,74 +72,76 @@ export function validateBranchName(branch: string): string[] {
   const errors: string[] = [];
 
   if (!branch) {
-    errors.push('Branch name is required');
+    errors.push(m.workspaceValidation_branchRequired_error());
     return errors;
   }
 
   // Cannot be empty or whitespace only
   if (branch.trim().length === 0) {
-    errors.push('Branch name cannot be empty or whitespace only');
+    errors.push(m.workspaceValidation_branchEmpty_error());
     return errors;
   }
 
   // Cannot contain spaces
   if (branch.includes(' ')) {
-    errors.push('Branch name cannot contain spaces');
+    errors.push(m.workspaceValidation_branchSpaces_error());
   }
 
   // Cannot contain certain special characters: ~ ^ : \ ? * [ @ {
   if (/[~^:\\?*\[@{]/.test(branch)) {
-    errors.push('Branch name contains invalid characters (~, ^, :, \\, ?, *, [, @, {)');
+    errors.push(
+      m.workspaceValidation_branchInvalidChars_error({ chars: '~, ^, :, \\, ?, *, [, @, {' }),
+    );
   }
 
   // Cannot start with a dot
   if (branch.startsWith('.')) {
-    errors.push("Branch name cannot start with '.'");
+    errors.push(m.workspaceValidation_branchStartsDot_error());
   }
 
   // Cannot end with a dot
   if (branch.endsWith('.')) {
-    errors.push("Branch name cannot end with '.'");
+    errors.push(m.workspaceValidation_branchEndsDot_error());
   }
 
   // Cannot end with .lock
   if (branch.endsWith('.lock')) {
-    errors.push("Branch name cannot end with '.lock'");
+    errors.push(m.workspaceValidation_branchEndsLock_error());
   }
 
   // Cannot contain consecutive dots
   if (branch.includes('..')) {
-    errors.push("Branch name cannot contain '..'");
+    errors.push(m.workspaceValidation_branchCannotContain_error({ seq: '..' }));
   }
 
   // Cannot contain @{
   if (branch.includes('@{')) {
-    errors.push("Branch name cannot contain '@{'");
+    errors.push(m.workspaceValidation_branchCannotContain_error({ seq: '@{' }));
   }
 
   // Cannot start or end with a slash
   if (branch.startsWith('/') || branch.endsWith('/')) {
-    errors.push('Branch name cannot start or end with /');
+    errors.push(m.workspaceValidation_branchSlashEdges_error());
   }
 
   // Cannot contain consecutive slashes
   if (branch.includes('//')) {
-    errors.push('Branch name cannot contain consecutive slashes');
+    errors.push(m.workspaceValidation_branchConsecutiveSlashes_error());
   }
 
   // Cannot start with a dash
   if (branch.startsWith('-')) {
-    errors.push("Branch name cannot start with '-'");
+    errors.push(m.workspaceValidation_branchStartsDash_error());
   }
 
   // Maximum length (git has a 255 byte limit for ref names)
   if (branch.length > 250) {
-    errors.push('Branch name is too long (max 250 characters)');
+    errors.push(m.workspaceValidation_branchTooLong_error());
   }
 
   // Cannot be a single @ character
   if (branch === '@') {
-    errors.push("Branch name cannot be a single '@'");
+    errors.push(m.workspaceValidation_branchSingleAt_error());
   }
 
   return errors;
@@ -172,16 +171,16 @@ export function validateRepositoryPath(path: string): string[] {
   const errors: string[] = [];
 
   if (!path) {
-    errors.push('Repository path is required');
+    errors.push(m.workspaceValidation_repoPathRequired_error());
   }
 
   // Basic path validation
   if (path && path.includes('..')) {
-    errors.push("Repository path cannot contain '..'");
+    errors.push(m.workspaceValidation_repoPathDoubleDot_error());
   }
 
   if (path && path.includes('\0')) {
-    errors.push('Repository path cannot contain null characters');
+    errors.push(m.workspaceValidation_repoPathNullChars_error());
   }
 
   return errors;
@@ -198,7 +197,7 @@ export function validateProjectName(name: string): string[] {
   const errors: string[] = [];
 
   if (!name || name.trim().length === 0) {
-    errors.push('Project name is required');
+    errors.push(m.workspaceValidation_projectNameRequired_error());
     return errors;
   }
 
@@ -206,33 +205,33 @@ export function validateProjectName(name: string): string[] {
 
   // Reject path separators — the name must be a single directory component
   if (trimmed.includes('/') || trimmed.includes('\\')) {
-    errors.push('Project name cannot contain path separators (/ or \\)');
+    errors.push(m.workspaceValidation_projectNameSeparators_error());
   }
 
   // Reject directory traversal
   if (trimmed === '..' || trimmed === '.') {
-    errors.push("Project name cannot be '.' or '..'");
+    errors.push(m.workspaceValidation_projectNameDots_error());
   }
 
   // Reject null bytes
   if (trimmed.includes('\0')) {
-    errors.push('Project name cannot contain null characters');
+    errors.push(m.workspaceValidation_projectNameNullChars_error());
   }
 
   // Reject characters that are invalid on common file systems (Windows + macOS + Linux)
   // < > : " | ? *  are invalid on Windows; \0 already checked above
   if (/[<>:"|?*]/.test(trimmed)) {
-    errors.push('Project name contains invalid characters (<, >, :, ", |, ?, *)');
+    errors.push(m.workspaceValidation_projectNameInvalidChars_error());
   }
 
   // Reject names that are only dots (e.g. "...", "....")
   if (/^\.+$/.test(trimmed)) {
-    errors.push('Project name cannot consist only of dots');
+    errors.push(m.workspaceValidation_projectNameOnlyDots_error());
   }
 
   // Length limit
   if (trimmed.length > 255) {
-    errors.push('Project name is too long (max 255 characters)');
+    errors.push(m.workspaceValidation_projectNameTooLong_error());
   }
 
   return errors;
@@ -263,7 +262,7 @@ export function validateCreateRequest(request: CreateWorkspaceRequest): string[]
   // Repository path is required unless a GitHub URL is provided
   // When githubUrl is provided, the repo will be cloned to a local path
   if (!request.repositoryPath && !request.githubUrl) {
-    errors.push('Repository path is required (or provide a GitHub URL)');
+    errors.push(m.workspaceValidation_repoPathOrUrlRequired_error());
   }
 
   return errors;

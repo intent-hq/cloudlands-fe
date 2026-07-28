@@ -1,10 +1,14 @@
 import type { StatusEvent } from './chat-state-types';
+import { m } from '$shared/paraglide/messages.js';
 
 type StatusLevel = StatusEvent['level'];
 
+// Localized `message` uses a getter so it re-resolves with the active locale.
 const DEFAULT_STATUS_EVENT: StatusEvent = {
   phase: 'status',
-  message: 'Status update',
+  get message() {
+    return m.chat_state_statusUpdate_label();
+  },
   level: 'info',
   timestamp: 0,
 };
@@ -63,7 +67,9 @@ export function sanitizeStatusEvent(
   statusEvent: unknown,
   fallbackTimestamp = DEFAULT_STATUS_EVENT.timestamp,
 ): StatusEvent {
-  const fallbackLevel: StatusLevel = isErrorLike(statusEvent) ? 'error' : DEFAULT_STATUS_EVENT.level;
+  const fallbackLevel: StatusLevel = isErrorLike(statusEvent)
+    ? 'error'
+    : DEFAULT_STATUS_EVENT.level;
 
   return {
     phase: toSafeString(readField(statusEvent, 'phase'), DEFAULT_STATUS_EVENT.phase),

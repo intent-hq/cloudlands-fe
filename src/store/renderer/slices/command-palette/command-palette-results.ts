@@ -7,11 +7,13 @@ import {
   fuzzyScore,
   type WorkspaceObject,
   type WorkspaceObjectType,
-} from "./command-palette-utils";
+} from './command-palette-utils';
+import { m } from '$shared/paraglide/messages.js';
 
 export interface PaletteCommand {
   id: string;
   label: string;
+  pillLabel?: string;
   icon: any;
   shortcut?: string;
 }
@@ -27,7 +29,7 @@ export interface WorkspaceItem {
 
 export interface ComputeResultsInput {
   query: string;
-  activeFilter: WorkspaceObjectType | "workspace" | null;
+  activeFilter: WorkspaceObjectType | 'workspace' | null;
   workspaceId: string | undefined;
   agents: WorkspaceObject[];
   notes: WorkspaceObject[];
@@ -95,9 +97,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
   // Searching: show filtered results across all types
   if (q) {
     const allItems = [
-      ...commands.filter(
-        (c) => c.id !== "new-workspace" && (workspaceId || c.id !== "new-file"),
-      ),
+      ...commands.filter((c) => c.id !== 'new-workspace' && (workspaceId || c.id !== 'new-file')),
       ...agents,
       ...notes,
       ...changes,
@@ -110,7 +110,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
     const filtered = allItems
       .map((item: any) => ({
         ...item,
-        _score: fuzzyScore(`${item.label} ${item.description || ""}`, q),
+        _score: fuzzyScore(`${item.label} ${item.description || ''}`, q),
       }))
       .filter((item: any) => item._score !== -Infinity)
       .sort((a: any, b: any) => (b._score as number) - (a._score as number))
@@ -123,11 +123,9 @@ export function computeResults(input: ComputeResultsInput): any[] {
   }
 
   // Not searching — show organized groups
-  const newWs = commands.find((c) => c.id === "new-workspace");
+  const newWs = commands.find((c) => c.id === 'new-workspace');
   const newActions = workspaceId
-    ? commands.filter((c) =>
-        ["new-agent", "new-terminal", "new-note", "new-file"].includes(c.id),
-      )
+    ? commands.filter((c) => ['new-agent', 'new-terminal', 'new-note', 'new-file'].includes(c.id))
     : [];
 
   if (!activeFilter && (newActions.length > 0 || newWs)) {
@@ -140,27 +138,27 @@ export function computeResults(input: ComputeResultsInput): any[] {
     }
   }
 
-  if (recentItems.length > 0 && !activeFilter) addItems(recentItems, "Recent");
-  if (agents.length > 0 && (!activeFilter || activeFilter === "agent"))
-    addItems(agents, "Agents", "@", "agent");
-  if (notes.length > 0 && (!activeFilter || activeFilter === "note"))
-    addItems(notes, "Context", "#", "note");
-  if (changes.length > 0 && (!activeFilter || activeFilter === "change"))
-    addItems(changes, "Changes", "~", "change");
-  if (terminals.length > 0 && (!activeFilter || activeFilter === "terminal"))
-    addItems(terminals, "Terminals", ">", "terminal");
-  if (browserUrls.length > 0 && (!activeFilter || activeFilter === "browser"))
-    addItems(browserUrls, "Browser", "^", "browser");
-  if (files.length > 0 && (!activeFilter || activeFilter === "file"))
-    addItems(files, "Files", "/", "file");
+  if (recentItems.length > 0 && !activeFilter)
+    addItems(recentItems, m.layout_commandPalette_recent_group());
+  if (agents.length > 0 && (!activeFilter || activeFilter === 'agent'))
+    addItems(agents, m.layout_commandPalette_agents_group(), '@', 'agent');
+  if (notes.length > 0 && (!activeFilter || activeFilter === 'note'))
+    addItems(notes, m.layout_commandPalette_context_group(), '#', 'note');
+  if (changes.length > 0 && (!activeFilter || activeFilter === 'change'))
+    addItems(changes, m.layout_commandPalette_changes_group(), '~', 'change');
+  if (terminals.length > 0 && (!activeFilter || activeFilter === 'terminal'))
+    addItems(terminals, m.layout_commandPalette_terminals_group(), '>', 'terminal');
+  if (browserUrls.length > 0 && (!activeFilter || activeFilter === 'browser'))
+    addItems(browserUrls, m.layout_commandPalette_browser_group(), '^', 'browser');
+  if (files.length > 0 && (!activeFilter || activeFilter === 'file'))
+    addItems(files, m.layout_commandPalette_files_group(), '/', 'file');
 
-  if (!activeFilter || activeFilter === "workspace") {
+  if (!activeFilter || activeFilter === 'workspace') {
     if (workspaceItems.length > 0) {
       flat.push({ _borderAbove: true, _idx: idx++ });
-      addItems(workspaceItems, "Other Spaces", "*");
+      addItems(workspaceItems, m.layout_commandPalette_otherSpaces_group(), '*');
     }
   }
 
   return flat;
 }
-

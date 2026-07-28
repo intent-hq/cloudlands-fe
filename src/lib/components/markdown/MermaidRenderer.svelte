@@ -9,6 +9,7 @@
   import mermaid from 'mermaid';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('MermaidRenderer');
 
@@ -157,7 +158,7 @@
       error = null;
     } catch (err) {
       logger.error('Failed to render mermaid diagram:', err);
-      error = err instanceof Error ? err.message : 'Failed to render diagram';
+      error = err instanceof Error ? err.message : m.markdown_mermaid_renderFailed_error();
       renderedSvg = '';
     }
   }
@@ -221,7 +222,7 @@
     <div class="mermaid-error">
       <pre class="error-message">{error}</pre>
       <details class="error-source">
-        <summary>View source</summary>
+        <summary>{m.markdown_mermaid_viewSource_label()}</summary>
         <pre>{decodeHtmlEntities(decodeBase64(code))}</pre>
       </details>
     </div>
@@ -234,15 +235,15 @@
         <button
           class="expand-button"
           onclick={openFullscreen}
-          title="Expand to fullscreen"
-          aria-label="Expand diagram to fullscreen"
+          title={m.markdown_mermaid_expand_tooltip()}
+          aria-label={m.markdown_mermaid_expand_ariaLabel()}
         >
           <Fa icon={faExpand} size="sm" />
         </button>
       {/if}
     </div>
   {:else if !code?.trim()}
-    <div class="mermaid-empty">No diagram code</div>
+    <div class="mermaid-empty">{m.markdown_mermaid_noCode_label()}</div>
   {:else}
     <div class="mermaid-loading">
       <div class="loading-spinner"></div>
@@ -258,15 +259,15 @@
     tabindex="-1"
     role="dialog"
     aria-modal="true"
-    aria-label="Fullscreen diagram view"
+    aria-label={m.markdown_mermaid_fullscreenView_ariaLabel()}
     bind:this={fullscreenDialogElement}
   >
     <div class="fullscreen-content">
       <button
         class="close-button"
         onclick={closeFullscreen}
-        title="Close fullscreen"
-        aria-label="Close fullscreen view"
+        title={m.markdown_mermaid_closeFullscreen_tooltip()}
+        aria-label={m.markdown_mermaid_closeFullscreen_ariaLabel()}
       >
         <Fa icon={faTimes} size="sm" />
       </button>

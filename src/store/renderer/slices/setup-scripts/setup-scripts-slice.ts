@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from '$lib/store-shim/utils/store/create-action';
+import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
 import {
   createCollection,
   addItemAt,
@@ -8,22 +8,23 @@ import {
   removeItem as collectionRemoveItem,
   updateItem,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
-import type { SetupScript, SetupScriptsState } from "./setup-scripts-types";
+} from '$lib/store-shim/utils/collections/collection-utils';
+import type { SetupScript, SetupScriptsState } from './setup-scripts-types';
+import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 const MAX_SCRIPTS = 50;
-export const SETUP_SCRIPT_BANNER_DISMISSED_KEY = "setup-script-banner-dismissed";
+export const SETUP_SCRIPT_BANNER_DISMISSED_KEY = 'setup-script-banner-dismissed';
 
 // ============================================================================
 // Initial State
 // ============================================================================
 
 export const initialState: SetupScriptsState = {
-  scripts: createCollection<SetupScript, "id">("id"),
+  scripts: createCollection<SetupScript, 'id'>('id'),
   pendingDeletions: {},
   isBannerDismissedGlobally: false,
   bannerDismissedByWorkspaceId: {},
@@ -38,74 +39,63 @@ function normalizeWorkspaceIds(workspaceIds: string[]): string[] {
 // ============================================================================
 
 /** Hydrate scripts from localStorage on init */
-export const hydrateScripts = createAction<[scripts: SetupScript[]]>(
-  "setupScripts/hydrateScripts"
-);
+export const hydrateScripts = createAction<[scripts: SetupScript[]]>('setupScripts/hydrateScripts');
 
 /** Save (create or update) a script. ID and timestamps are generated in the saga. */
-export const saveScript = createAction<[script: SetupScript]>(
-  "setupScripts/saveScript"
-);
+export const saveScript = createAction<[script: SetupScript]>('setupScripts/saveScript');
 
 /** Record usage of a script */
 export const recordScriptUsage = createAction<
   [scriptId: string, lastUsedAt: string, repoPath?: string]
->("setupScripts/recordScriptUsage");
+>('setupScripts/recordScriptUsage');
 
 /** Rename a script */
 export const renameScript = createAction<[scriptId: string, newName: string]>(
-  "setupScripts/renameScript"
+  'setupScripts/renameScript',
 );
 
 /** Update script content (also updates lastUsedAt) */
 export const updateScriptContent = createAction<
   [scriptId: string, content: string, lastUsedAt: string]
->("setupScripts/updateScriptContent");
+>('setupScripts/updateScriptContent');
 
 /** Optimistic UI removal (pending deletion) */
 export const removeScriptFromUI = createAction<[scriptId: string]>(
-  "setupScripts/removeScriptFromUI"
+  'setupScripts/removeScriptFromUI',
 );
 
 /** Undo optimistic removal */
-export const restoreScriptToUI = createAction<[scriptId: string]>(
-  "setupScripts/restoreScriptToUI"
-);
+export const restoreScriptToUI = createAction<[scriptId: string]>('setupScripts/restoreScriptToUI');
 
 /** Permanently delete a script */
-export const deleteScript = createAction<[scriptId: string]>(
-  "setupScripts/deleteScript"
-);
+export const deleteScript = createAction<[scriptId: string]>('setupScripts/deleteScript');
 
-export const hydrateSetupScriptBannerDismissals = createAction<[
-  isDismissedGlobally: boolean,
-  workspaceIds: string[],
-]>("setupScripts/hydrateSetupScriptBannerDismissals");
+export const hydrateSetupScriptBannerDismissals = createAction<
+  [isDismissedGlobally: boolean, workspaceIds: string[]]
+>('setupScripts/hydrateSetupScriptBannerDismissals');
 
 export const dismissSetupScriptBannerGlobally = createAction(
-  "setupScripts/dismissSetupScriptBannerGlobally"
+  'setupScripts/dismissSetupScriptBannerGlobally',
 );
 
 export const dismissSetupScriptBannerForWorkspace = createAction<[workspaceId: string]>(
-  "setupScripts/dismissSetupScriptBannerForWorkspace"
+  'setupScripts/dismissSetupScriptBannerForWorkspace',
 );
 
 // ============================================================================
 // Reducer
 // ============================================================================
 
-function trimCollection(
-  scripts: Collection<SetupScript, "id">
-): Collection<SetupScript, "id"> {
+function trimCollection(scripts: Collection<SetupScript, 'id'>): Collection<SetupScript, 'id'> {
   const items = getItems(scripts);
   if (items.length <= MAX_SCRIPTS) return scripts;
-  return createCollection<SetupScript, "id">("id", items.slice(0, MAX_SCRIPTS));
+  return createCollection<SetupScript, 'id'>('id', items.slice(0, MAX_SCRIPTS));
 }
 
 export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState)
   .with(hydrateScripts, (state, { payload: [scripts] }) => ({
     ...state,
-    scripts: createCollection<SetupScript, "id">("id", scripts),
+    scripts: createCollection<SetupScript, 'id'>('id', scripts),
   }))
   .with(saveScript, (state, { payload: [script] }) => {
     // Check if script already exists (by id)
@@ -138,7 +128,7 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
   .with(renameScript, (state, { payload: [scriptId, newName] }) => {
     const script = getItem(state.scripts, scriptId);
     if (!script) return state;
-    const trimmed = newName.trim() || "Custom Script";
+    const trimmed = newName.trim() || m.workspace_setupScripts_customScript_name();
     if (script.name === trimmed) return state;
     return {
       ...state,
@@ -167,7 +157,6 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
     return { ...state, pendingDeletions: rest };
   })
   .with(deleteScript, (state, { payload: [scriptId] }) => {
-
     const { [scriptId]: _, ...rest } = state.pendingDeletions;
     return {
       ...state,
@@ -175,17 +164,19 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
       pendingDeletions: rest,
     };
   })
-  .with(hydrateSetupScriptBannerDismissals, (state, { payload: [isDismissedGlobally, workspaceIds] }) => ({
-    ...state,
-    isBannerDismissedGlobally: isDismissedGlobally,
-    bannerDismissedByWorkspaceId: normalizeWorkspaceIds(workspaceIds).reduce<Record<string, true>>(
-      (acc, workspaceId) => {
+  .with(
+    hydrateSetupScriptBannerDismissals,
+    (state, { payload: [isDismissedGlobally, workspaceIds] }) => ({
+      ...state,
+      isBannerDismissedGlobally: isDismissedGlobally,
+      bannerDismissedByWorkspaceId: normalizeWorkspaceIds(workspaceIds).reduce<
+        Record<string, true>
+      >((acc, workspaceId) => {
         acc[workspaceId] = true;
         return acc;
-      },
-      {}
-    ),
-  }))
+      }, {}),
+    }),
+  )
   .with(dismissSetupScriptBannerGlobally, (state) => ({
     ...state,
     isBannerDismissedGlobally: true,
@@ -200,4 +191,3 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
       },
     };
   });
-

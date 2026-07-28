@@ -4,6 +4,7 @@
   import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
   import { onMount } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
 
   // Settings state
@@ -46,15 +47,15 @@
   // (§5.12), so its placeholder must never be written back unchanged.
   let loadedValues: Record<string, unknown> = {};
 
-  // Available shells (filtered by platform)
+  // Available shells (filtered by platform); shell names are product names — not translated
   const isWindows = navigator.platform.startsWith('Win');
   const shellOptions = [
-    { value: 'auto', label: 'Auto-detect (System Default)' },
+    { value: 'auto', label: m.settings_gitWorkspace_shell_autoDetect() },
     ...(isWindows
       ? [
           { value: 'powershell.exe', label: 'PowerShell' },
-          { value: 'cmd.exe', label: 'Command Prompt' },
-          { value: 'bash.exe', label: 'Git Bash' },
+          { value: 'cmd.exe', label: m.settings_gitWorkspace_shell_commandPrompt() },
+          { value: 'bash.exe', label: 'Git Bash' }, // i18n-ignore (product name)
           { value: 'wsl.exe', label: 'WSL' },
         ]
       : [
@@ -99,7 +100,7 @@
   async function loadSettings() {
     const settings = await appClient.settings.list();
     if (settings.length === 0) {
-      settingsError = 'Failed to load settings from the backend.';
+      settingsError = m.settings_gitWorkspace_loadError();
       return;
     }
     settingsError = '';
@@ -132,7 +133,7 @@
       // Refresh global autoCommit so workspaces pick up the new setting
       appStore.dispatch(refreshAutoCommitSettings());
     } catch (error) {
-      settingsError = 'Failed to save settings. Please try again.';
+      settingsError = m.settings_gitWorkspace_saveError();
       logger.error('Failed to save settings:', error);
     }
   }
@@ -143,7 +144,7 @@
   function handleBranchPrefixChange() {
     const validation = validateBranchPrefix(branchPrefix);
     if (!validation.valid) {
-      branchPrefixError = validation.error || 'Invalid branch prefix';
+      branchPrefixError = validation.error || m.settings_gitWorkspace_branchPrefix_invalid();
     } else {
       branchPrefixError = '';
       // Sanitize and normalize the prefix
@@ -184,7 +185,7 @@
   <section class="px-6 py-2">
     <div class="flex items-center justify-between gap-4">
       <label for="worktreesLocation" class="text-sm font-medium text-foreground shrink-0">
-        Worktrees Location
+        {m.settings_gitWorkspace_worktreesLocation_label()}
       </label>
       <div class="flex gap-2 flex-1 max-w-md">
         <input
@@ -193,7 +194,7 @@
           bind:value={worktreesLocation}
           onblur={handleSave}
           class="flex-1 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-          placeholder="~/intent/workspaces"
+          placeholder={'~/intent/workspaces' /* i18n-ignore (file path) */}
         />
       </div>
     </div>
@@ -203,11 +204,13 @@
   <section class="px-6 py-2">
     <div class="flex items-center justify-between gap-4">
       <div class="shrink-0">
-        <label for="sshKeyPath" class="text-sm font-medium text-foreground"> SSH Key Path </label>
+        <label for="sshKeyPath" class="text-sm font-medium text-foreground">
+          {m.settings_gitWorkspace_sshKeyPath_label()}
+        </label>
         <p class="text-xs text-subtle">
-          SSH key for git operations (e.g., <code class="bg-muted px-1 rounded"
-            >~/.ssh/id_ed25519</code
-          >)
+          {m.settings_gitWorkspace_sshKeyPath_description_before()}
+          <!-- i18n-ignore (file path) -->
+          <code class="bg-muted px-1 rounded">~/.ssh/id_ed25519</code>)
         </p>
       </div>
       <div class="flex gap-2 flex-1 max-w-md">
@@ -217,7 +220,7 @@
           bind:value={sshKeyPath}
           onblur={handleSave}
           class="flex-1 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-          placeholder="~/.ssh/id_ed25519"
+          placeholder={'~/.ssh/id_ed25519' /* i18n-ignore (file path) */}
         />
       </div>
     </div>
@@ -227,7 +230,7 @@
   <section class="px-6 py-2">
     <div class="flex items-center justify-between gap-4">
       <label for="defaultShell" class="text-sm font-medium text-foreground shrink-0">
-        Default Shell
+        {m.settings_gitWorkspace_defaultShell_label()}
       </label>
       <select
         id="defaultShell"
@@ -247,12 +250,12 @@
     <div class="flex items-center justify-between gap-4">
       <div class="shrink-0">
         <label for="branchPrefix" class="text-sm font-medium text-foreground">
-          Branch Prefix
+          {m.settings_gitWorkspace_branchPrefix_label()}
         </label>
         <p class="text-xs text-subtle">
-          Prefix for new workspace branches (e.g., <code class="bg-muted px-1 rounded"
-            >feature/</code
-          >)
+          {m.settings_gitWorkspace_branchPrefix_description_before()}
+          <!-- i18n-ignore (branch prefix example) -->
+          <code class="bg-muted px-1 rounded">feature/</code>)
         </p>
       </div>
       <div class="flex flex-col items-end gap-1 flex-1 max-w-md">
@@ -265,7 +268,7 @@
             {branchPrefixError
             ? 'border-destructive focus:border-destructive'
             : 'border-border focus:border-primary'}"
-          placeholder="feature/ or user/name/"
+          placeholder={m.settings_gitWorkspace_branchPrefix_placeholder()}
         />
         {#if branchPrefixError}
           <p class="text-xs text-destructive-foreground">{branchPrefixError}</p>
@@ -284,7 +287,7 @@
           onchange={handleSave}
           class="cursor-pointer"
         />
-        Auto-fetch updates
+        {m.settings_gitWorkspace_autoFetch_label()}
       </label>
       <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
         <input
@@ -293,7 +296,7 @@
           onchange={handleSave}
           class="cursor-pointer"
         />
-        Auto-commit changes
+        {m.settings_gitWorkspace_autoCommit_label()}
       </label>
     </div>
   </section>
@@ -310,19 +313,16 @@
             class="cursor-pointer"
             aria-describedby="cow-isolation-description"
           />
-          <span>Use Copy-on-Write isolation</span>
+          <span>{m.settings_gitWorkspace_cowIsolation_label()}</span>
         </label>
         <span
           class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-ui-sm leading-4 text-subtle"
         >
-          Experimental
+          {m.settings_gitWorkspace_experimental_badge()}
         </span>
       </div>
       <p id="cow-isolation-description" class="text-xs text-subtle mt-0.5 ml-6">
-        New workspaces are provisioned as copy-on-write clones of the repository, and each delegated
-        agent runs in its own CoW sandbox that is merged back automatically when it finishes.
-        Requires filesystem CoW support on the workspaces root (APFS on macOS, btrfs/XFS-reflink on
-        Linux, ReFS/Dev Drive on Windows).
+        {m.settings_gitWorkspace_cowIsolation_description()}
       </p>
     </section>
   {/if}
@@ -338,13 +338,10 @@
           class="cursor-pointer"
           aria-describedby="git-credentials-description"
         />
-        <span>Git credentials in terminals &amp; agents</span>
+        <span>{m.settings_gitWorkspace_gitCredentials_label()}</span>
       </label>
       <p id="git-credentials-description" class="text-xs text-subtle mt-0.5 ml-6">
-        When on, git commands in workspace terminals and agent sessions can authenticate to
-        github.com using your connected GitHub account, via a credential helper scoped to HTTPS
-        github.com remotes. The token is never exposed as GITHUB_TOKEN, and your own git credential
-        helpers always take precedence.
+        {m.settings_gitWorkspace_gitCredentials_description()}
       </p>
     </section>
   {/if}

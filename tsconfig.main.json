@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "ES2022",
     "lib": ["ES2022", "DOM"],
+    "allowJs": true,
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -28,6 +29,7 @@
   "include": [
     "src/types/**/*.d.ts",
     "src/main/**/*.ts",
+    "src/shared/paraglide/**/*.js",
     "src/store/main/**/*.ts",
     "src/store/utils/**/*.ts",
     "src/shared/**/*.ts",

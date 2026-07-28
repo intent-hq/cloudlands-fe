@@ -18,6 +18,7 @@
   import { v4 as uuidv4 } from 'uuid';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
 
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import {
@@ -675,13 +676,13 @@
       const result = await enhancePrompt(onboardingInputValue);
       onboardingInputValue = result.enhanced;
       await getOnboardingRichTextarea()?.setContent(result.enhanced);
-      toast.success('Prompt enhanced');
+      toast.success(m.onboarding_page_promptEnhanced_label());
     } catch (error) {
       logger.error('Failed to enhance prompt', error);
       toast.error(
         error instanceof Error && error.message
-          ? `Failed to enhance prompt: ${error.message}`
-          : 'Failed to enhance prompt',
+          ? m.onboarding_page_enhanceFailedWithMessage_error({ message: error.message })
+          : m.onboarding_page_enhanceFailed_error(),
       );
     } finally {
       isOnboardingEnhancing = false;
@@ -779,7 +780,7 @@
               ? await appClient.git.pull(projectSelection.repoPath, projectSelection.branch)
               : undefined;
           if (!pullResult?.success) {
-            onboardingPullError = pullResult?.error || 'Failed to pull changes';
+            onboardingPullError = pullResult?.error || m.onboarding_page_pullFailed_error();
             onboardingShowPullConflictDialog = true;
             isOnboardingCreating = false;
             return;
@@ -789,7 +790,7 @@
             branch: projectSelection.branch,
           });
         } catch (err) {
-          onboardingPullError = err instanceof Error ? err.message : 'Failed to pull changes';
+          onboardingPullError = err instanceof Error ? err.message : m.onboarding_page_pullFailed_error();
           onboardingShowPullConflictDialog = true;
           isOnboardingCreating = false;
           return;
@@ -838,7 +839,7 @@
         // PROTOCOL §9.1) alongside the human message so the error block can
         // classify without prose matching.
         onboardingCreationErrorCode = result.errorCode ?? null;
-        throw new Error(result.error || 'Failed to create workspace');
+        throw new Error(result.error || m.onboarding_page_createFailed_error());
       }
 
       const workspace = result.data.workspace;
@@ -893,7 +894,7 @@
         const now = new Date().toISOString();
         const scriptToSave = {
           id: uuidv4(),
-          name: setupScriptName || 'Custom Script',
+          name: setupScriptName || m.onboarding_page_customScript_label(),
           content: setupScript.trim(),
           repoPath: projectSelection.repoPath,
           projectType: 'generic' as string,
@@ -970,7 +971,7 @@
       await goto(`/workspace/${workspace.id}`, { replaceState: true });
     } catch (err) {
       logger.error('Workspace creation failed', err as Error);
-      onboardingCreationError = err instanceof Error ? err.message : 'An unexpected error occurred';
+      onboardingCreationError = err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
       isOnboardingCreating = false;
     }
   }
@@ -995,7 +996,7 @@
             <WorkspaceSetupCard
               repoName={projectSelection?.projectName ||
                 projectSelection?.repoPath?.split('/').pop() ||
-                'your project'}
+                m.onboarding_page_yourProject_label()}
               repoUrl={projectSelection?.githubUrl}
               repoPath={projectSelection?.repoPath}
               worktreePath={setupWorktreePath}
@@ -1020,7 +1021,7 @@
           <div
             class="flex-1 min-h-0 overflow-y-auto scroll-smooth"
             role="log"
-            aria-label="Onboarding steps"
+            aria-label={m.onboarding_page_steps_ariaLabel()}
           >
             <div class="flex flex-col w-full px-6 pt-[15vh] pb-8">
               <div class="flex flex-col items-start">
@@ -1031,7 +1032,10 @@
                       <div class="flex items-center gap-3 text-xs">
                         {#if !isRequirementsStep}
                           <span class="text-muted-foreground" aria-live="polite">
-                            Step {onboardingVisibleStep} / {ONBOARDING_TOTAL_STEPS}
+                            {m.onboarding_page_stepCount_label({
+                              current: onboardingVisibleStep,
+                              total: ONBOARDING_TOTAL_STEPS,
+                            })}
                           </span>
                         {/if}
 
@@ -1043,10 +1047,10 @@
                               appStore.dispatch(
                                 goToStep(VISIBLE_STEP_ORDER[onboardingVisibleStep - 2]),
                               )}
-                            aria-label="Go back to previous step"
+                            aria-label={m.onboarding_page_goBack_ariaLabel()}
                           >
                             <Fa icon={faArrowLeft} size="xs" />
-                            <span>Back</span>
+                            <span>{m.onboarding_page_back_label()}</span>
                           </button>
                         {/if}
                       </div>
@@ -1058,14 +1062,14 @@
                           <div class="space-y-3">
                             {#if !$requirementsCheckedOnce$}
                               <h1 class="text-5xl font-semibold tracking-tight leading-tight">
-                                Checking your setup…
+                                {m.onboarding_page_checkingSetup_title()}
                               </h1>
                             {:else}
                               <h1 class="text-5xl font-semibold tracking-tight leading-tight">
-                                Let's get your machine ready
+                                {m.onboarding_page_machineReady_title()}
                               </h1>
                               <p class="text-lg text-muted-foreground">
-                                Intent needs a couple of tools before we can create workspaces.
+                                {m.onboarding_page_machineReady_description()}
                               </p>
                             {/if}
                           </div>
@@ -1074,12 +1078,12 @@
                         <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
                           <div class="space-y-3">
                             <h1 class="text-5xl font-semibold tracking-tight leading-tight">
-                              Welcome!
+                              {m.onboarding_page_welcome_title()}
                             </h1>
                             <p class="text-lg text-muted-foreground">
-                              Intent is powered by AI coding CLIs.
+                              {m.onboarding_page_welcome_before()}
                               <br />
-                              If they run in your terminal, they can run in Intent.
+                              {m.onboarding_page_welcome_after()}
                             </p>
                           </div>
                         </div>
@@ -1087,12 +1091,12 @@
                         <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 2">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
-                              Connect GitHub
+                              {m.onboarding_page_connectGithub_title()}
                             </h2>
                             <p class="text-lg text-muted-foreground">
-                              Push changes and create pull requests directly from workspaces.
+                              {m.onboarding_page_connectGithub_before()}
                               <br />
-                              This is optional — you can also connect later from Settings.
+                              {m.onboarding_page_connectGithub_after()}
                             </p>
                           </div>
                         </div>
@@ -1100,10 +1104,10 @@
                         <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 3">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
-                              What project should we work on?
+                              {m.onboarding_page_whatProject_title()}
                             </h2>
                             <p class="text-lg text-muted-foreground">
-                              We can work on an existing project or create a new one.
+                              {m.onboarding_page_whatProject_description()}
                             </p>
                           </div>
                         </div>
@@ -1111,7 +1115,7 @@
                         <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 4">
                           <div class="space-y-6">
                             <h2 class="text-5xl font-semibold tracking-tighter">
-                              What should we build first?
+                              {m.onboarding_page_whatToBuild_title()}
                             </h2>
                           </div>
                         </div>
@@ -1146,14 +1150,14 @@
                             disabled={!hasConnectedProvider}
                             onclick={() => appStore.dispatch(goToStep('github'))}
                           >
-                            Let's go
+                            {m.onboarding_page_letsGo_label()}
                             {#if hasConnectedProvider}
                               <span class="ml-1 opacity-50">⌘↵</span>
                             {/if}
                           </Button>
                           {#if !hasConnectedProvider}
                             <p class="text-xs text-muted-foreground">
-                              Connect at least one agent to continue
+                              {m.onboarding_page_connectAgent_description()}
                             </p>
                           {/if}
                         </div>
@@ -1184,9 +1188,9 @@
                               onclick={() => appStore.dispatch(goToStep('configuring'))}
                             >
                               {#if projectName}
-                                Let's work on {projectName}
+                                {m.onboarding_page_letsWorkOn_label({ name: projectName })}
                               {:else}
-                                Let's go
+                                {m.onboarding_page_letsGo_label()}
                               {/if}
                               {#if projectSelection?.isValid}
                                 <span class="ml-1 opacity-50">⌘↵</span>
@@ -1195,11 +1199,11 @@
                             {#if !projectSelection?.isValid}
                               <p class="text-xs text-muted-foreground">
                                 {#if projectSelection?.type === 'local'}
-                                  Pick a project to continue
+                                  {m.onboarding_page_pickProject_label()}
                                 {:else if projectSelection?.type === 'github'}
-                                  Enter a GitHub repo to continue
+                                  {m.onboarding_page_enterGithubRepo_label()}
                                 {:else}
-                                  Name your project to continue
+                                  {m.onboarding_page_nameProject_label()}
                                 {/if}
                               </p>
                             {/if}
@@ -1271,13 +1275,13 @@
       const getResolutionPrompt = (errorType?: PullErrorType): string => {
         switch (errorType) {
           case 'stash-conflict':
-            return `The branch was updated but your local changes conflict with the pulled changes. Your changes are saved in the git stash. Please:\n1. Run \`git stash pop\` to apply the stashed changes\n2. Resolve any conflicts in the affected files\n3. Stage the resolved files with \`git add\`\n4. Continue with your work`;
+            return m.onboarding_page_pullResolution_stashConflict_prompt();
           case 'unstaged-changes':
-            return `This branch has unstaged local changes that prevented pulling. Please:\n1. Run \`git status\` to see the current state\n2. Either commit the changes (\`git add . && git commit -m "WIP"\`) or stash them (\`git stash\`)\n3. Pull the latest changes (\`git pull --rebase origin ${branch}\`)\n4. If you stashed, run \`git stash pop\` to restore your changes`;
+            return m.onboarding_page_pullResolution_unstagedChanges_prompt({ branch });
           case 'merge-conflict':
-            return `Fix merge conflicts in this branch. Run \`git status\` to see conflicting files, resolve them, then run \`git add\` and \`git rebase --continue\`.`;
+            return m.onboarding_page_pullResolution_mergeConflict_prompt();
           default:
-            return `There was an issue syncing this branch with the remote. Please:\n1. Run \`git status\` to understand the current state\n2. Address any uncommitted changes or conflicts\n3. Try pulling again with \`git pull --rebase origin ${branch}\``;
+            return m.onboarding_page_pullResolution_default_prompt({ branch });
         }
       };
 

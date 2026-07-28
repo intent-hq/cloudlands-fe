@@ -13,6 +13,7 @@
   faCheck,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('SetupScriptAgent');
 
@@ -66,7 +67,7 @@
       const workspaceId = await resolveWorkspaceId();
       if (!isComponentMounted) return;
       if (!workspaceId) {
-        error = 'No workspace found for this repository yet — create the workspace first, then generate a setup script.';
+        error = m.workspace_setupScriptAgent_noWorkspace_error();
         isGenerating = false;
         return;
       }
@@ -74,23 +75,25 @@
       const setupScript = await appClient.setupScripts.generate(workspaceId);
       if (!isComponentMounted) return;
       if (!setupScript || !setupScript.script) {
-        error = 'Failed to generate setup script';
+        error = m.workspace_setupScriptAgent_generateFailed_error();
         isGenerating = false;
         return;
       }
 
       generatedScript = {
-        name: setupScript.projectType ? `${setupScript.projectType} setup` : 'Generated setup',
+        name: setupScript.projectType
+          ? m.workspace_setupScriptAgent_projectTypeSetup_label({ projectType: setupScript.projectType })
+          : m.workspace_setupScriptAgent_generatedSetup_label(),
         description: setupScript.projectType
-          ? `Setup script generated for a ${setupScript.projectType} project`
-          : 'Setup script generated from repository analysis',
+          ? m.workspace_setupScriptAgent_generatedForProject_description({ projectType: setupScript.projectType })
+          : m.workspace_setupScriptAgent_generatedFromAnalysis_description(),
         content: setupScript.script,
       };
       isGenerating = false;
     } catch (err) {
       logger.error('Failed to generate setup script', err);
       if (!isComponentMounted) return;
-      error = err instanceof Error ? err.message : 'Failed to generate setup script';
+      error = err instanceof Error ? err.message : m.workspace_setupScriptAgent_generateFailed_error();
       isGenerating = false;
     }
   }
@@ -105,7 +108,7 @@
   <div class="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
     <div class="flex items-center gap-2">
       <AuggieAvatar size={20} {agentId} />
-      <span class="text-sm font-medium">Setup Script Generator</span>
+      <span class="text-sm font-medium">{m.workspace_setupScriptAgent_title()}</span>
       {#if isGenerating}
         <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
       {/if}
@@ -128,7 +131,7 @@
         <div
           class="w-4 h-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin"
         ></div>
-        <span class="text-sm">Analyzing repository...</span>
+        <span class="text-sm">{m.workspace_setupScriptAgent_analyzing_label()}</span>
       </div>
     {/if}
   </div>
@@ -147,7 +150,7 @@
           onclick={() => handleUseScript(generatedScript!)}
           class="h-7"
         >
-          Create Script
+          {m.workspace_setupScriptAgent_createScript_label()}
         </Button>
       </div>
       <p class="text-xs text-subtle mb-2">{generatedScript.description}</p>

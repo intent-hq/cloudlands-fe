@@ -2,6 +2,7 @@
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import { faPaperPlane } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   type ChiefSuggestion = {
     id: string;
@@ -18,33 +19,48 @@
   const suggestions: ChiefSuggestion[] = [
     {
       id: 'assigned-prs',
-      label: 'Make workspaces for the latest PRs assigned to me.',
-      prompt:
-        'Make workspaces to tackle the latest PRs assigned to me, grouped by urgency with the right specialist for each workspace.',
+      get label() {
+        return m.chat_chiefEmptyState_assignedPrs_label();
+      },
+      get prompt() {
+        return m.chat_chiefEmptyState_assignedPrs_prompt();
+      },
     },
     {
       id: 'stale-workspaces',
-      label: 'Delete stale workspaces.',
-      prompt:
-        'Analyze my workspaces for stale, duplicate, completed, or abandoned work. Propose which workspaces to archive or delete, explain why, and call out anything risky to preserve.',
+      get label() {
+        return m.chat_chiefEmptyState_staleWorkspaces_label();
+      },
+      get prompt() {
+        return m.chat_chiefEmptyState_staleWorkspaces_prompt();
+      },
     },
     {
       id: 'agent-performance',
-      label: 'Analyze my workspaces to improve agent performance.',
-      prompt:
-        'Analyze recent workspaces and agent activity for ways to improve agent performance. Propose specialist changes, AGENTS.md updates, and codebase/tooling changes that would make future agents faster and more reliable.',
+      get label() {
+        return m.chat_chiefEmptyState_agentPerformance_label();
+      },
+      get prompt() {
+        return m.chat_chiefEmptyState_agentPerformance_prompt();
+      },
     },
     {
       id: 'morning-brief',
-      label: 'Prepare my daily brief for today.',
-      prompt:
-        'Give me a concise daily brief for today: active workspaces, PRs/issues that need attention, blocked or waiting agents, and the highest-leverage next actions.',
+      get label() {
+        return m.chat_chiefEmptyState_morningBrief_label();
+      },
+      get prompt() {
+        return m.chat_chiefEmptyState_morningBrief_prompt();
+      },
     },
     {
       id: 'random-theme',
-      label: 'Switch me to a random theme.',
-      prompt:
-        'Change my app settings by switching me to a random theme. Pick one that feels distinct from my current theme and apply it.',
+      get label() {
+        return m.chat_chiefEmptyState_randomTheme_label();
+      },
+      get prompt() {
+        return m.chat_chiefEmptyState_randomTheme_prompt();
+      },
     },
   ];
 
@@ -59,8 +75,7 @@
 <section class="mx-auto flex min-h-[46vh] w-full max-w-3xl flex-col justify-end pb-12 pt-16">
   <div class="mb-4 flex items-baseline gap-3 px-1.5 text-foreground">
     <p class="flex-1">
-      Ask Intent to help you use the app: manage workspaces, tune settings, coordinate specialists,
-      and find your next best action.
+      {m.chat_chiefEmptyState_intro_label()}
     </p>
   </div>
 

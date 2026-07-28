@@ -26,6 +26,7 @@
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Props {
@@ -72,7 +73,7 @@
   function startEditingTitle() {
     if (!workspace) return;
     isEditingTitle = true;
-    editedTitle = workspace.title || 'Untitled';
+    editedTitle = workspace.title || m.workspace_links_untitled_label();
     tick().then(() => {
       if (titleInputRef) {
         titleInputRef.focus();
@@ -103,7 +104,7 @@
       saveTitle();
     } else if (e.key === 'Escape') {
       isEditingTitle = false;
-      editedTitle = workspace?.title || 'Untitled';
+      editedTitle = workspace?.title || m.workspace_links_untitled_label();
     }
   }
 
@@ -230,12 +231,12 @@
         }
       } else {
         logger.error('Failed to rename branch', { error: result.error });
-        toast.error(result.error || 'Failed to rename branch');
+        toast.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
         editedBranch = workspace.branch || '';
       }
     } catch (error) {
       logger.error('Error renaming branch:', error);
-      toast.error('Failed to rename branch');
+      toast.error(m.workspace_sidebarHeader_renameBranchFailed_error());
       editedBranch = workspace.branch || '';
     } finally {
       isEditingBranch = false;
@@ -259,50 +260,53 @@
    */
   function getBranchNameValidationError(name: string): string | undefined {
     if (!name || name.trim().length === 0) {
-      return 'Branch name cannot be empty';
+      return m.workspace_sidebarHeader_branchEmpty_error();
     }
 
     if (name.includes(' ')) {
-      return 'Branch name cannot contain spaces';
+      return m.workspace_sidebarHeader_branchSpaces_error();
     }
 
     if (/[~^:\\?*\[@{]/.test(name)) {
-      return 'Branch name contains invalid characters';
+      return m.workspace_sidebarHeader_branchInvalidChars_error();
     }
 
     if (name.startsWith('.')) {
-      return "Branch name cannot start with '.'";
+      return m.workspace_sidebarHeader_branchStartsDot_error();
     }
 
     if (name.endsWith('.lock')) {
-      return "Branch name cannot end with '.lock'";
+      return m.workspace_sidebarHeader_branchEndsLock_error();
     }
 
     if (name.includes('..')) {
-      return "Branch name cannot contain '..'";
+      return m.workspace_sidebarHeader_branchDoubleDot_error();
     }
 
     if (name.startsWith('/') || name.endsWith('/')) {
-      return 'Branch name cannot start or end with /';
+      return m.workspace_sidebarHeader_branchSlashEnds_error();
     }
 
     if (name.includes('//')) {
-      return 'Branch name cannot contain consecutive slashes';
+      return m.workspace_sidebarHeader_branchDoubleSlash_error();
     }
 
     if (name.startsWith('-')) {
-      return "Branch name cannot start with '-'";
+      return m.workspace_sidebarHeader_branchStartsDash_error();
     }
 
     if (name.length > 250) {
-      return 'Branch name is too long (max 250 characters)';
+      return m.workspace_sidebarHeader_branchTooLong_error();
     }
 
     return undefined;
   }
 
   const sidebarSideAction: MenuAction = $derived({
-    label: $sidebarSide$ === 'left' ? 'Move sidebar to right' : 'Move sidebar to left',
+    label:
+      $sidebarSide$ === 'left'
+        ? m.workspace_sidebarHeader_moveSidebarRight_label()
+        : m.workspace_sidebarHeader_moveSidebarLeft_label(),
     icon: faTableColumns,
     dividerBefore: true,
     onClick: () => {
@@ -357,7 +361,7 @@
                outline-none min-w-[80px] max-w-[200px] leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150"
-        placeholder="Untitled"
+        placeholder={m.ui_editableName_placeholder()}
         style="width: {Math.max(80, Math.min(200, (editedTitle || '').length * 8 + 20))}px"
       />
     {:else}
@@ -371,11 +375,11 @@
                disabled:cursor-default disabled:opacity-50"
         class:opacity-50={!workspace?.title}
         onclick={startEditingTitle}
-        title="Click to edit space title"
+        title={m.workspace_sidebarHeader_editTitle_tooltip()}
         disabled={!workspace}
       >
         {#if workspace}
-          {workspace.title || 'Untitled'}
+          {workspace.title || m.workspace_links_untitled_label()}
         {/if}
       </button>
     {/if}
@@ -390,13 +394,13 @@
         onkeydown={handleStatusMessageKeydown}
         disabled={isSavingStatusMessage}
         maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
-        aria-label="Workspace status"
+        aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
         class="text-xs text-foreground bg-none
                px-1.5 py-0.5 rounded
                outline-none w-full max-w-[240px] leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150 disabled:opacity-50"
-        placeholder="Add workspace status"
+        placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
       />
     {:else if workspace}
       <button
@@ -412,12 +416,14 @@
         class:text-ghost={!currentStatusMessage}
         onclick={startEditingStatusMessage}
         title={currentStatusMessage
-          ? 'Click to edit workspace status'
-          : 'Click to add workspace status'}
-        aria-label={currentStatusMessage ? 'Edit workspace status' : 'Add workspace status'}
+          ? m.workspace_sidebarHeader_editStatus_tooltip()
+          : m.workspace_sidebarHeader_addStatus_tooltip()}
+        aria-label={currentStatusMessage
+          ? m.workspace_sidebarHeader_editStatus_ariaLabel()
+          : m.workspace_sidebarHeader_addStatus_ariaLabel()}
         disabled={!workspace}
       >
-        {currentStatusMessage || 'Add status…'}
+        {currentStatusMessage || m.workspace_sidebarHeader_addStatus_label()}
       </button>
     {/if}
 
@@ -446,7 +452,7 @@
                  outline-none min-w-[60px] max-w-[150px] leading-normal
                  focus:ring-none! focus:outline-none!
                  transition-all duration-150 disabled:opacity-50"
-          placeholder="branch name"
+          placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
           style="width: {Math.max(60, Math.min(150, (editedBranch || '').length * 6 + 20))}px"
         />
       {:else}
@@ -460,11 +466,11 @@
                  focus-visible:outline-primary/50 focus-visible:outline-offset-[-1px]
                  disabled:cursor-default disabled:opacity-50"
           onclick={startEditingBranch}
-          title="Click to edit branch name"
+          title={m.workspace_sidebarHeader_editBranch_tooltip()}
           disabled={!workspace || isSavingBranch}
         >
           {#if workspace}
-            {workspace.branch || 'no branch'}
+            {workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
           {/if}
         </button>
       {/if}

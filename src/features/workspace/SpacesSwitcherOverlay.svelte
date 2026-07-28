@@ -8,6 +8,7 @@
    * Uses a scrollable container with auto-scroll-into-view for keyboard navigation.
    */
   import { goto } from '$app/navigation';
+  import { m } from '$shared/paraglide/messages.js';
   import {
   fade,
   fly,
@@ -219,7 +220,7 @@
   <div
     class="fixed top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-[75vw] max-w-160 z-50"
     transition:fly={{ y: 6, duration: 200 }}
-    aria-label="Workspace switcher"
+    aria-label={m.workspace_switcher_ariaLabel()}
     role="dialog"
   >
     <div class="bg-background overflow-hidden border border-border shadow-lg">
@@ -307,7 +308,7 @@
                           ? 'bg-muted-foreground/10 text-muted-foreground'
                           : 'bg-red-500/10 text-red-500'}
                   <span class="text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}">
-                    PR{wsPrNumber ? ` #${wsPrNumber}` : ''}
+                    {m.workspace_switcher_pr_label()}{wsPrNumber ? ` #${wsPrNumber}` : ''}
                   </span>
                 {/if}
 

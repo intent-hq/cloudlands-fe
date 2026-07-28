@@ -7,6 +7,7 @@
    * Supports drag-and-drop for cross-panel tab movement.
    */
 
+  import { m } from '$shared/paraglide/messages.js';
   import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { cn } from '$lib/utils';
   import PanelTabBar from './PanelTabBar.svelte';
@@ -286,7 +287,7 @@
     ondragleave={handleDragLeave}
     ondrop={handleDrop}
     role="region"
-    aria-label="Panel"
+    aria-label={m.layout_panel_ariaLabel()}
   >
     <!-- Drop zones overlay (positioned below tab bar) -->
     <PanelDropZones activeZone={activeDropZone} isActive={isDragOver} />

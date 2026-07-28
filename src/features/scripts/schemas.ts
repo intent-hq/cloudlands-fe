@@ -38,9 +38,13 @@ export const ScriptStatusSchema = z.enum(['idle', 'running', 'exited']);
  */
 export const WorkspaceScriptSchema = z
   .object({
+    // i18n-ignore (IPC payload validation, developer-facing)
     id: z.string().min(1, 'Script ID is required'),
+    // i18n-ignore (IPC payload validation, developer-facing)
     workspaceId: z.string().min(1, 'Workspace ID is required'),
+    // i18n-ignore (IPC payload validation, developer-facing)
     name: z.string().min(1, 'Script name is required'),
+    // i18n-ignore (IPC payload validation, developer-facing)
     command: z.string().min(1, 'Script command is required'),
     cwd: z.string().optional(),
     env: z.record(z.string()).optional(),
@@ -83,7 +87,9 @@ export const ScriptsFileFormatSchema = z
  * Schema for creating a new script (subset of WorkspaceScript).
  */
 export const CreateScriptSchema = z.object({
+  // i18n-ignore (IPC payload validation, developer-facing)
   name: z.string().min(1, 'Script name is required'),
+  // i18n-ignore (IPC payload validation, developer-facing)
   command: z.string().min(1, 'Script command is required'),
   cwd: z.string().optional(),
   env: z.record(z.string()).optional(),
@@ -105,4 +111,3 @@ export const UpdateScriptSchema = z.object({
   category: ScriptCategorySchema.optional(),
   autoStart: z.boolean().optional(),
 });
-

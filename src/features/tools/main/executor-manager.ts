@@ -6,13 +6,7 @@
  */
 
 import { LocalExecutor } from './executors/local-executor';
-import type {
-  IExecutor,
-  CommandResult,
-  ExecuteOptions,
-  FileInfo,
-  FileStats,
-} from '../types';
+import type { IExecutor, CommandResult, ExecuteOptions, FileInfo, FileStats } from '../types';
 import { Logger } from '../../../shared/logger';
 
 class RetryingExecutor implements IExecutor {
@@ -106,6 +100,7 @@ export class ExecutorManager {
       code === 'EPERM' ||
       code === 'ENOENT' || // file/dir not found - will not succeed on retry
       message.includes('no such file or directory') ||
+      // i18n-ignore (error-string matching, not display)
       message.includes('Permission denied') ||
       message.includes('not permitted')
     );

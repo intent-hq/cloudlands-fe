@@ -16,14 +16,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from '../../../lib/utils/browser-event-emitter';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { Logger } from '../../../shared/logger';
-import type { AgentMessage,
-  ContentBlock,
-  Workspace } from '../../../shared/types';
+import type { AgentMessage, ContentBlock, Workspace } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
-import {
-  createMessageId,
-  WorkspaceId,
-} from '../../../shared/types/branded-ids';
+import { createMessageId, WorkspaceId } from '../../../shared/types/branded-ids';
 import { createAppMessageId } from '$shared/utils/app-message-id';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
@@ -43,8 +38,12 @@ import { getRendererStore } from '$store/renderer/renderer-store-bridge';
 
 /** Shorthand – keeps call-site diffs minimal after bridge migration. */
 const appStore = {
-  get state() { return getRendererStore().state; },
-  dispatch(action: { type: string;[k: string]: any }) { return getRendererStore().dispatch(action); },
+  get state() {
+    return getRendererStore().state;
+  },
+  dispatch(action: { type: string; [k: string]: any }) {
+    return getRendererStore().dispatch(action);
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -498,7 +497,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
    */
   private getAccumulatedText(session: StreamSession): string {
     if (session.textParts.length === 0) return session.accumulatedText || '';
-    const joined = session.textParts.length === 1 ? session.textParts[0] : session.textParts.join('');
+    const joined =
+      session.textParts.length === 1 ? session.textParts[0] : session.textParts.join('');
     session.textParts = [joined];
     session.accumulatedText = joined;
     return joined;
@@ -743,6 +743,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     if (!session) {
       return {
         success: false,
+        // i18n-ignore (internal stream-manager result, consumed in-process only)
         error: 'Stream session not found',
       };
     }
@@ -750,6 +751,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     if (session.isComplete) {
       return {
         success: false,
+        // i18n-ignore (internal stream-manager result, consumed in-process only)
         error: 'Stream already completed',
       };
     }
@@ -831,16 +833,12 @@ export class StreamManager extends EventEmitter implements IDisposable {
 
     // Mark agent as having unread messages (if user isn't currently viewing it)
     // Pass isBackground to skip unread tracking for background agents
-    const agentSession = lookupAgentSession(
-      appStore.state, session.config.agentId
-    );
+    const agentSession = lookupAgentSession(appStore.state, session.config.agentId);
     const isBackgroundAgent =
       agentSession?.isBackground || agentSession?.metadata?.isBackground || false;
-    appStore.dispatch(newAssistantMessage(
-      session.config.agentId,
-      session.config.workspaceId,
-      isBackgroundAgent,
-    ));
+    appStore.dispatch(
+      newAssistantMessage(session.config.agentId, session.config.workspaceId, isBackgroundAgent),
+    );
 
     // Update metrics
     this.metrics.activeStreams--;
@@ -1321,6 +1319,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
   private registerTestWorkspace(workspaceId: string): void {
     const testWorkspace: Workspace = {
       id: WorkspaceId(workspaceId),
+      // i18n-ignore (test-harness stub data)
       title: 'Test Workspace',
       branch: 'test',
       changesets: [],
@@ -1481,9 +1480,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
           accumulatedText: state.accumulatedText,
           textParts: state.accumulatedText ? [state.accumulatedText] : [],
           accumulatedTextLength: state.accumulatedText ? state.accumulatedText.length : 0,
-          digestTail: state.accumulatedText
-            ? state.accumulatedText.slice(-DIGEST_TAIL_LEN)
-            : '',
+          digestTail: state.accumulatedText ? state.accumulatedText.slice(-DIGEST_TAIL_LEN) : '',
           contentBlocks: state.contentBlocks,
           isComplete: false,
           isActive: true,
@@ -1515,13 +1512,15 @@ export class StreamManager extends EventEmitter implements IDisposable {
               // No direct mutation needed in Redux here.
             } else {
               // Create a new assistant message with the content blocks
-              store.dispatch(addAgentSessionMessage(state.config.agentId, {
-                id: createMessageId(`msg_${Date.now()}`),
-                appMessageId: createAppMessageId(),
-                role: 'assistant',
-                contentBlocks: state.contentBlocks,
-                timestamp: new Date().toISOString(),
-              }));
+              store.dispatch(
+                addAgentSessionMessage(state.config.agentId, {
+                  id: createMessageId(`msg_${Date.now()}`),
+                  appMessageId: createAppMessageId(),
+                  role: 'assistant',
+                  contentBlocks: state.contentBlocks,
+                  timestamp: new Date().toISOString(),
+                }),
+              );
             }
           }
         }

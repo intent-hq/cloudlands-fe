@@ -16,6 +16,7 @@
   draw,
   scale,
 } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
 
   type NormalizedTaskStatus = TaskStatus | 'unknown';
 
@@ -67,7 +68,17 @@
   };
 
   let colors = $derived(statusColors[normalizedStatus] || statusColors.not_started);
-  let statusLabel = $derived(String(normalizedStatus ?? 'unknown').replace(/_/g, ' '));
+  const statusLabels: Record<NormalizedTaskStatus, () => string> = {
+    not_started: m.tiptap_taskStatus_notStarted_label,
+    waiting: m.tiptap_taskStatus_waiting_label,
+    discussion_needed: m.tiptap_taskStatus_discussionNeeded_label,
+    in_progress: m.tiptap_taskStatus_inProgress_label,
+    review_required: m.tiptap_taskStatus_reviewRequired_label,
+    complete: m.tiptap_taskStatus_complete_label,
+    cancelled: m.tiptap_taskStatus_cancelled_label,
+    unknown: m.tiptap_taskStatus_unknown_label,
+  };
+  let statusLabel = $derived((statusLabels[normalizedStatus] ?? m.tiptap_taskStatus_unknown_label)());
 </script>
 
 <button
@@ -75,7 +86,7 @@
   class="task-status-icon inline-flex items-center justify-center shrink-0 cursor-pointer bg-transparent border-0 p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-primary rounded-full"
   style="width: {size}px; height: {size}px;"
   {onclick}
-  title="Status: {statusLabel}"
+  title={m.tiptap_taskStatus_status_tooltip({ status: statusLabel })}
 >
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <!-- Clip path for half-fill effect -->

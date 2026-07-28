@@ -8,6 +8,7 @@ import { ipcMain } from 'electron';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { z } from 'zod';
 import { Logger } from '$lib/utils/logger';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger({ category: 'WorkspacePR-IPC' });
 
@@ -94,7 +95,7 @@ export function registerWorkspacePRHandlers(): void {
           logger.error('Failed to get workspace changes', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.workspacePr_unknown_error(),
           };
         }
       },
@@ -113,9 +114,11 @@ export function registerWorkspacePRHandlers(): void {
 
           // In production, this would use AI to generate PR content
           // For now, return mock data
+          // i18n-ignore (GitHub PR content is authored in English)
           const generatedTitle = title || 'Update workspace files';
           const generatedDescription =
             description ||
+            // i18n-ignore (GitHub PR content is authored in English)
             `## Changes
 
 This PR includes the following changes:
@@ -136,7 +139,7 @@ ${changes?.map((c) => `- ${c.file}: +${c.additions} -${c.deletions}`).join('\n')
           logger.error('Failed to generate PR content', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.workspacePr_unknown_error(),
           };
         }
       },
@@ -158,13 +161,13 @@ ${changes?.map((c) => `- ${c.file}: +${c.additions} -${c.deletions}`).join('\n')
           return {
             success: true,
             resolvedFiles: files || [],
-            message: `Conflicts resolved using ${strategy} strategy`,
+            message: m.workspacePr_conflictsResolved_message({ strategy: strategy ?? 'manual' }),
           };
         } catch (error) {
           logger.error('Failed to resolve merge conflicts', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.workspacePr_unknown_error(),
           };
         }
       },

@@ -4,26 +4,16 @@
  * Handles app-level and system operations.
  */
 
-import {
-  app,
-  BrowserWindow,
-  clipboard,
-  dialog,
-  ipcMain,
-  nativeTheme,
-  shell,
-} from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import { spawn } from 'child_process';
-import {
-  collectOpenWorkspaceIds,
-  collectWindowIdsForWorkspace,
-} from './window-workspace-tracking';
+import { collectOpenWorkspaceIds, collectWindowIdsForWorkspace } from './window-workspace-tracking';
 import { createRequire } from 'module';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
   AppPathSchema,
   AppSetBadgeSchema,
+  AppSetLanguagePreferenceSchema,
   DeepLinkHandleSchema,
   DialogMessageSchema,
   DialogOpenSchema,
@@ -69,6 +59,7 @@ import {
   XCODE_CHANNELS,
 } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
@@ -214,17 +205,12 @@ export function getWindowIdForWorkspace(workspaceId: string): number | undefined
  * Returns an empty array if no windows have the workspace open.
  */
 export function getWindowIdsForWorkspace(workspaceId: string): number[] {
-  return collectWindowIdsForWorkspace(
-    workspaceId,
-    windowWorkspaceIds,
-    windowOpenWorkspaceTabs,
-    {
-      isAlive(windowId: number) {
-        const win = BrowserWindow.fromId(windowId);
-        return !!win && !win.isDestroyed();
-      },
+  return collectWindowIdsForWorkspace(workspaceId, windowWorkspaceIds, windowOpenWorkspaceTabs, {
+    isAlive(windowId: number) {
+      const win = BrowserWindow.fromId(windowId);
+      return !!win && !win.isDestroyed();
     },
-  );
+  });
 }
 
 /**
@@ -275,16 +261,11 @@ export function sendToWorkspaceWindows(
   // Also broadcast to browser-mode WebSocket clients (if any are connected).
   // The named adapter owns the legacy global hook used by the HTTP MCP bridge.
   try {
-    broadcastToBrowserIpcClients(
-      channel,
-      data,
-      effectiveWorkspaceId,
-    );
+    broadcastToBrowserIpcClients(channel, data, effectiveWorkspaceId);
   } catch {
     // Ignore — WebSocket bridge may not be initialized yet
   }
 }
-
 
 /**
  * Check if the currently focused window has a browser panel as the active panel.
@@ -408,13 +389,13 @@ export async function installIntentCli(): Promise<{
           logger.info('CLI installed with admin privileges');
           return {
             success: true,
-            message: 'CLI installed successfully at /usr/local/bin/intent (with admin privileges)',
+            message: m.system_ipc_cliInstalledAdmin_message(),
           };
         } catch (osascriptErr: any) {
           logger.error('Failed to install CLI with admin privileges', osascriptErr);
           return {
             success: false,
-            message: 'Failed to install CLI. Admin privileges may be required.',
+            message: m.system_ipc_cliInstallAdminFailed_message(),
             error: osascriptErr instanceof Error ? osascriptErr.message : String(osascriptErr),
           };
         }
@@ -422,7 +403,7 @@ export async function installIntentCli(): Promise<{
         logger.error('Failed to create symlink', err);
         return {
           success: false,
-          message: 'Failed to create symlink',
+          message: m.system_ipc_symlinkFailed_message(),
           error: err instanceof Error ? err.message : String(err),
         };
       }
@@ -431,8 +412,8 @@ export async function installIntentCli(): Promise<{
     logger.error('Unexpected error in install-cli handler', error as Error);
     return {
       success: false,
-      message: 'Unexpected error during CLI installation',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: m.system_ipc_cliInstallUnexpected_message(),
+      error: error instanceof Error ? error.message : m.system_ipc_unknown_error(),
     };
   }
 }
@@ -569,6 +550,28 @@ export function setupSystemIPC() {
     ),
   );
 
+  // Sync the renderer's language preference to the main-process locale service.
+  // On change, notify listeners (index.ts rebuilds the application menu).
+  ipcMain.handle(
+    APP_CHANNELS.SET_LANGUAGE_PREFERENCE,
+    createSafeValidatedHandler(
+      AppSetLanguagePreferenceSchema,
+      async (_event, validated) => {
+        try {
+          const { setMainLanguagePreference } = await import('../../../main/main-locale');
+          const changed = setMainLanguagePreference(validated.preference);
+          if (changed) {
+            app.emit('main-locale-changed');
+          }
+          return { success: true };
+        } catch (error) {
+          return { success: false, error: (error as Error).message };
+        }
+      },
+      APP_CHANNELS.SET_LANGUAGE_PREFERENCE,
+    ),
+  );
+
   // Get app root directory
   ipcMain.handle(
     APP_CHANNELS.ROOT,
@@ -596,7 +599,7 @@ export function setupSystemIPC() {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to get path',
+            error: error instanceof Error ? error.message : m.system_ipc_getPathFailed_error(),
           };
         }
       },
@@ -699,7 +702,8 @@ export function setupSystemIPC() {
           logger.error('Failed to set window theme', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to set window theme',
+            error:
+              error instanceof Error ? error.message : m.system_ipc_setWindowThemeFailed_error(),
           };
         }
       },
@@ -723,7 +727,8 @@ export function setupSystemIPC() {
           logger.error('Failed to set window title', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to set window title',
+            error:
+              error instanceof Error ? error.message : m.system_ipc_setWindowTitleFailed_error(),
           };
         }
       },
@@ -760,7 +765,10 @@ export function setupSystemIPC() {
           logger.error('Failed to set window workspace state', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to set window workspace state',
+            error:
+              error instanceof Error
+                ? error.message
+                : m.system_ipc_setWindowWorkspaceStateFailed_error(),
           };
         }
       },
@@ -873,7 +881,7 @@ export function setupSystemIPC() {
           logger.error('Failed to create window', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to create window',
+            error: error instanceof Error ? error.message : m.system_ipc_createWindowFailed_error(),
           };
         }
       },
@@ -894,7 +902,8 @@ export function setupSystemIPC() {
           logger.error('Failed to open new window', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to open new window',
+            error:
+              error instanceof Error ? error.message : m.system_ipc_openNewWindowFailed_error(),
           };
         }
       },
@@ -960,7 +969,7 @@ export function setupSystemIPC() {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to open URL',
+            error: error instanceof Error ? error.message : m.system_ipc_openUrlFailed_error(),
           };
         }
       },
@@ -982,7 +991,8 @@ export function setupSystemIPC() {
           logger.error('Failed to write clipboard', { error });
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to write clipboard',
+            error:
+              error instanceof Error ? error.message : m.system_ipc_writeClipboardFailed_error(),
           };
         }
       },
@@ -1001,7 +1011,7 @@ export function setupSystemIPC() {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to show item',
+            error: error instanceof Error ? error.message : m.system_ipc_showItemFailed_error(),
           };
         }
       },
@@ -1021,7 +1031,7 @@ export function setupSystemIPC() {
         } catch (error) {
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to open path',
+            error: error instanceof Error ? error.message : m.system_ipc_openPathFailed_error(),
           };
         }
       },
@@ -1100,9 +1110,13 @@ export function setupSystemIPC() {
 
                 // Common VSCode paths on macOS
                 const commonPaths = [
+                  // i18n-ignore (filesystem paths)
                   '/Applications/Visual Studio Code.app',
+                  // i18n-ignore (filesystem paths)
                   '/Applications/Visual Studio Code - Insiders.app',
+                  // i18n-ignore (filesystem paths)
                   '~/Applications/Visual Studio Code.app',
+                  // i18n-ignore (filesystem paths)
                   '~/Applications/Visual Studio Code - Insiders.app',
                 ];
 
@@ -1207,10 +1221,10 @@ export function setupSystemIPC() {
             // filePath is already absolute
             await shell.openExternal(`vscode://file/${validated.filePath}`);
             return { success: true };
-          } catch  {
+          } catch {
             return {
               success: false,
-              error: `Failed to open git diff in VS Code: ${error}`,
+              error: m.system_ipc_openGitDiffVscodeFailed_error({ error: String(error) }),
             };
           }
         }
@@ -1314,7 +1328,7 @@ export function setupSystemIPC() {
         } catch (error) {
           return {
             success: false,
-            error: `Failed to open diff in VS Code: ${error}`,
+            error: m.system_ipc_openDiffVscodeFailed_error({ error: String(error) }),
           };
         }
       },
@@ -1336,8 +1350,25 @@ export function setupSystemIPC() {
             if (process.platform === 'darwin') {
               // Argv form (no shell) so the file path stays literal.
               const openArgs = validated.line
-                ? ['-a', 'Visual Studio Code', '--args', '-n', '--skip-add-to-recently-opened', '--goto', `${validated.file}:${validated.line}`]
-                : ['-a', 'Visual Studio Code', '--args', '-n', '--skip-add-to-recently-opened', validated.file];
+                ? [
+                    '-a',
+                    // i18n-ignore (application name argv for `open -a`)
+                    'Visual Studio Code',
+                    '--args',
+                    '-n',
+                    '--skip-add-to-recently-opened',
+                    '--goto',
+                    `${validated.file}:${validated.line}`,
+                  ]
+                : [
+                    '-a',
+                    // i18n-ignore (application name argv for `open -a`)
+                    'Visual Studio Code',
+                    '--args',
+                    '-n',
+                    '--skip-add-to-recently-opened',
+                    validated.file,
+                  ];
 
               // LOCAL-GUI: launches the user's VSCode via macOS `open` on the
               // client host; not workspace execution.
@@ -1351,7 +1382,12 @@ export function setupSystemIPC() {
           // Open file at specific line
           // Include -n and --skip-add-to-recently-opened to prevent GitLens tracking
           const codeArgs = validated.line
-            ? ['-n', '--skip-add-to-recently-opened', '--goto', `${validated.file}:${validated.line}`]
+            ? [
+                '-n',
+                '--skip-add-to-recently-opened',
+                '--goto',
+                `${validated.file}:${validated.line}`,
+              ]
             : ['-n', '--skip-add-to-recently-opened', validated.file];
 
           // LOCAL-GUI: launches the user's VSCode on the client host to open a
@@ -1369,10 +1405,10 @@ export function setupSystemIPC() {
               : `vscode://file/${validated.file}`;
             await shell.openExternal(fileUrl);
             return { success: true };
-          } catch  {
+          } catch {
             return {
               success: false,
-              error: 'Failed to open file in VS Code. Is it installed?',
+              error: m.system_ipc_openFileVscodeFailed_error(),
             };
           }
         }
@@ -1429,7 +1465,7 @@ export function setupSystemIPC() {
             // Spawn failed, try fallback with jetbrains toolbox
             throw new Error('idea command not found');
           }
-        } catch  {
+        } catch {
           // Try alternative JetBrains commands
           try {
             // Get the path to open
@@ -1445,7 +1481,7 @@ export function setupSystemIPC() {
                 // shell) so the path stays literal.
                 await execFileAsync(ideBinary, [pathToOpen]);
                 return { success: true };
-              } catch  {
+              } catch {
                 // Continue to next command
                 continue;
               }
@@ -1453,12 +1489,12 @@ export function setupSystemIPC() {
 
             return {
               success: false,
-              error: 'Failed to open in JetBrains. Is any JetBrains IDE installed?',
+              error: m.system_ipc_openJetbrainsFailed_error(),
             };
-          } catch  {
+          } catch {
             return {
               success: false,
-              error: 'Failed to open in JetBrains. Is any JetBrains IDE installed?',
+              error: m.system_ipc_openJetbrainsFailed_error(),
             };
           }
         }
@@ -1990,7 +2026,9 @@ export function setupSystemIPC() {
                     // This likely means it's gitignored and needs to be regenerated
                     // (e.g., run `pod install` for CocoaPods, `tuist generate` for Tuist)
                     logger.warn(
+                      // i18n-ignore (developer log message)
                       '[Xcode] Project file found in main repo but not in worktree. ' +
+                        // i18n-ignore (developer log message)
                         'You may need to run project generation (pod install, tuist generate, etc.) in the worktree.',
                       {
                         mainRepoProject,
@@ -2037,7 +2075,7 @@ export function setupSystemIPC() {
           logger.error('[Xcode] Failed to open', error as Error);
           return {
             success: false,
-            error: 'Failed to open in Xcode. Is Xcode installed?',
+            error: m.system_ipc_openXcodeFailed_error(),
           };
         }
       },
@@ -2112,7 +2150,10 @@ export function setupSystemIPC() {
       async () => {
         const os = require('os');
         const path = require('path');
-        const override = process.env.WORKSPACES_BASE_DIR || process.env.INTENT_WORKSPACES_ROOT || process.env.AUGMENT_WORKSPACES_ROOT;
+        const override =
+          process.env.WORKSPACES_BASE_DIR ||
+          process.env.INTENT_WORKSPACES_ROOT ||
+          process.env.AUGMENT_WORKSPACES_ROOT;
         const workspaceRoot =
           override && override.trim().length > 0 ? override : path.join(os.homedir(), 'intent');
         return { success: true, data: workspaceRoot };
@@ -2154,10 +2195,10 @@ export function setupSystemIPC() {
               hash: parsed.hash,
             },
           };
-        } catch  {
+        } catch {
           return {
             success: false,
-            error: 'Invalid deep link URL',
+            error: m.system_ipc_invalidDeepLink_error(),
           };
         }
       },
@@ -2209,7 +2250,7 @@ export function setupSystemIPC() {
           }
           return {
             success: false,
-            error: 'Command execution failed', // Don't expose full error message
+            error: m.system_ipc_commandExecutionFailed_error(), // Don't expose full error message
             data: {
               stdout: result.stdout,
               stderr: result.stderr,
@@ -2222,7 +2263,7 @@ export function setupSystemIPC() {
           });
           return {
             success: false,
-            error: 'Command execution failed', // Don't expose full error message
+            error: m.system_ipc_commandExecutionFailed_error(), // Don't expose full error message
             data: {
               stdout: '',
               stderr: '',
@@ -2382,7 +2423,7 @@ export function setupSystemIPC() {
           const getFonts =
             typeof fontListModule.getFonts === 'function'
               ? fontListModule.getFonts
-              : fontListModule.default?.getFonts ?? fontListModule.default;
+              : (fontListModule.default?.getFonts ?? fontListModule.default);
           if (typeof getFonts !== 'function') {
             throw new Error('font-list module does not export getFonts function');
           }
@@ -2393,18 +2434,17 @@ export function setupSystemIPC() {
 
           // Filter for monospace fonts by checking known patterns
           const monoFonts = cleanedFonts
-            .filter(
-              (name: string) =>
-                /mono|code|consol|courier|terminal|fixed|hack|source.*pro|fira|jetbrains|sf.*mono|menlo|monaco|andale|iosevka|inconsolata|dejavu.*mono|liberation.*mono|ubuntu.*mono|droid.*mono|noto.*mono|roboto.*mono|cascadia|operator|input|pragmata|anonymous|hermit|envy/i.test(
-                  name,
-                ),
+            .filter((name: string) =>
+              /mono|code|consol|courier|terminal|fixed|hack|source.*pro|fira|jetbrains|sf.*mono|menlo|monaco|andale|iosevka|inconsolata|dejavu.*mono|liberation.*mono|ubuntu.*mono|droid.*mono|noto.*mono|roboto.*mono|cascadia|operator|input|pragmata|anonymous|hermit|envy/i.test(
+                name,
+              ),
             )
             .sort((a: string, b: string) => a.localeCompare(b));
 
           return { success: true, data: monoFonts };
         } catch (error) {
           logger.error('Failed to list fonts', { error });
-          return { success: false, error: 'Failed to enumerate system fonts' };
+          return { success: false, error: m.system_ipc_enumerateFontsFailed_error() };
         }
       },
       SYSTEM_CHANNELS.LIST_FONTS,

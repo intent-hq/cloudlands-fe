@@ -17,6 +17,7 @@
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('FileExplorerLayout');
 
@@ -65,11 +66,11 @@
         openFiles.set(filePath, fileData);
         currentFileContent = result.content;
       } else {
-        error = result?.error || 'Failed to load file';
+        error = result?.error || m.fileExplorer_layout_loadFailed_error();
       }
     } catch (err) {
       logger.error('Failed to load file:', err);
-      error = 'Failed to load file';
+      error = m.fileExplorer_layout_loadFailed_error();
     } finally {
       isLoading = false;
     }
@@ -86,11 +87,11 @@
         fileData.modified = false;
         openFiles.set(filePath, fileData);
       } else {
-        error = result?.error || 'Failed to save file';
+        error = result?.error || m.fileExplorer_layout_saveFailed_error();
       }
     } catch (err) {
       logger.error('Failed to save file:', err);
-      error = 'Failed to save file';
+      error = m.fileExplorer_layout_saveFailed_error();
     }
   }
 
@@ -227,7 +228,7 @@
         <Breadcrumb.Root>
           <Breadcrumb.List>
             {#each getBreadcrumbParts(selectedFile) as part, i (`crumb-${i}-${part}`)}
-              {#if i < getBreadcrumbParts(selectedFile).length - 1}
+              {#if i !== getBreadcrumbParts(selectedFile).length - 1}
                 <Breadcrumb.Item>
                   <Breadcrumb.Link href="#">{part}</Breadcrumb.Link>
                 </Breadcrumb.Item>
@@ -299,7 +300,7 @@
           <div class="text-center">
             <Fa icon={faFileAlt} size="2x" class="w-12 h-12 mx-auto mb-4 text-subtle" />
             <p class="text-sm text-subtle">
-              Select a file from the sidebar to start editing
+              {m.fileExplorer_layout_selectFile_label()}
             </p>
           </div>
         </div>

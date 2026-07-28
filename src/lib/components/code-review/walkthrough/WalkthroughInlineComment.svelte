@@ -9,6 +9,7 @@
   faArrowRight,
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Line number for the comment */
@@ -65,7 +66,7 @@
     bind:this={inputElement}
     bind:value={message}
     onkeydown={handleKeydown}
-    placeholder="Ask about this line..."
+    placeholder={m.codeReview_inlineComment_askLine_placeholder()}
     disabled={isSending}
     class="flex-1 h-8 rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-50"
   />
@@ -86,7 +87,7 @@
     onclick={() => onClose?.()}
     class="h-8 px-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
   >
-    Cancel
+    {m.codeReview_inlineComment_cancel_label()}
   </button>
 </div>
-<p class="text-ui text-subtle mt-1">Enter to send · Esc to cancel</p>
+<p class="text-ui text-subtle mt-1">{m.codeReview_inlineComment_inputHint_label()}</p>

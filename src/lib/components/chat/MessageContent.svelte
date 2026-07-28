@@ -50,6 +50,7 @@
 
   import { createLogger } from '$lib/utils/client-logger';
   import { fly } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
 
   import {
     openWorkspaceFile,
@@ -137,6 +138,7 @@
           // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
           const contentText = getToolResultText(result);
           const hasErrorInContent =
+            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
             contentText.startsWith('Error:') || contentText.includes('Tool Error:');
           states.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
         } else if (!isStreaming) {
@@ -348,7 +350,7 @@
     <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
   {:else if parsedBlock.type === 'commit_message'}
     <div class="commit-message-block p-3 my-2 rounded-md bg-background border border-border">
-      <div class="text-xs font-medium text-subtle mb-1.5">Generated Commit Message</div>
+      <div class="text-xs font-medium text-subtle mb-1.5">{m.chat_messageContent_generatedCommitMessage_label()}</div>
       <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
         {parsedBlock.content}
       </div>
@@ -459,7 +461,7 @@
     {@const resultPayload = getToolResultPayload(block)}
     <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
       <div class="px-3 py-2 bg-muted/50 border-b border-border">
-        <span class="text-xs text-subtle">Tool Result</span>
+        <span class="text-xs text-subtle">{m.chat_messageContent_toolResult_label()}</span>
       </div>
       <div class="p-3">
         {#if typeof resultPayload === 'string'}
@@ -507,9 +509,9 @@
     </div>
   {:else if block.type === 'thinking'}
     <details class="p-2 bg-muted/50 rounded-md">
-      <summary class="cursor-pointer text-sm text-subtle"> 💭 Thinking... </summary>
+      <summary class="cursor-pointer text-sm text-subtle"> {m.chat_messageContent_thinking_label()} </summary>
       <div class="pl-4 mt-2 text-sm opacity-75">
-        <MarkdownViewer content={block.content || 'Processing...'} taskBlockRenderMode="content" />
+        <MarkdownViewer content={block.content || m.chat_shared_processing_fallback()} taskBlockRenderMode="content" />
       </div>
     </details>
   {/if}

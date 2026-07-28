@@ -12,6 +12,7 @@
   deactivateFeature,
 } from '$store/renderer/slices/feature-codes/feature-codes-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Props {
@@ -72,9 +73,9 @@
     try {
       const result = await invoke<{ status: string }>('feature-codes:activate', { code: inputValue.trim() });
       if (result?.status === 'already_active') {
-        feedback = { message: 'Feature already active.', color: 'text-yellow-400' };
+        feedback = { message: m.modals_featureCode_alreadyActive_feedback(), color: 'text-yellow-400' };
       } else {
-        feedback = { message: 'Feature activated!', color: 'text-green-400' };
+        feedback = { message: m.modals_featureCode_activated_feedback(), color: 'text-green-400' };
         needsRestart = true;
       }
       // Refresh the renderer-side store so UI gates update immediately
@@ -82,9 +83,9 @@
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.toLowerCase().includes('already active') || message.toLowerCase().includes('already_active')) {
-        feedback = { message: 'Feature already active.', color: 'text-yellow-400' };
+        feedback = { message: m.modals_featureCode_alreadyActive_feedback(), color: 'text-yellow-400' };
       } else {
-        feedback = { message: 'Invalid code.', color: 'text-red-400' };
+        feedback = { message: m.modals_featureCode_invalidCode_feedback(), color: 'text-red-400' };
       }
     } finally {
       isActivating = false;
@@ -119,7 +120,7 @@
   async function removeFeature(featureId: string) {
     await appStore.dispatch(deactivateFeature(featureId));
     needsRestart = true;
-    feedback = { message: 'Feature deactivated! Restart to apply.', color: 'text-yellow-400' };
+    feedback = { message: m.modals_featureCode_deactivated_feedback(), color: 'text-yellow-400' };
     scheduleFeedbackClear();
   }
 </script>
@@ -141,7 +142,7 @@
     >
       <!-- Header -->
       <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-        <h2 class="text-lg font-semibold">Enter Feature Code</h2>
+        <h2 class="text-lg font-semibold">{m.modals_featureCode_title()}</h2>
         <Button variant="ghost" size="icon" onclick={close}>
           <Fa icon={faXmark} />
         </Button>
@@ -153,7 +154,7 @@
           bind:this={inputRef}
           bind:value={inputValue}
           type="password"
-          placeholder="Enter code..."
+          placeholder={m.modals_featureCode_code_placeholder()}
           onkeydown={handleKeydown}
           class="w-full px-3 py-2 bg-background border border-border rounded text-foreground focus:outline-none focus:border-primary"
           autocorrect="off"
@@ -169,7 +170,7 @@
       <!-- Active Features -->
       {#if $hasActiveFeatures$}
         <div class="px-6 pb-4">
-          <p class="text-xs text-subtle mb-2">Active Features</p>
+          <p class="text-xs text-subtle mb-2">{m.modals_featureCode_activeFeatures_label()}</p>
           <ul class="space-y-1">
             {#each $activeFeatures$ as featureId}
               <li class="flex items-center justify-between text-sm text-subtle bg-muted/50 rounded px-2 py-1">
@@ -177,7 +178,7 @@
                 <button
                   class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
                   onclick={() => removeFeature(featureId)}
-                  title="Remove {featureId}"
+                  title={m.modals_featureCode_remove_tooltip({ featureId })}
                 >
                   <Fa icon={faXmark} size="xs" />
                 </button>
@@ -189,16 +190,16 @@
 
       <!-- Footer -->
       <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        <Button variant="ghost" onclick={close}>{needsRestart ? 'Close' : 'Cancel'}</Button>
+        <Button variant="ghost" onclick={close}>{needsRestart ? m.modals_featureCode_close_label() : m.modals_featureCode_cancel_label()}</Button>
         {#if needsRestart}
-          <Button variant="outline" onclick={restartApp}>Restart Now</Button>
+          <Button variant="outline" onclick={restartApp}>{m.modals_featureCode_restartNow_label()}</Button>
         {/if}
         <Button
           variant="default"
           onclick={confirm}
           disabled={!inputValue.trim() || isActivating || feedback !== null}
         >
-          Activate
+          {m.modals_featureCode_activate_label()}
         </Button>
       </div>
     </div>

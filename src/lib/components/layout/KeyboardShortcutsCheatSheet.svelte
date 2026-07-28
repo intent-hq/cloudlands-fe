@@ -12,6 +12,7 @@
 } from 'svelte/transition';
   import { faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import {
   getAllShortcutCategories,
   formatShortcut,
@@ -74,10 +75,10 @@
       <div class="flex items-center justify-between px-9 pr-7 pt-6">
         <div class="flex items-center gap-3">
           <!-- <Fa icon={faKeyboard} class="text-primary" /> -->
-          <span class="text-lg font-semibold">Keyboard Shortcuts</span>
+          <span class="text-lg font-semibold">{m.layout_cheatSheet_title()}</span>
           {#if $context !== 'global'}
             <span class="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full capitalize">
-              {$context} context
+              {m.layout_cheatSheet_context_label({ context: $context })}
             </span>
           {/if}
         </div>

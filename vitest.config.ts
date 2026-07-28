@@ -3,9 +3,18 @@ import path from 'path';
 
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
+  const { paraglideVitePlugin } = await import('@inlang/paraglide-js');
 
   return {
-    plugins: [svelte()],
+    plugins: [
+      // Compiles messages/{locale}.json into src/shared/paraglide so tests can
+      // import m.* functions without a separate generate:i18n run.
+      paraglideVitePlugin({
+        project: path.resolve(import.meta.dirname, 'project.inlang'),
+        outdir: path.resolve(import.meta.dirname, 'src/shared/paraglide'),
+      }),
+      svelte(),
+    ],
     test: {
       globals: true,
       environment: 'jsdom',

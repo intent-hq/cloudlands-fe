@@ -1,5 +1,6 @@
 import type { ProposalActionDetail, SpecialistEditProposal } from '$shared/types/proposal';
 import { parseCompoundModelId } from '$shared/config/provider-config';
+import { m } from '$shared/paraglide/messages.js';
 import {
   generateUniqueSpecialistId,
   type SpecialistFileScope,
@@ -166,7 +167,7 @@ export async function applySpecialistProposalWork(
     proposal,
     detail,
     'description',
-    current?.description ?? 'Custom specialist',
+    current?.description ?? m.chat_specialistProposalActions_customSpecialist_fallback(),
   ).trim();
   const prompt = stringField(
     proposal,
@@ -180,7 +181,7 @@ export async function applySpecialistProposalWork(
     saveFileSpecialist({
       id,
       name,
-      description: description || 'Custom specialist',
+      description: description || m.chat_specialistProposalActions_customSpecialist_fallback(),
       codingAgent:
         payload.codingAgent ??
         (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId),

@@ -42,6 +42,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   type JsonValue,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   const logger = createLogger('NoteCodeChangesCard');
 
@@ -206,9 +208,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   function handleViewAllClick() {
     appStore.dispatch(
-      openWorkspaceChatChanges(workspaceId, changes as unknown as JsonValue[], `Changes from: ${note.title || 'Task'}`, {
-        isAggregate: true,
-      }),
+      openWorkspaceChatChanges(
+        workspaceId,
+        changes as unknown as JsonValue[],
+        m.workspace_noteCodeChanges_changesFrom_label({
+          title: note.title || m.workspace_noteCodeChanges_task_label(),
+        }),
+        {
+          isAggregate: true,
+        },
+      ),
     );
   }
 </script>
@@ -231,9 +240,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             </div> -->
             <span class="text-sm font-medium text-foreground">
               {#if isLoading}
-                Loading changes...
+                {m.workspace_noteCodeChanges_loading_label()}
               {:else}
-                {totalFiles} file{totalFiles !== 1 ? 's' : ''} changed
+                {totalFiles === 1
+                  ? m.workspace_noteCodeChanges_filesChanged_one()
+                  : m.workspace_noteCodeChanges_filesChanged_many({
+                      count: formatInteger(totalFiles),
+                    })}
               {/if}
             </span>
             {#if !isLoading && hasChanges}
@@ -282,7 +295,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             {#if hasMoreFiles && !isExpanded}
               <div class="px-4 py-2 border-t border-border/30">
                 <span class="text-xs text-subtle">
-                  +{changes.length - MAX_VISIBLE_FILES} more files
+                  {m.workspace_noteCodeChanges_moreFiles_label({
+                    count: formatInteger(changes.length - MAX_VISIBLE_FILES),
+                  })}
                 </span>
               </div>
             {/if}
@@ -293,7 +308,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 onclick={handleViewAllClick}
                 class="text-xs text-subtle transition-colors cursor-pointer"
               >
-                View all changes →
+                {m.workspace_noteCodeChanges_viewAll_label()}
               </button>
             </div>
           </div>

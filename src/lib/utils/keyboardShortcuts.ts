@@ -1,6 +1,7 @@
 /**
  * Keyboard shortcuts management for chat interfaces
  */
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * Check if the currently focused element is within an xterm terminal.
@@ -31,10 +32,7 @@ export function isFocusInTerminal(target?: HTMLElement | null): boolean {
   // Use '.terminal-panel' (the content area) rather than '.terminal-overlay'
   // (the full container) so that focus on the tab bar doesn't block
   // app-level keyboard shortcuts like Cmd+J to toggle the terminal.
-  if (
-    typeof activeElement.closest === 'function' &&
-    activeElement.closest('.terminal-panel')
-  ) {
+  if (typeof activeElement.closest === 'function' && activeElement.closest('.terminal-panel')) {
     return true;
   }
 
@@ -184,8 +182,11 @@ export class KeyboardShortcutManager {
           !!shortcut.alt === !!reserved.alt
         ) {
           console.warn(
+            // i18n-ignore (dev console warning)
             `[KeyboardShortcutManager] WARNING: Registering shortcut "${this.getShortcutKey(shortcut)}" ` +
+              // i18n-ignore (dev console warning)
               `conflicts with reserved native shortcut: ${reserved.reason}. ` +
+              // i18n-ignore (dev console warning)
               `This will prevent the OS from handling this key combination.`,
           );
         }
@@ -345,65 +346,89 @@ export const CHAT_SHORTCUTS = {
   // Navigation
   SCROLL_TO_BOTTOM: {
     key: 'End',
-    description: 'Scroll to bottom',
+    get description() {
+      return m.chat_shortcuts_scrollToBottom_description();
+    },
   },
   SCROLL_TO_TOP: {
     key: 'Home',
-    description: 'Scroll to top',
+    get description() {
+      return m.chat_shortcuts_scrollToTop_description();
+    },
   },
   PREVIOUS_MESSAGE: {
     key: 'ArrowUp',
     alt: true,
-    description: 'Navigate to previous message',
+    get description() {
+      return m.chat_shortcuts_prevMessage_description();
+    },
   },
   NEXT_MESSAGE: {
     key: 'ArrowDown',
     alt: true,
-    description: 'Navigate to next message',
+    get description() {
+      return m.chat_shortcuts_nextMessage_description();
+    },
   },
 
   // Actions
   FOCUS_INPUT: {
     key: '/',
-    description: 'Focus chat input',
+    get description() {
+      return m.chat_shortcuts_focusInput_description();
+    },
   },
   SEND_MESSAGE: {
     key: 'Enter',
     ctrl: true,
-    description: 'Send message',
+    get description() {
+      return m.chat_shortcuts_sendMessage_description();
+    },
   },
   NEW_LINE: {
     key: 'Enter',
     shift: true,
-    description: 'Insert new line',
+    get description() {
+      return m.chat_shortcuts_newLine_description();
+    },
   },
   COPY_LAST_MESSAGE: {
     key: 'c',
     ctrl: true,
     shift: true,
-    description: 'Copy last message',
+    get description() {
+      return m.chat_shortcuts_copyLastMessage_description();
+    },
   },
   EDIT_LAST_MESSAGE: {
     key: 'e',
     ctrl: true,
     shift: true,
-    description: 'Edit last user message',
+    get description() {
+      return m.chat_shortcuts_editLastMessage_description();
+    },
   },
   DELETE_LAST_MESSAGE: {
     key: 'd',
     ctrl: true,
     shift: true,
-    description: 'Delete last message',
+    get description() {
+      return m.chat_shortcuts_deleteLastMessage_description();
+    },
   },
   SEARCH: {
     key: 'f',
     ctrl: true,
-    description: 'Search messages',
+    get description() {
+      return m.chat_shortcuts_searchMessages_description();
+    },
   },
   TOGGLE_SIDEBAR: {
     key: 'b',
     ctrl: true,
-    description: 'Toggle sidebar',
+    get description() {
+      return m.chat_shortcuts_toggleSidebar_description();
+    },
   },
 
   // Platform-specific
@@ -422,18 +447,24 @@ function getPlatformShortcuts() {
       SEND_MESSAGE_MAC: {
         key: 'Enter',
         meta: true,
-        description: 'Send message (Mac)',
+        get description() {
+          return m.chat_shortcuts_sendMessageMac_description();
+        },
       },
       COPY_LAST_MESSAGE_MAC: {
         key: 'c',
         meta: true,
         shift: true,
-        description: 'Copy last message (Mac)',
+        get description() {
+          return m.chat_shortcuts_copyLastMessageMac_description();
+        },
       },
       SEARCH_MAC: {
         key: 'f',
         meta: true,
-        description: 'Search messages (Mac)',
+        get description() {
+          return m.chat_shortcuts_searchMessagesMac_description();
+        },
       },
     };
   }

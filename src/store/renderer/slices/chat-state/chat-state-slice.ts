@@ -23,6 +23,7 @@ import {
   replaceAgentQueue,
 } from '../agent-queue/agent-queue-slice';
 import type { QueuedMessage } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
 // Initial State
@@ -270,7 +271,7 @@ function reduceQueuedRecordRemoved(
 function getStreamFailureMessage(payload: AgentStreamUpdatePayload): string | null {
   if (payload.error) return payload.error;
   if (payload.eventType === 'timeout' || payload.finishReason === 'timeout') {
-    return 'The agent response timed out before it finished. Try again or check the provider status.';
+    return m.chat_state_timeout_error();
   }
   return null;
 }
@@ -298,7 +299,7 @@ function reduceChunkReceived(
           ...agent.statusEvents,
           {
             phase: 'streaming',
-            message: 'Streaming response…',
+            message: m.chat_state_streaming_status(),
             level: 'info' as const,
             timestamp,
           },
@@ -365,7 +366,7 @@ function reduceAgentStreamUpdate(
       streamingStartTime: null,
       statusEvents: [],
       modelUnavailable: null,
-      error: getStreamFailureMessage(payload) || 'The response was interrupted. Please try again.',
+      error: getStreamFailureMessage(payload) || m.chat_state_interrupted_error(),
     });
   }
   return state;
@@ -698,7 +699,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(streamTimedOut, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
-      error: 'The agent response timed out before it finished. Try again or check the provider status.',
+      error: m.chat_state_timeout_error(),
     }),
   )
   .with(chatRebindStarted, (state, { payload: [agentId] }) =>

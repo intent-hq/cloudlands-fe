@@ -8,6 +8,7 @@
  */
 
 import type { ITheme } from '@xterm/xterm';
+import { m } from '$shared/paraglide/messages.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -736,7 +737,7 @@ export function parseVSCodeTheme(json: unknown): ParsedVSCodeTheme {
     isDark = true; // default to dark
   }
 
-  const name = themeJSON.name ?? 'Imported Theme';
+  const name = themeJSON.name ?? m.settings_themeImport_fallbackName_label();
 
   return {
     name,

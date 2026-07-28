@@ -39,6 +39,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { store as appStore } from '$store/renderer/store';
   import { appClient } from '$lib/client';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('SetupScriptBanner');
 
@@ -61,7 +62,7 @@
   let isOpen = $state(true); // persisted dismissal is owned by setup-scripts Redux state
   let isExpanded = $state(false);
   let scriptContent = $state('');
-  let scriptName = $state('Workspace setup');
+  let scriptName = $state(m.terminal_setupBanner_defaultName_label());
   let bannerEl = $state<HTMLDivElement | null>(null);
   let panelWidth = $state(640); // default ~40em
   let isResizing = $state(false);
@@ -181,14 +182,14 @@
 
   function handleSave() {
     if (!scriptContent.trim()) {
-      toast.error('Script is empty');
+      toast.error(m.terminal_setupBanner_emptyScript_error());
       return;
     }
 
     const now = new Date().toISOString();
     appStore.dispatch(saveScript({
       id: uuidv4(),
-      name: scriptName || 'Workspace setup',
+      name: scriptName || m.terminal_setupBanner_defaultName_label(),
       content: scriptContent,
       repoPath: repoPath || undefined,
       lastUsedAt: now,
@@ -196,15 +197,14 @@
       createdAt: now,
     }));
 
-    toast.success(
-      `Setup script "${scriptName}" saved! It will be available when creating new workspaces.`,
-    );
+    toast.success(m.terminal_setupBanner_saved_success({ name: scriptName }));
     logger.info('Setup script saved from terminal banner', { repoPath, scriptName });
     dismiss();
   }
 
   // Build script content from commands
   function buildScriptFromCommands(cmds: Array<{ command: string }>): string {
+    // i18n-ignore (generated script header comment, not UI)
     const header = isWindows ? '# PowerShell setup script\n\n' : '#!/bin/bash\n\n';
     return header + cmds.map((c) => c.command).join('\n');
   }
@@ -249,24 +249,26 @@
         <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary/70" />
       </div>
       <p class="text-sm text-subtle flex-1">
-        <span class="text-muted-foreground font-medium">Speed up future workspaces</span>
-        — save your setup commands as a reusable script
+        <span class="text-muted-foreground font-medium"
+          >{m.terminal_setupBanner_headline_label()}</span
+        >
+        {m.terminal_setupBanner_headline_suffix()}
       </p>
       <button
         type="button"
         class="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         onclick={dismiss}
       >
-        Don't show again
+        {m.terminal_setupBanner_dontShowAgain_label()}
       </button>
       {#if isExpanded}
         <Button variant="outline" size="xs" onclick={() => (isExpanded = false)}>
           <Fa icon={faChevronRight} size="xs" />
-          Close editor
+          {m.terminal_setupBanner_closeEditor_label()}
         </Button>
       {:else}
         <Button variant="outline" size="xs" onclick={handleExpand}>
-          Create setup script
+          {m.terminal_setupBanner_create_label()}
           <Fa icon={faChevronRight} size="xs" />
         </Button>
       {/if}
@@ -274,7 +276,7 @@
         type="button"
         class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={close}
-        aria-label="Close"
+        aria-label={m.terminal_setupBanner_close_ariaLabel()}
       >
         <Fa icon={faXmark} size="xs" />
       </button>
@@ -302,9 +304,11 @@
       <div class="flex items-start gap-2">
         <!-- <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary/70 mt-1" /> -->
         <div class="flex flex-col">
-          <span class="text-sm font-medium text-muted-foreground">Create setup script</span>
+          <span class="text-sm font-medium text-muted-foreground"
+            >{m.terminal_setupBanner_create_label()}</span
+          >
           <p class="text-xs text-subtle">
-            Runs automatically when you create new workspaces for this repo
+            {m.terminal_setupBanner_autorun_description()}
           </p>
         </div>
       </div>
@@ -312,13 +316,13 @@
       <div class="flex items-center gap-1.5">
         <Button variant="outline" size="xs" onclick={handleSave} disabled={!scriptContent.trim()}>
           <Fa icon={faFloppyDisk} size="xs" />
-          Save
+          {m.terminal_setupBanner_save_label()}
         </Button>
         <button
           type="button"
           class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => (isExpanded = false)}
-          aria-label="Close editor"
+          aria-label={m.terminal_setupBanner_closeEditor_label()}
         >
           <Fa icon={faXmark} size="xs" />
         </button>
@@ -327,12 +331,12 @@
 
     <!-- Script name -->
     <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border/30">
-      <span class="text-xs text-subtle">Name:</span>
+      <span class="text-xs text-subtle">{m.terminal_setupBanner_name_label()}</span>
       <input
         type="text"
         bind:value={scriptName}
         class="flex-1 text-xs bg-transparent border-0 outline-none focus:outline-none text-foreground/80 placeholder:text-muted-foreground/40"
-        placeholder="e.g. Node.js setup"
+        placeholder={m.terminal_setupBanner_name_placeholder()}
       />
     </div>
 
@@ -342,7 +346,7 @@
         bind:value={scriptContent}
         language={isWindows ? 'powershell' : 'shell'}
         lineNumbers={true}
-        placeholder="# Your setup script will run in new worktrees&#10;# Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME&#10;&#10;# Example:&#10;cp $MAIN_CHECKOUT/.env .env&#10;pnpm install"
+        placeholder={m.terminal_setupBanner_editor_placeholder()}
       />
     </div>
   </div>

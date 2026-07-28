@@ -19,6 +19,7 @@
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
   import Fa from 'svelte-fa';
   import { faGear } from '@fortawesome/free-solid-svg-icons';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     agents: AgentNode[];
@@ -34,8 +35,9 @@
 
   // Utility agent type groups - agents that run in the background for specific tasks
   const UTILITY_AGENT_GROUPS = [
+    // i18n-ignore (brand name)
     { id: 'git', label: 'Git', types: ['commit-message', 'pr-description'] },
-    { id: 'review', label: 'Review', types: ['code-review', 'code-walkthrough'] },
+    { id: 'review', label: m.agentOverview_hierarchyGraph_reviewCorral_label(), types: ['code-review', 'code-walkthrough'] },
   ] as const;
 
   // Pan/zoom state
@@ -359,6 +361,7 @@
 
   <!-- Group children into layout items (singles and batch boxes), then chunk into rows -->
   {@const layoutItems = hasChildren ? groupChildrenIntoLayoutItems(node.children, childCardWidth, GAPX) : []}
+  <!-- i18n-ignore (scanner false positive: multi-line const expression) -->
   {@const layoutRows = (() => {
     const rows: LayoutItem[][] = [];
     for (let i = 0; i < layoutItems.length; i += MAX_CHILDREN_PER_ROW) {
@@ -455,6 +458,7 @@
               {@const hDist = Math.abs(itemCenterX - branchX)}
               {@const r = Math.min(curveRadius, hDist / 2)}
 
+              <!-- i18n-ignore (scanner false positive on the < comparison) -->
               {#if hDist < 1}
                 <path
                   d="M {branchX} {connectorHeight / 3} L {branchX} {endY}"
@@ -463,6 +467,7 @@
                   stroke-width={lineWidth}
                   fill="none"
                 />
+                <!-- i18n-ignore (scanner false positive on the < comparison) -->
               {:else if itemCenterX < branchX}
                 <path
                   d="M {branchX} {connectorHeight / 3}
@@ -529,8 +534,8 @@
   {#if hierarchy.length === 0}
     <div class="absolute inset-0 flex items-center justify-center">
       <div class="text-center text-subtle">
-        <p class="text-lg font-medium">No agents yet</p>
-        <p class="text-sm mt-1">Agent hierarchy will appear here</p>
+        <p class="text-lg font-medium">{m.agentOverview_hierarchyGraph_noAgents_title()}</p>
+        <p class="text-sm mt-1">{m.agentOverview_hierarchyGraph_noAgents_description()}</p>
       </div>
     </div>
   {:else}
@@ -592,7 +597,7 @@
               </div>
               {#if hoveredAgent.isBackground}
                 <span class="px-1.5 py-0.5 text-ui font-medium bg-muted text-subtle rounded">
-                  BG
+                  {m.agentOverview_hierarchyGraph_background_badge()}
                 </span>
               {/if}
             </div>
@@ -602,21 +607,21 @@
               <!-- Hover status reads the selector-derived graph status; AgentNode
                 intentionally carries no separate waiting boolean. -->
               {#if hoveredAgent.status === 'waiting'}
-                <span class="text-yellow-500">● Waiting</span>
+                <span class="text-yellow-500">● {m.agentOverview_hierarchyGraph_statusWaiting_label()}</span>
               {:else if hoveredAgent.status === 'responding'}
-                <span class="text-primary">● Responding</span>
+                <span class="text-primary">● {m.agentOverview_hierarchyGraph_statusResponding_label()}</span>
               {:else if hoveredAgent.status === 'completed'}
-                <span class="text-green-500">● Completed</span>
+                <span class="text-green-500">● {m.agentOverview_hierarchyGraph_statusCompleted_label()}</span>
               {:else if hoveredAgent.status === 'failed'}
-                <span class="text-red-500">● Failed</span>
+                <span class="text-red-500">● {m.agentOverview_hierarchyGraph_statusFailed_label()}</span>
               {:else}
-                <span>● Idle</span>
+                <span>● {m.agentOverview_hierarchyGraph_statusIdle_label()}</span>
               {/if}
             </div>
 
             <!-- Created time -->
             <div class="text-xs text-subtle">
-              Created {formatRelativeTime(hoveredAgent.createdAt)}
+              {m.agentOverview_hierarchyGraph_created_label({ time: formatRelativeTime(hoveredAgent.createdAt) })}
             </div>
 
             <!-- Last response preview -->
@@ -630,7 +635,7 @@
             {#if hoveredAgent.activeToolName}
               <div class="text-xs text-subtle flex items-center gap-1">
                 <Fa icon={faGear} size="xs" class="animate-spin" />
-                <span>Using: {hoveredAgent.activeToolName}</span>
+                <span>{m.agentOverview_hierarchyGraph_usingTool_label({ tool: hoveredAgent.activeToolName })}</span>
               </div>
             {/if}
           </div>
@@ -644,7 +649,7 @@
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={zoomOut}
-        title="Zoom out"
+        title={m.agentOverview_hierarchyGraph_zoomOut_tooltip()}
       >
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -655,7 +660,7 @@
         type="button"
         class="zoom-percent w-12 h-8 flex items-center justify-center text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
         onclick={resetZoom}
-        title="Reset zoom (click to reset)"
+        title={m.agentOverview_hierarchyGraph_resetZoom_tooltip()}
       >
         {zoomPercent}%
       </button>
@@ -664,7 +669,7 @@
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={zoomIn}
-        title="Zoom in"
+        title={m.agentOverview_hierarchyGraph_zoomIn_tooltip()}
       >
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -678,7 +683,7 @@
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={fitToView}
-        title="Fit to view"
+        title={m.agentOverview_hierarchyGraph_fitToView_tooltip()}
       >
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
@@ -688,7 +693,7 @@
 
     <!-- Pan hint -->
     <div class="absolute bottom-4 left-4 text-xs text-subtle">
-      Scroll to pan • Pinch to zoom
+      {m.agentOverview_hierarchyGraph_panHint_label()}
     </div>
   {/if}
 </div>

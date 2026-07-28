@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$shared/paraglide/messages.js';
   import HomeCard from './cards/HomeCard.svelte';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
@@ -37,15 +38,15 @@
   const panelMeta = $derived.by(() => {
     switch ($panelItem$) {
       case 'home':
-        return { title: 'Home', description: 'Your workspace dashboard' };
+        return { title: m.layout_sidebarNav_home_label(), description: m.layout_sidebarPanel_home_description() };
       case 'active':
-        return { title: 'Active workspaces', description: '' };
+        return { title: m.layout_sidebarNav_activeWorkspaces_title(), description: '' };
       case 'chief':
-        return { title: 'Chief of Staff', description: 'App-level assistant' };
+        return { title: m.layout_sidebarPanel_chief_title(), description: m.layout_sidebarPanel_chief_description() };
       case 'all-workspaces':
-        return { title: 'All workspaces', description: '' };
+        return { title: m.layout_sidebarNav_allWorkspaces_title(), description: '' };
       case 'settings':
-        return { title: 'Settings', description: 'Accounts, agents, and preferences' };
+        return { title: m.layout_sidebarNav_settings_label(), description: m.layout_sidebarPanel_settings_description() };
       default:
         return { title: '', description: '' };
     }
@@ -86,7 +87,7 @@
 {#if $panelItem$ && !$onboardingActive$}
   <!-- Outer wrapper animates width; inner content stays at full static width -->
   <div class="shrink-0 h-full overflow-hidden" transition:slide={{ axis: 'x', duration: 200 }}>
-    <div class="sidebar-panel h-full flex flex-col relative" style="width: {liveWidth}px;" aria-label="Sidebar panel">
+    <div class="sidebar-panel h-full flex flex-col relative" style="width: {liveWidth}px;" aria-label={m.layout_sidebarPanel_ariaLabel()}>
       <!-- Header (Chief has its own header) -->
       {#if $panelItem$ !== 'chief'}
       <div class="panel-header shrink-0">
@@ -97,12 +98,12 @@
           {/if}
         </div>
         <div class="flex items-center gap-0.5 shrink-0">
-          <Tooltip content={$isCardPinned$ ? 'Unpin panel' : 'Pin panel open'} side="bottom" sideOffset={4}>
+          <Tooltip content={$isCardPinned$ ? m.layout_sidebarPanel_unpin_tooltip() : m.layout_sidebarPanel_pin_tooltip()} side="bottom" sideOffset={4}>
             <button
               class="w-6 h-6 flex items-center justify-center rounded-md transition-colors cursor-pointer
                 {$isCardPinned$ ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45 hover:text-foreground hover:bg-muted/50'}"
               onclick={() => appStore.dispatch(toggleCardPinned())}
-              aria-label={$isCardPinned$ ? 'Unpin panel' : 'Pin panel open'}
+              aria-label={$isCardPinned$ ? m.layout_sidebarPanel_unpin_tooltip() : m.layout_sidebarPanel_pin_tooltip()}
             >
               <Fa icon={faThumbtack} size="xs" />
             </button>
@@ -110,7 +111,7 @@
           <button
             class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
             onclick={() => appStore.dispatch(closePanel())}
-            aria-label="Close panel"
+            aria-label={m.layout_sidebarPanel_close_ariaLabel()}
           >
             <Fa icon={faXmark} size="xs" />
           </button>

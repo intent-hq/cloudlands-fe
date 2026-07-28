@@ -5,6 +5,7 @@
 } from './link-tooltip-state.svelte';
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   const isMac = isMacPlatform();
   const modifierKey = isMac ? '⌘' : 'Ctrl';
@@ -22,8 +23,8 @@
   const isMailto = $derived(state.url.startsWith('mailto:'));
   const hintText = $derived(
     isMailto
-      ? `Click to open · Hold ${modifierKey} to copy`
-      : `Click to open · Hold ${modifierKey} to open in external browser`,
+      ? m.ui_linkTooltip_copyHint_tooltip({ key: modifierKey })
+      : m.ui_linkTooltip_externalHint_tooltip({ key: modifierKey }),
   );
 </script>
 
@@ -35,7 +36,7 @@
       role="tooltip"
     >
       <div class="link-tooltip-url">{displayUrl}</div>
-      <div class="link-tooltip-hint">{state.copied ? 'Copied!' : hintText}</div>
+      <div class="link-tooltip-hint">{state.copied ? m.ui_linkTooltip_copied_label() : hintText}</div>
     </div>
   {/if}
 </Portal>

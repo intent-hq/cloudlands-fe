@@ -5,6 +5,7 @@
  */
 
 import { logger } from './client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * Announce a message to screen readers
@@ -164,7 +165,7 @@ export function makeKeyboardNavigable(
  */
 export function createSkipLink(
   targetId: string,
-  text: string = 'Skip to main content',
+  text: string = m.ui_accessibility_skipToMain_label(),
 ): HTMLAnchorElement {
   const link = document.createElement('a');
   link.href = `#${targetId}`;
@@ -226,10 +227,10 @@ export function checkColorContrast(
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result
       ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16),
-      }
+          r: parseInt(result[1], 16),
+          g: parseInt(result[2], 16),
+          b: parseInt(result[3], 16),
+        }
       : null;
   };
 
@@ -317,7 +318,7 @@ export class KeyboardShortcuts {
  */
 export function initializeAccessibility(): void {
   // Add skip links
-  const skipLink = createSkipLink('main-content', 'Skip to main content');
+  const skipLink = createSkipLink('main-content', m.ui_accessibility_skipToMain_label());
   document.body.insertBefore(skipLink, document.body.firstChild);
 
   // Set up live region for announcements

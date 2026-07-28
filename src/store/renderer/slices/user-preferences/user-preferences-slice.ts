@@ -1,6 +1,7 @@
 import { createAction } from "$lib/store-shim/utils/store/create-action";
 import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import { createBooleanPreference } from "$lib/store-shim/utils/store/boolean-preference";
+import { SYSTEM_LANGUAGE_PREFERENCE } from "$shared/i18n/locale-matcher";
 
 export const SYSTEM_DEFAULT_FONT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
@@ -48,6 +49,8 @@ export type UserPreferencesState = {
   soundOnlyWhenUnfocused: boolean;
   volume: number;
   activityLogPresets: ActivityLogPresetPreference[];
+  /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
+  languagePreference: string;
 };
 
 export type FontSettingsState = Pick<
@@ -84,6 +87,7 @@ export const initialState: UserPreferencesState = {
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   activityLogPresets: [],
+  languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
 };
 
 const betaUpdatesPreference = createBooleanPreference<UserPreferencesState>({
@@ -164,6 +168,10 @@ export const saveActivityLogPreset = createAction<[preset: ActivityLogPresetPref
 
 export const deleteActivityLogPreset = createAction<[index: number]>(
   "userPreferences/deleteActivityLogPreset"
+);
+
+export const setLanguagePreference = createAction<[preference: string]>(
+  "userPreferences/setLanguagePreference"
 );
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
@@ -272,4 +280,8 @@ export const userPreferencesReducer = hasCompletedProviderSetupPreference.regist
   .with(deleteActivityLogPreset, (state, { payload: [index] }) => ({
     ...state,
     activityLogPresets: state.activityLogPresets.filter((_, i) => i !== index),
+  }))
+  .with(setLanguagePreference, (state, { payload: [preference] }) => ({
+    ...state,
+    languagePreference: preference,
   }));

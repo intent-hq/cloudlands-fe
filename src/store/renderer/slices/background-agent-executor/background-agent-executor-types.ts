@@ -108,12 +108,40 @@ export const emptyWorkspaceState: BackgroundAgentExecutorWorkspaceState = {
 /** Default config for each executor type (keyed by string for flexibility) */
 const COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS = 300_000;
 
-export const EXECUTOR_CONFIGS: Record<string, { resultTag: string; timeout: number; name: string; agentType: string }> = {
-  commit: { resultTag: 'COMMIT_MESSAGE', timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS, name: 'Commit Message Generator', agentType: 'commit-message' },
-  'commit-merge': { resultTag: 'COMMIT_MESSAGE', timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS, name: 'Merge Commit Generator', agentType: 'commit-message' },
-  pr: { resultTag: 'PR_DESCRIPTION', timeout: 180000, name: 'PR Description Generator', agentType: 'pr-description' },
-  review: { resultTag: 'CODE_REVIEW', timeout: 120000, name: 'Code Review Assistant', agentType: 'code-review' },
-  walkthrough: { resultTag: 'CODE_WALKTHROUGH', timeout: 120000, name: 'Code Walkthrough Generator', agentType: 'code-walkthrough' },
+export const EXECUTOR_CONFIGS: Record<
+  string,
+  { resultTag: string; timeout: number; name: string; agentType: string }
+> = {
+  commit: {
+    resultTag: 'COMMIT_MESSAGE',
+    timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS,
+    name: 'Commit Message Generator', // i18n-ignore (internal background-agent session name)
+    agentType: 'commit-message',
+  },
+  'commit-merge': {
+    resultTag: 'COMMIT_MESSAGE',
+    timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS,
+    name: 'Merge Commit Generator', // i18n-ignore (internal background-agent session name)
+    agentType: 'commit-message',
+  },
+  pr: {
+    resultTag: 'PR_DESCRIPTION',
+    timeout: 180000,
+    name: 'PR Description Generator', // i18n-ignore (internal background-agent session name)
+    agentType: 'pr-description',
+  },
+  review: {
+    resultTag: 'CODE_REVIEW',
+    timeout: 120000,
+    name: 'Code Review Assistant', // i18n-ignore (internal background-agent session name)
+    agentType: 'code-review',
+  },
+  walkthrough: {
+    resultTag: 'CODE_WALKTHROUGH',
+    timeout: 120000,
+    name: 'Code Walkthrough Generator', // i18n-ignore (internal background-agent session name)
+    agentType: 'code-walkthrough',
+  },
 };
 
 /** Maximum diff size per file in characters before skipping */
@@ -121,4 +149,3 @@ export const MAX_DIFF_SIZE_PER_FILE = 50_000;
 
 /** Maximum total diff size in characters */
 export const MAX_TOTAL_DIFF_SIZE = 200_000;
-

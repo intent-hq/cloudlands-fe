@@ -300,6 +300,7 @@ export const IPC_CHANNELS = {
   // App
   APP: {
     SET_BADGE: 'app:set-badge',
+    SET_LANGUAGE_PREFERENCE: 'app:set-language-preference',
     VERSION: 'app:version',
     GET_VERSION: 'app:get-version',
     NAME: 'app:name',

@@ -8,6 +8,7 @@
 
   import { cn } from '$lib/utils';
   import type { ProviderLoadError } from './model-picker-provider-errors';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     isLoadingModels: boolean;
@@ -45,7 +46,7 @@
     <div class="flex flex-col items-center gap-2.5 py-4 px-3">
       <div class="flex items-center gap-1.5 text-destructive-foreground">
         <Fa icon={faExclamationTriangle} class="h-3.5 w-3.5" />
-        <span class="text-sm font-medium">Failed to load models</span>
+        <span class="text-sm font-medium">{m.chat_modelPicker_loadFailed_label()}</span>
       </div>
       <div class="text-xs text-center text-muted-foreground leading-tight max-w-[280px]">
         <div>{blockingLoadError.displayText}</div>
@@ -63,12 +64,12 @@
         onclick={onRetry}
       >
         <Fa icon={faArrowsRotate} class="h-3 w-3" />
-        Retry
+        {m.chat_modelPicker_retry_label()}
       </button>
     </div>
   {:else}
     <div class="flex flex-col items-center gap-2.5 py-4 px-3 text-muted-foreground">
-      <span class="text-sm">No models available</span>
+      <span class="text-sm">{m.chat_modelPicker_noModels_label()}</span>
       <button
         type="button"
         class={cn(
@@ -79,7 +80,7 @@
         onclick={onRetry}
       >
         <Fa icon={faArrowsRotate} class="h-3 w-3" />
-        Retry
+        {m.chat_modelPicker_retry_label()}
       </button>
     </div>
   {/if}

@@ -18,6 +18,7 @@ import {
   setHasCompletedProviderSetup,
   setNotificationEnabled,
   setNoteFontStyle,
+  setLanguagePreference,
   setShowArchived,
   setBetaUpdatesEnabled,
   setSpellcheckEnabled,
@@ -47,6 +48,7 @@ import {
   selectHasCompletedProviderSetup,
   selectIsAgentMonospace,
   selectIsNoteMonospace,
+  selectLanguagePreference,
   selectNoteFontStyle,
   selectNoteFontStyleLabel,
   selectNotificationEnabled,
@@ -314,6 +316,25 @@ describe("userPreferencesReducer", () => {
 
   });
 
+  describe("language preference actions", () => {
+    it("defaults to the system preference", () => {
+      expect(initialState.languagePreference).toBe("system");
+    });
+
+    it("sets an explicit language preference", () => {
+      const state = userPreferencesReducer(initialState, setLanguagePreference("zh-CN"));
+      expect(state.languagePreference).toBe("zh-CN");
+    });
+
+    it("sets the preference back to system", () => {
+      const state = userPreferencesReducer(
+        { ...initialState, languagePreference: "zh-CN" },
+        setLanguagePreference("system")
+      );
+      expect(state.languagePreference).toBe("system");
+    });
+  });
+
   describe("selectors", () => {
     const state = {
       userPreferences: {
@@ -381,6 +402,14 @@ describe("userPreferencesReducer", () => {
       expect(selectActivityLogPresets.select(preferenceState)).toEqual([
         { name: "Errors", filters: {} },
       ]);
+    });
+
+    it("selects the language preference", () => {
+      const preferenceState = {
+        userPreferences: { ...initialState, languagePreference: "zh-CN" },
+      } as any;
+
+      expect(selectLanguagePreference.select(preferenceState)).toBe("zh-CN");
     });
 
   });

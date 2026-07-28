@@ -2,6 +2,7 @@
   import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     nodeVersion?: string;
@@ -17,10 +18,9 @@
   <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
   <span class="text-xs">
     {#if nodeVersion}
-      Node.js {MINIMUM_NODE_VERSION}+ is required to use Auggie. You have {nodeVersion} installed.
+      {m.lib_nodeVersionWarning_haveVersion_message({ minimumVersion: MINIMUM_NODE_VERSION, nodeVersion })}
     {:else}
-      Node.js {MINIMUM_NODE_VERSION}+ is required to use Auggie. Node.js was not found on your
-      system.
+      {m.lib_nodeVersionWarning_notFound_message({ minimumVersion: MINIMUM_NODE_VERSION })}
     {/if}
   </span>
 </div>

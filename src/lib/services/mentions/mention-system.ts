@@ -16,6 +16,7 @@ import { DebouncedSearchService } from './search-service';
 import { providerRegistry } from './providers';
 import { BreadcrumbController } from './breadcrumb-controller.svelte';
 import { logger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
 // Constants
 const CACHE_TIMEOUT_MS = 5000; // 5 seconds
@@ -25,22 +26,27 @@ const CACHE_CLEANUP_TARGET = 50; // Target size after cleanup
 const URI_TYPE_REGEX = /^devspace:\/\/[^\/]+\/([^\/]+)/;
 
 // Default mention data
+// Localized descriptions use getters so they re-evaluate with the active locale.
 const DEFAULT_NOTES: MentionCandidate[] = [
   {
     id: 'spec',
-    label: 'spec',
+    label: 'spec', // i18n-ignore (note identifier)
     type: 'note',
     uri: 'note:spec',
     score: 1,
-    description: 'Space specification',
+    get description() {
+      return m.chat_mentions_specNote_description();
+    },
   },
   {
     id: 'plan',
-    label: 'plan',
+    label: 'plan', // i18n-ignore (note identifier)
     type: 'note',
     uri: 'note:plan',
     score: 0.95,
-    description: 'Implementation plan',
+    get description() {
+      return m.chat_mentions_planNote_description();
+    },
   },
 ];
 
@@ -153,7 +159,10 @@ export class MentionSystem {
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     // Validate inputs - allow either workspaceId or repoPath
     if (!context?.workspaceId && !context?.repoPath) {
-      logger.error('[MentionSystem] search called without valid context (no workspaceId or repoPath)');
+      logger.error(
+        // i18n-ignore (log message)
+        '[MentionSystem] search called without valid context (no workspaceId or repoPath)',
+      );
       return [];
     }
 
@@ -186,7 +195,10 @@ export class MentionSystem {
 
     // If no workspaceId and no repoPath, return empty results (no random defaults)
     if (!context?.workspaceId && !context?.repoPath) {
-      logger.debug('[MentionSystem] searchSync called without workspaceId or repoPath - returning empty results');
+      logger.debug(
+        // i18n-ignore (log message)
+        '[MentionSystem] searchSync called without workspaceId or repoPath - returning empty results',
+      );
       return [];
     }
 
@@ -346,8 +358,8 @@ export class MentionSystem {
       return {
         exists: false,
         type: 'file',
-        label: 'Invalid URI',
-        error: 'Invalid URI provided',
+        label: 'Invalid URI', // i18n-ignore (internal diagnostic for malformed programmatic URIs)
+        error: 'Invalid URI provided', // i18n-ignore (internal diagnostic for malformed programmatic URIs)
       };
     }
 
@@ -360,7 +372,7 @@ export class MentionSystem {
         exists: false,
         type: 'file',
         label: 'Unknown',
-        error: `No resolver found for URI: ${uri}`,
+        error: `No resolver found for URI: ${uri}`, // i18n-ignore (internal diagnostic)
       };
     }
 
@@ -523,6 +535,7 @@ export function getMentionSystem(config?: MentionSystemConfig): MentionSystem {
     logger.debug('[MentionSystem] Created new instance with config:', config);
   } else if (config && configHash !== instanceConfigHash) {
     logger.warn(
+      // i18n-ignore (log message)
       '[MentionSystem] Config provided but instance already exists with different config',
       { current: instanceConfigHash, requested: configHash },
     );

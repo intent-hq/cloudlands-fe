@@ -14,6 +14,7 @@
   scale,
 } from 'svelte/transition';
   import type { WorkspaceDisplayStatus } from '$lib/components/workspace/utils/workspace-status-grouping';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     status,
@@ -39,12 +40,24 @@
   };
 
   const statusLabels: Record<WorkspaceDisplayStatus, string> = {
-    not_started: 'Not started',
-    in_progress: 'In progress',
-    complete: 'Complete',
-    pr_ready: 'PR Mergeable',
-    pr_open: 'PR open',
-    pr_merged: 'PR merged',
+    get not_started() {
+      return m.workspace_statusIcon_notStarted_label();
+    },
+    get in_progress() {
+      return m.workspace_statusIcon_inProgress_label();
+    },
+    get complete() {
+      return m.workspace_statusIcon_complete_label();
+    },
+    get pr_ready() {
+      return m.workspace_statusIcon_prReady_label();
+    },
+    get pr_open() {
+      return m.workspace_statusIcon_prOpen_label();
+    },
+    get pr_merged() {
+      return m.workspace_statusIcon_prMerged_label();
+    },
   };
 
   let colors = $derived(statusColors[status] || statusColors.not_started);

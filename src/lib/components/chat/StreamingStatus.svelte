@@ -18,6 +18,7 @@
   import { cn } from '$lib/utils/cn';
   import { Spinner } from '$lib/components/ui/indicators';
   import { deriveErrorDisplay, formatDuration } from './streaming-status-utils';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Whether streaming is active */
@@ -199,6 +200,7 @@
     return completed.reverse();
   });
 
+
   // Determine current status
   type Status = 'normal' | 'error' | 'model-unavailable';
 
@@ -219,7 +221,7 @@
     if (error) {
       return error;
     }
-    return 'Thinking';
+    return m.chat_streamingStatus_thinking_label();
   });
 
   // Error surface copy: recreate-aware when the daemon flagged the session
@@ -247,9 +249,9 @@
         {#if status === 'model-unavailable' && modelUnavailable}
           <Fa icon={faExclamationTriangle} class="text-amber-500/70 shrink-0" />
           <span class="text-amber-600 dark:text-amber-400 text-sm">
-            Model <code class="px-1 py-0.5 bg-muted rounded text-ui"
-              >{modelUnavailable.failedModel}</code
-            > is not available
+            {m.chat_streamingStatus_modelUnavailable_before()} <code
+              class="px-1 py-0.5 bg-muted rounded text-ui">{modelUnavailable.failedModel}</code
+            > {m.chat_streamingStatus_modelUnavailable_after()}
           </span>
         {:else if status === 'error' && errorDisplay}
           <Fa icon={faExclamationTriangle} class="text-destructive-foreground/70 shrink-0" />
@@ -290,12 +292,12 @@
             class="h-7 px-2 text-sm gap-1.5"
           >
             <Fa icon={faRotateRight} class="size-3" />
-            Retry with {modelUnavailable.nextAvailableModel}
+            {m.chat_streamingStatus_retryWith_label({ model: modelUnavailable.nextAvailableModel })}
           </Button>
         {:else if status === 'error' && onRetry && !isStreaming && !isProcessing}
           <Button variant="ghost" size="sm" onclick={onRetry} class="h-7 px-2 text-sm gap-1.5">
             <Fa icon={faRotateRight} class="size-3" />
-            Try again
+            {m.chat_streamingStatus_tryAgain_label()}
           </Button>
         {/if}
       </div>
@@ -308,7 +310,7 @@
           <div class="flex items-center gap-1.5 text-xs {event.level === 'warn' ? 'text-amber-500' : event.level === 'error' ? 'text-destructive-foreground' : 'text-ghost'}">
             <span class="w-3 text-ghost/30">│</span>
             <span>{event.message}</span>
-            <span class="text-ghost/60">took {duration}</span>
+            <span class="text-ghost/60">{m.chat_streamingStatus_took_label({ duration })}</span>
           </div>
         {/each}
       </div>

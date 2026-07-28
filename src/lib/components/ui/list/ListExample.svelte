@@ -29,13 +29,15 @@
 
   const notes = [
     { id: 'spec', title: 'Spec', isSpec: true },
-    { id: 'note-1', title: 'Project Overview' },
-    { id: 'note-2', title: 'Meeting Notes' },
-    { id: 'note-3', title: 'Todo List' },
+    { id: 'note-1', title: 'Project Overview' }, // i18n-ignore (dev-only example data)
+    { id: 'note-2', title: 'Meeting Notes' }, // i18n-ignore (dev-only example data)
+    { id: 'note-3', title: 'Todo List' }, // i18n-ignore (dev-only example data)
   ];
 
   const agents = [
+    // i18n-ignore (dev-only example data)
     { id: 'agent-1', name: 'Code Assistant', status: 'Active', lastMessage: 'Analyzing code...' },
+    // i18n-ignore (dev-only example data)
     { id: 'agent-2', name: 'Test Runner', status: 'Idle', lastMessage: 'Last run: 5 min ago' },
   ];
 
@@ -49,6 +51,9 @@
     { id: 'term-1', name: 'Terminal 1', lastCommand: 'npm run dev' },
     { id: 'term-2', name: 'Terminal 2', lastCommand: 'git status' },
   ];
+
+  // i18n-ignore (dev-only example data)
+  const demoTitles = { notes: 'Notes', agents: 'Agents', files: 'Files', terminals: 'Terminals' };
 
   function handleNoteClick(noteId: string) {
     selectedNoteId = noteId;
@@ -72,7 +77,7 @@
 <div class="w-64 h-screen bg-background border-r p-2 space-y-4">
   <!-- Notes Section with ListSection wrapper -->
   <ListSection
-    title="Notes"
+    title={demoTitles.notes}
     icon={faStickyNote}
     actionIcon={faPlus}
     actionLabel="Create Note"
@@ -100,7 +105,7 @@
 
   <!-- Agents Section -->
   <ListSection
-    title="Agents"
+    title={demoTitles.agents}
     collapsible={true}
     collapsed={collapsedSections.agents}
     onToggleCollapse={() => toggleSection('agents')}
@@ -127,7 +132,7 @@
   </ListSection>
 
   <!-- Files Section (non-collapsible) -->
-  <ListSection title="Files">
+  <ListSection title={demoTitles.files}>
     {#if files.length === 0}
       <ListEmpty message="No files" icon={faFile} />
     {:else}
@@ -140,7 +145,7 @@
   </ListSection>
 
   <!-- Terminals with different spacing -->
-  <ListSection title="Terminals">
+  <ListSection title={demoTitles.terminals}>
     <ListContainer spacing="relaxed">
       {#each terminals as terminal (terminal.name)}
         <ListItem

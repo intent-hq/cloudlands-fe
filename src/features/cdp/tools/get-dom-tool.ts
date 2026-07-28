@@ -6,16 +6,14 @@
  */
 
 import { BaseMCPTool } from '../../mcp/main/mcp/tool';
-import {
-  ToolCall,
-  ToolResult,
-} from '../../mcp/main/mcp/protocol';
+import { ToolCall, ToolResult } from '../../mcp/main/mcp/protocol';
 import { CdpConnectionManager } from '../cdp-connection';
 
 export class GetDomTool extends BaseMCPTool {
   constructor(private connectionManager: CdpConnectionManager) {
     super(
       'cdp.get_dom',
+      // i18n-ignore (agent-facing CDP tool)
       'Get the DOM structure as HTML. Can retrieve full document or specific element by CSS selector.',
       {
         type: 'object',
@@ -23,6 +21,7 @@ export class GetDomTool extends BaseMCPTool {
           selector: {
             type: 'string',
             description:
+              // i18n-ignore (agent-facing CDP tool)
               'Optional CSS selector to get specific element. If not provided, returns full document HTML.',
           },
         },
@@ -44,10 +43,12 @@ export class GetDomTool extends BaseMCPTool {
         });
 
         if (result.exceptionDetails) {
+          // i18n-ignore (agent-facing CDP tool)
           return this.error(`Script error: ${result.exceptionDetails.text}`);
         }
 
         if (result.result.value === null) {
+          // i18n-ignore (agent-facing CDP tool)
           return this.error(`No element found matching selector: ${selector}`);
         }
 
@@ -60,6 +61,7 @@ export class GetDomTool extends BaseMCPTool {
         const { root } = await client.DOM.getDocument({ depth: -1 });
         const { outerHTML } = await client.DOM.getOuterHTML({ nodeId: root.nodeId });
 
+        // i18n-ignore (agent-facing CDP tool)
         return this.success(`Full document HTML:\n\n${outerHTML}`, { length: outerHTML.length });
       }
     } catch (error) {

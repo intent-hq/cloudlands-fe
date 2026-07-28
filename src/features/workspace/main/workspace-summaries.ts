@@ -9,6 +9,7 @@
 
 import { execAsync, execFileAsync } from '../../../shared/git/git-env';
 import { Logger } from '../../../shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import type {
   Note,
   Workspace,
@@ -198,9 +199,8 @@ export async function getWorkspaceTasks(workspaceId: WorkspaceId): Promise<Works
   const taskNotes = getSpecTaskNotes(notes);
   return taskNotes.map((note) => ({
     id: note.id as string,
-    title: note.title || 'Untitled task',
+    title: note.title || m.workspaceSummaries_untitledTask_label(),
     status: note.metadata?.task?.status ?? 'not_started',
     updatedAt: note.updatedAt,
   }));
 }
-

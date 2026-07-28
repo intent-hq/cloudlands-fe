@@ -6,6 +6,7 @@
    */
 
   import type { TabTypeComponentProps } from './registry';
+  import { m } from '$shared/paraglide/messages.js';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
@@ -44,6 +45,6 @@
   />
 {:else}
   <div class="flex flex-col items-center justify-center h-full text-subtle gap-4">
-    <p class="text-sm">No changes found</p>
+    <p class="text-sm">{m.layout_chatChanges_noChanges_label()}</p>
   </div>
 {/if}

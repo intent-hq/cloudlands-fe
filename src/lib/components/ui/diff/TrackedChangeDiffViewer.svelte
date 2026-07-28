@@ -40,6 +40,8 @@
   import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   const logger = createLogger('TrackedChangeDiffViewer');
   const MAX_CONTENT_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
@@ -356,7 +358,7 @@
 
     try {
       if (!change) {
-        error = 'No change provided';
+        error = m.ui_trackedDiff_noChange_error();
         return;
       }
 
@@ -566,7 +568,7 @@
       }
     } catch (err) {
       logger.error('Failed to load diff content', err as Error);
-      error = err instanceof Error ? err.message : 'Failed to load diff';
+      error = err instanceof Error ? err.message : m.ui_trackedDiff_loadFailed_error();
     } finally {
       loading = false;
       isLoadingDiff = false;
@@ -1113,7 +1115,9 @@
         ? 'hunk-action-btn hunk-stage-btn line-hover-btn'
         : 'hunk-action-btn hunk-unstage-btn line-hover-btn';
       btn.innerHTML = isUnstaged ? '+' : '−';
-      btn.title = isUnstaged ? 'Stage this line' : 'Unstage this line';
+      btn.title = isUnstaged
+        ? m.ui_trackedDiff_stageLine_tooltip()
+        : m.ui_trackedDiff_unstageLine_tooltip();
 
       // Stop all event propagation to prevent line selection
       const stopEvent = (e: Event) => {
@@ -1194,15 +1198,17 @@
   {:else if contentTooLarge}
     <div class="error-state">
       <Fa icon={faExclamationTriangle} class="text-warning" />
-      <span class="text-subtle text-sm ml-2">File too large to display diff</span>
+      <span class="text-subtle text-sm ml-2">{m.ui_trackedDiff_tooLarge_error()}</span>
     </div>
   {:else if noChangesAtStage}
     <div class="empty-state">
       <span class="text-subtle text-sm">
         {#if change.stage === 'committed'}
-          Unable to load diff for this commit
+          {m.ui_trackedDiff_commitUnavailable_error()}
+        {:else if change.stage === 'staged'}
+          {m.ui_trackedDiff_noStagedChanges_label()}
         {:else}
-          No {change.stage === 'staged' ? 'staged' : 'unstaged'} changes for this file
+          {m.ui_trackedDiff_noUnstagedChanges_label()}
         {/if}
       </span>
     </div>
@@ -1222,16 +1228,18 @@
         ).filter((lineNum) => lineSet.has(lineNum)).length}
         <div class="selection-action-bar">
           <span class="selection-info">
-            {modifiedCount} modified line{modifiedCount !== 1 ? 's' : ''} selected
+            {modifiedCount === 1
+              ? m.ui_trackedDiff_linesSelected_one()
+              : m.ui_trackedDiff_linesSelected_many({ count: formatInteger(modifiedCount) })}
           </span>
           {#if modifiedCount > 0}
             {#if change.stage === 'unstaged' && onStageHunk}
               <button class="hunk-action-btn hunk-stage-btn" onclick={stageSelectedLines}>
-                <span class="icon">+</span> Stage
+                <span class="icon">+</span> {m.ui_trackedDiff_stage_label()}
               </button>
             {:else if change.stage === 'staged' && onUnstageHunk}
               <button class="hunk-action-btn hunk-unstage-btn" onclick={unstageSelectedLines}>
-                <span class="icon">−</span> Unstage
+                <span class="icon">−</span> {m.ui_trackedDiff_unstage_label()}
               </button>
             {/if}
           {/if}

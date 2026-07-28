@@ -51,6 +51,7 @@
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
   import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 
@@ -129,7 +130,8 @@
     // @ts-expect-error - userAgentData is not in all browsers
     (navigator.userAgentData?.platform === 'macOS' ||
       /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
-  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
+  // i18n-ignore (Explorer/Finder are OS brand names)
+  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : m.chat_agentCard_fileManager_label();
 
   // Start editing the agent name
   async function startEditing() {
@@ -170,7 +172,7 @@
               nameExplicitlySet: previousNameExplicitlySet,
             } as any),
           );
-          toast.error('Failed to rename agent');
+          toast.error(m.chat_agentCard_renameFailed_error());
         });
       }
     }
@@ -228,7 +230,7 @@
     const items: SidebarMenuEntry[] = [
       {
         id: 'open',
-        label: 'Open',
+        label: m.chat_agentCard_menu_open_label(),
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           {
@@ -246,7 +248,7 @@
       },
       {
         id: 'rename',
-        label: 'Rename',
+        label: m.chat_agentCard_menu_rename_label(),
         icon: faPen,
         onClick: () => {
           startEditing();
@@ -262,7 +264,7 @@
     if (sandboxPath && selectIsDaemonLocal.select(appStore.state)) {
       items.push({
         id: 'reveal-sandbox',
-        label: `Reveal in ${fileManagerName}`,
+        label: m.chat_agentCard_menu_revealIn_label({ fileManager: fileManagerName }),
         icon: faFolderOpen,
         onClick: async () => {
           closeContextMenu();
@@ -270,7 +272,9 @@
             await invoke('shell:showItemInFolder', { path: sandboxPath });
           } catch (error) {
             toast.error(
-              error instanceof Error ? error.message : `Failed to reveal in ${fileManagerName}`,
+              error instanceof Error
+                ? error.message
+                : m.chat_agentCard_revealFailed_error({ fileManager: fileManagerName }),
             );
           }
         },
@@ -281,7 +285,7 @@
     if (avatarState === 'running' || avatarState === 'responding') {
       items.push({
         id: 'stop',
-        label: 'Stop',
+        label: m.chat_agentCard_menu_stop_label(),
         icon: faStop,
         onClick: async () => {
           const wsId = $agent$?.workspaceId
@@ -302,7 +306,7 @@
     items.push({ type: 'separator' });
     items.push({
       id: 'delete',
-      label: 'Delete',
+      label: m.chat_agentCard_menu_delete_label(),
       icon: faTrash,
       destructive: true,
       onClick: async () => {
@@ -363,7 +367,7 @@
   const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 
   // Extract display data
-  const displayName = $derived(agentData?.name || agentName || 'Agent');
+  const displayName = $derived(agentData?.name || agentName || m.chat_shared_agentName_fallback());
   const lastUserMsg = $derived(
     // filter out [Currently viewing: ...] prefixes and @context[...] mentions (raw base64/pipe format)
     agentData?.lastUserMessage
@@ -525,12 +529,12 @@
               <span
                 class="delegated-by-text ml-1 min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle"
               >
-                · Delegated by {delegatedByName}
+                {m.chat_agentCard_delegatedBy_label({ name: delegatedByName })}
               </span>
             {/if}
             {#if isBackground}
               <div class="ml-auto px-1 py-0.5 text-ui font-bold bg-muted text-subtle rounded mr-1">
-                BG
+                {m.chat_agentCard_background_badge()}
               </div>
             {/if}
           </div>

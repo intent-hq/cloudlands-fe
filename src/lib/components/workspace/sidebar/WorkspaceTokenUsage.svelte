@@ -16,6 +16,7 @@
   import { formatCompactNumber } from '$lib/utils/format-compact-number';
   import { formatModelLabel } from '$features/token-usage/utils/format-model-label';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -60,7 +61,9 @@
     Object.entries($usage$.byAgentId)
       .map(([agentId, entry]) => ({
         agentId,
-        name: agentNameById.get(agentId) || `Agent ${agentId.substring(0, 8)}`,
+        name:
+          agentNameById.get(agentId) ||
+          m.workspace_tokenUsage_agentFallback_label({ id: agentId.substring(0, 8) }),
         inputTokens: entry.inputTokens,
         outputTokens: entry.outputTokens,
         cachedTokens: entry.cacheReadTokens + entry.cacheCreationTokens,
@@ -69,12 +72,22 @@
   );
 
   const summaryText = $derived(
-    `↑ ${formatCompactNumber(totals.inputTokens)} in · ${formatCompactNumber(totals.outputTokens)} out · ${formatCompactNumber(cachedTokens)} cached`,
+    m.workspace_tokenUsage_summary_label({
+      input: formatCompactNumber(totals.inputTokens),
+      output: formatCompactNumber(totals.outputTokens),
+      cached: formatCompactNumber(cachedTokens),
+    }),
   );
 </script>
 
 {#if hasData}
-  <TooltipRich title="Token usage" side="bottom" align="start" delayDuration={300} class="w-full">
+  <TooltipRich
+    title={m.workspace_tokenUsage_title()}
+    side="bottom"
+    align="start"
+    delayDuration={300}
+    class="w-full"
+  >
     {#snippet content()}
       <div class="flex flex-col gap-2">
         {#if modelRows.length > 0}
@@ -82,10 +95,10 @@
             class="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 gap-y-0.5 text-sm"
             data-testid="token-usage-by-model"
           >
-            <span class="text-subtle">Model</span>
-            <span class="text-subtle text-right">In</span>
-            <span class="text-subtle text-right">Out</span>
-            <span class="text-subtle text-right">Cached</span>
+            <span class="text-subtle">{m.workspace_tokenUsage_model_label()}</span>
+            <span class="text-subtle text-right">{m.workspace_tokenUsage_in_label()}</span>
+            <span class="text-subtle text-right">{m.workspace_tokenUsage_out_label()}</span>
+            <span class="text-subtle text-right">{m.workspace_tokenUsage_cached_label()}</span>
             {#each modelRows as row (row.model)}
               <span class="truncate max-w-40" title={row.model}>{row.label}</span>
               <span class="text-right font-medium">{formatCompactNumber(row.inputTokens)}</span>
@@ -98,10 +111,10 @@
           class="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 gap-y-0.5 text-sm"
           data-testid="token-usage-by-agent"
         >
-          <span class="text-subtle">Agent</span>
-          <span class="text-subtle text-right">In</span>
-          <span class="text-subtle text-right">Out</span>
-          <span class="text-subtle text-right">Cached</span>
+          <span class="text-subtle">{m.workspace_tokenUsage_agent_label()}</span>
+          <span class="text-subtle text-right">{m.workspace_tokenUsage_in_label()}</span>
+          <span class="text-subtle text-right">{m.workspace_tokenUsage_out_label()}</span>
+          <span class="text-subtle text-right">{m.workspace_tokenUsage_cached_label()}</span>
           {#each agentRows as row (row.agentId)}
             <span class="truncate max-w-40">{row.name}</span>
             <span class="text-right font-medium">{formatCompactNumber(row.inputTokens)}</span>
@@ -117,7 +130,9 @@
     >
       {summaryText}
       {#if isUpdating}
-        <span class="italic opacity-60" aria-label="Token usage is updating"> · updating…</span>
+        <span class="italic opacity-60" aria-label={m.workspace_tokenUsage_updating_ariaLabel()}>
+          {m.workspace_tokenUsage_updating_label()}</span
+        >
       {/if}
     </div>
   </TooltipRich>

@@ -14,6 +14,7 @@
 } from 'svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
 
   import {
   initializeGitHubAuth,
@@ -43,7 +44,7 @@
   }
 
   let {
-    message = 'Connect to GitHub',
+    message = m.lib_githubAuth_connect_label(),
     onSuccess,
     class: className = '',
     autoStart = false,
@@ -173,7 +174,7 @@
       transition:slide={{ axis: 'y', duration: 200 }}
     >
       <Fa icon={faCheck} size="xs" />
-      <span>Connected to GitHub</span>
+      <span>{m.lib_githubAuth_connected_label()}</span>
     </div>
   {:else if hasError}
     <!-- Error state -->
@@ -181,22 +182,23 @@
       <p class="text-xs text-destructive-foreground">{$error$}</p>
       <Button variant="outline" size="xs" onclick={handleRetry}>
         <Fa icon={faRotateRight} size="xs" />
-        <span>Try Again</span>
+        <span>{m.lib_githubAuth_tryAgain_label()}</span>
       </Button>
     </div>
   {:else if $requiresDaemonAuth$}
     <!-- Daemon auth required state -->
     <div class="py-2 px-2 space-y-1" transition:slide={{ axis: 'y', duration: 200 }}>
-      <p class="text-xs text-subtle">Please authenticate with the daemon first.</p>
+      <p class="text-xs text-subtle">{m.lib_githubAuth_daemonAuthFirst_message()}</p>
       <p class="text-xs text-subtle">
-        Run <code class="bg-muted px-1 rounded">auggie login</code> in your terminal.
+        <!-- i18n-ignore (shell command) -->
+        {m.lib_githubAuth_run_before()} <code class="bg-muted px-1 rounded">auggie login</code> {m.lib_githubAuth_inYourTerminal_after()}
       </p>
     </div>
   {:else if hasDeviceFlow && $deviceFlow$}
     <!-- Device-flow state: show the user code + Open GitHub (§5.27) -->
     <div class="py-1.5 px-3 space-y-2" transition:slide={{ axis: 'y', duration: 200 }}>
       <div class="flex items-center justify-between gap-2">
-        <p class="text-xs text-subtle">Enter this code on GitHub</p>
+        <p class="text-xs text-subtle">{m.lib_githubAuth_enterCode_label()}</p>
         <Button variant="ghost-light" size="icon-xs -mt-2 -mr-2" onclick={handleCancel}>
           <Fa icon={faXmark} size="xs" />
         </Button>
@@ -209,16 +211,16 @@
       <div class="flex items-center gap-1.5 text-xs text-subtle">
         {#if isCheckingAuth}
           <Fa icon={faSpinner} size="xs" class="animate-spin" />
-          <span>Checking...</span>
+          <span>{m.lib_githubAuth_checking_label()}</span>
         {:else}
           <Fa icon={faSpinner} size="xs" class="animate-spin" />
-          <span>Waiting for authorization...</span>
+          <span>{m.lib_githubAuth_waitingForAuthorization_label()}</span>
           <button
             type="button"
             class="cursor-pointer underline underline-offset-2 decoration-muted-foreground/20"
             onclick={checkAuthStatus}
           >
-            Check now
+            {m.lib_githubAuth_checkNow_label()}
           </button>
         {/if}
       </div>
@@ -230,7 +232,7 @@
       transition:slide={{ axis: 'y', duration: 200 }}
     >
       <Fa icon={faSpinner} size="xs" class="animate-spin" />
-      <span>Starting authentication...</span>
+      <span>{m.lib_githubAuth_startingAuthentication_label()}</span>
     </div>
   {:else}
     <!-- Initial prompt state -->
@@ -245,7 +247,7 @@
       </div>
       <div class="flex-1 min-w-0">
         <p class="text-xs font-medium text-subtle">{message}</p>
-        <p class="text-xs text-subtle">Enables PRs, repo listing, and more</p>
+        <p class="text-xs text-subtle">{m.lib_githubAuth_enables_description()}</p>
       </div>
     </button>
   {/if}

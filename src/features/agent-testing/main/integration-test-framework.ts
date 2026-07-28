@@ -35,6 +35,7 @@ export const integrationTestRunner = {
     return {
       passed: true,
       success: true,
+      // i18n-ignore (test harness)
       message: `Integration test ${scenario.name} passed`,
       duration,
       totalDuration: duration,

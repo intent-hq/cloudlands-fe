@@ -76,6 +76,7 @@ export class RestartPolicy {
       return {
         shouldRestart: false,
         delayMs: 0,
+        // i18n-ignore (internal diagnostic reason)
         reason: 'Intentional stop (teardown)',
       };
     }
@@ -92,6 +93,7 @@ export class RestartPolicy {
 
     // Check if we've exhausted our attempts
     if (this.attemptCount > this.config.maxAttempts) {
+      // i18n-ignore (internal diagnostic reason)
       const reason = `Max restart attempts (${this.config.maxAttempts}) exhausted`;
       this.reset();
       return {
@@ -111,6 +113,7 @@ export class RestartPolicy {
     return {
       shouldRestart: true,
       delayMs,
+      // i18n-ignore (internal diagnostic reason)
       reason: `Restart attempt ${this.attemptCount}/${this.config.maxAttempts} after ${uptime}ms uptime`,
       remainingAttempts: this.config.maxAttempts - this.attemptCount,
     };

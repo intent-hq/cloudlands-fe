@@ -1,10 +1,10 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
+  import { differenceInDays } from 'date-fns';
   import {
   formatDistanceToNow,
-  format,
-  differenceInDays,
-} from 'date-fns';
+  formatShortDate,
+} from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
   import type { Workspace } from '$shared/types';
   import {
@@ -26,6 +26,8 @@
   faCircleQuestion,
   faPaperPlane,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
 // Type definitions
   interface CommentLike {
@@ -149,7 +151,7 @@
     if (!dateStr) return '';
     const d = new Date(dateStr);
     const days = differenceInDays(new Date(), d);
-    return days >= 1 ? format(d, 'MMM d') : formatDistanceToNow(d, { addSuffix: true });
+    return days >= 1 ? formatShortDate(d) : formatDistanceToNow(d);
   }
 
   // Truncate content for tooltips
@@ -272,8 +274,9 @@
         </div>
         {#if replies.length > 0}
           <div class="hover-card-footer">
-            {replies.length}
-            {replies.length === 1 ? 'reply' : 'replies'}
+            {replies.length === 1
+              ? m.tiptap_responsiveThread_replies_one()
+              : m.tiptap_responsiveThread_replies_many({ count: formatInteger(replies.length) })}
           </div>
         {/if}
       </div>
@@ -314,7 +317,7 @@
           <div class="full-text">{comment.content}</div>
           <div class="compact-actions">
             <Button size="xs" variant="ghost" onclick={() => onResolve?.()}>
-              <Fa icon={faCheck} size="xs" /> Resolve
+              <Fa icon={faCheck} size="xs" /> {m.tiptap_responsiveThread_resolve_label()}
             </Button>
             <Button size="xs" variant="ghost" onclick={() => onClose?.()}>
               <Fa icon={faTimes} size="xs" />

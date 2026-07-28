@@ -13,6 +13,7 @@
   import { Badge } from '$lib/components/ui/badge';
   import type { PRInfo } from './types';
   import CommitNode from './CommitNode.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     pr: PRInfo;
@@ -71,7 +72,9 @@
           {/if}
           {#if commitCount > 0}
             <span class="text-xs text-subtle shrink-0 ml-auto">
-              {commitCount} commit{commitCount === 1 ? '' : 's'}
+              {commitCount === 1
+                ? m.fileTracking_prNode_commitCount_one({ count: commitCount })
+                : m.fileTracking_prNode_commitCount_many({ count: commitCount })}
             </span>
           {/if}
         </div>
@@ -85,7 +88,7 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={() => onOpenPR?.(pr.htmlUrl)}
-        tooltip="View PR"
+        tooltip={m.fileTracking_prNode_viewPr_tooltip()}
       >
         <Fa icon={faExternalLink} class="h-2.5 w-2.5" />
       </Button>

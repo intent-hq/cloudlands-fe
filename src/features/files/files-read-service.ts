@@ -30,6 +30,7 @@ import {
   loadFileContentSucceeded,
 } from "$store/renderer/slices/files/files-slice";
 import { createLogger } from "$lib/utils/client-logger";
+import { m } from "$shared/paraglide/messages.js";
 
 const logger = createLogger("FilesReadService");
 
@@ -74,7 +75,7 @@ export async function ensureFileContent(
         );
       } else {
         appStore.dispatch(
-          loadFileContentFailed(workspaceId, path, absolutePath, "File not found"),
+          loadFileContentFailed(workspaceId, path, absolutePath, m.files_read_notFound_error()),
         );
       }
     } catch (error) {

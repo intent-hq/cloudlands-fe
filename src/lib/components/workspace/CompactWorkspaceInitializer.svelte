@@ -110,6 +110,7 @@
     resolveSubmitProvider,
   } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
@@ -866,7 +867,7 @@
           });
 
           // Insert the trailing text inline (not using setContent to avoid newlines)
-          richTextarea.insertText('. Next, I want to ');
+          richTextarea.insertText(m.workspace_compactInitializer_nextIWantTo_text());
         }
       }, 200);
     }
@@ -1064,10 +1065,10 @@
 
   // Progress messages to show during creation - makes wait feel shorter
   const CREATION_STAGES = [
-    'Preparing workspace...',
-    'Setting up git branch...',
-    'Configuring environment...',
-    'Almost ready...',
+    m.workspace_compactInitializer_stagePreparing_label(),
+    m.workspace_compactInitializer_stageGitBranch_label(),
+    m.workspace_compactInitializer_stageEnvironment_label(),
+    m.workspace_compactInitializer_stageAlmostReady_label(),
   ];
 
   // Cycle through creation stages while creating
@@ -1399,6 +1400,7 @@
       parts.push(`Team: ${metadata.teamName}`);
     }
     if (metadata.priority !== undefined) {
+      // i18n-ignore (agent-facing context content, kept in English)
       const priorityLabels = ['No priority', 'Urgent', 'High', 'Medium', 'Low'];
       parts.push(`Priority: ${priorityLabels[metadata.priority] || metadata.priority}`);
     }
@@ -1458,7 +1460,7 @@
               ? await appClient.git.pull(repoPath, branch)
               : undefined;
           if (!pullResult?.success) {
-            pullError = pullResult?.error || 'Failed to pull changes';
+            pullError = pullResult?.error || m.workspace_compactInitializer_pullFailed_error();
             showPullConflictDialog = true;
             isPulling = false;
             isCreating = false;
@@ -1470,7 +1472,7 @@
             branch,
           });
         } catch (err) {
-          pullError = err instanceof Error ? err.message : 'Failed to pull changes';
+          pullError = err instanceof Error ? err.message : m.workspace_compactInitializer_pullFailed_error();
           showPullConflictDialog = true;
           isPulling = false;
           isCreating = false;
@@ -1506,7 +1508,7 @@
         : undefined;
 
       // Get agent name and specialist ID from selected specialist
-      let agentName = 'Agent';
+      let agentName: string = m.workspace_fileChanges_agent_label();
       let specialistId: string | undefined;
 
       if (selectedSpecialist) {
@@ -1514,7 +1516,7 @@
         const specialist = selectSpecialists
           .select(appStore.state)
           .find((s) => s.id === selectedSpecialist);
-        agentName = specialist?.name ?? 'Agent';
+        agentName = specialist?.name ?? m.workspace_fileChanges_agent_label();
         specialistId = selectedSpecialist;
       }
 
@@ -1667,7 +1669,7 @@
               const lastLines = outputLines.slice(-100).join('\n');
               content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
             } else {
-              content += '\nNo output yet.';
+              content += '\nNo output yet.'; // i18n-ignore (agent-facing context content)
             }
 
             const contextRef: Record<string, any> = {
@@ -1912,7 +1914,7 @@
         const now = new Date().toISOString();
         const scriptToSave = {
           id: uuidv4(),
-          name: setupScriptName || 'Custom Script',
+          name: setupScriptName || m.workspace_setupScriptEditor_customScript_name(),
           content: setupScript.trim(),
           repoPath,
           projectType: 'generic' as string,
@@ -1991,7 +1993,7 @@
         }, 100);
       }
     } catch (err) {
-      error = err instanceof Error ? getGitErrorMessage(err.message) : 'Failed to create workspace';
+      error = err instanceof Error ? getGitErrorMessage(err.message) : m.workspace_compactInitializer_createFailed_error();
     } finally {
       isCreating = false;
     }
@@ -2229,7 +2231,7 @@
           }
         } catch (err) {
           logger.error('Failed to process image', { fileName: file.name, error: err });
-          toast.error(`Failed to process image: ${file.name}`);
+          toast.error(m.workspace_compactInitializer_processImageFailed_error({ fileName: file.name }));
         }
       } else {
         // Non-image files are inserted as mentions
@@ -2264,7 +2266,7 @@
     }
 
     if (oversizedFiles.length > 0) {
-      toast.error(`Files too large (max 10MB): ${oversizedFiles.join(', ')}`);
+      toast.error(m.workspace_compactInitializer_filesTooLarge_error({ files: oversizedFiles.join(', ') }));
     }
   }
 
@@ -2413,14 +2415,14 @@
 
       initialPrompt = result.enhanced;
       await richTextarea?.setContent(result.enhanced);
-      toast.success('Prompt enhanced');
+      toast.success(m.workspace_compactInitializer_promptEnhanced_toast());
     } catch (error) {
       if (currentRequestId === cancelledRequestId) return;
       logger.error('Failed to enhance prompt:', error);
       toast.error(
         error instanceof Error && error.message
-          ? `Failed to enhance prompt: ${error.message}`
-          : 'Failed to enhance prompt',
+          ? m.workspace_compactInitializer_enhanceFailedWithMessage_error({ message: error.message })
+          : m.workspace_compactInitializer_enhanceFailed_error(),
       );
     } finally {
       if (currentRequestId !== cancelledRequestId) {
@@ -2472,7 +2474,7 @@
       >
         <div class="flex flex-col items-center gap-2 text-primary">
           <Fa icon={faPaperclip} class="w-6 h-6" />
-          <span class="text-sm font-medium">Drop files here</span>
+          <span class="text-sm font-medium">{m.workspace_compactInitializer_dropFiles_label()}</span>
         </div>
       </div>
     {/if}
@@ -2482,7 +2484,7 @@
       <RichTextarea
         bind:this={richTextarea}
         bind:value={initialPrompt}
-        placeholder="What would you like to work on?"
+        placeholder={m.workspace_compactInitializer_prompt_placeholder()}
         repoPath={repoType === 'local' ? repoPath : undefined}
         onfocus={() => {
           isExpanded = true;
@@ -2559,7 +2561,7 @@
             size="icon-xs"
             variant="ghost-light"
             disabled={!initialPrompt.trim() && !isEnhancing}
-            tooltip={isEnhancing ? 'Stop enhancing' : 'Enhance prompt'}
+            tooltip={isEnhancing ? m.workspace_compactInitializer_stopEnhancing_tooltip() : m.workspace_compactInitializer_enhancePrompt_tooltip()}
             tooltipSide="top"
           >
             {#if isEnhancing}
@@ -2577,7 +2579,7 @@
           class="absolute top-2 right-2.5"
           size="icon-xs"
           variant="ghost-light"
-          title="Add files"
+          title={m.workspace_compactInitializer_addFiles_tooltip()}
         >
           <Fa icon={faPaperclip} size="xs" />
         </Button>
@@ -2588,7 +2590,7 @@
   <!-- First-time user hint -->
   {#if showFirstTimeHints && !isExpanded}
     <p class="mt-3 text-xs text-subtle leading-relaxed" transition:fade={{ duration: 200 }}>
-      Describe a feature, bug fix, or refactor — the agent will create a branch and start coding.
+      {m.workspace_compactInitializer_firstTimeHint_label()}
     </p>
   {/if}
 
@@ -2604,9 +2606,9 @@
           <div class="flex items-start gap-3">
             <Fa icon={faExclamationTriangle} class="text-destructive-foreground mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-destructive-foreground">Git is not installed</p>
+              <p class="font-medium text-destructive-foreground">{m.workspace_compactInitializer_gitNotInstalled_label()}</p>
               <p class="text-subtle mt-1">
-                Git is required to create workspaces. Please install Git and restart the app.
+                {m.workspace_compactInitializer_gitRequired_description()}
               </p>
               <button
                 class="mt-2 text-primary hover:text-primary/80 underline cursor-pointer"
@@ -2618,7 +2620,7 @@
                   }
                 }}
               >
-                Download Git →
+                {m.workspace_compactInitializer_downloadGit_label()}
               </button>
             </div>
           </div>
@@ -2660,7 +2662,7 @@
               <Fa icon={faSpinner} class="animate-spin" size="sm" />
               <span class="min-w-[160px] text-left">
                 {#if isPulling}
-                  Pulling latest changes...
+                  {m.workspace_compactInitializer_pullingLatest_label()}
                 {:else}
                   {CREATION_STAGES[creationStage]}
                 {/if}
@@ -2671,7 +2673,7 @@
                   {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
                 </span>
               {/if}
-              <span>Create workspace</span>
+              <span>{m.workspace_compactInitializer_createWorkspace_label()}</span>
             {/if}
           </Button>
         </div>
@@ -2693,17 +2695,17 @@
           transition:slide={{ axis: 'y', duration: 200 }}
         >
           {#if gitAvailable === false}
-            Git is required — install it and restart to continue.
+            {m.workspace_compactInitializer_gitRequiredHint_label()}
           {:else if gitAvailable === null}
-            Checking dependencies...
+            {m.workspace_compactInitializer_checkingDependencies_label()}
           {:else if !repoPath}
-            Select a repository to get started.
+            {m.workspace_compactInitializer_selectRepoHint_label()}
           {:else if !isValidPath}
-            The selected path is not valid.
+            {m.workspace_compactInitializer_invalidPathHint_label()}
           {:else if repoType === 'github' && githubAuthNeeded !== 'none'}
-            GitHub authentication is required.
+            {m.workspace_compactInitializer_githubAuthRequired_label()}
           {:else if !isNewRepo && !branch && repoType !== 'remote'}
-            Waiting for branch selection...
+            {m.workspace_compactInitializer_waitingBranchSelection_label()}
           {/if}
         </div>
       {/if}
@@ -2724,7 +2726,7 @@
             }}
           >
             <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
-            <span>Use PR branch <strong>{selectedPRBranch}</strong></span>
+            <span>{m.workspace_branchSelector_usePrBranch_label()} <strong>{selectedPRBranch}</strong></span>
           </button>
         </div>
       {/if}
@@ -2751,24 +2753,24 @@
               class="flex items-center gap-1 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => (showSetupScript = !showSetupScript)}
             >
-              <span>Set up dev environment with</span>
+              <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
               {#if isRepoConfigLoading}
                 <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
-                <span class="sr-only">Detecting setup script…</span>
+                <span class="sr-only">{m.workspace_compactInitializer_detectingSetupScript_label()}</span>
               {:else}
                 <div class="bg-background px-2 py-0.5 font-medium">{setupScriptName}</div>
-                <p class="text-sm text-subtle">script</p>
+                <p class="text-sm text-subtle">{m.workspace_compactInitializer_setupDevEnvWith_after()}</p>
               {/if}
             </button>
             <!-- Right: rapid fire -->
-            <Tooltip content="Stay on this page after creating a space" side="top" size="sm">
+            <Tooltip content={m.workspace_compactInitializer_rapidFire_tooltip()} side="top" size="sm">
               <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
               <div
                 class="flex whitespace-nowrap items-center gap-2 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer select-none ml-auto"
                 onclick={() => (stayOnHomePage = !stayOnHomePage)}
               >
                 <Checkbox checked={stayOnHomePage} size="sm" />
-                <span>Rapid fire mode</span>
+                <span>{m.workspace_compactInitializer_rapidFireMode_label()}</span>
               </div>
             </Tooltip>
           </div>

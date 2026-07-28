@@ -40,6 +40,7 @@
   createUniqueMonacoModelPath,
   normalizeMonacoModelPath,
 } from '$lib/utils/monaco-model-uri';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('CodeEditor');
 
@@ -108,7 +109,11 @@
     // @ts-expect-error - userAgentData is not in all browsers
     (navigator.userAgentData?.platform === 'macOS' ||
       /Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
-  const fileManagerName = isWindows ? 'Explorer' : isMac ? 'Finder' : 'File Manager';
+  const fileManagerName = isWindows
+    ? m.layout_panelTabBar_fileManagerExplorer_label()
+    : isMac
+      ? m.layout_panelTabBar_fileManagerFinder_label()
+      : m.layout_panelTabBar_fileManagerGeneric_label();
   const workspaceIdStore = writable(workspaceId ?? '');
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
@@ -125,9 +130,10 @@
 
   // Helper to format file size
   function formatFileSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes < 1024) return m.editor_codeEditor_fileSizeBytes_label({ size: bytes });
+    if (bytes < 1024 * 1024)
+      return m.editor_codeEditor_fileSizeKb_label({ size: (bytes / 1024).toFixed(1) });
+    return m.editor_codeEditor_fileSizeMb_label({ size: (bytes / (1024 * 1024)).toFixed(1) });
   }
 
   // Open file in VS Code
@@ -956,21 +962,20 @@
               d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
             />
           </svg>
-          <h3 class="text-lg font-medium mb-2">File Too Large</h3>
+          <h3 class="text-lg font-medium mb-2">{m.editor_codeEditor_fileTooLarge_title()}</h3>
           <p class="text-sm">
-            This file is too large to display inline ({formatFileSize(contentSize)}). Open it in an
-            external application instead.
+            {m.editor_codeEditor_fileTooLarge_description({ size: formatFileSize(contentSize) })}
           </p>
           {#if workspaceId && filePath}
             <div class="mt-4 flex items-center justify-center gap-2">
               <Button variant="secondary" size="sm" onclick={openInVSCode}>
                 <Fa icon={faExternalLinkAlt} class="mr-2" />
-                Open in VS Code
+                {m.editor_codeEditor_openInVsCode_label()}
               </Button>
               {#if $isDaemonLocal$}
                 <Button variant="ghost" size="sm" onclick={revealInFolder}>
                   <Fa icon={faFolderOpen} class="mr-2" />
-                  Reveal in {fileManagerName}
+                  {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
                 </Button>
               {/if}
             </div>

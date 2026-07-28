@@ -40,6 +40,7 @@ import {
 import { appClient } from "$lib/client";
 import type { MutationResult, NoteMetadataPatch } from "$lib/client";
 import { toast } from "svelte-sonner";
+import { m } from "$shared/paraglide/messages.js";
 import { ContentType, NoteVisibility } from "$shared/types";
 import type { CreateNoteRequest, Note } from "$shared/types";
 import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
@@ -223,8 +224,8 @@ function reconcileNoteConflict(
     void refetchWorkspaceNotes(workspaceId);
   }
   logger.warn("Note mutation conflicted; reloaded the latest version", { noteId });
-  toast.warning("This note changed on the server", {
-    description: "Your change was not applied; reloaded the latest version.",
+  toast.warning(m.notes_writeService_noteChanged_label(), {
+    description: m.notes_writeService_noteChanged_description(),
   });
   return true;
 }
@@ -290,7 +291,7 @@ export async function createNote(
 async function handleCreateNoteRequested(workspaceId: string): Promise<void> {
   if (!workspaceId) return;
   const newNoteId = await createNote(workspaceId, {
-    title: "New Note",
+    title: m.notes_writeService_newNote_title(),
     content: "",
     tags: [],
   });
@@ -299,7 +300,7 @@ async function handleCreateNoteRequested(workspaceId: string): Promise<void> {
   appStore.dispatch(
     openTab(workspaceId, {
       type: "note",
-      title: "New Note",
+      title: m.notes_writeService_newNote_title(),
       closable: true,
       noteId: newNoteId,
       workspaceId,
@@ -381,7 +382,9 @@ async function flushContent(key: string, noteId: string): Promise<void> {
       if (!result.success) {
         if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
         logger.error("Failed to save note content", result.error);
-        toast.error("Failed to save note", { description: result.error ?? "Unknown error" });
+        toast.error(m.notes_writeService_saveFailed_error(), {
+          description: result.error ?? m.notes_writeService_unknown_error(),
+        });
         await refetchWorkspaceNotes(pending.workspaceId);
         return;
       }
@@ -418,8 +421,8 @@ export async function updateNoteTitle(
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error("Failed to update note title", result.error);
-      toast.error("Failed to update note title", {
-        description: result.error ?? "Unknown error",
+      toast.error(m.notes_writeService_updateTitleFailed_error(), {
+        description: result.error ?? m.notes_writeService_unknown_error(),
       });
       if (previous !== undefined) {
         appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { title: previous }));
@@ -448,8 +451,8 @@ export async function updateNoteMetadata(
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error("Failed to update note metadata", result.error);
-      toast.error("Failed to update note", {
-        description: result.error ?? "Unknown error",
+      toast.error(m.notes_writeService_updateFailed_error(), {
+        description: result.error ?? m.notes_writeService_unknown_error(),
       });
       appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, rollback));
       return;
@@ -469,8 +472,8 @@ export async function deleteNote(workspaceId: string, noteId: string): Promise<v
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
       logger.error("Failed to delete note", result.error);
-      toast.error("Failed to delete note", {
-        description: result.error ?? "Unknown error",
+      toast.error(m.notes_writeService_deleteFailed_error(), {
+        description: result.error ?? m.notes_writeService_unknown_error(),
       });
       if (snapshot) appStore.dispatch(applyNoteCreated(workspaceId, snapshot));
     }

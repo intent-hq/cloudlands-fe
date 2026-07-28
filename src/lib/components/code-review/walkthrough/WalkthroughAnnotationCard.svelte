@@ -3,6 +3,7 @@
   import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import type { WalkthroughAnnotation } from './types';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     annotation: WalkthroughAnnotation;
@@ -51,7 +52,7 @@
     <button
       class="group mb-2 flex items-center gap-2 text-left transition-colors hover:text-primary"
       onclick={() => onClick?.()}
-      title="View in diff"
+      title={m.codeReview_annotationCard_viewInDiff_tooltip()}
     >
       <span class="text-xs font-mono text-muted-foreground group-hover:text-primary truncate">
         {shortFilename()}

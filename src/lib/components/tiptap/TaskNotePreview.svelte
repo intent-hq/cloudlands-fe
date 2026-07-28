@@ -14,6 +14,7 @@
 } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     noteId: NoteId;
@@ -64,7 +65,7 @@
     {#if !note}
       <div class="flex items-center gap-2 text-subtle text-sm">
         <Fa icon={faSpinner} class="animate-spin" />
-        <span>Loading...</span>
+        <span>{m.tiptap_taskNotePreview_loading_label()}</span>
       </div>
     {:else}
       <!-- Content preview -->
@@ -94,14 +95,14 @@
           </div>
         </div>
       {:else}
-        <div class="text-sm text-subtle italic">No content</div>
+        <div class="text-sm text-subtle italic">{m.tiptap_taskNotePreview_noContent_label()}</div>
       {/if}
     {/if}
   </div>
 
   <div class="text-subtle text-xs w-full bg-sidebar/50 py-2 px-5">
-    Click to open.
+    {m.tiptap_taskNotePreview_clickToOpen_label()}
     <br />
-    ⌘ + click to open in adjacent panel
+    {m.tiptap_taskNotePreview_cmdClick_label()}
   </div>
 </div>

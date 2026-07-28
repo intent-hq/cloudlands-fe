@@ -32,9 +32,9 @@ describe('timeFormatting', () => {
   });
 
   describe('formatRelativeTime', () => {
-    it('should return "Just now" for very recent times', () => {
+    it('should return "now" for very recent times', () => {
       const date = new Date(NOW.getTime() - 5000); // 5 seconds ago
-      expect(formatRelativeTime(date)).toBe('Just now');
+      expect(formatRelativeTime(date)).toBe('now');
     });
 
     it('should return seconds ago', () => {
@@ -62,9 +62,9 @@ describe('timeFormatting', () => {
       expect(formatRelativeTime(date)).toBe('3 hours ago');
     });
 
-    it('should return "Yesterday"', () => {
+    it('should return "yesterday"', () => {
       const date = new Date(NOW.getTime() - 24 * 60 * 60000); // 1 day ago
-      expect(formatRelativeTime(date)).toBe('Yesterday');
+      expect(formatRelativeTime(date)).toBe('yesterday');
     });
 
     it('should return days ago', () => {
@@ -84,7 +84,7 @@ describe('timeFormatting', () => {
 
     it('should accept string dates', () => {
       const dateStr = new Date(NOW.getTime() - 5000).toISOString();
-      expect(formatRelativeTime(dateStr)).toBe('Just now');
+      expect(formatRelativeTime(dateStr)).toBe('now');
     });
   });
 

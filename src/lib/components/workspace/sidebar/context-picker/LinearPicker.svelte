@@ -22,6 +22,7 @@
 
   import { startLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('LinearPicker');
 
@@ -117,12 +118,12 @@
 {#if !isAuthenticated}
   <div class="p-8 flex flex-col items-center gap-4">
     <LinearIcon size={48} class="text-subtle" />
-    <p class="text-sm text-subtle text-center">Connect to Linear to see your issues</p>
+    <p class="text-sm text-subtle text-center">{m.workspace_linearPicker_connectPrompt_label()}</p>
     <Button onclick={handleConnect} disabled={isConnecting}>
       {#if isConnecting}
         <Fa icon={faSpinner} class="animate-spin mr-2" />
       {/if}
-      Connect Linear
+      {m.workspace_linearPicker_connect_label()}
     </Button>
   </div>
 {:else if isLoading}
@@ -136,7 +137,7 @@
       <Fa icon={faSearch} class="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" size="sm" />
       <Input
         bind:value={searchQuery}
-        placeholder="Search issues..."
+        placeholder={m.workspace_contextPicker_searchIssues_placeholder()}
         class="pl-9 h-9"
         autofocus
       />

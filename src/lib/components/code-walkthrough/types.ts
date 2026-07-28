@@ -4,6 +4,8 @@
  * Types for the AI-powered code walkthrough feature that narrates through code changes.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 export type WalkthroughStatus = 'idle' | 'running' | 'complete' | 'error' | 'stale';
 
 export type AnnotationCategory = 'explanation' | 'context' | 'rationale' | 'warning' | 'highlight';
@@ -102,7 +104,7 @@ export function parseWalkthroughResult(text: string): ParsedWalkthrough | null {
       summary: parsed.summary,
       sections: parsed.sections.map(
         (s: { title?: string; description?: string; files?: string[] }, i: number) => ({
-          title: s.title || `Section ${i + 1}`,
+          title: s.title || m.codeWalkthrough_section_sectionNumber_label({ number: i + 1 }),
           description: s.description || '',
           files: Array.isArray(s.files) ? s.files : [],
         }),

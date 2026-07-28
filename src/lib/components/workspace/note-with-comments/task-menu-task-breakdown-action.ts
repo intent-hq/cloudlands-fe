@@ -2,6 +2,7 @@ import type { Workspace } from '$shared/types';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { store as appStore } from '$store/renderer/store';
 import { agentSessionLaunchAgentRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { m } from '$shared/paraglide/messages.js';
 
 import type { AgentContext } from '$features/agent/agent-context';
 
@@ -14,7 +15,7 @@ export function runTaskBreakdownTaskMenuAction({
   noteId: string | null | undefined;
   taskData: any;
 }): void {
-  const taskText = taskData.text || 'Unknown task';
+  const taskText = taskData.text || m.workspace_taskMenu_unknownTask_label();
   const taskPosition = parseInt(taskData.position) || 0;
   const taskChecked = taskData.checked === true || taskData.checked === 'true';
 
@@ -34,7 +35,7 @@ export function runTaskBreakdownTaskMenuAction({
     noteId
       ? {
           type: 'note',
-          content: `Note ID: ${noteId}`,
+          content: `Note ID: ${noteId}`, // i18n-ignore (agent-facing context content)
           metadata: {
             noteId,
             source: 'task-menu',
@@ -42,7 +43,7 @@ export function runTaskBreakdownTaskMenuAction({
         }
       : {
           type: 'spec',
-          content: "Space specification (note ID 'spec').",
+          content: "Space specification (note ID 'spec').", // i18n-ignore (agent-facing context content)
           metadata: {
             noteId: 'spec',
             source: 'task-menu',
@@ -50,11 +51,12 @@ export function runTaskBreakdownTaskMenuAction({
         },
   ];
 
+  // i18n-ignore (agent-facing prompt, kept in English)
   const userMessage = `Please break down this task into smaller subtasks: "${taskText}". Read the space specification and analyze the codebase for context, then replace the original task with a breakdown of manageable subtasks.`;
 
   // Use the task text with a prefix to indicate it's a breakdown task
   // The factory will sanitize and truncate the name
-  const agentName = `Break down: ${taskText}`;
+  const agentName = m.workspace_taskMenu_breakDown_label({ task: taskText });
 
   const launchAction = agentSessionLaunchAgentRequested(workspace.id, {
     name: agentName,

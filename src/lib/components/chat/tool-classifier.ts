@@ -22,6 +22,7 @@ import {
   faBrain,
 } from '@fortawesome/free-solid-svg-icons';
 import { faNote } from '$lib/icons/faNote';
+import { m } from '$shared/paraglide/messages.js';
 
 export type ToolCategory =
   | 'file-read'
@@ -443,7 +444,7 @@ export function getContextEngineSource(toolName: string | undefined | null): str
   if (!toolName) return 'Codebase';
   const cleanName = cleanToolName(toolName).toLowerCase();
   if (cleanName.includes('git') || cleanName.includes('commit')) {
-    return 'Commit History';
+    return m.chat_toolClassifier_commitHistory_label();
   }
   if (cleanName.includes('conversation')) {
     return 'Conversations';
@@ -516,7 +517,7 @@ function detectPreFormattedToolName(
       return {
         category: 'workspace',
         icon: CATEGORY_ICONS.workspace,
-        verb: 'Rename workspace',
+        verb: m.chat_toolClassifier_renameWorkspace_label(),
         subject: truncate(input.title, 30),
         path: null,
       };
@@ -528,7 +529,7 @@ function detectPreFormattedToolName(
       return {
         category: 'note',
         icon: CATEGORY_ICONS.note,
-        verb: 'Edit note',
+        verb: m.chat_toolClassifier_editNote_label(),
         subject: formatNoteTitle(input.title, 25),
         path: null,
       };
@@ -537,7 +538,7 @@ function detectPreFormattedToolName(
       return {
         category: 'note',
         icon: CATEGORY_ICONS.note,
-        verb: 'Edit note lines',
+        verb: m.chat_toolClassifier_editNoteLines_label(),
         subject: `${formatNoteTitle(input.title, 15)} (${input.start_line}-${input.end_line})`,
         path: null,
       };
@@ -552,7 +553,7 @@ function detectPreFormattedToolName(
       return {
         category: 'note',
         icon: CATEGORY_ICONS.note,
-        verb: 'Add to note',
+        verb: m.chat_toolClassifier_addToNote_label(),
         subject: suffix
           ? `${formatNoteTitle(input.title, 15)} → ${suffix}`
           : formatNoteTitle(input.title, 25),
@@ -566,7 +567,7 @@ function detectPreFormattedToolName(
       return {
         category: 'note',
         icon: CATEGORY_ICONS.note,
-        verb: 'Replace note content',
+        verb: m.chat_toolClassifier_replaceNoteContent_label(),
         subject: formatNoteTitle(input.title, 25),
         path: null,
       };
@@ -578,7 +579,7 @@ function detectPreFormattedToolName(
       return {
         category: 'note',
         icon: CATEGORY_ICONS.note,
-        verb: 'Update note metadata',
+        verb: m.chat_toolClassifier_updateNoteMetadata_label(),
         subject: formatNoteTitle(input.title, 25),
         path: null,
       };
@@ -587,7 +588,7 @@ function detectPreFormattedToolName(
       return {
         category: 'task',
         icon: CATEGORY_ICONS.task,
-        verb: 'Check task',
+        verb: m.chat_toolClassifier_checkTask_label(),
         subject: `${truncate(input.taskText, 20)} → ${input.status}`,
         path: null,
       };
@@ -596,7 +597,7 @@ function detectPreFormattedToolName(
       return {
         category: 'task',
         icon: CATEGORY_ICONS.task,
-        verb: 'Update task status',
+        verb: m.chat_toolClassifier_updateTaskStatus_label(),
         subject: `${formatNoteTitle(input.title, 20)} → ${input.status}`,
         path: null,
       };
@@ -605,7 +606,7 @@ function detectPreFormattedToolName(
       return {
         category: 'note',
         icon: CATEGORY_ICONS.note,
-        verb: 'Read note',
+        verb: m.chat_toolClassifier_readNote_label(),
         subject: formatNoteTitle(input.title, 25),
         path: null,
       };
@@ -822,7 +823,9 @@ function classifyToolInner(
       return {
         category: 'file-read',
         icon: CATEGORY_ICONS['file-read'],
-        verb: extractedIsDir ? 'List Contents' : 'Read',
+        verb: extractedIsDir
+          ? m.chat_toolClassifier_listContents_label()
+          : m.chat_toolClassifier_read_label(),
         subject: filename(extracted),
         path: dirname(extracted) || null,
         filePath: extracted || null,
@@ -834,7 +837,7 @@ function classifyToolInner(
       return {
         category: 'file-read',
         icon: CATEGORY_ICONS['file-read'],
-        verb: 'Read',
+        verb: m.chat_toolClassifier_read_label(),
         subject: filename(resultPath),
         path: dirname(resultPath) || null,
         filePath: resultPath,
@@ -852,7 +855,9 @@ function classifyToolInner(
           return {
             category: 'file-read',
             icon: CATEGORY_ICONS['file-read'],
-            verb: titleIsDir ? 'List Contents' : 'Read',
+            verb: titleIsDir
+              ? m.chat_toolClassifier_listContents_label()
+              : m.chat_toolClassifier_read_label(),
             subject: filename(candidate),
             path: dirname(candidate) || null,
             filePath: candidate || null,
@@ -864,8 +869,8 @@ function classifyToolInner(
     return {
       category: 'file-read',
       icon: CATEGORY_ICONS['file-read'],
-      verb: 'Read',
-      subject: 'file',
+      verb: m.chat_toolClassifier_read_label(),
+      subject: m.chat_toolClassifier_file_subject(),
       path: null,
     };
   }
@@ -887,8 +892,8 @@ function classifyToolInner(
     return {
       category: 'file-write',
       icon: CATEGORY_ICONS['file-write'],
-      verb: 'Edit',
-      subject: 'file',
+      verb: m.chat_toolClassifier_edit_label(),
+      subject: m.chat_toolClassifier_file_subject(),
       path: null,
     };
   }
@@ -904,8 +909,8 @@ function classifyToolInner(
         const verbLower = writeMatch[1].toLowerCase();
         const verb =
           verbLower === 'save' || verbLower === 'write' || verbLower === 'create'
-            ? 'Save'
-            : 'Edit';
+            ? m.chat_toolClassifier_save_label()
+            : m.chat_toolClassifier_edit_label();
         return {
           category: 'file-write',
           icon: CATEGORY_ICONS['file-write'],
@@ -924,7 +929,9 @@ function classifyToolInner(
         return {
           category: 'file-read',
           icon: CATEGORY_ICONS['file-read'],
-          verb: readIsDir ? 'List Contents' : 'Read',
+          verb: readIsDir
+            ? m.chat_toolClassifier_listContents_label()
+            : m.chat_toolClassifier_read_label(),
           subject: filename(filePart),
           path: dirname(filePart) || null,
           filePath: filePart || null,
@@ -939,7 +946,7 @@ function classifyToolInner(
         return {
           category: 'file-delete',
           icon: CATEGORY_ICONS['file-delete'],
-          verb: 'Delete',
+          verb: m.chat_toolClassifier_delete_label(),
           subject: filename(filePart),
           path: dirname(filePart) || null,
           filePath: filePart || null,
@@ -996,7 +1003,7 @@ function classifyToolInner(
     return {
       category: 'search',
       icon: CATEGORY_ICONS.search,
-      verb: 'Check',
+      verb: m.chat_toolClassifier_check_label(),
       subject: input.paths
         ? Array.isArray(input.paths)
           ? input.paths.length === 1
@@ -1149,7 +1156,11 @@ function fileReadDisplay(name: string, input: Record<string, any>): ToolDisplay 
   // Only treat as directory when explicitly specified via input.type to avoid
   // misclassifying extensionless files (e.g. Dockerfile, Makefile) as directories.
   const isDirectory = input.type === 'directory';
-  const verb = input.search_query_regex ? 'Search' : isDirectory ? 'List Contents' : 'Read';
+  const verb = input.search_query_regex
+    ? m.chat_toolClassifier_search_label()
+    : isDirectory
+      ? m.chat_toolClassifier_listContents_label()
+      : m.chat_toolClassifier_read_label();
   return {
     category: 'file-read',
     icon: CATEGORY_ICONS['file-read'],
@@ -1183,7 +1194,10 @@ function fileWriteDisplay(name: string, input: Record<string, any>): ToolDisplay
     }
   }
 
-  const verb = name.includes('save') || name.includes('write') ? 'Save' : 'Edit';
+  const verb =
+    name.includes('save') || name.includes('write')
+      ? m.chat_toolClassifier_save_label()
+      : m.chat_toolClassifier_edit_label();
   let fileLine: number | null = null;
   if (input.line !== undefined) {
     fileLine = input.line;
@@ -1221,7 +1235,7 @@ function fileDeleteDisplay(name: string, input: Record<string, any>): ToolDispla
   return {
     category: 'file-delete',
     icon: CATEGORY_ICONS['file-delete'],
-    verb: 'Delete',
+    verb: m.chat_toolClassifier_delete_label(),
     subject,
     path,
     filePath,
@@ -1229,7 +1243,7 @@ function fileDeleteDisplay(name: string, input: Record<string, any>): ToolDispla
 }
 
 function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Run';
+  let verb = m.chat_toolClassifier_run_label();
   let subject: string | null = null;
 
   // Extract terminal ID from name like "read terminal 123", "kill terminal 5"
@@ -1246,28 +1260,28 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
     name.includes('read_process') ||
     (name.includes('read') && (name.includes('terminal') || name.includes('process')))
   ) {
-    verb = 'Read';
+    verb = m.chat_toolClassifier_read_label();
     subject = terminalSubject;
   } else if (
     name.includes('write-process') ||
     name.includes('write_process') ||
     (name.includes('write') && (name.includes('terminal') || name.includes('process')))
   ) {
-    verb = 'Write to';
+    verb = m.chat_toolClassifier_writeTo_label();
     subject = terminalSubject;
   } else if (
     name.includes('kill-process') ||
     name.includes('kill_process') ||
     (name.includes('kill') && (name.includes('terminal') || name.includes('process')))
   ) {
-    verb = 'Kill';
+    verb = m.chat_toolClassifier_kill_label();
     subject = terminalSubject;
   } else if (
     name.includes('list-process') ||
     name.includes('list_process') ||
     (name.includes('list') && name.includes('process'))
   ) {
-    verb = 'List';
+    verb = m.chat_toolClassifier_list_label();
     subject = 'processes';
   } else if (input.command) {
     // Prefer description as subject if available, otherwise use command (first line only)
@@ -1276,10 +1290,10 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
   } else if (input.terminal_id !== undefined && !input.command) {
     // Input-based detection: terminal_id without command is read/write/kill process
     if (input.input_text !== undefined) {
-      verb = 'Write to';
+      verb = m.chat_toolClassifier_writeTo_label();
       subject = `terminal ${input.terminal_id}`;
     } else {
-      verb = 'Read';
+      verb = m.chat_toolClassifier_read_label();
       subject = `terminal ${input.terminal_id}`;
     }
   } else if (input.description) {
@@ -1295,19 +1309,19 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
       const rest = titleMatch[2].trim();
       if (rest.length > 0) {
         if (titleVerb === 'list') {
-          verb = 'List';
+          verb = m.chat_toolClassifier_list_label();
           subject = rest;
         } else if (titleVerb === 'read') {
-          verb = 'Read';
+          verb = m.chat_toolClassifier_read_label();
           subject = rest;
         } else if (titleVerb === 'kill') {
-          verb = 'Kill';
+          verb = m.chat_toolClassifier_kill_label();
           subject = rest;
         } else if (titleVerb === 'write') {
-          verb = 'Write to';
+          verb = m.chat_toolClassifier_writeTo_label();
           subject = rest;
         } else if (titleVerb === 'launch') {
-          verb = 'Launch';
+          verb = m.chat_toolClassifier_launch_label();
           subject = truncate(rest.split('\n')[0], 80);
         } else {
           subject = truncate(rest.split('\n')[0], 80);
@@ -1333,19 +1347,16 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
 }
 
 function contextEngineDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Augment Context Engine';
+  const verb = m.chat_toolClassifier_contextEngine_label();
   let subject: string | null = null;
 
   // Determine the source type
   if (name.includes('git') || name.includes('commit')) {
-    verb = 'Context Engine';
-    subject = 'Commit History';
+    subject = m.chat_toolClassifier_commitHistory_label();
   } else if (name.includes('conversation')) {
-    verb = 'Context Engine';
-    subject = 'Conversations';
+    subject = m.chat_toolClassifier_conversations_label();
   } else {
-    verb = 'Context Engine';
-    subject = 'Codebase';
+    subject = m.chat_toolClassifier_codebase_label();
   }
 
   // If there's a query, append a snippet of it
@@ -1364,18 +1375,18 @@ function contextEngineDisplay(name: string, input: Record<string, any>): ToolDis
 }
 
 function searchDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Search';
+  let verb = m.chat_toolClassifier_search_label();
   let subject: string | null = null;
 
   if (name.includes('git-commit') || name.includes('git_commit')) {
-    verb = 'Search commits';
+    verb = m.chat_toolClassifier_searchCommits_label();
   } else if (name.includes('web-search') || name.includes('web_search')) {
-    verb = 'Search web';
+    verb = m.chat_toolClassifier_searchWeb_label();
   } else if (name.includes('glob') || name.includes('find')) {
-    verb = 'Find';
+    verb = m.chat_toolClassifier_find_label();
   } else if (name.includes('codebase') || name.includes('retrieval')) {
     // Context engine / codebase retrieval
-    verb = 'Context engine';
+    verb = m.chat_toolClassifier_contextEngineSentenceCase_label();
   }
 
   // Priority: information_request > query > pattern > glob > description > fallback
@@ -1403,7 +1414,7 @@ function searchDisplay(name: string, input: Record<string, any>): ToolDisplay {
 }
 
 function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'API';
+  let verb = 'API'; // i18n-ignore (technical acronym, untranslated across locales)
   let subject: string | null = null;
 
   // Detect tool type by name OR input shape (ACP titles lose the tool name).
@@ -1416,7 +1427,7 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
   const isGlean = name.includes('glean') || !!input.call?.payload?.query;
 
   if (isGitHub) {
-    verb = 'GitHub';
+    verb = 'GitHub'; // i18n-ignore (brand name)
     if (input.path) {
       // Show API path: "GET /repos/owner/repo/issues"
       const method = input.method || 'GET';
@@ -1426,13 +1437,13 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
       subject = truncate(input.summary, 60);
     }
   } else if (isLinear) {
-    verb = 'Linear';
+    verb = 'Linear'; // i18n-ignore (brand name)
     subject = input.summary ? truncate(input.summary, 300) : null;
   } else if (isGlean) {
-    verb = 'Glean';
+    verb = 'Glean'; // i18n-ignore (brand name)
     subject = input.call?.payload?.query ? truncate(input.call.payload.query, 300) : null;
   } else if (name.includes('sentry')) {
-    verb = 'Sentry';
+    verb = 'Sentry'; // i18n-ignore (brand name)
     // Sentry tools have various input shapes - try to find the most descriptive one
     if (input.naturalLanguageQuery) {
       subject = truncate(input.naturalLanguageQuery, 60);
@@ -1464,7 +1475,7 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
     name.includes('web_fetch') ||
     name === 'fetch'
   ) {
-    verb = 'Fetch';
+    verb = m.chat_toolClassifier_fetch_label();
     if (input.url) {
       try {
         const url = new URL(input.url);
@@ -1494,14 +1505,14 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
 }
 
 function agentDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Agent';
+  let verb = m.chat_toolClassifier_agent_label();
   let subject: string | null = null;
 
   if (name.includes('create_agent') || name.includes('create-agent')) {
-    verb = 'Create agent';
+    verb = m.chat_toolClassifier_createAgent_label();
     subject = input.name ? `"${truncate(input.name, 30)}"` : null;
   } else if (name.includes('delegate')) {
-    verb = 'Delegate';
+    verb = m.chat_toolClassifier_delegate_label();
     // Show task description or a friendly label instead of raw UUID
     if (input.taskDescription) {
       subject = truncate(input.taskDescription, 40);
@@ -1513,7 +1524,7 @@ function agentDisplay(name: string, input: Record<string, any>): ToolDisplay {
       subject = 'task';
     }
   } else if (name.includes('message') || name.includes('send')) {
-    verb = 'Message agent';
+    verb = m.chat_toolClassifier_messageAgent_label();
     // Show a preview of the message if available
     if (input.message) {
       subject = truncate(input.message, 40);
@@ -1521,10 +1532,10 @@ function agentDisplay(name: string, input: Record<string, any>): ToolDisplay {
       subject = null;
     }
   } else if (name.includes('status')) {
-    verb = 'Check agent status';
+    verb = m.chat_toolClassifier_checkAgentStatus_label();
     subject = null;
   } else if (name.includes('wait')) {
-    verb = 'Wait for';
+    verb = m.chat_toolClassifier_waitFor_label();
     const ids = Array.isArray(input.agentIds)
       ? input.agentIds
       : input.agentIds
@@ -1532,10 +1543,10 @@ function agentDisplay(name: string, input: Record<string, any>): ToolDisplay {
         : [];
     subject = ids.length === 1 ? 'agent' : `${ids.length} agents`;
   } else if (name.includes('read') && name.includes('conversation')) {
-    verb = 'Read agent conversation';
+    verb = m.chat_toolClassifier_readAgentConversation_label();
     subject = null;
   } else if (name.includes('summary') || name.includes('get_agent')) {
-    verb = 'Get agent summary';
+    verb = m.chat_toolClassifier_getAgentSummary_label();
     // Try to extract agent name from input
     if (input.agentName) {
       subject = truncate(input.agentName, 30);
@@ -1547,10 +1558,10 @@ function agentDisplay(name: string, input: Record<string, any>): ToolDisplay {
       subject = null;
     }
   } else if (name.includes('list')) {
-    verb = 'List agents';
+    verb = m.chat_toolClassifier_listAgents_label();
     subject = null;
   } else if (name.includes('report') && name.includes('parent')) {
-    verb = 'Report to parent';
+    verb = m.chat_toolClassifier_reportToParent_label();
     // Show a preview of the report if available
     if (input.report) {
       subject = truncate(input.report, 50);
@@ -1569,21 +1580,21 @@ function agentDisplay(name: string, input: Record<string, any>): ToolDisplay {
 }
 
 function taskDisplay(name: string, input: Record<string, any>, result?: any): ToolDisplay {
-  let verb = 'Task';
+  let verb = m.chat_toolClassifier_task_label();
   let subject: string | null = null;
 
   if (name.includes('get') && name.includes('my') && name.includes('task')) {
     // get_my_task - reading the agent's assigned task
-    verb = 'Get task assignment';
+    verb = m.chat_toolClassifier_getTaskAssignment_label();
     // Try to extract task title from result or _noteTitle
     const noteTitle = input._noteTitle ? truncate(input._noteTitle, 30) : null;
     subject = noteTitle;
   } else if (name.includes('view') || name.includes('list') || name === 'task') {
     // "Task" with no other qualifiers is likely viewing the task list
-    verb = 'View';
+    verb = m.chat_toolClassifier_view_label();
     subject = 'task list';
   } else if (name.includes('add')) {
-    verb = 'Add';
+    verb = m.chat_toolClassifier_add_label();
     if (input.tasks && Array.isArray(input.tasks) && input.tasks.length > 0) {
       const firstName = input.tasks[0]?.name;
       subject =
@@ -1628,28 +1639,28 @@ function taskDisplay(name: string, input: Record<string, any>, result?: any): To
         // Format state nicely (COMPLETE -> complete, IN_PROGRESS -> in progress)
         const formattedState = state ? safeStr(state).toLowerCase().replace(/_/g, ' ') : null;
         if (taskName && formattedState) {
-          verb = 'Mark';
+          verb = m.chat_toolClassifier_mark_label();
           subject = `${taskName} ${formattedState}`;
         } else if (formattedState) {
-          verb = 'Mark';
+          verb = m.chat_toolClassifier_mark_label();
           subject = taskName ? `${taskName} ${formattedState}` : formattedState;
         } else if (taskName) {
-          verb = 'Update';
+          verb = m.chat_toolClassifier_update_label();
           subject = taskName;
         } else {
-          verb = 'Update';
+          verb = m.chat_toolClassifier_update_label();
           subject = 'task';
         }
       } else {
-        verb = 'Update';
+        verb = m.chat_toolClassifier_update_label();
         subject = `${count} tasks`;
       }
     } else {
-      verb = 'Update';
+      verb = m.chat_toolClassifier_update_label();
       subject = 'task';
     }
   } else if (name.includes('reorganize')) {
-    verb = 'Reorganize';
+    verb = m.chat_toolClassifier_reorganize_label();
     subject = 'task list';
   }
 
@@ -1667,7 +1678,7 @@ function workspaceDisplay(
   input: Record<string, any>,
   resultMetadata?: ResultMetadata | null,
 ): ToolDisplay {
-  let verb = 'Workspace';
+  let verb = m.chat_toolClassifier_workspace_label();
   let subject: string | null = null;
   let category: ToolCategory = 'workspace';
   let noteId: string | null = null;
@@ -1698,13 +1709,13 @@ function workspaceDisplay(
   };
 
   if (name.includes('title') && name.includes('workspace')) {
-    verb = 'Rename workspace';
+    verb = m.chat_toolClassifier_renameWorkspace_label();
     subject = input.title ? truncate(input.title, 30) : null;
   } else if (
     (name.includes('name') || name.includes('rename') || name.includes('title')) &&
     name.includes('agent')
   ) {
-    verb = 'Rename agent';
+    verb = m.chat_toolClassifier_renameAgent_label();
     subject = input.name
       ? truncate(input.name, 30)
       : input.title
@@ -1712,17 +1723,19 @@ function workspaceDisplay(
         : null;
   } else if (name.includes('create') && name.includes('note')) {
     category = 'note';
-    verb = 'Create note';
+    verb = m.chat_toolClassifier_createNote_label();
     subject = getNoteTitle(30);
     noteId = getNoteId();
   } else if (name.includes('read') && name.includes('note')) {
     category = 'note';
-    verb = 'Read note';
+    verb = m.chat_toolClassifier_readNote_label();
     subject = getNoteTitle(30);
     noteId = getNoteId();
   } else if (name.includes('task') && name.includes('status')) {
     category = 'task';
-    verb = name.includes('note') ? 'Update task status' : 'Check task';
+    verb = name.includes('note')
+      ? m.chat_toolClassifier_updateTaskStatus_label()
+      : m.chat_toolClassifier_checkTask_label();
     const noteTitle = getNoteTitle(20);
     const taskText = input.taskText ? truncate(input.taskText, 25) : null;
     const status = input.status;
@@ -1736,7 +1749,7 @@ function workspaceDisplay(
     noteId = getNoteId();
   } else if (name.includes('update') && name.includes('note')) {
     category = 'note';
-    verb = 'Update note';
+    verb = m.chat_toolClassifier_updateNote_label();
     subject = getNoteTitle(30);
     noteId = getNoteId();
   } else if (
@@ -1744,7 +1757,7 @@ function workspaceDisplay(
     (name.includes('add') && name.includes('note'))
   ) {
     category = 'note';
-    verb = 'Add to note';
+    verb = m.chat_toolClassifier_addToNote_label();
     const noteTitle = getNoteTitle(20);
     const heading = input.heading ? truncate(safeStr(input.heading).replace(/^#+\s*/, ''), 20) : null;
     // Show note title as subject, heading is already visible in the expanded view
@@ -1753,55 +1766,55 @@ function workspaceDisplay(
   } else if (name.includes('edit') && name.includes('note') && name.includes('line')) {
     // edit_note_lines - line-based editing
     category = 'note';
-    verb = 'Edit note';
+    verb = m.chat_toolClassifier_editNote_label();
     const noteTitle = getNoteTitle(25);
     subject = noteTitle;
     noteId = getNoteId();
   } else if (name.includes('edit') && name.includes('note')) {
     // edit_note - str_replace style editing
     category = 'note';
-    verb = 'Edit note';
+    verb = m.chat_toolClassifier_editNote_label();
     const noteTitle = getNoteTitle(25);
     subject = noteTitle;
     noteId = getNoteId();
   } else if (name.includes('set') && name.includes('note') && name.includes('content')) {
     // set_note_content - full replacement
     category = 'note';
-    verb = 'Replace note';
+    verb = m.chat_toolClassifier_replaceNote_label();
     const noteTitle = getNoteTitle(25);
     subject = noteTitle;
     noteId = getNoteId();
   } else if (name.includes('delete') && name.includes('note') && !name.includes('comment')) {
     category = 'note';
-    verb = 'Delete note';
+    verb = m.chat_toolClassifier_deleteNote_label();
     subject = getNoteTitle(30);
     // Don't set noteId for delete - the note won't exist anymore
   } else if (name.includes('comment')) {
     // Check comment BEFORE list_note to avoid list_note_comments matching "List notes"
     category = 'note';
     verb = name.includes('delete')
-      ? 'Delete comment'
+      ? m.chat_toolClassifier_deleteComment_label()
       : name.includes('list')
-        ? 'List comments'
+        ? m.chat_toolClassifier_listComments_label()
         : name.includes('respond')
-          ? 'Reply to comment'
-          : 'Add comment';
+          ? m.chat_toolClassifier_replyToComment_label()
+          : m.chat_toolClassifier_addComment_label();
     const noteTitle = getNoteTitle(25);
-    subject = noteTitle ? `on ${noteTitle}` : null;
+    subject = noteTitle ? m.chat_toolClassifier_onNote_subject({ noteTitle }) : null;
     noteId = getNoteId();
   } else if (name.includes('list') && name.includes('note')) {
     category = 'note';
-    verb = 'List notes';
+    verb = m.chat_toolClassifier_listNotes_label();
     subject = null;
   } else if (name.includes('timeline')) {
-    verb = 'Read';
+    verb = m.chat_toolClassifier_read_label();
     subject = 'timeline';
   } else if (name.includes('info') || name.includes('context') || name.includes('details')) {
-    verb = 'Get';
+    verb = m.chat_toolClassifier_get_label();
     subject = 'workspace info';
   } else if (input.title) {
     // Fallback for tools with a title input - likely a rename operation
-    verb = 'Rename';
+    verb = m.chat_toolClassifier_rename_label();
     subject = truncate(input.title, 30);
   }
 
@@ -1816,14 +1829,14 @@ function workspaceDisplay(
 }
 
 function metaDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Think';
+  let verb = m.chat_toolClassifier_think_label();
   let subject: string | null = null;
 
   if (name.includes('remember')) {
-    verb = 'Remember';
+    verb = m.chat_toolClassifier_remember_label();
     subject = input.memory ? truncate(input.memory, 50) : null;
   } else if (name.includes('think') || name.includes('sequential')) {
-    verb = 'Think';
+    verb = m.chat_toolClassifier_think_label();
     subject = input.thought ? truncate(input.thought, 40) : null;
   }
 
@@ -1837,7 +1850,7 @@ function metaDisplay(name: string, input: Record<string, any>): ToolDisplay {
 }
 
 function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Browser';
+  let verb = m.chat_toolClassifier_browser_label();
   let subject: string | null = null;
 
   // ---- MCP browser_exec tool: input.actions is an array of action objects ----
@@ -1847,73 +1860,73 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
 
     switch (actionType) {
       case 'screenshot':
-        verb = 'Screenshot';
+        verb = m.chat_toolClassifier_screenshot_label();
         subject = primaryAction.tabId || input.tabId ? 'tab' : 'page';
         break;
       case 'evaluate':
-        verb = 'Evaluate';
+        verb = m.chat_toolClassifier_evaluate_label();
         subject = primaryAction.expression
           ? truncate(safeStr(primaryAction.expression).split('\n')[0], 60)
           : 'script';
         break;
       case 'listTabs':
-        verb = 'List';
+        verb = m.chat_toolClassifier_list_label();
         subject = 'browser tabs';
         break;
       case 'focusTab':
-        verb = 'Focus';
+        verb = m.chat_toolClassifier_focus_label();
         subject = 'tab';
         break;
       case 'openTab':
-        verb = 'Open';
+        verb = m.chat_toolClassifier_open_label();
         subject = primaryAction.url ? truncate(primaryAction.url, 50) : 'new tab';
         break;
       case 'getAccessibilityTree':
-        verb = 'Inspect';
+        verb = m.chat_toolClassifier_inspect_label();
         subject = 'accessibility tree';
         break;
       case 'snapshot':
-        verb = 'Snapshot';
+        verb = m.chat_toolClassifier_snapshot_label();
         subject = primaryAction.name ? truncate(primaryAction.name, 40) : 'page';
         break;
       case 'resetTab':
-        verb = 'Reset';
+        verb = m.chat_toolClassifier_reset_label();
         subject = 'tab';
         break;
       case 'startSession':
-        verb = 'Start';
+        verb = m.chat_toolClassifier_start_label();
         subject = primaryAction.name ? `session "${truncate(primaryAction.name, 30)}"` : 'capture session';
         break;
       case 'endSession':
-        verb = 'End';
+        verb = m.chat_toolClassifier_end_label();
         subject = 'capture session';
         break;
       case 'captureStep':
-        verb = 'Capture';
+        verb = m.chat_toolClassifier_capture_label();
         subject = primaryAction.stepName ? truncate(primaryAction.stepName, 40) : 'step';
         break;
       case 'startCapture':
-        verb = 'Start';
+        verb = m.chat_toolClassifier_start_label();
         subject = 'capture';
         break;
       case 'endCapture':
-        verb = 'End';
+        verb = m.chat_toolClassifier_end_label();
         subject = 'capture';
         break;
       case 'startTrace':
-        verb = 'Start';
+        verb = m.chat_toolClassifier_start_label();
         subject = 'performance trace';
         break;
       case 'stopTrace':
-        verb = 'Stop';
+        verb = m.chat_toolClassifier_stop_label();
         subject = 'performance trace';
         break;
       case 'getSummary':
-        verb = 'Get';
+        verb = m.chat_toolClassifier_get_label();
         subject = 'session summary';
         break;
       default:
-        verb = 'Browser';
+        verb = m.chat_toolClassifier_browser_label();
         subject = actionType ? safeStr(actionType) : null;
         break;
     }
@@ -1941,94 +1954,97 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
     input.element ? truncate(input.element, 30) : null;
 
   if (name.includes('open-browser') || name.includes('open_browser')) {
-    verb = 'Open';
+    verb = m.chat_toolClassifier_open_label();
     subject = input.url ? truncate(input.url, 40) : 'browser';
   } else if (name.includes('navigate')) {
-    verb = 'Navigate';
+    verb = m.chat_toolClassifier_navigate_label();
     subject = input.url ? truncate(input.url, 40) : null;
   } else if (name.includes('click')) {
-    verb = 'Click';
+    verb = m.chat_toolClassifier_click_label();
     subject = getElement();
   } else if (name.includes('screenshot')) {
-    verb = 'Screenshot';
-    subject = getElement() || 'page';
+    verb = m.chat_toolClassifier_screenshot_label();
+    subject = getElement() || m.chat_toolClassifier_page_subject();
   } else if (name.includes('snapshot')) {
-    verb = 'Snapshot';
-    subject = 'page';
+    verb = m.chat_toolClassifier_snapshot_label();
+    subject = m.chat_toolClassifier_page_subject();
   } else if (name.includes('type') || name === 'fill' || name.includes('fill_form')) {
-    verb = name === 'fill' || name.includes('fill') ? 'Fill' : 'Type';
+    verb =
+      name === 'fill' || name.includes('fill')
+        ? m.chat_toolClassifier_fill_label()
+        : m.chat_toolClassifier_type_label();
     subject = input.text ? truncate(input.text, 30) : getElement();
   } else if (name.includes('hover')) {
-    verb = 'Hover';
+    verb = m.chat_toolClassifier_hover_label();
     subject = getElement();
   } else if (name.includes('drag')) {
-    verb = 'Drag';
+    verb = m.chat_toolClassifier_drag_label();
     subject = input.startElement ? truncate(input.startElement, 30) : null;
   } else if (name.includes('select') && name.includes('option')) {
-    verb = 'Select';
+    verb = m.chat_toolClassifier_select_label();
     subject = input.values
       ? Array.isArray(input.values)
         ? truncate(input.values.join(', '), 30)
         : null
       : null;
   } else if (name.includes('upload') || name.includes('file_upload')) {
-    verb = 'Upload';
+    verb = m.chat_toolClassifier_upload_label();
     subject = input.filePath
       ? filename(input.filePath)
       : Array.isArray(input.paths)
         ? `${input.paths.length} file${input.paths.length > 1 ? 's' : ''}`
         : 'file';
   } else if (name.includes('press') || name.includes('key')) {
-    verb = 'Press';
+    verb = m.chat_toolClassifier_press_label();
     subject = input.key ? input.key : null;
   } else if (name.includes('wait')) {
-    verb = 'Wait';
+    verb = m.chat_toolClassifier_wait_label();
     subject = input.text
       ? `for "${truncate(input.text, 25)}"`
       : input.time
         ? `${input.time}s`
         : null;
   } else if (name.includes('resize')) {
-    verb = 'Resize';
+    verb = m.chat_toolClassifier_resize_label();
     subject = input.width && input.height ? `${input.width}×${input.height}` : 'page';
   } else if (name.includes('close')) {
-    verb = 'Close';
+    verb = m.chat_toolClassifier_close_label();
     subject = 'page';
   } else if (name.includes('dialog')) {
-    verb = 'Handle';
+    verb = m.chat_toolClassifier_handle_label();
     subject = input.accept ? 'accept dialog' : 'dismiss dialog';
   } else if (name.includes('evaluate') || name.includes('script')) {
-    verb = 'Evaluate';
+    verb = m.chat_toolClassifier_evaluate_label();
     subject = 'script';
   } else if (name.includes('console')) {
-    verb = 'Read';
+    verb = m.chat_toolClassifier_read_label();
     subject = 'console';
   } else if (name.includes('network')) {
-    verb = 'Check';
+    verb = m.chat_toolClassifier_check_label();
     subject = 'network';
   } else if (name.includes('emulate')) {
-    verb = 'Emulate';
+    verb = m.chat_toolClassifier_emulate_label();
     subject = input.viewport
       ? `${input.viewport.width}×${input.viewport.height}`
       : input.colorScheme
         ? input.colorScheme
         : 'device';
   } else if (name.includes('performance')) {
-    verb = 'Performance';
+    verb = m.chat_toolClassifier_performance_label();
     subject = name.includes('start') ? 'start trace' : name.includes('stop') ? 'stop trace' : 'trace';
   } else if (name.includes('tab') || name.includes('page')) {
     // list_pages, select_page, new_page, close_page
     if (name.includes('list')) {
-      verb = 'List';
+      verb = m.chat_toolClassifier_list_label();
       subject = 'pages';
     } else if (name.includes('new')) {
-      verb = 'Open';
+      verb = m.chat_toolClassifier_open_label();
       subject = input.url ? truncate(input.url, 40) : 'new page';
     } else if (name.includes('select')) {
-      verb = 'Select';
+      verb = m.chat_toolClassifier_select_label();
       subject = 'page';
     } else {
-      verb = 'Browser';
+      verb = m.chat_toolClassifier_browser_label();
       subject = 'page';
     }
   }
@@ -2072,7 +2088,9 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
     }
   }
 
-  const verb = words[0] ? words[0].charAt(0).toUpperCase() + words[0].slice(1) : 'Run';
+  const verb = words[0]
+    ? words[0].charAt(0).toUpperCase() + words[0].slice(1)
+    : m.chat_toolClassifier_run_label();
   const nameSubject = words.length > 1 ? words.slice(1).join(' ') : null;
 
   // Try to extract a useful subject from input

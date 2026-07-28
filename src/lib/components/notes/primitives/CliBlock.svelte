@@ -26,6 +26,7 @@
   openTerminalTabRequested,
 } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('CliBlock');
 
@@ -54,18 +55,22 @@
   // Get button state
   let buttonState = $derived.by(() => {
     if (running) {
-      return { label: 'Running...', icon: faSpinner, spin: true };
+      return { label: m.notes_cliBlock_running_label(), icon: faSpinner, spin: true };
     }
     if (hasTerminal) {
-      return { label: 'Open', icon: faArrowUpRightFromSquare, spin: false };
+      return { label: m.notes_cliBlock_open_label(), icon: faArrowUpRightFromSquare, spin: false };
     }
     if (primitive?.lastRun?.status === 'success') {
-      return { label: 'Ran', icon: faCheck, spin: false };
+      return { label: m.notes_cliBlock_ran_label(), icon: faCheck, spin: false };
     }
     if (primitive?.lastRun?.status === 'error') {
-      return { label: `Exit ${primitive.lastRun.exitCode}`, icon: faTimes, spin: false };
+      return {
+        label: m.notes_cliBlock_exit_label({ code: primitive.lastRun.exitCode ?? '' }),
+        icon: faTimes,
+        spin: false,
+      };
     }
-    return { label: 'Run', icon: faPlay, spin: false };
+    return { label: m.notes_cliBlock_run_label(), icon: faPlay, spin: false };
   });
 
   // Run the command - creates a terminal and opens it
@@ -73,7 +78,7 @@
     e.stopPropagation();
     if (!primitive || running) return;
     if (!workspaceId) {
-      toast.error('No space context available');
+      toast.error(m.notes_cliBlock_noWorkspace_error());
       return;
     }
 
@@ -90,7 +95,9 @@
         workspaceId,
         command: primitive.command,
         cwd: primitive.cwd,
-        title: primitive.description || `Command: ${primitive.command.substring(0, 30)}`,
+        title:
+          primitive.description ||
+          m.notes_cliBlock_commandTitle_label({ command: primitive.command.substring(0, 30) }),
       });
 
       if (result.ok && result.terminalId) {
@@ -137,14 +144,14 @@
         }
 
         // Note: terminal:created event listener in +page.svelte will open the drawer
-        toast.success('Terminal opened');
+        toast.success(m.notes_cliBlock_terminalOpened_label());
       } else {
-        throw new Error(result.error || 'Failed to create terminal');
+        throw new Error(result.error || m.notes_cliBlock_createTerminalFailed_error());
       }
     } catch (err) {
       logger.error('[runCommand] Error running command', { error: err, command: primitive?.command, workspaceId });
       running = false;
-      toast.error(err instanceof Error ? err.message : 'Failed to run command');
+      toast.error(err instanceof Error ? err.message : m.notes_cliBlock_runFailed_error());
     }
   }
 
@@ -175,7 +182,7 @@
               );
             }
           }}
-          title="View agent"
+          title={m.notes_cliBlock_viewAgent_tooltip()}
         >
           <AuggieAvatar agentId={linkedAgentId} size={16} />
         </button>
@@ -197,6 +204,6 @@
       </Button>
     </div>
   {:else}
-    <div class="my-1.5 text-sm text-subtle">Invalid CLI block</div>
+    <div class="my-1.5 text-sm text-subtle">{m.notes_cliBlock_invalid_error()}</div>
   {/if}
 </NodeViewWrapper>

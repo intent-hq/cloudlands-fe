@@ -8,6 +8,7 @@
    * - Visual representation of the layout tree
    */
 
+  import { m } from '$shared/paraglide/messages.js';
   import type { PanelLayoutNode } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { cn } from '$lib/utils';
 
@@ -96,8 +97,10 @@
   )}
   role="button"
   tabindex="0"
-  aria-label={`Panel layout with ${panelRects.length} panels`}
-  title={`${panelRects.length} panel${panelRects.length !== 1 ? 's' : ''} - Click for default layout`}
+  aria-label={m.layout_panelMinimap_ariaLabel({ count: panelRects.length })}
+  title={panelRects.length === 1
+    ? m.layout_panelMinimap_tooltip_one({ count: panelRects.length })
+    : m.layout_panelMinimap_tooltip_many({ count: panelRects.length })}
   {onclick}
   onkeydown={(e) => e.key === 'Enter' && onclick?.()}
 >

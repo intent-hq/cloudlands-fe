@@ -21,6 +21,7 @@
   import { openWorkspaceInNewWindow } from '$lib/components/layout/sidebar-nav/utils/openWorkspaceInNewWindow';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { Workspace } from '$shared/types';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceIds: string[];
@@ -122,7 +123,7 @@
     return [
       {
         id: 'open',
-        label: 'Open',
+        label: m.chat_chatWorkspaceCard_menu_open_label(),
         onClick: () => {
           closeOverflowMenu();
           void handleWorkspaceClick(workspaceId);
@@ -130,7 +131,7 @@
       },
       {
         id: 'open-new-window',
-        label: 'Open in New Window',
+        label: m.chat_chatWorkspaceCard_menu_openNewWindow_label(),
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           closeOverflowMenu();
@@ -140,7 +141,7 @@
       { type: 'separator' },
       {
         id: 'archive',
-        label: 'Archive',
+        label: m.chat_chatWorkspaceCard_menu_archive_label(),
         icon: faBoxArchive,
         onClick: () => {
           appStore.dispatch(requestArchiveWorkspace(workspaceId));
@@ -149,7 +150,7 @@
       },
       {
         id: 'delete',
-        label: 'Delete Space…',
+        label: m.chat_chatWorkspaceCard_menu_deleteSpace_label(),
         icon: faTrash,
         destructive: true,
         onClick: () => {
@@ -176,10 +177,12 @@
             <button
               type="button"
               class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
-              aria-label="Workspace actions for {workspace.title || workspace.id}"
+              aria-label={m.chat_chatWorkspaceCard_actionsFor_ariaLabel({
+                name: workspace.title || workspace.id,
+              })}
               aria-haspopup="menu"
               aria-expanded={overflowMenu?.workspaceId === workspaceId}
-              title="Workspace actions"
+              title={m.chat_chatWorkspaceCard_actions_title()}
               onclick={(event) => openOverflowMenu(event, workspaceId)}
             >
               ⋯
@@ -189,7 +192,9 @@
       {:else}
         <div class="rounded-md border border-border/50 bg-muted/10 px-3 py-2 text-left">
           <div class="truncate font-mono text-xs text-foreground">{workspaceId}</div>
-          <div class="mt-0.5 text-xs text-subtle">Workspace not found</div>
+          <div class="mt-0.5 text-xs text-subtle">
+            {m.chat_chatWorkspaceCard_notFound_label()}
+          </div>
         </div>
       {/if}
     {/each}

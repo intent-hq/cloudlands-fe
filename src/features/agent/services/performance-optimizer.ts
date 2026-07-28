@@ -251,6 +251,7 @@ export class PerformanceOptimizer {
     } catch (error) {
       const duration = perf.now() - start;
       this.recordMetric(operation, duration, false, {
+        // i18n-ignore (internal performance-metric metadata, not user-facing)
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
@@ -271,7 +272,7 @@ export class PerformanceOptimizer {
     p99ResponseTime: number;
     successRate: number;
     slowOperations: string[];
-    } {
+  } {
     if (this.metricsCount === 0) {
       return {
         avgResponseTime: 0,
@@ -334,7 +335,7 @@ export class PerformanceOptimizer {
     hitRate: number;
     hits: number;
     misses: number;
-    } {
+  } {
     const total = this.cacheHits + this.cacheMisses;
     return {
       size: this.memoCache.size,

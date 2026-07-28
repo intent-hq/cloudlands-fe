@@ -13,6 +13,7 @@
 
 import type { Result, NoteComment } from '../../shared/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { m } from '$shared/paraglide/messages.js';
 
 export interface ListCommentsParams {
   status?: 'open' | 'resolved' | 'pending' | 'all';
@@ -81,7 +82,7 @@ function normalizeComment(raw: Record<string, unknown>, noteId: string): NoteCom
 }
 
 function toError(error: unknown): string {
-  return error instanceof Error ? error.message : 'Backend request failed';
+  return error instanceof Error ? error.message : m.comments_client_backendRequestFailed_error();
 }
 
 class CommentsClient {

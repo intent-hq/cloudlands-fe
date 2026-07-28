@@ -17,6 +17,7 @@
    *   - Middle area: "Add row above/below" based on Y position
    */
 
+  import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
@@ -154,7 +155,7 @@
           zoneType: 'row-above',
           position: 'before',
           insertDirection: 'vertical',
-          label: 'Add row above',
+          label: m.layout_panelSplitHandle_addRowAbove_label(),
         };
       }
       if (y > rect.height - EDGE_THRESHOLD) {
@@ -162,7 +163,7 @@
           zoneType: 'row-below',
           position: 'after',
           insertDirection: 'vertical',
-          label: 'Add row below',
+          label: m.layout_panelSplitHandle_addRowBelow_label(),
         };
       }
       // Middle area - add column left or right
@@ -172,14 +173,14 @@
           zoneType: 'column-left',
           position: 'before',
           insertDirection: 'horizontal',
-          label: 'Add column left',
+          label: m.layout_panelSplitHandle_addColumnLeft_label(),
         };
       } else {
         return {
           zoneType: 'column-right',
           position: 'after',
           insertDirection: 'horizontal',
-          label: 'Add column right',
+          label: m.layout_panelSplitHandle_addColumnRight_label(),
         };
       }
     } else {
@@ -190,7 +191,7 @@
           zoneType: 'column-left',
           position: 'before',
           insertDirection: 'horizontal',
-          label: 'Add column left',
+          label: m.layout_panelSplitHandle_addColumnLeft_label(),
         };
       }
       if (x > rect.width - EDGE_THRESHOLD) {
@@ -198,7 +199,7 @@
           zoneType: 'column-right',
           position: 'after',
           insertDirection: 'horizontal',
-          label: 'Add column right',
+          label: m.layout_panelSplitHandle_addColumnRight_label(),
         };
       }
       // Middle area - add row above or below
@@ -208,14 +209,14 @@
           zoneType: 'row-above',
           position: 'before',
           insertDirection: 'vertical',
-          label: 'Add row above',
+          label: m.layout_panelSplitHandle_addRowAbove_label(),
         };
       } else {
         return {
           zoneType: 'row-below',
           position: 'after',
           insertDirection: 'vertical',
-          label: 'Add row below',
+          label: m.layout_panelSplitHandle_addRowBelow_label(),
         };
       }
     }
@@ -311,7 +312,7 @@
     isDragging && 'dragging',
     isTabDragOver && 'tab-drag-over',
   )}
-  aria-label="Resize panel"
+  aria-label={m.layout_panelSplitHandle_resize_ariaLabel()}
   onmousedown={handleMouseDown}
   ondragover={handleTabDragOver}
   ondragleave={handleTabDragLeave}

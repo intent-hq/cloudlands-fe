@@ -1,5 +1,6 @@
 <script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type Props = {
@@ -47,7 +48,7 @@
       <button
         class="flex items-center gap-1.5 flex-1 min-w-0 text-left hover:text-muted-foreground transition-colors text-inherit cursor-pointer"
         onclick={handleOpenFile}
-        title="Click to open file"
+        title={m.editor_codeSnippet_openFile_tooltip()}
       >
         <span
           class="text-muted-foreground truncate group-hover:text-muted-foreground transition-colors"

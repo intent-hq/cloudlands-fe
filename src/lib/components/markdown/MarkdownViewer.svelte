@@ -62,6 +62,7 @@
 
   // Patterns that need markdown processing but not TipTap
   const needsProcessingPatterns = [
+    // i18n-ignore (scanner false positive: backticks in regex literal confuse the string tracker)
     /```/, // Code blocks (triple backticks)
     /`[^`]+`/, // Inline code (single backticks)
     /\|.*\|/, // Tables

@@ -55,6 +55,7 @@
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(ROOT_WORKSPACE_ID);
@@ -87,7 +88,7 @@
       const sanitized = sanitizeCommandForDisplay(lastCommand);
       return sanitized.length > 20 ? sanitized.slice(0, 20) + '…' : sanitized;
     }
-    return term.name || 'Terminal';
+    return term.name || m.terminal_quakeOverlay_terminal_fallback();
   }
 
   // ============================================================================
@@ -134,7 +135,7 @@
     const term = $terminals.find((t: TerminalTab) => t.id === $activeTerminalId);
     if (!term) return;
     isEditingHeaderName = true;
-    headerEditValue = term.customName || term.name || 'Terminal';
+    headerEditValue = term.customName || term.name || m.terminal_quakeOverlay_terminal_fallback();
     requestAnimationFrame(() => {
       const input = document.querySelector('[data-edit-header-terminal]') as HTMLInputElement;
       input?.focus();
@@ -178,7 +179,13 @@
 
   function createNewTerminal() {
     const newId = `terminal-root-${Date.now()}`;
-    appStore.dispatch(addTerminal(ROOT_WORKSPACE_ID, newId, `Terminal ${$terminals.length + 1}`));
+    appStore.dispatch(
+      addTerminal(
+        ROOT_WORKSPACE_ID,
+        newId,
+        m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
+      ),
+    );
     if (!$isOpen) {
       appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, newId));
     }
@@ -378,7 +385,7 @@
               onblur={finishEditingHeaderName}
               onkeydown={handleHeaderEditKeydown}
               class="text-sm font-medium bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 w-40 text-muted-foreground"
-              placeholder="Terminal name"
+              placeholder={m.terminal_quakeOverlay_terminalName_placeholder()}
             />
           {:else}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -386,11 +393,11 @@
               class="text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
               onclick={startEditingHeaderName}
               ondblclick={startEditingHeaderName}
-              title="Click to rename terminal"
+              title={m.terminal_quakeOverlay_renameTerminal_tooltip()}
             >
               {$terminals.find((t: TerminalTab) => t.id === $activeTerminalId)?.customName ||
                 $terminals.find((t: TerminalTab) => t.id === $activeTerminalId)?.name ||
-                'Terminal'}
+                m.terminal_quakeOverlay_terminal_fallback()}
             </span>
           {/if}
         </div>
@@ -402,9 +409,9 @@
             variant="ghost-light"
             size="icon-xs"
             onclick={clearActiveTerminal}
-            tooltip="Clear Terminal"
+            tooltip={m.terminal_quakeOverlay_clear_tooltip()}
             tooltipShortcut="⌘K"
-            aria-label="Clear terminal"
+            aria-label={m.terminal_quakeOverlay_clear_ariaLabel()}
           >
             <Fa icon={faBan} size="xs" />
           </Button>
@@ -414,9 +421,9 @@
             variant="ghost-light"
             size="icon-xs"
             onclick={handleClose}
-            tooltip="Collapse Terminal"
+            tooltip={m.terminal_quakeOverlay_collapse_tooltip()}
             tooltipShortcut="mod+J"
-            aria-label="Collapse terminal"
+            aria-label={m.terminal_quakeOverlay_collapse_ariaLabel()}
           >
             <Fa icon={faChevronDown} size="xs" />
           </Button>
@@ -467,7 +474,7 @@
                   onblur={finishEditing}
                   onkeydown={handleEditKeydown}
                   onclick={(e) => e.stopPropagation()}
-                  placeholder="Name"
+                  placeholder={m.terminal_quakeOverlay_name_placeholder()}
                   class="w-60 p-0 border-none bg-transparent font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
                 />
               {:else}
@@ -480,19 +487,23 @@
                 type="button"
                 class="ml-0.5 p-1 text-muted-foreground hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
                 onclick={(e) => closeTerminal(term.id, e)}
-                aria-label="Close terminal"
+                aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
               >
                 <Fa icon={faXmark} size="xs" />
               </button>
             </div>
           {/each}
 
-          <Tooltip content="New Terminal (⌘⇧N)" side="top" delayDuration={300}>
+          <Tooltip
+            content={m.terminal_rootOverlay_newTerminalShortcut_tooltip()}
+            side="top"
+            delayDuration={300}
+          >
             <button
               type="button"
               class="flex items-center justify-center w-7 h-7 ml-1 border-none rounded-md bg-transparent text-muted-foreground cursor-pointer transition-all duration-150 hover:bg-muted/80 hover:text-foreground"
               onclick={createNewTerminal}
-              aria-label="New terminal"
+              aria-label={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
             >
               <Fa icon={faPlus} class="w-3.5 h-3.5" />
             </button>
@@ -504,9 +515,9 @@
             variant="ghost-light"
             size="icon-xs"
             onclick={handleClose}
-            tooltip="Collapse Terminal"
+            tooltip={m.terminal_quakeOverlay_collapse_tooltip()}
             tooltipShortcut="mod+J"
-            aria-label="Collapse terminal"
+            aria-label={m.terminal_quakeOverlay_collapse_ariaLabel()}
           >
             <Fa icon={faChevronDown} size="xs" />
           </Button>

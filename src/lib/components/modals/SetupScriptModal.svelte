@@ -7,6 +7,7 @@
   import SetupScriptEditor from '$lib/components/workspace/initializer/SetupScriptEditor.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import type { ProjectType } from '$features/setup-scripts';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -72,7 +73,7 @@
   }
 </script>
 
-<Modal bind:open title="Setup Script" contentClass="p-0" onClose={handleCancel}>
+<Modal bind:open title={m.modals_setupScript_title()} contentClass="p-0" onClose={handleCancel}>
   <SetupScriptEditor
     bind:this={editorRef}
     {repoPath}
@@ -86,13 +87,13 @@
     contentOnly={true}
   />
   <div class="flex items-center justify-end gap-3 px-6 py-3 border-t border-border shrink-0">
-    <Button variant="ghost" onclick={handleCancel}>Cancel</Button>
+    <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
     {#if localHasUnsavedChanges}
       <Button class="text-white" onclick={handleSaveAndDone}>
-        Save & Done
+        {m.modals_setupScript_saveAndDone_label()}
       </Button>
     {:else}
-      <Button class="text-white" onclick={handleDone}>Done</Button>
+      <Button class="text-white" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
     {/if}
   </div>
 </Modal>

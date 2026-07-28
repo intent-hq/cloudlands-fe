@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tweened } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     value: number;
@@ -12,7 +13,7 @@
   let {
     value,
     duration = 300,
-    format = (n: number) => Math.round(n).toLocaleString(),
+    format = (n: number) => formatInteger(n),
     class: className = '',
   }: Props = $props();
 

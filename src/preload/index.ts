@@ -242,6 +242,7 @@ const ALLOWED_CHANNELS = [
   "system:check-rtk",
   "system:list-fonts",
   "app:set-badge",
+  "app:set-language-preference",
   "app:version",
   "app:get-version",
   "app:name",

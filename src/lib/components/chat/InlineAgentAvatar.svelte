@@ -19,6 +19,7 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import type { Workspace } from '$shared/types';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     agentId: string;
@@ -74,7 +75,7 @@
   });
 
   // Display name for tooltip
-  const displayName = $derived(agentData?.name || 'Agent');
+  const displayName = $derived(agentData?.name || m.chat_shared_agentName_fallback());
 </script>
 
 <!-- Provider ensures proper context and cleanup during component destruction -->

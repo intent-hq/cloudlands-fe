@@ -554,7 +554,7 @@
       {@const baseTop = commentPositions[comment.id]}
       {@const isFocused = focusedCommentId === comment.id}
       {@const horizontalOffset = isFocused ? -50 : 0}
-      <!-- Calculate adjusted top position to prevent overflow -->
+      <!-- Calculate adjusted top position to prevent overflow (i18n-ignore: code expression, not user-visible text) -->
       {@const adjustedTop = (() => {
         if (isFocused) {
           // When focused/expanded, ensure the comment doesn't go above viewport

@@ -10,6 +10,7 @@
    */
 
   import { tick } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import type { SidebarNavItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import NewWorkspaceCard from './cards/NewWorkspaceCard.svelte';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
@@ -41,10 +42,10 @@
   const isCardPinned$ = selectIsCardPinned();
   const contextMenuOpen$ = selectContextMenuOpen();
 
-  const cardMeta: Partial<Record<SidebarNavItem, { title: string; description: string }>> = {
-    'new-workspace': { title: 'Create new workspace', description: '' },
-    active: { title: 'Active workspaces', description: '' },
-    'all-workspaces': { title: 'All workspaces', description: '' },
+  const cardMeta: Partial<Record<SidebarNavItem, { title: () => string; description: string }>> = {
+    'new-workspace': { title: () => m.layout_sidebarNav_newWorkspace_title(), description: '' },
+    active: { title: () => m.layout_sidebarNav_activeWorkspaces_title(), description: '' },
+    'all-workspaces': { title: () => m.layout_sidebarNav_allWorkspaces_title(), description: '' },
   };
 
   interface Props {
@@ -158,7 +159,7 @@
         <div class="px-3 pt-3 pb-2 shrink-0 flex items-start justify-between">
           <div>
             <h3 class="{isExpanded ? 'text-base' : 'text-sm'} font-semibold text-foreground">
-              {meta.title}
+              {meta.title()}
             </h3>
             {#if meta.description}
               <p class="{isExpanded ? 'text-xs' : 'text-ui'} text-subtle mt-0.5">
@@ -167,12 +168,12 @@
             {/if}
           </div>
           {#if isExpanded}
-            <Tooltip content={$isCardPinned$ ? 'Unpin sidebar' : 'Pin sidebar open'} side="bottom" sideOffset={4}>
+            <Tooltip content={$isCardPinned$ ? m.layout_sidebarNav_unpinSidebar_tooltip() : m.layout_sidebarNav_pinSidebar_tooltip()} side="bottom" sideOffset={4}>
               <button
                 class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50
                   {$isCardPinned$ ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45'}"
                 onclick={() => appStore.dispatch(toggleCardPinned())}
-                aria-label={$isCardPinned$ ? 'Unpin sidebar' : 'Pin sidebar open'}
+                aria-label={$isCardPinned$ ? m.layout_sidebarNav_unpinSidebar_tooltip() : m.layout_sidebarNav_pinSidebar_tooltip()}
               >
                 <Fa icon={faThumbtack} size="xs" />
               </button>

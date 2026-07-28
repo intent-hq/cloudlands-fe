@@ -32,6 +32,7 @@
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { fly } from 'svelte/transition';
   import { store as appStore } from '$store/renderer/store';
+  import * as m from '$shared/paraglide/messages.js';
 
 
   interface Props {
@@ -88,7 +89,7 @@
         walkthrough = parsed;
         walkthroughStatus = 'complete';
       } else {
-        walkthroughError = 'Failed to parse walkthrough';
+        walkthroughError = m.codeReview_walkthrough_parseFailed_error();
         walkthroughStatus = 'error';
       }
     } else if (state.status === 'error' && state.error) {
@@ -156,21 +157,20 @@
         >
           <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-subtle" />
         </div>
-        <h3 class="text-sm font-medium text-foreground mb-2">Review Your Changes</h3>
+        <h3 class="text-sm font-medium text-foreground mb-2">{m.codeReview_tabContent_reviewYourChanges_title()}</h3>
         <p class="text-xs text-subtle mb-4 max-w-60">
           {#if hasChanges}
-            Get AI-powered feedback on your {$ftStagedChanges$.length} staged file{$ftStagedChanges$.length ===
-            1
-              ? ''
-              : 's'}.
+            {$ftStagedChanges$.length === 1
+              ? m.codeReview_tabContent_stagedFeedback_one({ count: $ftStagedChanges$.length })
+              : m.codeReview_tabContent_stagedFeedback_many({ count: $ftStagedChanges$.length })}
           {:else}
-            Stage some changes to get started with a code review.
+            {m.codeReview_tabContent_stageChanges_description()}
           {/if}
         </p>
         {#if hasChanges}
           <Button variant="default" size="sm" onclick={handleTriggerReview}>
             <Fa icon={faWandMagicSparkles} class="h-4 w-4 mr-2" />
-            Start Review
+            {m.codeReview_tabContent_startReview_label()}
           </Button>
         {/if}
       </div>
@@ -180,11 +180,11 @@
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-primary" />
-            <span class="text-sm font-medium">Reviewing your changes...</span>
+            <span class="text-sm font-medium">{m.codeReview_tabContent_reviewing_label()}</span>
           </div>
           <Button variant="ghost" size="xs" onclick={handleStop}>
             <Fa icon={faStop} class="h-3 w-3 mr-1" />
-            Stop
+            {m.codeReview_tabContent_stop_label()}
           </Button>
         </div>
         {#if streamingText}
@@ -209,12 +209,12 @@
               class="text-xs gap-1 bg-green-500/10 text-green-600 border-green-500/20"
             >
               <Fa icon={faCheck} class="h-3 w-3" />
-              Review Complete
+              {m.codeReview_tabContent_reviewComplete_label()}
             </Badge>
           </div>
           <Button variant="ghost" size="xs" onclick={handleTriggerReview}>
             <Fa icon={faRotateRight} class="h-3 w-3 mr-1" />
-            Re-review
+            {m.codeReview_tabContent_rereview_label()}
           </Button>
         </div>
 
@@ -234,7 +234,7 @@
         <p class="text-sm text-red-500 mb-4">{error}</p>
         <Button variant="outline" size="sm" onclick={handleTriggerReview}>
           <Fa icon={faRotateRight} class="h-4 w-4 mr-2" />
-          Try Again
+          {m.codeReview_tabContent_tryAgain_label()}
         </Button>
       </div>
     {/if}

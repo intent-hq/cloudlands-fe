@@ -13,6 +13,7 @@
   faCheck,
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     initialText: string;
@@ -73,7 +74,7 @@
     onkeydown={handleKeyDown}
     class="w-full min-h-10 max-h-48 px-3 py-2.5 text-sm leading-normal text-foreground bg-background border border-border rounded-lg resize-none overflow-y-auto focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
     rows="1"
-    placeholder="Edit your message..."
+    placeholder={m.chat_chatMessage_edit_placeholder()}
     autocorrect="off"
     autocapitalize="off"
     spellcheck="false"
@@ -82,26 +83,26 @@
   <div class="flex justify-end gap-2">
     <Button variant="ghost" size="sm" onclick={onCancel} class="text-subtle">
       <Fa icon={faXmark} class="mr-1.5" />
-      Cancel
+      {m.chat_messageEditor_cancel_label()}
     </Button>
     <Button variant="default" size="sm" onclick={handleSave} disabled={!text.trim()}>
       <Fa icon={faCheck} class="mr-1.5" />
-      Send
+      {m.chat_messageEditor_send_label()}
     </Button>
   </div>
 
   <p class="text-ui text-subtle text-right">
-    Press <kbd
+    {m.chat_messageEditor_kbdHint_before()} <kbd
       class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-ui font-medium bg-muted border border-border rounded mx-0.5"
       >⌘</kbd
     ><kbd
       class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-ui font-medium bg-muted border border-border rounded mx-0.5"
       >↵</kbd
     >
-    to send,
+    {m.chat_messageEditor_kbdHint_middle()}
     <kbd
       class="inline-flex items-center justify-center min-w-5 px-1 py-0.5 text-ui font-medium bg-muted border border-border rounded mx-0.5"
-      >Esc</kbd
-    > to cancel
+      >{m.chat_messageEditor_kbdEsc_label()}</kbd
+    > {m.chat_messageEditor_kbdHint_after()}
   </p>
 </div>

@@ -19,6 +19,7 @@ import { Logger } from '$shared/logger';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { invoke as invokeIpc } from '$shared/generated/ipc-client';
 import { appClient } from '$lib/client';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger('WorkspaceClient');
 const WORKSPACE_CLIENT_CACHE_MAX_ENTRIES = 100;
@@ -153,6 +154,7 @@ export class WorkspaceClient {
                 }
               }
               throw new Error(
+                // i18n-ignore (internal diagnostic error)
                 `Data serialization failed: ${serializeError instanceof Error ? serializeError.message : 'Unknown error'}`,
               );
             }
@@ -232,14 +234,14 @@ export class WorkspaceClient {
   private normalizeResponse<T>(response: any): Result<T, string> {
     // Guard against undefined/null responses
     if (response === undefined || response === null) {
-      return { ok: false, error: 'No response received' };
+      return { ok: false, error: 'No response received' }; // i18n-ignore (wire-error normalization)
     }
     // Handle Result format (ok/error)
     if ('ok' in response) {
       if (response.ok) {
         return { ok: true, data: response.data };
       } else {
-        return { ok: false, error: response.error || 'Unknown error' };
+        return { ok: false, error: response.error || 'Unknown error' }; // i18n-ignore (wire-error normalization)
       }
     }
     // Handle CommandResponse format (success/error)
@@ -247,11 +249,11 @@ export class WorkspaceClient {
       if (response.success) {
         return { ok: true, data: response.data };
       } else {
-        return { ok: false, error: response.error || 'Unknown error' };
+        return { ok: false, error: response.error || 'Unknown error' }; // i18n-ignore (wire-error normalization)
       }
     }
     // Fallback
-    return { ok: false, error: 'Invalid response format' };
+    return { ok: false, error: 'Invalid response format' }; // i18n-ignore (wire-error normalization)
   }
 
   /**
@@ -275,9 +277,7 @@ export class WorkspaceClient {
     return result as Result<Workspace[], string>;
   }
 
-  async create(
-    request: CreateWorkspaceRequest,
-  ): Promise<
+  async create(request: CreateWorkspaceRequest): Promise<
     | { ok: true; data: { workspace: Workspace; initialAgent?: { id: string } } }
     | {
         ok: false;
@@ -323,7 +323,7 @@ export class WorkspaceClient {
         },
       };
     }
-    const createError = result.error || 'Failed to create workspace';
+    const createError = result.error || m.workspace_client_createFailed_error();
     return result.errorCode
       ? { ok: false, error: createError, errorCode: result.errorCode }
       : { ok: false, error: createError };
@@ -349,7 +349,7 @@ export class WorkspaceClient {
       this.clearCache();
       return { ok: true, data: normalizeWorkspacePaths(result.workspace) };
     }
-    return { ok: false, error: result.error || 'Failed to update workspace' };
+    return { ok: false, error: result.error || m.workspace_client_updateFailed_error() };
   }
 
   async delete(id: WorkspaceId): Promise<Result<void, string>> {
@@ -363,7 +363,7 @@ export class WorkspaceClient {
       this.clearCache();
       return { ok: true, data: undefined };
     }
-    return { ok: false, error: result.error || 'Failed to delete workspace' };
+    return { ok: false, error: result.error || m.workspace_client_deleteFailed_error() };
   }
 
   async archive(id: WorkspaceId): Promise<Result<void, string>> {
@@ -377,7 +377,7 @@ export class WorkspaceClient {
       this.clearCache();
       return { ok: true, data: undefined };
     }
-    return { ok: false, error: result.error || 'Failed to archive workspace' };
+    return { ok: false, error: result.error || m.workspace_client_archiveFailed_error() };
   }
 
   async unarchive(id: WorkspaceId): Promise<Result<void, string>> {
@@ -391,7 +391,7 @@ export class WorkspaceClient {
       this.clearCache();
       return { ok: true, data: undefined };
     }
-    return { ok: false, error: result.error || 'Failed to unarchive workspace' };
+    return { ok: false, error: result.error || m.workspace_client_unarchiveFailed_error() };
   }
 
   /**
@@ -437,7 +437,6 @@ export class WorkspaceClient {
   async getTasks(workspaceId: WorkspaceId): Promise<Result<WorkspaceTask[], string>> {
     return this.invokeFresh<WorkspaceTask[]>(WORKSPACE_CHANNELS.GET_TASKS, { workspaceId });
   }
-
 }
 
 export const workspaceClient = new WorkspaceClient();

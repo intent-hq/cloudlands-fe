@@ -6,16 +6,14 @@
  */
 
 import { BaseMCPTool } from '../../mcp/main/mcp/tool';
-import {
-  ToolCall,
-  ToolResult,
-} from '../../mcp/main/mcp/protocol';
+import { ToolCall, ToolResult } from '../../mcp/main/mcp/protocol';
 import { CdpConnectionManager } from '../cdp-connection';
 
 export class RunScriptTool extends BaseMCPTool {
   constructor(private connectionManager: CdpConnectionManager) {
     super(
       'cdp.run_script',
+      // i18n-ignore (agent-facing CDP tool)
       'Execute JavaScript code in the renderer process. Returns the result with type information.',
       {
         type: 'object',
@@ -23,6 +21,7 @@ export class RunScriptTool extends BaseMCPTool {
           script: {
             type: 'string',
             description:
+              // i18n-ignore (agent-facing CDP tool)
               'JavaScript code to execute in the page context. Can access DOM, window, and all page variables.',
           },
         },
@@ -36,6 +35,7 @@ export class RunScriptTool extends BaseMCPTool {
       const { script } = call.arguments as { script: string };
 
       if (!script || typeof script !== 'string') {
+        // i18n-ignore (agent-facing CDP tool)
         return this.error('Script parameter is required and must be a string');
       }
 
@@ -50,12 +50,14 @@ export class RunScriptTool extends BaseMCPTool {
       // Handle script execution errors
       if (result.exceptionDetails) {
         const exception = result.exceptionDetails;
+        // i18n-ignore (agent-facing CDP tool)
         const errorMessage = exception.exception?.description || exception.text || 'Unknown error';
         const location =
           exception.lineNumber !== undefined && exception.columnNumber !== undefined
             ? `\nLine: ${exception.lineNumber + 1}, Column: ${exception.columnNumber + 1}`
             : '';
 
+        // i18n-ignore (agent-facing CDP tool)
         return this.error(`Script execution failed: ${errorMessage}${location}`);
       }
 

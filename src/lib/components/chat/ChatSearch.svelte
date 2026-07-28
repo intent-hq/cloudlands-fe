@@ -9,6 +9,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     onSearch: (query: string, filters: SearchFilters) => void;
@@ -100,7 +101,7 @@
       bind:value={searchQuery}
       onkeydown={handleKeyDown}
       type="text"
-      placeholder="Search messages..."
+      placeholder={m.chat_chatSearch_input_placeholder()}
       class="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
     />
 
@@ -111,14 +112,14 @@
         <button
           onclick={() => onNavigateResult('prev')}
           class="p-1 hover:bg-muted rounded transition-colors"
-          title="Previous result (Shift+Enter)"
+          title={m.chat_chatSearch_previousResult_title()}
         >
           <Fa icon={faChevronUp} size="xs" />
         </button>
         <button
           onclick={() => onNavigateResult('next')}
           class="p-1 hover:bg-muted rounded transition-colors"
-          title="Next result (Enter)"
+          title={m.chat_chatSearch_nextResult_title()}
         >
           <Fa icon={faChevronDown} size="xs" />
         </button>
@@ -129,7 +130,7 @@
     <button
       onclick={() => (showFilters = !showFilters)}
       class="p-1.5 hover:bg-muted rounded transition-colors {showFilters ? 'bg-muted' : ''}"
-      title="Toggle filters"
+      title={m.chat_chatSearch_toggleFilters_title()}
     >
       <Fa icon={faFilter} size="xs" class="text-ghost" />
     </button>
@@ -138,7 +139,7 @@
     <button
       onclick={onClose}
       class="p-1.5 hover:bg-muted rounded transition-colors"
-      title="Close search (Esc)"
+      title={m.chat_chatSearch_closeSearch_title()}
     >
       <Fa icon={faXmark} size="xs" class="text-ghost" />
     </button>
@@ -152,7 +153,7 @@
     >
       <!-- Role Filter -->
       <div class="flex items-center gap-2">
-        <span class="text-xs text-subtle w-20">Filter by:</span>
+        <span class="text-xs text-subtle w-20">{m.chat_chatSearch_filterBy_label()}</span>
         <div class="flex gap-1">
           <button
             onclick={() => toggleFilter('role', 'all')}
@@ -160,7 +161,7 @@
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted hover:bg-muted/80'}"
           >
-            All
+            {m.chat_chatSearch_filterAll_label()}
           </button>
           <button
             onclick={() => toggleFilter('role', 'user')}
@@ -168,7 +169,7 @@
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted hover:bg-muted/80'}"
           >
-            User
+            {m.chat_chatSearch_filterUser_label()}
           </button>
           <button
             onclick={() => toggleFilter('role', 'assistant')}
@@ -176,7 +177,7 @@
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted hover:bg-muted/80'}"
           >
-            Assistant
+            {m.chat_chatSearch_filterAssistant_label()}
           </button>
         </div>
       </div>
@@ -190,7 +191,7 @@
             onchange={handleSearch}
             class="w-3 h-3"
           />
-          <span class="text-xs text-subtle">Case sensitive</span>
+          <span class="text-xs text-subtle">{m.chat_chatSearch_caseSensitive_label()}</span>
         </label>
         <label class="flex items-center gap-2 cursor-pointer">
           <input
@@ -199,7 +200,7 @@
             onchange={handleSearch}
             class="w-3 h-3"
           />
-          <span class="text-xs text-subtle">Use regex</span>
+          <span class="text-xs text-subtle">{m.chat_chatSearch_useRegex_label()}</span>
         </label>
       </div>
     </div>
@@ -208,9 +209,9 @@
   <!-- Keyboard Shortcuts Help -->
   <div class="px-3 py-2 text-xs text-subtle bg-muted/30">
     <div class="flex gap-4">
-      <span>Enter: Next</span>
-      <span>Shift+Enter: Previous</span>
-      <span>Esc: Close</span>
+      <span>{m.chat_chatSearch_enterNext_label()}</span>
+      <span>{m.chat_chatSearch_shiftEnterPrevious_label()}</span>
+      <span>{m.chat_chatSearch_escClose_label()}</span>
     </div>
   </div>
 </div>

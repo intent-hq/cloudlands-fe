@@ -19,6 +19,7 @@
   import AuggieAvatar from '../ui/auggie-avatar/AuggieAvatar.svelte';
   import DropdownMenu from '../ui/dropdown-menu.svelte';
   import Button from '../ui/button/button.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     onSpecialistChange?: (specialistId: string | null) => void;
@@ -65,10 +66,10 @@
   let pickerOpen = $state(false);
 
   // General agent description shown when no specialist is selected
-  const generalDescription = 'This agent has full workspace context. Ask me anything about your code or what you\'d like to work on.';
+  const generalDescription = $derived(m.chat_regularAgentWelcome_generalDescription_label());
 
   // Display label for the picker trigger
-  const displayLabel = $derived(specialistInfo?.name ?? 'General');
+  const displayLabel = $derived(specialistInfo?.name ?? m.chat_shared_general_fallback());
 
   // The behavior prompt or description to show
   const displayPrompt = $derived(
@@ -110,8 +111,8 @@
             >
               <AuggieAvatar seed="blank" size={20} />
               <div class="flex flex-col min-w-0">
-                <span class="font-medium text-foreground">General</span>
-                <span class="text-xs text-subtle">No specialized behavior</span>
+                <span class="font-medium text-foreground">{m.chat_shared_general_fallback()}</span>
+                <span class="text-xs text-subtle">{m.chat_shared_noSpecializedBehavior_label()}</span>
               </div>
             </button>
 
@@ -146,7 +147,7 @@
               onclick={() => { openSpecialistSettings(); close(); }}
             >
               <Fa icon={faPlus} size={12} class="ml-1 opacity-50" />
-              <span>Create specialist</span>
+              <span>{m.chat_regularAgentWelcome_createSpecialist_label()}</span>
             </button>
           </div>
         {/snippet}
@@ -169,7 +170,9 @@
         onclick={() => (showFullPrompt = !showFullPrompt)}
         class="text-xs text-muted-foreground hover:text-foreground transition-colors mt-2 cursor-pointer"
       >
-        {showFullPrompt ? 'Show less' : 'Show more'}
+        {showFullPrompt
+          ? m.chat_regularAgentWelcome_showLess_label()
+          : m.chat_regularAgentWelcome_showMore_label()}
       </button>
     {/if}
   </div>
@@ -178,11 +181,11 @@
   {#if specialistInfo?.source}
     <p class="text-xs text-muted-foreground mb-2">
       {#if specialistInfo.source === 'project'}
-        📁 Project specialist
+        {m.chat_regularAgentWelcome_projectSpecialist_label()}
       {:else if specialistInfo.source === 'user'}
-        👤 User specialist
+        {m.chat_regularAgentWelcome_userSpecialist_label()}
       {:else if specialistInfo.source === 'bundled'}
-        📦 Built-in specialist
+        {m.chat_regularAgentWelcome_builtInSpecialist_label()}
       {/if}
     </p>
   {/if}
@@ -196,7 +199,7 @@
       class="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer pl-1.5 mr-auto"
     >
       <Fa icon={faGear} size={12} class="opacity-60" />
-      <span>Customize this specialist's behavior</span>
+      <span>{m.chat_regularAgentWelcome_customize_label()}</span>
     </Button>
   {/if}
 </div>

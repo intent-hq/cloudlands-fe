@@ -3,6 +3,7 @@
    * SettingsCard - Hover card content for the Settings nav item
    * Navigates to the settings page on click.
    */
+  import { m } from '$shared/paraglide/messages.js';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
   import { closeAll } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
@@ -17,5 +18,5 @@
     navigateToSettings();
   }}
 >
-  Go to Settings →
+  {m.layout_settingsCard_goSettings_label()}
 </button>

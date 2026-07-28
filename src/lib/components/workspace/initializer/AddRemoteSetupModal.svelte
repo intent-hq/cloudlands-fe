@@ -15,6 +15,7 @@
   import { scaleConfig } from '$lib/utils/animations';
   import { createLogger } from '$lib/utils/client-logger';
   import { portal } from '$lib/actions/portal';
+  import { m } from '$shared/paraglide/messages.js';
 
 interface Props {
     isOpen: boolean;
@@ -71,7 +72,7 @@ interface Props {
 
   function handleSave() {
     if (!isFormValid) {
-      error = 'Please fill in all required fields';
+      error = m.workspace_addRemoteSetupModal_requiredFields_error();
       return;
     }
 
@@ -124,7 +125,7 @@ interface Props {
       type="button"
       class="absolute inset-0 bg-black/50 cursor-default"
       onclick={handleClose}
-      aria-label="Close modal"
+      aria-label={m.workspace_addRemoteSetupModal_close_ariaLabel()}
       transition:fade={{ duration: 150 }}
     ></button>
 
@@ -137,7 +138,7 @@ interface Props {
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold flex items-center gap-2">
           <Fa icon={faServer} class="text-ghost" />
-          Add Remote Setup
+          {m.workspace_addRemoteSetupModal_title()}
         </h2>
         <Button onclick={handleClose} variant="ghost" size="icon">
           <Fa icon={faXmark} />
@@ -147,18 +148,18 @@ interface Props {
       <!-- Content -->
       <div class="space-y-4">
         <div>
-          <Label for="name">Setup Name *</Label>
+          <Label for="name">{m.workspace_addRemoteSetupModal_setupName_label()}</Label>
           <Input
             id="name"
             bind:value={name}
-            placeholder="e.g., Dev Server"
+            placeholder={m.workspace_addRemoteSetupModal_setupName_placeholder()}
             class="mt-1"
           />
         </div>
 
         <!-- Connection Details -->
         <div class="space-y-3">
-          <h3 class="text-sm font-medium">Connection Details</h3>
+          <h3 class="text-sm font-medium">{m.workspace_addRemoteSetupModal_connectionDetails_label()}</h3>
 
           <!-- Transport type selector -->
           <div class="flex gap-2">
@@ -174,6 +175,7 @@ interface Props {
                 }
               }}
             >
+              <!-- i18n-ignore (protocol name) -->
               SSH
             </button>
             <button
@@ -188,6 +190,7 @@ interface Props {
                 }
               }}
             >
+              <!-- i18n-ignore (protocol name) -->
               WebSocket
             </button>
           </div>
@@ -195,16 +198,12 @@ interface Props {
           {#if transport === 'ssh'}
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <Label for="host">Host *</Label>
-                <Input
-                  id="host"
-                  bind:value={host}
-                  placeholder="dev.example.com"
-                  class="mt-1"
-                />
+                <Label for="host">{m.workspace_addRemoteSetupModal_host_label()}</Label>
+                <!-- i18n-ignore (example hostname placeholder) -->
+                <Input id="host" bind:value={host} placeholder="dev.example.com" class="mt-1" />
               </div>
               <div>
-                <Label for="port">Port</Label>
+                <Label for="port">{m.workspace_addRemoteSetupModal_port_label()}</Label>
                 <Input
                   id="port"
                   type="number"
@@ -216,31 +215,23 @@ interface Props {
             </div>
           {:else}
             <div>
-              <Label for="wsUrl">WebSocket URL *</Label>
-              <Input
-                id="wsUrl"
-                bind:value={wsUrl}
-                placeholder="wss://dev.example.com/ws"
-                class="mt-1"
-              />
+              <Label for="wsUrl">{m.workspace_addRemoteSetupModal_wsUrl_label()}</Label>
+              <!-- i18n-ignore (example URL placeholder) -->
+              <Input id="wsUrl" bind:value={wsUrl} placeholder="wss://dev.example.com/ws" class="mt-1" />
             </div>
           {/if}
 
           <div>
-            <Label for="username">Username *</Label>
-            <Input
-              id="username"
-              bind:value={username}
-              placeholder="john"
-              class="mt-1"
-            />
+            <Label for="username">{m.workspace_addRemoteSetupModal_username_label()}</Label>
+            <!-- i18n-ignore (example username placeholder) -->
+            <Input id="username" bind:value={username} placeholder="john" class="mt-1" />
           </div>
         </div>
 
         <!-- Authentication (SSH only) -->
         {#if transport === 'ssh'}
           <div class="space-y-3">
-            <h3 class="text-sm font-medium">Authentication</h3>
+            <h3 class="text-sm font-medium">{m.workspace_addRemoteSetupModal_authentication_label()}</h3>
 
             <!-- Auth mode radio buttons -->
             <div class="space-y-2">
@@ -263,7 +254,7 @@ interface Props {
                 <div class="flex-1">
                   <div class="flex items-center gap-2">
                     <Fa icon={faKey} class="text-ghost text-xs" />
-                    <span class="text-sm font-medium">SSH Agent</span>
+                    <span class="text-sm font-medium">{m.workspace_addRemoteSetupModal_sshAgent_label()}</span>
                   </div>
                 </div>
               </label>
@@ -285,17 +276,14 @@ interface Props {
                   class="mt-1"
                 />
                 <div class="flex-1">
-                  <span class="text-sm font-medium">Key File</span>
+                  <span class="text-sm font-medium">{m.workspace_addRemoteSetupModal_keyFile_label()}</span>
                   {#if authMode === 'keyfile'}
                     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                     <!-- stopPropagation prevents clicks on interactive elements from bubbling
                          to the parent <label>, which would steal focus to the radio button -->
                     <div class="mt-1" onclick={(e) => e.stopPropagation()}>
-                      <Input
-                        bind:value={keyPath}
-                        placeholder="~/.ssh/id_rsa"
-                        class="mt-1 h-8"
-                      />
+                      <!-- i18n-ignore (example path placeholder) -->
+                      <Input bind:value={keyPath} placeholder="~/.ssh/id_rsa" class="mt-1 h-8" />
                     </div>
                   {/if}
                 </div>
@@ -318,7 +306,7 @@ interface Props {
                   class="mt-1"
                 />
                 <div class="flex-1">
-                  <span class="text-sm font-medium">Password</span>
+                  <span class="text-sm font-medium">{m.workspace_addRemoteSetupModal_password_label()}</span>
                   {#if authMode === 'password'}
                     <div class="mt-1">
                       <Input
@@ -337,37 +325,28 @@ interface Props {
           <!-- WebSocket info - no SSH auth needed -->
           <div class="text-sm text-subtle bg-muted/50 px-3 py-2 rounded-md">
             <p>
-              WebSocket connections use the authentication configured on the remote server.
-              No SSH credentials are required.
+              {m.workspace_addRemoteSetupModal_websocketAuth_description()}
             </p>
           </div>
         {/if}
 
         <!-- Repository Path -->
         <div>
-          <Label for="workspacePath">Repository Path *</Label>
-          <Input
-            id="workspacePath"
-            bind:value={workspacePath}
-            placeholder="/home/user/myrepo"
-            class="mt-1"
-          />
+          <Label for="workspacePath">{m.workspace_addRemoteSetupModal_repoPath_label()}</Label>
+          <!-- i18n-ignore (example path placeholder) -->
+          <Input id="workspacePath" bind:value={workspacePath} placeholder="/home/user/myrepo" class="mt-1" />
           <p class="text-xs text-subtle mt-1">
-            Path to the git repository on the remote server
+            {m.workspace_addRemoteSetupModal_repoPath_description()}
           </p>
         </div>
 
         <!-- Branch Name -->
         <div>
-          <Label for="branch">Branch Name</Label>
-          <Input
-            id="branch"
-            bind:value={branch}
-            placeholder="main"
-            class="mt-1"
-          />
+          <Label for="branch">{m.workspace_addRemoteSetupModal_branch_label()}</Label>
+          <!-- i18n-ignore (branch name placeholder) -->
+          <Input id="branch" bind:value={branch} placeholder="main" class="mt-1" />
           <p class="text-xs text-subtle mt-1">
-            Branch to check out on the remote server (defaults to main)
+            {m.workspace_addRemoteSetupModal_branch_description()}
           </p>
         </div>
 
@@ -378,8 +357,8 @@ interface Props {
 
       <!-- Footer -->
       <div class="flex justify-end gap-2 mt-6">
-        <Button onclick={handleClose} variant="outline">Cancel</Button>
-        <Button onclick={handleSave} disabled={!isFormValid}>Add Setup</Button>
+        <Button onclick={handleClose} variant="outline">{m.workspace_addRemoteSetupModal_cancel_label()}</Button>
+        <Button onclick={handleSave} disabled={!isFormValid}>{m.workspace_addRemoteSetupModal_addSetup_label()}</Button>
       </div>
     </div>
   </div>

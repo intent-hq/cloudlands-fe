@@ -14,6 +14,7 @@
   faStar,
 } from '@fortawesome/free-solid-svg-icons';
   import type { AnnotationCategory, AnnotationImportance } from './types';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     message: string;
@@ -97,9 +98,9 @@
   const lineLabel = $derived.by(() => {
     if (!lineNumber) return null;
     if (endLine && endLine > lineNumber) {
-      return `Lines ${lineNumber}-${endLine}`;
+      return m.codeWalkthrough_annotationCard_lineRange_label({ start: lineNumber, end: endLine });
     }
-    return `Line ${lineNumber}`;
+    return m.codeWalkthrough_annotationCard_line_label({ line: lineNumber });
   });
 </script>
 

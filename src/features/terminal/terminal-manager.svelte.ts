@@ -102,6 +102,7 @@ class RendererTerminalManager {
     // If forceNew is true, dispose the existing terminal first
     if (forceNew && managed) {
       logger.info(
+        // i18n-ignore (log message, not user-facing)
         `[RendererTerminalManager] Force creating new terminal, disposing existing: ${terminalId}`,
       );
       this.disposeTerminal(terminalId);
@@ -113,12 +114,14 @@ class RendererTerminalManager {
       // This prevents terminals from a different workspace from being reused
       if (managed.workspaceId !== workspaceId) {
         logger.warn(
+          // i18n-ignore (log message, not user-facing)
           `[RendererTerminalManager] Terminal ${terminalId} has mismatched workspaceId (has: ${managed.workspaceId}, requested: ${workspaceId}). Disposing and recreating.`,
         );
         this.disposeTerminal(terminalId);
         managed = undefined;
       } else {
         logger.info(
+          // i18n-ignore (log message, not user-facing)
           `[RendererTerminalManager] Reattaching to existing terminal: ${terminalId} (was attached: ${managed.isAttached})`,
         );
 
@@ -285,6 +288,7 @@ class RendererTerminalManager {
 
     if (terminalsToDispose.length > 0) {
       logger.info(
+        // i18n-ignore (log message, not user-facing)
         `[RendererTerminalManager] Disposing ${terminalsToDispose.length} terminals for workspace ${workspaceId}`,
       );
       for (const id of terminalsToDispose) {

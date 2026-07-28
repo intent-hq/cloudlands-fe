@@ -2,23 +2,18 @@ import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import {
-  MINIMUM_AUGGIE_VERSION,
-  MINIMUM_NODE_VERSION,
-} from '../../../shared/constants/auggie';
+import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { checkGitVersion } from './version-checks';
 import { executeAuggieCommand } from './execute-auggie-command';
-import {
-  findAuggiePathAsync,
-  getEnhancedPath,
-} from './auggie-path';
+import { findAuggiePathAsync, getEnhancedPath } from './auggie-path';
 import { hostExec } from '../../../shared/main/host-exec';
 import { getProviderAuthVerdict } from '../../../shared/main/provider-auth-status';
 import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
+import { m } from '../../../shared/paraglide/messages.js';
 
 // Re-export path helpers for backwards compatibility with existing consumers.
 export { findAuggiePathAsync, getEnhancedPath };
@@ -299,9 +294,9 @@ export function setupAuggieIPC() {
         });
         return {
           success: false,
-          error: `Auggie CLI check failed: ${
-            error instanceof Error ? error.message : String(error)
-          }. Please try again.`,
+          error: m.auggie_ipc_checkFailed_error({
+            error: error instanceof Error ? error.message : String(error),
+          }),
           data: status,
         };
       }
@@ -356,16 +351,16 @@ export function setupAuggieIPC() {
 
     const instructions: string[] = [];
     if (!nodeCheck.nodeVersionOk) {
-      const versionInfo = nodeCheck.nodeVersion
-        ? ` (found ${nodeCheck.nodeVersion})`
-        : ' (not found)';
+      const major = MINIMUM_NODE_VERSION.split('.')[0];
       instructions.push(
-        `Install Node.js ${MINIMUM_NODE_VERSION.split('.')[0]}+ from https://nodejs.org${versionInfo}.`,
+        nodeCheck.nodeVersion
+          ? m.auggie_ipc_installNodeFound_instruction({ major, version: nodeCheck.nodeVersion })
+          : m.auggie_ipc_installNodeNotFound_instruction({ major }),
       );
     }
     instructions.push(
-      `Run \`${command}\` in your terminal (see https://docs.augmentcode.com/cli for details).`,
-      `After install, verify with \`auggie --version\` (must be >= ${MINIMUM_AUGGIE_VERSION}).`,
+      m.auggie_ipc_runInstall_instruction({ command }),
+      m.auggie_ipc_verifyInstall_instruction({ version: MINIMUM_AUGGIE_VERSION }),
     );
 
     const errorMessage = instructions.join(' ');
@@ -399,10 +394,7 @@ export function setupAuggieIPC() {
   // the setup UI can show "logged in" once the user finishes the flow.
   ipcMain.handle(
     AUGGIE_CHANNELS.AUTHENTICATE,
-    async (
-      _,
-      _params?: { action?: 'start' | 'complete' | 'poll'; authResponse?: string },
-    ) => {
+    async (_, _params?: { action?: 'start' | 'complete' | 'poll'; authResponse?: string }) => {
       // Re-check via the daemon so callers get the current install state.
       let auggiePath: string | null = null;
       let installed = false;
@@ -422,19 +414,19 @@ export function setupAuggieIPC() {
         });
         return {
           success: false,
-          error: 'Could not reach the daemon to check for the Auggie CLI. Please try again.',
+          error: m.auggie_ipc_daemonUnreachable_error(),
         };
       }
 
       if (!installed || !auggiePath) {
         return {
           success: false,
-          error: 'Auggie CLI not found. Install it first, then click Login again.',
+          error: m.auggie_ipc_notInstalled_error(),
           errorType: 'not_installed' as const,
           data: {
             instructions: [
-              'Install the Auggie CLI first (npm install -g @augmentcode/auggie).',
-              'Then run `auggie login` in your terminal.',
+              m.auggie_ipc_installFirst_instruction(),
+              m.auggie_ipc_thenLogin_instruction(),
             ],
             command: 'auggie login',
           },
@@ -447,8 +439,7 @@ export function setupAuggieIPC() {
       // Otherwise return the instruction to run `auggie login` interactively
       // (the daemon cannot host the OAuth interactive TTY session; the user
       // runs it in their own terminal).
-      const authenticated =
-        (await getProviderAuthVerdict('auggie', { force: true })) === true;
+      const authenticated = (await getProviderAuthVerdict('auggie', { force: true })) === true;
 
       if (authenticated) {
         return {
@@ -459,13 +450,13 @@ export function setupAuggieIPC() {
 
       return {
         success: false,
-        error: 'Run `auggie login` in your terminal to sign in, then click Login again.',
+        error: m.auggie_ipc_loginRequired_error(),
         errorType: 'manual_login_required' as const,
         data: {
           authenticated: false,
           instructions: [
-            `Run \`${auggiePath} login\` (or just \`auggie login\`) in your terminal.`,
-            'Complete the browser flow, then return here and click Login again.',
+            m.auggie_ipc_runLogin_instruction({ path: auggiePath }),
+            m.auggie_ipc_completeBrowserFlow_instruction(),
           ],
           command: 'auggie login',
           auggiePath,
@@ -475,10 +466,8 @@ export function setupAuggieIPC() {
   );
 
   // Get available models for auggie — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(
-    AUGGIE_CHANNELS.GET_MODELS,
-    async (_event, params?: { forceRefresh?: boolean }) =>
-      getProviderModelsEnvelope('auggie', params),
+  ipcMain.handle(AUGGIE_CHANNELS.GET_MODELS, async (_event, params?: { forceRefresh?: boolean }) =>
+    getProviderModelsEnvelope('auggie', params),
   );
 
   // Get the latest session file
@@ -492,7 +481,7 @@ export function setupAuggieIPC() {
       } catch {
         return {
           success: false,
-          error: 'Sessions directory not found',
+          error: m.auggie_ipc_sessionsDirNotFound_error(),
         };
       }
 
@@ -501,7 +490,7 @@ export function setupAuggieIPC() {
       if (files.length === 0) {
         return {
           success: false,
-          error: 'No session files found',
+          error: m.auggie_ipc_noSessionFiles_error(),
         };
       }
 
@@ -531,7 +520,7 @@ export function setupAuggieIPC() {
     } catch (error) {
       return {
         success: false,
-        error: (error as Error).message || 'Failed to get latest session',
+        error: (error as Error).message || m.auggie_ipc_latestSessionFailed_error(),
       };
     }
   });
@@ -603,7 +592,7 @@ export function setupAuggieIPC() {
       logger.error('Error extracting file changes', error instanceof Error ? error : undefined);
       return {
         success: false,
-        error: (error as Error).message || 'Failed to extract file changes',
+        error: (error as Error).message || m.auggie_ipc_extractChangesFailed_error(),
       };
     }
   });
@@ -634,20 +623,20 @@ export function setupAuggieIPC() {
       }
       return {
         success: false,
-        error: 'No user info available',
+        error: m.auggie_ipc_noUserInfo_error(),
       };
     } catch (error) {
       // Daemon not configured / method missing: treat as no user, not a crash.
       if (error instanceof JsonRpcError && error.rpcCode === -32601) {
         return {
           success: false,
-          error: 'No user info available',
+          error: m.auggie_ipc_noUserInfo_error(),
         };
       }
       logger.error('Error getting user info', error instanceof Error ? error : undefined);
       return {
         success: false,
-        error: (error as Error).message || 'Failed to get user info',
+        error: (error as Error).message || m.auggie_ipc_userInfoFailed_error(),
       };
     }
   });
@@ -664,7 +653,7 @@ export function setupAuggieIPC() {
       if (!claudePath) {
         return {
           success: false,
-          error: 'Claude CLI not found. Please install the Claude CLI first.',
+          error: m.auggie_ipc_claudeCliNotFound_error(),
         };
       }
 
@@ -689,7 +678,7 @@ export function setupAuggieIPC() {
         success: true,
       };
     } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
+      const errorMessage = (error as Error).message || m.auggie_ipc_unknown_error();
       logger.error('Failed to uninstall MCP from Claude Code', { error: errorMessage });
       return {
         success: false,
@@ -709,7 +698,7 @@ export function setupAuggieIPC() {
       if (!codexPath) {
         return {
           success: false,
-          error: 'Codex CLI not found. Please install the Codex CLI first.',
+          error: m.auggie_ipc_codexCliNotFound_error(),
         };
       }
 
@@ -734,7 +723,7 @@ export function setupAuggieIPC() {
         success: true,
       };
     } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
+      const errorMessage = (error as Error).message || m.auggie_ipc_unknown_error();
       logger.error('Failed to uninstall MCP from Codex', { error: errorMessage });
       return {
         success: false,
@@ -754,7 +743,7 @@ export function setupAuggieIPC() {
       if (!cortexPath) {
         return {
           success: false,
-          error: 'Cortex CLI not found. Please install the Cortex CLI first.',
+          error: m.auggie_ipc_cortexCliNotFound_error(),
         };
       }
 
@@ -779,7 +768,7 @@ export function setupAuggieIPC() {
         success: true,
       };
     } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
+      const errorMessage = (error as Error).message || m.auggie_ipc_unknown_error();
       logger.error('Failed to uninstall MCP from Cortex', { error: errorMessage });
       return {
         success: false,
@@ -821,11 +810,13 @@ export function setupAuggieIPC() {
         });
         return {
           success: false,
-          error: `Failed to parse OpenCode config: ${(readOrParseError as Error).message}`,
+          error: m.auggie_ipc_parseOpencodeConfigFailed_error({
+            error: (readOrParseError as Error).message,
+          }),
         };
       }
     } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
+      const errorMessage = (error as Error).message || m.auggie_ipc_unknown_error();
       logger.error('Failed to uninstall MCP from OpenCode', { error: errorMessage });
       return {
         success: false,
@@ -867,11 +858,13 @@ export function setupAuggieIPC() {
         });
         return {
           success: false,
-          error: `Failed to parse Pi config: ${(readOrParseError as Error).message}`,
+          error: m.auggie_ipc_parsePiConfigFailed_error({
+            error: (readOrParseError as Error).message,
+          }),
         };
       }
     } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
+      const errorMessage = (error as Error).message || m.auggie_ipc_unknown_error();
       logger.error('Failed to uninstall MCP from Pi', { error: errorMessage });
       return {
         success: false,
@@ -913,11 +906,13 @@ export function setupAuggieIPC() {
         });
         return {
           success: false,
-          error: `Failed to parse Droid MCP config: ${(readOrParseError as Error).message}`,
+          error: m.auggie_ipc_parseDroidConfigFailed_error({
+            error: (readOrParseError as Error).message,
+          }),
         };
       }
     } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error';
+      const errorMessage = (error as Error).message || m.auggie_ipc_unknown_error();
       logger.error('Failed to uninstall MCP from Droid', { error: errorMessage });
       return {
         success: false,

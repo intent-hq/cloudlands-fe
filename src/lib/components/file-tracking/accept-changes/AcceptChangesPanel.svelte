@@ -53,6 +53,7 @@
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { untrack } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
   executeBackgroundAgent,
@@ -319,7 +320,7 @@
     if (state.status === 'success' && state.result && state.result !== prevCommitResult) {
       prevCommitResult = state.result;
       appStore.dispatch(setCommitMessage(workspaceId, state.result));
-      toast.success('Commit message generated');
+      toast.success(m.fileTracking_acceptChanges_commitMessageGenerated_success());
     }
   });
 
@@ -344,7 +345,7 @@
       }
 
       appStore.dispatch(setPRDescription(workspaceId, descriptionLines || state.result));
-      toast.success('PR description generated');
+      toast.success(m.fileTracking_acceptChanges_prDescriptionGenerated_success());
     }
   });
 
@@ -405,7 +406,7 @@
         stagedFiles: stagedFiles.map((f: any) => f.path),
         status: 'complete',
       }));
-      toast.success('Code review complete');
+      toast.success(m.fileTracking_acceptChanges_codeReviewComplete_success());
     }
 
     if (state.status === 'error' && state.error) {
@@ -553,10 +554,13 @@
   const generatingMessagePreview = $derived(''); // Streaming preview not available via Redux yet
   const generatingMessageStatus = $derived.by(() => {
     if (!commitIsRunning) return '';
-    if ($commitExecState$.status === 'initializing') return 'Starting agent...';
-    if ($commitExecState$.progress < 20) return 'Analyzing changes...';
-    if ($commitExecState$.progress < 50) return 'Generating commit message...';
-    return 'Finalizing...';
+    if ($commitExecState$.status === 'initializing')
+      return m.fileTracking_acceptChanges_startingAgent_label();
+    if ($commitExecState$.progress < 20)
+      return m.fileTracking_acceptChanges_analyzingChanges_label();
+    if ($commitExecState$.progress < 50)
+      return m.fileTracking_acceptChanges_generatingCommitMessage_label();
+    return m.fileTracking_acceptChanges_finalizing_label();
   });
 
   // Streaming preview data for PR description generation
@@ -564,10 +568,13 @@
   const generatingPRPreview = $derived(''); // Streaming preview not available via Redux yet
   const generatingPRStatus = $derived.by(() => {
     if (!prIsRunning) return '';
-    if ($prExecState$.status === 'initializing') return 'Starting agent...';
-    if ($prExecState$.progress < 20) return 'Analyzing commits and changes...';
-    if ($prExecState$.progress < 50) return 'Generating PR description...';
-    return 'Finalizing...';
+    if ($prExecState$.status === 'initializing')
+      return m.fileTracking_acceptChanges_startingAgent_label();
+    if ($prExecState$.progress < 20)
+      return m.fileTracking_acceptChanges_analyzingCommits_label();
+    if ($prExecState$.progress < 50)
+      return m.fileTracking_acceptChanges_generatingPrDescription_label();
+    return m.fileTracking_acceptChanges_finalizing_label();
   });
 
   // Track file tracking changes to refresh
@@ -740,7 +747,7 @@
       await prepareAction();
     } catch (error) {
       logger.error('Failed to load status', error as Error);
-      toast.error('Failed to load git status');
+      toast.error(m.fileTracking_acceptChanges_loadGitStatusFailed_error());
     } finally {
       isLoading = false;
       if (thisStatusVersion === statusRequestVersion) {
@@ -818,7 +825,7 @@
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to stage file', error as Error, { filePath });
-      toast.error('Failed to stage file');
+      toast.error(m.fileTracking_acceptChanges_stageFileFailed_error());
     }
   }
 
@@ -828,7 +835,7 @@
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to unstage file', error as Error, { filePath });
-      toast.error('Failed to unstage file');
+      toast.error(m.fileTracking_acceptChanges_unstageFileFailed_error());
     }
   }
 
@@ -839,7 +846,7 @@
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to stage all files', error as Error);
-      toast.error('Failed to stage files');
+      toast.error(m.fileTracking_acceptChanges_stageFilesFailed_error());
     }
   }
 
@@ -850,7 +857,7 @@
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to unstage all files', error as Error);
-      toast.error('Failed to unstage files');
+      toast.error(m.fileTracking_acceptChanges_unstageFilesFailed_error());
     }
   }
 
@@ -861,7 +868,7 @@
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to stage file group', error as Error, { count: paths.length });
-      toast.error('Failed to stage files');
+      toast.error(m.fileTracking_acceptChanges_stageFilesFailed_error());
     }
   }
 
@@ -872,13 +879,13 @@
       await refreshPrepareData();
     } catch (error) {
       logger.error('Failed to unstage file group', error as Error, { count: paths.length });
-      toast.error('Failed to unstage files');
+      toast.error(m.fileTracking_acceptChanges_unstageFilesFailed_error());
     }
   }
 
   async function handleRevert(filePath: string) {
     // Use optimistic revert - UI updates immediately, toast shows right away
-    toast.warning('Changes reverted');
+    toast.warning(m.fileTracking_codeChanges_changesReverted_warning());
 
     // Dispatch revert action - saga handles optimistic update + rollback on failure
     appStore.dispatch(revertByPathRequested(workspaceId, [filePath]));
@@ -985,7 +992,7 @@
 
       if (result.success) {
         logger.info('Commit succeeded, updating UI');
-        toast.success('Changes committed');
+        toast.success(m.fileTracking_acceptChanges_changesCommitted_success());
         appStore.dispatch(setCommitMessage(workspaceId, ''));
         appStore.dispatch(resetAcceptChangesOperations(workspaceId));
         logger.info('Loading status after successful commit');
@@ -994,13 +1001,14 @@
         onSuccess?.(result);
       } else {
         logger.warn('Commit failed', { error: result.error });
-        toast.error(result.error || 'Failed to commit');
+        toast.error(result.error || m.fileTracking_acceptChanges_commitFailed_error());
       }
     } catch (error) {
       logger.error('Failed to commit changes', error as Error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to commit changes';
+      const errorMessage =
+        error instanceof Error ? error.message : m.fileTracking_acceptChanges_commitChangesFailed_error();
       if (errorMessage.includes('timed out')) {
-        toast.error('Commit timed out. Check git status to see if it succeeded.');
+        toast.error(m.fileTracking_acceptChanges_commitTimedOut_error());
         // Reload status to check if commit actually succeeded
         await loadStatus(false);
       } else {
@@ -1024,18 +1032,19 @@
       );
 
       if (result.success) {
-        toast.success('Changes pushed');
+        toast.success(m.fileTracking_acceptChanges_changesPushed_success());
         await loadStatus(false);
         onSuccess?.(result);
       } else {
         logger.warn('Push failed', { error: result.error, targetBranch: $acceptChangesState.targetBranch });
-        toast.error(result.error || 'Failed to push');
+        toast.error(result.error || m.fileTracking_acceptChanges_pushFailed_error());
       }
     } catch (error) {
       logger.error('Failed to push changes', error as Error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to push changes';
+      const errorMessage =
+        error instanceof Error ? error.message : m.fileTracking_acceptChanges_pushChangesFailed_error();
       if (errorMessage.includes('timed out')) {
-        toast.error('Push timed out. Check git status to see if it succeeded.');
+        toast.error(m.fileTracking_acceptChanges_pushTimedOut_error());
         await loadStatus(false);
       } else {
         toast.error(errorMessage);
@@ -1050,9 +1059,11 @@
     try {
       const newStatus = await AcceptChangesClient.addRemote(WorkspaceId(workspaceId), remoteUrl);
       status = newStatus;
-      toast.success('Remote added successfully');
+      toast.success(m.fileTracking_acceptChanges_remoteAdded_success());
     } catch (error) {
-      toast.error(`Failed to add remote: ${(error as Error).message}`);
+      toast.error(
+        m.fileTracking_acceptChanges_addRemoteFailed_error({ error: (error as Error).message }),
+      );
       throw error;
     }
   }
@@ -1071,7 +1082,11 @@
       );
 
       if (result.success) {
-        toast.success(`Changes merged into ${$acceptChangesState.targetBranch}`);
+        toast.success(
+          m.fileTracking_acceptChanges_changesMerged_success({
+            branch: $acceptChangesState.targetBranch,
+          }),
+        );
         isMergedToTrunk = true;
         celebrateMerge();
         await loadStatus(false);
@@ -1084,27 +1099,29 @@
         const needsRebase =
           errorMsg.includes('behind') ||
           errorMsg.includes('rebase') ||
+          // i18n-ignore (matches a backend error string, not UI text)
           errorMsg.includes('Please rebase first');
 
         if (needsRebase && !options?.rebaseFirst) {
           // Show toast with action to open terminal and run rebase
-          toast.error('Branch is behind trunk', {
-            description: 'Your branch needs to be rebased before merging.',
+          toast.error(m.fileTracking_acceptChanges_branchBehind_error(), {
+            description: m.fileTracking_acceptChanges_branchBehind_description(),
             action: {
-              label: 'Rebase in Terminal',
+              label: m.fileTracking_acceptChanges_rebaseInTerminal_label(),
               onClick: () => openRebaseTerminal(),
             },
             duration: 10000,
           });
         } else {
-          toast.error(result.error || 'Failed to merge');
+          toast.error(result.error || m.fileTracking_acceptChanges_mergeFailed_error());
         }
       }
     } catch (error) {
       logger.error('Failed to merge to trunk', error as Error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to merge changes';
+      const errorMessage =
+        error instanceof Error ? error.message : m.fileTracking_acceptChanges_mergeChangesFailed_error();
       if (errorMessage.includes('timed out')) {
-        toast.error('Merge timed out. Check git status to see if it succeeded.');
+        toast.error(m.fileTracking_acceptChanges_mergeTimedOut_error());
         await loadStatus(false);
       } else {
         toast.error(errorMessage);
@@ -1123,7 +1140,7 @@
 
     const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (!worktreePath) {
-      toast.error('Cannot find space path');
+      toast.error(m.fileTracking_acceptChanges_noSpacePath_error());
       return;
     }
 
@@ -1138,24 +1155,24 @@
         workspaceId,
         command: rebaseCommand,
         cwd: worktreePath,
-        title: `Rebase onto ${tb}`,
+        title: m.fileTracking_acceptChanges_rebaseOnto_title({ branch: tb }),
       });
 
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
-        const terminalTitle = `Rebase onto ${tb}`;
+        const terminalTitle = m.fileTracking_acceptChanges_rebaseOnto_title({ branch: tb });
         appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
         appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
-        toast.success('Rebase started in terminal', {
-          description: 'After rebase completes, retry the merge.',
+        toast.success(m.fileTracking_acceptChanges_rebaseStarted_success(), {
+          description: m.fileTracking_acceptChanges_rebaseStarted_description(),
         });
       } else {
-        toast.error(result.error || 'Failed to open terminal');
+        toast.error(result.error || m.fileTracking_acceptChanges_openTerminalFailed_error());
       }
     } catch (error) {
       logger.error('Failed to open rebase terminal', error as Error);
-      toast.error('Failed to open terminal');
+      toast.error(m.fileTracking_acceptChanges_openTerminalFailed_error());
     }
   }
 
@@ -1174,7 +1191,7 @@
 
   async function handleCreateWorkspace(prompt: string) {
     if (!$workspace?.repositoryPath) {
-      toast.error('No repository path found');
+      toast.error(m.fileTracking_acceptChanges_noRepoPath_error());
       return;
     }
 
@@ -1185,7 +1202,7 @@
       if ($workspace.id) {
         const archiveResult = await workspaceClient.archive($workspace.id);
         if (!archiveResult.ok) {
-          toast.error('Failed to archive workspace');
+          toast.error(m.fileTracking_acceptChanges_archiveFailed_error());
           isCreatingWorkspace = false;
           return;
         }
@@ -1201,7 +1218,7 @@
       // Prepare the initial agent configuration. No client-minted agentId:
       // the daemon assigns the id and returns it on the create result.
       const initialAgent = {
-        name: 'Starting new Space',
+        name: m.fileTracking_acceptChanges_startingNewSpace_label(),
         model: selectedModel ?? undefined, // undefined means use specialist default
         prompt: prompt.trim() || undefined,
         agentType: createAgentTypeId('workspace'),
@@ -1224,7 +1241,7 @@
       // Create the workspace
       // Note: Branch name will be generated by the backend using the workspace ID
       const result = await workspaceClient.create({
-        title: repoPath.split('/').pop() || 'New Workspace',
+        title: repoPath.split('/').pop() || m.fileTracking_acceptChanges_newWorkspace_title(),
         repositoryPath: repoPath,
         // branch is omitted - backend will use workspace ID as branch name
         baseRef: baseBranch,
@@ -1233,7 +1250,7 @@
       });
 
       if (!result.ok) {
-        throw new Error(result.error || 'Failed to create space');
+        throw new Error(result.error || m.fileTracking_acceptChanges_createSpaceFailed_error());
       }
 
       const newWorkspace = result.data.workspace;
@@ -1247,7 +1264,7 @@
       // Initial-agent lifecycle (creation + initial-message delivery) is
       // owned by the daemon on workspace.create; no pending-agent stash here.
 
-      toast.success('New space created!');
+      toast.success(m.fileTracking_acceptChanges_newSpaceCreated_success());
 
       // Navigate to the new workspace using full page navigation
       // We use window.location.href instead of SvelteKit's goto() because the workspace page
@@ -1257,7 +1274,11 @@
       window.location.href = `/workspace/${newWorkspace.id}`;
     } catch (error) {
       logger.error('Failed to create workspace', error as Error);
-      toast.error(error instanceof Error ? error.message : 'Failed to create space');
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : m.fileTracking_acceptChanges_createSpaceFailed_error(),
+      );
     } finally {
       isCreatingWorkspace = false;
     }
@@ -1268,7 +1289,7 @@
 
     // If including commit, we need a commit message
     if (includeCommit && !$acceptChangesState.commitMessage.trim()) {
-      toast.error('Please enter a commit message');
+      toast.error(m.fileTracking_acceptChanges_enterCommitMessage_error());
       return;
     }
 
@@ -1288,13 +1309,13 @@
         );
 
         if (result.success) {
-          toast.success('Changes added to PR');
+          toast.success(m.fileTracking_acceptChanges_changesAddedToPr_success());
           appStore.dispatch(setCommitMessage(workspaceId, ''));
           await loadStatus(false);
           onSuccess?.(result);
         } else {
           logger.warn('Add to PR failed', { error: result.error });
-          toast.error(result.error || 'Failed to add to PR');
+          toast.error(result.error || m.fileTracking_acceptChanges_addToPrFailed_error());
         }
       } else {
         // Just push
@@ -1305,19 +1326,20 @@
         );
 
         if (result.success) {
-          toast.success('Changes added to PR');
+          toast.success(m.fileTracking_acceptChanges_changesAddedToPr_success());
           await loadStatus(false);
           onSuccess?.(result);
         } else {
           logger.warn('Add to PR failed', { error: result.error });
-          toast.error(result.error || 'Failed to add to PR');
+          toast.error(result.error || m.fileTracking_acceptChanges_addToPrFailed_error());
         }
       }
     } catch (error) {
       logger.error('Failed to add to PR', error as Error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to add to PR';
+      const errorMessage =
+        error instanceof Error ? error.message : m.fileTracking_acceptChanges_addToPrFailed_error();
       if (errorMessage.includes('timed out')) {
-        toast.error('Operation timed out. Check git status to see if it succeeded.');
+        toast.error(m.fileTracking_acceptChanges_operationTimedOut_error());
         await loadStatus(false);
       } else {
         toast.error(errorMessage);
@@ -1344,7 +1366,9 @@
 
     isCreatingPR = true;
     try {
-      const title = $acceptChangesState.prTitle || `Changes from ${status?.branch}`;
+      const title =
+        $acceptChangesState.prTitle ||
+        m.fileTracking_acceptChanges_changesFrom_title({ branch: status?.branch ?? '' });
       const result = await withTimeout(
         AcceptChangesClient.execute(WorkspaceId(workspaceId), 'create-pr', {
           targetBranch: $acceptChangesState.targetBranch,
@@ -1366,16 +1390,19 @@
           pendingActionAfterAuth = 'create-pr';
           showGitHubAuthModal = true;
         } else {
-          toast.error(result.error || 'Failed to create PR');
+          toast.error(result.error || m.fileTracking_acceptChanges_createPrFailed_error());
         }
         // Still refresh status - commit may have succeeded before PR creation failed
         await loadStatus(false);
       }
     } catch (error) {
       logger.error('Failed to create pull request', error as Error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create pull request';
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : m.fileTracking_acceptChanges_createPullRequestFailed_error();
       if (errorMessage.includes('timed out')) {
-        toast.error('PR creation timed out. Check GitHub to see if it was created.');
+        toast.error(m.fileTracking_acceptChanges_prCreationTimedOut_error());
       } else if (errorMessage.toLowerCase().includes('github authentication')) {
         pendingActionAfterAuth = 'create-pr';
         showGitHubAuthModal = true;
@@ -1615,10 +1642,17 @@
     appStore.dispatch(setPendingCommitAction(workspaceId, 'commit'));
 
     // Start optimistic background operation tracking
-    appStore.dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Committing changes...'));
+    appStore.dispatch(
+      startBackgroundOperation(
+        workspaceId,
+        'commit',
+        Date.now(),
+        m.fileTracking_acceptChanges_committingChanges_label(),
+      ),
+    );
 
     // Show optimistic feedback - brief toast, UI shows status
-    toast.info('Committing in background...', { duration: 2000 });
+    toast.info(m.fileTracking_acceptChanges_committingInBackground_info(), { duration: 2000 });
 
     // Start generating the commit message
     appStore.dispatch(executeBackgroundAgent(workspaceId, 'commit'));
@@ -1632,10 +1666,17 @@
     appStore.dispatch(setPendingCommitAction(workspaceId, 'add-to-pr'));
 
     // Start optimistic background operation tracking
-    appStore.dispatch(startBackgroundOperation(workspaceId, 'add-to-pr', Date.now(), 'Adding to PR...'));
+    appStore.dispatch(
+      startBackgroundOperation(
+        workspaceId,
+        'add-to-pr',
+        Date.now(),
+        m.fileTracking_acceptChanges_addingToPr_label(),
+      ),
+    );
 
     // Show optimistic feedback - brief toast, UI shows status
-    toast.info('Adding to PR in background...', { duration: 2000 });
+    toast.info(m.fileTracking_acceptChanges_addingToPrInBackground_info(), { duration: 2000 });
 
     // Start generating the commit message
     appStore.dispatch(executeBackgroundAgent(workspaceId, 'commit'));
@@ -1653,10 +1694,17 @@
     appStore.dispatch(setPendingPRContext(workspaceId, context));
 
     // Start optimistic background operation tracking
-    appStore.dispatch(startBackgroundOperation(workspaceId, 'create-pr', Date.now(), 'Creating PR...'));
+    appStore.dispatch(
+      startBackgroundOperation(
+        workspaceId,
+        'create-pr',
+        Date.now(),
+        m.fileTracking_acceptChanges_creatingPr_label(),
+      ),
+    );
 
     // Show optimistic feedback - brief toast, UI shows status
-    toast.info('Creating PR in background...', { duration: 2000 });
+    toast.info(m.fileTracking_acceptChanges_creatingPrInBackground_info(), { duration: 2000 });
 
     // Start generating the PR description
     appStore.dispatch(executeBackgroundAgent(workspaceId, 'pr', context));
@@ -1670,10 +1718,17 @@
     appStore.dispatch(setPendingCommitAction(workspaceId, options?.squash ? 'squash-merge' : 'merge'));
 
     // Start optimistic background operation tracking
-    appStore.dispatch(startBackgroundOperation(workspaceId, 'commit', Date.now(), 'Merging to trunk...'));
+    appStore.dispatch(
+      startBackgroundOperation(
+        workspaceId,
+        'commit',
+        Date.now(),
+        m.fileTracking_acceptChanges_mergingToTrunk_label(),
+      ),
+    );
 
     // Show optimistic feedback - brief toast, UI shows status
-    toast.info('Merging in background...', { duration: 2000 });
+    toast.info(m.fileTracking_acceptChanges_mergingInBackground_info(), { duration: 2000 });
 
     // Start generating the commit message (will trigger merge on completion)
     appStore.dispatch(executeBackgroundAgent(workspaceId, 'commit'));
@@ -1701,8 +1756,8 @@
 </script>
 
 <PanelWrapper
-  title="Review changes"
-  breadcrumbs={[{ label: 'Changes', icon: faPencil }]}
+  title={m.fileTracking_acceptChanges_reviewChanges_title()}
+  breadcrumbs={[{ label: m.fileTracking_acceptChanges_changes_breadcrumb(), icon: faPencil }]}
   {canGoBack}
   {canGoForward}
   {onNavigateBack}
@@ -1768,7 +1823,11 @@
           class="h-4 w-4 {executionResult.success ? 'text-green-500' : 'text-red-500'}"
         />
         <div class="flex-1">
-          <p class="text-sm font-medium">{executionResult.success ? 'Success' : 'Failed'}</p>
+          <p class="text-sm font-medium">
+            {executionResult.success
+              ? m.fileTracking_acceptChanges_success_label()
+              : m.fileTracking_acceptChanges_failed_label()}
+          </p>
           {#if executionResult.error}
             <p class="text-xs text-subtle">{executionResult.error}</p>
           {/if}
@@ -1782,7 +1841,7 @@
           onclick={() => handleOpenPR(executionResult!.result!.prUrl!)}
         >
           <Fa icon={faExternalLinkAlt} class="h-3 w-3 mr-1.5" />
-          View Pull Request
+          {m.fileTracking_acceptChanges_viewPullRequest_label()}
         </Button>
       {/if}
 
@@ -1793,7 +1852,7 @@
           executionResult = null;
         }}
       >
-        Back to Changes
+        {m.fileTracking_acceptChanges_backToChanges_label()}
       </Button>
     </div>
   {:else if status || hasFilesToShow}
@@ -1802,7 +1861,7 @@
       {workspaceId}
       workspace={$workspace}
       workspaceTitle={$workspace?.title}
-      branch={status?.branch ?? (isLoadingStatus ? '' : 'Loading...')}
+      branch={status?.branch ?? (isLoadingStatus ? '' : m.fileTracking_acceptChanges_loading_label())}
       targetBranch={$acceptChangesState.targetBranch}
       availableBranches={status?.availableBranches ?? []}
       {unstagedFiles}

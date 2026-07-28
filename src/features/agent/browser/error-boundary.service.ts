@@ -7,13 +7,11 @@
 
 import { createLogger } from '$lib/utils/client-logger';
 import { toast } from 'svelte-sonner';
-import {
-  AgentError,
-  AgentErrorCode,
-} from '../errors/agent-errors';
+import { AgentError, AgentErrorCode } from '../errors/agent-errors';
 import { RETRY } from '$shared/constants';
 import { cleanErrorMessage } from '$shared/errors/messages';
 import { isFatalError } from '$shared/constants/agent-streaming';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('ErrorBoundary');
 
@@ -100,7 +98,7 @@ export class ErrorBoundaryService {
           const delay = exponentialBackoff ? retryDelay * Math.pow(2, attempt - 1) : retryDelay;
 
           if (notifyOnRetry) {
-            toast.warning(`Something went wrong, retrying in ${delay / 1000}s...`);
+            toast.warning(m.agent_errorBoundary_retrying_message({ seconds: delay / 1000 }));
           }
 
           onRetry?.(attempt);
@@ -115,7 +113,9 @@ export class ErrorBoundaryService {
 
     // All attempts failed
     const detailedMessage = `${operationName} failed after ${attempt} attempt${attempt === 1 ? '' : 's'}: ${lastError?.message}`;
-    const userMessage = cleanErrorMessage(lastError?.message || 'Something went wrong. Please try again.');
+    const userMessage = cleanErrorMessage(
+      lastError?.message || m.agent_errorBoundary_generic_error(),
+    );
 
     // Don't show toast for "all models exhausted" errors - the error is already shown in chat
     const lowerMessage = lastError?.message?.toLowerCase() || '';

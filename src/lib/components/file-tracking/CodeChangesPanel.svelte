@@ -53,6 +53,7 @@
   import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
 
@@ -139,6 +140,7 @@
   $effect(() => {
     if (workspaceId && workspaceId !== previousWorkspaceId) {
       logger.info(
+        // i18n-ignore (log message, not user-facing)
         `[CodeChangesPanel] Workspace changed from ${previousWorkspaceId} to ${workspaceId}`,
       );
       previousWorkspaceId = workspaceId;
@@ -195,8 +197,8 @@
   const commitHistory = $derived.by(() =>
     $ftCommits$.map((commit) => ({
       hash: commit.hash,
-      message: commit.message || commit.hash?.slice(0, 7) || 'unknown',
-      author: commit.author || 'unknown',
+      message: commit.message || commit.hash?.slice(0, 7) || m.fileTracking_codeChanges_unknown_fallback(),
+      author: commit.author || m.fileTracking_codeChanges_unknown_fallback(),
       timestamp: commit.timestamp,
       files: commit.files,
       filesChanged: commit.filesChanged || commit.files?.length || 0,
@@ -245,7 +247,9 @@
     if (!workspaceId) return;
     const result = await stageFilesViaSeam(workspaceId, [change.relativePath || change.file]);
     if (!result.success) {
-      toast.error('Stage failed', { description: result.error || 'Unknown error' });
+      toast.error(m.fileTracking_codeChanges_stageFailed_error(), {
+        description: result.error || m.ui_workspaceActions_unknown_error(),
+      });
     }
   }
 
@@ -268,7 +272,9 @@
     if (paths.length > 0) {
       const result = await stageFilesViaSeam(workspaceId, paths);
       if (!result.success) {
-        toast.error('Stage failed', { description: result.error || 'Unknown error' });
+        toast.error(m.fileTracking_codeChanges_stageFailed_error(), {
+          description: result.error || m.ui_workspaceActions_unknown_error(),
+        });
       }
     }
   }
@@ -299,7 +305,7 @@
     }
 
     // Use optimistic revert - UI updates immediately, toast shows right away
-    toast.warning('Changes reverted');
+    toast.warning(m.fileTracking_codeChanges_changesReverted_warning());
 
     if (!workspaceId) return;
     // TODO: revert still dispatches the legacy changes-slice action — the daemon
@@ -330,7 +336,7 @@
   );
 
   // Computed: summary text for the accept button
-  const acceptButtonText = $derived('Accept changes');
+  const acceptButtonText = $derived(m.workspace_specOnboarding_acceptChanges_label());
 </script>
 
 {#snippet acceptButton()}
@@ -356,8 +362,8 @@
     {#if backgroundOperation}
       <Tooltip
         content={backgroundOperation.phase === 'generating'
-          ? 'Generating message...'
-          : 'Syncing changes...'}
+          ? m.fileTracking_codeChanges_generatingMessage_tooltip()
+          : m.fileTracking_codeChanges_syncingChanges_tooltip()}
       >
         <div class="flex items-center gap-1.5 px-2 py-1 text-xs text-green-600 dark:text-green-400">
           <div class="relative">
@@ -368,18 +374,18 @@
           </div>
           <span class="text-ui">
             {#if backgroundOperation.type === 'commit'}
-              Committing
+              {m.fileTracking_codeChanges_committing_label()}
             {:else if backgroundOperation.type === 'add-to-pr'}
-              Adding to PR
+              {m.fileTracking_codeChanges_addingToPr_label()}
             {:else}
-              Creating PR
+              {m.fileTracking_codeChanges_creatingPr_label()}
             {/if}
           </span>
         </div>
       </Tooltip>
     {/if}
 
-    <Tooltip content="Refresh changes">
+    <Tooltip content={m.fileTracking_codeChanges_refresh_tooltip()}>
       <Button
         variant="ghost-light"
         size="icon"
@@ -392,15 +398,19 @@
     </Tooltip>
 
     <ToggleGroup.Root bind:value={viewMode} size="xs" variant="default">
-      <ToggleGroup.Item value="list" size="xs" tooltip="List view">
+      <ToggleGroup.Item value="list" size="xs" tooltip={m.fileTracking_codeChanges_listView_tooltip()}>
         <Fa icon={faList} size="xs" />
       </ToggleGroup.Item>
-      <ToggleGroup.Item value="tree" size="xs" tooltip="Tree view">
+      <ToggleGroup.Item value="tree" size="xs" tooltip={m.fileTracking_codeChanges_treeView_tooltip()}>
         <Fa icon={faFolderTree} size="xs" />
       </ToggleGroup.Item>
     </ToggleGroup.Root>
 
-    <Tooltip content={$autoCommitEnabled ? 'Auto-commit enabled' : 'Auto-commit disabled'}>
+    <Tooltip
+      content={$autoCommitEnabled
+        ? m.fileTracking_codeChanges_autoCommitOn_tooltip()
+        : m.fileTracking_codeChanges_autoCommitOff_tooltip()}
+    >
       <div class="flex items-center gap-1.5 pl-1">
         <Switch
           size="sm"
@@ -417,7 +427,7 @@
 {/snippet}
 
 <VSCodeScrollablePanel
-  title="Code Changes"
+  title={m.fileTracking_codeChanges_panel_title()}
   scrollAreaClass="h-full flex-1 flex flex-col"
   contentClass="pb-0! h-full flex-1 flex flex-col"
   {collapsed}
@@ -448,7 +458,7 @@
         <!-- Auto-commit notice -->
         {#if $autoCommitEnabled && (stagedChanges.length > 0 || unstagedChanges.length > 0)}
           <div class="px-2 py-1.5 mb-2 text-xs text-subtle bg-muted/50 rounded">
-            Auto-commit is on. Agent changes will be committed automatically.
+            {m.fileTracking_codeChanges_autoCommitNotice_label()}
           </div>
         {/if}
 
@@ -460,7 +470,7 @@
             onToggleCollapse={() => (stagedCollapsed = !stagedCollapsed)}
           >
             {#snippet actions()}
-              <Tooltip content="Unstage all">
+              <Tooltip content={m.workspace_fileChanges_unstageAll_label()}>
                 <Button
                   variant="ghost"
                   size="icon-xs"
@@ -492,13 +502,13 @@
         {#if unstagedChanges.length > 0}
           <ListSection
             class="mb-3 {$autoCommitEnabled ? 'opacity-50 pointer-events-none' : ''}"
-            title="Unstaged"
+            title={m.fileTracking_codeChanges_unstaged_title()}
             collapsible
             collapsed={unstagedCollapsed}
             onToggleCollapse={() => (unstagedCollapsed = !unstagedCollapsed)}
           >
             {#snippet actions()}
-              <Tooltip content="Stage all">
+              <Tooltip content={m.workspace_fileChanges_stageAll_label()}>
                 <Button
                   variant="ghost"
                   size="icon-xs"
@@ -531,7 +541,7 @@
       <!-- {#if commitHistory.length > 0}
         <ListSection
           class="mb-3"
-          title={`Commits (${commitHistory.length})`}
+          title={m.fileTracking_codeChanges_commitsCount_title({ count: commitHistory.length })}
           icon={faHistory}
           collapsible
           collapsed={commitsCollapsed}
@@ -571,7 +581,9 @@
 
                 <div class="flex-1 min-w-0">
                   <div class="text-xs truncate">
-                    {commit.message || commit.hash?.substring(0, 7) || 'unknown'}
+                    {commit.message ||
+                      commit.hash?.substring(0, 7) ||
+                      m.fileTracking_codeChanges_unknown_fallback()}
                   </div>
                 </div>
 

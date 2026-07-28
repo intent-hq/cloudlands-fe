@@ -10,6 +10,7 @@
  * replayed to providers); the FE renders it as a centered inline notice.
  */
 import { getProviderConfig } from '$shared/config/provider-config';
+import { m } from '$shared/paraglide/messages.js';
 
 interface MessageLike {
   role?: string;
@@ -47,8 +48,8 @@ export function getModelChangeNotice(
 
 function describeSide(providerId: string | undefined, model: string | null): string {
   const providerName = providerId ? getProviderConfig(providerId).displayName : undefined;
-  if (providerName && model) return `${providerName} / ${model}`;
-  if (providerName) return `${providerName} default model`;
+  if (providerName && model) return `${providerName} / ${model}`; // i18n-ignore (identifier pairing)
+  if (providerName) return m.chat_modelChangeNotice_defaultModel_label({ provider: providerName });
   return model ?? '';
 }
 
@@ -63,5 +64,7 @@ export function formatModelChangeLabel(
 ): string {
   const fromLabel = describeSide(notice.fromProvider, notice.from);
   const toLabel = describeSide(notice.toProvider, notice.to);
-  return fromLabel && toLabel ? `Switched from ${fromLabel} to ${toLabel}` : fallbackText;
+  return fromLabel && toLabel
+    ? m.chat_modelChangeNotice_switched_label({ from: fromLabel, to: toLabel })
+    : fallbackText;
 }

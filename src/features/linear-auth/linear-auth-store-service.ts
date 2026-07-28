@@ -39,6 +39,7 @@ import {
   startLinearAuth,
 } from "$store/renderer/slices/linear-auth/linear-auth-slice";
 import { createLogger } from "$lib/utils/client-logger";
+import { m } from "$shared/paraglide/messages.js";
 
 const logger = createLogger("LinearAuthService");
 
@@ -66,7 +67,7 @@ export async function initializeLinearAuthFlow(): Promise<void> {
 export async function connectLinearFlow(apiKey: string): Promise<void> {
   const key = apiKey.trim();
   if (!key) {
-    appStore.dispatch(setLinearError("Enter a Linear API key"));
+    appStore.dispatch(setLinearError(m.linearAuth_service_enterApiKey_error()));
     return;
   }
   appStore.dispatch(setLinearError(null));
@@ -79,11 +80,11 @@ export async function connectLinearFlow(apiKey: string): Promise<void> {
     } else {
       appStore.dispatch(setLinearAuthState(false, false, null));
       appStore.dispatch(
-        setLinearError("Linear rejected the API key — check the key and try again."),
+        setLinearError(m.linearAuth_service_keyRejected_error()),
       );
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to store the API key";
+    const message = error instanceof Error ? error.message : m.linearAuth_service_storeKeyFailed_error();
     appStore.dispatch(setLinearError(message));
     logger.error("connect error", error);
   } finally {
@@ -103,7 +104,7 @@ export async function logoutLinearFlow(): Promise<void> {
     // Mirror connectLinearFlow: surface the daemon message via setLinearError
     // and bail before the re-probe (which would otherwise clobber the error
     // with `null` and mask the still-present key).
-    const message = error instanceof Error ? error.message : "Failed to clear the API key";
+    const message = error instanceof Error ? error.message : m.linearAuth_service_clearKeyFailed_error();
     appStore.dispatch(setLinearError(message));
     logger.error("logout error", error);
     return;
@@ -115,9 +116,7 @@ export async function logoutLinearFlow(): Promise<void> {
     );
     if (authState.isAuthenticated) {
       appStore.dispatch(
-        setLinearError(
-          "Key cleared, but the daemon still authenticates via its LINEAR_API_KEY environment variable.",
-        ),
+        setLinearError(m.linearAuth_service_envKeyStillActive_error()),
       );
     }
   } catch {

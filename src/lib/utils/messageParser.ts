@@ -117,6 +117,7 @@ const SPECIAL_BLOCK_PATTERNS = {
   mermaid: /(?:(`{3,})mermaid\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})mermaid\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Nav-link blocks - separate patterns for backtick vs tilde
   navLink:
+    // i18n-ignore (regex literal with backticks)
     /(?:(`{3,})nav-link\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})nav-link\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Workspace card blocks - @@@workspace sentinel syntax
   workspaceSentinel: /^@@@workspace[ \t]*\n([\s\S]*?)^@@@[ \t]*$/gm,
@@ -181,8 +182,6 @@ function parseNavLinkBody(body: string): { target: string; label?: string } | nu
   if (!target) return null;
   return label ? { target, label } : { target };
 }
-
-
 
 /**
  * Parse a single special block match into a ParsedContent
@@ -986,6 +985,7 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
   for (const block of blocks) {
     const lastBlock = merged[merged.length - 1];
     if (lastBlock?.type === 'text' && block.type === 'text') {
+      // i18n-ignore (whitespace-only template literal)
       lastBlock.content += `\n\n${block.content}`;
     } else {
       merged.push(block);
@@ -1015,11 +1015,11 @@ const GROUP_AND_THINK_TAG_REGEX =
 
 /**
  * Post-processing step: extract group markers from text blocks.
- * Scans text blocks for `<group:Name>` and `</group:Name>` (or `</group>`) tags,
- * splitting them into separate `group_start` / `group_end` entries.
+ * Scans text blocks for group open tags and group close tags,
+ * splitting them into separate group_start / group_end entries.
  *
  * Handles the streaming case: if the last group_start has no matching group_end,
- * it is marked with `metadata.isStreaming = true`.
+ * it is marked with metadata.isStreaming = true.
  */
 
 /**
@@ -1039,10 +1039,10 @@ export type RenderBlock = ParsedContent | GroupedBlock;
  * Transform a flat ParsedContent[] (with group_start/group_end markers) into a
  * tree structure where grouped content is nested inside GroupedBlock objects.
  *
- * - Content between `group_start` and `group_end` is wrapped in a `GroupedBlock`
+ * - Content between group_start and group_end is wrapped in a GroupedBlock
  * - Content outside groups passes through as-is
- * - Unclosed groups (streaming) are still wrapped, with `isStreaming: true`
- * - `group_start` and `group_end` markers themselves are consumed (not in output)
+ * - Unclosed groups (streaming) are still wrapped, with isStreaming: true
+ * - group_start and group_end markers themselves are consumed (not in output)
  */
 export function groupParsedBlocks(blocks: ParsedContent[]): RenderBlock[] {
   const result: RenderBlock[] = [];
@@ -1126,7 +1126,7 @@ export function filterWorkspaceCardsCoveredByIds(
 
 /**
  * Grouped content block structure for rendering at the ContentBlock level.
- * Wraps ContentBlocks that appear between `<group:Name>` and `</group>` tags.
+ * Wraps ContentBlocks that appear between group open and group close tags.
  */
 export interface ContentBlockGroup {
   type: 'content_group';
@@ -1138,7 +1138,7 @@ export interface ContentBlockGroup {
 export type RenderContentBlock = ContentBlock | ContentBlockGroup;
 
 /**
- * Group ContentBlocks that appear between `<group:Name>` and `</group>` tags
+ * Group ContentBlocks that appear between group open and group close tags
  * found in text-type ContentBlocks.
  *
  * This operates at the ContentBlock[] level (not ParsedContent[]), grouping
@@ -1147,11 +1147,11 @@ export type RenderContentBlock = ContentBlock | ContentBlockGroup;
  *
  * Algorithm:
  * 1. Walk through ContentBlocks in order
- * 2. When a text block contains `<group:Name>`, split text and start collecting
+ * 2. When a text block contains a group open tag, split text and start collecting
  * 3. All subsequent blocks go inside the group
- * 4. When `</group>` is found, split text and close the group
+ * 4. When a group close tag is found, split text and close the group
  * 5. If a new group opens while another is open, auto-close the previous
- * 6. Unclosed groups: isStreaming param controls the group's isStreaming flag
+ * 6. Unclosed groups: isStreaming param controls the isStreaming flag
  */
 export function groupContentBlocks(
   blocks: ContentBlock[],
@@ -1389,6 +1389,7 @@ export function cleanAgentMessage(content: string): string {
     const afterRobot = cleaned.substring(robotEmojiIndex).trim();
 
     // If there are tool calls before the robot emoji, remove that entire section
+    // i18n-ignore (matches agent transcript markers emitted in English)
     if (beforeRobot.includes('Tool call:') || beforeRobot.includes('Tool result:')) {
       // Remove the robot emoji itself and keep the content after it
       cleaned = afterRobot.replace(/^🤖\s*/, '');

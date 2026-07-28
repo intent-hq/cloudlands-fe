@@ -27,6 +27,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { store as appStore } from '$store/renderer/store';
@@ -58,9 +59,9 @@
 
   let {
     open,
-    title = 'Select folder',
+    title = m.onboarding_dirPicker_selectFolder_label(),
     initialPath,
-    selectLabel = 'Select folder',
+    selectLabel = m.onboarding_dirPicker_selectFolder_label(),
     onSelect,
     onClose,
   }: Props = $props();
@@ -304,7 +305,7 @@
           type="button"
           class="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/40 cursor-pointer"
           onclick={onClose}
-          aria-label="Close folder picker"
+          aria-label={m.onboarding_dirPicker_close_ariaLabel()}
         >
           <Fa icon={faXmark} size="sm" />
         </button>
@@ -320,8 +321,8 @@
           )}
           disabled={!listing?.parent || loading}
           onclick={navigateUp}
-          aria-label="Go up one level"
-          title="Up (Backspace)"
+          aria-label={m.onboarding_dirPicker_goUp_ariaLabel()}
+          title={m.onboarding_dirPicker_goUp_tooltip()}
         >
           <Fa icon={faArrowUp} size="sm" />
         </button>
@@ -329,7 +330,7 @@
           type="button"
           class="text-xs px-2 py-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground cursor-pointer"
           onclick={navigateHome}
-          title="Home"
+          title={m.onboarding_dirPicker_home_tooltip()}
         >
           ~
         </button>
@@ -343,7 +344,7 @@
             pathError && 'border-destructive/60 focus:border-destructive/60',
           )}
           placeholder="…"
-          aria-label="Path"
+          aria-label={m.onboarding_dirPicker_path_ariaLabel()}
           aria-invalid={pathError ? true : undefined}
           spellcheck="false"
           autocomplete="off"
@@ -369,21 +370,21 @@
         bind:this={listContainerRef}
         class="max-h-80 overflow-y-auto"
         role="listbox"
-        aria-label="Directory contents"
+        aria-label={m.onboarding_dirPicker_contents_ariaLabel()}
       >
         {#if loading}
           <div class="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
             <Fa icon={faSpinner} class="animate-spin" size="sm" />
-            <span>Loading…</span>
+            <span>{m.onboarding_dirPicker_loading_label()}</span>
           </div>
         {:else if error}
           <div class="px-4 py-6 text-sm text-destructive-foreground/90">
-            <p class="font-medium mb-1">Couldn't read directory</p>
+            <p class="font-medium mb-1">{m.onboarding_dirPicker_readError_title()}</p>
             <p class="text-xs text-muted-foreground break-all">{error}</p>
           </div>
         {:else if directoryEntries.length === 0}
           <div class="px-4 py-8 text-center text-sm text-muted-foreground">
-            No subfolders here. Click "{selectLabel}" to pick this folder.
+            {m.onboarding_dirPicker_noSubfolders_description({ label: selectLabel })}
           </div>
         {:else}
           <ul class="divide-y divide-border/10">
@@ -428,7 +429,7 @@
           class="text-sm px-3 py-1.5 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground cursor-pointer"
           onclick={onClose}
         >
-          Cancel
+          {m.onboarding_dirPicker_cancel_label()}
         </button>
         <button
           type="button"

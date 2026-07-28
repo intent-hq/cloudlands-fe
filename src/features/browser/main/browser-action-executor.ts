@@ -159,10 +159,12 @@ function validateBrowserUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
     if (!BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(parsed.protocol)) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
       return `Protocol "${parsed.protocol}" is not allowed. Supported protocols: ${BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.join(', ')}`;
     }
     return null;
   } catch {
+    // i18n-ignore (agent-facing protocol error, not user-facing)
     return `Invalid URL: "${url}". Please provide a valid URL with one of these protocols: ${BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.join(', ')}`;
   }
 }
@@ -371,6 +373,7 @@ async function executeAction(
           return {
             action: 'navigate',
             success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
             error: 'No browser tabs available. Use { action: "openTab", url: "..." } to open a tab first.',
           };
         }
@@ -388,6 +391,7 @@ async function executeAction(
         return {
           action: 'unknown',
           success: false,
+          // i18n-ignore (agent-facing protocol error, not user-facing)
           error: `Unknown action: ${(_exhaustive as any).action}`,
         };
       }
@@ -397,6 +401,7 @@ async function executeAction(
     return {
       action: action.action,
       success: false,
+      // i18n-ignore (agent-facing protocol error, not user-facing)
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
@@ -426,6 +431,7 @@ export async function executeActions(
     return {
       success: false,
       results: [],
+      // i18n-ignore (agent-facing protocol error, not user-facing)
       error: `Invalid action sequence: ${parseResult.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`,
     };
   }

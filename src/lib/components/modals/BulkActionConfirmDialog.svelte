@@ -6,6 +6,7 @@
   faXmark,
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -19,9 +20,9 @@
 
   let {
     open = $bindable(false),
-    title = 'Confirm Action',
+    title = m.modals_bulkActionConfirm_title(),
     description = '',
-    confirmText = 'Confirm',
+    confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
     onConfirm,
     onCancel,
@@ -93,7 +94,7 @@
           </div>
           <h2 id="bulk-dialog-title" class="text-lg font-semibold">{title}</h2>
         </div>
-        <Button variant="ghost" size="icon" onclick={close} aria-label="Close">
+        <Button variant="ghost" size="icon" onclick={close} aria-label={m.modals_bulkActionConfirm_close_ariaLabel()}>
           <Fa icon={faXmark} />
         </Button>
       </div>
@@ -105,7 +106,7 @@
 
       <!-- Footer -->
       <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        <Button variant="ghost" onclick={close}>Cancel</Button>
+        <Button variant="ghost" onclick={close}>{m.modals_bulkActionConfirm_cancel_label()}</Button>
         <Button {variant} onclick={handleConfirm}>{confirmText}</Button>
       </div>
     </div>

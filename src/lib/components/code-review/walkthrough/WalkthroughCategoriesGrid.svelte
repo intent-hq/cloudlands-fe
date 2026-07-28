@@ -7,6 +7,7 @@
    * Clicking a card scrolls to that category section.
    */
   import type { WalkthroughCategory } from './types';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Categories to display */
@@ -51,7 +52,7 @@
 
 <div class="walkthrough-categories-grid {className}">
   <div class="mb-4">
-    <h3 class="text-sm font-medium text-subtle">What code has changed?</h3>
+    <h3 class="text-sm font-medium text-subtle">{m.codeReview_categoriesGrid_whatChanged_title()}</h3>
   </div>
 
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -79,7 +80,9 @@
               <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M3.5 1.5A1.5 1.5 0 0 1 5 0h6a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 11 15H5a1.5 1.5 0 0 1-1.5-1.5v-12z"/>
               </svg>
-              <span>{category.files.length} file{category.files.length !== 1 ? 's' : ''}</span>
+              <span>{category.files.length === 1
+                  ? m.codeReview_categoriesGrid_fileCount_one({ count: category.files.length })
+                  : m.codeReview_categoriesGrid_fileCount_many({ count: category.files.length })}</span>
             </div>
           </div>
         </div>

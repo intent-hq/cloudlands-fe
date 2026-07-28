@@ -15,6 +15,8 @@
 
   import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   export type CommitStatus =
     | { state: 'committing' }
@@ -47,12 +49,12 @@
         {#if status.state === 'committing'}
           <Fa icon={faSpinner} class="opacity-30 animate-spin" size="xs" />
           <span class="truncate min-w-0 text-left flex-1 text-subtle">
-            Auto-committing…
+            {m.chat_autoCommitStatus_committing_label()}
           </span>
         {:else if status.state === 'committed'}
           <Fa icon={faCodeCommit} class="text-ghost" size="xs" />
           <span class="truncate min-w-0 text-left flex-1">
-            Auto-committed
+            {m.chat_autoCommitStatus_committed_label()}
             <button
               onclick={handleOpenCommitChangeset}
               class="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -61,18 +63,30 @@
               {status.message}
             </button>
             <span class="text-subtle">
-              · {status.fileCount} file{status.fileCount !== 1 ? 's' : ''}
+              {status.fileCount === 1
+                ? m.chat_autoCommitStatus_fileCount_one({ count: formatInteger(status.fileCount) })
+                : m.chat_autoCommitStatus_fileCount_many({
+                    count: formatInteger(status.fileCount),
+                  })}
             </span>
           </span>
         {:else if status.state === 'hook-failure'}
           <Fa icon={faCodeCommit} class="opacity-30 text-amber-500/70" size="xs" />
           <span class="truncate min-w-0 text-left flex-1">
             {#if status.status === 'waking-agent'}
-              <span class="text-amber-500/70">Pre-commit hooks failed</span>
-              <span class="text-subtle">· fixing (attempt {status.retryCount})</span>
+              <span class="text-amber-500/70">{m.chat_autoCommitStatus_hooksFailed_label()}</span>
+              <span class="text-subtle">
+                {m.chat_autoCommitStatus_fixingAttempt_label({
+                  attempt: formatInteger(status.retryCount),
+                })}
+              </span>
             {:else}
-              <span class="text-red-500/70">Auto-commit failed</span>
-              <span class="text-subtle">· hooks failed after {status.retryCount} attempts</span>
+              <span class="text-red-500/70">{m.chat_autoCommitStatus_failed_label()}</span>
+              <span class="text-subtle">
+                {m.chat_autoCommitStatus_hooksFailedAfter_label({
+                  count: formatInteger(status.retryCount),
+                })}
+              </span>
             {/if}
           </span>
         {/if}

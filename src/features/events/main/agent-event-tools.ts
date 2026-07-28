@@ -263,50 +263,65 @@ export class AgentEventTools {
  */
 export const workspaceEventTools = {
   name: 'workspace_events',
+  // i18n-ignore (agent-facing MCP tool descriptions)
   description: 'Query and monitor workspace events and activity',
 
   methods: {
     getRecentFiles: {
+      // i18n-ignore (agent-facing MCP tool descriptions)
       description: 'Get the most recently modified files',
       parameters: {
+        // i18n-ignore (agent-facing MCP tool descriptions)
         limit: { type: 'number', description: 'Number of files to return', default: 5 },
       },
     },
 
     getAgentFiles: {
+      // i18n-ignore (agent-facing MCP tool descriptions)
       description: 'Get files modified by a specific agent',
       parameters: {
         agentId: { type: 'string', description: 'ID of the agent', required: true },
+        // i18n-ignore (agent-facing MCP tool descriptions)
         limit: { type: 'number', description: 'Number of files to return', default: 10 },
       },
     },
 
     getAgentActivity: {
+      // i18n-ignore (agent-facing MCP tool descriptions)
       description: 'Get recent activity from all agents',
       parameters: {
+        // i18n-ignore (agent-facing MCP tool descriptions)
         minutesAgo: { type: 'number', description: 'How many minutes back to look', default: 30 },
       },
     },
 
     getDirectoryChanges: {
+      // i18n-ignore (agent-facing MCP tool descriptions)
       description: 'Get changes in a specific directory',
       parameters: {
+        // i18n-ignore (agent-facing MCP tool descriptions)
         directory: { type: 'string', description: 'Directory path', required: true },
+        // i18n-ignore (agent-facing MCP tool descriptions)
         limit: { type: 'number', description: 'Number of changes to return', default: 20 },
       },
     },
 
     getWorkspaceSummary: {
+      // i18n-ignore (agent-facing MCP tool descriptions)
       description: 'Get a summary of recent workspace activity',
       parameters: {
+        // i18n-ignore (agent-facing MCP tool descriptions)
         minutesAgo: { type: 'number', description: 'Time window in minutes', default: 60 },
       },
     },
 
     searchEvents: {
+      // i18n-ignore (agent-facing MCP tool descriptions)
       description: 'Search for events containing a term',
       parameters: {
+        // i18n-ignore (agent-facing MCP tool descriptions)
         searchTerm: { type: 'string', description: 'Term to search for', required: true },
+        // i18n-ignore (agent-facing MCP tool descriptions)
         limit: { type: 'number', description: 'Maximum results', default: 20 },
       },
     },

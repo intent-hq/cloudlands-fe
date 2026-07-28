@@ -126,6 +126,7 @@
   import { parseAgentEvents } from './event-wake-summary';
   import AgentCard from './AgentCard.svelte';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
@@ -230,7 +231,7 @@
     const pillLabels: string[] = [];
     if (contextRefs && contextRefs.length > 0) {
       for (const ref of contextRefs) {
-        const label = ref.title || ref.identifier || 'Context';
+        const label = ref.title || ref.identifier || m.chat_shared_context_fallback();
         pillLabels.push(`🔗 ${label}`);
       }
     }
@@ -339,7 +340,7 @@
   const effectiveError = $derived.by(() => {
     if ($chatError$) return $chatError$;
     if ($agentSession$?.status === AgentStatus.Error) {
-      return $agentSession$.stopReason || 'Agent spawn failed';
+      return $agentSession$.stopReason || m.chat_chatPanel_agentSpawnFailed_error();
     }
     return null;
   });
@@ -1101,7 +1102,7 @@
       return {
         type: isSpec ? 'spec' : 'note',
         noteId,
-        title: note?.title || (isSpec ? 'Spec' : undefined),
+        title: note?.title || (isSpec ? m.chat_shared_spec_label() : undefined),
         kind: isSpec ? 'spec' : 'note',
       };
     }
@@ -1155,7 +1156,7 @@
             panelId,
             tabId: tab.id,
             type: 'file',
-            label: tab.title || tab.filePath.split('/').pop() || 'File',
+            label: tab.title || tab.filePath.split('/').pop() || m.chat_shared_file_fallback(),
             filePath: tab.filePath,
             checked: false, // Default unchecked - user opts-in
             isActive: isActiveTab,
@@ -1167,7 +1168,7 @@
             panelId,
             tabId: tab.id,
             type: isSpec ? 'spec' : 'note',
-            label: tab.title || (isSpec ? 'Spec' : 'Note'),
+            label: tab.title || (isSpec ? m.chat_shared_spec_label() : m.chat_shared_note_fallback()),
             noteId: tab.noteId,
             checked: false,
             isActive: isActiveTab,
@@ -1178,7 +1179,7 @@
             panelId,
             tabId: tab.id,
             type: 'diff',
-            label: tab.title || tab.diffPath.split('/').pop() || 'Diff',
+            label: tab.title || tab.diffPath.split('/').pop() || m.chat_shared_diff_fallback(),
             filePath: tab.diffPath,
             checked: false,
             isActive: isActiveTab,
@@ -1189,7 +1190,7 @@
             panelId,
             tabId: tab.id,
             type: 'browser',
-            label: tab.title || 'Browser',
+            label: tab.title || m.chat_shared_browser_fallback(),
             browserUrl: tab.browserUrl,
             checked: false,
             isActive: isActiveTab,
@@ -1216,7 +1217,7 @@
             panelId,
             tabId: tab.id,
             type: 'agent',
-            label: tab.title || 'Agent',
+            label: tab.title || m.chat_shared_agentName_fallback(),
             agentId: tab.agentId,
             checked: false,
             isActive: isActiveTab,
@@ -1271,7 +1272,7 @@
             panelId,
             tabId,
             sourceType: isNote ? 'note' : 'file',
-            sourceLabel: file?.split('/').pop() || 'Selection',
+            sourceLabel: file?.split('/').pop() || m.chat_chatPanel_selection_fallback(),
             filePath: isNote ? undefined : file,
             text: text,
             language: language,
@@ -2407,16 +2408,21 @@
     });
     for (const panel of checkedPanels) {
       if (panel.type === 'file' && panel.filePath) {
+        // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing file: ${panel.filePath}]`);
       } else if (panel.type === 'diff' && panel.filePath) {
+        // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing diff for: ${panel.filePath}]`);
       } else if (panel.type === 'note' && panel.noteId) {
         parts.push(
+          // i18n-ignore (agent-directed context marker, not user-facing UI)
           `[Currently viewing note: "${panel.label}" (ID: ${panel.noteId}). Use read_note_space-mcp(noteId="${panel.noteId}") to read its content.]`,
         );
       } else if (panel.type === 'spec') {
+        // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push('[Currently viewing: Spec]');
       } else if (panel.type === 'browser' && panel.browserUrl) {
+        // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing browser: ${panel.browserUrl}]`);
       }
     }
@@ -2428,6 +2434,7 @@
       const displayText =
         selectedText.length > 500 ? selectedText.substring(0, 500) + '...' : selectedText;
       const source = selection.sourceLabel ? ` from ${selection.sourceLabel}` : '';
+      // i18n-ignore (agent-directed context marker, not user-facing UI)
       parts.push(`[Selected text${source}:\n\`\`\`\n${displayText}\n\`\`\`]`);
     }
 
@@ -2593,7 +2600,7 @@
     const currentStatus = $agentSession$?.status;
     if (currentStatus === AgentStatus.Error) {
       // Capture the current error message before clearing so we can restore it on failure
-      const priorError = $chatError$ || 'Agent failed to start';
+      const priorError = $chatError$ || m.chat_chatPanel_agentFailedToStart_error();
 
       // Clear the current error so the UI shows loading state
       appStore.dispatch(chatErrorCleared(agentId));
@@ -2623,7 +2630,7 @@
       if (result.redriven === false) {
         // Nothing was queued to redrive — the error is cleared, but no new
         // turn starts. Tell the user what to do next instead of a silent no-op.
-        toast.info('Nothing to retry — error cleared. Send a message to start a new turn.');
+        toast.info(m.chat_chatPanel_nothingToRetry_toast());
       }
       return;
     }
@@ -2939,7 +2946,7 @@
     <PanelFindBar
       bind:query={searchQuery}
       bind:inputRef={searchInputRef}
-      placeholder="Search messages..."
+      placeholder={m.chat_chatSearch_input_placeholder()}
       currentMatchIndex={currentSearchIndex}
       totalMatches={searchMatchCount}
       disableNavigationWhenNoMatches={false}
@@ -2986,7 +2993,7 @@
         >
           <Fa icon={faSquareCheck} class="text-ghost opacity-50" size="w-3 h-3" />
           <span class="text-subtle truncate max-w-[200px]">
-            {task.taskText || 'Assigned task'}
+            {task.taskText || m.chat_chatPanel_assignedTask_fallback()}
           </span>
         </a>
       {/if}
@@ -3005,7 +3012,7 @@
           <WorkspaceSetupCard
             repoName={onboardingContext.projectName ||
               onboardingContext.projectPath?.split('/').pop() ||
-              'your project'}
+              m.chat_chatPanel_yourProject_fallback()}
             repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
             worktreePath={onboardingContext.worktreePath}
             branch={onboardingContext.branch}
@@ -3031,7 +3038,7 @@
             <WorkspaceSetupCard
               repoName={onboardingContext.projectName ||
                 onboardingContext.projectPath?.split('/').pop() ||
-                'your project'}
+                m.chat_chatPanel_yourProject_fallback()}
               repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
               worktreePath={onboardingContext.worktreePath}
               branch={onboardingContext.branch}
@@ -3104,7 +3111,7 @@
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||
                       onboardingContext.projectPath?.split('/').pop() ||
-                      'your project'}
+                      m.chat_chatPanel_yourProject_fallback()}
                     repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                     worktreePath={onboardingContext.worktreePath}
                     branch={onboardingContext.branch}
@@ -3209,7 +3216,7 @@
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||
                       onboardingContext.projectPath?.split('/').pop() ||
-                      'your project'}
+                      m.chat_chatPanel_yourProject_fallback()}
                     repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                     worktreePath={onboardingContext.worktreePath}
                     branch={onboardingContext.branch}
@@ -3344,7 +3351,7 @@
                 <WorkspaceSetupCard
                   repoName={onboardingContext.projectName ||
                     onboardingContext.projectPath?.split('/').pop() ||
-                    'your project'}
+                    m.chat_chatPanel_yourProject_fallback()}
                   repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                   worktreePath={onboardingContext.worktreePath}
                   branch={onboardingContext.branch}
@@ -3720,10 +3727,10 @@
           ? 'opacity-0!'
           : ''}"
         title={showLock
-          ? 'Auto-scroll locked (click to unlock)'
+          ? m.chat_chatPanel_autoScrollLocked_tooltip()
           : showUnlock
-            ? 'Auto-scroll unlocked (click to lock)'
-            : 'Scroll to bottom'}
+            ? m.chat_chatPanel_autoScrollUnlocked_tooltip()
+            : m.chat_chatPanel_scrollToBottom_tooltip()}
       >
         <Fa icon={showArrow ? faArrowDown : showLock ? faLock : faLockOpen} class="w-3! h-3!" />
       </Button>

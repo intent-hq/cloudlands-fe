@@ -29,12 +29,13 @@
  * directly off the ThemeManager snapshot, mirroring the sibling
  * `settings-hydration-service.ts` / `agent-mutation-service.ts`.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import { store as appStore } from "$store/renderer/store";
-import { ThemeManager } from "$lib/utils/theme";
-import { themePresets } from "$lib/utils/theme-presets";
-import { safeLocalStorage } from "$lib/utils/safe-storage";
-import { createLogger } from "$lib/utils/client-logger";
+import { m } from '$shared/paraglide/messages.js';
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import { store as appStore } from '$store/renderer/store';
+import { ThemeManager } from '$lib/utils/theme';
+import { themePresets } from '$lib/utils/theme-presets';
+import { safeLocalStorage } from '$lib/utils/safe-storage';
+import { createLogger } from '$lib/utils/client-logger';
 import {
   clearThemeCustomization,
   importCustomTheme,
@@ -44,19 +45,19 @@ import {
   setThemeError,
   setThemeName,
   setThemePreference,
-} from "$store/renderer/slices/theme/theme-slice";
+} from '$store/renderer/slices/theme/theme-slice';
 import {
   DEFAULT_THEME_NAME,
   DEFAULT_THEME_PREFERENCE,
   type ThemeCustomizationState,
   type ThemeName,
   type ThemePreference,
-} from "$store/renderer/slices/theme/theme-types";
+} from '$store/renderer/slices/theme/theme-types';
 
-const logger = createLogger("ThemeMutationService");
+const logger = createLogger('ThemeMutationService');
 
-const THEME_STORAGE_KEY = "theme";
-const DARK_MODE_MEDIA_QUERY = "(prefers-color-scheme: dark)";
+const THEME_STORAGE_KEY = 'theme';
+const DARK_MODE_MEDIA_QUERY = '(prefers-color-scheme: dark)';
 
 /** Snapshot the ThemeManager exposes for one-shot Redux hydration. */
 export type ThemeManagerSnapshot = {
@@ -102,29 +103,29 @@ function withListenerSuppressed<T>(fn: () => T): T {
 }
 
 export function themeNameFromIsDark(isDark: boolean): ThemeName {
-  return isDark ? "dark" : "light";
+  return isDark ? 'dark' : 'light';
 }
 
 function isThemePreference(value: string | null | undefined): value is ThemePreference {
-  return value === "light" || value === "dark" || value === "system";
+  return value === 'light' || value === 'dark' || value === 'system';
 }
 
 function readDocumentThemeName(): ThemeName | null {
-  if (typeof document === "undefined") return null;
+  if (typeof document === 'undefined') return null;
 
   const root = document.documentElement;
-  if (root.classList.contains("dark")) return "dark";
-  if (root.classList.contains("light")) return "light";
+  if (root.classList.contains('dark')) return 'dark';
+  if (root.classList.contains('light')) return 'light';
 
-  const colorScheme = root.style.getPropertyValue("color-scheme").trim();
-  if (colorScheme === "dark" || colorScheme.startsWith("dark ")) return "dark";
-  if (colorScheme === "light" || colorScheme.startsWith("light ")) return "light";
+  const colorScheme = root.style.getPropertyValue('color-scheme').trim();
+  if (colorScheme === 'dark' || colorScheme.startsWith('dark ')) return 'dark';
+  if (colorScheme === 'light' || colorScheme.startsWith('light ')) return 'light';
 
   return null;
 }
 
 function readSystemThemeName(): ThemeName {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
     return DEFAULT_THEME_NAME;
   }
 
@@ -136,7 +137,7 @@ function readSystemThemeName(): ThemeName {
 }
 
 function resolveThemePreference(preference: ThemePreference): ThemeName {
-  if (preference === "system") return readSystemThemeName();
+  if (preference === 'system') return readSystemThemeName();
   return preference;
 }
 
@@ -165,7 +166,7 @@ export function applyThemePreferenceToManager(
 }
 
 export function applyPresetThemeToManager(manager: ThemeManager, presetId: string | null): void {
-  if (presetId == null || presetId === "") {
+  if (presetId == null || presetId === '') {
     manager.clearCustomTheme();
     return;
   }
@@ -217,7 +218,7 @@ export function syncReduxFromThemeManager(manager: ThemeManager): void {
 
 export function themeErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error) return error;
+  if (typeof error === 'string' && error) return error;
   return fallback;
 }
 
@@ -242,7 +243,7 @@ export function handleThemeChanged(detail: ThemeChangedEventDetail): void {
   }
 
   const themeName =
-    typeof detail?.isDark === "boolean"
+    typeof detail?.isDark === 'boolean'
       ? themeNameFromIsDark(detail.isDark)
       : readThemeNameFromBrowserState(preference ?? DEFAULT_THEME_PREFERENCE);
 
@@ -262,14 +263,12 @@ export function handleThemePreferenceChangeRequested(
     appStore.dispatch(setThemeError(null));
   } catch (error) {
     appStore.dispatch(
-      setThemeError(themeErrorMessage(error, "Failed to apply theme preference.")),
+      setThemeError(themeErrorMessage(error, m.theme_service_applyPreferenceFailed_error())),
     );
   }
 }
 
-export function handleThemePresetSelected(
-  action: ReturnType<typeof selectThemePreset>,
-): void {
+export function handleThemePresetSelected(action: ReturnType<typeof selectThemePreset>): void {
   try {
     const [presetId] = action.payload;
     const manager = getThemeManager();
@@ -277,13 +276,13 @@ export function handleThemePresetSelected(
     syncReduxFromThemeManager(manager);
     appStore.dispatch(setThemeError(null));
   } catch (error) {
-    appStore.dispatch(setThemeError(themeErrorMessage(error, "Failed to apply theme preset.")));
+    appStore.dispatch(
+      setThemeError(themeErrorMessage(error, m.theme_service_applyPresetFailed_error())),
+    );
   }
 }
 
-export function handleCustomThemeImported(
-  action: ReturnType<typeof importCustomTheme>,
-): void {
+export function handleCustomThemeImported(action: ReturnType<typeof importCustomTheme>): void {
   try {
     const [json] = action.payload;
     const manager = getThemeManager();
@@ -291,7 +290,9 @@ export function handleCustomThemeImported(
     syncReduxFromThemeManager(manager);
     appStore.dispatch(setThemeError(null));
   } catch (error) {
-    appStore.dispatch(setThemeError(themeErrorMessage(error, "Failed to import theme.")));
+    appStore.dispatch(
+      setThemeError(themeErrorMessage(error, m.theme_service_importFailed_error())),
+    );
   }
 }
 
@@ -303,23 +304,23 @@ export function handleThemeCustomizationCleared(): void {
     appStore.dispatch(setThemeError(null));
   } catch (error) {
     appStore.dispatch(
-      setThemeError(themeErrorMessage(error, "Failed to clear custom theme.")),
+      setThemeError(themeErrorMessage(error, m.theme_service_clearCustomFailed_error())),
     );
   }
 }
 
 function installThemeChangedListener(): void {
-  if (typeof window === "undefined" || themeChangedListener !== null) return;
+  if (typeof window === 'undefined' || themeChangedListener !== null) return;
   themeChangedListener = (event: Event) => {
     if (suppressListenerDepth > 0) return;
     const detail = (event as CustomEvent<ThemeChangedEventDetail>).detail ?? {};
     try {
       handleThemeChanged(detail);
     } catch (error) {
-      logger.warn("theme-changed handler failed", error);
+      logger.warn('theme-changed handler failed', error);
     }
   };
-  window.addEventListener("theme-changed", themeChangedListener);
+  window.addEventListener('theme-changed', themeChangedListener);
 }
 
 /** Lazy boot: hydrate + install the window listener on the first dispatched action.
@@ -334,7 +335,7 @@ function bootOnce(): void {
     initThemeFromManager();
     installThemeChangedListener();
   } catch (error) {
-    logger.warn("theme hydration failed", error);
+    logger.warn('theme hydration failed', error);
   }
 }
 
@@ -357,7 +358,7 @@ export function createThemeMutationMiddleware(): StoreMiddleware {
       installed = true;
       bootOnce();
     }
-    if (!action || typeof action !== "object") return result;
+    if (!action || typeof action !== 'object') return result;
     const type = (action as { type?: unknown }).type;
     switch (type) {
       case requestThemePreferenceChange.type:
@@ -381,8 +382,8 @@ export function createThemeMutationMiddleware(): StoreMiddleware {
 
 /** Test-only — reset the installed-once guard so each test fixture can boot fresh. */
 export function __resetThemeMutationForTests(): void {
-  if (typeof window !== "undefined" && themeChangedListener) {
-    window.removeEventListener("theme-changed", themeChangedListener);
+  if (typeof window !== 'undefined' && themeChangedListener) {
+    window.removeEventListener('theme-changed', themeChangedListener);
   }
   themeChangedListener = null;
   installed = false;

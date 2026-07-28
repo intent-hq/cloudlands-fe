@@ -16,6 +16,7 @@
 } from '$lib/utils/svelte-error-resolver';
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -67,21 +68,27 @@
       color: 'text-destructive-foreground',
       bgColor: 'bg-destructive/10',
       borderColor: 'border-destructive/30',
-      defaultTitle: 'Error',
+      get defaultTitle() {
+        return m.lib_errorDisplay_error_title();
+      },
     },
     warning: {
       icon: faExclamationTriangle,
       color: 'text-amber-500',
       bgColor: 'bg-amber-500/10',
       borderColor: 'border-amber-500/30',
-      defaultTitle: 'Warning',
+      get defaultTitle() {
+        return m.lib_errorDisplay_warning_title();
+      },
     },
     info: {
       icon: faInfo,
       color: 'text-blue-500',
       bgColor: 'bg-blue-500/10',
       borderColor: 'border-blue-500/30',
-      defaultTitle: 'Information',
+      get defaultTitle() {
+        return m.lib_errorDisplay_info_title();
+      },
     },
   };
 
@@ -128,7 +135,7 @@
                 class="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 mb-2"
               >
                 <Fa icon={faLightbulb} size="sm" />
-                Debugging Tips
+                {m.lib_errorDisplay_debuggingTips_title()}
               </div>
               <ul class="text-xs text-muted-foreground space-y-1">
                 {#each svelteErrorInfo.debuggingTips as tip, tipIndex (`tip-${tipIndex}-${tip.slice(0, 20)}`)}
@@ -143,7 +150,7 @@
             <!-- Common Causes -->
             <div class="bg-amber-500/10 border border-amber-500/20 rounded-md p-3">
               <div class="text-sm font-medium text-amber-600 dark:text-amber-400 mb-2">
-                Common Causes
+                {m.lib_errorDisplay_commonCauses_title()}
               </div>
               <ul class="text-xs text-muted-foreground space-y-1">
                 {#each svelteErrorInfo.commonCauses as cause, causeIndex (`cause-${causeIndex}-${cause.slice(0, 20)}`)}
@@ -162,7 +169,7 @@
               onclick={(e) => { e.preventDefault(); handleLink(svelteErrorInfo.docsUrl, { workspaceId: $activeWorkspaceId ?? undefined, event: e }); }}
             >
               <Fa icon={faExternalLinkAlt} size="xs" />
-              View Svelte Documentation
+              {m.lib_errorDisplay_viewSvelteDocs_label()}
             </a>
           </div>
         {/if}
@@ -170,7 +177,7 @@
         {#if errorStack}
           <details class="mt-3">
             <summary class="text-xs font-semibold {config.color} cursor-pointer hover:underline">
-              Stack Trace
+              {m.lib_errorDisplay_stackTrace_label()}
             </summary>
             <pre
               class="mt-2 text-xs font-mono text-subtle bg-background/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-words max-h-64">{errorStack}</pre>
@@ -192,7 +199,7 @@
         {#if errorStack}
           <details class="mt-3">
             <summary class="text-xs font-semibold {config.color} cursor-pointer hover:underline">
-              Stack Trace
+              {m.lib_errorDisplay_stackTrace_label()}
             </summary>
             <pre
               class="mt-2 text-xs font-mono text-subtle bg-background/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-words max-h-64">{errorStack}</pre>

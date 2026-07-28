@@ -80,6 +80,7 @@ export function defaultSocketPath(env: NodeJS.ProcessEnv = process.env): string 
   if (dataDir) {
     return path.join(dataDir, 'intentd.sock');
   }
+  // i18n-ignore (filesystem path)
   return path.join(os.homedir(), 'Library', 'Application Support', 'intentd', 'intentd.sock');
 }
 

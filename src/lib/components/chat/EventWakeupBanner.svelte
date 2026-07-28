@@ -14,6 +14,8 @@
   import AgentCard from './AgentCard.svelte';
   import { categorizeEventTypes, firstNonEmptyString } from './event-wake-summary';
   import type { Workspace } from '$shared/types';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface EventData {
     type: string;
@@ -62,7 +64,7 @@
   // We access parsedEvents directly since it's already reactive
   const friendlySummary = $derived.by((): string => {
     const types = metadata?.eventTypes || [];
-    if (types.length === 0) return 'Subscription update';
+    if (types.length === 0) return m.chat_eventWakeup_subscriptionUpdate_label();
 
     // Get agent names from parsed events for completion events
     const idleAgentNames = parsedEvents
@@ -85,33 +87,56 @@
     if (idleAgentNames.length > 0) {
       // We have parsed agent names - use them
       if (idleAgentNames.length === 1) {
-        parts.push(`${idleAgentNames[0]} finished`);
+        parts.push(m.chat_eventWakeup_agentFinished_named({ name: idleAgentNames[0] }));
       } else if (idleAgentNames.length === 2) {
-        parts.push(`${idleAgentNames[0]} & ${idleAgentNames[1]} finished`);
+        parts.push(
+          m.chat_eventWakeup_agentsFinished_pair({
+            first: idleAgentNames[0],
+            second: idleAgentNames[1],
+          }),
+        );
       } else {
-        parts.push(`${idleAgentNames[0]} +${idleAgentNames.length - 1} finished`);
+        parts.push(
+          m.chat_eventWakeup_agentsFinished_overflow({
+            name: idleAgentNames[0],
+            count: formatInteger(idleAgentNames.length - 1),
+          }),
+        );
       }
     } else if (agentIdleCount > 0) {
       // Fallback: we know there are idle events but couldn't parse names
-      parts.push(agentIdleCount === 1 ? 'Agent finished' : `${agentIdleCount} agents finished`);
+      parts.push(
+        agentIdleCount === 1
+          ? m.chat_eventWakeup_agentFinished_label()
+          : m.chat_eventWakeup_agentsFinished_count({ count: formatInteger(agentIdleCount) }),
+      );
     }
 
     if (createdAgentNames.length > 0) {
       if (createdAgentNames.length === 1) {
-        parts.push(`New: ${createdAgentNames[0]}`);
+        parts.push(m.chat_eventWakeup_newAgent_named({ name: createdAgentNames[0] }));
       } else {
-        parts.push(`${createdAgentNames.length} new agents`);
+        parts.push(
+          m.chat_eventWakeup_newAgents_count({ count: formatInteger(createdAgentNames.length) }),
+        );
       }
     } else if (agentCreatedCount > 0) {
       // Fallback: we know there are created events but couldn't parse names
-      parts.push(agentCreatedCount === 1 ? 'New agent' : `${agentCreatedCount} new agents`);
+      parts.push(
+        agentCreatedCount === 1
+          ? m.chat_eventWakeup_newAgent_label()
+          : m.chat_eventWakeup_newAgents_count({ count: formatInteger(agentCreatedCount) }),
+      );
     }
 
     parts.push(...categorizeEventTypes(types));
 
-    if (parts.length === 0) return `${types.length} events`;
+    if (parts.length === 0)
+      return types.length === 1
+        ? m.chat_eventWakeup_eventCount_one({ count: formatInteger(types.length) })
+        : m.chat_eventWakeup_eventCount_many({ count: formatInteger(types.length) });
     if (parts.length === 1) return parts[0];
-    return parts.slice(0, 2).join(' & ');
+    return m.chat_eventWakeup_summaryJoin_label({ first: parts[0], second: parts[1] });
   });
 
   // Parse event details from message text
@@ -229,10 +254,15 @@
               </div>
             </Tooltip.Trigger>
             <Tooltip.Content side="top" class="">
-              <p class="font-medium">Subscription wakeup</p>
+              <p class="font-medium">{m.chat_eventWakeup_subscriptionWakeup_tooltip()}</p>
               <p class="text-subtle mt-0.5">
-                {metadata?.eventCount ?? 0}
-                {(metadata?.eventCount ?? 0) === 1 ? 'event' : 'events'} triggered this response
+                {(metadata?.eventCount ?? 0) === 1
+                  ? m.chat_eventWakeup_triggered_one({
+                      count: formatInteger(metadata?.eventCount ?? 0),
+                    })
+                  : m.chat_eventWakeup_triggered_many({
+                      count: formatInteger(metadata?.eventCount ?? 0),
+                    })}
               </p>
             </Tooltip.Content>
           </Tooltip.Root>
@@ -250,7 +280,7 @@
                 e.stopPropagation();
                 onScrollToPrevious();
               }}
-              title="Scroll to previous message"
+              title={m.chat_eventWakeup_scrollToPrevious_title()}
             >
               <Fa icon={faArrowUp} class="w-2.5! h-2.5!" />
             </Button>
@@ -273,7 +303,7 @@
         {/each}
         {#if agentEvents.length > 5}
           <div class="text-ui text-subtle text-center py-1">
-            +{agentEvents.length - 5} more agents
+            {m.chat_shared_moreAgents_label({ count: formatInteger(agentEvents.length - 5) })}
           </div>
         {/if}
       </div>

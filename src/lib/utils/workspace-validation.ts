@@ -4,6 +4,7 @@
 
 import { createLogger } from './client-logger';
 import { invoke } from '$shared/generated/ipc-client';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('WorkspaceValidation');
 
@@ -42,8 +43,8 @@ export async function validateRepoPath(
   if (!path || path.trim().length === 0) {
     return {
       valid: false,
-      error: 'Repository path is required',
-      suggestion: 'Select a local folder or enter a GitHub URL',
+      error: m.workspace_validation_repoPathRequired_error(),
+      suggestion: m.workspace_validation_repoPathRequired_suggestion(),
     };
   }
 
@@ -110,15 +111,15 @@ async function validateGitHubUrl(url: string): Promise<ValidationResult> {
   if (!parsed) {
     return {
       valid: false,
-      error: 'Invalid GitHub URL format',
-      suggestion: 'Use format: https://github.com/owner/repo or owner/repo',
+      error: m.workspace_validation_invalidGithubUrl_error(),
+      suggestion: m.workspace_validation_invalidGithubUrl_suggestion(),
     };
   }
 
   // Could add API validation here if needed
   return {
     valid: true,
-    warning: 'GitHub repository will be cloned locally',
+    warning: m.workspace_validation_githubCloneLocally_warning(),
   };
 }
 
@@ -135,7 +136,7 @@ async function validateLocalPath(
   if (path.includes('\0')) {
     return {
       valid: false,
-      error: 'Invalid path: contains null characters',
+      error: m.workspace_validation_nullCharacters_error(),
     };
   }
 
@@ -148,8 +149,8 @@ async function validateLocalPath(
   ) {
     return {
       valid: false,
-      error: 'Path must be absolute or relative',
-      suggestion: 'Use an absolute path like /Users/name/project or a relative path like ./project',
+      error: m.workspace_validation_pathNotAbsolute_error(),
+      suggestion: m.workspace_validation_pathNotAbsolute_suggestion(),
     };
   }
 
@@ -168,14 +169,13 @@ async function validateLocalPath(
               valid: true,
               isNewRepo: true,
               directoryStatus: status,
-              warning:
-                'This directory will be created and a new git repository will be initialized.',
+              warning: m.workspace_validation_willCreateRepo_warning(),
             };
           }
           return {
             valid: false,
-            error: 'Directory does not exist',
-            suggestion: 'Please select an existing directory or enable "Create new repository"',
+            error: m.workspace_validation_dirNotExist_error(),
+            suggestion: m.workspace_validation_dirNotExist_suggestion(),
             directoryStatus: status,
           };
         }
@@ -184,8 +184,8 @@ async function validateLocalPath(
         if (!status.isDirectory) {
           return {
             valid: false,
-            error: 'Path is not a directory',
-            suggestion: 'Please select a folder, not a file',
+            error: m.workspace_validation_notDirectory_error(),
+            suggestion: m.workspace_validation_notDirectory_suggestion(),
             directoryStatus: status,
           };
         }
@@ -199,7 +199,9 @@ async function validateLocalPath(
               valid: true,
               isNewRepo: false,
               directoryStatus: status,
-              warning: `This directory is inside a git repository at ${status.parentGitRoot}. It will use the parent repository.`,
+              warning: m.workspace_validation_insideParentRepo_warning({
+                path: status.parentGitRoot ?? '',
+              }),
             };
           }
 
@@ -210,7 +212,7 @@ async function validateLocalPath(
               valid: true,
               isNewRepo: true,
               directoryStatus: status,
-              warning: 'A new git repository will be initialized in this empty directory.',
+              warning: m.workspace_validation_emptyDirInit_warning(),
             };
           }
           // Non-empty, non-git directory
@@ -218,8 +220,7 @@ async function validateLocalPath(
             valid: true,
             isNewRepo: true,
             directoryStatus: status,
-            warning:
-              'Directory is not a git repository. A new repository will be initialized with existing files.',
+            warning: m.workspace_validation_nonGitDirInit_warning(),
           };
         }
 
@@ -238,13 +239,13 @@ async function validateLocalPath(
           return {
             valid: true,
             isNewRepo: true,
-            warning: 'This directory will be created and a new git repository will be initialized.',
+            warning: m.workspace_validation_willCreateRepo_warning(),
           };
         }
         return {
           valid: false,
-          error: 'Directory does not exist',
-          suggestion: 'Please select an existing directory or create it first',
+          error: m.workspace_validation_dirNotExist_error(),
+          suggestion: m.workspace_validation_dirNotExistLegacy_suggestion(),
         };
       }
 
@@ -254,7 +255,7 @@ async function validateLocalPath(
         return {
           valid: true,
           isNewRepo: true,
-          warning: 'Directory is not a git repository. A new repository will be initialized.',
+          warning: m.workspace_validation_nonGitInit_warning(),
         };
       }
     } catch (err) {
@@ -289,8 +290,8 @@ export function validateBranchPrefix(prefix: string): ValidationResult {
   if (invalidChars.test(trimmed)) {
     return {
       valid: false,
-      error: 'Branch prefix contains invalid characters',
-      suggestion: 'Use only letters, numbers, hyphens, underscores, and forward slashes',
+      error: m.workspace_validation_branchPrefixInvalidChars_error(),
+      suggestion: m.workspace_validation_branchChars_suggestion(),
     };
   }
 
@@ -298,7 +299,7 @@ export function validateBranchPrefix(prefix: string): ValidationResult {
   if (trimmed === '.' || trimmed === '..' || trimmed.startsWith('.')) {
     return {
       valid: false,
-      error: 'Branch prefix cannot start with a dot',
+      error: m.workspace_validation_branchPrefixDot_error(),
     };
   }
 
@@ -306,7 +307,7 @@ export function validateBranchPrefix(prefix: string): ValidationResult {
   if (trimmed.includes('..') || trimmed.includes('//')) {
     return {
       valid: false,
-      error: 'Branch prefix cannot contain consecutive dots or slashes',
+      error: m.workspace_validation_branchPrefixConsecutive_error(),
     };
   }
 
@@ -314,7 +315,7 @@ export function validateBranchPrefix(prefix: string): ValidationResult {
   if (trimmed.startsWith('/')) {
     return {
       valid: false,
-      error: 'Branch prefix cannot start with a slash',
+      error: m.workspace_validation_branchPrefixSlash_error(),
     };
   }
 
@@ -322,7 +323,7 @@ export function validateBranchPrefix(prefix: string): ValidationResult {
   if (trimmed.endsWith('.lock')) {
     return {
       valid: false,
-      error: 'Branch prefix cannot end with .lock',
+      error: m.workspace_validation_branchPrefixLock_error(),
     };
   }
 
@@ -330,7 +331,7 @@ export function validateBranchPrefix(prefix: string): ValidationResult {
   if (trimmed.length > 50) {
     return {
       valid: false,
-      error: 'Branch prefix is too long (max 50 characters)',
+      error: m.workspace_validation_branchPrefixTooLong_error(),
     };
   }
 
@@ -375,7 +376,7 @@ export function validateBranchName(branch: string): ValidationResult {
   if (!branch || branch.trim().length === 0) {
     return {
       valid: false,
-      error: 'Branch name is required',
+      error: m.workspace_validation_branchNameRequired_error(),
     };
   }
 
@@ -386,8 +387,8 @@ export function validateBranchName(branch: string): ValidationResult {
   if (invalidChars.test(trimmed)) {
     return {
       valid: false,
-      error: 'Branch name contains invalid characters',
-      suggestion: 'Use only letters, numbers, hyphens, underscores, and forward slashes',
+      error: m.workspace_validation_branchNameInvalidChars_error(),
+      suggestion: m.workspace_validation_branchChars_suggestion(),
     };
   }
 
@@ -396,7 +397,7 @@ export function validateBranchName(branch: string): ValidationResult {
   if (reserved.includes(trimmed)) {
     return {
       valid: false,
-      error: 'Branch name is reserved',
+      error: m.workspace_validation_branchNameReserved_error(),
     };
   }
 
@@ -404,7 +405,7 @@ export function validateBranchName(branch: string): ValidationResult {
   if (trimmed.includes('..') || trimmed.includes('//')) {
     return {
       valid: false,
-      error: 'Branch name cannot contain consecutive dots or slashes',
+      error: m.workspace_validation_branchNameConsecutive_error(),
     };
   }
 
@@ -412,7 +413,7 @@ export function validateBranchName(branch: string): ValidationResult {
   if (trimmed.startsWith('/') || trimmed.endsWith('/')) {
     return {
       valid: false,
-      error: 'Branch name cannot start or end with a slash',
+      error: m.workspace_validation_branchNameSlash_error(),
     };
   }
 
@@ -420,7 +421,7 @@ export function validateBranchName(branch: string): ValidationResult {
   if (trimmed.endsWith('.lock')) {
     return {
       valid: false,
-      error: 'Branch name cannot end with .lock',
+      error: m.workspace_validation_branchNameLock_error(),
     };
   }
 
@@ -471,8 +472,8 @@ export function validateInitialPrompt(prompt: string): ValidationResult {
   if (trimmed.length > 100000) {
     return {
       valid: false,
-      error: 'Initial prompt is too long',
-      suggestion: 'Keep your initial prompt under 100,000 characters',
+      error: m.workspace_validation_promptTooLong_error(),
+      suggestion: m.workspace_validation_promptTooLong_suggestion(),
     };
   }
 
@@ -487,19 +488,19 @@ export function getGitErrorMessage(error: string): string {
 
   // Buffer overflow from git command output (e.g., large repos with many refs)
   if (errorLower.includes('maxbuffer')) {
-    return 'This repository produced too much output for a git command to handle. This can happen with very large repositories. Please try again or contact support if the issue persists.';
+    return m.workspace_gitError_maxBuffer();
   }
 
   // Clone-specific timeout (5 minute limit)
   if (errorLower.includes('clone') && errorLower.includes('timed out')) {
-    return 'Cloning this repository timed out. The repository may be very large or your network connection may be slow. Please try again — if the repository was partially downloaded, the next attempt will be faster.';
+    return m.workspace_gitError_cloneTimeout();
   }
 
   // Transport-level timeout on workspace.create: the daemon is often still
   // finishing the creation (e.g. bootstrapping the initial agent) in the
   // background, so avoid mislabelling this as a git failure.
   if (errorLower.includes('json-rpc request timed out: workspace.create')) {
-    return 'Creating this workspace is taking longer than expected. The daemon may still be finishing it in the background — check your workspace list, or try again.';
+    return m.workspace_gitError_createTimeout();
   }
 
   // General git command timeout — only relabel when the error is actually
@@ -508,42 +509,42 @@ export function getGitErrorMessage(error: string): string {
   if (
     errorLower.includes('timed out') &&
     ['git', 'clone', 'fetch', 'worktree', 'pull', 'push', 'rebase', 'merge'].some((keyword) =>
-      errorLower.includes(keyword)
+      errorLower.includes(keyword),
     )
   ) {
-    return 'A git operation timed out. This can happen with large repositories or slow network connections. Please try again.';
+    return m.workspace_gitError_gitTimeout();
   }
 
   // Clone failed with non-zero exit code
   if (errorLower.includes('git clone failed')) {
     if (errorLower.includes('could not read from remote')) {
-      return 'Could not connect to the remote repository. Please check the URL and your network connection.';
+      return m.workspace_gitError_cloneRemote();
     }
     if (
       errorLower.includes('authentication') ||
       errorLower.includes('permission denied') ||
       errorLower.includes('access denied')
     ) {
-      return 'Authentication failed when cloning. Please check that you have access to this repository.';
+      return m.workspace_gitError_cloneAuth();
     }
-    return 'Failed to clone the repository. Please check the URL and your network connection.';
+    return m.workspace_gitError_cloneFailed();
   }
 
   // Worktree ref resolution failure
   if (errorLower.includes('could not resolve any ref to create worktree')) {
-    return 'Could not find the specified branch or commit. Please check that the branch exists and try again.';
+    return m.workspace_gitError_worktreeRef();
   }
 
   // File system errors
   if (errorLower.includes('failed to write file')) {
     if (errorLower.includes('eacces') || errorLower.includes('permission denied')) {
-      return 'Permission denied when creating workspace. Please check that you have write access to the workspace directory.';
+      return m.workspace_gitError_writePermission();
     }
     if (errorLower.includes('enospc') || errorLower.includes('disk space')) {
-      return 'Insufficient disk space. Please free up some space and try again.';
+      return m.workspace_gitError_diskSpaceFree();
     }
     if (errorLower.includes('enoent') || errorLower.includes('no such file')) {
-      return 'Could not create workspace directory. Please check that the parent directory exists and you have write access.';
+      return m.workspace_gitError_writeNoEnt();
     }
     // Return the full error message for file write errors to show the underlying cause
     return error;
@@ -551,28 +552,28 @@ export function getGitErrorMessage(error: string): string {
 
   if (errorLower.includes('failed to read file')) {
     if (errorLower.includes('enoent') || errorLower.includes('no such file')) {
-      return 'File not found. The workspace may have been deleted or moved.';
+      return m.workspace_gitError_readNotFound();
     }
     if (errorLower.includes('eacces') || errorLower.includes('permission denied')) {
-      return 'Permission denied when reading workspace. Please check file permissions.';
+      return m.workspace_gitError_readPermission();
     }
     return error;
   }
 
   if (errorLower.includes('permission denied')) {
-    return 'Permission denied. Please check that you have access to this repository.';
+    return m.workspace_gitError_permissionDenied();
   }
 
   if (errorLower.includes('not found') || errorLower.includes('enoent')) {
-    return 'Repository or directory not found. Please check the path.';
+    return m.workspace_gitError_notFound();
   }
 
   if (errorLower.includes('already exists')) {
-    return 'A workspace with this configuration already exists.';
+    return m.workspace_gitError_alreadyExists();
   }
 
   if (errorLower.includes('network') || errorLower.includes('etimedout')) {
-    return 'Network error. Please check your internet connection and try again.';
+    return m.workspace_gitError_network();
   }
 
   if (errorLower.includes('authentication') || errorLower.includes('401')) {
@@ -580,15 +581,15 @@ export function getGitErrorMessage(error: string): string {
     if (errorLower.includes('private repositor')) {
       return error;
     }
-    return 'Authentication failed. Please check your credentials.';
+    return m.workspace_gitError_authFailed();
   }
 
   if (errorLower.includes('rate limit') || errorLower.includes('403')) {
-    return 'API rate limit exceeded. Please try again later.';
+    return m.workspace_gitError_rateLimit();
   }
 
   if (errorLower.includes('disk space') || errorLower.includes('enospc')) {
-    return 'Insufficient disk space. Please free up some space.';
+    return m.workspace_gitError_diskSpace();
   }
 
   return error;

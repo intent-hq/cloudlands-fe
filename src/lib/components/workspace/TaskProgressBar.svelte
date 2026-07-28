@@ -6,6 +6,8 @@
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
   import type { TaskStatus } from '$shared/types';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   export interface TaskDetail {
     id?: string;
@@ -93,7 +95,10 @@
         <!-- Header -->
         <div class="flex items-center justify-between gap-3">
           <span class="text-xs font-semibold text-foreground">
-            {stats.completed}/{stats.total} tasks
+            {m.workspace_taskProgressBar_tasksRatio_label({
+              completed: formatInteger(stats.completed),
+              total: formatInteger(stats.total),
+            })}
           </span>
           <div class="flex items-center gap-3 text-ui text-subtle">
             {#if stats.completed > 0}
@@ -188,7 +193,9 @@
               {/each}
               {#if completedTasks.length > 3}
                 <span class="text-ui text-subtle pl-4"
-                  >+{completedTasks.length - 3} more completed</span
+                  >{m.workspace_taskProgressBar_moreCompleted_label({
+                    count: formatInteger(completedTasks.length - 3),
+                  })}</span
                 >
               {/if}
             </div>
@@ -197,7 +204,9 @@
           <!-- Cancelled tasks -->
           {#if cancelledTasks.length > 0}
             <div class="text-ui text-subtle">
-              {cancelledTasks.length} cancelled
+              {m.workspace_taskProgressBar_cancelled_label({
+                count: formatInteger(cancelledTasks.length),
+              })}
             </div>
           {/if}
         {/if}

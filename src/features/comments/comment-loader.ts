@@ -1,6 +1,7 @@
 import { commentsClient } from './comments.client';
 import { Logger } from '../../shared/logger';
 import type { NoteComment } from '../../shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger('CommentLoader');
 
@@ -60,7 +61,7 @@ export async function loadComments(options: CommentLoaderOptions): Promise<NoteC
         id: c.id,
         noteId: c.noteId ?? noteId,
         threadId: c.threadId ?? c.id,
-        author: c.author ?? 'Unknown',
+        author: c.author ?? m.comments_loader_unknownAuthor_label(),
         authorType: (c.authorType as NoteComment['authorType']) ?? 'user',
         type: c.type as NoteComment['type'],
         content: c.content ?? '',
@@ -100,8 +101,9 @@ function getDefaultMockComments(): NoteComment[] {
       id: 'demo-comment-1',
       noteId: 'demo-note',
       threadId: 'thread-1',
+      // i18n-ignore (demo/mock data, not rendered production UI)
       content: 'This is a demo comment for testing the unified layout system',
-      author: 'Demo User',
+      author: 'Demo User', // i18n-ignore (demo/mock data)
       authorType: 'user',
       type: 'comment',
       status: 'open',
@@ -116,8 +118,9 @@ function getDefaultMockComments(): NoteComment[] {
       id: 'demo-comment-2',
       noteId: 'demo-note',
       threadId: 'thread-2',
+      // i18n-ignore (demo/mock data, not rendered production UI)
       content: 'Another test comment to verify layout algorithm',
-      author: 'Demo User',
+      author: 'Demo User', // i18n-ignore (demo/mock data)
       authorType: 'user',
       type: 'suggestion',
       status: 'open',
@@ -132,6 +135,7 @@ function getDefaultMockComments(): NoteComment[] {
       id: 'demo-comment-3',
       noteId: 'demo-note',
       threadId: 'thread-3',
+      // i18n-ignore (demo/mock data, not rendered production UI)
       content: 'What about edge cases?',
       author: 'Reviewer',
       authorType: 'agent',
@@ -198,7 +202,7 @@ export async function replyToComment(
         id: c.id,
         noteId: c.noteId ?? noteId,
         threadId: c.threadId ?? c.id,
-        author: c.author ?? 'Unknown',
+        author: c.author ?? m.comments_loader_unknownAuthor_label(),
         authorType: (c.authorType as NoteComment['authorType']) ?? 'user',
         type: c.type as NoteComment['type'],
         content: c.content ?? '',

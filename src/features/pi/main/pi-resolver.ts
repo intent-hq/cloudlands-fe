@@ -10,11 +10,9 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import {
-  findBinary,
-  getCommonNpmPaths,
-} from '../../../shared/main/find-binary';
+import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
 import { hostExec } from '../../../shared/main/host-exec';
+import { m } from '../../../shared/paraglide/messages.js';
 
 // Common paths to look for npx (adapter runner)
 const NPX_PATHS = [
@@ -184,7 +182,7 @@ export async function isPiMcpAdapterInstalled(): Promise<boolean> {
 export async function installPiMcpAdapter(): Promise<{ success: boolean; error?: string }> {
   const piPath = await getPiPath();
   if (!piPath) {
-    return { success: false, error: 'Pi CLI not found. Please install Pi first.' };
+    return { success: false, error: m.pi_resolver_cliNotFound_error() };
   }
 
   try {
@@ -205,7 +203,7 @@ export async function installPiMcpAdapter(): Promise<{ success: boolean; error?:
   } catch (error) {
     return {
       success: false,
-      error: (error as Error).message || 'Failed to install pi-mcp-adapter',
+      error: (error as Error).message || m.pi_resolver_adapterInstallFailed_error(),
     };
   }
 }

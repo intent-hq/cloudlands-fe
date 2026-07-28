@@ -37,11 +37,13 @@ function openBrowserTab(
   try {
     const parsed = new URL(url);
     if (!BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(parsed.protocol)) {
+      // i18n-ignore (agent-facing protocol error, not user-facing)
       const msg = `Protocol "${parsed.protocol}" is not allowed. Supported: ${BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.join(', ')}`;
       logger.warn('Rejected browser:open-tab with disallowed protocol', { url, protocol: parsed.protocol });
       return { success: false, message: msg };
     }
   } catch {
+    // i18n-ignore (agent-facing protocol error, not user-facing)
     const msg = `Invalid URL: "${url}"`;
     logger.warn('Rejected browser:open-tab with invalid URL', { url });
     return { success: false, message: msg };
@@ -53,6 +55,7 @@ function openBrowserTab(
   // user happens to be viewing at the moment.
   sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, { url, position, workspaceId });
   logger.info('Sent browser:open-tab', { url, position, workspaceId });
+  // i18n-ignore (agent-facing protocol message, not user-facing)
   return { success: true, message: `Opening browser tab with URL: ${url}` };
 }
 

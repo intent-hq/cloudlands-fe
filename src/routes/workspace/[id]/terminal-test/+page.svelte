@@ -8,7 +8,9 @@
 
 <div class="terminal-test-page">
   <div class="header">
+    <!-- i18n-ignore (dev-only terminal test page) -->
     <h1>Terminal Test</h1>
+    <!-- i18n-ignore (dev-only terminal test page) -->
     <p>Testing the terminal implementation for workspace: {workspaceId}</p>
   </div>
 

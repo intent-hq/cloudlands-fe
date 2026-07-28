@@ -8,9 +8,13 @@ import { UNKNOWN_MODEL } from './token-usage-utils';
  * Known raw names verified against real session files (2026-06-12).
  */
 const KNOWN_MODEL_LABELS: Record<string, string> = {
+  // i18n-ignore (model product names, not translatable)
   'claude-fable-5-high-c4-p2-agent': 'Claude Fable 5 (High)',
+  // i18n-ignore (model product names, not translatable)
   'claude-haiku-4-5-200k-v13-c4-p2-agent': 'Claude Haiku 4.5',
+  // i18n-ignore (model product names, not translatable)
   'claude-sonnet-4-5-200k-v13-c4-p2-agent': 'Claude Sonnet 4.5',
+  // i18n-ignore (model product names, not translatable)
   'claude-fruitcake-eap-high-c4-p2-agent': 'Claude Fruitcake EAP (High)',
   'gpt5-5-400k-v1-c4-p2-agent': 'GPT-5.5',
 };
@@ -86,4 +90,3 @@ export function formatModelLabel(rawModelName: string): string {
   const label = parts.join(' ');
   return efforts.length > 0 ? `${label} (${efforts.join(', ')})` : label;
 }
-

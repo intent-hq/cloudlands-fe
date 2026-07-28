@@ -11,6 +11,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { SCRIPTS_CHANNELS } from '$shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
@@ -24,16 +25,8 @@ import {
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { createWorkspaceId } from '$shared/types/branded-ids';
 import type { WorkspaceId } from '$shared/types';
-import {
-  readScripts,
-  writeScripts,
-  upsertScript,
-  removeScript,
-} from './scripts-persistence';
-import {
-  getScriptProcessManager,
-  disposeScriptProcessManager,
-} from './script-process-manager';
+import { readScripts, writeScripts, upsertScript, removeScript } from './scripts-persistence';
+import { getScriptProcessManager, disposeScriptProcessManager } from './script-process-manager';
 import { WorkspaceConfig } from '$shared/main/config';
 import {
   CreateScriptSchema,
@@ -54,6 +47,7 @@ const autoStartTriggered = new Set<string>();
 // Validation Schemas
 // ============================================================================
 
+// i18n-ignore (IPC payload validation, developer-facing)
 const WorkspaceIdField = z.string().min(1, 'Workspace ID is required');
 
 const ScriptsListSchema = z.object({
@@ -67,37 +61,44 @@ const ScriptsCreateSchema = z.object({
 
 const ScriptsUpdateSchema = z.object({
   workspaceId: WorkspaceIdField,
+  // i18n-ignore (IPC payload validation, developer-facing)
   scriptId: z.string().min(1, 'Script ID is required'),
   updates: UpdateScriptSchema,
 });
 
 const ScriptsRemoveSchema = z.object({
   workspaceId: WorkspaceIdField,
+  // i18n-ignore (IPC payload validation, developer-facing)
   scriptId: z.string().min(1, 'Script ID is required'),
 });
 
 const ScriptsStartSchema = z.object({
   workspaceId: WorkspaceIdField,
+  // i18n-ignore (IPC payload validation, developer-facing)
   scriptId: z.string().min(1, 'Script ID is required'),
 });
 
 const ScriptsStopSchema = z.object({
   workspaceId: WorkspaceIdField,
+  // i18n-ignore (IPC payload validation, developer-facing)
   scriptId: z.string().min(1, 'Script ID is required'),
 });
 
 const ScriptsRestartSchema = z.object({
   workspaceId: WorkspaceIdField,
+  // i18n-ignore (IPC payload validation, developer-facing)
   scriptId: z.string().min(1, 'Script ID is required'),
 });
 
 const ScriptsGetStatusSchema = z.object({
   workspaceId: WorkspaceIdField,
+  // i18n-ignore (IPC payload validation, developer-facing)
   scriptId: z.string().min(1, 'Script ID is required'),
 });
 
 const ScriptsGetOutputSchema = z.object({
   workspaceId: WorkspaceIdField,
+  // i18n-ignore (IPC payload validation, developer-facing)
   scriptId: z.string().min(1, 'Script ID is required'),
   lastN: z.number().int().positive().optional(),
 });
@@ -156,62 +157,76 @@ async function getOrCreateManager(workspaceId: string) {
   manager.setStateChangeCallback((scriptId: string, state: ScriptRuntimeState) => {
     const wsId = workspaceId as unknown as WorkspaceId;
     // Look up the actual script name asynchronously
-    readScripts(workspaceId).then((scripts) => {
-      const script = scripts.find((s) => s.id === scriptId);
-      const scriptName = script?.name || scriptId;
+    readScripts(workspaceId)
+      .then((scripts) => {
+        const script = scripts.find((s) => s.id === scriptId);
+        const scriptName = script?.name || scriptId;
 
-      if (state.status === 'running') {
-        mainDispatch(scriptStarted({
-          workspaceId: wsId,
-          scriptId,
-          scriptName,
-          pid: state.pid,
-          startedAt: state.startedAt ? new Date(state.startedAt).toISOString() : new Date().toISOString(),
-        }));
-      } else if (state.status === 'exited' || state.status === 'idle') {
-        // Only emit stopped if it was previously running (has stoppedAt)
-        if (state.stoppedAt) {
-          mainDispatch(scriptStopped({
-            workspaceId: wsId,
-            scriptId,
-            scriptName,
-            exitCode: state.exitCode,
-            stoppedAt: new Date(state.stoppedAt).toISOString(),
-          }));
+        if (state.status === 'running') {
+          mainDispatch(
+            scriptStarted({
+              workspaceId: wsId,
+              scriptId,
+              scriptName,
+              pid: state.pid,
+              startedAt: state.startedAt
+                ? new Date(state.startedAt).toISOString()
+                : new Date().toISOString(),
+            }),
+          );
+        } else if (state.status === 'exited' || state.status === 'idle') {
+          // Only emit stopped if it was previously running (has stoppedAt)
+          if (state.stoppedAt) {
+            mainDispatch(
+              scriptStopped({
+                workspaceId: wsId,
+                scriptId,
+                scriptName,
+                exitCode: state.exitCode,
+                stoppedAt: new Date(state.stoppedAt).toISOString(),
+              }),
+            );
+          }
         }
-      }
-      if (state.error) {
-        mainDispatch(scriptError({
-          workspaceId: wsId,
-          scriptId,
-          scriptName,
-          error: state.error,
-        }));
-      }
-      if (state.detectedUrl) {
-        mainDispatch(scriptUrlDetected({
-          workspaceId: wsId,
-          scriptId,
-          scriptName,
-          url: state.detectedUrl,
-        }));
-      }
-    }).catch((err) => {
-      logger.warn('Failed to look up script name for event', { scriptId, error: String(err) });
-    });
+        if (state.error) {
+          mainDispatch(
+            scriptError({
+              workspaceId: wsId,
+              scriptId,
+              scriptName,
+              error: state.error,
+            }),
+          );
+        }
+        if (state.detectedUrl) {
+          mainDispatch(
+            scriptUrlDetected({
+              workspaceId: wsId,
+              scriptId,
+              scriptName,
+              url: state.detectedUrl,
+            }),
+          );
+        }
+      })
+      .catch((err) => {
+        logger.warn('Failed to look up script name for event', { scriptId, error: String(err) });
+      });
   });
 
   manager.setOutputCallback((scriptId: string, lines: OutputLine[]) => {
     const wsId = workspaceId as unknown as WorkspaceId;
-    mainDispatch(scriptOutput({
-      workspaceId: wsId,
-      scriptId,
-      lines: lines.map((l) => ({
-        text: l.text,
-        stream: l.stream,
-        timestamp: new Date(l.timestamp).toISOString(),
-      })),
-    }));
+    mainDispatch(
+      scriptOutput({
+        workspaceId: wsId,
+        scriptId,
+        lines: lines.map((l) => ({
+          text: l.text,
+          stream: l.stream,
+          timestamp: new Date(l.timestamp).toISOString(),
+        })),
+      }),
+    );
   });
 
   // Trigger auto-start for this workspace (once per workspace)
@@ -221,9 +236,7 @@ async function getOrCreateManager(workspaceId: string) {
     setTimeout(async () => {
       try {
         const scripts = await readScripts(workspaceId);
-        const autoStartScripts = scripts.filter(
-          (s) => s.autoStart && s.mode === 'service',
-        );
+        const autoStartScripts = scripts.filter((s) => s.autoStart && s.mode === 'service');
         for (const script of autoStartScripts) {
           logger.info(`[Scripts] Auto-starting "${script.name}"`, {
             scriptId: script.id,
@@ -267,7 +280,7 @@ export function registerScriptsHandlers(): void {
           logger.error('[Scripts] Error listing scripts:', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.scripts_ipc_unknown_error(),
             data: [],
           };
         }
@@ -318,7 +331,7 @@ export function registerScriptsHandlers(): void {
           logger.error('[Scripts] Error creating script:', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.scripts_ipc_unknown_error(),
           };
         }
       },
@@ -345,7 +358,7 @@ export function registerScriptsHandlers(): void {
           const scripts = await readScripts(workspaceId);
           const existing = scripts.find((s) => s.id === scriptId);
           if (!existing) {
-            return { success: false, error: `Script not found: ${scriptId}` };
+            return { success: false, error: m.scripts_ipc_scriptNotFound_error({ scriptId }) };
           }
 
           const updated: WorkspaceScript = {
@@ -360,7 +373,9 @@ export function registerScriptsHandlers(): void {
           try {
             const manager = await getOrCreateManager(workspaceId);
             manager.updateDefinition(scriptId, updated);
-          } catch { /* manager may not exist yet */ }
+          } catch {
+            /* manager may not exist yet */
+          }
 
           logger.info(`[Scripts] Updated script "${updated.name}"`, {
             scriptId,
@@ -372,7 +387,7 @@ export function registerScriptsHandlers(): void {
           logger.error('[Scripts] Error updating script:', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.scripts_ipc_unknown_error(),
           };
         }
       },
@@ -391,11 +406,13 @@ export function registerScriptsHandlers(): void {
           try {
             const manager = await getOrCreateManager(workspaceId);
             await manager.remove(scriptId);
-          } catch { /* manager may not exist yet */ }
+          } catch {
+            /* manager may not exist yet */
+          }
 
           const removed = await removeScript(workspaceId, scriptId);
           if (!removed) {
-            return { success: false, error: `Script not found: ${scriptId}` };
+            return { success: false, error: m.scripts_ipc_scriptNotFound_error({ scriptId }) };
           }
 
           logger.info(`[Scripts] Removed script ${scriptId}`, { workspaceId });
@@ -404,7 +421,7 @@ export function registerScriptsHandlers(): void {
           logger.error('[Scripts] Error removing script:', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.scripts_ipc_unknown_error(),
           };
         }
       },
@@ -422,7 +439,7 @@ export function registerScriptsHandlers(): void {
           const scripts = await readScripts(workspaceId);
           const script = scripts.find((s) => s.id === scriptId);
           if (!script) {
-            return { success: false, error: `Script not found: ${scriptId}` };
+            return { success: false, error: m.scripts_ipc_scriptNotFound_error({ scriptId }) };
           }
 
           const manager = await getOrCreateManager(workspaceId);
@@ -438,7 +455,7 @@ export function registerScriptsHandlers(): void {
           logger.error('[Scripts] Error starting script:', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.scripts_ipc_unknown_error(),
           };
         }
       },
@@ -462,7 +479,7 @@ export function registerScriptsHandlers(): void {
           logger.error('[Scripts] Error stopping script:', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.scripts_ipc_unknown_error(),
           };
         }
       },
@@ -480,7 +497,7 @@ export function registerScriptsHandlers(): void {
           const scripts = await readScripts(workspaceId);
           const script = scripts.find((s) => s.id === scriptId);
           if (!script) {
-            return { success: false, error: `Script not found: ${scriptId}` };
+            return { success: false, error: m.scripts_ipc_scriptNotFound_error({ scriptId }) };
           }
 
           const manager = await getOrCreateManager(workspaceId);
@@ -498,7 +515,7 @@ export function registerScriptsHandlers(): void {
           logger.error('[Scripts] Error restarting script:', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.scripts_ipc_unknown_error(),
           };
         }
       },
@@ -524,7 +541,7 @@ export function registerScriptsHandlers(): void {
           logger.error('[Scripts] Error getting script status:', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.scripts_ipc_unknown_error(),
           };
         }
       },
@@ -552,7 +569,7 @@ export function registerScriptsHandlers(): void {
           logger.error('[Scripts] Error getting script output:', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.scripts_ipc_unknown_error(),
             lines: [],
           };
         }

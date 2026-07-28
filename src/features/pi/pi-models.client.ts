@@ -9,6 +9,7 @@
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { PI_CHANNELS } from '$shared/ipc/channels';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('PiModelsClient');
 
@@ -29,9 +30,8 @@ export async function checkPiMcpAdapterInstalled(): Promise<boolean> {
 export async function installPiMcpAdapter(): Promise<InstallPiMcpAdapterResponse> {
   if (typeof window === 'undefined') {
     logger.debug('Skipping Pi MCP adapter install - not in browser environment');
-    return { success: false, error: 'Pi MCP adapter install is only available in the app' };
+    return { success: false, error: m.pi_client_appOnly_error() };
   }
 
   return await invoke<InstallPiMcpAdapterResponse>(PI_CHANNELS.INSTALL_MCP_ADAPTER);
 }
-

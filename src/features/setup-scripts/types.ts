@@ -5,6 +5,8 @@
  * These scripts handle common tasks like copying .env files, installing deps, etc.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 /**
  * Variables available in setup scripts.
  * These are set as environment variables when the script runs.
@@ -18,22 +20,30 @@ export interface SetupScriptVariable {
 export const SETUP_SCRIPT_VARIABLES: SetupScriptVariable[] = [
   {
     name: 'MAIN_CHECKOUT',
-    description: 'Absolute path to the main repository checkout (where you cloned the repo)',
+    get description() {
+      return m.setupScripts_variables_mainCheckout_description();
+    },
     example: '/Users/dev/projects/myrepo',
   },
   {
     name: 'WORKTREE_PATH',
-    description: 'Absolute path to the new worktree directory (current working directory)',
+    get description() {
+      return m.setupScripts_variables_worktreePath_description();
+    },
     example: '/Users/dev/projects/myrepo-worktrees/feature-branch',
   },
   {
     name: 'BRANCH_NAME',
-    description: 'Name of the branch for this worktree',
+    get description() {
+      return m.setupScripts_variables_branchName_description();
+    },
     example: 'feature/my-feature',
   },
   {
     name: 'SOURCE_BRANCH',
-    description: 'Name of the branch this worktree was created from',
+    get description() {
+      return m.setupScripts_variables_sourceBranch_description();
+    },
     example: 'main',
   },
 ];
@@ -60,6 +70,7 @@ const isWindows =
 export function generateVariablesHelpComment(isWindowsOverride?: boolean): string {
   const win = isWindowsOverride ?? isWindows;
   if (win) {
+    // i18n-ignore (shell script comment block)
     return `# Available variables:
 #   $env:MAIN_CHECKOUT  - Path to main repository checkout
 #   $env:WORKTREE_PATH  - Path to this worktree (current directory)
@@ -67,6 +78,7 @@ export function generateVariablesHelpComment(isWindowsOverride?: boolean): strin
 #   $env:SOURCE_BRANCH  - Name of the branch this worktree was created from
 `;
   }
+  // i18n-ignore (shell script comment block)
   return `# Available variables:
 #   $MAIN_CHECKOUT  - Path to main repository checkout
 #   $WORKTREE_PATH  - Path to this worktree (current directory)
@@ -127,7 +139,10 @@ export const SETUP_SCRIPT_TEMPLATES: SetupScriptTemplate[] = [
     id: 'node-pnpm',
     name: 'Node.js (pnpm)',
     projectType: 'node-pnpm',
-    description: 'Copies .env files from $MAIN_CHECKOUT and installs dependencies with pnpm',
+    get description() {
+      return m.setupScripts_template_nodePnpm_description();
+    },
+    // i18n-ignore (shell script content)
     content: `#!/bin/bash
 # Setup script for Node.js project with pnpm
 # Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
@@ -143,6 +158,7 @@ done
 # Install dependencies
 echo "Installing dependencies..."
 pnpm install`,
+    // i18n-ignore (shell script content)
     contentWindows: `# Setup script for Node.js project with pnpm
 # Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
@@ -163,7 +179,10 @@ pnpm install`,
     id: 'node-npm',
     name: 'Node.js (npm)',
     projectType: 'node-npm',
-    description: 'Copies .env files from $MAIN_CHECKOUT and installs dependencies with npm',
+    get description() {
+      return m.setupScripts_template_nodeNpm_description();
+    },
+    // i18n-ignore (shell script content)
     content: `#!/bin/bash
 # Setup script for Node.js project with npm
 # Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
@@ -179,6 +198,7 @@ done
 # Install dependencies
 echo "Installing dependencies..."
 npm install`,
+    // i18n-ignore (shell script content)
     contentWindows: `# Setup script for Node.js project with npm
 # Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
@@ -199,7 +219,10 @@ npm install`,
     id: 'node-yarn',
     name: 'Node.js (yarn)',
     projectType: 'node-yarn',
-    description: 'Copies .env files from $MAIN_CHECKOUT and installs dependencies with yarn',
+    get description() {
+      return m.setupScripts_template_nodeYarn_description();
+    },
+    // i18n-ignore (shell script content)
     content: `#!/bin/bash
 # Setup script for Node.js project with yarn
 # Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
@@ -215,6 +238,7 @@ done
 # Install dependencies
 echo "Installing dependencies..."
 yarn install`,
+    // i18n-ignore (shell script content)
     contentWindows: `# Setup script for Node.js project with yarn
 # Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
@@ -235,7 +259,10 @@ yarn install`,
     id: 'python-pip',
     name: 'Python (pip + venv)',
     projectType: 'python-pip',
-    description: 'Copies .env from $MAIN_CHECKOUT, creates venv, and installs requirements',
+    get description() {
+      return m.setupScripts_template_pythonPip_description();
+    },
+    // i18n-ignore (shell script content)
     content: `#!/bin/bash
 # Setup script for Python project with pip
 # Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
@@ -260,6 +287,7 @@ elif [ -f "setup.py" ]; then
 fi
 
 echo "Virtual environment ready. Activate with: source venv/bin/activate"`,
+    // i18n-ignore (shell script content)
     contentWindows: `# Setup script for Python project with pip
 # Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
@@ -289,7 +317,10 @@ Write-Host "Virtual environment ready. Activate with: .\\venv\\Scripts\\Activate
     id: 'python-poetry',
     name: 'Python (poetry)',
     projectType: 'python-poetry',
-    description: 'Copies .env from $MAIN_CHECKOUT and installs dependencies with poetry',
+    get description() {
+      return m.setupScripts_template_pythonPoetry_description();
+    },
+    // i18n-ignore (shell script content)
     content: `#!/bin/bash
 # Setup script for Python project with poetry
 # Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
@@ -303,6 +334,7 @@ fi
 # Install dependencies with poetry
 echo "Installing dependencies..."
 poetry install`,
+    // i18n-ignore (shell script content)
     contentWindows: `# Setup script for Python project with poetry
 # Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
@@ -321,7 +353,10 @@ poetry install`,
     id: 'go',
     name: 'Go',
     projectType: 'go',
-    description: 'Copies .env from $MAIN_CHECKOUT and downloads Go module dependencies',
+    get description() {
+      return m.setupScripts_template_go_description();
+    },
+    // i18n-ignore (shell script content)
     content: `#!/bin/bash
 # Setup script for Go project
 # Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
@@ -337,6 +372,7 @@ echo "Downloading Go modules..."
 go mod download
 
 echo "Go modules ready"`,
+    // i18n-ignore (shell script content)
     contentWindows: `# Setup script for Go project
 # Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
@@ -357,7 +393,10 @@ Write-Host "Go modules ready"`,
     id: 'rust',
     name: 'Rust (cargo)',
     projectType: 'rust',
-    description: 'Copies .env from $MAIN_CHECKOUT and fetches Cargo dependencies',
+    get description() {
+      return m.setupScripts_template_rust_description();
+    },
+    // i18n-ignore (shell script content)
     content: `#!/bin/bash
 # Setup script for Rust project
 # Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
@@ -373,6 +412,7 @@ echo "Fetching Cargo dependencies..."
 cargo fetch
 
 echo "Dependencies ready. Run 'cargo build' when needed."`,
+    // i18n-ignore (shell script content)
     contentWindows: `# Setup script for Rust project
 # Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
@@ -391,9 +431,14 @@ Write-Host "Dependencies ready. Run 'cargo build' when needed."`,
   },
   {
     id: 'generic',
-    name: 'Copy config files only',
+    get name() {
+      return m.setupScripts_template_generic_name();
+    },
     projectType: 'generic',
-    description: 'Copies common gitignored config files from $MAIN_CHECKOUT',
+    get description() {
+      return m.setupScripts_template_generic_description();
+    },
+    // i18n-ignore (shell script content)
     content: `#!/bin/bash
 # Generic setup script
 # Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
@@ -407,6 +452,7 @@ for file in .env .env.local .envrc .tool-versions; do
 done
 
 echo "Config files copied"`,
+    // i18n-ignore (shell script content)
     contentWindows: `# Generic setup script
 # Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"
@@ -423,10 +469,14 @@ Write-Host "Config files copied"`,
   },
   {
     id: 'generic-recursive',
-    name: 'Copy config files recursively',
+    get name() {
+      return m.setupScripts_template_genericRecursive_name();
+    },
     projectType: 'generic',
-    description:
-      'Recursively copies .env files from $MAIN_CHECKOUT, skipping node_modules, .git, and gitignored directories',
+    get description() {
+      return m.setupScripts_template_genericRecursive_description();
+    },
+    // i18n-ignore (shell script content)
     content: `#!/bin/bash
 # Generic setup script - recursive .env copy
 # Available variables: $MAIN_CHECKOUT, $WORKTREE_PATH, $BRANCH_NAME, $SOURCE_BRANCH
@@ -456,6 +506,7 @@ find . "\${EXCLUDES[@]}" -name '.env*' -type f | while IFS= read -r file; do
   done
 
 echo "Done - .env files copied recursively"`,
+    // i18n-ignore (shell script content)
     contentWindows: `# Generic setup script - recursive .env copy
 # Available variables: $env:MAIN_CHECKOUT, $env:WORKTREE_PATH, $env:BRANCH_NAME, $env:SOURCE_BRANCH
 $ErrorActionPreference = "Stop"

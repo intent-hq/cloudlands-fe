@@ -24,6 +24,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
 
   // Icon components for well-known editors
   import CursorCodeIcon from '$lib/components/shared/icons/CursorCodeIcon.svelte';
@@ -153,7 +154,11 @@
       onCancel?.();
     } catch (err) {
       logger.error(`Failed to open in ${editor.appName}:`, err);
-      toast.error(err instanceof Error ? err.message : `Failed to open in ${editor.appName}`);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : m.modals_pullConflict_openFailed_error({ appName: editor.appName })
+      );
     }
   }
 
@@ -206,9 +211,9 @@
               <Fa icon={faExclamationTriangle} size="lg" />
             </div>
             <div>
-              <h2 class="text-lg font-semibold">Pull Failed</h2>
+              <h2 class="text-lg font-semibold">{m.modals_pullConflict_title()}</h2>
               {#if branchName}
-                <p class="text-sm text-subtle mt-0.5">Branch: {branchName}</p>
+                <p class="text-sm text-subtle mt-0.5">{m.modals_pullConflict_branch_label({ branchName })}</p>
               {/if}
             </div>
           </div>
@@ -220,8 +225,7 @@
         <!-- Content -->
         <div class="p-6">
           <p class="text-sm text-subtle mb-4">
-            Unable to pull changes from the remote branch. This usually happens when there are local
-            changes that conflict with remote changes.
+            {m.modals_pullConflict_description()}
           </p>
           {#if error}
             <div
@@ -235,7 +239,7 @@
         <!-- Footer -->
         <div class="px-6 py-4 border-t border-border flex flex-col gap-3">
           <div class="grid grid-cols-2 gap-2 items-center">
-            <p class="text-xs select-none">Resolve conflicts in another app</p>
+            <p class="text-xs select-none">{m.modals_pullConflict_resolveInApp_label()}</p>
             <!-- Open in dropdown (combined IDEs and terminals) -->
             {#if $installedEditors$.length > 0}
               <DropdownMenu bind:open={dropdownOpen} align="start" portal={true}>
@@ -243,7 +247,7 @@
                   <Button variant="outline" onclick={toggle} class="w-full justify-between gap-2">
                     <span class="flex items-center gap-2">
                       <Fa icon={faArrowUpRightFromSquare} size="sm" />
-                      <span>Open in...</span>
+                      <span>{m.modals_pullConflict_openIn_label()}</span>
                     </span>
                     <Fa icon={faChevronDown} size="xs" class="opacity-50" />
                   </Button>
@@ -286,9 +290,9 @@
           </div>
           <div class="grid grid-cols-2 gap-2 items-center">
             <Tooltip
-              content="Create a new workspace on the target with an agent to resolve the conflicts"
+              content={m.modals_pullConflict_createWorkspace_tooltip()}
             >
-              <span class="text-xs inline-block">Or let Intent handle it</span>
+              <span class="text-xs inline-block">{m.modals_pullConflict_letIntentHandle_label()}</span>
             </Tooltip>
             <!-- Create workspace action -->
             <Button
@@ -297,7 +301,7 @@
               class="w-full justify-start gap-2"
             >
               <Fa icon={faCodeBranch} />
-              Create Workspace
+              {m.modals_pullConflict_createWorkspace_label()}
             </Button>
           </div>
         </div>

@@ -5,10 +5,8 @@
  */
 
 import { Logger } from '$lib/utils/logger';
-import {
-  EDITOR_REGISTRY,
-  type EditorDefinition,
-} from '$shared/editors/editor-registry';
+import { m } from '$shared/paraglide/messages.js';
+import { EDITOR_REGISTRY, type EditorDefinition } from '$shared/editors/editor-registry';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { spawn } from 'child_process';
 import os from 'os';
@@ -97,12 +95,19 @@ export async function getInstalledFlatpakApps(): Promise<Set<string>> {
         appIds.add(editor.flatpakId);
       }
     }
-    logger.info(`[ExternalEditors] Flatpak (host.listInstalledEditors): found ${appIds.size} installed apps`);
+    logger.info(
+      // i18n-ignore (developer log message)
+      `[ExternalEditors] Flatpak (host.listInstalledEditors): found ${appIds.size} installed apps`,
+    );
     flatpakInstalledCache = appIds;
     flatpakCacheTimestamp = now;
     return appIds;
   } catch (error) {
-    logger.info('[ExternalEditors] host.listInstalledEditors failed; treating Flatpak as unavailable', error as Error);
+    logger.info(
+      // i18n-ignore (developer log message)
+      '[ExternalEditors] host.listInstalledEditors failed; treating Flatpak as unavailable',
+      error as Error,
+    );
     flatpakInstalledCache = new Set();
     flatpakCacheTimestamp = now;
     return flatpakInstalledCache;
@@ -170,7 +175,10 @@ async function findExecutableBinary(editorId: string): Promise<string | null> {
     homeDir ? `${homeDir}/.local/share/JetBrains/Toolbox/scripts` : null,
   ].filter(Boolean) as string[];
 
-  logger.debug(`[ExternalEditors] Searching for ${editorId} binaries: [${binaries.join(', ')}] in paths: [${searchPaths.join(', ')}]`);
+  logger.debug(
+    // i18n-ignore (developer log message)
+    `[ExternalEditors] Searching for ${editorId} binaries: [${binaries.join(', ')}] in paths: [${searchPaths.join(', ')}]`,
+  );
 
   for (const binary of binaries) {
     const resolvedPath = await findBinary(binary, {
@@ -331,7 +339,10 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
     return cachedEditors;
   }
 
-  logger.info(`[ExternalEditors] Detecting installed editors... (platform=${process.platform}, forceRefresh=${forceRefresh})`);
+  logger.info(
+    // i18n-ignore (developer log message)
+    `[ExternalEditors] Detecting installed editors... (platform=${process.platform}, forceRefresh=${forceRefresh})`,
+  );
 
   const isMacOS = process.platform === 'darwin';
   const isLinux = process.platform === 'linux';
@@ -374,7 +385,9 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
         installed = await isAppInstalled(editor.appName, editor.id);
       }
 
-      logger.info(`[ExternalEditors] Editor ${editor.id} (${editor.name}): installed=${installed}, handlerType=${editor.handlerType}`);
+      logger.info(
+        `[ExternalEditors] Editor ${editor.id} (${editor.name}): installed=${installed}, handlerType=${editor.handlerType}`,
+      );
 
       // Get icon for installed apps (only works on macOS)
       let iconBase64: string | null = null;
@@ -383,8 +396,12 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
       }
 
       // Apply platform-specific display name overrides on Windows
-      const name = (isWindows && editor.platforms?.win32?.name) ? editor.platforms.win32.name : editor.name;
-      const shortLabel = (isWindows && editor.platforms?.win32?.shortLabel) ? editor.platforms.win32.shortLabel : editor.shortLabel;
+      const name =
+        isWindows && editor.platforms?.win32?.name ? editor.platforms.win32.name : editor.name;
+      const shortLabel =
+        isWindows && editor.platforms?.win32?.shortLabel
+          ? editor.platforms.win32.shortLabel
+          : editor.shortLabel;
 
       return {
         ...editor,
@@ -404,7 +421,10 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
 
   const installedCount = results.filter((e) => e.installed).length;
   const installedNames = results.filter((e) => e.installed).map((e) => `${e.id}(${e.handlerType})`);
-  logger.info(`[ExternalEditors] Detected ${installedCount} installed editors: [${installedNames.join(', ')}]`);
+  logger.info(
+    // i18n-ignore (developer log message)
+    `[ExternalEditors] Detected ${installedCount} installed editors: [${installedNames.join(', ')}]`,
+  );
 
   return results;
 }
@@ -472,17 +492,24 @@ export function registerExternalEditorsHandlers(): void {
 
         if (!editor) {
           logger.error(`[ExternalEditors] OPEN: Unknown editor ID: ${editorId}`);
-          return { success: false, error: `Unknown editor: ${editorId}` };
+          return { success: false, error: m.externalEditors_ipc_unknownEditor_error({ editorId }) };
         }
 
-        logger.info(`[ExternalEditors] OPEN: Found editor ${editor.name}, handlerType=${editor.handlerType}`);
+        logger.info(
+          // i18n-ignore (developer log message)
+          `[ExternalEditors] OPEN: Found editor ${editor.name}, handlerType=${editor.handlerType}`,
+        );
 
         // For special handlers, delegate to existing IPC channels
         // The frontend should call those directly for better control
         if (editor.handlerType !== 'generic') {
-          logger.warn(`[ExternalEditors] OPEN: Editor ${editor.id} has non-generic handlerType=${editor.handlerType}, rejecting`);
+          logger.warn(
+            // i18n-ignore (developer log message)
+            `[ExternalEditors] OPEN: Editor ${editor.id} has non-generic handlerType=${editor.handlerType}, rejecting`,
+          );
           return {
             success: false,
+            // i18n-ignore (internal invariant error; handlerType is a code identifier)
             error: `Use dedicated handler for ${editor.handlerType} editors`,
           };
         }
@@ -502,7 +529,10 @@ export function registerExternalEditorsHandlers(): void {
             }
           } else if (process.platform === 'linux') {
             // Linux: find the binary and run it directly, or fall back to Flatpak
-            logger.info(`[ExternalEditors] OPEN: Linux platform, looking up binary for ${editorId}`);
+            logger.info(
+              // i18n-ignore (developer log message)
+              `[ExternalEditors] OPEN: Linux platform, looking up binary for ${editorId}`,
+            );
             const binaryPath = await findLinuxBinaryPath(editorId);
 
             if (binaryPath) {
@@ -512,7 +542,9 @@ export function registerExternalEditorsHandlers(): void {
               if (editorId === 'terminal') {
                 // Terminals need special flags to set working directory
                 args = getLinuxTerminalArgs(binaryPath, path);
-                logger.info(`[ExternalEditors] OPEN: Using terminal args for ${binaryPath}`, { args });
+                logger.info(`[ExternalEditors] OPEN: Using terminal args for ${binaryPath}`, {
+                  args,
+                });
               } else {
                 // Regular editors: pass path and optional file as arguments
                 args = file ? [path, file] : [path];
@@ -521,7 +553,10 @@ export function registerExternalEditorsHandlers(): void {
               // No native binary found, try Flatpak
               const flatpakAppId = await findFlatpakAppId(editorId);
               if (flatpakAppId) {
-                logger.info(`[ExternalEditors] OPEN: Using Flatpak to launch ${editorId} (${flatpakAppId})`);
+                logger.info(
+                  // i18n-ignore (developer log message)
+                  `[ExternalEditors] OPEN: Using Flatpak to launch ${editorId} (${flatpakAppId})`,
+                );
                 command = 'flatpak';
                 args = ['run', flatpakAppId];
                 if (file) {
@@ -530,13 +565,20 @@ export function registerExternalEditorsHandlers(): void {
                   args.push(path);
                 }
               } else {
-                logger.error(`[ExternalEditors] OPEN: Could not find binary or Flatpak for ${editor.name} (${editorId})`);
-                return { success: false, error: `Could not find binary for ${editor.name}` };
+                logger.error(
+                  // i18n-ignore (developer log message)
+                  `[ExternalEditors] OPEN: Could not find binary or Flatpak for ${editor.name} (${editorId})`,
+                );
+                return {
+                  success: false,
+                  error: m.externalEditors_ipc_binaryNotFound_error({ editorName: editor.name }),
+                };
               }
             }
           } else if (process.platform === 'win32') {
             // Windows: find the first available binary via shared binary lookup
-            const binary = (await findWindowsBinary(editorId)) ?? editor.platforms?.win32?.binaries?.[0];
+            const binary =
+              (await findWindowsBinary(editorId)) ?? editor.platforms?.win32?.binaries?.[0];
             if (binary) {
               command = binary;
               if (editorId === 'terminal') {
@@ -562,7 +604,12 @@ export function registerExternalEditorsHandlers(): void {
             }
           } else {
             logger.error(`[ExternalEditors] OPEN: Unsupported platform: ${process.platform}`);
-            return { success: false, error: `Unsupported platform: ${process.platform}` };
+            return {
+              success: false,
+              error: m.externalEditors_ipc_unsupportedPlatform_error({
+                platform: process.platform,
+              }),
+            };
           }
 
           logger.info('[ExternalEditors] OPEN: Spawning process', {
@@ -572,7 +619,8 @@ export function registerExternalEditorsHandlers(): void {
             platform: process.platform,
           });
 
-          const isWindowsGuiTerminal = process.platform === 'win32' && editorId === 'windows-terminal';
+          const isWindowsGuiTerminal =
+            process.platform === 'win32' && editorId === 'windows-terminal';
           // LOCAL-GUI: launches the user's editor on the client host; not workspace execution
           const child = spawn(command, args, {
             detached: true,
@@ -589,7 +637,11 @@ export function registerExternalEditorsHandlers(): void {
           });
 
           if (spawnError) {
-            logger.error(`[ExternalEditors] OPEN: Spawn failed - ${spawnError.message} (code=${(spawnError as NodeJS.ErrnoException).code}, command=${command}, args=${JSON.stringify(args)})`, spawnError);
+            logger.error(
+              // i18n-ignore (developer log message)
+              `[ExternalEditors] OPEN: Spawn failed - ${spawnError.message} (code=${(spawnError as NodeJS.ErrnoException).code}, command=${command}, args=${JSON.stringify(args)})`,
+              spawnError,
+            );
             return { success: false, error: spawnError.message };
           }
 
@@ -601,7 +653,7 @@ export function registerExternalEditorsHandlers(): void {
           logger.error('[ExternalEditors] Failed to open', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.externalEditors_ipc_unknown_error(),
           };
         }
       },
@@ -625,15 +677,17 @@ export function registerExternalEditorsHandlers(): void {
           if (process.platform === 'darwin') {
             // macOS: Show file picker for .app bundles
             dialogOptions = {
-              title: 'Choose Application',
+              title: m.externalEditors_ipc_chooseApplication_title(),
               defaultPath: '/Applications',
               properties: ['openFile'],
-              filters: [{ name: 'Applications', extensions: ['app'] }],
+              filters: [
+                { name: m.externalEditors_ipc_applications_filterName(), extensions: ['app'] },
+              ],
             };
           } else if (process.platform === 'linux') {
             // Linux: Show file picker for executables in common locations
             dialogOptions = {
-              title: 'Choose Application',
+              title: m.externalEditors_ipc_chooseApplication_title(),
               defaultPath: '/usr/bin',
               properties: ['openFile'],
               // No extension filter on Linux - executables don't have extensions
@@ -641,19 +695,29 @@ export function registerExternalEditorsHandlers(): void {
           } else if (process.platform === 'win32') {
             // Windows: Show file picker for .exe files in Program Files
             dialogOptions = {
-              title: 'Choose Application',
+              title: m.externalEditors_ipc_chooseApplication_title(),
               defaultPath: process.env.PROGRAMFILES || 'C:\\Program Files',
               properties: ['openFile'],
-              filters: [{ name: 'Applications', extensions: ['exe', 'cmd', 'bat'] }],
+              filters: [
+                {
+                  name: m.externalEditors_ipc_applications_filterName(),
+                  extensions: ['exe', 'cmd', 'bat'],
+                },
+              ],
             };
           } else {
-            return { success: false, error: `Unsupported platform: ${process.platform}` };
+            return {
+              success: false,
+              error: m.externalEditors_ipc_unsupportedPlatform_error({
+                platform: process.platform,
+              }),
+            };
           }
 
           const result = await electronDialog.showOpenDialog(dialogOptions);
 
           if (result.canceled || result.filePaths.length === 0) {
-            return { success: false, error: 'No application selected' };
+            return { success: false, error: m.externalEditors_ipc_noApplicationSelected_error() };
           }
 
           const appPath = result.filePaths[0];
@@ -664,7 +728,11 @@ export function registerExternalEditorsHandlers(): void {
             appName = appPath.split('/').pop()?.replace('.app', '') || '';
           } else if (process.platform === 'win32') {
             // Windows: "C:\Program Files\App\app.exe" -> "app.exe"
-            appName = appPath.split(/[/\\]/).pop()?.replace(/\.(exe|cmd|bat)$/i, '') || '';
+            appName =
+              appPath
+                .split(/[/\\]/)
+                .pop()
+                ?.replace(/\.(exe|cmd|bat)$/i, '') || '';
           } else {
             // Linux: "/usr/bin/code" -> "code"
             appName = appPath.split('/').pop() || '';
@@ -720,7 +788,7 @@ export function registerExternalEditorsHandlers(): void {
           logger.error('[ExternalEditors] Failed to open with custom app', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.externalEditors_ipc_unknown_error(),
           };
         }
       },

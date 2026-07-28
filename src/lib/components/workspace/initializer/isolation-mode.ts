@@ -11,12 +11,15 @@
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+import { m } from '$shared/paraglide/messages.js';
 
 export type IsolationMode = 'worktree' | 'cow';
 
 /** Human noun for the isolated checkout the daemon would provision. */
 export function isolationNoun(mode: IsolationMode): string {
-  return mode === 'cow' ? 'CoW checkout' : 'worktree';
+  return mode === 'cow'
+    ? m.workspace_isolationMode_cowCheckout_label()
+    : m.workspace_isolationMode_worktree_label();
 }
 
 /**

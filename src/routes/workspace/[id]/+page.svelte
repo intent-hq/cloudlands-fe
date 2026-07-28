@@ -87,6 +87,7 @@
     flushPendingAgentDeletionsRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('workspace-page');
@@ -528,9 +529,9 @@
       const { error, timestamp } = JSON.parse(errorData);
       if (Date.now() - timestamp < 30000) {
         logger.error('[WorkspacePage] Workspace creation failed', { error });
-        toast.error(`Failed to create workspace: ${error}`, {
+        toast.error(m.workspace_page_createFailed_error({ error }), {
           duration: 10000,
-          description: 'Please try again or contact support if the issue persists.',
+          description: m.workspace_page_createFailedRetry_description(),
         });
       }
     } catch (e) {
@@ -671,7 +672,7 @@
       const layoutManager = getPanelLayoutManager(workspaceId);
       layoutManager.openTab({
         type: 'agent-overview',
-        title: 'Agent Overview',
+        title: m.layout_tabTypes_agentOverview_title(),
         closable: true,
         workspaceId,
       });
@@ -789,7 +790,7 @@
      ============================================================================ -->
 
 <svelte:head>
-  <title>{isOnboarding || showOnboarding ? 'New Space' : $workspace?.title || 'Space'}</title>
+  <title>{isOnboarding || showOnboarding ? m.workspace_page_newSpace_title() : $workspace?.title || m.workspace_page_space_title()}</title>
 </svelte:head>
 
 <!-- Sidebar Snippet -->
@@ -845,7 +846,7 @@
         {#if workspaceLoader.loadError && !isCreatingWorkspace}
           <ResourceNotFound
             kind={workspaceLoader.loadError.kind}
-            resourceLabel="Workspace"
+            resourceLabel={m.workspace_page_workspaceResource_label()}
             resourceId={workspaceId}
             detail={workspaceLoader.loadError.kind === 'error'
               ? workspaceLoader.loadError.message
@@ -885,10 +886,10 @@
   <WorkspaceModals workspace={$workspace ?? null} showPRCreator={false} />
   <InputDialog
     bind:open={createFileDialogOpen}
-    title="Create new file"
-    description="Enter a name for the new file"
-    placeholder="filename.ts"
-    confirmLabel="Create"
+    title={m.workspace_page_createFile_title()}
+    description={m.workspace_page_createFile_description()}
+    placeholder={m.workspace_page_createFile_placeholder()}
+    confirmLabel={m.workspace_page_create_label()}
     onConfirm={handleCreateFileConfirm}
   />
 {/snippet}

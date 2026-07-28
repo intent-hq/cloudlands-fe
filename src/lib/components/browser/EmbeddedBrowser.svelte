@@ -47,6 +47,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('EmbeddedBrowser');
 
@@ -558,14 +559,14 @@
           // ERR_CONNECTION_REFUSED on localhost - likely a dev server that isn't running
           const port = failedUrl?.match(/:(\d+)/)?.[1];
           errorMessage = port
-            ? `Cannot connect to localhost:${port}. The server may not be running.`
-            : 'Cannot connect to localhost. The server may not be running.';
+            ? m.browser_embedded_localhostRefusedPort_error({ port })
+            : m.browser_embedded_localhostRefused_error();
           logger.warn('Localhost connection refused', {
             url: failedUrl,
             errorCode: e.errorCode,
           });
         } else {
-          errorMessage = e.errorDescription || 'Failed to load page';
+          errorMessage = e.errorDescription || m.browser_embedded_loadFailed_error();
           logger.error('Webview failed to load', {
             errorCode: e.errorCode,
             errorDescription: e.errorDescription,
@@ -636,17 +637,20 @@
       try {
         const parsed = new URL(targetUrl);
         if (!ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
-          errorMessage = `Protocol "${parsed.protocol}" is not allowed. Supported: ${ALLOWED_PROTOCOLS.join(', ')}`;
+          errorMessage = m.browser_embedded_protocolNotAllowed_error({
+            protocol: parsed.protocol,
+            protocols: ALLOWED_PROTOCOLS.join(', '),
+          });
           logger.warn('Blocked disallowed protocol in webview', {
             url: targetUrl,
             protocol: parsed.protocol,
           });
         } else {
-          errorMessage = 'Cannot load the app inside itself';
+          errorMessage = m.browser_embedded_selfLoad_error();
           logger.warn('Prevented loading app URL in webview', { url: targetUrl });
         }
       } catch {
-        errorMessage = 'Invalid URL format';
+        errorMessage = m.browser_embedded_invalidUrlFormat_error();
         logger.warn('Invalid URL format', { url: targetUrl });
       }
       return;
@@ -679,7 +683,7 @@
         webviewReady = false;
       }
     } catch (error) {
-      errorMessage = 'Invalid URL';
+      errorMessage = m.browser_embedded_invalidUrl_error();
       logger.error('Invalid URL', { url: targetUrl, error });
     }
   }
@@ -734,15 +738,15 @@
       urlToCopy = currentWebviewUrl;
     }
     if (!urlToCopy) {
-      toast.error('No URL to copy');
+      toast.error(m.browser_embedded_noUrlToCopy_error());
       return;
     }
     try {
       await writeTextToClipboard(urlToCopy);
-      toast.success('URL copied to clipboard');
+      toast.success(m.browser_embedded_urlCopied_label());
     } catch (error) {
       logger.error('Failed to copy browser URL', error, { url: urlToCopy });
-      toast.error('Failed to copy URL');
+      toast.error(m.browser_embedded_copyFailed_error());
     }
   }
 
@@ -800,10 +804,10 @@
         size="icon-xs"
         onclick={goBack}
         disabled={!canGoBack}
-        tooltip="Go Back"
+        tooltip={m.browser_embedded_goBack_tooltip()}
         tooltipShortcut="alt+←"
         tooltipSide="bottom"
-        aria-label="Go back"
+        aria-label={m.browser_embedded_goBack_ariaLabel()}
       >
         <Fa icon={faArrowLeft} size="xs" />
       </Button>
@@ -812,10 +816,10 @@
         size="icon-xs"
         onclick={goForward}
         disabled={!canGoForward}
-        tooltip="Go Forward"
+        tooltip={m.browser_embedded_goForward_tooltip()}
         tooltipShortcut="alt+→"
         tooltipSide="bottom"
-        aria-label="Go forward"
+        aria-label={m.browser_embedded_goForward_ariaLabel()}
       >
         <Fa icon={faArrowRight} size="xs" />
       </Button>
@@ -824,10 +828,10 @@
         size="icon-xs"
         onclick={refresh}
         disabled={isLoading}
-        tooltip="Refresh"
+        tooltip={m.browser_embedded_refresh_tooltip()}
         tooltipShortcut="mod+r"
         tooltipSide="bottom"
-        aria-label="Refresh page"
+        aria-label={m.browser_embedded_refresh_ariaLabel()}
       >
         <Fa icon={faRefresh} size="xs" class={isLoading ? 'animate-spin' : ''} />
       </Button>
@@ -847,9 +851,9 @@
         bind:value={displayUrl}
         class="flex-1 border-none py-0 h-auto px-0"
         noFocusStyle
-        placeholder="Enter URL..."
+        placeholder={m.browser_embedded_url_placeholder()}
       />
-      <button type="submit" class="sr-only">Go</button>
+      <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
     </form>
 
     <!-- Actions -->
@@ -858,10 +862,10 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={toggleDevTools}
-        tooltip="Toggle DevTools"
+        tooltip={m.browser_embedded_devtools_tooltip()}
         tooltipShortcut="mod+alt+i"
         tooltipSide="bottom"
-        aria-label="Toggle developer tools"
+        aria-label={m.browser_embedded_devtools_ariaLabel()}
       >
         <Fa icon={faCode} size="xs" />
       </Button>
@@ -869,9 +873,9 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={openExternal}
-        tooltip="Open in External Browser"
+        tooltip={m.browser_embedded_openExternal_tooltip()}
         tooltipSide="bottom"
-        aria-label="Open in external browser"
+        aria-label={m.browser_embedded_openExternal_ariaLabel()}
       >
         <Fa icon={faExternalLinkAlt} size="xs" />
       </Button>
@@ -880,10 +884,10 @@
           variant="ghost-light"
           size="icon-xs"
           onclick={onClose}
-          tooltip="Close Browser"
+          tooltip={m.browser_embedded_close_tooltip()}
           tooltipShortcut="esc"
           tooltipSide="bottom"
-          aria-label="Close browser"
+          aria-label={m.browser_embedded_close_ariaLabel()}
         >
           <Fa icon={faTimes} size="xs" />
         </Button>
@@ -921,12 +925,12 @@
       <div class="flex items-center justify-center h-full text-subtle">
         <div class="text-center">
           <div class="text-4xl mb-3 opacity-50">⚠️</div>
-          <p class="text-lg font-medium mb-1">Cannot load this URL</p>
+          <p class="text-lg font-medium mb-1">{m.browser_embedded_cannotLoadUrl_label()}</p>
           <p class="text-sm">
             {#if url.startsWith('javascript:') || url.startsWith('data:')}
-              This protocol is not allowed for security reasons
+              {m.browser_embedded_protocolBlocked_description()}
             {:else}
-              The app cannot load itself in the browser panel
+              {m.browser_embedded_selfLoadBlocked_description()}
             {/if}
           </p>
           <p class="text-xs mt-2 opacity-50 max-w-md break-all">{url}</p>
@@ -936,8 +940,8 @@
       <div class="flex items-center justify-center h-full text-subtle">
         <div class="text-center">
           <div class="text-4xl mb-3 opacity-50">🌐</div>
-          <p class="text-lg font-medium mb-1">No URL specified</p>
-          <p class="text-sm">Enter a URL in the sidebar to get started</p>
+          <p class="text-lg font-medium mb-1">{m.browser_embedded_noUrl_label()}</p>
+          <p class="text-sm">{m.browser_embedded_noUrl_description()}</p>
         </div>
       </div>
     {/if}

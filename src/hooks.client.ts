@@ -1,4 +1,5 @@
 import { logger } from '$shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import type { HandleClientError } from '@sveltejs/kit';
 import { shouldSuppressMonacoUnhandledRejection } from '$lib/utils/monaco-error-suppression';
 
@@ -34,6 +35,7 @@ export const handleError: HandleClientError = ({ error, event }) => {
       return { message: '' };
     }
     // Model disposed during async operations (e.g., diff computation, tokenization)
+    // i18n-ignore (matches Monaco's internal English error message)
     if (message.includes('TextModel got disposed')) {
       return { message: '' };
     }
@@ -43,6 +45,7 @@ export const handleError: HandleClientError = ({ error, event }) => {
   if (error && typeof error === 'object' && 'message' in error) {
     const message = String(error.message);
     const isNotFoundError =
+      // i18n-ignore (matches SvelteKit's internal English error message)
       message.includes('Not found: /index.html') || message.includes('Not found');
 
     if (isNotFoundError) {
@@ -87,7 +90,7 @@ export const handleError: HandleClientError = ({ error, event }) => {
       });
 
       return {
-        message: 'Page not found',
+        message: m.hooks_client_pageNotFound_message(),
       };
     } else {
       // Reset counter for non-"Not found" errors
@@ -170,6 +173,6 @@ export const handleError: HandleClientError = ({ error, event }) => {
 
   // Return a user-friendly error message
   return {
-    message: 'An unexpected error occurred',
+    message: m.hooks_client_unexpected_error(),
   };
 };

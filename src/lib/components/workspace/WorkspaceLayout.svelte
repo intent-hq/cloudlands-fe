@@ -17,6 +17,7 @@
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
   import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
   import { Logger } from '$shared/logger';
+  import { m } from '$shared/paraglide/messages.js';
 
   // Props
   interface Props {
@@ -71,7 +72,10 @@
 
 <ErrorBoundary logger={workspaceLogger}>
   <!-- Main Workspace Layout -->
-  <div class="workspace-page h-full flex flex-col relative bg-sidebar" aria-label="Workspace layout">
+  <div
+    class="workspace-page h-full flex flex-col relative bg-sidebar"
+    aria-label={m.workspace_layout_ariaLabel()}
+  >
     <!-- Upper Area: Sidebar + Content (shrinks when terminal is open) -->
     <div class="upper-area flex-1 flex min-h-0">
       {#if sidebarSide === 'right'}

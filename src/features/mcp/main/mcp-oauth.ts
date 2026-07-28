@@ -12,6 +12,7 @@ import express from 'express';
 import type { Server } from 'http';
 import { shell } from 'electron';
 import { Logger } from '$shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger('McpOAuth');
 
@@ -168,7 +169,7 @@ async function discoverOAuthMetadata(serverUrl: string): Promise<OAuthServerMeta
           return metadata as OAuthServerMetadata;
         }
       }
-    } catch  {
+    } catch {
       // Continue trying other paths
     }
   }
@@ -374,8 +375,7 @@ export async function initiateMcpOAuth(
     if (!metadata) {
       return {
         success: false,
-        error:
-          'This server does not support OAuth. Please configure authentication headers manually.',
+        error: m.mcp_oauth_notSupported_error(),
       };
     }
 
@@ -439,7 +439,7 @@ export async function initiateMcpOAuth(
       callbackServer.server.close();
       return {
         success: false,
-        error: 'Failed to register OAuth client. Please configure authentication headers manually.',
+        error: m.mcp_oauth_registerFailed_error(),
       };
     }
 

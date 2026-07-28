@@ -26,6 +26,7 @@ import { TerminalBufferManager } from './terminal-buffer-manager';
 import { TerminalThemeManager } from './terminal-theme-manager';
 import { terminalHistoryTracker } from './terminal-history-tracker';
 import { isGitHubUrl } from '$shared/utils/link-helpers';
+import { m } from '$shared/paraglide/messages.js';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { store as appStore } from '$store/renderer/store';
@@ -417,7 +418,7 @@ export class TerminalAdapter {
       });
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to open terminal');
+        throw new Error(result.error || m.terminal_adapter_openFailed_error());
       }
       if (result.id) {
         this.terminalId = result.id;
@@ -783,6 +784,7 @@ export class TerminalAdapter {
         const handleContextLost = (event: Event) => {
           event.preventDefault();
           logger.warn(
+            // i18n-ignore (log message, not user-facing)
             `[WebGL] Context lost for terminal ${this.terminalId}, recovering...`,
           );
 
@@ -798,6 +800,7 @@ export class TerminalAdapter {
             const currentTheme = this.themeManager.getCurrentTheme();
             if (!currentTheme.isDark) {
               logger.info(
+                // i18n-ignore (log message, not user-facing)
                 '[WebGL] Skipping WebGL recovery on light theme, using Canvas renderer',
               );
               return;
@@ -806,6 +809,7 @@ export class TerminalAdapter {
             // Guard against infinite recovery loops
             if (this.webglRecoveryAttempts >= TerminalAdapter.MAX_WEBGL_RECOVERY_ATTEMPTS) {
               logger.warn(
+                // i18n-ignore (log message, not user-facing)
                 `[WebGL] Max recovery attempts (${TerminalAdapter.MAX_WEBGL_RECOVERY_ATTEMPTS}) reached for terminal ${this.terminalId}, staying on Canvas renderer`,
               );
               return;
@@ -818,6 +822,7 @@ export class TerminalAdapter {
               logger.info(`[WebGL] Successfully recovered from context loss (attempt ${this.webglRecoveryAttempts})`);
             } catch (error) {
               logger.warn(
+                // i18n-ignore (log message, not user-facing)
                 '[WebGL] Failed to recover from context loss, falling back to Canvas renderer:',
                 error,
               );
@@ -1115,6 +1120,7 @@ export class TerminalAdapter {
       }
 
       logger.debug(
+        // i18n-ignore (log message, not user-facing)
         `Restored terminal buffer for ${this.terminalId} with ${lines.length} lines (prompt removed)`,
       );
     }
@@ -1753,7 +1759,7 @@ export class TerminalAdapter {
 
     // Show error in terminal
     if (!this.isDisposed) {
-      this.xterm.writeln(`\r\n\x1b[31mError: ${error.message}\x1b[0m\r\n`);
+      this.xterm.writeln(`\r\n\x1b[31m${m.terminal_adapter_errorLine_label({ message: error.message })}\x1b[0m\r\n`);
     }
   }
 
@@ -1822,7 +1828,7 @@ export class TerminalAdapter {
       });
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to reconnect terminal');
+        throw new Error(result.error || m.terminal_adapter_reconnectFailed_error());
       }
       if (result.id) {
         this.terminalId = result.id;

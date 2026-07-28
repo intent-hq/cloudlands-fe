@@ -24,6 +24,7 @@
   toggleDiffSideBySide,
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Props {
@@ -72,7 +73,7 @@
       variant="ghost-light"
       size={buttonSizeMap[size]}
       onclick={toggle}
-      title="View settings"
+      title={m.ui_viewSettings_trigger_tooltip()}
       class={className}
     >
       <Fa icon={faEye} size="xs" />
@@ -81,7 +82,7 @@
 
   {#snippet content()}
   <div class="w-full text-xs text-subtle px-2 pt-2 pb-1">
-    View options
+    {m.ui_viewSettings_options_label()}
   </div>
       {#if showFold}
         <button
@@ -94,7 +95,7 @@
               <Fa icon={faCheck} size="xs" class="text-accent" />
             {/if}
           </span>
-          <span>Fold unchanged</span>
+          <span>{m.ui_viewSettings_foldUnchanged_label()}</span>
         </button>
       {/if}
 
@@ -109,7 +110,7 @@
               <Fa icon={faCheck} size="xs" class="text-accent" />
             {/if}
           </span>
-          <span>Wrap lines</span>
+          <span>{m.ui_viewSettings_wrapLines_label()}</span>
         </button>
       {/if}
 
@@ -124,7 +125,7 @@
               <Fa icon={faCheck} size="xs" class="text-accent" />
             {/if}
           </span>
-          <span>Split view</span>
+          <span>{m.ui_viewSettings_splitView_label()}</span>
         </button>
       {/if}
 
@@ -139,7 +140,7 @@
               <Fa icon={faCheck} size="xs" class="text-accent" />
             {/if}
           </span>
-          <span>Diff indicators</span>
+          <span>{m.ui_viewSettings_diffIndicators_label()}</span>
         </button>
       {/if}
   {/snippet}

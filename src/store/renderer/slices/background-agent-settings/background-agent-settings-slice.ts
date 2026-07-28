@@ -1,9 +1,10 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
-import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
-import type { AuggieModel } from "$features/auggie/auggie-models.client";
-import type { ModelFallbackResult } from "$lib/utils/model-fallback";
-import { findBestAvailableModel } from "$lib/utils/model-fallback";
+import { createAction } from '$lib/store-shim/utils/store/create-action';
+import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
+import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ModelFallbackResult } from '$lib/utils/model-fallback';
+import { findBestAvailableModel } from '$lib/utils/model-fallback';
+import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
 // Types & Constants (re-exported from old store)
@@ -11,27 +12,44 @@ import { findBestAvailableModel } from "$lib/utils/model-fallback";
 
 export const DEFAULT_BACKGROUND_MODEL = MODEL_DEFAULTS.BACKGROUND_AGENT_MODEL;
 
-export type BackgroundAgentType = "commit" | "pr" | "review" | "fast";
+export type BackgroundAgentType = 'commit' | 'pr' | 'review' | 'fast';
 
+// Localized copy uses getters so it re-evaluates with the active locale.
 export const BACKGROUND_AGENT_TYPE_INFO: Record<
   BackgroundAgentType,
   { label: string; description: string }
 > = {
   commit: {
-    label: "Commit message",
-    description: "Generates git commit messages from staged changes",
+    get label() {
+      return m.settings_backgroundAgents_commit_label();
+    },
+    get description() {
+      return m.settings_backgroundAgents_commit_description();
+    },
   },
   pr: {
-    label: "PR description",
-    description: "Generates pull request titles and descriptions",
+    get label() {
+      return m.settings_backgroundAgents_pr_label();
+    },
+    get description() {
+      return m.settings_backgroundAgents_pr_description();
+    },
   },
   review: {
-    label: "Code review",
-    description: "Performs automated code reviews on changes",
+    get label() {
+      return m.settings_backgroundAgents_review_label();
+    },
+    get description() {
+      return m.settings_backgroundAgents_review_description();
+    },
   },
   fast: {
-    label: "Quick tasks",
-    description: "Prompt enhancement, layout suggestions, and setup scripts",
+    get label() {
+      return m.settings_backgroundAgents_fast_label();
+    },
+    get description() {
+      return m.settings_backgroundAgents_fast_description();
+    },
   },
 };
 
@@ -52,14 +70,14 @@ export type BackgroundAgentSettingsState = {
   providerSettings: Record<string, ProviderBgSettings>;
 };
 
-export const STORAGE_KEY = "workspaces-background-agent-settings";
-export const PROVIDER_SETTINGS_KEY = "workspaces-bg-agent-settings-per-provider";
+export const STORAGE_KEY = 'workspaces-background-agent-settings';
+export const PROVIDER_SETTINGS_KEY = 'workspaces-bg-agent-settings-per-provider';
 
 const DEFAULT_TYPE_OVERRIDES: Record<BackgroundAgentType, string> = {
-  commit: "",
-  pr: "",
-  review: "",
-  fast: "",
+  commit: '',
+  pr: '',
+  review: '',
+  fast: '',
 };
 
 export const initialState: BackgroundAgentSettingsState = {
@@ -73,40 +91,38 @@ export const initialState: BackgroundAgentSettingsState = {
 // ============================================================================
 
 export const setDefaultModel = createAction<[model: string]>(
-  "backgroundAgentSettings/setDefaultModel"
+  'backgroundAgentSettings/setDefaultModel',
 );
 
 export const setTypeOverride = createAction<
   [payload: { type: BackgroundAgentType; model: string }]
->("backgroundAgentSettings/setTypeOverride");
+>('backgroundAgentSettings/setTypeOverride');
 
 export const clearTypeOverride = createAction<[type: BackgroundAgentType]>(
-  "backgroundAgentSettings/clearTypeOverride"
+  'backgroundAgentSettings/clearTypeOverride',
 );
 
-export const resetSettings = createAction(
-  "backgroundAgentSettings/resetSettings"
-);
+export const resetSettings = createAction('backgroundAgentSettings/resetSettings');
 
 /** Hydrate full state from localStorage (used by init saga) */
 export const hydrateSettings = createAction<
   [payload: { defaultModel: string; typeOverrides: Record<BackgroundAgentType, string> }]
->("backgroundAgentSettings/hydrateSettings");
+>('backgroundAgentSettings/hydrateSettings');
 
 /** Hydrate provider settings cache from localStorage */
 export const hydrateProviderSettings = createAction<
   [providerSettings: Record<string, ProviderBgSettings>]
->("backgroundAgentSettings/hydrateProviderSettings");
+>('backgroundAgentSettings/hydrateProviderSettings');
 
 /** Save current settings for a provider (used by switchProvider saga) */
 export const saveProviderSnapshot = createAction<
   [payload: { providerId: string; settings: ProviderBgSettings }]
->("backgroundAgentSettings/saveProviderSnapshot");
+>('backgroundAgentSettings/saveProviderSnapshot');
 
 /** Restore settings for a provider (used by switchProvider saga) */
 export const restoreProviderSettings = createAction<
   [payload: { defaultModel: string; typeOverrides: Record<BackgroundAgentType, string> }]
->("backgroundAgentSettings/restoreProviderSettings");
+>('backgroundAgentSettings/restoreProviderSettings');
 
 // ============================================================================
 // Saga Trigger Actions (dispatched by consumers, handled by sagas)
@@ -114,7 +130,7 @@ export const restoreProviderSettings = createAction<
 
 export const switchProvider = createAction<
   [payload: { newProviderId: string; previousProviderId: string }]
->("backgroundAgentSettings/switchProvider");
+>('backgroundAgentSettings/switchProvider');
 
 // ============================================================================
 // Utility function (not a selector — takes runtime params)
@@ -124,7 +140,7 @@ export function getValidatedModelForType(
   type: BackgroundAgentType,
   defaultModel: string,
   typeOverrides: Record<BackgroundAgentType, string>,
-  availableModels: AuggieModel[]
+  availableModels: AuggieModel[],
 ): ModelFallbackResult {
   const override = typeOverrides[type];
   const requestedModel = override && override.length > 0 ? override : defaultModel;
@@ -135,52 +151,51 @@ export function getValidatedModelForType(
 // Reducer
 // ============================================================================
 
-export const backgroundAgentSettingsReducer =
-  createReducer<BackgroundAgentSettingsState>(initialState)
-    .with(setDefaultModel, (state, { payload: [model] }) => ({
-      ...state,
-      defaultModel: model,
-    }))
-    .with(setTypeOverride, (state, { payload: [{ type, model }] }) => ({
-      ...state,
-      typeOverrides: { ...state.typeOverrides, [type]: model },
-    }))
-    .with(clearTypeOverride, (state, { payload: [type] }) => ({
-      ...state,
-      typeOverrides: { ...state.typeOverrides, [type]: "" },
-    }))
-    .with(resetSettings, () => ({
-      ...initialState,
-      typeOverrides: { ...initialState.typeOverrides },
-      providerSettings: {},
-    }))
-    .with(hydrateSettings, (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
-      ...state,
-      defaultModel: defaultModel || DEFAULT_BACKGROUND_MODEL,
-      typeOverrides: {
-        commit: typeOverrides?.commit || "",
-        pr: typeOverrides?.pr || "",
-        review: typeOverrides?.review || "",
-        fast: typeOverrides?.fast || "",
-      },
-    }))
-    .with(hydrateProviderSettings, (state, { payload: [providerSettings] }) => ({
-      ...state,
-      providerSettings,
-    }))
-    .with(saveProviderSnapshot, (state, { payload: [{ providerId, settings }] }) => ({
-      ...state,
-      providerSettings: { ...state.providerSettings, [providerId]: settings },
-    }))
-    .with(restoreProviderSettings, (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
-      ...state,
-      defaultModel,
-      typeOverrides: {
-        commit: typeOverrides.commit || "",
-        pr: typeOverrides.pr || "",
-        review: typeOverrides.review || "",
-        fast: typeOverrides.fast || "",
-      },
-    }))
-;
-
+export const backgroundAgentSettingsReducer = createReducer<BackgroundAgentSettingsState>(
+  initialState,
+)
+  .with(setDefaultModel, (state, { payload: [model] }) => ({
+    ...state,
+    defaultModel: model,
+  }))
+  .with(setTypeOverride, (state, { payload: [{ type, model }] }) => ({
+    ...state,
+    typeOverrides: { ...state.typeOverrides, [type]: model },
+  }))
+  .with(clearTypeOverride, (state, { payload: [type] }) => ({
+    ...state,
+    typeOverrides: { ...state.typeOverrides, [type]: '' },
+  }))
+  .with(resetSettings, () => ({
+    ...initialState,
+    typeOverrides: { ...initialState.typeOverrides },
+    providerSettings: {},
+  }))
+  .with(hydrateSettings, (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
+    ...state,
+    defaultModel: defaultModel || DEFAULT_BACKGROUND_MODEL,
+    typeOverrides: {
+      commit: typeOverrides?.commit || '',
+      pr: typeOverrides?.pr || '',
+      review: typeOverrides?.review || '',
+      fast: typeOverrides?.fast || '',
+    },
+  }))
+  .with(hydrateProviderSettings, (state, { payload: [providerSettings] }) => ({
+    ...state,
+    providerSettings,
+  }))
+  .with(saveProviderSnapshot, (state, { payload: [{ providerId, settings }] }) => ({
+    ...state,
+    providerSettings: { ...state.providerSettings, [providerId]: settings },
+  }))
+  .with(restoreProviderSettings, (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
+    ...state,
+    defaultModel,
+    typeOverrides: {
+      commit: typeOverrides.commit || '',
+      pr: typeOverrides.pr || '',
+      review: typeOverrides.review || '',
+      fast: typeOverrides.fast || '',
+    },
+  }));

@@ -41,6 +41,7 @@ export function formatEventNotification(events: WorkspaceEvent[]): string {
 
   const lines: string[] = [
     '[WORKSPACE EVENTS]',
+    // i18n-ignore (agent-facing notification content)
     `You have received ${events.length} workspace event${events.length > 1 ? 's' : ''} while you were working:`,
     '',
   ];
@@ -49,7 +50,7 @@ export function formatEventNotification(events: WorkspaceEvent[]): string {
   const grouped = groupEventsByType(events);
 
   let eventNumber = 1;
-   
+
   for (const [_type, typeEvents] of Object.entries(grouped)) {
     for (const event of typeEvents) {
       lines.push(`${eventNumber}. ${formatSingleEvent(event)}`);
@@ -58,6 +59,7 @@ export function formatEventNotification(events: WorkspaceEvent[]): string {
   }
 
   lines.push('');
+  // i18n-ignore (agent-facing notification content)
   lines.push('Consider these events and take appropriate action if needed.');
 
   return lines.join('\n');
@@ -72,6 +74,7 @@ export function formatSingleEvent(event: WorkspaceEvent): string {
   // Agent created
   if (isAgentCreatedEvent(event)) {
     const { agentName, agentId, taskNoteId, createdByAgentId } = event.data;
+    // i18n-ignore (agent-facing notification content)
     const displayName = agentName || 'New agent';
     let msg = `[agent:created] "${displayName}" was created`;
     if (agentId) {
@@ -100,6 +103,7 @@ export function formatSingleEvent(event: WorkspaceEvent): string {
     if (reason && reason !== 'user_action') {
       msg += `\n   - Reason: ${reason}`;
     }
+    // i18n-ignore (agent-facing notification content)
     msg += '\n\n   This agent is no longer available. Its conversation history has been removed.';
     return msg;
   }
@@ -129,6 +133,7 @@ export function formatSingleEvent(event: WorkspaceEvent): string {
       msg += `\n\n   **Agent's Summary:**\n   ${lastResponseSummary.split('\n').join('\n   ')}`;
     }
 
+    // i18n-ignore (agent-facing notification content)
     msg += `\n\n   Use \`read_agent_conversation(agentId="${agentId}")\` to see their full conversation.`;
     return msg;
   }
@@ -137,7 +142,8 @@ export function formatSingleEvent(event: WorkspaceEvent): string {
   if (isAgentMessageSentEvent(event)) {
     const { fromAgentName, toAgentName, message, priority } = event.data;
     const preview = message.length > 100 ? `${message.substring(0, 100)}...` : message;
-    const prioritySuffix = priority === 'interrupt' ? ' (INTERRUPT)' : priority === 'high' ? ' (HIGH PRIORITY)' : '';
+    const prioritySuffix =
+      priority === 'interrupt' ? ' (INTERRUPT)' : priority === 'high' ? ' (HIGH PRIORITY)' : '';
     return `[agent:message:sent] "${fromAgentName}" sent message to "${toAgentName}"${prioritySuffix}\n   - Message: "${preview}"`;
   }
 
@@ -198,6 +204,7 @@ export function formatSingleEvent(event: WorkspaceEvent): string {
   // Agent tool call
   if (isAgentToolCallEvent(event)) {
     const { toolName, status, filesModified } = event.data;
+    // i18n-ignore (agent-facing notification content)
     const agentName = event.actor.name || 'Unknown agent';
     let msg = `[agent:tool:call] ${agentName} called ${toolName} (${status})`;
     if (filesModified && filesModified.length > 0) {
@@ -207,6 +214,7 @@ export function formatSingleEvent(event: WorkspaceEvent): string {
   }
 
   // Generic fallback
+  // i18n-ignore (agent-facing notification content)
   return `[${event.type}] Event at ${timestamp} by ${event.actor.name || event.actor.type}`;
 }
 
@@ -268,6 +276,7 @@ function getEventCategory(type: string): string {
  * Create a summary of events for logging
  */
 export function summarizeEvents(events: WorkspaceEvent[]): string {
+  // i18n-ignore (agent-facing notification content)
   if (events.length === 0) return 'No events';
 
   const typeCounts: Record<string, number> = {};

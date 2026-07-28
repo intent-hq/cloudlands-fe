@@ -5,71 +5,127 @@
  * Edit values here or use the sandbox UI to modify them.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 export const progressCardCopy = {
   loading: {
-    headline: 'Loading...',
+    get headline() {
+      return m.workspace_progressCopy_loading_headline();
+    },
     subtext: '',
   },
   specCreating: {
-    headline: 'Coordinator writing spec...',
+    get headline() {
+      return m.workspace_progressCopy_specCreating_headline();
+    },
     subtext: '',
   },
   specReady: {
-    headline: 'Ready to start.',
-    subtext: 'Spec ready for review.',
+    get headline() {
+      return m.workspace_progressCopy_specReady_headline();
+    },
+    get subtext() {
+      return m.workspace_progressCopy_specReady_subtext();
+    },
   },
   tasksReady: {
-    headline: 'Tasks ready to go!',
-    subtext: 'Review and delegate or implement.',
+    get headline() {
+      return m.workspace_progressCopy_tasksReady_headline();
+    },
+    get subtext() {
+      return m.workspace_progressCopy_tasksReady_subtext();
+    },
   },
   tasksInProgress: {
     early: {
-      headline: 'Making progress.',
-      // subtext uses template: `${completed} of ${total} tasks done.`
+      get headline() {
+        return m.workspace_progressCopy_tasksEarly_headline();
+      },
+      // subtext uses template: workspace_progressCopy key with completed/total params
     },
     mid: {
-      headline: 'Things are progressing nicely.',
-      // subtext uses template: `We're ${percent}% through the work.`
+      get headline() {
+        return m.workspace_progressCopy_tasksMid_headline();
+      },
+      // subtext uses template: workspace_progressCopy key with percent param
     },
     late: {
-      headline: 'Almost there!',
-      // subtext uses template: `${remaining} task${s} remaining.`
+      get headline() {
+        return m.workspace_progressCopy_tasksLate_headline();
+      },
+      // subtext uses template: workspace_progressCopy key with remaining param
     },
   },
   changesUnstaged: {
-    // headline uses template: `Review ${count} file change${s}`
-    subtext: 'Time to review the changes and push.',
-    actionLabel: 'Review changes',
-    actionTooltip: 'Opens the changes panel to review, stage, and commit file changes.',
+    // headline uses template: workspace_progressCopy key with count param
+    get subtext() {
+      return m.workspace_progressCopy_changesUnstaged_subtext();
+    },
+    get actionLabel() {
+      return m.workspace_progressCopy_changesUnstaged_actionLabel();
+    },
+    get actionTooltip() {
+      return m.workspace_progressCopy_changesUnstaged_actionTooltip();
+    },
   },
   changesStaged: {
-    // headline uses template: `${count} file${s} staged`
-    subtext: 'Ready to commit.',
-    actionLabel: 'Commit',
-    actionTooltip: 'Opens the changes panel to commit your staged changes.',
+    // headline uses template: workspace_progressCopy key with count param
+    get subtext() {
+      return m.workspace_progressCopy_changesStaged_subtext();
+    },
+    get actionLabel() {
+      return m.workspace_progressCopy_changesStaged_actionLabel();
+    },
+    get actionTooltip() {
+      return m.workspace_progressCopy_changesStaged_actionTooltip();
+    },
   },
   commitsUnpushed: {
-    // headline uses template: `${count} commit${s} to push`
-    subtextNew: 'Push to create a PR.',
-    subtextExisting: 'Push to update PR.',
-    actionLabelNew: 'Create PR',
-    actionLabelExisting: 'Push changes',
-    actionTooltip: 'Opens the changes panel to push commits and create a pull request.',
+    // headline uses template: workspace_progressCopy key with count param
+    get subtextNew() {
+      return m.workspace_progressCopy_commitsUnpushed_subtextNew();
+    },
+    get subtextExisting() {
+      return m.workspace_progressCopy_commitsUnpushed_subtextExisting();
+    },
+    get actionLabelNew() {
+      return m.workspace_progressCopy_commitsUnpushed_actionLabelNew();
+    },
+    get actionLabelExisting() {
+      return m.workspace_progressCopy_commitsUnpushed_actionLabelExisting();
+    },
+    get actionTooltip() {
+      return m.workspace_progressCopy_commitsUnpushed_actionTooltip();
+    },
   },
   prOpen: {
-    // headline uses template: `PR #${number} open`
-    subtext: 'Awaiting review.',
-    actionLabel: 'View PR',
-    actionTooltip: 'Opens the pull request on GitHub in your browser.',
+    // headline uses template: workspace_progressCopy key with number param
+    get subtext() {
+      return m.workspace_progressCopy_prOpen_subtext();
+    },
+    get actionLabel() {
+      return m.workspace_progressCopy_prOpen_actionLabel();
+    },
+    get actionTooltip() {
+      return m.workspace_progressCopy_prOpen_actionTooltip();
+    },
   },
   prApproved: {
-    // headline uses template: `PR #${number} approved`
-    subtext: 'Ready to merge.',
-    actionLabel: 'Merge PR',
-    actionTooltip: 'Opens the pull request on GitHub to merge.',
+    // headline uses template: workspace_progressCopy key with number param
+    get subtext() {
+      return m.workspace_progressCopy_prApproved_subtext();
+    },
+    get actionLabel() {
+      return m.workspace_progressCopy_prApproved_actionLabel();
+    },
+    get actionTooltip() {
+      return m.workspace_progressCopy_prApproved_actionTooltip();
+    },
   },
   allDone: {
-    headline: 'All done!',
+    get headline() {
+      return m.workspace_progressCopy_allDone_headline();
+    },
     subtext: '',
   },
 } as const;

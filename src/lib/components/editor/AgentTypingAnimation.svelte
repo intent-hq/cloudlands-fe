@@ -10,6 +10,7 @@
   selectIsFollowing,
   selectAgentColor,
 } from '$store/renderer/slices/agent-follow/agent-follow-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   const isFollowing$ = selectIsFollowing();
   const agentColor$ = selectAgentColor();
@@ -129,7 +130,7 @@
       style="background: {$agentColor$?.start};"
     ></div>
     <span class="text-xs" style="color: {$agentColor$?.start};">
-      Agent typing...
+      {m.editor_typingAnimation_agentTyping_label()}
     </span>
   </div>
 {/if}

@@ -23,6 +23,7 @@ import {
 } from '$store/renderer/slices/workspace/workspace-slice';
 
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
+import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('workspace-loader');
@@ -104,7 +105,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
           workspace: { id: workspaceId, status: 'error' },
           workspaceData: {
             id: workspaceId,
-            title: 'Error loading space',
+            title: m.workspace_loader_errorLoading_title(),
             status: 'error',
             error: message,
           } as any,
@@ -139,7 +140,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       workspace: { id: workspaceId, status: 'ready' }, // Don't show loading state
       workspaceData: {
         id: workspaceId,
-        title: config?.title ?? 'New Workspace',
+        title: config?.title ?? m.workspace_loader_newWorkspace_title(),
         repositoryPath: config?.repositoryPath ?? '',
         branch: config?.branch ?? '',
         status: 'creating',
@@ -163,6 +164,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // Check if this is an optimistic ID that's no longer in the manager
     if (workspaceId.startsWith('optimistic-')) {
       logger.warn(
+        // i18n-ignore (log message, not user-facing)
         'Attempting to load optimistic workspace as real workspace - waiting for navigation',
         { workspaceId },
       );
@@ -217,6 +219,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // FIX: Retry once if workspace not found - this handles a race condition on page reload
     // where workspace:open is called before the backend has fully initialized.
     // The retry gives the backend time to scan workspace directories.
+    // i18n-ignore (backend error-string comparison, not user-facing)
     if (!openResult.ok && openResult.error === 'Workspace not found') {
       logger.warn('Workspace not found on first attempt, retrying after delay', { workspaceId });
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -228,6 +231,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // entity: evict the stale entity so the page renders the not-found state
     // instead of a zombie view (#766). We do NOT synthesize a workspace
     // entity into Redux.
+    // i18n-ignore (backend error-string comparison, not user-facing)
     if (!openResult.ok && openResult.error === 'Workspace not found') {
       logger.error('Workspace not found after retry', { workspaceId });
       // Staleness guard: navigation may have superseded this load while the
@@ -260,7 +264,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
         workspace: { id: workspaceId, status: 'error' },
         workspaceData: {
           id: workspaceId,
-          title: 'Space not found',
+          title: m.workspace_loader_notFound_title(),
           status: 'not_found',
         } as any,
       });
@@ -275,10 +279,10 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
         worktreePath: ws.worktreePath,
       });
     } else {
-      const errorMsg = !openResult.ok && 'error' in openResult ? openResult.error : 'Unknown error';
+      const errorMsg = !openResult.ok && 'error' in openResult ? openResult.error : m.ui_workspaceActions_unknown_error();
       logger.error('Failed to open workspace', { workspaceId, error: errorMsg });
       if (!ws) {
-        throw new Error(`Failed to open space: ${errorMsg}`);
+        throw new Error(m.workspace_loader_openFailed_error({ error: errorMsg }));
       }
     }
 
@@ -313,7 +317,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
         workspace: { id: workspaceId, status: 'error' },
         workspaceData: {
           id: workspaceId,
-          title: 'Space not found',
+          title: m.workspace_loader_notFound_title(),
           status: 'error',
         } as any,
       });

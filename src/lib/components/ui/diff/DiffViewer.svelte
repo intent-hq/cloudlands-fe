@@ -51,6 +51,8 @@
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { hashContent } from './diff-content-hash.js';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   type Props = PureDiffProps;
 
@@ -1074,10 +1076,10 @@
             bind:query={searchQuery}
             bind:inputRef={searchInputRef}
             layout="inline"
-            placeholder="Find in diff..."
+            placeholder={m.ui_diffViewer_find_placeholder()}
             currentMatchIndex={currentSearchIndex}
             totalMatches={searchResults.length}
-            emptyResultText="No results"
+            emptyResultText={m.ui_diffViewer_noResults_label()}
             onKeydown={handleSearchKeydown}
             onPrevious={() => navigateToResult(currentSearchIndex - 1)}
             onNext={() => navigateToResult(currentSearchIndex + 1)}
@@ -1090,7 +1092,7 @@
         <div bind:this={containerRef} class="pure-diff-container" style:--diffs-font-family={$codeFontFamilyCSS}></div>
       {:else}
         <div class="pure-diff-empty">
-          <p class="text-subtle text-sm">No diff content available</p>
+          <p class="text-subtle text-sm">{m.ui_diffViewer_empty_label()}</p>
         </div>
       {/if}
     </div>
@@ -1098,7 +1100,16 @@
     <!-- Preview when collapsed -->
     <div class="pure-diff-preview">
       <button type="button" class="pure-diff-preview-button" onclick={toggleCollapse}>
-        Click to expand ({stats.additions} additions, {stats.deletions} deletions)
+        {m.ui_diffViewer_expand_label({
+          additions:
+            stats.additions === 1
+              ? m.ui_diffViewer_additions_one()
+              : m.ui_diffViewer_additions_many({ count: formatInteger(stats.additions) }),
+          deletions:
+            stats.deletions === 1
+              ? m.ui_diffViewer_deletions_one()
+              : m.ui_diffViewer_deletions_many({ count: formatInteger(stats.deletions) }),
+        })}
       </button>
     </div>
   {/if}

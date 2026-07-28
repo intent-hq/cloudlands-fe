@@ -144,6 +144,7 @@ export class EventStore {
     // Validate workspaceId
     if (typeof workspaceId !== 'string' || !workspaceId) {
       const error = new Error(
+        // i18n-ignore (developer-facing internal error)
         `Invalid workspaceId for EventStore: expected non-empty string, got ${typeof workspaceId}`,
       );
       logger.error('EventStore constructor error', {

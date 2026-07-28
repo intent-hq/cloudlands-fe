@@ -25,11 +25,7 @@ import {
   isClaudeCodeInstalled,
   isNpxAvailableForClaudeCode,
 } from '../../claude-code/main/claude-code-resolver';
-import {
-  clearCodexCache,
-  getCodexPath,
-  isCodexInstalled,
-} from '../../codex/main/codex-resolver';
+import { clearCodexCache, getCodexPath, isCodexInstalled } from '../../codex/main/codex-resolver';
 import {
   clearCortexCache,
   getCortexPath,
@@ -40,21 +36,14 @@ import {
   getOpenCodePath,
   isOpenCodeInstalled,
 } from '../../opencode/main/opencode-resolver';
-import {
-  clearPiCache,
-  getPiPath,
-  isPiInstalled,
-} from '../../pi/main/pi-resolver';
-import {
-  clearDroidCache,
-  getDroidPath,
-  isDroidInstalled,
-} from '../../droid/main/droid-resolver';
+import { clearPiCache, getPiPath, isPiInstalled } from '../../pi/main/pi-resolver';
+import { clearDroidCache, getDroidPath, isDroidInstalled } from '../../droid/main/droid-resolver';
 import type {
   NpxStatus,
   ProviderAvailabilityResult,
   ProviderStatus,
 } from '$shared/types/provider-availability';
+import { m } from '../../../shared/paraglide/messages.js';
 
 export type { NpxStatus, ProviderAvailabilityResult, ProviderStatus };
 
@@ -195,6 +184,7 @@ async function checkUnslothAvailability(): Promise<ProviderStatus> {
  */
 async function checkMockAvailability(): Promise<ProviderStatus> {
   if (process.env.TESTING !== 'true') {
+    // i18n-ignore (test-only mock provider diagnostic)
     return { available: false, error: 'Mock provider requires TESTING=true' };
   }
   const scriptPath = process.env.MOCK_AGENT_SCRIPT_PATH;
@@ -490,10 +480,7 @@ export function setupProviderAvailabilityIPC(): void {
 
   ipcMain.handle(
     PROVIDERS_CHANNELS.CHECK_SINGLE,
-    async (
-      _event: Electron.IpcMainInvokeEvent,
-      request: string | { providerId: string },
-    ) => {
+    async (_event: Electron.IpcMainInvokeEvent, request: string | { providerId: string }) => {
       const providerId = typeof request === 'string' ? request : request.providerId;
       try {
         let status: ProviderStatus;
@@ -578,7 +565,11 @@ export function setupProviderAvailabilityIPC(): void {
             status = await checkMockAvailability();
             break;
           default:
-            return { success: false, providerId, error: `Unknown provider: ${providerId}` };
+            return {
+              success: false,
+              providerId,
+              error: m.providers_availability_unknownProvider_error({ id: providerId }),
+            };
         }
 
         if (status.available) {

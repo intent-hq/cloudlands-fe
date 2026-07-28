@@ -5,6 +5,7 @@
 } from 'svelte/transition';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import type { Snippet } from 'svelte';
@@ -63,7 +64,7 @@
     onkeydown={(e) => e.key === 'Enter' && handleBackdropClick(e)}
     role="button"
     tabindex="-1"
-    aria-label="Close drawer"
+    aria-label={m.layout_drawer_close_ariaLabel()}
   ></div>
 
   <!-- Drawer Panel -->

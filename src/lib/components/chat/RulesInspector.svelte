@@ -2,6 +2,7 @@
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     rules: string | null;
@@ -38,7 +39,7 @@
   >
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <h2 id="rules-inspector-title" class="text-lg font-semibold text-foreground">
-        Applied Agent Rules
+        {m.chat_rulesInspector_title()}
       </h2>
       <Button variant="ghost" size="icon-sm" onclick={onClose}>
         <Fa icon={faXmark} />
@@ -52,7 +53,7 @@
             class="whitespace-pre-wrap font-mono text-xs bg-muted/50 p-4 rounded-md">{rules}</pre>
         </div>
       {:else}
-        <p class="text-subtle">No custom rules were applied to this agent.</p>
+        <p class="text-subtle">{m.chat_rulesInspector_noRules_label()}</p>
       {/if}
     </div>
   </div>

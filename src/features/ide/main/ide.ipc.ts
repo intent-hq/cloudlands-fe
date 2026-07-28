@@ -4,19 +4,14 @@
  * Handles opening files and projects in external IDEs like VSCode and JetBrains
  */
 
-import {
-  ipcMain,
-  shell,
-} from 'electron';
+import { ipcMain, shell } from 'electron';
 import { spawn } from 'child_process';
 import { unlinkSync } from 'fs';
 import { writeFile } from 'fs/promises';
-import {
-  homedir,
-  tmpdir,
-} from 'os';
+import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 import { Logger } from '$lib/utils/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { z } from 'zod';
@@ -123,6 +118,7 @@ export async function openInVSCode(
     const commonCodePaths = [
       '/usr/local/bin/code',
       '/opt/homebrew/bin/code',
+      // i18n-ignore (filesystem path)
       '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code',
       // Linux paths
       '/usr/bin/code',
@@ -130,7 +126,9 @@ export async function openInVSCode(
       // Windows paths
       ...(process.platform === 'win32'
         ? [
+            // i18n-ignore (filesystem path)
             join(homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'bin', 'code.cmd'),
+            // i18n-ignore (filesystem path)
             join(homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code', 'Code.exe'),
             'C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd',
             'C:\\Program Files\\Microsoft VS Code\\Code.exe',
@@ -155,7 +153,8 @@ export async function openInVSCode(
 
       // Try to spawn VSCode with the found command
       // Use shell for PATH-style invocations and Windows .cmd launchers
-      const useShell = codeCommand === 'code' || (process.platform === 'win32' && codeCommand.endsWith('.cmd'));
+      const useShell =
+        codeCommand === 'code' || (process.platform === 'win32' && codeCommand.endsWith('.cmd'));
       // LOCAL-GUI: launches the user's editor on the client host; not workspace execution
       const child = spawn(codeCommand, args, {
         detached: true,
@@ -261,6 +260,7 @@ export async function openInVSCode(
     }
     if (process.platform === 'darwin') {
       logger.info('Trying macOS open command');
+      // i18n-ignore (application name argv for `open -a`)
       const openArgs = ['-n', '-a', 'Visual Studio Code'];
 
       if (typeof pathOrPaths === 'string') {
@@ -345,13 +345,12 @@ export async function openInVSCode(
       await shell.openPath(pathToOpen);
       return {
         success: true,
-        error: 'Opened in default application (VSCode not found)',
+        error: m.ide_ipc_openedDefaultApp_message(),
       };
-    } catch  {
+    } catch {
       return {
         success: false,
-        error:
-          'Failed to open in VS Code. Please ensure VS Code is installed and the "code" command is available in your PATH.',
+        error: m.ide_ipc_openVscodeFailed_error(),
       };
     }
   }
@@ -382,6 +381,7 @@ export async function openInJetBrains(
     };
     // Map IDE command names to macOS `.app` bundle display names (for `open -a`).
     const ideAppNames: Record<string, string> = {
+      // i18n-ignore (application name for `open -a`)
       idea: 'IntelliJ IDEA',
       webstorm: 'WebStorm',
       pycharm: 'PyCharm',
@@ -428,7 +428,7 @@ export async function openInJetBrains(
       logger.error('[JetBrains] host.listInstalledEditors reports no JetBrains IDE installed');
       return {
         success: false,
-        error: 'No JetBrains IDE found. Please install IntelliJ IDEA, WebStorm, PyCharm, or another JetBrains IDE.',
+        error: m.ide_ipc_noJetbrainsIde_error(),
       };
     }
 
@@ -454,11 +454,7 @@ export async function openInJetBrains(
           // IDE's inner command-line tool. The `.app` bundle path comes from the
           // daemon (host.listInstalledEditors) — no local `access()` probe.
           await new Promise((resolve) => setTimeout(resolve, 1000));
-          if (
-            selectedEntry?.source === 'macAppBundle' &&
-            selectedEntry.path &&
-            selectedIde
-          ) {
+          if (selectedEntry?.source === 'macAppBundle' && selectedEntry.path && selectedIde) {
             const toolPath = `${selectedEntry.path}/Contents/MacOS/${selectedIde}`;
             try {
               // LOCAL-GUI: invokes the IDE's inner CLI to open the file on the client host; not workspace execution
@@ -470,7 +466,11 @@ export async function openInJetBrains(
               });
             }
           }
-          logger.info('Opened in JetBrains IDE', { ide: command, folder: pathOrPaths.folder, file: pathOrPaths.file });
+          logger.info('Opened in JetBrains IDE', {
+            ide: command,
+            folder: pathOrPaths.folder,
+            file: pathOrPaths.file,
+          });
           return { success: true };
         } else {
           execArgv = [...command, pathOrPaths.folder, pathOrPaths.file];
@@ -484,14 +484,17 @@ export async function openInJetBrains(
     logger.info('[JetBrains] Executing command', { execArgv });
     // LOCAL-GUI: launches the user's JetBrains IDE on the client host; not workspace execution
     await execFileAsync(execArgv[0], execArgv.slice(1));
-    logger.info('[JetBrains] Successfully opened in JetBrains IDE', { ide: command, path: pathOrPaths });
+    logger.info('[JetBrains] Successfully opened in JetBrains IDE', {
+      ide: command,
+      path: pathOrPaths,
+    });
 
     return { success: true };
   } catch (error) {
     logger.error('[JetBrains] Failed to open in JetBrains IDE', error as Error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : m.ide_ipc_unknown_error(),
     };
   }
 }
@@ -582,12 +585,12 @@ export function registerIDEHandlers(): void {
           try {
             unlinkSync(oldFilePath);
             unlinkSync(newFilePath);
-          } catch  {
+          } catch {
             // Ignore cleanup errors
           }
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.ide_ipc_unknown_error(),
           };
         }
       },
@@ -637,10 +640,10 @@ export function registerIDEHandlers(): void {
             // LOCAL-GUI: hands the vscode:// URL to the client OS handler to launch the user's editor; not workspace execution
             await shell.openExternal(`vscode://file/${filePath}`);
             return { success: true };
-          } catch  {
+          } catch {
             return {
               success: false,
-              error: error instanceof Error ? error.message : 'Unknown error',
+              error: error instanceof Error ? error.message : m.ide_ipc_unknown_error(),
             };
           }
         }

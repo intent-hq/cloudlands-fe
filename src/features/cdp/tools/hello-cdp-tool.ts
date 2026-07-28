@@ -6,14 +6,12 @@
  */
 
 import { BaseMCPTool } from '../../mcp/main/mcp/tool';
-import {
-  ToolCall,
-  ToolResult,
-} from '../../mcp/main/mcp/protocol';
+import { ToolCall, ToolResult } from '../../mcp/main/mcp/protocol';
 import { CdpConnectionManager } from '../cdp-connection';
 
 export class HelloCdpTool extends BaseMCPTool {
   constructor(private connectionManager: CdpConnectionManager) {
+    // i18n-ignore (agent-facing CDP tool)
     super('cdp.hello', 'Test CDP connection by getting the page title', {
       type: 'object',
       properties: {},
@@ -32,9 +30,11 @@ export class HelloCdpTool extends BaseMCPTool {
       });
 
       if (result.exceptionDetails) {
+        // i18n-ignore (agent-facing CDP tool)
         return this.error(`Script error: ${result.exceptionDetails.text}`);
       }
 
+      // i18n-ignore (agent-facing CDP tool)
       return this.success(`Page title: ${result.result.value}`);
     } catch (error) {
       return this.error(`CDP error: ${(error as Error).message}`);

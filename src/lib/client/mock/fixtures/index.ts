@@ -265,6 +265,7 @@ export const mockUserPreferences: UserPreferencesState = {
   soundOnlyWhenUnfocused: true,
   volume: 0.5,
   activityLogPresets: [],
+  languagePreference: "system",
 };
 
 /** Configured MCP servers for the MCP settings panel. */

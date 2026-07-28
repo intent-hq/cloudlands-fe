@@ -14,6 +14,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     states: DiagramState[];
@@ -132,7 +133,7 @@
             onclick={() => goToState(index)}
             onmouseenter={() => (hoveredIndex = index)}
             onmouseleave={() => (hoveredIndex = null)}
-            aria-label="State {index + 1}: {stateNarrative?.title || 'State ' + (index + 1)}"
+            aria-label={m.diagram_controls_state_ariaLabel({ number: index + 1, title: stateNarrative?.title || m.diagram_controls_stateNumber_label({ number: index + 1 }) })}
           ></button>
 
           <!-- Hover card -->
@@ -164,7 +165,7 @@
             size="sm"
             class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
             onclick={goToPrevState}
-            aria-label="Previous step"
+            aria-label={m.diagram_controls_previousStep_ariaLabel()}
           >
             <Fa icon={faChevronLeft} class="text-ui" />
           </Button>
@@ -173,7 +174,7 @@
             size="sm"
             class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
             onclick={goToNextState}
-            aria-label="Next step"
+            aria-label={m.diagram_controls_nextStep_ariaLabel()}
           >
             <Fa icon={faChevronRight} class="text-ui" />
           </Button>
