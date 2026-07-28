@@ -37,8 +37,9 @@ export const selectIsProviderEnabled = store.createSelector(
 export const selectEnabledProviderIds = store.createSelector(
   (state): string[] => {
     const enabledProviders = state.providerSettings.enabledProviders;
+    const catalogEntries = state.providerCatalog ? getItems(state.providerCatalog.providers) : [];
     const enabled = new Set(
-      getItems(state.providerCatalog.providers)
+      catalogEntries
         .filter((p) => selectIsProviderEnabled.select(state, p.id))
         .map((p) => p.id)
     );

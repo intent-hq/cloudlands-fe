@@ -10,8 +10,10 @@
 
 /**
  * Split a compound model id into its raw parts. `providerId` is `undefined`
- * for bare ids (no `:`); a leading `:` yields an empty-string providerId,
- * matching the legacy parse (malformed ids are filtered by callers).
+ * for bare ids (no `:`); a malformed id with an empty prefix (`:model`)
+ * yields an empty-string providerId, matching the legacy parse. Callers
+ * falling back to another provider should use `|| fallback` (not `??`) so
+ * the empty string never propagates as a "real" provider id.
  */
 export function splitCompoundModelId(compoundModelId: string): {
   providerId?: string;

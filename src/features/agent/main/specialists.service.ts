@@ -264,7 +264,11 @@ function resolveSpecialistCodingAgent(
   explicitCodingAgent: string | undefined,
   fallbackCodingAgent?: string,
 ): string {
-  return explicitCodingAgent || fallbackCodingAgent || getCachedDefaultProviderId() || 'auggie';
+  // Last resort is the daemon registry's default. Before catalog hydration
+  // this degrades to '' (unknown) rather than baking in a provider id —
+  // callers always pass the active provider as fallbackCodingAgent in
+  // practice, and tier lookups on '' safely resolve to undefined.
+  return explicitCodingAgent || fallbackCodingAgent || getCachedDefaultProviderId() || '';
 }
 
 /**

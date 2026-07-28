@@ -183,7 +183,7 @@ async function handleCreateAgentRequested(wsId: string, agentType?: string): Pro
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
   const agentName = generateSpecialistAgentName('Agent', existingNames);
   const provider = model.includes(':')
-    ? (splitCompoundModelId(model).providerId ?? globalProvider)
+    ? (splitCompoundModelId(model).providerId || globalProvider)
     : globalProvider;
 
   try {
@@ -223,7 +223,7 @@ async function handleCreateAgentWithSpecialist(
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
   let provider = model.includes(':')
-    ? (splitCompoundModelId(model).providerId ?? globalProvider)
+    ? (splitCompoundModelId(model).providerId || globalProvider)
     : globalProvider;
   let behaviorPrompt: string | undefined;
   let specialistBaseName = 'Agent';
@@ -471,7 +471,7 @@ async function handleLaunchAgent(
     const provider =
       config.provider ??
       (model.includes(':')
-        ? (splitCompoundModelId(model).providerId ?? activeProvider)
+        ? (splitCompoundModelId(model).providerId || activeProvider)
         : activeProvider);
 
     const createAction = createAgentFromConfigRequested(

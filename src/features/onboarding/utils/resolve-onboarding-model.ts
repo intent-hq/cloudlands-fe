@@ -61,7 +61,7 @@ export interface ResolvedModelConfig {
 }
 
 function getProviderForModel(model: string, fallbackProvider: string): string {
-  return splitCompoundModelId(model).providerId ?? fallbackProvider;
+  return splitCompoundModelId(model).providerId || fallbackProvider;
 }
 
 /** Map a provider ID to its status within a ProviderAvailabilityResult. */

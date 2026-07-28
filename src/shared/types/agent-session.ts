@@ -375,9 +375,11 @@ export function getAgentProvider(
 
   // Fallback: infer provider from model ID.
   // parseCompoundModelId handles both compound ('opencode:haiku4.5' -> 'opencode')
-  // and bare ('haiku4.5' -> default provider) model IDs.
+  // and bare ('haiku4.5' -> default provider) model IDs. An empty resolution
+  // (bare id before catalog hydration, or a malformed ':model' prefix) is
+  // "unknown", never an empty-string provider id.
   if (session.model) {
-    return parseCompoundModelId(session.model, defaultProviderId).providerId;
+    return parseCompoundModelId(session.model, defaultProviderId).providerId || undefined;
   }
 
   return undefined;
