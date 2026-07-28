@@ -982,6 +982,31 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
     expect(mockNotificationInstances.length).toBe(1);
   });
+
+  it('suppresses via the isWaitingForOtherAgents fast path without consulting agent.list', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent({ isWaitingForOtherAgents: true }));
+
+    // Fast path fires before the agent.list gate — no §5.5 read at all.
+    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    expect(mockNotificationInstances.length).toBe(0);
+  });
+
+  it('does not suppress when isWaitingForOtherAgents is false', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent({ isWaitingForOtherAgents: false }));
+
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(mockNotificationInstances.length).toBe(1);
+  });
+
+  it('does not suppress when isWaitingForOtherAgents is absent (older daemons)', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(mockNotificationInstances.length).toBe(1);
+  });
 });
 
 describe('NotificationService fallbacks for workspaces with no open window', () => {

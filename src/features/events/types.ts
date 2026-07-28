@@ -472,6 +472,8 @@ export interface AgentIdleEvent extends WorkspaceEventBase {
     specialist?: string;
     /** Whether this is a background agent (not user-facing) */
     isBackground?: boolean;
+    /** Whether the agent is awaiting delegated sub-agents (pending completion watches); absent on older daemons */
+    isWaitingForOtherAgents?: boolean;
     /** Explicit completion report set by the agent via report_to_parent tool */
     completionReport?: string;
     /** ID of the parent agent that created this agent (for delegation) */
@@ -1385,6 +1387,7 @@ export interface AgentIdlePayload extends CanonicalAgentStatusFields {
   lastResponseSummary?: string;
   taskNoteId?: string;
   isBackground?: boolean;
+  isWaitingForOtherAgents?: boolean;
   completionReport?: string;
   parentAgentId?: string;
   respondingToMessageId?: string;
