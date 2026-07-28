@@ -137,6 +137,31 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   });
 </script>
 
+{#snippet fallbackDetails()}
+  <!-- Fallback: input details + raw result (or "Completed" when there is no result) -->
+  {#if inputEntries}
+    <div class="flex flex-col gap-1 pb-2 mb-2 border-b border-border/50">
+      {#each inputEntries as { key, value }}
+        <div class="text-xs">
+          <span class="text-subtle">{key}</span>
+          <span class="text-subtle ml-1.5 break-all">{value}</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+  {#if result != null}
+    <div class="overflow-hidden rounded">
+      <pre
+        class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-subtle">{typeof result ===
+        'string'
+          ? result
+          : JSON.stringify(result, null, 2)}</pre>
+    </div>
+  {:else}
+    <div class="text-xs text-subtle italic">Completed</div>
+  {/if}
+{/snippet}
+
 <div class="flex flex-col text-sm">
   <!-- Error display -->
   {#if isError}
@@ -1089,26 +1114,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               <pre
                 class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-muted-foreground">{parsedResult.content}</pre>
             </div>
+          {:else}
+            <!-- Rich-typed result with nothing renderable — never leave the container empty -->
+            {@render fallbackDetails()}
           {/if}
         {:else if result}
-          <!-- Fallback: show input details + raw result -->
-          {#if inputEntries}
-            <div class="flex flex-col gap-1 pb-2 mb-2 border-b border-border/50">
-              {#each inputEntries as { key, value }}
-                <div class="text-xs">
-                  <span class="text-subtle">{key}</span>
-                  <span class="text-subtle ml-1.5 break-all">{value}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-          <div class="overflow-hidden rounded">
-            <pre
-              class="m-0 p-2 font-mono text-sm leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-subtle">{typeof result ===
-              'string'
-                ? result
-                : JSON.stringify(result, null, 2)}</pre>
-          </div>
+          {@render fallbackDetails()}
         {/if}
       </div>
     </div>
