@@ -160,6 +160,7 @@
     sshKeyPath = '';
     autoFetch = false;
     autoCommit = true;
+    cowIsolation = false;
     exposeGitCredential = true;
     defaultShell = 'auto';
     branchPrefix = '';

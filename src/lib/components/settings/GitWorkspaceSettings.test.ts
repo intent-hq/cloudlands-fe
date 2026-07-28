@@ -258,3 +258,38 @@ describe('GitWorkspaceSettings — CoW isolation toggle', () => {
     });
   });
 });
+
+describe('GitWorkspaceSettings — resetToDefaults', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.mockCapabilities.mockResolvedValue({ cowSupported: true });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('resets cowIsolation to false and persists the default via settings.update', async () => {
+    mocks.mockSettingsList.mockResolvedValue([
+      ...baseSettings.filter((setting) => setting.path !== 'workspace.cowIsolation'),
+      { path: 'workspace.cowIsolation', value: true },
+    ]);
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'workspace.cowIsolation', value: false }]);
+
+    const { component } = render(GitWorkspaceSettings);
+
+    const toggle = await waitFor(
+      () => screen.getByRole('checkbox', { name: COW_LABEL }) as HTMLInputElement,
+    );
+    expect(toggle.checked).toBe(true);
+
+    component.resetToDefaults();
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'workspace.cowIsolation', value: false },
+      ]);
+    });
+    expect(toggle.checked).toBe(false);
+  });
+});
