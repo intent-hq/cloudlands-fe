@@ -982,7 +982,7 @@
 
           <!-- Message content - line-clamp-6 -->
           <div
-            class="leading-normal text-subtle whitespace-pre-wrap select-text line-clamp-6 {onEditSubmit &&
+            class="leading-normal text-subtle select-text line-clamp-6 {onEditSubmit &&
             !agentAttribution
               ? 'cursor-pointer'
               : 'cursor-text'}"
@@ -1021,7 +1021,7 @@
             <!-- Render text with inline @mentions as chips -->
             {#each parsedMessage.segments as segment, i (i)}
               {#if segment.type === 'text'}
-                <span>{segment.content}</span>
+                <span class="whitespace-pre-wrap">{segment.content}</span>
               {:else if segment.type === 'mention'}
                 {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
                   segment.mentionType,
