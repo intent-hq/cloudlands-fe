@@ -443,7 +443,7 @@
       class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={!isTeamMode}
     >
-      <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_label()}</span>
+      <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
       {#key teamModeModel}
         <ModelPicker
           selectedModel={modelWasOverridden ? selectedModel : undefined}
@@ -580,7 +580,7 @@
       class="model-picker-row {!isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={isTeamMode}
     >
-      <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_label()}</span>
+      <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
       {#key singleAgentModel}
         <ModelPicker
           selectedModel={modelWasOverridden ? selectedModel : undefined}

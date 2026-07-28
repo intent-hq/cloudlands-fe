@@ -193,7 +193,7 @@
   {#if variant === 'ghost'}
     <!-- Minimal inline variant with "Work in" + pill pattern -->
     <div class="flex items-center gap-1 text-sm text-subtle whitespace-nowrap">
-      <span>{m.workspace_remoteSetupSelector_workIn_label()}</span>
+      <span>{m.workspace_remoteSetupSelector_workIn_before()}</span>
       <Select.Root bind:value={selectedSetupId}>
         <Select.Trigger
           variant="ghost"

@@ -1711,7 +1711,7 @@
             {#if searchQuery}
               {m.workspace_issueSuggestions_noIssuesMatch_label({ query: searchQuery })}
             {:else if activeSource === 'github-issues'}
-              {m.workspace_issueSuggestions_noIssuesFoundFor_label()} <button
+              {m.workspace_issueSuggestions_noIssuesFoundFor_before()} <button
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
                     workspaceId:
@@ -1722,7 +1722,7 @@
                 >{repositoryOwner}/{repositoryName}</button
               >
             {:else if activeSource === 'github-prs'}
-              {m.workspace_issueSuggestions_noPullRequestsFoundFor_label()} <button
+              {m.workspace_issueSuggestions_noPullRequestsFoundFor_before()} <button
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
                     workspaceId:

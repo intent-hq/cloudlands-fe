@@ -523,7 +523,7 @@
   title={m.onboarding_githubRepoTab_whereToClone_tooltip()}
 >
   <Fa icon={faFolder} class="text-subtle/50 shrink-0 -mb-px" size={20} />
-  <span class="text-sm text-muted-foreground whitespace-nowrap">{m.onboarding_githubRepoTab_storeRepoIn_label()}</span>
+  <span class="text-sm text-muted-foreground whitespace-nowrap">{m.onboarding_githubRepoTab_storeRepoIn_before()}</span>
   <span
     class="text-sm font-medium truncate max-w-40 {clonePath
       ? 'text-foreground'

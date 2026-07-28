@@ -597,7 +597,7 @@
     <div class="mb-4">
       <h2 class="text-base font-medium text-foreground">{m.settings_aiBehavior_createSpecialist_title()}</h2>
       <p class="text-sm text-muted-foreground mt-1">
-        {m.settings_aiBehavior_createSpecialist_pathNote()}
+        {m.settings_aiBehavior_createSpecialist_pathNote_before()}
         <!-- i18n-ignore (file path) -->
         <code class="bg-muted px-1 py-0.5 rounded">~/.intent/specialists/</code>
       </p>

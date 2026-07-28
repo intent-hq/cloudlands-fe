@@ -908,7 +908,7 @@
   >
     <div class="text-sm font-medium text-foreground">
       {#if keyboardShortcuts.showPanelNumbers}
-        <span class="text-primary">{m.layout_panelLayout_pressKeys_label()}</span> {m.layout_panelLayout_jumpToPanel_after()}
+        <span class="text-primary">{m.layout_panelLayout_pressKeys_before()}</span> {m.layout_panelLayout_jumpToPanel_after()}
       {:else}
         <span class="text-primary">⌘K</span> {m.layout_panelLayout_leaderActivated_label()}
         <span class="text-subtle ml-2"> {m.layout_panelLayout_leaderHints_label()} </span>

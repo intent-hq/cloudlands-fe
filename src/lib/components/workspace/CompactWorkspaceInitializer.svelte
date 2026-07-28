@@ -2753,13 +2753,13 @@
               class="flex items-center gap-1 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => (showSetupScript = !showSetupScript)}
             >
-              <span>{m.workspace_compactInitializer_setupDevEnvWith_label()}</span>
+              <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
               {#if isRepoConfigLoading}
                 <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
                 <span class="sr-only">{m.workspace_compactInitializer_detectingSetupScript_label()}</span>
               {:else}
                 <div class="bg-background px-2 py-0.5 font-medium">{setupScriptName}</div>
-                <p class="text-sm text-subtle">{m.workspace_compactInitializer_script_label()}</p>
+                <p class="text-sm text-subtle">{m.workspace_compactInitializer_setupDevEnvWith_after()}</p>
               {/if}
             </button>
             <!-- Right: rapid fire -->

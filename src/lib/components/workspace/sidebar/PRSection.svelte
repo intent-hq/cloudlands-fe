@@ -952,7 +952,7 @@
           <span class="font-medium"
             >{$workspace$?.branch || m.workspace_prSection_branchFallback_label()}</span
           >
-          {m.workspace_prSection_forcePushAheadBehind_label({
+          {m.workspace_prSection_forcePushAheadBehind_middle({
             ahead: aheadPhrase,
             behind: behindPhrase,
           })}

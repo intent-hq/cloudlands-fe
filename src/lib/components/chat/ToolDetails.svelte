@@ -635,7 +635,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             <div class="flex flex-col gap-1">
               <!-- Sent message to [agent] line -->
               <div class="flex items-center gap-1.5">
-                <span class="text-subtle">{m.chat_toolDetails_sentMessageTo_label()}</span>
+                <span class="text-subtle">{m.chat_toolDetails_sentMessageTo_before()}</span>
                 {#if agentId}
                   <button
                     type="button"

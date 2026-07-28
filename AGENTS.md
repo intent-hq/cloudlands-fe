@@ -66,7 +66,7 @@ All user-facing strings (labels, aria-labels, placeholders, tooltips, toasts, er
 - **Dates/numbers**: only via `$lib/i18n/format` (renderer) or `src/shared/i18n/formatters.ts` (main/shared) — never ad-hoc `toLocaleString`, direct `date-fns` format calls, or string-built numbers/percentages.
 - **Module-scope constants** holding localized text use property getters (`get description() { return m.…() }`) so strings re-evaluate on locale change; identifier-bearing fields stay literal.
 - **Exemptions** — log lines, wire/IPC constants, agent-generated content, brand names, file paths, URLs, shell commands — mark with `// i18n-ignore (reason)` or `<!-- i18n-ignore (reason) -->` on the same line or the line above.
-- **Enforcement**: `scripts/check-hardcoded-strings.mjs` (chained into `pnpm run lint`) blocks hardcoded strings inside `ENFORCED_DIRS`. New features in enforced dirs must be string-free from day one; when you migrate a directory to messages, add it to `ENFORCED_DIRS`. A catalog-completeness CI check (planned) will additionally fail on keys missing from non-English locales.
+- **Enforcement**: `scripts/check-hardcoded-strings.mjs` (chained into `pnpm run lint`) blocks hardcoded strings inside `ENFORCED_DIRS`. New features in enforced dirs must be string-free from day one; when you migrate a directory to messages, add it to `ENFORCED_DIRS`. There is no catalog-completeness CI check yet — one is planned for Phase 3 of the i18n effort (alongside the pseudo-locale check, tracked in the i18n spec) to fail on keys missing from non-English locales once a second locale ships.
 - **Reference example**: `src/lib/components/settings` (the pilot extraction).
 
 ## Common commands

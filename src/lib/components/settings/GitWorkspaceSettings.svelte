@@ -208,7 +208,7 @@
           {m.settings_gitWorkspace_sshKeyPath_label()}
         </label>
         <p class="text-xs text-subtle">
-          {m.settings_gitWorkspace_sshKeyPath_description()}
+          {m.settings_gitWorkspace_sshKeyPath_description_before()}
           <!-- i18n-ignore (file path) -->
           <code class="bg-muted px-1 rounded">~/.ssh/id_ed25519</code>)
         </p>
@@ -253,7 +253,7 @@
           {m.settings_gitWorkspace_branchPrefix_label()}
         </label>
         <p class="text-xs text-subtle">
-          {m.settings_gitWorkspace_branchPrefix_description()}
+          {m.settings_gitWorkspace_branchPrefix_description_before()}
           <!-- i18n-ignore (branch prefix example) -->
           <code class="bg-muted px-1 rounded">feature/</code>)
         </p>

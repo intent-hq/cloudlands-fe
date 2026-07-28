@@ -738,7 +738,7 @@
                 </Tooltip.Trigger>
                 <Tooltip.Content side="bottom" class="max-w-xs z-[200]">
                   <p class="text-xs">{variable.description}</p>
-                  <p class="text-xs opacity-50 mt-1">{m.workspace_setupScriptEditor_example_label()} <code class="text-ui">{variable.example}</code></p>
+                  <p class="text-xs opacity-50 mt-1">{m.workspace_setupScriptEditor_example_before()} <code class="text-ui">{variable.example}</code></p>
                 </Tooltip.Content>
               </Tooltip.Root>
             </Tooltip.Provider>

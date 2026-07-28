@@ -318,7 +318,7 @@
       {m.onboarding_setupCard_runningSetup_before()} {#if projectType}<span class="">{projectType}</span>{:else}{m.onboarding_setupCard_project_label()}{/if} {m.onboarding_setupCard_runningSetup_after()}
     {/snippet}
     {#snippet setupDone()}
-      {m.onboarding_setupCard_ranSetup_before()} {#if projectType}<span class="">{projectType}</span>{:else}{m.onboarding_setupCard_project_label()}{/if} {m.onboarding_setupCard_ranSetup_middle()}{#if onFocusSetupTerminal}{' '}{m.onboarding_setupCard_ranSetupIn_label()}
+      {m.onboarding_setupCard_ranSetup_before()} {#if projectType}<span class="">{projectType}</span>{:else}{m.onboarding_setupCard_project_label()}{/if} {m.onboarding_setupCard_ranSetup_middle()}{#if onFocusSetupTerminal}{' '}{m.onboarding_setupCard_ranSetupIn_middle()}
         <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
           {#snippet trigger()}
             <button

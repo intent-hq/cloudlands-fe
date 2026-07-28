@@ -814,7 +814,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (addedCount.value > 0) {
       logger.debug(`Added ${addedCount.value} image(s) to context`);
       toast.success(
-        m.chat_richInput_addedImages_toast({ count: formatInteger(addedCount.value) }),
+        addedCount.value === 1
+          ? m.chat_richInput_addedImages_toast_one()
+          : m.chat_richInput_addedImages_toast_many({ count: formatInteger(addedCount.value) }),
       );
     }
 

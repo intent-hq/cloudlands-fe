@@ -382,7 +382,7 @@
             }
           }}
         >
-          <span class="text-muted-foreground">{m.onboarding_promptStep_branchOffOf_label()}</span>
+          <span class="text-muted-foreground">{m.onboarding_promptStep_branchOffOf_before()}</span>
           <BranchSelector
             variant="ghost"
             triggerClass="pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"

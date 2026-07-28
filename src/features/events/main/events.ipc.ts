@@ -354,7 +354,11 @@ function describeSubscription(sub: any): string {
   }
 
   if (sub.filter.actorIds && sub.filter.actorIds.length > 0) {
-    parts.push(m.events_ipc_fromAgents_description({ count: sub.filter.actorIds.length }));
+    parts.push(
+      sub.filter.actorIds.length === 1
+        ? m.events_ipc_fromAgents_description_one()
+        : m.events_ipc_fromAgents_description_many({ count: sub.filter.actorIds.length }),
+    );
   }
 
   return parts.length > 0 ? parts.join(' ') : m.events_ipc_subscribed_description();
