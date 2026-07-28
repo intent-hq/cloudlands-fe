@@ -40,6 +40,7 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   chatLastAttemptedMessageSet,
+  chatQueuedRetryRecordsCleared,
   chatSendStarted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { createLogger } from '$lib/utils/client-logger';
@@ -103,6 +104,16 @@ async function handleEditAndRegenerate(
       return;
     }
     truncateLocalTranscript(agentId, messageId);
+    // The daemon's editAndRegenerate discards the queue — PROTOCOL §5.5
+    // step (2): "same hard-cancel + queue-discard semantics as
+    // `agent.forceMessage`" — so the discarded queue entries never run and
+    // their parked retry records are dropped WITHOUT promotion (#999). This
+    // must happen at the flow site:
+    // the reducer's snapshot-diff clear-queue signature cannot distinguish a
+    // single-entry discard from a genuine drain, and the late-arriving empty
+    // snapshot would otherwise promote a discarded payload over the edited
+    // text recorded below.
+    appStore.dispatch(chatQueuedRetryRecordsCleared(agentId));
     // Reset chat-state like a normal send (clears any stale error banner and
     // starts the thinking indicator immediately). Dispatched only AFTER the
     // wire call succeeds — on failure the transcript and any prior error stay

@@ -162,3 +162,13 @@ export const STATUS_EVENTS_STORAGE_KEY = 'chat-status-events';
 
 /** Minimum time between messages in ms (rate limiting) */
 export const MIN_MESSAGE_SEND_INTERVAL = 100;
+
+/**
+ * Cap on parked `queuedRetryRecords` per agent (#973-family memory bound).
+ * Records normally leave via snapshot diff, user removal, or reset — but a
+ * dropped events subscription or per-agent deletion can strand them for the
+ * app session, and each can carry MB-scale base64 imageBlocks. Parking
+ * beyond the cap evicts the oldest (lowest-seq) records first; 20 comfortably
+ * exceeds any realistic queue depth.
+ */
+export const MAX_QUEUED_RETRY_RECORDS = 20;
