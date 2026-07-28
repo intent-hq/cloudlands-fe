@@ -2247,8 +2247,12 @@ function handleNotification(method: string, params: unknown): void {
   // STAB-22: agent:message events with role="assistant" should trigger a
   // conversation refetch so AgentCard preview updates for watched agents whose
   // tab was never opened. The event payload is { agentId, messageId, role }.
-  // Guard for role="assistant": only load if the session has no messages yet
-  // (avoid redundant fetches for already-hydrated transcripts).
+  // Guard for role="assistant": refetch when the session is missing or the
+  // persisted row's messageId is absent from the transcript (checking both
+  // `id` and `appMessageId`, matching the message-dedup merge identity) —
+  // this self-heals transcripts that hydrated before the row persisted
+  // (#1019). When the event carries no messageId, only refetch for an
+  // empty session (avoid redundant fetches for already-hydrated transcripts).
   // QUEUED-MESSAGES: also handle role="user" — if the session is missing or its
   // messages do not contain the messageId, refetch to fold in dequeued and
   // agent-to-agent messages.
@@ -2257,7 +2261,12 @@ function handleNotification(method: string, params: unknown): void {
     if (typeof agentId === 'string') {
       if (role === 'assistant') {
         const session = appStore.state.agentSessions.byAgentId[agentId];
-        if (!session || session.messages.length === 0) {
+        const hasMessage =
+          typeof messageId === 'string'
+            ? (session?.messages.some((m) => m.id === messageId || m.appMessageId === messageId) ??
+              false)
+            : (session?.messages.length ?? 0) > 0;
+        if (!session || !hasMessage) {
           void loadChatTranscript(agentId);
         }
       } else if (role === 'user' && typeof messageId === 'string') {

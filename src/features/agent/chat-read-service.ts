@@ -20,8 +20,11 @@
  *
  * READ-ONLY: this module never invokes an agent mutation (no create/send/stop).
  *
- * Loads are coalesced per agent via an in-flight map so the ChatPanel mount
- * effect and rebind re-dispatch collapse rapid triggers into one fetch.
+ * Loads are coalesced per agent via an in-flight map. A request arriving while
+ * a load is already in flight marks a single pending RERUN instead of silently
+ * sharing the (possibly already stale) in-flight read (monorepo#1019): when the
+ * current load settles, exactly one follow-up load runs. Multiple mid-flight
+ * requests collapse into that one rerun, so there is no unbounded loop.
  *
  * Errors are swallowed (logged only) so a failed read leaves any prior session
  * intact rather than clobbering it with an empty transcript. If `agents.get`
@@ -45,6 +48,7 @@ import {
   bulkUpsertSessions,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { deduplicateAgentMessages } from "$shared/utils/message-dedup";
 import { createLogger } from "$lib/utils/client-logger";
 import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
 import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
@@ -53,6 +57,17 @@ const logger = createLogger("ChatReadService");
 
 /** In-flight loads keyed by agent id; coalesces concurrent requests. */
 const inFlight = new Map<string, Promise<void>>();
+
+/** Pending follow-up loads keyed by agent id; at most one rerun per in-flight load. */
+const pendingRerun = new Map<string, Promise<void>>();
+
+/** Dependency-light one-time read of the store's current transcript (no selector import). */
+function readCurrentMessages(agentId: string): AgentMessage[] {
+  const state = appStore.state as {
+    agentSessions?: { byAgentId: Record<string, { messages?: AgentMessage[] }> };
+  };
+  return state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+}
 
 /**
  * Fetch a single agent's session AND its FULL transcript from the seam, then
@@ -68,7 +83,24 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   // session. Skip entirely.
   if (isAgentDeletionPending(agentId)) return;
   const pending = inFlight.get(agentId);
-  if (pending) return pending;
+  if (pending) {
+    // A request arriving mid-load means the in-flight read may already be
+    // stale (e.g. the turn finalized after paging began). Returning the
+    // pending promise as-is swallowed the refetch (monorepo#1019); instead,
+    // schedule exactly ONE follow-up load after the current one settles.
+    // Further mid-flight requests coalesce into that same rerun. The rerun
+    // clears its map entry before starting, so a request arriving DURING the
+    // rerun schedules at most one more — reruns only run when requested,
+    // never in an unbounded loop.
+    const scheduledRerun = pendingRerun.get(agentId);
+    if (scheduledRerun) return scheduledRerun;
+    const rerun = pending.then(() => {
+      pendingRerun.delete(agentId);
+      return loadChatTranscript(agentId);
+    });
+    pendingRerun.set(agentId, rerun);
+    return rerun;
+  }
 
   // Create a placeholder promise that we'll resolve once the actual work is done
   let resolveRun!: () => void;
@@ -78,6 +110,18 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
 
   // Register in inFlight BEFORE dispatching to prevent re-entrant calls
   inFlight.set(agentId, runPromise);
+
+  // BASELINE snapshot (monorepo#1019): identity set (id + appMessageId) of the
+  // store's messages at the moment this read begins. The merge guard below
+  // retains only store-only messages ABSENT from this baseline — i.e. exactly
+  // the ones the live stream appended DURING the read. Pre-read rows the fetch
+  // dropped (BE truncation via edit/regenerate or agent.replaceMessages, from
+  // this or any other client) converge to BE state instead of becoming ghosts.
+  const baselineIds = new Set<string>();
+  for (const message of readCurrentMessages(agentId)) {
+    if (typeof message.id === "string") baselineIds.add(message.id);
+    if (typeof message.appMessageId === "string") baselineIds.add(message.appMessageId);
+  }
 
   // Dispatch loading status synchronously now that we're registered
   // Wrap in try/catch to ensure cleanup if dispatch throws
@@ -165,11 +209,32 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         }
       }
 
+      // STALE-HYDRATION MERGE GUARD (monorepo#1019): a store message absent
+      // from the fetched set AND from the pre-read baseline was appended by
+      // the live stream AFTER this hydration read began; replacing the list
+      // wholesale would wipe it. Merge those post-baseline messages with the
+      // fetched set by message id (fetched copies win for shared ids).
+      // Baseline messages missing from the fetch are deliberately DROPPED so
+      // BE-side truncations (edit/regenerate refetch convergence, iOS
+      // editAndRegenerate, daemon agent.replaceMessages) still shrink the
+      // transcript instead of leaving permanent ghost rows.
+      const appendedDuringRead = readCurrentMessages(agentId).filter(
+        (m) =>
+          !(
+            (typeof m.id === "string" && baselineIds.has(m.id)) ||
+            (typeof m.appMessageId === "string" && baselineIds.has(m.appMessageId))
+          ),
+      );
+      const mergedMessages =
+        appendedDuringRead.length === 0
+          ? finalMessages
+          : deduplicateAgentMessages([...finalMessages, ...appendedDuringRead]);
+
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is
       // because the daemon snapshot actually reports a turn is in-flight;
       // any orphan/stale healing belongs in the daemon, not the renderer.
-      const sessionWithMessages = { ...session, messages: finalMessages };
+      const sessionWithMessages = { ...session, messages: mergedMessages };
       appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {
