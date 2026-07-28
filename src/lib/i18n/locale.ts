@@ -64,12 +64,23 @@ export function getActiveLocale(): AppLocale {
 /**
  * A locale's own name in that locale (endonym), e.g. `de` → "Deutsch".
  * Catalog-driven via `Intl.DisplayNames` so new locales need no name table;
- * falls back to the raw tag for anything Intl cannot name.
+ * falls back to the raw tag for anything Intl cannot name. Chinese catalogs
+ * are named by script ("简体中文" / "繁體中文") rather than by region — the
+ * regional form ("中文（中国）") is not the conventional picker label.
  */
 export function getLocaleEndonym(locale: string): string {
+  let displayTag = locale;
   try {
-    const name = new Intl.DisplayNames([locale], { type: 'language' }).of(locale);
-    if (name && name !== locale) {
+    const maximized = new Intl.Locale(locale).maximize();
+    if (maximized.language === 'zh' && maximized.script) {
+      displayTag = `zh-${maximized.script}`;
+    }
+  } catch {
+    // Unknown tag — name the raw tag below.
+  }
+  try {
+    const name = new Intl.DisplayNames([locale], { type: 'language' }).of(displayTag);
+    if (name && name !== displayTag) {
       return name.charAt(0).toLocaleUpperCase(locale) + name.slice(1);
     }
   } catch {
