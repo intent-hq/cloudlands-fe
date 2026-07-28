@@ -2,10 +2,30 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from 'vitest';
 
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { DropdownOption } from '$lib/components/ui/dropdown';
+
+// The picker utils normalize provider ids via the providerCatalog slice —
+// provide a hydrated §5.38-shaped mock state instead of booting the full store.
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import(
+    '$store/renderer/utils/test-helpers/store-mock'
+  );
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
+  );
+  const { MOCK_PROVIDER_CATALOG } = await import(
+    '../../../../test/fixtures/provider-catalog.fixture'
+  );
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  );
+  return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
+});
 
 import { isUserProviderSettled } from './model-picker-utils';
 
@@ -92,10 +112,11 @@ describe('isUserProviderSettled', () => {
     expect(result).toBe(true);
   });
 
-  it('normalizes raw enabled provider ids through getProviderConfig before checking membership', () => {
-    // 'acp' is an alias that getProviderConfig resolves to the default provider
-    // ('auggie'). Passing the raw alias must still recognize the provider as
-    // enabled so the helper evaluates settledness, not treat it as "not enabled".
+  it('normalizes raw enabled provider ids through the catalog before checking membership', () => {
+    // 'acp' is an alias that the catalog lookup resolves to the default
+    // provider ('auggie'). Passing the raw alias must still recognize the
+    // provider as enabled so the helper evaluates settledness, not treat it
+    // as "not enabled".
     const result = isUserProviderSettled({
       agentProviderModels: null,
       agentProviderError: null,

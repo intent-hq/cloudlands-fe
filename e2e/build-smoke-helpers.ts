@@ -1763,7 +1763,6 @@ export function setMockAgentBehavior(
   return {
     MOCK_AGENT_BEHAVIOR: JSON.stringify(behavior),
     MOCK_AGENT_SCRIPT_PATH: resolve(process.cwd(), 'e2e', 'mock-acp-agent.js'),
-    DEFAULT_PROVIDER_OVERRIDE: 'mock',
   };
 }
 

@@ -539,8 +539,10 @@ app.whenReady().then(async () => {
   (async () => {
     try {
       const { hostExec } = await import('../shared/main/host-exec.js');
-      const { getDefaultProviderConfig } = await import('../shared/config/provider-config.js');
-      const defaultProvider = getDefaultProviderConfig();
+      const { fetchProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
+      const catalog = await fetchProviderCatalog();
+      const defaultProvider = catalog.providers.find((p) => p.id === catalog.defaultProviderId);
+      if (!defaultProvider) return;
 
       const result = await hostExec(defaultProvider.command, {
         args: ['--version'],
@@ -1315,6 +1317,12 @@ app.whenReady().then(async () => {
   await seedPathFromHostEnv();
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
+
+  // Hydrate the main-process provider catalog cache (non-blocking): the
+  // JSON-RPC client queues the request until the daemon socket connects.
+  const { primeProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
+  primeProviderCatalog();
+
   startupMetrics.end('criticalIPC');
 
   logger.info('Critical IPC handlers registered, creating window');

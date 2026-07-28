@@ -137,12 +137,29 @@ vi.mock('$features/agent/agent.client', () => ({
 }));
 
 // Mock Redux store bridge — the component reads agent sessions from Redux
-const mockReduxState: { workspaceAgents: { byWorkspaceId: Record<string, any> } } = {
-  workspaceAgents: { byWorkspaceId: {} },
-};
+const mockReduxState = vi.hoisted(
+  (): {
+    workspaceAgents: { byWorkspaceId: Record<string, any> };
+    providerCatalog?: unknown;
+  } => ({
+    workspaceAgents: { byWorkspaceId: {} },
+  }),
+);
 const mockReduxDispatch = vi.hoisted(() => vi.fn());
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  // The input resolves provider ids/display names via the providerCatalog
+  // slice — hydrate the §5.38-shaped mock catalog into the mocked state.
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
+  );
+  const { MOCK_PROVIDER_CATALOG } = await import(
+    '../../../../test/fixtures/provider-catalog.fixture'
+  );
+  mockReduxState.providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  );
 
   return createAppStoreMockModule({
     state: () => mockReduxState,

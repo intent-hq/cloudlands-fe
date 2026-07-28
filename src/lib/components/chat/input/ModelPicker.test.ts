@@ -60,9 +60,19 @@ vi.mock('$features/agent/browser', () => ({}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  // Seed a hydrated §5.38 catalog so the real provider-catalog selectors
+  // (display names, id normalization, compound-id parsing) resolve.
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
+  );
+  const { MOCK_PROVIDER_CATALOG } = await import('../../../../test/fixtures/provider-catalog.fixture');
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  );
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({ providerCatalog }),
     dispatch: mockSvelteDispatch,
   });
 });
@@ -129,93 +139,6 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectManagedInstallStatusByProvider: () => codexManagedInstallStatus$,
 }));
-
-vi.mock('$shared/config/provider-config', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('$shared/config/provider-config')>();
-
-  return {
-    ...actual,
-    getProviderConfig: (providerId?: string) => {
-      const configs = {
-        auggie: {
-          id: 'auggie',
-          displayName: 'Augment Auggie',
-          shortName: 'Auggie',
-          command: 'auggie',
-          canBeDisabled: true,
-          loginCommandHint: 'auggie login',
-        },
-        codex: {
-          id: 'codex',
-          displayName: 'OpenAI Codex',
-          shortName: 'Codex',
-          command: 'codex-acp',
-          canBeDisabled: true,
-          loginDocsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
-        },
-        'claude-code': {
-          id: 'claude-code',
-          displayName: 'Anthropic Claude Code',
-          shortName: 'Claude Code',
-          command: 'claude-agent-acp',
-          canBeDisabled: true,
-          loginDocsUrl: 'https://code.claude.com/docs/en/quickstart#step-2-log-in-to-your-account',
-        },
-        opencode: {
-          id: 'opencode',
-          displayName: 'OpenCode',
-          shortName: 'OpenCode',
-          command: 'opencode',
-          canBeDisabled: true,
-        },
-      };
-      return (
-        configs[(providerId ?? 'auggie') as keyof typeof configs] ?? {
-          id: providerId ?? 'auggie',
-          displayName: providerId ?? 'auggie',
-          shortName: providerId ?? 'auggie',
-          command: providerId ?? 'auggie',
-          canBeDisabled: true,
-        }
-      );
-    },
-    isProviderAuthenticationError: () => false,
-    parseCompoundModelId: (modelId?: string) => {
-      if (!modelId) {
-        return { providerId: '', modelId: '' };
-      }
-
-      const [providerId, ...rest] = modelId.split(':');
-      if (rest.length === 0) {
-        return { providerId: 'auggie', modelId };
-      }
-
-      return { providerId: providerId || 'auggie', modelId: rest.join(':') };
-    },
-    resolvePreferredModel: () => undefined,
-    ACP_PROVIDERS: {
-      auggie: {
-        id: 'auggie',
-        displayName: 'Augment Auggie',
-        shortName: 'Auggie',
-        canBeDisabled: true,
-      },
-      codex: { id: 'codex', displayName: 'OpenAI Codex', shortName: 'Codex', canBeDisabled: true },
-      'claude-code': {
-        id: 'claude-code',
-        displayName: 'Anthropic Claude Code',
-        shortName: 'Claude Code',
-        canBeDisabled: true,
-      },
-      opencode: {
-        id: 'opencode',
-        displayName: 'OpenCode',
-        shortName: 'OpenCode',
-        canBeDisabled: true,
-      },
-    },
-  };
-});
 
 const enabledProviderIds$ = writable(['auggie']);
 const activeProviderId$ = writable('auggie');

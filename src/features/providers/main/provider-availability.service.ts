@@ -8,7 +8,11 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import { PROVIDERS_CHANNELS } from '../../../shared/ipc/channels';
-import { ACP_PROVIDERS } from '../../../shared/config/provider-config';
+import {
+  fetchProviderCatalog,
+  getCachedProviderCatalog,
+  getCachedProviderCatalogEntry,
+} from '../../../main/utils/provider-catalog-accessor';
 import { Logger } from '../../../shared/logger';
 import {
   getProviderAuthVerdict,
@@ -246,20 +250,36 @@ async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse | null
 export async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   logger.info('Checking all provider availability');
 
-  // Determine which providers are hidden due to missing env vars or feature codes
+  // Determine which providers are hidden due to missing env vars or feature
+  // codes, from the daemon registry's gating metadata (PROTOCOL §5.38).
   const hiddenProviders: string[] = [];
-  for (const [providerId, config] of Object.entries(ACP_PROVIDERS)) {
+  let catalog;
+  try {
+    catalog = await fetchProviderCatalog();
+  } catch (error) {
+    // Fail closed on the gating decision: fall back to the last cached
+    // registry when the fetch fails. When there is no cache either, the
+    // daemon has never answered on this connection — provider discovery
+    // below will fail the same way and report nothing available, so no
+    // gated provider can surface through this path.
+    catalog = getCachedProviderCatalog();
+    logger.warn('Provider catalog fetch failed; using cached registry for gating', {
+      error,
+      hasCachedCatalog: catalog !== undefined,
+    });
+  }
+  for (const entry of catalog?.providers ?? []) {
     // Check legacy env var gating
-    if (config.requiresEnvVar && !process.env[config.requiresEnvVar]) {
-      hiddenProviders.push(providerId);
+    if (entry.requiresEnvVar && !process.env[entry.requiresEnvVar]) {
+      hiddenProviders.push(entry.id);
       continue;
     }
     // Check feature code gating
     if (
-      config.requiresFeatureCode &&
-      !featureCodesService.isFeatureEnabled(config.requiresFeatureCode)
+      entry.requiresFeatureCode &&
+      !featureCodesService.isFeatureEnabled(entry.requiresFeatureCode)
     ) {
-      hiddenProviders.push(providerId);
+      hiddenProviders.push(entry.id);
     }
   }
 
@@ -515,9 +535,13 @@ export function setupProviderAvailabilityIPC(): void {
             }
             break;
           case 'cortex': {
+            // Fail closed pre-hydration: cortex is feature-gated in the
+            // registry, so an unhydrated catalog means "hidden", not "open".
+            const cortexEntry = getCachedProviderCatalogEntry('cortex');
+            const cortexFeatureCode = cortexEntry?.requiresFeatureCode;
             const isHidden =
-              ACP_PROVIDERS.cortex.requiresFeatureCode &&
-              !featureCodesService.isFeatureEnabled(ACP_PROVIDERS.cortex.requiresFeatureCode);
+              cortexEntry === undefined ||
+              (cortexFeatureCode && !featureCodesService.isFeatureEnabled(cortexFeatureCode));
             if (isHidden) {
               status = { available: false };
             } else {

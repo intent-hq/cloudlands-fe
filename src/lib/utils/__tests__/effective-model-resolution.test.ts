@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getDefaultProviderId, PROVIDER_MODEL_TIERS } from '$shared/config/provider-config';
+import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.fixture';
 
 import {
   dropCrossProviderFallbackModel,
@@ -9,14 +9,21 @@ import {
   resolveSubmitProvider,
 } from '../effective-model-resolution';
 
+const defaultProviderId = MOCK_PROVIDER_CATALOG.defaultProviderId;
+
+function tiersFor(providerId: string) {
+  return MOCK_PROVIDER_CATALOG.providers.find((p) => p.id === providerId)?.modelTiers;
+}
+
 describe('resolveEffectiveModelForSpecialist', () => {
-  const defaultProviderId = getDefaultProviderId();
 
   it('uses the Redux effective model when the provider matches the specialist coding agent (file specialist)', () => {
     expect(
       resolveEffectiveModelForSpecialist({
         specialistId: 'spec-writer',
         selectedProvider: 'auggie',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('auggie'),
         availableModelValues: ['fable-5', 'opus4.7', 'sonnet4.5'],
         globalSelectedModel: 'sonnet4.5',
         effectiveCodingAgent: 'auggie',
@@ -29,13 +36,15 @@ describe('resolveEffectiveModelForSpecialist', () => {
   it('falls back to tier resolution when the Redux effective model is not in the available list', () => {
     const expectedTierModel =
       'auggie' !== defaultProviderId
-        ? `auggie:${PROVIDER_MODEL_TIERS['auggie'].smart}`
-        : PROVIDER_MODEL_TIERS['auggie'].smart;
+        ? `auggie:${tiersFor('auggie')!.smart}`
+        : tiersFor('auggie')!.smart;
 
     expect(
       resolveEffectiveModelForSpecialist({
         specialistId: 'spec-writer',
         selectedProvider: 'auggie',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('auggie'),
         availableModelValues: [expectedTierModel, 'sonnet4.5'],
         globalSelectedModel: 'sonnet4.5',
         effectiveCodingAgent: 'auggie',
@@ -46,7 +55,7 @@ describe('resolveEffectiveModelForSpecialist', () => {
   });
 
   it('resolves the tier against the locally-selected provider when it differs from the specialist coding agent', () => {
-    const smartModel = PROVIDER_MODEL_TIERS['claude-code'].smart;
+    const smartModel = tiersFor('claude-code')!.smart;
     const expectedTierModel =
       'claude-code' !== defaultProviderId ? `claude-code:${smartModel}` : smartModel;
 
@@ -54,6 +63,8 @@ describe('resolveEffectiveModelForSpecialist', () => {
       resolveEffectiveModelForSpecialist({
         specialistId: 'implementor',
         selectedProvider: 'claude-code',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('claude-code'),
         availableModelValues: [expectedTierModel, 'claude-code:sonnet'],
         globalSelectedModel: undefined,
         effectiveCodingAgent: 'auggie',
@@ -68,6 +79,8 @@ describe('resolveEffectiveModelForSpecialist', () => {
       resolveEffectiveModelForSpecialist({
         specialistId: 'custom-agent',
         selectedProvider: 'auggie',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('auggie'),
         availableModelValues: ['sonnet4.5', 'custom-model'],
         globalSelectedModel: 'sonnet4.5',
         effectiveCodingAgent: 'codex',
@@ -82,6 +95,8 @@ describe('resolveEffectiveModelForSpecialist', () => {
       resolveEffectiveModelForSpecialist({
         specialistId: 'spec-writer',
         selectedProvider: 'claude-code',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('claude-code'),
         availableModelValues: ['claude-code:sonnet', 'claude-code:haiku'],
         globalSelectedModel: undefined,
         effectiveCodingAgent: 'auggie',
@@ -96,6 +111,8 @@ describe('resolveEffectiveModelForSpecialist', () => {
       resolveEffectiveModelForSpecialist({
         specialistId: 'custom-agent',
         selectedProvider: 'claude-code',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('claude-code'),
         availableModelValues: ['claude-code:sonnet'],
         globalSelectedModel: undefined,
         effectiveCodingAgent: 'auggie',
@@ -110,6 +127,8 @@ describe('resolveEffectiveModelForSpecialist', () => {
       resolveEffectiveModelForSpecialist({
         specialistId: null,
         selectedProvider: 'auggie',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('auggie'),
         availableModelValues: ['opus4.7', 'sonnet4.5'],
         globalSelectedModel: 'sonnet4.5',
       }),
@@ -121,6 +140,8 @@ describe('resolveEffectiveModelForSpecialist', () => {
       resolveEffectiveModelForSpecialist({
         specialistId: 'spec-writer',
         selectedProvider: 'auggie',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('auggie'),
         availableModelValues: [],
         globalSelectedModel: undefined,
         effectiveCodingAgent: 'auggie',
@@ -139,6 +160,8 @@ describe('resolveSubmitModel', () => {
         overriddenModel: 'sonnet4.5',
         specialistId: 'spec-writer',
         selectedProvider: 'auggie',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('auggie'),
         availableModelValues: ['fable-5', 'sonnet4.5'],
         globalSelectedModel: 'fable-5',
         effectiveCodingAgent: 'auggie',
@@ -155,6 +178,8 @@ describe('resolveSubmitModel', () => {
         overriddenModel: undefined,
         specialistId: 'spec-writer',
         selectedProvider: 'auggie',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('auggie'),
         availableModelValues: ['fable-5', 'sonnet4.5'],
         globalSelectedModel: 'sonnet4.5',
         effectiveCodingAgent: 'auggie',
@@ -171,6 +196,8 @@ describe('resolveSubmitModel', () => {
         overriddenModel: undefined,
         specialistId: 'spec-writer',
         selectedProvider: 'auggie',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('auggie'),
         availableModelValues: ['fable-5', 'sonnet4.5'],
         globalSelectedModel: 'sonnet4.5',
         effectiveCodingAgent: 'auggie',
@@ -187,6 +214,8 @@ describe('resolveSubmitModel', () => {
         overriddenModel: 'opus4.6',
         specialistId: null,
         selectedProvider: 'auggie',
+        defaultProviderId,
+        selectedProviderTiers: tiersFor('auggie'),
         availableModelValues: ['fable-5', 'sonnet4.5'],
         globalSelectedModel: 'sonnet4.5',
       }),
@@ -195,45 +224,43 @@ describe('resolveSubmitModel', () => {
 });
 
 describe('resolveSubmitProvider', () => {
-  const defaultProviderId = getDefaultProviderId();
 
   it('derives the provider from a compound model prefix', () => {
-    expect(resolveSubmitProvider('claude-code:sonnet', 'grok')).toBe('claude-code');
+    expect(resolveSubmitProvider('claude-code:sonnet', 'grok', defaultProviderId)).toBe('claude-code');
   });
 
   it('resolves a bare model id to the default provider', () => {
-    expect(resolveSubmitProvider('fable-5', 'grok')).toBe(defaultProviderId);
+    expect(resolveSubmitProvider('fable-5', 'grok', defaultProviderId)).toBe(defaultProviderId);
   });
 
   it('keeps the selected provider when no model resolved', () => {
-    expect(resolveSubmitProvider(undefined, 'grok')).toBe('grok');
+    expect(resolveSubmitProvider(undefined, 'grok', defaultProviderId)).toBe('grok');
   });
 
   it('keeps the selected provider for an empty compound prefix (mirrors the daemon filter)', () => {
-    expect(resolveSubmitProvider(':sonnet', 'grok')).toBe('grok');
+    expect(resolveSubmitProvider(':sonnet', 'grok', defaultProviderId)).toBe('grok');
   });
 });
 
 describe('dropCrossProviderFallbackModel', () => {
-  const defaultProviderId = getDefaultProviderId();
 
   it('keeps a model owned by the selected provider', () => {
-    expect(dropCrossProviderFallbackModel('grok:grok-4', 'grok')).toBe('grok:grok-4');
+    expect(dropCrossProviderFallbackModel('grok:grok-4', 'grok', defaultProviderId)).toBe('grok:grok-4');
   });
 
   it('keeps a bare model id when the selected provider is the default provider', () => {
-    expect(dropCrossProviderFallbackModel('opus4.7', defaultProviderId)).toBe('opus4.7');
+    expect(dropCrossProviderFallbackModel('opus4.7', defaultProviderId, defaultProviderId)).toBe('opus4.7');
   });
 
   it('drops a bare default-provider model when the selected provider is non-default', () => {
-    expect(dropCrossProviderFallbackModel('opus4.7', 'grok')).toBeUndefined();
+    expect(dropCrossProviderFallbackModel('opus4.7', 'grok', defaultProviderId)).toBeUndefined();
   });
 
   it('drops a compound model owned by a different provider', () => {
-    expect(dropCrossProviderFallbackModel('claude-code:sonnet', 'grok')).toBeUndefined();
+    expect(dropCrossProviderFallbackModel('claude-code:sonnet', 'grok', defaultProviderId)).toBeUndefined();
   });
 
   it('passes through undefined', () => {
-    expect(dropCrossProviderFallbackModel(undefined, 'grok')).toBeUndefined();
+    expect(dropCrossProviderFallbackModel(undefined, 'grok', defaultProviderId)).toBeUndefined();
   });
 });

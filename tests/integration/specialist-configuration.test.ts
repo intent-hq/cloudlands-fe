@@ -18,12 +18,8 @@ import {
   MODEL_IDS,
   DEFAULT_AGENT_MODEL,
 } from '../../src/shared/constants/agent-services';
-import {
-  PROVIDER_MODEL_TIERS,
-  getDefaultModelForProvider,
-  getModelTierFromModel,
-  getDefaultProviderId,
-} from '../../src/shared/config/provider-config';
+import { MOCK_PROVIDER_CATALOG } from '../../src/test/fixtures/provider-catalog.fixture';
+import { getModelTierFromCatalog } from '../../src/shared/provider-catalog';
 import {
   writeSpecialistFile,
   ensureSpecialistsDirectory,
@@ -37,6 +33,20 @@ import {
 const { mockSettingsData } = vi.hoisted(() => ({
   mockSettingsData: {} as Record<string, unknown>,
 }));
+
+// Tier/default-provider helpers over the §5.38-shaped mock catalog, replacing
+// the deleted provider-config lookups (the registry now lives in the daemon).
+function getDefaultModelForProvider(providerId: string, tier: 'fast' | 'balanced' | 'smart') {
+  const tiers = MOCK_PROVIDER_CATALOG.providers.find((p) => p.id === providerId)?.modelTiers;
+  if (!tiers) throw new Error(`no tier table for ${providerId}`);
+  return tiers[tier];
+}
+function getModelTierFromModel(modelId: string, preferredProviderId?: string) {
+  return getModelTierFromCatalog(MOCK_PROVIDER_CATALOG.providers, modelId, preferredProviderId);
+}
+function getDefaultProviderId() {
+  return MOCK_PROVIDER_CATALOG.defaultProviderId;
+}
 
 const TEST_HOME = '/tmp/augment-specialist-config-test';
 let originalHome: string | undefined;
@@ -74,6 +84,10 @@ describe('Specialist Configuration', () => {
     originalHome = process.env.HOME;
     process.env.HOME = TEST_HOME;
     await fs.rm(TEST_HOME, { recursive: true, force: true });
+    // specialists.service resolves tiers via the main-process catalog cache;
+    // seed it directly (no live daemon in unit tests).
+    const accessor = await import('../../src/main/utils/provider-catalog-accessor');
+    accessor.setProviderCatalogCacheForTests(MOCK_PROVIDER_CATALOG);
     await initSpecialistsService();
     await refreshSpecialistsFromFiles();
   });
@@ -275,7 +289,7 @@ describe('Specialist Configuration', () => {
 
   describe('Auggie Provider Tier Regression (opus4.7)', () => {
     it('auggie smart tier resolves to opus4.7', () => {
-      expect(PROVIDER_MODEL_TIERS['auggie'].smart).toBe('opus4.7');
+      expect(getDefaultModelForProvider('auggie', 'smart')).toBe('opus4.7');
     });
 
     it('getDefaultModelForProvider(auggie, smart) returns opus4.7', () => {
@@ -305,8 +319,7 @@ describe('Specialist Configuration', () => {
 
     it('non-auggie provider tiers are NOT opus4.7', () => {
       // Ensure the change is scoped to auggie only
-      const claudeCode = PROVIDER_MODEL_TIERS['claude-code'];
-      expect(claudeCode.smart).not.toBe('opus4.7');
+      expect(getDefaultModelForProvider('claude-code', 'smart')).not.toBe('opus4.7');
     });
   });
 

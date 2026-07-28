@@ -11,7 +11,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { MINIMUM_AUGGIE_VERSION } from '$shared/constants/auggie';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
-  import { ACP_PROVIDERS } from '$shared/config/provider-config';
+  import { selectProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
   faCircleCheck,
@@ -232,6 +232,14 @@
 
   // Get available provider options for the setup screen
   // Filter out providers hidden by env var gate
+  function catalogRow(providerId: string): { displayName: string; command: string } {
+    const entry = selectProviderCatalogEntry.select(appStore.state, providerId);
+    return {
+      displayName: entry?.displayName ?? providerId,
+      command: entry?.command ?? providerId,
+    };
+  }
+
   const providerOptions = $derived.by(() => {
     const hidden = providerAvailability?.hiddenProviders ?? [];
     const codexManagedInstallStatus = $codexManagedInstallStatus$;
@@ -245,8 +253,8 @@
     return [
       {
         id: 'auggie',
-        name: ACP_PROVIDERS.auggie.displayName,
-        command: ACP_PROVIDERS.auggie.command,
+        name: catalogRow('auggie').displayName,
+        command: catalogRow('auggie').command,
         installCommand: 'npm install -g @augmentcode/auggie',
         description: m.lib_auggieSetup_auggie_description(),
         available: providerAvailability?.providers.auggie.available ?? false,
@@ -255,8 +263,8 @@
       },
       {
         id: 'claude-code',
-        name: ACP_PROVIDERS['claude-code'].displayName,
-        command: ACP_PROVIDERS['claude-code'].command,
+        name: catalogRow('claude-code').displayName,
+        command: catalogRow('claude-code').command,
         installCommand: 'npm install -g @agentclientprotocol/claude-agent-acp',
         description: m.lib_auggieSetup_claudeCode_description(),
         available: providerAvailability?.providers.claudeCode.available ?? false,
@@ -265,8 +273,8 @@
       },
       {
         id: 'codex',
-        name: ACP_PROVIDERS.codex.displayName,
-        command: ACP_PROVIDERS.codex.command,
+        name: catalogRow('codex').displayName,
+        command: catalogRow('codex').command,
         installCommand: codexSetupInProgress
           ? undefined
           : 'npm install -g @agentclientprotocol/codex-acp',
@@ -278,8 +286,8 @@
       },
       {
         id: 'cortex',
-        name: ACP_PROVIDERS.cortex.displayName,
-        command: ACP_PROVIDERS.cortex.command,
+        name: catalogRow('cortex').displayName,
+        command: catalogRow('cortex').command,
         installCommand: 'pip install snowflake-cli',
         description: m.lib_auggieSetup_cortex_description(),
         available: providerAvailability?.providers.cortex?.available ?? false,

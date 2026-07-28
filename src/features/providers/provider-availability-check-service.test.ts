@@ -31,7 +31,7 @@ vi.mock("$lib/electron-bridge", () => ({
 
 import { invoke } from "$lib/electron-bridge";
 import { PROVIDERS_CHANNELS } from "$shared/ipc/channels";
-import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
+import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/types/provider-availability";
 import { store as appStore } from "$store/renderer/store";
 import {
   checkAllProvidersRequested,

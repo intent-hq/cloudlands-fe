@@ -28,9 +28,10 @@
 } from '$store/renderer/slices/model/model-slice';
 
   import {
-  ACP_PROVIDERS,
-  resolveProviderEnabled,
-} from '$shared/config/provider-config';
+  selectProviderCatalogEntries,
+  selectProviderDisplayName,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectIsProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
   AUGGIE_CHANNELS,
   PROVIDERS_CHANNELS,
@@ -64,6 +65,7 @@
   const activeProviderId = selectActiveProviderId();
   const enabledProviders$ = selectEnabledProviders();
   const providerInUseReasons$ = selectProviderInUseReasons();
+  const catalogEntries$ = selectProviderCatalogEntries();
 
   // Provider availability state
   let providerAvailability: ProviderAvailabilityResult | null = $state(null);
@@ -175,11 +177,11 @@
     return undefined;
   }
 
-  // Provider options for display - dynamically generated from ACP_PROVIDERS
+  // Provider options for display - dynamically generated from the catalog
   // Filter out providers that are hidden (env var gated and not enabled)
   // Alphabetically sorted by display name for provider neutrality
   const providerOptions = $derived.by(() =>
-    Object.values(ACP_PROVIDERS)
+    $catalogEntries$
       .filter((provider) => !providerAvailability?.hiddenProviders?.includes(provider.id))
       .map((provider) => {
         const statusKey = providerKeyMap[provider.id];
@@ -231,11 +233,13 @@
 
   // Reactive helper to check if a provider is enabled
   function isProviderEnabled(providerId: string): boolean {
-    return resolveProviderEnabled($enabledProviders$, providerId);
+    // Reactive via $enabledProviders$; catalog metadata read via selector.
+    void $enabledProviders$;
+    return selectIsProviderEnabled.select(appStore.state, providerId);
   }
 
   function canManageProviderEnablement(providerId: string): boolean {
-    return ACP_PROVIDERS[providerId]?.canBeDisabled !== false;
+    return $catalogEntries$.find((p) => p.id === providerId)?.canBeDisabled !== false;
   }
 
   function handleToggleProvider(providerId: string, enabled: boolean) {
@@ -244,7 +248,7 @@
       if (reason) {
         toast.error(
           m.settings_providers_cannotDisable({
-            name: ACP_PROVIDERS[providerId]?.displayName || providerId,
+            name: selectProviderDisplayName.select(appStore.state, providerId),
           }),
           { description: reason },
         );
@@ -541,7 +545,7 @@
       appStore.dispatch(reloadModelsForProvider());
       toast.success(
         m.settings_providers_switchedTo({
-          name: ACP_PROVIDERS[providerId]?.displayName || providerId,
+          name: selectProviderDisplayName.select(appStore.state, providerId),
         }),
       );
     } finally {
@@ -556,7 +560,9 @@
       <div class="space-y-1">
         <div class="flex items-center gap-2">
           {@render providerIcon('auggie')}
-          <span class="text-sm text-foreground">{ACP_PROVIDERS.auggie.displayName}</span>
+          <span class="text-sm text-foreground"
+            >{selectProviderDisplayName.select(appStore.state, 'auggie')}</span
+          >
           <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
         </div>
       </div>
@@ -1015,7 +1021,9 @@
     <div class="space-y-1">
       <div class="flex items-center gap-2 h-7">
         {@render providerIcon(providerid)}
-        <span class="text-sm text-foreground">{ACP_PROVIDERS[providerid].displayName}</span>
+        <span class="text-sm text-foreground"
+          >{selectProviderDisplayName.select(appStore.state, providerid)}</span
+        >
         <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
       </div>
     </div>

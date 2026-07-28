@@ -8,11 +8,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
+  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
-  getDefaultProviderId,
-  getProviderConfig,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
+  selectCatalogDefaultProviderId,
+  selectNormalizedProviderId,
+  selectProviderDisplayName,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
@@ -53,6 +54,22 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { slide } from 'svelte/transition';
 
   const logger = createLogger('SimpleRichInput');
+
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
+
+  // Catalog-backed local shims for the legacy provider-config helpers.
+  function normalizeProviderId(providerId: string): string {
+    return selectNormalizedProviderId.select(appStore.state, providerId);
+  }
+  function providerDisplayName(providerId: string): string {
+    return selectProviderDisplayName.select(appStore.state, providerId);
+  }
+  function parseCompoundModelId(compoundModelId: string): {
+    providerId: string;
+    modelId: string;
+  } {
+    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+  }
 
   type MainPanelContext = {
     type: 'file' | 'note' | 'spec';
@@ -434,18 +451,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   const hydratedPropProviderId = $derived.by(() => {
     if (propProviderId) {
-      return getProviderConfig(propProviderId).id;
+      return normalizeProviderId(propProviderId);
     }
 
     if (!agentId) {
-      return getProviderConfig(getDefaultProviderId()).id;
+      return $defaultProviderId$;
     }
 
     const session = workspace?.id
       ? selectAgentSession.select(appStore.state, agentId)
       : undefined;
-    const provider = session ? getAgentProvider(session) : undefined;
-    return provider ? getProviderConfig(provider).id : undefined;
+    const provider = session ? getAgentProvider(session, $defaultProviderId$) : undefined;
+    return provider ? normalizeProviderId(provider) : undefined;
   });
   let localProviderId = $state<string | undefined>(undefined);
 
@@ -478,24 +495,22 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     providerId: string;
   } {
     if (!model) {
-      const provider = selectedProviderId || getDefaultProviderId();
-      const config = getProviderConfig(provider);
+      const provider = selectedProviderId || $defaultProviderId$;
       return {
         modelLabel: m.chat_richInput_defaultModel_label(),
-        providerName: config.displayName,
-        providerId: config.id,
+        providerName: providerDisplayName(provider),
+        providerId: normalizeProviderId(provider),
       };
     }
     // Bare (non-compound) ids belong to the agent's current provider, not the
     // default provider parseCompoundModelId falls back to.
     const rawProvider = model.includes(':')
       ? parseCompoundModelId(model).providerId
-      : selectedProviderId || getDefaultProviderId();
-    const config = getProviderConfig(rawProvider);
+      : selectedProviderId || $defaultProviderId$;
     return {
       modelLabel: parseCompoundModelId(model).modelId,
-      providerName: config.displayName,
-      providerId: config.id,
+      providerName: providerDisplayName(rawProvider),
+      providerId: normalizeProviderId(rawProvider),
     };
   }
 
@@ -582,7 +597,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         error instanceof Error
           ? error.message
           : m.chat_richInput_switchFailed_error({
-              provider: getProviderConfig(newProvider).displayName,
+              provider: providerDisplayName(newProvider),
             }),
       );
     } finally {
@@ -1160,7 +1175,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
           // Check if the model is from a different provider
           const rawProvider = parseCompoundModelId(newModel).providerId;
-          const newProvider = getProviderConfig(rawProvider).id;
+          const newProvider = normalizeProviderId(rawProvider);
           if (agentId && newProvider !== selectedProviderId) {
             // Provider is changing — run the full provider switch flow
             void handleProviderChangeFromModel(newProvider, newModel);

@@ -10,6 +10,25 @@ vi.mock('$features/providers/provider-models.client', () => ({
   getProviderModels: vi.fn(),
 }));
 
+// model-utils reads id normalization / display names / the default provider
+// from the providerCatalog slice — provide a hydrated §5.38-shaped mock state.
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import(
+    '$store/renderer/utils/test-helpers/store-mock'
+  );
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
+  );
+  const { MOCK_PROVIDER_CATALOG } = await import(
+    '../../../../test/fixtures/provider-catalog.fixture'
+  );
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  );
+  return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
+});
+
 import { getProviderModels } from '$features/providers/provider-models.client';
 import {
   fetchModelsForProvider,

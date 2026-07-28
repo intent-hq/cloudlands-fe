@@ -1,11 +1,11 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { DropdownOption } from '$lib/components/ui/dropdown';
+import { resolvePreferredModel, splitCompoundModelId } from '$shared/utils/compound-model-id';
 import {
-  getDefaultProviderId,
-  getProviderConfig,
-  parseCompoundModelId,
-  resolvePreferredModel,
-} from '$shared/config/provider-config';
+  selectCatalogDefaultProviderId,
+  selectNormalizedProviderId,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { store as appStore } from '$store/renderer/store';
 
 interface ModelPickerOptionInput {
   value: string;
@@ -44,11 +44,11 @@ export interface IsUserProviderSettledParams {
   agentProviderModels: AuggieModel[] | null;
   /** Error produced by the disabled agent-provider fetch, or null when none. */
   agentProviderError: string | null;
-  /** Raw enabled provider ids; normalized internally through `getProviderConfig(id).id`. */
+  /** Raw enabled provider ids; normalized internally through the catalog. */
   enabledProviderIds: string[];
   /** Models per normalized provider id for the "all providers" view. */
   allProviderModels: Record<string, DropdownOption[]>;
-  /** The model's provider id, already normalized through `getProviderConfig(id).id`. */
+  /** The model's provider id, already normalized through the catalog. */
   modelProvider: string;
 }
 
@@ -71,9 +71,9 @@ export interface IsUserProviderSettledParams {
  *
  * @param params.agentProviderModels - Models fetched for a disabled agent provider, or `null` while pending.
  * @param params.agentProviderError - Error from the disabled agent-provider fetch, or `null` when none.
- * @param params.enabledProviderIds - Raw enabled provider ids; normalized internally via `getProviderConfig(id).id`.
+ * @param params.enabledProviderIds - Raw enabled provider ids; normalized internally via the catalog.
  * @param params.allProviderModels - Models per normalized provider id for the "all providers" view.
- * @param params.modelProvider - The model's provider id, already normalized through `getProviderConfig(id).id`.
+ * @param params.modelProvider - The model's provider id, already normalized through the catalog.
  * @returns `true` only when the user's provider has definitively settled; `false` while still loading.
  */
 export function isUserProviderSettled(params: IsUserProviderSettledParams): boolean {
@@ -85,7 +85,9 @@ export function isUserProviderSettled(params: IsUserProviderSettledParams): bool
     modelProvider,
   } = params;
 
-  const normalizedEnabledProviderIds = enabledProviderIds.map((pid) => getProviderConfig(pid).id);
+  const normalizedEnabledProviderIds = enabledProviderIds.map((pid) =>
+    selectNormalizedProviderId.select(appStore.state, pid),
+  );
   const providerEnabled = normalizedEnabledProviderIds.includes(modelProvider);
   if (!providerEnabled) return agentProviderModels !== null || agentProviderError !== null;
   return (allProviderModels[modelProvider]?.length ?? 0) > 0;
@@ -93,12 +95,14 @@ export function isUserProviderSettled(params: IsUserProviderSettledParams): bool
 
 /**
  * Return true when `providerId` is present in `enabledProviderIds`, comparing
- * both sides after normalization through `getProviderConfig(id).id` so raw
- * aliases (e.g. `acp`) match their canonical provider id.
+ * both sides after catalog normalization so raw aliases (e.g. `acp`) match
+ * their canonical provider id.
  */
 export function isProviderEnabled(enabledProviderIds: string[], providerId: string): boolean {
-  const normalizedId = getProviderConfig(providerId).id;
-  return enabledProviderIds.some((pid) => getProviderConfig(pid).id === normalizedId);
+  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
+  return enabledProviderIds.some(
+    (pid) => selectNormalizedProviderId.select(appStore.state, pid) === normalizedId,
+  );
 }
 
 /**
@@ -108,7 +112,9 @@ export function isProviderEnabled(enabledProviderIds: string[], providerId: stri
  * so `opencode:foo` still only matches the compound form.
  */
 export function normalizeModelIdForMatch(modelId: string): string {
-  const prefix = `${getDefaultProviderId()}:`;
+  const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
+  if (!defaultProviderId) return modelId;
+  const prefix = `${defaultProviderId}:`;
   return modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
 }
 
@@ -137,8 +143,10 @@ export function findModelFallbackOption(
   let candidates = options.filter((opt) => opt.value !== excludeValue);
 
   if (restrictToProvider) {
+    const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
     candidates = candidates.filter(
-      (opt) => parseCompoundModelId(opt.value).providerId === restrictToProvider,
+      (opt) =>
+        (splitCompoundModelId(opt.value).providerId ?? defaultProviderId) === restrictToProvider,
     );
   }
 

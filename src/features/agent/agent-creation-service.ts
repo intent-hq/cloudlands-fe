@@ -44,11 +44,7 @@ import { AgentStatus } from '$shared/types';
 import { createAgentTypeId, parseAgentTypeId } from '$shared/types/agent.types';
 import { WorkspaceId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { getAgentProvider } from '$shared/types/agent-session';
-import {
-  getDefaultModelForProvider,
-  parseCompoundModelId,
-  PROVIDER_MODEL_TIERS,
-} from '$shared/config/provider-config';
+import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import { cleanErrorMessage } from '$shared/errors/messages';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
@@ -85,15 +81,17 @@ const logger = createLogger('AgentCreationService');
  * middleware-chain construction.
  */
 async function loadCreationDeps() {
-  const [factoryMod, wsSel, waSel, modelSel, provSel, specSel, notesSel] = await Promise.all([
-    import('$features/agent/services/agent-factory'),
-    import('$store/renderer/slices/workspace/workspace-selectors'),
-    import('$store/renderer/slices/workspace-agents/workspace-agents-selectors'),
-    import('$store/renderer/slices/model/model-selectors'),
-    import('$store/renderer/slices/provider-settings/provider-settings-selectors'),
-    import('$store/renderer/slices/specialists/specialists-selectors'),
-    import('$store/renderer/slices/workspace-notes/workspace-notes-selectors'),
-  ]);
+  const [factoryMod, wsSel, waSel, modelSel, provSel, specSel, notesSel, catalogSel] =
+    await Promise.all([
+      import('$features/agent/services/agent-factory'),
+      import('$store/renderer/slices/workspace/workspace-selectors'),
+      import('$store/renderer/slices/workspace-agents/workspace-agents-selectors'),
+      import('$store/renderer/slices/model/model-selectors'),
+      import('$store/renderer/slices/provider-settings/provider-settings-selectors'),
+      import('$store/renderer/slices/specialists/specialists-selectors'),
+      import('$store/renderer/slices/workspace-notes/workspace-notes-selectors'),
+      import('$store/renderer/slices/provider-catalog/provider-catalog-selectors'),
+    ]);
   return {
     agentFactory: factoryMod.agentFactory,
     selectWorkspaceById: wsSel.selectWorkspaceById,
@@ -105,6 +103,8 @@ async function loadCreationDeps() {
     selectEffectiveModel: specSel.selectEffectiveModel,
     selectEffectiveBehaviorPrompt: specSel.selectEffectiveBehaviorPrompt,
     selectNoteById: notesSel.selectNoteById,
+    selectCatalogDefaultProviderId: catalogSel.selectCatalogDefaultProviderId,
+    selectDefaultModelForProviderTier: catalogSel.selectDefaultModelForProviderTier,
   };
 }
 type CreationDeps = Awaited<ReturnType<typeof loadCreationDeps>>;
@@ -159,7 +159,9 @@ function registerCreatedAgent(
 function getWorkspaceInitialAgentProvider(wsId: string, deps: CreationDeps): string | undefined {
   const sessions = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
   const initialAgent = sessions.find((s) => String(s.workspaceId) === wsId && s.isInitialAgent);
-  return initialAgent ? getAgentProvider(initialAgent) : undefined;
+  return initialAgent
+    ? getAgentProvider(initialAgent, deps.selectCatalogDefaultProviderId.select(appStore.state))
+    : undefined;
 }
 
 function getCreationError(error: unknown, fallback?: string): string {
@@ -180,7 +182,9 @@ async function handleCreateAgentRequested(wsId: string, agentType?: string): Pro
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
   const agentName = generateSpecialistAgentName('Agent', existingNames);
-  const provider = model.includes(':') ? parseCompoundModelId(model).providerId : globalProvider;
+  const provider = model.includes(':')
+    ? (splitCompoundModelId(model).providerId || globalProvider)
+    : globalProvider;
 
   try {
     const result = await deps.agentFactory.createAgent(workspace, {
@@ -218,7 +222,9 @@ async function handleCreateAgentWithSpecialist(
   const globalProvider = deps.selectActiveProviderId.select(appStore.state);
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
-  let provider = model.includes(':') ? parseCompoundModelId(model).providerId : globalProvider;
+  let provider = model.includes(':')
+    ? (splitCompoundModelId(model).providerId || globalProvider)
+    : globalProvider;
   let behaviorPrompt: string | undefined;
   let specialistBaseName = 'Agent';
   if (specialistId) {
@@ -294,10 +300,14 @@ async function handleRunAgentForNote(
       implementorBehaviorPrompt = implementorSpec.defaultBehaviorPrompt;
       if (!implementorModel) {
         const activeProvider = deps.selectActiveProviderId.select(appStore.state);
-        implementorModel =
-          implementorSpec.defaultModelTier && activeProvider in PROVIDER_MODEL_TIERS
-            ? getDefaultModelForProvider(activeProvider, implementorSpec.defaultModelTier)
-            : (implementorSpec.defaultModel ?? '');
+        const tierModel = implementorSpec.defaultModelTier
+          ? deps.selectDefaultModelForProviderTier.select(
+              appStore.state,
+              activeProvider,
+              implementorSpec.defaultModelTier,
+            )
+          : undefined;
+        implementorModel = tierModel ?? implementorSpec.defaultModel ?? '';
       }
     }
   }
@@ -460,7 +470,9 @@ async function handleLaunchAgent(
     const activeProvider = deps.selectActiveProviderId.select(appStore.state);
     const provider =
       config.provider ??
-      (model.includes(':') ? parseCompoundModelId(model).providerId : activeProvider);
+      (model.includes(':')
+        ? (splitCompoundModelId(model).providerId || activeProvider)
+        : activeProvider);
 
     const createAction = createAgentFromConfigRequested(
       wsId,

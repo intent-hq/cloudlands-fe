@@ -48,7 +48,7 @@ test.describe('Build Smoke — Agent Chat UI', () => {
     // registry sees it (it's gated behind requiresEnvVar).
     const mockScriptPath = path.resolve(process.cwd(), 'e2e', 'mock-acp-agent.js');
     const launched = await launchPackagedApp({
-      extraEnv: { MOCK_AGENT_SCRIPT_PATH: mockScriptPath, DEFAULT_PROVIDER_OVERRIDE: 'mock' },
+      extraEnv: { MOCK_AGENT_SCRIPT_PATH: mockScriptPath },
     });
     app = launched.app;
     page = launched.page;

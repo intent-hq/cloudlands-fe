@@ -56,10 +56,24 @@ async function buildState(fileSpecialists: object[]) {
   const { createCollection } = await import(
     '$lib/store-shim/utils/collections/collection-utils'
   );
+  const {
+    initialState: providerCatalogInitialState,
+    providerCatalogLoaded,
+    providerCatalogReducer,
+  } = await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } = await import(
+    '../../../test/fixtures/provider-catalog.fixture'
+  );
   return {
+    providerCatalog: providerCatalogReducer(
+      providerCatalogInitialState,
+      providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+    ),
     providerSettings: {
       activeProviderId: 'auggie',
       enabledProviders: { 'claude-code': true, codex: true },
+      defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
+      nonDisableableProviderIds: [],
     },
     model: { ...modelInitialState, providerModels: {} },
     specialists: {

@@ -2,6 +2,7 @@ import { createAction } from '$lib/store-shim/utils/store/create-action';
 import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   normalizeModelForProvider,
   normalizeProviderModels,
@@ -72,6 +73,7 @@ export const initialState: ModelState = {
   providerModels: {},
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
+  defaultProviderId: '',
 };
 
 // ============================================================================
@@ -144,11 +146,18 @@ export const resetToDefaults = createAction('model/resetToDefaults');
 // ============================================================================
 
 export const modelReducer = createReducer<ModelState>(initialState)
+  .with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
+    ...state,
+    defaultProviderId: catalog.defaultProviderId,
+    // Re-normalize persisted picks that landed before the catalog: bare ids
+    // for the default provider, prefixed otherwise (same rule as writes).
+    providerModels: normalizeProviderModels(state.providerModels, catalog.defaultProviderId),
+  }))
   .with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => ({
     ...state,
     providerModels: {
       ...state.providerModels,
-      [providerId]: normalizeModelForProvider(providerId, model),
+      [providerId]: normalizeModelForProvider(providerId, model, state.defaultProviderId),
     },
   }))
   .with(setAvailableModels, (state, { payload: [models] }) => ({
@@ -194,7 +203,7 @@ export const modelReducer = createReducer<ModelState>(initialState)
   })
   .with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
     ...state,
-    providerModels: normalizeProviderModels(models),
+    providerModels: normalizeProviderModels(models, state.defaultProviderId),
   }))
   .with(hydrateModelPickerCollapsedGroups, (state, { payload: [groupKeys] }) => ({
     ...state,

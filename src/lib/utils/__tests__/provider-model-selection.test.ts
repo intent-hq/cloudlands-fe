@@ -1,11 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
+import { store as appStore } from '$store/renderer/store';
+import { seedProviderCatalog } from '../../../test/fixtures/provider-catalog.fixture';
 import {
   buildProviderDropdownOptions,
   getSelectableProviderIds,
   pickCompatibleModelForProvider,
   shouldShowChatProviderControl,
 } from '../provider-model-selection';
+
+beforeAll(() => {
+  appStore.init();
+  seedProviderCatalog(appStore);
+});
 
 describe('pickCompatibleModelForProvider', () => {
   it('keeps the current model when it already matches the provider', () => {

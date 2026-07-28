@@ -111,9 +111,40 @@ vi.mock('$features/agent/agent.client', () => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  // Hydrated catalog with the synthetic `anthropic` provider these regressions
+  // use, so the real provider-catalog selectors resolve ids/display names.
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
+  );
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded({
+      providers: [
+        {
+          id: 'auggie',
+          displayName: 'Auggie',
+          shortName: 'Auggie',
+          command: 'auggie',
+          isDefault: true,
+          canBeDisabled: true,
+          visible: true,
+        },
+        {
+          id: 'anthropic',
+          displayName: 'Anthropic',
+          shortName: 'Anthropic',
+          command: 'anthropic',
+          isDefault: false,
+          canBeDisabled: true,
+          visible: true,
+        },
+      ],
+      defaultProviderId: 'auggie',
+    }),
+  );
 
   return createAppStoreMockModule({
-    state: () => ({ sessions }),
+    state: () => ({ sessions, providerCatalog }),
     dispatch: mockReduxDispatch,
   });
 });
@@ -176,29 +207,6 @@ vi.mock('$store/renderer/slices/model/model-utils', () => ({
         : [{ value: 'auggie:butler', label: 'Auggie Butler' }];
     return Promise.resolve({ models });
   }),
-}));
-
-vi.mock('$shared/config/provider-config', () => ({
-  ACP_PROVIDERS: {
-    auggie: { id: 'auggie', displayName: 'Auggie', shortName: 'Auggie' },
-    anthropic: { id: 'anthropic', displayName: 'Anthropic', shortName: 'Anthropic' },
-  },
-  getDefaultProviderId: () => 'auggie',
-  getProviderConfig: (providerId?: string) => ({
-    id: providerId || 'auggie',
-    displayName: providerId || 'auggie',
-    shortName: providerId || 'auggie',
-    command: providerId || 'auggie',
-  }),
-  isProviderAuthenticationError: () => false,
-  parseCompoundModelId: (modelId?: string) => {
-    if (!modelId) return { providerId: 'auggie', modelId: '' };
-    const [providerId, ...rest] = modelId.split(':');
-    return rest.length
-      ? { providerId, modelId: rest.join(':') }
-      : { providerId: 'auggie', modelId };
-  },
-  resolvePreferredModel: () => undefined,
 }));
 
 vi.mock('$shared/types/agent-session', () => ({

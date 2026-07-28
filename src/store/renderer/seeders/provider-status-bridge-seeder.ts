@@ -58,7 +58,8 @@ import {
   OPENCODE_CHANNELS,
   PROVIDERS_CHANNELS,
 } from "$shared/ipc/channels";
-import { ACP_PROVIDERS } from "$shared/config/provider-config";
+import { getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { store as appStore } from "$store/renderer/store";
 import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
 import { CODEX_ADAPTER_MISSING_WARNING } from "$shared/constants/codex";
@@ -162,9 +163,9 @@ async function checkAuggie(): Promise<HostCheckResult> {
  * matching the main service's default-deny gating.
  */
 function computeHiddenProviders(): string[] {
-  return Object.values(ACP_PROVIDERS)
-    .filter((config) => config.requiresEnvVar || config.requiresFeatureCode)
-    .map((config) => config.id);
+  return getItems(appStore.state.providerCatalog.providers)
+    .filter((entry) => entry.requiresEnvVar || entry.requiresFeatureCode)
+    .map((entry) => entry.id);
 }
 
 /** Attach an auth verdict only when the provider is actually available. */
@@ -370,7 +371,7 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
     typeof arg === "string"
       ? arg
       : ((arg as { providerId?: unknown } | undefined)?.providerId as string) || "";
-  if (!providerId || !(providerId in ACP_PROVIDERS)) {
+  if (!providerId || !getItem(appStore.state.providerCatalog.providers, providerId)) {
     return { success: false, providerId, error: m.providers_bridge_unknownProvider_error({ providerId }) };
   }
   try {

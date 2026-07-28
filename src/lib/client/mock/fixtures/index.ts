@@ -235,7 +235,10 @@ export const mockSystemStatus: SystemStatusState = {
   binaryInstallAvailable: false,
 };
 
-export const mockProviderSettings: ProviderSettingsState = {
+export const mockProviderSettings: Pick<
+  ProviderSettingsState,
+  "activeProviderId" | "enabledProviders"
+> = {
   activeProviderId: "auggie",
   enabledProviders: { auggie: true, "claude-code": false, codex: false },
 };

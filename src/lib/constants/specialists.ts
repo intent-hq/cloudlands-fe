@@ -1,5 +1,5 @@
 import { m } from '$shared/paraglide/messages.js';
-import type { ModelTier } from '$shared/config/provider-config';
+import type { ProviderModelTier as ModelTier } from '$shared/provider-catalog';
 import type { SpecialistSource } from '$shared/specialist-file-types';
 
 /** Known built-in specialist IDs */

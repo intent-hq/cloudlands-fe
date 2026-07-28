@@ -55,10 +55,12 @@
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
 
+  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
-  getProviderConfig,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
+  selectCatalogDefaultProviderId,
+  selectNormalizedProviderId,
+  selectProviderDisplayName,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
   import {
@@ -87,6 +89,24 @@
   import Fa from 'svelte-fa';
 
   const logger = createLogger('ModelPicker');
+
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
+
+  // Catalog-backed local shims for the legacy provider-config helpers, so the
+  // picker's many call sites keep their shape. Reads are reactive via the
+  // defaultProviderId$ subscription above plus the appStore.state lookups.
+  function normalizeProviderId(providerId: string): string {
+    return selectNormalizedProviderId.select(appStore.state, providerId);
+  }
+  function providerDisplayName(providerId: string): string {
+    return selectProviderDisplayName.select(appStore.state, providerId);
+  }
+  function parseCompoundModelId(compoundModelId: string): {
+    providerId: string;
+    modelId: string;
+  } {
+    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+  }
 
   const activeProviderId$ = selectActiveProviderId();
   const enabledProviderIds$ = selectEnabledProviderIds();
@@ -168,12 +188,12 @@
   // one (fetching then uses the active provider; the trigger icon prefers the
   // displayed model's provider).
   const explicitProviderId = $derived.by(() => {
-    if (providerId) return getProviderConfig(providerId).id;
+    if (providerId) return normalizeProviderId(providerId);
     if (agentId && workspaceId) {
       const session = $agentSession$;
       if (session) {
-        const provider = getAgentProvider(session);
-        if (provider) return getProviderConfig(provider).id;
+        const provider = getAgentProvider(session, $defaultProviderId$);
+        if (provider) return normalizeProviderId(provider);
       }
     }
     return null;
@@ -189,12 +209,12 @@
   let agentProviderError = $state<string | null>(null);
 
   function setProviderWarningState(providerId: string, warning: string | undefined) {
-    const normalizedId = getProviderConfig(providerId).id;
+    const normalizedId = normalizeProviderId(providerId);
     appStore.dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning }));
   }
 
   function setProviderErrorState(providerId: string, error: string) {
-    const normalizedId = getProviderConfig(providerId).id;
+    const normalizedId = normalizeProviderId(providerId);
     appStore.dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }));
   }
 
@@ -202,7 +222,7 @@
     providerId: string,
     warnings: Record<string, string>,
   ): ProviderWarningNotice | null {
-    const normalizedId = getProviderConfig(providerId).id;
+    const normalizedId = normalizeProviderId(providerId);
     return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
   }
 
@@ -242,7 +262,7 @@
       return;
     }
 
-    const providerIds = enabledIds.map((pid) => getProviderConfig(pid).id);
+    const providerIds = enabledIds.map((pid) => normalizeProviderId(pid));
     allProviderModels = Object.fromEntries(
       Object.entries(allProviderModels).filter(([providerId]) => providerIds.includes(providerId)),
     );
@@ -594,7 +614,7 @@
 
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
-    ...$enabledProviderIds$.flatMap((pid) => allProviderModels[getProviderConfig(pid).id] ?? []),
+    ...$enabledProviderIds$.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
     // Keep the agent's current provider selectable even if it was since
     // disabled, so the selected model isn't treated as unavailable.
     ...(isEffectiveProviderEnabled ? [] : toDropdownOptions(availableModels)),
@@ -606,7 +626,7 @@
 
   const providerLoadWarnings = $derived.by<ProviderLoadError[]>(() => {
     return $enabledProviderIds$
-      .map((pid) => allProviderErrors[getProviderConfig(pid).id])
+      .map((pid) => allProviderErrors[normalizeProviderId(pid)])
       .filter((error): error is ProviderLoadError => Boolean(error));
   });
 
@@ -779,7 +799,7 @@
     // otherwise a slow/empty per-provider fetch during boot or refresh would
     // silently replace the user's picked model (e.g. Sonnet 4.6 → GPT 5.4).
     const { providerId: rawModelProvider } = parseCompoundModelId(localModel ?? '');
-    const modelProvider = getProviderConfig(rawModelProvider).id;
+    const modelProvider = normalizeProviderId(rawModelProvider);
     if (
       !isUserProviderSettled({
         agentProviderModels,
@@ -824,7 +844,7 @@
     // lose their model, the provider just changed.
     const { providerId: unavailableModelProvider, modelId: unavailableBaseId } =
       parseCompoundModelId(unavailableModelName);
-    const activeProvider = getProviderConfig($activeProviderId$).id;
+    const activeProvider = normalizeProviderId($activeProviderId$);
     const isProviderSwitch =
       unavailableModelName === MODEL_DEFAULTS.UI_INITIAL_MODEL ||
       unavailableModelProvider !== activeProvider ||
@@ -885,7 +905,7 @@
     const rawCurrentProvider = localModel
       ? parseCompoundModelId(localModel).providerId
       : effectiveProviderId;
-    const currentProvider = getProviderConfig(rawCurrentProvider).id;
+    const currentProvider = normalizeProviderId(rawCurrentProvider);
 
     // Try same-provider fallback first
     const fallbackOption = findFallbackOption(currentProvider);
@@ -911,7 +931,7 @@
       try {
         const models = await getModelsForProvider(currentProvider);
         if (models.length > 0) {
-          const normalizedId = getProviderConfig(currentProvider).id;
+          const normalizedId = normalizeProviderId(currentProvider);
           allProviderModels = {
             ...allProviderModels,
             [normalizedId]: toDropdownOptions(models),
@@ -922,7 +942,7 @@
         logger.warn('Retry fetch failed for provider', { provider: currentProvider, error: err });
       }
 
-      const providerName = getProviderConfig(currentProvider).displayName;
+      const providerName = providerDisplayName(currentProvider);
       toast.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
         description: m.chat_modelPicker_tryRefreshing_description(),
       });

@@ -34,8 +34,13 @@ const SONNET_ROW = {
 };
 
 describe("model-reload-service (PROTOCOL §5.30 models.list wire)", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     appStore.init();
+    // activeProviderId adopts the registry default from catalog hydration.
+    const { seedProviderCatalog } = await import(
+      "../../test/fixtures/provider-catalog.fixture"
+    );
+    seedProviderCatalog(appStore);
   });
 
   beforeEach(async () => {

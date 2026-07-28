@@ -10,10 +10,9 @@ import {
   type Specialist,
 } from "$lib/constants/specialists";
 import {
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  PROVIDER_MODEL_TIERS,
-} from "$shared/config/provider-config";
+  selectCatalogDefaultProviderId,
+  selectDefaultModelForProviderTier,
+} from "../provider-catalog/provider-catalog-selectors";
 import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
 import type { FileSpecialist, SpecialistOverrides } from "./specialists-slice";
 import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-selectors";
@@ -183,12 +182,13 @@ export const selectEffectiveModel = store.createSelector((state, specialistId: s
     // Resolve the model tier to an actual model ID for the active provider
     if (specialist.defaultModelTier) {
         const providerId = selectEffectiveCodingAgent.select(state, specialistId);
-        if (providerId in PROVIDER_MODEL_TIERS) {
-            const baseModel = getDefaultModelForProvider(providerId, specialist.defaultModelTier);
-            const defaultProviderId = getDefaultProviderId();
+        const baseModel = selectDefaultModelForProviderTier.select(
+            state, providerId, specialist.defaultModelTier);
+        if (baseModel) {
+            const defaultProviderId = selectCatalogDefaultProviderId.select(state);
             return providerId !== defaultProviderId ? `${providerId}:${baseModel}` : baseModel;
         }
-        // Provider has no tier mapping — fall through
+        // Provider has no tier mapping (or catalog not hydrated) — fall through
     }
     return specialist.defaultModel ?? '';
 });
