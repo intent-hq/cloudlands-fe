@@ -121,7 +121,7 @@ describe('i18n catalog completeness gate', () => {
       (dir) => {
         const result = runCheck(dir);
         expect(result.exitCode).toBe(1);
-        expect(result.output).toContain('en: unpaired plural');
+        expect(result.output).toContain('en: 1 unpaired plural(s)');
         expect(result.output).toContain('x_count_one has no x_count_many twin');
       },
     );

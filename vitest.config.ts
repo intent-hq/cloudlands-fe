@@ -9,15 +9,15 @@ export default defineConfig(async () => {
   // The pseudo-locale catalog (messages/en-XA.json) is registered in
   // project.inlang but gitignored — regenerate it before the Paraglide
   // plugin compiles the project.
-  writePseudoCatalog(import.meta.dirname);
+  writePseudoCatalog(__dirname);
 
   return {
     plugins: [
       // Compiles messages/{locale}.json into src/shared/paraglide so tests can
       // import m.* functions without a separate generate:i18n run.
       paraglideVitePlugin({
-        project: path.resolve(import.meta.dirname, 'project.inlang'),
-        outdir: path.resolve(import.meta.dirname, 'src/shared/paraglide'),
+        project: path.resolve(__dirname, 'project.inlang'),
+        outdir: path.resolve(__dirname, 'src/shared/paraglide'),
       }),
       svelte(),
     ],

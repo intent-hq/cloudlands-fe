@@ -97,8 +97,12 @@ export function checkCompleteness(rootDir) {
   }
 
   // Base catalog: plural pairing.
-  for (const line of unpairedPlurals(baseKeys)) {
-    problems.push(`${baseLocale}: unpaired plural — ${line}`);
+  const baseUnpaired = unpairedPlurals(baseKeys);
+  if (baseUnpaired.length > 0) {
+    problems.push(
+      `${baseLocale}: ${baseUnpaired.length} unpaired plural(s):\n` +
+        listCapped(baseUnpaired.map((line) => `  ! ${line}`)).join('\n'),
+    );
   }
 
   // Non-base catalogs: exact key parity + placeholder parity + plural pairing.
@@ -142,8 +146,12 @@ export function checkCompleteness(rootDir) {
           listCapped(mismatched).join('\n'),
       );
     }
-    for (const line of unpairedPlurals(keys)) {
-      problems.push(`${locale}: unpaired plural — ${line}`);
+    const unpaired = unpairedPlurals(keys);
+    if (unpaired.length > 0) {
+      problems.push(
+        `${locale}: ${unpaired.length} unpaired plural(s):\n` +
+          listCapped(unpaired.map((line) => `  ! ${line}`)).join('\n'),
+      );
     }
   }
 
