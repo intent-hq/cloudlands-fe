@@ -92,12 +92,14 @@ export async function configureMonacoWorkers(): Promise<void> {
     // Import all Monaco workers using Vite's ?worker suffix (NOT ?worker&inline)
     // This tells Vite to bundle these as separate worker files that load on demand
     // PERF: Removes 15.5MB from initial bundle by not inlining workers
+    // (monaco-editor 0.56's package exports map roots specifiers at esm/vs, so the
+    // esm/vs prefix must be dropped from the import paths)
     const [editorWorker, jsonWorker, cssWorker, htmlWorker, tsWorker] = await Promise.all([
-      import('monaco-editor/esm/vs/editor/editor.worker?worker'),
-      import('monaco-editor/esm/vs/language/json/json.worker?worker'),
-      import('monaco-editor/esm/vs/language/css/css.worker?worker'),
-      import('monaco-editor/esm/vs/language/html/html.worker?worker'),
-      import('monaco-editor/esm/vs/language/typescript/ts.worker?worker'),
+      import('monaco-editor/editor/editor.worker?worker'),
+      import('monaco-editor/language/json/json.worker?worker'),
+      import('monaco-editor/language/css/css.worker?worker'),
+      import('monaco-editor/language/html/html.worker?worker'),
+      import('monaco-editor/language/typescript/ts.worker?worker'),
     ]);
 
     // Store worker modules for later use
@@ -270,57 +272,58 @@ export async function initializeMonaco() {
     await ensureMonacoInitialized();
 
     // Check if TypeScript language service is available
-    if (!monaco.languages?.typescript) {
+    // (monaco-editor 0.55+ moved languages.typescript to the top-level typescript namespace)
+    if (!monaco.typescript) {
       logger.warn('[Monaco] TypeScript language service not available yet');
       return;
     }
 
     // Configure TypeScript/JavaScript language defaults
-    if (monaco.languages.typescript.javascriptDefaults) {
-      monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+    if (monaco.typescript.javascriptDefaults) {
+      monaco.typescript.javascriptDefaults.setDiagnosticsOptions({
         noSemanticValidation: false,
         noSyntaxValidation: false,
       });
 
-      monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
-        target: monaco.languages.typescript.ScriptTarget.ES2020,
+      monaco.typescript.javascriptDefaults.setCompilerOptions({
+        target: monaco.typescript.ScriptTarget.ES2020,
         allowNonTsExtensions: true,
-        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-        module: monaco.languages.typescript.ModuleKind.CommonJS,
+        moduleResolution: monaco.typescript.ModuleResolutionKind.NodeJs,
+        module: monaco.typescript.ModuleKind.CommonJS,
         noEmit: true,
         esModuleInterop: true,
-        jsx: monaco.languages.typescript.JsxEmit.React,
+        jsx: monaco.typescript.JsxEmit.React,
         reactNamespace: 'React',
         allowJs: true,
         typeRoots: ['node_modules/@types'],
       });
 
       // Set eager model sync for better performance
-      monaco.languages.typescript.javascriptDefaults.setEagerModelSync(true);
+      monaco.typescript.javascriptDefaults.setEagerModelSync(true);
     }
 
     // Configure TypeScript language defaults
-    if (monaco.languages.typescript.typescriptDefaults) {
-      monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+    if (monaco.typescript.typescriptDefaults) {
+      monaco.typescript.typescriptDefaults.setDiagnosticsOptions({
         noSemanticValidation: false,
         noSyntaxValidation: false,
       });
 
-      monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-        target: monaco.languages.typescript.ScriptTarget.ES2020,
+      monaco.typescript.typescriptDefaults.setCompilerOptions({
+        target: monaco.typescript.ScriptTarget.ES2020,
         allowNonTsExtensions: true,
-        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-        module: monaco.languages.typescript.ModuleKind.CommonJS,
+        moduleResolution: monaco.typescript.ModuleResolutionKind.NodeJs,
+        module: monaco.typescript.ModuleKind.CommonJS,
         noEmit: true,
         esModuleInterop: true,
-        jsx: monaco.languages.typescript.JsxEmit.React,
+        jsx: monaco.typescript.JsxEmit.React,
         reactNamespace: 'React',
         allowJs: true,
         typeRoots: ['node_modules/@types'],
       });
 
       // Set eager model sync for better performance
-      monaco.languages.typescript.typescriptDefaults.setEagerModelSync(true);
+      monaco.typescript.typescriptDefaults.setEagerModelSync(true);
     }
 
     // Register Svelte language with HTML-like syntax highlighting
