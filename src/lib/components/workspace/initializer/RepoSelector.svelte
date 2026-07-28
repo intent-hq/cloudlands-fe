@@ -400,7 +400,10 @@
         const githubInfo = parseGitHubUrl(inputValue);
         if (githubInfo) {
           githubUrlInput = `${githubInfo.owner}/${githubInfo.repo}`;
-          handleInputChange(`https://github.com/${githubInfo.owner}/${githubInfo.repo}`);
+          handleInputChange(
+            `https://github.com/${githubInfo.owner}/${githubInfo.repo}`,
+            githubUrlInput,
+          );
         }
       }
     } else {
@@ -740,9 +743,10 @@
 
     githubUrlInput = cleaned;
 
-    // Trigger detection with the full URL for the existing logic
+    // Trigger detection with the full URL for the existing logic; pass the
+    // raw typed text as the search term so the Recent list filters by it
     if (cleaned) {
-      handleInputChange(`https://github.com/${cleaned}`);
+      handleInputChange(`https://github.com/${cleaned}`, cleaned);
     } else {
       handleInputChange('');
     }
@@ -758,7 +762,7 @@
 
       // Trigger detection
       if (normalized) {
-        handleInputChange(`https://github.com/${normalized}`);
+        handleInputChange(`https://github.com/${normalized}`, normalized);
       }
     }
   }
@@ -784,10 +788,13 @@
     }
   }
 
-  // Handle input change - search first, then debounced detection
-  function handleInputChange(value: string) {
+  // Handle input change - search first, then debounced detection.
+  // `search` is the plain text used to filter the Recent list; callers that
+  // pass a URL-prefixed `value` (GitHub tab) supply the unprefixed text so
+  // the name/owner match clauses are reachable (intent-hq/monorepo#859).
+  function handleInputChange(value: string, search: string = value) {
     inputValue = value;
-    searchTerm = value; // Update search term for filtering
+    searchTerm = search; // Update search term for filtering
 
     // Clear any pending detection
     if (detectionDebounceTimer) {
