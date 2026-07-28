@@ -252,8 +252,8 @@ describe("chatReadService (fake seam, real store)", () => {
   });
 
   it("dispatching initializeChatRequested triggers a load (middleware wiring)", async () => {
-    // Own agent id: the shared AGENT already holds messages from earlier
-    // tests, which the stale-clobber merge guard now (correctly) retains.
+    // Own agent id: keeps this wiring assertion independent of transcript
+    // state that earlier tests left behind for the shared AGENT.
     const agentId = "agent-middleware-wiring";
     agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
     agentsApi.getConversation.mockResolvedValueOnce(conversation([makeMessage("via-action", "x")]) as never);
@@ -866,6 +866,40 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
       "clobber-user",
       "clobber-asst",
+    ]);
+  });
+
+  // Regression (PR #505 review): the merge guard must retain ONLY messages
+  // appended DURING the read (absent from the pre-read baseline). Pre-read
+  // rows the fetch dropped — a BE-side truncation (edit/regenerate refetch
+  // convergence, iOS editAndRegenerate, daemon agent.replaceMessages) — must
+  // be dropped so the refetch can SHRINK the transcript, not ghost forever.
+  it("shrinks the transcript when a refetch returns a BE-truncated set (pre-baseline rows dropped)", async () => {
+    const agentId = "agent-truncation-converge";
+    const userTurn: AgentMessage = {
+      id: "trunc-user",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "keep me" }],
+    };
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation([userTurn, makeMessage("trunc-asst-old", "dropped by BE")]) as never,
+    );
+    await loadChatTranscript(agentId);
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "trunc-user",
+      "trunc-asst-old",
+    ]);
+
+    // BE truncated the transcript (e.g. edit/regenerate); the refetch returns
+    // [user] only. trunc-asst-old is in the pre-read baseline and absent from
+    // the fetch → it must be dropped, not retained as a ghost.
+    agentsApi.getConversation.mockResolvedValueOnce(conversation([userTurn]) as never);
+    await loadChatTranscript(agentId);
+
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "trunc-user",
     ]);
   });
 });

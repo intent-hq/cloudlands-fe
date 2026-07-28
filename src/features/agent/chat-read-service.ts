@@ -111,6 +111,18 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   // Register in inFlight BEFORE dispatching to prevent re-entrant calls
   inFlight.set(agentId, runPromise);
 
+  // BASELINE snapshot (monorepo#1019): identity set (id + appMessageId) of the
+  // store's messages at the moment this read begins. The merge guard below
+  // retains only store-only messages ABSENT from this baseline — i.e. exactly
+  // the ones the live stream appended DURING the read. Pre-read rows the fetch
+  // dropped (BE truncation via edit/regenerate or agent.replaceMessages, from
+  // this or any other client) converge to BE state instead of becoming ghosts.
+  const baselineIds = new Set<string>();
+  for (const message of readCurrentMessages(agentId)) {
+    if (typeof message.id === "string") baselineIds.add(message.id);
+    if (typeof message.appMessageId === "string") baselineIds.add(message.appMessageId);
+  }
+
   // Dispatch loading status synchronously now that we're registered
   // Wrap in try/catch to ensure cleanup if dispatch throws
   try {
@@ -197,18 +209,26 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         }
       }
 
-      // STALE-HYDRATION MERGE GUARD (monorepo#1019): a message present in the
-      // store but absent from the fetched set was appended by the live stream
-      // AFTER this hydration read began; replacing the list wholesale would
-      // wipe it. Merge by message id with the store's CURRENT messages —
-      // fetched copies win for shared ids, store-only messages are retained.
-      // Deliberate removals (edit/regenerate flows) go through
-      // `replaceMessages`, not this path, so retaining is safe here.
-      const currentMessages = readCurrentMessages(agentId);
+      // STALE-HYDRATION MERGE GUARD (monorepo#1019): a store message absent
+      // from the fetched set AND from the pre-read baseline was appended by
+      // the live stream AFTER this hydration read began; replacing the list
+      // wholesale would wipe it. Merge those post-baseline messages with the
+      // fetched set by message id (fetched copies win for shared ids).
+      // Baseline messages missing from the fetch are deliberately DROPPED so
+      // BE-side truncations (edit/regenerate refetch convergence, iOS
+      // editAndRegenerate, daemon agent.replaceMessages) still shrink the
+      // transcript instead of leaving permanent ghost rows.
+      const appendedDuringRead = readCurrentMessages(agentId).filter(
+        (m) =>
+          !(
+            (typeof m.id === "string" && baselineIds.has(m.id)) ||
+            (typeof m.appMessageId === "string" && baselineIds.has(m.appMessageId))
+          ),
+      );
       const mergedMessages =
-        currentMessages.length === 0
+        appendedDuringRead.length === 0
           ? finalMessages
-          : deduplicateAgentMessages([...finalMessages, ...currentMessages]);
+          : deduplicateAgentMessages([...finalMessages, ...appendedDuringRead]);
 
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is
