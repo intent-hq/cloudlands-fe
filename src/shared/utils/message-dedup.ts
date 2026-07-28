@@ -99,9 +99,9 @@ function hasSameAppMessageId(a: AgentMessage, b: AgentMessage): boolean {
 
 /**
  * Content-hash matching is a FALLBACK for pairs where id-based matching is
- * impossible: at least one side lacks an `appMessageId` (echo-less paths like
- * `agent.forceMessage`, or rows from older daemons that do not echo
- * `userAppMessageId` — PROTOCOL §5.5). When BOTH sides carry an appMessageId,
+ * impossible: at least one side lacks an `appMessageId` (e.g. rows from older
+ * daemons that do not echo `userAppMessageId` — PROTOCOL §5.5). When BOTH
+ * sides carry an appMessageId,
  * the id comparison is authoritative: equal ids merge via the appMessageId
  * paths, and differing ids are distinct logical messages even with identical
  * content, so content fallback must never collapse them.
