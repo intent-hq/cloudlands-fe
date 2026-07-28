@@ -16,6 +16,26 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: vi.fn(),
 }));
 
+// The seeder reads known provider ids / gating metadata from the
+// providerCatalog slice — provide a hydrated §5.38-shaped mock state without
+// booting the full store (whose middleware would drag in live services).
+vi.mock("$store/renderer/store", async () => {
+  const { createAppStoreMockModule } = await import(
+    "$store/renderer/utils/test-helpers/store-mock"
+  );
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
+    "$store/renderer/slices/provider-catalog/provider-catalog-slice"
+  );
+  const { MOCK_PROVIDER_CATALOG } = await import(
+    "../../../test/fixtures/provider-catalog.fixture"
+  );
+  const providerCatalog = providerCatalogReducer(
+    initialState,
+    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+  );
+  return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
+});
+
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { mockInvoke } from "$shared/ipc-mock-router";
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from "$shared/ipc/channels";

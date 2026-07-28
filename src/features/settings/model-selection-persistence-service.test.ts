@@ -28,13 +28,21 @@ import {
   setSelectedModel,
 } from "$store/renderer/slices/model/model-slice";
 import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
-import { getDefaultProviderId } from "$shared/config/provider-config";
+import {
+  MOCK_PROVIDER_CATALOG,
+  seedProviderCatalog,
+} from "../../test/fixtures/provider-catalog.fixture";
+
+const getDefaultProviderId = () => MOCK_PROVIDER_CATALOG.defaultProviderId;
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update wire)", () => {
   beforeAll(() => {
     appStore.init();
+    // The middleware now reads known provider ids and the default provider
+    // from the providerCatalog slice — seed the §5.38-shaped mock catalog.
+    seedProviderCatalog(appStore);
   });
 
   beforeEach(async () => {

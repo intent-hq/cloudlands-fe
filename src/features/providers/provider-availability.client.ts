@@ -7,7 +7,7 @@
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
-import { getAvailableIdsFromResult } from '$shared/config/provider-config';
+import { getAvailableIdsFromResult } from '$shared/types/provider-availability';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { store as appStore } from '$store/renderer/store';
 

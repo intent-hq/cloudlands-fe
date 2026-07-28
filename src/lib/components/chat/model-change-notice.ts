@@ -9,7 +9,8 @@
  * `null` means "provider default model". The row is transcript-only (never
  * replayed to providers); the FE renders it as a centered inline notice.
  */
-import { getProviderConfig } from '$shared/config/provider-config';
+import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
 interface MessageLike {
@@ -47,7 +48,9 @@ export function getModelChangeNotice(
 }
 
 function describeSide(providerId: string | undefined, model: string | null): string {
-  const providerName = providerId ? getProviderConfig(providerId).displayName : undefined;
+  const providerName = providerId
+    ? selectProviderDisplayName.select(appStore.state, providerId)
+    : undefined;
   if (providerName && model) return `${providerName} / ${model}`; // i18n-ignore (identifier pairing)
   if (providerName) return m.chat_modelChangeNotice_defaultModel_label({ provider: providerName });
   return model ?? '';

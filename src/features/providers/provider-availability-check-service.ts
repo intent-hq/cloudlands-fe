@@ -32,7 +32,7 @@ import type { StoreMiddleware } from "$lib/store-shim/types";
 import { invoke } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
-import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
+import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/types/provider-availability";
 import { clearProviderAvailabilityCache } from "$features/providers/provider-availability.client";
 import { store as appStore } from "$store/renderer/store";
 

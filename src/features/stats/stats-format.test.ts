@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { ACP_PROVIDERS } from '$shared/config/provider-config';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { store as appStore } from '$store/renderer/store';
+import {
+  MOCK_PROVIDER_CATALOG,
+  seedProviderCatalog,
+} from '../../test/fixtures/provider-catalog.fixture';
 import type { UsageModelStats, UsageProviderStats } from '$lib/client/app-client';
 import {
   formatDuration,
@@ -203,6 +207,11 @@ describe('rankProviders', () => {
 });
 
 describe('providerDisplayName', () => {
+  beforeAll(() => {
+    appStore.init();
+    seedProviderCatalog(appStore);
+  });
+
   it('maps raw provider ids to short app-style names', () => {
     expect(providerDisplayName('auggie')).toBe('Auggie');
     expect(providerDisplayName('claude-code')).toBe('Claude Code');
@@ -214,8 +223,8 @@ describe('providerDisplayName', () => {
     expect(providerDisplayName('grok')).toBe('Grok');
   });
 
-  it('covers every configured provider via the shared config (drift guard)', () => {
-    for (const provider of Object.values(ACP_PROVIDERS)) {
+  it('covers every catalog provider (drift guard)', () => {
+    for (const provider of MOCK_PROVIDER_CATALOG.providers) {
       expect(providerDisplayName(provider.id), provider.id).toBe(provider.shortName);
       expect(provider.shortName, `${provider.id} shortName`).not.toBe('');
     }

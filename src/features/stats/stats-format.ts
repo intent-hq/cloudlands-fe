@@ -6,7 +6,8 @@
  * counts degrade gracefully instead of rendering "0M". All helpers are pure
  * and NaN-safe: a zero-data period renders zeroes, never NaN.
  */
-import { ACP_PROVIDERS } from '$shared/config/provider-config';
+import { selectProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { store as appStore } from '$store/renderer/store';
 import type {
   UsageModelStats,
   UsageProviderStats,
@@ -125,17 +126,14 @@ export function rankProviders(byProvider: UsageProviderStats[], limit = 4): Rank
 }
 
 /**
- * Short app-style display names for the raw provider ids carried on the wire.
- * Derived from the shared provider config (single source of truth), so new
- * providers pick up a short name automatically; `unknown` covers
+ * Pretty-print a raw provider id (`claude-code` → "Claude Code") using the
+ * daemon catalog's `shortName` (single source of truth), so new providers
+ * pick up a short name automatically; `unknown` covers
  * pre-migration/unattributable usage and unrecognized ids pass through as-is.
  */
-const PROVIDER_SHORT_NAMES: Record<string, string> = {
-  ...Object.fromEntries(Object.values(ACP_PROVIDERS).map((p) => [p.id, p.shortName])),
-  unknown: 'Unknown',
-};
-
-/** Pretty-print a raw provider id (`claude-code` → "Claude Code"). */
 export function providerDisplayName(providerId: string): string {
-  return PROVIDER_SHORT_NAMES[providerId] ?? providerId;
+  if (providerId === 'unknown') return 'Unknown';
+  return (
+    selectProviderCatalogEntry.select(appStore.state, providerId)?.shortName ?? providerId
+  );
 }

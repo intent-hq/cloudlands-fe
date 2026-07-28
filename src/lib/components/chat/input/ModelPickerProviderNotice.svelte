@@ -1,5 +1,6 @@
 <script module lang="ts">
-  import { getProviderConfig } from '$shared/config/provider-config';
+  import { selectProviderCatalogEntryOrDefault } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { store as appStore } from '$store/renderer/store';
 
   export type ProviderWarningNotice = {
     providerId: string;
@@ -13,12 +14,12 @@
     warning: string | undefined,
   ): ProviderWarningNotice | null {
     if (!warning) return null;
-    const provider = getProviderConfig(providerId);
+    const provider = selectProviderCatalogEntryOrDefault.select(appStore.state, providerId);
     return {
-      providerId: provider.id,
-      providerName: provider.displayName,
+      providerId: provider?.id ?? providerId,
+      providerName: provider?.displayName ?? providerId,
       message: warning,
-      docsUrl: provider.loginDocsUrl,
+      docsUrl: provider?.loginDocsUrl,
     };
   }
 </script>

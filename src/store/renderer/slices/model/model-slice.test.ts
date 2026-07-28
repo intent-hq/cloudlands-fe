@@ -5,13 +5,14 @@ import {
 } from 'vitest';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
-import { getDefaultProviderId } from '$shared/config/provider-config';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
+import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   clearModelFallbackInfo,
   clearLoadingStateForProvider,
   hydrateModelFallbackInfo,
   hydrateModelPickerCollapsedGroups,
-  initialState,
+  initialState as bareInitialState,
   loadProviderModelsFromStorage,
   modelReducer,
   setModelFallbackInfo,
@@ -24,7 +25,14 @@ import {
 import { selectAllProviderWarnings } from './model-selectors';
 import type { ModelState } from './model-types';
 
-const defaultProviderId = getDefaultProviderId();
+const defaultProviderId = MOCK_PROVIDER_CATALOG.defaultProviderId;
+
+// Most cases exercise the slice after catalog hydration (the boot-time
+// contract: the provider-catalog seeder lands before user model picks).
+const initialState = modelReducer(
+  bareInitialState,
+  providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+);
 
 const mockModels: AuggieModel[] = [
   {
@@ -40,7 +48,33 @@ const mockModels: AuggieModel[] = [
 
 describe('modelReducer', () => {
   it('returns the initial state', () => {
-    expect(modelReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+    expect(modelReducer(undefined, { type: '@@INIT' })).toEqual(bareInitialState);
+  });
+
+  it('snapshots the default provider id from catalog hydration', () => {
+    expect(bareInitialState.defaultProviderId).toBe('');
+    expect(initialState.defaultProviderId).toBe(defaultProviderId);
+  });
+
+  it('re-normalizes persisted picks that landed before catalog hydration', () => {
+    const preCatalog = modelReducer(
+      bareInitialState,
+      loadProviderModelsFromStorage({
+        auggie: 'auggie:gpt5.4',
+        codex: 'gpt-5.3-codex/high',
+      }),
+    );
+    // Before hydration defaultProviderId is '' — everything stays prefixed.
+    expect(preCatalog.providerModels).toEqual({
+      auggie: 'auggie:gpt5.4',
+      codex: 'codex:gpt-5.3-codex/high',
+    });
+
+    const hydrated = modelReducer(preCatalog, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    expect(hydrated.providerModels).toEqual({
+      auggie: 'gpt5.4',
+      codex: 'codex:gpt-5.3-codex/high',
+    });
   });
 
   it('stores available models as a collection', () => {

@@ -32,10 +32,8 @@ import {
   setSelectedModel,
 } from "$store/renderer/slices/model/model-slice";
 import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";
-import {
-  getAllProviderIds,
-  parseCompoundModelId,
-} from "$shared/config/provider-config";
+import { getItem } from "$lib/store-shim/utils/collections/collection-utils";
+import { splitCompoundModelId } from "$shared/utils/compound-model-id";
 
 const logger = createLogger("ModelSelectionPersistenceService");
 
@@ -61,7 +59,7 @@ export function createModelSelectionPersistenceMiddleware(): StoreMiddleware {
           const model = payload[0];
           if (typeof model === "string" && model.length > 0) {
             const compoundProviderId = model.includes(":")
-              ? parseCompoundModelId(model).providerId
+              ? (splitCompoundModelId(model).providerId ?? "")
               : "";
             const activeProviderId =
               appStore.state.providerSettings.activeProviderId;
@@ -83,7 +81,7 @@ export function createModelSelectionPersistenceMiddleware(): StoreMiddleware {
             if (
               compoundProviderId.length > 0 &&
               compoundProviderId !== activeProviderId &&
-              getAllProviderIds().includes(compoundProviderId)
+              getItem(appStore.state.providerCatalog.providers, compoundProviderId) !== undefined
             ) {
               appStore.dispatch(setActiveProvider(compoundProviderId));
               appStore.dispatch(reloadModelsForProvider());

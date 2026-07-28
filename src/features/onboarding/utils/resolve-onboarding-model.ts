@@ -15,8 +15,8 @@
  *   5. the first usable provider
  *
  * Model selection:
- *   - Providers with tier mappings (auggie, claude-code, codex, cortex) use
- *     the specialist's tier/defaultModel, same as before.
+ *   - Providers with a static catalog tier table (auggie, claude-code,
+ *     codex, cortex) use the specialist's tier/defaultModel, same as before.
  *   - Providers with dynamic models (opencode) never synthesize a tier model.
  *     We read `selectAvailableModels` and, if empty, trigger
  *     `reloadModelsForProvider` and fetch via `getModelsForProvider`.
@@ -33,12 +33,10 @@ import {
   selectAvailableModels,
 } from '$store/renderer/slices/model/model-selectors';
 import {
-  PROVIDER_MODEL_TIERS,
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  isModelValidForProvider,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
+  selectCatalogDefaultProviderId,
+  selectProviderModelTiers,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
 import { resolvePreferredDefaultModel } from '$lib/utils/effective-model-resolution';
 import { getModelsForProvider } from '$store/renderer/slices/model/model-utils';
 import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
@@ -63,7 +61,7 @@ export interface ResolvedModelConfig {
 }
 
 function getProviderForModel(model: string, fallbackProvider: string): string {
-  return model.includes(':') ? parseCompoundModelId(model).providerId : fallbackProvider;
+  return splitCompoundModelId(model).providerId ?? fallbackProvider;
 }
 
 /** Map a provider ID to its status within a ProviderAvailabilityResult. */
@@ -157,8 +155,8 @@ function resolveUsableProvider(
 }
 
 /**
- * Resolve a model for a provider whose models are dynamic (i.e. not in
- * PROVIDER_MODEL_TIERS — e.g. opencode). Reads from Redux when the provider
+ * Resolve a model for a provider whose models are dynamic (i.e. no static
+ * catalog tier table — e.g. opencode). Reads from Redux when the provider
  * matches the active one; if the list is empty we fetch fresh via
  * getModelsForProvider and dispatch reloadModelsForProvider so the store
  * stays in sync for the rest of the UI.
@@ -175,10 +173,11 @@ async function resolveDynamicProviderModel(
     // a provider switch the flat `availableModels` list can still hold the
     // previous provider's catalog until reloadModelsForProvider resolves, and
     // resolving against it would return another provider's model id.
+    const defaultProviderId = selectCatalogDefaultProviderId.select(state);
     const fromStore = selectAvailableModels
       .select(state)
       .map((m) => m.value)
-      .filter((value) => isModelValidForProvider(value, provider));
+      .filter((value) => isModelValidForProvider(value, provider, defaultProviderId));
     const picked = resolvePreferredDefaultModel(fromStore, storeModel);
     if (picked) return picked;
   }
@@ -212,7 +211,7 @@ async function resolveDynamicProviderModel(
  */
 export async function resolveOnboardingModel(state: StoreState): Promise<ResolvedModelConfig> {
   const activeProvider = selectActiveProviderId.select(state);
-  const defaultProviderId = getDefaultProviderId();
+  const defaultProviderId = selectCatalogDefaultProviderId.select(state);
   const specialist = selectSpecialists.select(state).find((s) => s.id === specialistId);
   const behaviorPrompt = selectEffectiveBehaviorPrompt.select(state, specialistId) || undefined;
   const specialistOverride = selectUserOverrides.select(state).modelOverrides[specialistId];
@@ -272,17 +271,19 @@ export async function resolveOnboardingModel(state: StoreState): Promise<Resolve
 
   // 1. Specialist user override — honor only if it matches the resolved provider
   // (which already respects its encoded provider when that provider is usable).
+  const providerTiers = selectProviderModelTiers.select(state, provider);
+
   if (specialistOverride && overrideProvider === provider) {
     resolvedModel = specialistOverride;
     logger.info('Using specialist model override', { specialistId, override: specialistOverride });
-  } else if (specialist?.defaultModelTier && provider in PROVIDER_MODEL_TIERS) {
+  } else if (specialist?.defaultModelTier && providerTiers) {
     // 2. Specialist tier → provider tier model
-    const baseModel = getDefaultModelForProvider(provider, specialist.defaultModelTier);
+    const baseModel = providerTiers[specialist.defaultModelTier];
     resolvedModel = provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
-  } else if (specialist?.defaultModel && provider in PROVIDER_MODEL_TIERS) {
+  } else if (specialist?.defaultModel && providerTiers) {
     // 3. Specialist explicit default (only for tier-backed providers; for
     // dynamic providers we never copy a tier-style default across providers).
-    const { providerId: defaultModelProvider } = parseCompoundModelId(specialist.defaultModel);
+    const defaultModelProvider = getProviderForModel(specialist.defaultModel, defaultProviderId);
     if (defaultModelProvider === provider) {
       resolvedModel = specialist.defaultModel;
     }
@@ -292,7 +293,7 @@ export async function resolveOnboardingModel(state: StoreState): Promise<Resolve
 
   // 4. Fallback: provider-specific model discovery.
   if (!resolvedModel) {
-    if (provider in PROVIDER_MODEL_TIERS) {
+    if (providerTiers) {
       // Tier-backed provider: prefer the user's selected/preferred model
       // if it matches the active provider's loaded list, otherwise pick
       // the smart tier as a safe default for the Coordinator role.
@@ -302,7 +303,7 @@ export async function resolveOnboardingModel(state: StoreState): Promise<Resolve
           : [];
       resolvedModel = resolvePreferredDefaultModel(fromStore, storeModel);
       if (!resolvedModel) {
-        const smart = getDefaultModelForProvider(provider, 'smart');
+        const smart = providerTiers.smart;
         resolvedModel = provider !== defaultProviderId ? `${provider}:${smart}` : smart;
       }
     } else {
@@ -314,7 +315,7 @@ export async function resolveOnboardingModel(state: StoreState): Promise<Resolve
   // 5. Validate tier-backed results against the live model list when we can.
   if (
     resolvedModel &&
-    provider in PROVIDER_MODEL_TIERS &&
+    providerTiers &&
     provider === activeProvider
   ) {
     const availableModels = selectAvailableModels.select(state);

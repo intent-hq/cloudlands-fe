@@ -1,20 +1,10 @@
+import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { resolveProviderEnabled } from "$shared/provider-catalog";
 import { store } from "../../store";
-import {
-  ACP_PROVIDERS,
-  type ACPProviderConfig,
-  getProviderConfig,
-  resolveProviderEnabled,
-} from "$shared/config/provider-config";
 
 export const selectActiveProviderId = store.createSelector(
   (state): string => {
     return state.providerSettings.activeProviderId;
-  }
-);
-
-export const selectActiveProvider = store.createSelector(
-  (state): ACPProviderConfig => {
-    return getProviderConfig(state.providerSettings.activeProviderId);
   }
 );
 
@@ -32,7 +22,15 @@ export const selectEnabledProviders = store.createSelector(
 
 export const selectIsProviderEnabled = store.createSelector(
   (state, providerId: string): boolean => {
-    return resolveProviderEnabled(state.providerSettings.enabledProviders, providerId);
+    // Fall back through the providerCatalog slice for states captured before
+    // the providerSettings snapshot fields hydrate (and partial test mocks).
+    const defaultProviderId =
+      state.providerSettings.defaultProviderId || state.providerCatalog?.defaultProviderId || "";
+    const nonDisableable = state.providerSettings.nonDisableableProviderIds ?? [];
+    return resolveProviderEnabled(state.providerSettings.enabledProviders, providerId, {
+      defaultProviderId,
+      canBeDisabled: !nonDisableable.includes(providerId),
+    });
   }
 );
 
@@ -40,11 +38,12 @@ export const selectEnabledProviderIds = store.createSelector(
   (state): string[] => {
     const enabledProviders = state.providerSettings.enabledProviders;
     const enabled = new Set(
-      Object.values(ACP_PROVIDERS)
-        .filter((p) => resolveProviderEnabled(enabledProviders, p.id))
+      getItems(state.providerCatalog.providers)
+        .filter((p) => selectIsProviderEnabled.select(state, p.id))
         .map((p) => p.id)
     );
-    enabled.add(selectActiveProviderId.select(state));
+    const activeProviderId = selectActiveProviderId.select(state);
+    if (activeProviderId) enabled.add(activeProviderId);
 
     for (const [providerId, isEnabled] of Object.entries(enabledProviders)) {
       if (isEnabled) {

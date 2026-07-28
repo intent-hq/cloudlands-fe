@@ -1,5 +1,5 @@
 import type { ProposalActionDetail, SpecialistEditProposal } from '$shared/types/proposal';
-import { parseCompoundModelId } from '$shared/config/provider-config';
+import { selectParsedCompoundModelId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import {
   generateUniqueSpecialistId,
@@ -162,7 +162,7 @@ export async function applySpecialistProposalWork(
     ? selectEffectiveModel.select(state, current.id)
     : selectSelectedModel.select(state);
   const model = stringField(proposal, detail, 'model', fallbackModel).trim();
-  const { providerId } = parseCompoundModelId(model);
+  const { providerId } = selectParsedCompoundModelId.select(state, model);
   const description = stringField(
     proposal,
     detail,

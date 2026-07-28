@@ -27,13 +27,11 @@ import {
 import { selectTopLevelContextItems } from '$store/renderer/slices/context/context-selectors';
 import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 
+import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
 import {
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  isModelValidForProvider,
-  parseCompoundModelId,
-  PROVIDER_MODEL_TIERS,
-} from '$shared/config/provider-config';
+  selectCatalogDefaultProviderId,
+  selectProviderModelTiers,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -334,9 +332,13 @@ export class UnifiedAgentFactory {
       // Only resolve for providers with known tier mappings — providers with dynamic
       // model lists (e.g. opencode) would produce invalid compound IDs.
       let resolvedModel = normalized.model;
-      if (!resolvedModel && provider && provider in PROVIDER_MODEL_TIERS) {
-        const baseModel = getDefaultModelForProvider(provider, 'balanced');
-        const defaultProviderId = getDefaultProviderId();
+      const providerTiers =
+        provider && !isBackend
+          ? selectProviderModelTiers.select(appStore.state, provider)
+          : undefined;
+      if (!resolvedModel && provider && providerTiers) {
+        const baseModel = providerTiers.balanced;
+        const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
         // Prefix with provider ID for non-default providers (matches model store behavior)
         resolvedModel = provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
         logger.debug('Using provider-aware default model', {
@@ -356,16 +358,18 @@ export class UnifiedAgentFactory {
       // This catches edge cases where an LLM-supplied or inherited model slips through
       // earlier validation (e.g., "codex:opencode/big-pickle").
       if (resolvedModel && provider && resolvedModel.includes(':')) {
-        if (!isModelValidForProvider(resolvedModel, provider)) {
-          const { providerId: modelProvider } = parseCompoundModelId(resolvedModel);
+        const defaultProviderId = isBackend
+          ? ''
+          : selectCatalogDefaultProviderId.select(appStore.state);
+        if (!isModelValidForProvider(resolvedModel, provider, defaultProviderId)) {
+          const modelProvider = splitCompoundModelId(resolvedModel).providerId;
           logger.warn('Safety net: cross-provider model mismatch in agent creation', {
             resolvedModel,
             modelProvider,
             expectedProvider: provider,
           });
-          if (provider in PROVIDER_MODEL_TIERS) {
-            const baseModel = getDefaultModelForProvider(provider, 'balanced');
-            const defaultProviderId = getDefaultProviderId();
+          if (providerTiers) {
+            const baseModel = providerTiers.balanced;
             resolvedModel = provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
             logger.debug('Re-resolved model to provider default', { resolvedModel });
           }

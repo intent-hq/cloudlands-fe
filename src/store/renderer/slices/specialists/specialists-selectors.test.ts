@@ -40,7 +40,10 @@ import { createCollection } from "$lib/store-shim/utils/collections/collection-u
 import { initialState } from "./specialists-slice";
 import type { StoreState } from "../../types";
 import { SPECIALISTS } from "$lib/constants/specialists";
-import { PROVIDER_MODEL_TIERS } from "$shared/config/provider-config";
+import {
+  MOCK_PROVIDER_CATALOG,
+  seedProviderCatalog,
+} from "../../../../test/fixtures/provider-catalog.fixture";
 import { store as appStore } from "$store/renderer/store";
 import { dispatchSpecialistList } from "../../../../features/specialists/specialists-mutation-service";
 import type { SpecialistDef } from "$lib/client/app-client";
@@ -402,7 +405,10 @@ describe("specialists selectors", () => {
       );
     });
 
-    it("still resolves tier-only specialists via PROVIDER_MODEL_TIERS", () => {
+    it("still resolves tier-only specialists via the catalog tier tables", () => {
+      seedProviderCatalog(appStore);
+      const auggieTiers = MOCK_PROVIDER_CATALOG.providers.find((p) => p.id === "auggie")!
+        .modelTiers!;
       const tierOnlyDef: SpecialistDef = {
         id: "tier-only-custom",
         name: "Tier Only",
@@ -417,12 +423,12 @@ describe("specialists selectors", () => {
       // Active provider is the default (auggie), so the tier resolves to a
       // bare model ID without a provider prefix.
       expect(selectEffectiveModel.select(appStore.state, "tier-only-custom")).toBe(
-        PROVIDER_MODEL_TIERS["auggie"].smart,
+        auggieTiers.smart,
       );
       // Bundled specialists carrying only a tier (e.g. verifier: smart) also
       // resolve via the tier mapping.
       expect(selectEffectiveModel.select(appStore.state, "verifier")).toBe(
-        PROVIDER_MODEL_TIERS["auggie"].smart,
+        auggieTiers.smart,
       );
     });
   });

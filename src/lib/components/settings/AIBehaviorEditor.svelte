@@ -42,7 +42,8 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
-  import { parseCompoundModelId } from '$shared/config/provider-config';
+  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
+  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { generateUniqueSpecialistId } from '$shared/specialist-file-types';
   import { store as appStore } from '$store/renderer/store';
 
@@ -59,6 +60,14 @@
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
   const activeProviderId$ = selectActiveProviderId();
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
+
+  function parseCompoundModelId(compoundModelId: string): {
+    providerId: string;
+    modelId: string;
+  } {
+    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+  }
 
   // Check if all specialists already use the currently selected default model
   const allSpecialistsUseSelectedModel = $derived.by(() => {

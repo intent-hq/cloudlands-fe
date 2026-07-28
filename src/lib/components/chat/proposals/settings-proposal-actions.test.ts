@@ -20,8 +20,19 @@ import {
 import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { initialState as specialistsInitialState } from '$store/renderer/slices/specialists/specialists-slice';
 import { initialState as modelInitialState } from '$store/renderer/slices/model/model-slice';
+import {
+  initialState as providerCatalogInitialState,
+  providerCatalogLoaded,
+  providerCatalogReducer,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
 import type { StoreState } from '$lib/store/types';
+
+const providerCatalog = providerCatalogReducer(
+  providerCatalogInitialState,
+  providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+);
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -61,6 +72,7 @@ function makeState(overrides: Partial<StoreState> = {}): StoreState {
     mcpSettings: mcpSettingsInitialState,
     userPreferences: userPreferencesInitialState,
     settingsProposalHistory: { entries: {} },
+    providerCatalog,
     ...overrides,
   } as StoreState;
 }

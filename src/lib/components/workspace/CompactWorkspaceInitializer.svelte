@@ -103,7 +103,11 @@
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { parseCompoundModelId } from '$shared/config/provider-config';
+  import {
+    selectCatalogDefaultProviderId,
+    selectProviderModelTiers,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { parseCompoundModelId } from '$shared/utils/compound-model-id';
   import {
     dropCrossProviderFallbackModel,
     resolveSubmitModel,
@@ -122,6 +126,7 @@
   const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
   const activeProviderId$ = selectActiveProviderId();
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
   const logger = createLogger('CompactWorkspaceInitializer');
 
   // Constants
@@ -430,9 +435,10 @@
   // (e.g., 'claude-code:default' when active provider is now 'opencode') should be discarded
   // since they won't exist in the current model list and cause a flash of the wrong model.
   const restoredModel = savedState?.selectedModel ?? lastSubmittedAgent?.selectedModel;
-  const currentProviderAtInit = $activeProviderId$ ?? 'auggie';
+  const currentProviderAtInit = $activeProviderId$ || $defaultProviderId$;
   const isModelForCurrentProvider =
-    !restoredModel || parseCompoundModelId(restoredModel).providerId === currentProviderAtInit;
+    !restoredModel ||
+    parseCompoundModelId(restoredModel, $defaultProviderId$).providerId === currentProviderAtInit;
 
   let selectedModel = $state<string | undefined>(
     isModelForCurrentProvider ? restoredModel : undefined,
@@ -534,7 +540,11 @@
     if (!settings) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     const model = settings.selectedModel;
-    if (model && parseCompoundModelId(model).providerId === ($activeProviderId$ ?? 'auggie')) {
+    if (
+      model &&
+      parseCompoundModelId(model, $defaultProviderId$).providerId ===
+        ($activeProviderId$ || $defaultProviderId$)
+    ) {
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
     }
@@ -1753,6 +1763,8 @@
         specialistId: selectedSpecialist,
         selectedProvider,
         availableModelValues: $availableModels$.map((m) => m.value),
+        defaultProviderId: $defaultProviderId$,
+        selectedProviderTiers: selectProviderModelTiers.select(reduxState, selectedProvider),
         globalSelectedModel: $selectedModel$,
         effectiveCodingAgent: selectedSpecialist
           ? selectEffectiveCodingAgent.select(reduxState, selectedSpecialist)
@@ -1800,7 +1812,11 @@
       // silently flipping the submitted provider. Explicit user overrides
       // (modelWasOverridden) may legitimately cross providers and are kept.
       if (!modelWasOverridden) {
-        resolvedModel = dropCrossProviderFallbackModel(resolvedModel, selectedProvider);
+        resolvedModel = dropCrossProviderFallbackModel(
+          resolvedModel,
+          selectedProvider,
+          $defaultProviderId$,
+        );
       }
 
       // Derive the submitted provider from the final resolved model so intent
@@ -1808,7 +1824,11 @@
       // gives a compound model prefix precedence over the provider field, and
       // a bare model id resolves to the default provider. When no model
       // resolves, keep the form's selected provider.
-      const submitProvider = resolveSubmitProvider(resolvedModel, selectedProvider);
+      const submitProvider = resolveSubmitProvider(
+        resolvedModel,
+        selectedProvider,
+        $defaultProviderId$,
+      );
 
       // No client-minted agentId: the daemon assigns the initial agent's id
       // and returns it on the create result (supersedes the fresh-id-per-

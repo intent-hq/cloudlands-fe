@@ -28,8 +28,14 @@ import { ClientLogger } from "$lib/utils/client-logger";
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("provider-settings-persistence-service (PROTOCOL §5.12 settings.update wire)", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     appStore.init();
+    // The toggle reducer resolves enabled-if-unset via the catalog-snapshotted
+    // default provider — hydrate the §5.38-shaped mock catalog.
+    const { seedProviderCatalog } = await import(
+      "../../test/fixtures/provider-catalog.fixture"
+    );
+    seedProviderCatalog(appStore);
   });
 
   beforeEach(async () => {

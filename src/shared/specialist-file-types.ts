@@ -38,7 +38,7 @@ export type SpecialistFileScope = Extract<SpecialistSource, 'project' | 'user'>;
  * - 'balanced': General purpose model (e.g., sonnet4.5 for Anthropic)
  * - 'fast': Faster, cheaper model (e.g., haiku4.5 for Anthropic)
  *
- * Must match the ModelTier type in provider-config.ts
+ * Must match the ProviderModelTier type in shared/provider-catalog.ts
  */
 export type ModelTier = 'fast' | 'balanced' | 'smart';
 

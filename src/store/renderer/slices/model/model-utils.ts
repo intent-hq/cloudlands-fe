@@ -10,11 +10,12 @@ import {
   getProviderModels,
   type ProviderModelEntry,
 } from '$features/providers/provider-models.client';
+import { store as appStore } from '../../store';
 import {
-  ACP_PROVIDERS,
-  getDefaultProviderId,
-  getProviderConfig,
-} from '$shared/config/provider-config';
+  selectCatalogDefaultProviderId,
+  selectNormalizedProviderId,
+  selectProviderCatalogEntry,
+} from '../provider-catalog/provider-catalog-selectors';
 /**
  * Provider model row shape — the provider-agnostic daemon catalog shape
  * shared by all eight providers (`models.list`, PROTOCOL §6.7).
@@ -36,7 +37,7 @@ async function fetchProviderModelsWithWarning(
   providerId: string,
   options: { forceRefresh?: boolean } = {},
 ): Promise<ProviderModelsWithWarning> {
-  const normalizedId = getProviderConfig(providerId).id;
+  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
   if (normalizedId === 'mock') {
     return { models: [] };
   }
@@ -51,7 +52,7 @@ function prefixModelsForProvider(providerId: string, models: ProviderModel[]): A
   if (models.length === 0) {
     return [];
   }
-  const defaultProviderId = getDefaultProviderId();
+  const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
   return models.map((model) => {
     if (providerId !== defaultProviderId) {
       return {
@@ -71,7 +72,7 @@ export async function getModelsForProviderForLoadingState(
   warning?: string;
   stale?: boolean;
 }> {
-  const normalizedId = getProviderConfig(providerId).id;
+  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
   const result = await fetchProviderModelsWithWarning(normalizedId, options);
   return {
     models: prefixModelsForProvider(normalizedId, result.models),
@@ -102,14 +103,14 @@ export function getGroupedModels(
   providerDisplayName: string;
   models: AuggieModel[];
 }> {
-  const providerConfig = ACP_PROVIDERS[activeProviderId];
-  if (!providerConfig || availableModels.length === 0) {
+  const providerEntry = selectProviderCatalogEntry.select(appStore.state, activeProviderId);
+  if (!providerEntry || availableModels.length === 0) {
     return [];
   }
   return [
     {
-      providerId: providerConfig.id,
-      providerDisplayName: providerConfig.displayName,
+      providerId: providerEntry.id,
+      providerDisplayName: providerEntry.displayName,
       models: availableModels,
     },
   ];

@@ -1,6 +1,7 @@
 import { store } from '../../store';
-import { getDefaultProviderId, parseCompoundModelId } from '$shared/config/provider-config';
+import { parseCompoundModelId } from '$shared/utils/compound-model-id';
 import { selectProviderModels } from '../model/model-selectors';
+import { selectCatalogDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 import { selectSpecialists } from '../specialists/specialists-selectors';
 import { selectActiveProviderId } from './provider-settings-selectors';
 import { m } from '$shared/paraglide/messages.js';
@@ -35,10 +36,11 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
   // pins the active provider itself. ProviderSelector already hides Disable
   // for the active provider; the pin is defense in depth for callers that
   // bypass that UI (e.g. toggles or agent-driven settings proposals).
+  const defaultProviderId = selectCatalogDefaultProviderId.select(state);
   const activeProviderId = selectActiveProviderId.select(state);
   const globalModel = selectProviderModels.select(state)[activeProviderId];
   if (globalModel) {
-    const { providerId } = parseCompoundModelId(globalModel);
+    const { providerId } = parseCompoundModelId(globalModel, defaultProviderId);
     addReason(providerId, m.settings_providers_inUseDefaultModel_label({ model: globalModel }));
   }
 
@@ -53,7 +55,7 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
     // follows the effective coding agent instead of the pinned model.
     if (!specialist.defaultModelTier && specialist.defaultModel) {
       if (specialist.defaultModel.includes(':')) {
-        const { providerId } = parseCompoundModelId(specialist.defaultModel);
+        const { providerId } = parseCompoundModelId(specialist.defaultModel, defaultProviderId);
         addReason(
           providerId,
           m.settings_providers_inUseSpecialistModel_label({
@@ -64,7 +66,7 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
       } else if (!specialist.codingAgent) {
         // Bare model id with no explicit agent resolves to the default provider.
         addReason(
-          getDefaultProviderId(),
+          defaultProviderId,
           m.settings_providers_inUseSpecialistModel_label({
             name: specialist.name,
             model: specialist.defaultModel,

@@ -192,6 +192,7 @@
 } from '$store/renderer/slices/specialists/specialists-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
+  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
@@ -1328,10 +1329,12 @@
   // Hydrated input model — uses session model when available, falls back to agentModel prop
   let hydratedInputModel = $derived(resolveHydratedInputModel($agentSession$, agentModel));
 
+  const catalogDefaultProviderId$ = selectCatalogDefaultProviderId();
+
   // Provider ID for the input — resolved from the agent session
   let inputProviderId = $derived.by(() => {
     if (!$agentSession$) return undefined;
-    return getAgentProvider($agentSession$);
+    return getAgentProvider($agentSession$, $catalogDefaultProviderId$);
   });
 
   // Create a synthetic message object for the pending prompt to use with ChatMessage component

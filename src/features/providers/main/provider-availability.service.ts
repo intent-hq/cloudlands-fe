@@ -8,7 +8,10 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import { PROVIDERS_CHANNELS } from '../../../shared/ipc/channels';
-import { ACP_PROVIDERS } from '../../../shared/config/provider-config';
+import {
+  fetchProviderCatalog,
+  getCachedProviderCatalogEntry,
+} from '../../../main/utils/provider-catalog-accessor';
 import { Logger } from '../../../shared/logger';
 import {
   getProviderAuthVerdict,
@@ -246,21 +249,27 @@ async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse | null
 export async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   logger.info('Checking all provider availability');
 
-  // Determine which providers are hidden due to missing env vars or feature codes
+  // Determine which providers are hidden due to missing env vars or feature
+  // codes, from the daemon registry's gating metadata (PROTOCOL §5.38).
   const hiddenProviders: string[] = [];
-  for (const [providerId, config] of Object.entries(ACP_PROVIDERS)) {
-    // Check legacy env var gating
-    if (config.requiresEnvVar && !process.env[config.requiresEnvVar]) {
-      hiddenProviders.push(providerId);
-      continue;
+  try {
+    const catalog = await fetchProviderCatalog();
+    for (const entry of catalog.providers) {
+      // Check legacy env var gating
+      if (entry.requiresEnvVar && !process.env[entry.requiresEnvVar]) {
+        hiddenProviders.push(entry.id);
+        continue;
+      }
+      // Check feature code gating
+      if (
+        entry.requiresFeatureCode &&
+        !featureCodesService.isFeatureEnabled(entry.requiresFeatureCode)
+      ) {
+        hiddenProviders.push(entry.id);
+      }
     }
-    // Check feature code gating
-    if (
-      config.requiresFeatureCode &&
-      !featureCodesService.isFeatureEnabled(config.requiresFeatureCode)
-    ) {
-      hiddenProviders.push(providerId);
-    }
+  } catch (error) {
+    logger.warn('Provider catalog unavailable; treating no providers as hidden', { error });
   }
 
   if (hiddenProviders.length > 0) {
@@ -515,9 +524,9 @@ export function setupProviderAvailabilityIPC(): void {
             }
             break;
           case 'cortex': {
+            const cortexFeatureCode = getCachedProviderCatalogEntry('cortex')?.requiresFeatureCode;
             const isHidden =
-              ACP_PROVIDERS.cortex.requiresFeatureCode &&
-              !featureCodesService.isFeatureEnabled(ACP_PROVIDERS.cortex.requiresFeatureCode);
+              cortexFeatureCode && !featureCodesService.isFeatureEnabled(cortexFeatureCode);
             if (isHidden) {
               status = { available: false };
             } else {
