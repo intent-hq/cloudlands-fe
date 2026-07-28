@@ -81,6 +81,7 @@ import {
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import {
   chatLastAttemptedMessageSet,
+  chatReset,
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
@@ -160,6 +161,10 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     loadChatTranscriptSpy.mockImplementation(() => Promise.resolve());
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(clearAgentQueue(AGENT));
+    // #999: parked queuedRetryRecords (and any stale active record) must not
+    // leak across tests — a later `replaceAgentQueue` snapshot would promote
+    // them into lastAttemptedMessage mid-test.
+    appStore.dispatch(chatReset(AGENT));
     seedWorkspace();
     seedSession();
   });
@@ -1162,21 +1167,38 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
   });
 
-  it("#969: a successful enqueue followed by the drained queue's agent:idle clears the record", async () => {
+  it("#969/#999: a successful enqueue parks B's record; the drain snapshot promotes it and the drained queue's agent:idle clears it", async () => {
     // When in-flight A ends, its `agent:stream:end` (mapped to eventType
     // 'complete') is disposition-neutral and no longer clears the record
     // (#984); with B queued ready-to-send the daemon also withholds
-    // `agent:idle` until the drain finishes. The record clears on the final
-    // turn's `agent:idle` — so if B's DRAINED turn fails instead, the record
-    // is still present for "Try again" (though it holds A, not B — fixing
-    // that requires turn-scoped records, #973 family, out of scope here).
+    // `agent:idle` until the drain finishes. With turn-scoped records (#999)
+    // B's payload parks under its QueuedMessage id, the drain snapshot
+    // (`agent:queue:updated` without the id) promotes it into
+    // `lastAttemptedMessage`, and the final turn's `agent:idle` performs the
+    // success-clear.
     appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "message A" }));
     seedSession({ isStreaming: true, status: AgentStatus.Active });
 
+    const queuedB: QueuedMessage = {
+      id: "qm-B",
+      content: "message B",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queuedB }),
+    );
     appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
     await flush();
     await flush();
     expect(agentsQueue).toHaveBeenCalledTimes(1);
+    // Successful enqueue: A's active record untouched, B parked by id.
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "message A",
+    });
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({
+      "qm-B": { text: "message B" },
+    });
 
     appStore.dispatch(
       agentStreamUpdateReceived({
@@ -1186,10 +1208,18 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
         eventType: "complete",
       }),
     );
-    // Disposition-neutral terminal — the record survives (#984).
+    // Disposition-neutral terminal — the active record survives (#984).
     expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
       text: "message A",
     });
+
+    // The daemon dequeues B to run it and publishes the shrunk snapshot —
+    // the parked record is promoted to the active slot (#999).
+    appStore.dispatch(replaceAgentQueue(AGENT, []));
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "message B",
+    });
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({});
 
     // The drained queue's terminal `agent:idle` performs the success-clear.
     const idleEvent: AgentIdleEvent = {
@@ -1214,6 +1244,90 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     };
     appStore.dispatch(eventReceived(WS, idleEvent));
     expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toBeNull();
+  });
+
+  it("#999: a failed DRAINED turn retries the drained message B, not the already-succeeded in-flight A", async () => {
+    // The issue's core scenario: A in flight (recorded), B queued
+    // successfully. A completes, the daemon drains B, and B's turn FAILS.
+    // "Try again" must resend B — resending A would be a duplicate delivery.
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "message A" }));
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+
+    const queuedB: QueuedMessage = {
+      id: "qm-B",
+      content: "message B",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queuedB }),
+    );
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+
+    // A's disposition-neutral terminal, then the drain snapshot for B.
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "complete",
+      }),
+    );
+    appStore.dispatch(replaceAgentQueue(AGENT, []));
+
+    // B's drained turn fails — the failure banner appears with B recorded.
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "error",
+        error: "turn B blew up",
+      }),
+    );
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "message B",
+    });
+
+    // "Try again" resends B through the lifecycle path.
+    seedSession({ isStreaming: false, status: AgentStatus.Idle });
+    const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("message B");
+  });
+
+  it("#999: removing a queued message drops its parked record without promotion", async () => {
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "message A" }));
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+
+    const queuedB: QueuedMessage = {
+      id: "qm-B",
+      content: "message B",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queuedB }),
+    );
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({
+      "qm-B": { text: "message B" },
+    });
+
+    // User deletes the queued entry — B will never drain, so its record is
+    // dropped and A's active record stays authoritative.
+    appStore.dispatch(removeQueuedMessageRequested(AGENT, "qm-B"));
+    await flush();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({});
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "message A",
+    });
   });
 
   it("#969: two rapid queue failures — the record pairs with the LAST failed message", async () => {

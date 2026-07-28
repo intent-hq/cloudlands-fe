@@ -46,6 +46,7 @@ import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
   chatLastAttemptedMessageSet,
+  chatQueuedRetryRecordSet,
   chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
@@ -195,22 +196,25 @@ async function dispatchToLifecycle(
   // `priority: "interrupt"` to the daemon, which preempts the in-flight turn
   // keep-alive per PROTOCOL.md §5.5.
   //
-  // #969: on the queue path, `recordedAttempt` is dispatched ONLY in the two
-  // enqueue-FAILURE branches (rejection / throw), immediately before each
-  // `chatSendFailed` — never on a successful enqueue. A successful enqueue
-  // must leave the in-flight turn's record alone: the queued message will
-  // drain FIFO daemon-side anyway, so if the IN-FLIGHT turn fails, "Try
-  // again" must retry the failed message, not resend the queued one (which
-  // would deliver it twice). Failure-branch recording pairs the banner with
-  // exactly the message that failed to queue for every queue-path
-  // `chatSendFailed`. Residual gap (pre-existing record-lifetime issue,
-  // #973 family): since #984 the in-flight turn's `complete` no longer
-  // clears the record (the success-clear rides `agent:idle`, which the
-  // daemon withholds while a ready-to-send queue drains), so in-flight A's
-  // record survives into queued B's drained turn. If B's turn then fails,
-  // "Try again" resends already-succeeded A — a duplicate delivery — rather
-  // than the old safe no-op. Deliberately pinned in the updated #969 test;
-  // fixing it requires turn-scoped records (#973 family), out of scope.
+  // #969: on the queue path, the ACTIVE record (`chatLastAttemptedMessageSet`)
+  // is dispatched ONLY in the two enqueue-FAILURE branches (rejection /
+  // throw), immediately before each `chatSendFailed` — never on a successful
+  // enqueue. A successful enqueue must leave the in-flight turn's record
+  // alone: the queued message will drain FIFO daemon-side anyway, so if the
+  // IN-FLIGHT turn fails, "Try again" must retry the failed message, not
+  // resend the queued one (which would deliver it twice). Failure-branch
+  // recording pairs the banner with exactly the message that failed to queue
+  // for every queue-path `chatSendFailed`.
+  //
+  // #999 (turn-scoped records): a successful enqueue instead PARKS the
+  // payload in `queuedRetryRecords`, keyed by the returned QueuedMessage id.
+  // When the daemon drains that entry (its id leaves the next
+  // `agent:queue:updated` snapshot), the chat-state reducer promotes the
+  // parked record into `lastAttemptedMessage` — so a failure in the DRAINED
+  // turn retries the drained message. This closes the #984 residual where
+  // in-flight A's record survived into queued B's drained turn ("Try again"
+  // resent already-succeeded A — a duplicate delivery) because `agent:idle`
+  // is withheld while ready-to-send entries remain queued.
   //
   // NOTE: neither a one-shot model override nor noteIds can ride the queued
   // delivery — `agent.queueMessage` has no model/noteIds params (PROTOCOL
@@ -245,6 +249,10 @@ async function dispatchToLifecycle(
       }
       const queuedMessage = result.queuedMessage;
       if (queuedMessage) {
+        // #999: park the retry payload against the queued entry's id BEFORE
+        // seeding the queue slice, so a (theoretical) immediate drain
+        // snapshot can already see and promote it.
+        appStore.dispatch(chatQueuedRetryRecordSet(agentId, queuedMessage.id, recordedAttempt));
         const existing = deps.selectAgentQueueMessages.select(appStore.state, agentId);
         const next = existing.some((m) => m.id === queuedMessage.id)
           ? existing

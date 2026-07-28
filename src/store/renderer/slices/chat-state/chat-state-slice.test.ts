@@ -27,7 +27,13 @@ import {
   transcriptHydrationStarted,
   transcriptHydrationSettled,
   chatLastAttemptedMessageSet,
+  chatQueuedRetryRecordSet,
 } from './chat-state-slice';
+import {
+  removeQueuedMessageFromAgentQueue,
+  replaceAgentQueue,
+} from '../agent-queue/agent-queue-slice';
+import type { QueuedMessage } from '$shared/types';
 import {
   selectChatAgentState,
   selectChatError,
@@ -204,6 +210,99 @@ describe('chatStateReducer', () => {
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
     s = chatStateReducer(s, chatSendStarted(AGENT));
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+  });
+
+  describe('turn-scoped queued retry records (#999)', () => {
+    const queuedEntry = (id: string, position = 0): QueuedMessage => ({
+      id,
+      content: `content of ${id}`,
+      queuedAt: '2026-01-01T00:00:00.000Z',
+      position,
+    });
+
+    it('chatQueuedRetryRecordSet parks the record without touching lastAttemptedMessage', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'A' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'A' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({ 'qm-1': { text: 'B' } });
+    });
+
+    it('replaceAgentQueue promotes a drained record into lastAttemptedMessage', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'A' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      // Drain snapshot: qm-1 no longer present (daemon dequeued it to run).
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('replaceAgentQueue leaves still-queued records parked', () => {
+      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
+      // qm-1 drains, qm-2 is still queued.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-2')]));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({ 'qm-2': { text: 'C' } });
+    });
+
+    it('replaceAgentQueue promotes the LAST-enqueued record when several ids vanish in one snapshot', () => {
+      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
+      // Missed intermediate snapshots: both drained by the time this arrives.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'C' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('replaceAgentQueue with no parked records is a no-op (state identity preserved)', () => {
+      const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+      const s2 = chatStateReducer(s1, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));
+      expect(s2).toBe(s1);
+    });
+
+    it('replaceAgentQueue never materializes a chat-state entry for an unopened chat', () => {
+      const s = chatStateReducer(initialState, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT]).toBeUndefined();
+    });
+
+    it('removeQueuedMessageFromAgentQueue drops the record WITHOUT promotion (user delete)', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'A' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, removeQueuedMessageFromAgentQueue(AGENT, 'qm-1'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'A' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+      // The follow-up snapshot without qm-1 must not resurrect/promote it.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'A' });
+    });
+
+    it('agent:idle success-clear does not disturb parked records', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'A' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      const idleEvent: AgentIdleEvent = {
+        id: 'evt-idle-1',
+        type: 'agent:idle',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        workspaceId: 'ws-1',
+        actor: { type: 'agent', id: AGENT },
+        data: {
+          agentId: AGENT,
+          agentName: 'Test Agent',
+          reason: 'stream_complete',
+          finishReason: 'end_turn',
+          status: 'idle',
+          activationState: null,
+          isActive: false,
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: null,
+        },
+      };
+      s = chatStateReducer(s, eventReceived('ws-1', idleEvent));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({ 'qm-1': { text: 'B' } });
+    });
   });
 
   it('agentStreamUpdateReceived(complete, no failure) preserves lastAttemptedMessage until the disposition is known (#984)', () => {
