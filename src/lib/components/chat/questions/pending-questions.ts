@@ -21,19 +21,21 @@ export interface PendingQuestionSet {
 /**
  * Derive the pending question set, or null when there is none.
  *
- * Null whenever the agent's turn is still active (`isRunning` mirrors the
- * canonical `selectAgentIsRunning` gate), an optimistic pending user bubble
- * is shown, the last assistant message is still streaming, or a user message
- * trails the last assistant message (superseded). Because this reads only
- * the transcript, restored sessions re-surface unanswered questions
- * automatically.
+ * Null whenever the agent's OWN turn is still active (`isTurnActive` mirrors
+ * the canonical `selectAgentIsResponding` gate — NOT the broader
+ * `selectAgentIsRunning`, which stays true while the agent merely waits on
+ * delegated agents and must not suppress the wizard), an optimistic pending
+ * user bubble is shown, the last assistant message is still streaming, or a
+ * user message trails the last assistant message (superseded). Because this
+ * reads only the transcript, restored sessions re-surface unanswered
+ * questions automatically.
  */
 export function derivePendingQuestions(
   messages: readonly AgentMessage[],
-  isRunning: boolean,
+  isTurnActive: boolean,
   showingPendingUserMessage = false,
 ): PendingQuestionSet | null {
-  if (isRunning || showingPendingUserMessage || messages.length === 0) {
+  if (isTurnActive || showingPendingUserMessage || messages.length === 0) {
     return null;
   }
   // Walk back to the last assistant message; a user message encountered
