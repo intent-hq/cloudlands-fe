@@ -245,6 +245,11 @@ function reduceAgentIdleReconcile(
  * incoming snapshot with more than one recorded id vanishing at once — is
  * distinguishable from a genuine drain, which removes exactly one entry per
  * cycle; on that signature the records are dropped without promotion.
+ * This reducer-side signature only sees PARKED ids, so a clear that wipes a
+ * multi-entry queue holding exactly ONE parked record slips past it (#1032);
+ * the events bridge covers that case with the raw last-snapshot length the
+ * queue slice retains (see handleQueueUpdatedEvent), dispatching
+ * `chatQueuedRetryRecordsCleared` before the snapshot lands here.
  */
 function reduceQueueSnapshotDiff(
   state: ChatStateSlice,
@@ -499,16 +504,19 @@ export const chatQueuedRetryRecordUpdated = createAction<
 >('chatState/queuedRetryRecordUpdated');
 
 /**
- * Drop ALL parked retry records without promotion (#999). Dispatched at a
- * flow site that KNOWS the daemon discarded the whole queue —
+ * Drop ALL parked retry records without promotion (#999). Two dispatch
+ * sites: (1) a flow site that KNOWS the daemon discarded the whole queue —
  * `agent.editAndRegenerate` calls `clear_queue` (PROTOCOL §5.5) — so the
- * discarded entries never run and their records must not be promoted. The
+ * discarded entries never run and their records must not be promoted; the
  * snapshot-diff clear-queue signature (empty snapshot + >1 vanishing id)
  * cannot catch a SINGLE-entry discard (indistinguishable from a genuine
  * drain), and Electron does not order the event channel against the RPC
  * response: a late-arriving empty snapshot would promote the discarded
  * entry's payload over the flow's freshly recorded `lastAttemptedMessage`.
- * Dropping the records first makes that snapshot a no-op.
+ * Dropping the records first makes that snapshot a no-op. (2) The events
+ * bridge's `handleQueueUpdatedEvent` (#1032), which INFERS a clear from the
+ * mirrored-count heuristic (empty snapshot wiping >1 last-snapshot entry)
+ * for clears with no FE flow site — another client's `agent.forceMessage`.
  */
 export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
   'chatState/queuedRetryRecordsCleared',

@@ -160,6 +160,33 @@ describe("agentQueueReducer", () => {
     expect(JSON.parse(JSON.stringify(staleReplacement))).toEqual(staleReplacement);
   });
 
+  it("retains the RAW snapshot count before tombstone suppression (#1032 clear-signal source)", () => {
+    const state = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [
+      message("m1", 0),
+      message("m2", 1),
+    ]));
+    const removed = agentQueueReducer(
+      state,
+      removeQueuedMessageFromAgentQueue(AGENT_ID, "m2"),
+    );
+    // A re-published 2-entry snapshot: the tombstone hides m2 from the
+    // visible mirror, but the raw count must still say 2 — the events
+    // bridge's clear-queue detection reads it so an optimistic local
+    // removal cannot make a daemon 2-entry clear look like a 1-entry drain.
+    const republished = agentQueueReducer(removed, replaceAgentQueue(AGENT_ID, [
+      message("m1", 0),
+      message("m2", 1),
+    ]));
+
+    expect(getItems(republished.byAgentId[AGENT_ID].messages).map((item) => item.id)).toEqual([
+      "m1",
+    ]);
+    expect(republished.byAgentId[AGENT_ID].lastSnapshotCount).toBe(2);
+
+    const cleared = agentQueueReducer(republished, replaceAgentQueue(AGENT_ID, []));
+    expect(cleared.byAgentId[AGENT_ID].lastSnapshotCount).toBe(0);
+  });
+
   it("restores a recently-removed ID so a later snapshot can bring the message back", () => {
     const state = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [
       message("m1", 0),
