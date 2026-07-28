@@ -31,6 +31,11 @@ export interface SendMessageOptions {
   model?: string;
   agentId?: string;
   contextReferences?: ContextReference[];
+  /**
+   * Image blocks the original send carried, recorded so "Try again" resends
+   * them with the message (#965). Plain base64 data — serializable/redux-safe.
+   */
+  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
 }
 
 /**
