@@ -26,9 +26,9 @@
     $props();
 </script>
 
-<div
-  class="flex items-start gap-3 p-4 bg-card border border-destructive/50 shadow-lg min-w-[360px] max-w-[500px]"
->
+<!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
+     the destructive border tint is passed as a wrapper class by the service. -->
+<div class="flex items-start gap-3 max-w-[500px]">
   <!-- Icon -->
   <div class="flex-shrink-0 mt-0.5 text-destructive">
     <Fa icon={faExclamationCircle} class="w-5 h-5" />
