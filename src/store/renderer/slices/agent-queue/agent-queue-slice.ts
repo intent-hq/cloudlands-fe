@@ -13,6 +13,7 @@ const RECENTLY_REMOVED_MESSAGE_ID_LIMIT = 100;
 const createEmptyAgentQueueEntry = (): AgentQueueEntryState => ({
   messages: createCollection<QueuedMessage, "id">("id"),
   recentlyRemovedMessageIds: [],
+  lastSnapshotCount: 0,
   isHydrating: false,
   error: null,
 });
@@ -113,6 +114,7 @@ export const agentQueueReducer = createReducer<AgentQueueState>(initialState)
       ...current,
       recentlyRemovedMessageIds,
       messages: createCollection<QueuedMessage, "id">("id", visibleMessages),
+      lastSnapshotCount: messages.length,
       isHydrating: false,
       error: null,
     });

@@ -150,6 +150,7 @@ import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settin
 import { __resetDaemonEventsBridgeForTests } from '$features/events/daemon-events-bridge.client';
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
 import {
+  chatQueuedRetryRecordSet,
   chatReset,
   chatSendStarted,
   chatStopCompleted,
@@ -2120,6 +2121,7 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
   beforeEach(async () => {
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(clearAgentQueue(AGENT));
+    appStore.dispatch(chatReset(AGENT));
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
@@ -2128,6 +2130,23 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
   });
 
   afterEach(() => vi.clearAllMocks());
+
+  /** Read this agent's chat-state retry fields for the clear-queue assertions. */
+  function readRetryState() {
+    const state = appStore.state as {
+      chatState?: {
+        byAgentId: Record<
+          string,
+          { lastAttemptedMessage: unknown; queuedRetryRecords: Record<string, unknown> }
+        >;
+      };
+    };
+    const agent = state.chatState?.byAgentId[AGENT];
+    return {
+      lastAttemptedMessage: agent?.lastAttemptedMessage ?? null,
+      queuedRetryRecords: agent?.queuedRetryRecords ?? {},
+    };
+  }
 
   it('renders the BE queue snapshot from a PROTOCOL §5.5 agent:queue:updated payload', async () => {
     await primeBridge();
@@ -2219,6 +2238,90 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     expect(selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual([
       'q-1',
     ]);
+  });
+
+  it('an empty snapshot wiping a multi-entry mirrored queue drops a SINGLE parked record without promotion (#1032 forceMessage clear)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Mirror a 2-entry daemon queue: q-mine was queued by THIS client (its
+    // retry record is parked), q-other by another client (no local record).
+    handler(
+      notification('agent:queue:updated', {
+        agentId: AGENT,
+        queue: [
+          { id: 'q-mine', content: 'mine', queuedAt: '2026-01-02T00:00:01.000Z', position: 0 },
+          { id: 'q-other', content: 'other', queuedAt: '2026-01-02T00:00:02.000Z', position: 1 },
+        ],
+      }),
+    );
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'q-mine', { text: 'mine' }));
+
+    // Another client's agent.forceMessage clears the whole queue (PROTOCOL
+    // §5.5) — the daemon publishes an EMPTY snapshot. Exactly ONE parked
+    // record vanishes, which the reducer alone cannot distinguish from a
+    // genuine drain; the bridge's mirrored-count signal must recognize the
+    // clear and drop the record instead of promoting the discarded payload.
+    handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
+
+    expect(readRetryState()).toEqual({ lastAttemptedMessage: null, queuedRetryRecords: {} });
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
+  });
+
+  it('a tombstone-suppressed mirror does not undercount the clear signal (optimistic removal racing a forceMessage clear)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Mirror a 2-entry daemon queue with q-mine's retry record parked.
+    handler(
+      notification('agent:queue:updated', {
+        agentId: AGENT,
+        queue: [
+          { id: 'q-mine', content: 'mine', queuedAt: '2026-01-02T00:00:01.000Z', position: 0 },
+          { id: 'q-other', content: 'other', queuedAt: '2026-01-02T00:00:02.000Z', position: 1 },
+        ],
+      }),
+    );
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'q-mine', { text: 'mine' }));
+
+    // The user optimistically removes q-other locally (dispatchQueueRemoval's
+    // reducer half): the tombstone hides it from the VISIBLE mirror
+    // (count==1), but the daemon still holds 2 entries. If another client's
+    // forceMessage clear lands in that window, the empty snapshot is a
+    // daemon 2-entry clear — the clear signal must use the raw last-snapshot
+    // count, not the suppressed visible count, or the clear masquerades as a
+    // single-entry drain and promotes the discarded payload.
+    appStore.dispatch(removeQueuedMessageFromAgentQueue(AGENT, 'q-other'));
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual([
+      'q-mine',
+    ]);
+    handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
+
+    expect(readRetryState()).toEqual({ lastAttemptedMessage: null, queuedRetryRecords: {} });
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
+  });
+
+  it('an empty snapshot draining a SINGLE-entry mirrored queue still promotes its parked record (genuine drain preserved)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:queue:updated', {
+        agentId: AGENT,
+        queue: [
+          { id: 'q-mine', content: 'mine', queuedAt: '2026-01-02T00:00:01.000Z', position: 0 },
+        ],
+      }),
+    );
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'q-mine', { text: 'mine' }));
+
+    // The daemon dequeues the sole entry to run it — a genuine drain.
+    handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
+
+    expect(readRetryState()).toEqual({
+      lastAttemptedMessage: { text: 'mine' },
+      queuedRetryRecords: {},
+    });
   });
 });
 
