@@ -459,14 +459,14 @@ function findTagEnd(src, openIndex) {
 
 function extractSvelteParts(src) {
   const scripts = [];
-  const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
+  const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi;
   let m;
   while ((m = scriptRe.exec(src)) !== null) {
     scripts.push({ text: m[1], index: m.index + m[0].indexOf('>') + 1 });
   }
   // Blank scripts, styles, and HTML comments out of the template (line-preserving).
   const template = src
-    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, (block) => blankSpan(block))
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\b[^>]*>/gi, (block) => blankSpan(block))
     .replace(/<!--[\s\S]*?-->/g, (c) => blankSpan(c));
   return { template, scripts };
 }
