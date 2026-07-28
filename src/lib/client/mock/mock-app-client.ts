@@ -31,7 +31,10 @@ type MigratedDomain =
   | "tasks"
   | "comments"
   | "git"
-  | "files";
+  | "files"
+  // `providers` was born live (`providers.catalog`, PROTOCOL §5.38) — it never
+  // had a mock fixture era, so it is likewise absent here.
+  | "providers";
 
 /** Emit the snapshot once, then return an idle disposer. */
 function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe {

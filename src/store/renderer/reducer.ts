@@ -1,4 +1,5 @@
 import { providerSettingsReducer } from "./slices/provider-settings/provider-settings-slice";
+import { providerCatalogReducer } from "./slices/provider-catalog/provider-catalog-slice";
 import { backgroundAgentSettingsReducer } from "./slices/background-agent-settings/background-agent-settings-slice";
 import { externalEditorsReducer } from "./slices/external-editors/external-editors-slice";
 import { uiLayoutReducer } from "./slices/ui-layout/ui-layout-slice";
@@ -82,6 +83,7 @@ import { hostRequirementsReducer } from "./slices/host-requirements/host-require
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
+  providerCatalog: providerCatalogReducer,
   backgroundAgentSettings: backgroundAgentSettingsReducer,
   externalEditors: externalEditorsReducer,
   uiLayout: uiLayoutReducer,
