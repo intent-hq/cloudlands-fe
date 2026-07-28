@@ -85,6 +85,8 @@ import {
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
+import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
+import type { AgentIdleEvent } from "$features/events/types";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
 import { CHIEF_WORKSPACE_ID } from "$store/renderer/slices/sidebar-nav/sidebar-nav-types";
 import { selectChiefThreads } from "$store/renderer/slices/sidebar-nav/sidebar-nav-selectors";
@@ -1160,12 +1162,14 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
   });
 
-  it("#969: a successful enqueue followed by the in-flight turn completing successfully clears the record (residual #973-family gap is intended)", async () => {
-    // Pins the residual gap as deliberate: when in-flight A completes
-    // successfully (the normal precondition for the daemon draining B), the
-    // reducer clears lastAttemptedMessage — so if B's DRAINED turn later
-    // fails, "Try again" no-ops. Fixing that requires turn-scoped records
-    // (#973 family), out of scope here.
+  it("#969: a successful enqueue followed by the drained queue's agent:idle clears the record", async () => {
+    // When in-flight A ends, its `agent:stream:end` (mapped to eventType
+    // 'complete') is disposition-neutral and no longer clears the record
+    // (#984); with B queued ready-to-send the daemon also withholds
+    // `agent:idle` until the drain finishes. The record clears on the final
+    // turn's `agent:idle` — so if B's DRAINED turn fails instead, the record
+    // is still present for "Try again" (though it holds A, not B — fixing
+    // that requires turn-scoped records, #973 family, out of scope here).
     appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "message A" }));
     seedSession({ isStreaming: true, status: AgentStatus.Active });
 
@@ -1182,6 +1186,33 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
         eventType: "complete",
       }),
     );
+    // Disposition-neutral terminal — the record survives (#984).
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "message A",
+    });
+
+    // The drained queue's terminal `agent:idle` performs the success-clear.
+    const idleEvent: AgentIdleEvent = {
+      id: "evt-idle-drain-1",
+      type: "agent:idle",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      workspaceId: WS,
+      actor: { type: "agent", id: AGENT },
+      data: {
+        agentId: AGENT,
+        agentName: "Test Agent",
+        reason: "stream_complete",
+        finishReason: "end_turn",
+        status: "idle",
+        activationState: null,
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: null,
+      },
+    };
+    appStore.dispatch(eventReceived(WS, idleEvent));
     expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toBeNull();
   });
 

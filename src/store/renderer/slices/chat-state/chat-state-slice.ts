@@ -195,13 +195,27 @@ function reduceAgentStreamUpdate(
       lastChunkTime: null,
       receivedFirstChunk: false,
       statusEvents: [],
-      // Preserve the retry payload when the turn FAILED so the error
-      // banner's "Try again" can resend it (#941), and when the turn ended
-      // model-unavailable so "Retry with <model>" has a message to resend
-      // (#964); clear it only on a genuinely successful completion.
-      lastAttemptedMessage: failureMessage || modelUnavailable
-        ? getAgent(state, payload.agentId).lastAttemptedMessage
-        : null,
+      // This terminal maps the daemon's `agent:stream:end`, which is
+      // disposition-NEUTRAL (PROTOCOL §7: the complete/error payloads are
+      // identical by design) — a failed turn ends its stream the same way and
+      // only the follow-up lifecycle event carries the disposition
+      // (`agent:idle` on success, `agent:failed` on error). Clearing the
+      // retry payload here therefore raced ahead of the failure banner and
+      // left "Try again" a no-op (#984). Preserve the record and defer the
+      // success-clear to the `agent:idle` finalize (reduceAgentIdleReconcile,
+      // whose error/modelUnavailable guards keep the #941/#964 preserve-on-
+      // failure semantics). The one disposition this event DOES carry is the
+      // user interrupt (`stopReason: "interrupted"`, §7.2) — clear the
+      // abandoned payload inline here (#965), because the synthetic
+      // post-interrupt `agent:idle` (agent_manager.rs interrupt_inner,
+      // STAB-28) is SUPPRESSED when a ready-to-send queue exists or the
+      // interrupt carries a message, so the idle finalize can't be relied on.
+      // When the synthetic idle does arrive, its reconcile is a harmless
+      // no-op on the already-cleared record.
+      lastAttemptedMessage:
+        !failureMessage && !modelUnavailable && payload.stopReason === 'interrupted'
+          ? null
+          : getAgent(state, payload.agentId).lastAttemptedMessage,
       modelUnavailable,
       error: failureMessage,
     });

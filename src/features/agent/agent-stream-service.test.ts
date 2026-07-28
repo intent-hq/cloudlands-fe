@@ -20,6 +20,8 @@ import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
+import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
+import type { AgentIdleEvent } from "$features/events/types";
 
 const WS = "ws-stream-1";
 const AGENT = "agent-stream-1";
@@ -177,7 +179,7 @@ describe("agentStreamService (real store)", () => {
     expect(chatState?.lastAttemptedMessage).toEqual({ text: "edited text" });
   });
 
-  it("#941: a successful complete clears lastAttemptedMessage", () => {
+  it("#941: a successful turn clears lastAttemptedMessage on the follow-up agent:idle (#984)", () => {
     simulateSendInFlight();
     appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "edited text" }));
     appStore.dispatch(
@@ -192,6 +194,33 @@ describe("agentStreamService (real store)", () => {
       ),
     );
 
+    // `complete` maps the disposition-neutral `agent:stream:end` — the record
+    // survives it (#984); the success-clear rides the follow-up `agent:idle`.
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "edited text",
+    });
+
+    const idleEvent: AgentIdleEvent = {
+      id: "evt-idle-stream-1",
+      type: "agent:idle",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      workspaceId: WS,
+      actor: { type: "agent", id: AGENT },
+      data: {
+        agentId: AGENT,
+        agentName: "Agent Stream",
+        reason: "stream_complete",
+        finishReason: "end_turn",
+        status: "idle",
+        activationState: null,
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: null,
+      },
+    };
+    appStore.dispatch(eventReceived(WS, idleEvent));
     expect(
       selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage,
     ).toBeNull();
