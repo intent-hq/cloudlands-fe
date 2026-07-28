@@ -6,6 +6,7 @@
 
 import { ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import { NOTIFICATION_CHANNELS } from '../../../shared/ipc/channels';
 import { getNotificationService } from './notification.service';
 
@@ -34,7 +35,7 @@ export function setupNotificationIPC(): void {
       logger.error('Failed to show test notification', error as Error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : m.notifications_web_unknown_error(),
       };
     }
   });
@@ -50,7 +51,7 @@ export function setupNotificationIPC(): void {
       logger.error('Failed to request notification permission', error as Error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : m.notifications_web_unknown_error(),
       };
     }
   });

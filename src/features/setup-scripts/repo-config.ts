@@ -12,7 +12,12 @@
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
-/** User-facing label for a setup script sourced from the repo config. */
+/**
+ * User-facing label for a setup script sourced from the repo config.
+ * Doubles as a persisted identity sentinel (saved-script name comparisons),
+ * so it must stay a stable constant rather than a locale-dependent message.
+ */
+// i18n-ignore (persisted identity sentinel; translating breaks saved-script matching)
 export const REPO_CONFIG_SCRIPT_NAME = 'From repo config';
 
 /** Script-list entry id for the repo-config script in SetupScriptEditor. */

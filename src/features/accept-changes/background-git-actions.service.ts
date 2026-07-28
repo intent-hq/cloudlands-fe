@@ -13,6 +13,7 @@ import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { PullRequestStatus } from '$shared/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { store as appStore } from '$store/renderer/store';
 
@@ -53,7 +54,7 @@ class BackgroundGitActionsService {
     const { workspaceId, commitMessage } = params;
 
     if (!commitMessage.trim()) {
-      return { success: false, error: 'Commit message is required' };
+      return { success: false, error: m.acceptChanges_backgroundGit_commitMessageRequired_error() };
     }
 
     try {
@@ -77,10 +78,14 @@ class BackgroundGitActionsService {
         }
         return { success: true };
       } else {
-        return { success: false, error: result.error || 'Failed to commit' };
+        return {
+          success: false,
+          error: result.error || m.acceptChanges_backgroundGit_commitFailed_error(),
+        };
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to commit';
+      const message =
+        error instanceof Error ? error.message : m.acceptChanges_backgroundGit_commitFailed_error();
       logger.error('Commit failed', error as Error);
       return { success: false, error: message };
     }
@@ -97,7 +102,7 @@ class BackgroundGitActionsService {
     const { workspaceId, prTitle, prDescription, targetBranch, hasStaged } = params;
 
     if (!prTitle.trim()) {
-      return { success: false, error: 'PR title is required' };
+      return { success: false, error: m.acceptChanges_backgroundGit_prTitleRequired_error() };
     }
 
     try {
@@ -109,7 +114,10 @@ class BackgroundGitActionsService {
           { commitMessage: prTitle.trim() },
         );
         if (!commitResult.success) {
-          return { success: false, error: commitResult.error || 'Failed to commit staged changes' };
+          return {
+            success: false,
+            error: commitResult.error || m.acceptChanges_backgroundGit_commitStagedFailed_error(),
+          };
         }
       }
 
@@ -123,20 +131,22 @@ class BackgroundGitActionsService {
       if (result.success) {
         // Update local workspace store with PR info from result
         if (result.result?.prNumber && result.result?.prHtmlUrl) {
-          appStore.dispatch(updateWorkspaceEntity(workspaceId, {
-            activePullRequest: {
-              id: String(result.result.prNumber),
-              number: result.result.prNumber,
-              url: result.result.prHtmlUrl,
-              title: prTitle.trim(),
-              status: PullRequestStatus.Open,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-            prUrl: result.result.prHtmlUrl,
-            prNumber: result.result.prNumber,
-            prStatus: PullRequestStatus.Open,
-          }));
+          appStore.dispatch(
+            updateWorkspaceEntity(workspaceId, {
+              activePullRequest: {
+                id: String(result.result.prNumber),
+                number: result.result.prNumber,
+                url: result.result.prHtmlUrl,
+                title: prTitle.trim(),
+                status: PullRequestStatus.Open,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+              prUrl: result.result.prHtmlUrl,
+              prNumber: result.result.prNumber,
+              prStatus: PullRequestStatus.Open,
+            }),
+          );
         }
 
         // Fire-and-forget refresh: let UI update reactively
@@ -153,10 +163,16 @@ class BackgroundGitActionsService {
         if (result.error?.toLowerCase().includes('github authentication')) {
           return { success: false, needsAuth: true };
         }
-        return { success: false, error: result.error || 'Failed to create pull request' };
+        return {
+          success: false,
+          error: result.error || m.acceptChanges_backgroundGit_createPrFailed_error(),
+        };
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create pull request';
+      const message =
+        error instanceof Error
+          ? error.message
+          : m.acceptChanges_backgroundGit_createPrFailed_error();
       logger.error('Create PR failed', error as Error);
 
       // Check for GitHub authentication error in exception
@@ -169,4 +185,3 @@ class BackgroundGitActionsService {
 }
 
 export const backgroundGitActionsService = new BackgroundGitActionsService();
-

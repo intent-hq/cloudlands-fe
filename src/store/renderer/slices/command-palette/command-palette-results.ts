@@ -13,6 +13,7 @@ import { m } from '$shared/paraglide/messages.js';
 export interface PaletteCommand {
   id: string;
   label: string;
+  pillLabel?: string;
   icon: any;
   shortcut?: string;
 }

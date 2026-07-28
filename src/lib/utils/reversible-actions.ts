@@ -53,6 +53,7 @@ class ReversibleActionManager {
                   toast.dismiss(toastId);
                 } catch (error) {
                   logger.error(
+                    // i18n-ignore (developer log message)
                     'Failed to undo action:',
                     error instanceof Error ? error : new Error(String(error)),
                   );
@@ -72,6 +73,7 @@ class ReversibleActionManager {
               await config.onExpire();
             } catch (error) {
               logger.error(
+                // i18n-ignore (developer log message)
                 'Failed to execute onExpire callback:',
                 error instanceof Error ? error : new Error(String(error)),
               );
@@ -83,6 +85,7 @@ class ReversibleActionManager {
         return true;
       } catch (error) {
         logger.error(
+          // i18n-ignore (developer log message)
           'Failed to execute action:',
           error instanceof Error ? error : new Error(String(error)),
         );
@@ -111,6 +114,7 @@ class ReversibleActionManager {
             resolve(true);
           } catch (error) {
             logger.error(
+              // i18n-ignore (developer log message)
               'Failed to execute action:',
               error instanceof Error ? error : new Error(String(error)),
             );
@@ -191,6 +195,7 @@ class ReversibleActionManager {
             resolve(true);
           } catch (error) {
             logger.error(
+              // i18n-ignore (developer log message)
               'Failed to execute action:',
               error instanceof Error ? error : new Error(String(error)),
             );
@@ -219,6 +224,7 @@ class ReversibleActionManager {
             if (config.onExpire) await config.onExpire();
           } catch (error) {
             logger.error(
+              // i18n-ignore (developer log message)
               'Failed to execute onExpire callback:',
               error instanceof Error ? error : new Error(String(error)),
             );

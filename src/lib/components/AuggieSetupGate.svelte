@@ -23,6 +23,7 @@
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('AuggieSetupGate');
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
@@ -200,7 +201,7 @@
       if (status?.installed && status?.versionOk && status?.authenticated) {
         auggieInstructions = null;
         auggieCommand = null;
-        toast.success('Ready to go.');
+        toast.success(m.lib_auggieSetup_readyToGo_message());
         return;
       }
       const channel =
@@ -237,7 +238,9 @@
     const codexSetupInProgress = codexManagedInstallStatus?.managedInstallState === 'installing';
     const codexProgress = codexManagedInstallStatus?.downloadProgress;
     const codexSetupStatus = codexSetupInProgress
-      ? `Setting up Codex…${typeof codexProgress === 'number' ? ` ${Math.round(codexProgress * 100)}%` : ''}`
+      ? typeof codexProgress === 'number'
+        ? m.lib_auggieSetup_settingUpCodexPercent_label({ percent: Math.round(codexProgress * 100) })
+        : m.lib_auggieSetup_settingUpCodex_label()
       : undefined;
     return [
       {
@@ -245,7 +248,7 @@
         name: ACP_PROVIDERS.auggie.displayName,
         command: ACP_PROVIDERS.auggie.command,
         installCommand: 'npm install -g @augmentcode/auggie',
-        description: "Augment's official CLI agent with cloud features",
+        description: m.lib_auggieSetup_auggie_description(),
         available: providerAvailability?.providers.auggie.available ?? false,
         requiresAuth: true,
         docsUrl: 'https://docs.augmentcode.com/cli/overview',
@@ -255,7 +258,7 @@
         name: ACP_PROVIDERS['claude-code'].displayName,
         command: ACP_PROVIDERS['claude-code'].command,
         installCommand: 'npm install -g @agentclientprotocol/claude-agent-acp',
-        description: "Anthropic's Claude Code as an ACP agent",
+        description: m.lib_auggieSetup_claudeCode_description(),
         available: providerAvailability?.providers.claudeCode.available ?? false,
         requiresAuth: false,
         docsUrl: 'https://github.com/anthropics/claude-code',
@@ -268,7 +271,7 @@
           ? undefined
           : 'npm install -g @agentclientprotocol/codex-acp',
         setupStatus: codexSetupStatus,
-        description: "OpenAI's Codex as an ACP agent",
+        description: m.lib_auggieSetup_codex_description(),
         available: providerAvailability?.providers.codex.available ?? false,
         requiresAuth: false,
         docsUrl: 'https://github.com/openai/codex',
@@ -278,7 +281,7 @@
         name: ACP_PROVIDERS.cortex.displayName,
         command: ACP_PROVIDERS.cortex.command,
         installCommand: 'pip install snowflake-cli',
-        description: "Snowflake's AI coding agent",
+        description: m.lib_auggieSetup_cortex_description(),
         available: providerAvailability?.providers.cortex?.available ?? false,
         requiresAuth: false,
         docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex',
@@ -293,9 +296,9 @@
   async function copyCommand(command: string) {
     try {
       await navigator.clipboard.writeText(command);
-      toast.success('Copied to clipboard');
+      toast.success(m.lib_auggieSetup_copied_message());
     } catch {
-      toast.error('Could not copy command');
+      toast.error(m.lib_auggieSetup_copyFailed_error());
     }
   }
 </script>
@@ -313,7 +316,7 @@
         </svg>
       </div>
       <p class="text-subtle">
-        An experimental workspace for parallel agents.
+        {m.lib_auggieSetup_tagline_message()}
       </p>
     </section>
 
@@ -323,14 +326,14 @@
         <div class="loading-spinner">
           <Fa icon={faCircleNotch} size="2x" class="animate-spin text-subtle" />
         </div>
-        <p class="text-subtle text-center">Checking available providers...</p>
+        <p class="text-subtle text-center">{m.lib_auggieSetup_checkingProviders_label()}</p>
       </section>
 
       <!-- Error State -->
     {:else if providerCheckError}
       <section class="providers-section">
-        <h2>Something went wrong</h2>
-        <p class="text-subtle">We couldn't check for available agent providers.</p>
+        <h2>{m.lib_auggieSetup_somethingWentWrong_title()}</h2>
+        <p class="text-subtle">{m.lib_auggieSetup_checkFailed_description()}</p>
         <div class="error-message">
           {providerCheckError}
         </div>
@@ -343,16 +346,16 @@
           }}
           variant="outline"
         >
-          Try Again
+          {m.lib_auggieSetup_tryAgain_label()}
         </Button>
       </section>
 
       <!-- No Providers Available - Show Setup Options -->
     {:else}
       <section class="providers-section">
-        <h2>Install an Agent Provider</h2>
+        <h2>{m.lib_auggieSetup_installProvider_title()}</h2>
         <p class="text-subtle mb-4">
-          Intent needs an ACP-compatible agent to run. Install one of the following:
+          {m.lib_auggieSetup_installProvider_description()}
         </p>
 
         <div class="provider-cards">
@@ -361,11 +364,11 @@
               <div class="provider-header">
                 <h3>{provider.name}</h3>
                 {#if provider.id === 'auggie'}
-                  <span class="recommended-badge">Recommended</span>
+                  <span class="recommended-badge">{m.lib_auggieSetup_recommended_badge()}</span>
                 {/if}
                 {#if provider.available}
                   <span class="available-badge">
-                    <Fa icon={faCircleCheck} class="inline" size="sm" /> Available
+                    <Fa icon={faCircleCheck} class="inline" size="sm" /> {m.lib_auggieSetup_available_badge()}
                   </span>
                 {/if}
               </div>
@@ -376,9 +379,9 @@
                   <Button onclick={installAuggie} disabled={actionInProgress} size="sm">
                     {#if actionInProgress}
                       <Fa icon={faCircleNotch} class="animate-spin mr-2" />
-                      Loading…
+                      {m.lib_auggieSetup_loading_label()}
                     {:else}
-                      <Fa icon={faDownload} class="mr-2" /> Install
+                      <Fa icon={faDownload} class="mr-2" /> {m.lib_auggieSetup_install_label()}
                     {/if}
                   </Button>
                 {:else}
@@ -392,7 +395,7 @@
                     <button
                       class="install-command-button"
                       onclick={() => copyCommand(installCommand)}
-                      title="Click to copy"
+                      title={m.lib_auggieSetup_clickToCopy_tooltip()}
                     >
                       <code>{installCommand}</code>
                       <Fa icon={faPaste} class="copy-icon" size="sm" />
@@ -401,12 +404,12 @@
                 {/if}
                 <button class="docs-link" onclick={() => openProviderDocs(provider.docsUrl)}>
                   <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
-                  Docs
+                  {m.lib_auggieSetup_docs_label()}
                 </button>
               </div>
 
               {#if provider.requiresAuth && provider.id === 'auggie'}
-                <p class="auth-note">Requires Augment account login after install</p>
+                <p class="auth-note">{m.lib_auggieSetup_authNote_message()}</p>
               {/if}
 
               <!-- Instructions panel driven by AUGGIE_CHANNELS.INSTALL / AUTHENTICATE -->
@@ -437,7 +440,7 @@
               });
             }}
           >
-            <Fa icon={faCircleNotch} class="mr-2" /> Check Again
+            <Fa icon={faCircleNotch} class="mr-2" /> {m.lib_auggieSetup_checkAgain_label()}
           </Button>
         </div>
       </section>
@@ -445,13 +448,13 @@
       <!-- Auggie login section (rendered when installed but not authenticated) -->
       {#if status?.installed && status?.versionOk && !status?.authenticated}
         <section class="authenticate">
-          <h2>Authenticate with Augment</h2>
+          <h2>{m.lib_auggieSetup_authenticate_title()}</h2>
           <div class="actions">
             <Button onclick={() => startAuthentication()} disabled={actionInProgress}>
               {#if actionInProgress}
-                <Fa icon={faCircleNotch} class="animate-spin mr-2" /> Loading…
+                <Fa icon={faCircleNotch} class="animate-spin mr-2" /> {m.lib_auggieSetup_loading_label()}
               {:else}
-                <Fa icon={faCircleCheck} class="mr-2" /> Login with Augment
+                <Fa icon={faCircleCheck} class="mr-2" /> {m.lib_auggieSetup_loginWithAugment_label()}
               {/if}
             </Button>
           </div>

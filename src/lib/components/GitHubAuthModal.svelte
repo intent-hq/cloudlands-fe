@@ -5,6 +5,7 @@
   onDestroy,
   onMount,
 } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   import {
   startGitHubAuth,
@@ -90,7 +91,7 @@
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
     role="button"
     tabindex="0"
-    aria-label="Close modal"
+    aria-label={m.lib_githubAuth_closeModal_ariaLabel()}
     onclick={handleCancel}
     onkeydown={(e) => e.key === 'Escape' && handleCancel()}
   >
@@ -99,7 +100,7 @@
       onclick={(event) => event.stopPropagation()}
     >
       <div class="flex justify-between items-center p-4 border-b border-border">
-        <h2 class="m-0 text-lg text-foreground">Connect to GitHub</h2>
+        <h2 class="m-0 text-lg text-foreground">{m.lib_githubAuth_connect_label()}</h2>
         <button
           class="bg-transparent border-none text-2xl cursor-pointer text-muted-foreground hover:text-foreground"
           onclick={handleCancel}>×</button
@@ -112,24 +113,25 @@
             <p>{$error$}</p>
             <button
               class="mt-3 bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"
-              onclick={handleRetry}>Try Again</button
+              onclick={handleRetry}>{m.lib_githubAuth_tryAgain_label()}</button
             >
           </div>
         {:else if $requiresDaemonAuth$}
           <div class="daemon-auth-required">
             <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
             <p class="text-foreground">
-              Please authenticate with the daemon first to enable GitHub integration.
+              {m.lib_githubAuth_daemonAuthIntegration_message()}
             </p>
             <p class="text-subtle text-sm mt-2">
-              Run <code class="bg-muted px-2 py-1 rounded">auggie login</code> in your terminal.
+              <!-- i18n-ignore (shell command) -->
+              {m.lib_githubAuth_run_before()} <code class="bg-muted px-2 py-1 rounded">auggie login</code> {m.lib_githubAuth_inYourTerminal_after()}
             </p>
           </div>
         {:else if $deviceFlow$}
           <div class="oauth-redirect">
             <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
             <p class="text-foreground mb-4">
-              Enter this code on GitHub to connect your account.
+              {m.lib_githubAuth_enterCodeConnect_message()}
             </p>
             <GitHubDeviceCodeCard
               userCode={$deviceFlow$.userCode}
@@ -139,7 +141,7 @@
               <div
                 class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
               ></div>
-              <span>Waiting for authorization...</span>
+              <span>{m.lib_githubAuth_waitingForAuthorization_label()}</span>
             </div>
           </div>
         {:else if $isAuthenticating$}
@@ -147,22 +149,22 @@
             <div
               class="w-6 h-6 border-[3px] border-border border-t-blue-600 rounded-full animate-spin mx-auto"
             ></div>
-            <p class="text-foreground">Starting authentication...</p>
+            <p class="text-foreground">{m.lib_githubAuth_startingAuthentication_label()}</p>
           </div>
         {:else}
           <div class="connect-prompt">
             <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
             <p class="text-foreground">
-              Connect your GitHub account to create pull requests and list repositories.
+              {m.lib_githubAuth_connectPrompt_message()}
             </p>
             <p class="text-subtle text-sm mt-2">
-              Git push/pull uses your local git credentials (SSH keys or credential manager).
+              {m.lib_githubAuth_localCredentials_message()}
             </p>
             <button
               class="bg-[#238636] text-white border-none px-6 py-3 rounded text-base cursor-pointer mt-4 hover:bg-[#2ea043]"
               onclick={handleConnect}
             >
-              Connect to GitHub
+              {m.lib_githubAuth_connect_label()}
             </button>
           </div>
         {/if}

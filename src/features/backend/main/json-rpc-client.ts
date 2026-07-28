@@ -422,7 +422,11 @@ export class JsonRpcClient extends EventEmitter {
     // daemon-issued response could never carry `method`, so the two branches
     // do not overlap.
     if (hasMethod && hasId) {
-      this.dispatchInboundRequest(message.id as number | string, message.method as string, message.params);
+      this.dispatchInboundRequest(
+        message.id as number | string,
+        message.method as string,
+        message.params,
+      );
       return;
     }
     // Response: correlate by numeric id against a pending outbound request.
@@ -449,6 +453,7 @@ export class JsonRpcClient extends EventEmitter {
   private dispatchInboundRequest(id: number | string, method: string, params: unknown): void {
     const handler = this.reverseHandlers.get(method);
     if (!handler) {
+      // i18n-ignore (wire-protocol error)
       this.sendReverseError(id, -32601, `Method not found: ${method}`);
       return;
     }
@@ -472,7 +477,12 @@ export class JsonRpcClient extends EventEmitter {
     this.writeFrame(payload);
   }
 
-  private sendReverseError(id: number | string, code: number, message: string, data?: unknown): void {
+  private sendReverseError(
+    id: number | string,
+    code: number,
+    message: string,
+    data?: unknown,
+  ): void {
     const error: { code: number; message: string; data?: unknown } = { code, message };
     if (data !== undefined) error.data = data;
     const payload = `${JSON.stringify({ jsonrpc: '2.0', id, error })}\n`;

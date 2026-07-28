@@ -133,7 +133,9 @@ export function assertAgentCommitAllowed(
     return {
       allowed: false,
       reason:
+        // i18n-ignore (agent-facing tool response, not shown in UI)
         'Auto-commit is disabled for this workspace. ' +
+        // i18n-ignore (agent-facing tool response, not shown in UI)
         'Use agent_commit_changes with userRequested: true if the user asked to commit.',
     };
   }

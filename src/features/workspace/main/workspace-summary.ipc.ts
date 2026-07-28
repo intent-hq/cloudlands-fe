@@ -11,6 +11,7 @@ import { ipcMain } from 'electron';
 
 import { WORKSPACE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import type { CommandResponse, WorkspaceId } from '../../../shared/types';
 import {
   WorkspaceGetDiffSummarySchema,
@@ -53,13 +54,13 @@ export function setupWorkspaceSummaryIPC(): void {
         try {
           const workspace = await protocolAdapter.getWorkspace(workspaceId);
           if (!workspace) {
-            return failure('Workspace not found');
+            return failure(m.workspaceIpc_workspaceNotFound_error());
           }
           const summary = await computeWorkspaceDiffSummary(workspaceId, workspace.worktreePath);
           return success(summary ?? null);
         } catch (error) {
           logger.error('Failed to get diff summary', error as Error, { workspaceId });
-          return failure('Failed to get diff summary');
+          return failure(m.workspaceSummary_diffSummaryFailed_error());
         }
       },
       WORKSPACE_CHANNELS.GET_DIFF_SUMMARY,
@@ -76,7 +77,7 @@ export function setupWorkspaceSummaryIPC(): void {
         try {
           const workspace = await protocolAdapter.getWorkspace(workspaceId);
           if (!workspace) {
-            return failure('Workspace not found');
+            return failure(m.workspaceIpc_workspaceNotFound_error());
           }
           const summary = await computeWorkspaceGitSummary({
             id: workspaceId,
@@ -86,7 +87,7 @@ export function setupWorkspaceSummaryIPC(): void {
           return success(summary ?? null);
         } catch (error) {
           logger.error('Failed to get git summary', error as Error, { workspaceId });
-          return failure('Failed to get git summary');
+          return failure(m.workspaceSummary_gitSummaryFailed_error());
         }
       },
       WORKSPACE_CHANNELS.GET_GIT_SUMMARY,
@@ -105,7 +106,7 @@ export function setupWorkspaceSummaryIPC(): void {
           return success(tasks);
         } catch (error) {
           logger.error('Failed to get workspace tasks', error as Error, { workspaceId });
-          return failure('Failed to get workspace tasks');
+          return failure(m.workspaceSummary_tasksFailed_error());
         }
       },
       WORKSPACE_CHANNELS.GET_TASKS,
@@ -114,4 +115,3 @@ export function setupWorkspaceSummaryIPC(): void {
 
   logger.info('Workspace summary IPC handlers registered');
 }
-

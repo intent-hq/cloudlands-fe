@@ -31,6 +31,7 @@ export class ValidationError extends Error {
     public errors: z.ZodError['errors'],
     public input: unknown,
   ) {
+    // i18n-ignore (developer diagnostic error)
     super(`Validation failed for channel ${channel}`);
     this.name = 'ValidationError';
   }
@@ -95,7 +96,11 @@ export function createSafeValidatedHandler<T>(
     ipcDebugTracker.trackCall(channelName, data, 'main');
 
     // Log incoming data for STREAM_MESSAGE channel to debug image blocks issue
-    if (channelName === 'agent-backend:stream-message' && typeof data === 'object' && data !== null) {
+    if (
+      channelName === 'agent-backend:stream-message' &&
+      typeof data === 'object' &&
+      data !== null
+    ) {
       const dataObj = data as any;
       logger.info('IPC Handler: Received STREAM_MESSAGE request', {
         channelName,
@@ -111,7 +116,11 @@ export function createSafeValidatedHandler<T>(
       const validated = schema.parse(data);
 
       // Log validated data for STREAM_MESSAGE channel to debug image blocks issue
-      if (channelName === 'agent-backend:stream-message' && typeof validated === 'object' && validated !== null) {
+      if (
+        channelName === 'agent-backend:stream-message' &&
+        typeof validated === 'object' &&
+        validated !== null
+      ) {
         const validatedObj = validated as any;
         logger.info('IPC Handler: After validation STREAM_MESSAGE request', {
           channelName,
@@ -140,6 +149,7 @@ export function createSafeValidatedHandler<T>(
           success: false,
           error: {
             code: 'VALIDATION_ERROR',
+            // i18n-ignore (developer diagnostic error; schema messages are not localized)
             message: 'Invalid request parameters',
             details: error.errors,
           },

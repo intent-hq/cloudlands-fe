@@ -17,21 +17,22 @@
  * This module is dependency-light: it imports only the AppClient seam, the
  * configured store, slice actions, and selectors (per src/store AGENTS.md).
  */
-import { appClient } from "$lib/client";
-import type { CreatePrerequisiteOptions, MutationResult } from "$lib/client";
-import { toast } from "$lib/components/ui/toast";
-import type { TaskStatus, WorkspaceTask } from "$shared/types";
-import { store as appStore } from "$store/renderer/store";
+import { appClient } from '$lib/client';
+import type { CreatePrerequisiteOptions, MutationResult } from '$lib/client';
+import { toast } from '$lib/components/ui/toast';
+import type { TaskStatus, WorkspaceTask } from '$shared/types';
+import { store as appStore } from '$store/renderer/store';
 import {
   applyLocalNoteUpdate,
   applyTaskStatusChanged as applyNoteTaskStatusChanged,
-} from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
-import { applyTaskStatusChanged as applyWorkspaceTaskStatusChanged } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
-import { selectNoteById } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
-import { selectWorkspaceTasks } from "$store/renderer/slices/workspace-tasks/workspace-tasks-selectors";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { applyTaskStatusChanged as applyWorkspaceTaskStatusChanged } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+import { selectWorkspaceTasks } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
-const logger = createLogger("TasksWriteService");
+const logger = createLogger('TasksWriteService');
 
 /** Dispatch the optimistic status into both the notes and tasks slices. */
 function applyStatus(workspaceId: string, noteId: string, status: TaskStatus): void {
@@ -41,9 +42,11 @@ function applyStatus(workspaceId: string, noteId: string, status: TaskStatus): v
 
 /** Read the current task-note status from the notes slice, falling back to the tasks slice. */
 function readCurrentStatus(workspaceId: string, noteId: string): TaskStatus | undefined {
-  const fromNote = selectNoteById.select(appStore.state, workspaceId, noteId)?.metadata?.task?.status;
+  const fromNote = selectNoteById.select(appStore.state, workspaceId, noteId)?.metadata?.task
+    ?.status;
   if (fromNote !== undefined) return fromNote;
-  return selectWorkspaceTasks.select(appStore.state, workspaceId).find((t) => t.id === noteId)?.status;
+  return selectWorkspaceTasks.select(appStore.state, workspaceId).find((t) => t.id === noteId)
+    ?.status;
 }
 
 /**
@@ -71,15 +74,15 @@ function reconcileTaskConflict(
 ): boolean {
   if (!result.conflict) return false;
   const current = result.conflict.current as WorkspaceTask | undefined;
-  if (current && typeof current === "object") {
+  if (current && typeof current === 'object') {
     if (current.status) applyStatus(workspaceId, noteId, current.status);
-    if (typeof current.rev === "number") {
+    if (typeof current.rev === 'number') {
       appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { rev: current.rev }));
     }
   }
-  logger.warn("Task mutation conflicted; reloaded the latest version", { noteId });
-  toast.warning("This task changed on the server", {
-    description: "Your change was not applied; reloaded the latest version.",
+  logger.warn('Task mutation conflicted; reloaded the latest version', { noteId });
+  toast.warning(m.tasks_write_conflict_title(), {
+    description: m.tasks_write_conflict_description(),
   });
   return true;
 }
@@ -106,7 +109,7 @@ export async function updateTaskNoteStatus(
   if (!result.success) {
     if (reconcileTaskConflict(workspaceId, noteId, result)) return;
     if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
-    logger.error("Failed to update task status", result.error);
+    logger.error('Failed to update task status', result.error);
   }
 }
 
@@ -126,7 +129,7 @@ export async function createPrerequisiteTask(
 ): Promise<string | undefined> {
   const result = await appClient.tasks.createPrerequisite(dependentNoteId, title, options);
   if (!result.success) {
-    logger.error("Failed to create prerequisite task", result.error);
+    logger.error('Failed to create prerequisite task', result.error);
     return undefined;
   }
   return result.id;

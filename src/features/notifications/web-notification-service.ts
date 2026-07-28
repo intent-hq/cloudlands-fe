@@ -43,12 +43,10 @@ import { addMockIpcListener } from '$shared/ipc-mock-router';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { getPlatform } from '$lib/utils/platform-capabilities';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { AgentIdleEvent } from '$features/events/types';
-import {
-  buildNotificationContent,
-  type NotificationContent,
-} from './utils/notification-content';
+import { buildNotificationContent, type NotificationContent } from './utils/notification-content';
 import { handleNotificationNavigate } from './notification-navigation';
 import { playNotificationSoundPerSettings } from './notification-sound-gate';
 
@@ -351,17 +349,21 @@ export async function showTestWebNotification(): Promise<{ success: boolean; err
     if (!isNotificationSupported()) {
       return {
         success: false,
-        error: 'Desktop notifications are not supported on this platform',
+        error: m.notification_not_supported(),
       };
     }
     const granted = await ensurePermission();
     if (!granted) {
-      return { success: false, error: 'Notification permission was not granted' };
+      return { success: false, error: m.notifications_web_permissionNotGranted_error() };
     }
-    await showWebNotification({ title: 'Agent', body: 'Test notification' });
+    await showWebNotification({
+      title: m.notification_specialist_agent(),
+      body: m.notification_test_body(),
+    });
     return { success: true };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : m.notifications_web_unknown_error();
     logger.error('Failed to show test notification', error);
     return { success: false, error: errorMessage };
   }
@@ -381,7 +383,7 @@ export async function requestWebNotificationPermission(): Promise<{
     if (!isNotificationSupported()) {
       return {
         success: false,
-        error: 'Desktop notifications are not supported on this platform',
+        error: m.notification_not_supported(),
       };
     }
     // resolvePermission (not ensurePermission): a thrown requestPermission
@@ -392,7 +394,7 @@ export async function requestWebNotificationPermission(): Promise<{
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : m.notifications_web_unknown_error(),
     };
   }
 }

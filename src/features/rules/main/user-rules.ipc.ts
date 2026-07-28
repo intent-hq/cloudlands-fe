@@ -29,24 +29,29 @@ const logger = new Logger('EndUserRulesIPC');
 
 // New schemas for per-type operations
 const UserRulesGetByTypeSchema = z.object({
+  // i18n-ignore (IPC payload validation, developer-facing)
   type: z.string().min(1, 'Rule type is required'),
 });
 
 const UserRulesUpdateByTypeSchema = z.object({
+  // i18n-ignore (IPC payload validation, developer-facing)
   type: z.string().min(1, 'Rule type is required'),
   content: z.string(),
 });
 
 const UserRulesSetEnabledByTypeSchema = z.object({
+  // i18n-ignore (IPC payload validation, developer-facing)
   type: z.string().min(1, 'Rule type is required'),
   enabled: z.boolean(),
 });
 
 const UserRulesDeleteByTypeSchema = z.object({
+  // i18n-ignore (IPC payload validation, developer-facing)
   type: z.string().min(1, 'Rule type is required'),
 });
 
 const UserRulesExportByTypeSchema = z.object({
+  // i18n-ignore (IPC payload validation, developer-facing)
   type: z.string().min(1, 'Rule type is required'),
 });
 

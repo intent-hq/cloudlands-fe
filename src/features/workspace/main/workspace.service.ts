@@ -9,8 +9,8 @@ import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
-
 import { Logger } from '../../../shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import { getChangeHistoryForWorkspace } from './change-history-persistence';
 import { getBackendClient } from '../../backend/main/backend.ipc';
@@ -23,15 +23,8 @@ import type {
   WorkspaceMetadata,
   WorkspaceUIContext,
 } from '../../../shared/types';
-import {
-  PullRequestStatus,
-  WorkspaceStatus,
-} from '../../../shared/types';
-import {
-  CHIEF_WORKSPACE_ID,
-  type WorkspaceId,
-} from '../../../shared/types/branded-ids';
-
+import { PullRequestStatus, WorkspaceStatus } from '../../../shared/types';
+import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '../../../shared/types/branded-ids';
 
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import {
@@ -41,15 +34,11 @@ import {
   workspaceDeleted,
   workspaceArchived,
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
-import {
-  isValidWorkspaceIdFormat,
-} from '../../../main/utils/workspace-validation';
+import { isValidWorkspaceIdFormat } from '../../../main/utils/workspace-validation';
 import type { WorkspaceRepository } from './workspace.repository';
 import { DaemonWorkspaceRepository, getChiefWorkspace } from './workspace.repository';
 
 const logger = new Logger('WorkspaceService');
-
-
 
 type BackgroundEnrichmentWorkspaceUpdates = Partial<
   Pick<
@@ -95,9 +84,7 @@ export class WorkspaceService {
   private recentlyDeletedCleanupTimers = new Map<string, NodeJS.Timeout>();
   private readonly RECENTLY_DELETED_TTL = 60000; // 60 seconds - long enough for zombie events to settle
 
-  constructor(
-    private readonly repository: WorkspaceRepository = new DaemonWorkspaceRepository(),
-  ) {
+  constructor(private readonly repository: WorkspaceRepository = new DaemonWorkspaceRepository()) {
     // Domain event listeners (including task:status-changed) are now handled
     // by sagas in domain-event-listener-sagas.ts.
   }
@@ -143,9 +130,7 @@ export class WorkspaceService {
       includeArchived,
     })) as { workspaces?: unknown[] };
     const rows = Array.isArray(response?.workspaces) ? response.workspaces : [];
-    return rows.map((raw) =>
-      this.normalizeDaemonWorkspace(raw as Record<string, unknown>),
-    );
+    return rows.map((raw) => this.normalizeDaemonWorkspace(raw as Record<string, unknown>));
   }
 
   /**
@@ -165,9 +150,7 @@ export class WorkspaceService {
       title: String(raw.title ?? raw.name ?? rawId),
       branch: String(raw.branch ?? ''),
       status: this.toWorkspaceStatus(raw.status),
-      changesets: Array.isArray(raw.changesets)
-        ? (raw.changesets as Workspace['changesets'])
-        : [],
+      changesets: Array.isArray(raw.changesets) ? (raw.changesets as Workspace['changesets']) : [],
       timeline: Array.isArray(raw.timeline) ? (raw.timeline as Workspace['timeline']) : [],
       conversationInfo: Array.isArray(raw.conversationInfo)
         ? (raw.conversationInfo as Workspace['conversationInfo'])
@@ -358,9 +341,7 @@ export class WorkspaceService {
                 if (idx >= paginatedWorkspaces.length) return;
                 const paginatedWorkspace = paginatedWorkspaces[idx];
                 if (!paginatedWorkspace) continue;
-                agentIdsResults[idx] = await this.getWorkspaceAgentIds(
-                  paginatedWorkspace.id,
-                );
+                agentIdsResults[idx] = await this.getWorkspaceAgentIds(paginatedWorkspace.id);
               }
             },
           ),
@@ -719,7 +700,7 @@ export class WorkspaceService {
         logger.error('getWorkspace called with undefined or null id');
         return {
           ok: false,
-          error: 'Workspace ID is required',
+          error: m.workspaceService_workspaceIdRequired_error(),
         };
       }
 
@@ -728,7 +709,7 @@ export class WorkspaceService {
         logger.error('Invalid workspace ID format', { id });
         return {
           ok: false,
-          error: 'Invalid workspace ID format',
+          error: m.workspaceService_workspaceIdInvalidFormat_error(),
         };
       }
 
@@ -744,7 +725,7 @@ export class WorkspaceService {
       if (!workspace) {
         return {
           ok: false,
-          error: 'Workspace not found',
+          error: m.workspaceIpc_workspaceNotFound_error(),
         };
       }
 
@@ -852,7 +833,7 @@ export class WorkspaceService {
         });
         return {
           ok: false,
-          error: 'Workspace was recently deleted',
+          error: m.workspaceService_recentlyDeleted_error(),
         };
       }
 
@@ -874,8 +855,7 @@ export class WorkspaceService {
       // Normalize PR URL (convert empty string to null so daemon clears it)
       let normalizedPrUrl: string | null | undefined;
       if (requestedPrUrl !== undefined) {
-        normalizedPrUrl =
-          requestedPrUrl === null || requestedPrUrl === '' ? null : requestedPrUrl;
+        normalizedPrUrl = requestedPrUrl === null || requestedPrUrl === '' ? null : requestedPrUrl;
       }
 
       // Build daemon payload. `updatedAt` is stamped daemon-side; do NOT send it.
@@ -891,11 +871,12 @@ export class WorkspaceService {
       const response = (await getBackendClient().request('workspace.update', daemonParams)) as
         | { workspace?: unknown }
         | undefined;
-      const rawWorkspace = response && typeof response === 'object' ? response.workspace : undefined;
+      const rawWorkspace =
+        response && typeof response === 'object' ? response.workspace : undefined;
       if (!rawWorkspace || typeof rawWorkspace !== 'object') {
         return {
           ok: false,
-          error: 'Workspace not found',
+          error: m.workspaceIpc_workspaceNotFound_error(),
         };
       }
       const daemonWorkspace = this.normalizeDaemonWorkspace(
@@ -982,7 +963,7 @@ export class WorkspaceService {
           ? (response as { workspace?: unknown }).workspace
           : response;
       if (!raw || typeof raw !== 'object') {
-        return { ok: false, error: 'Daemon returned an invalid workspace payload' };
+        return { ok: false, error: m.workspaceService_invalidDaemonPayload_error() };
       }
       const newWorkspace = this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
 
@@ -1016,7 +997,7 @@ export class WorkspaceService {
         logger.error('Invalid workspace ID for deletion', { id });
         return {
           ok: false,
-          error: 'Invalid workspace ID',
+          error: m.workspaceService_invalidWorkspaceId_error(),
         };
       }
 
@@ -1064,7 +1045,7 @@ export class WorkspaceService {
             : JSON.stringify(error);
       return {
         ok: false,
-        error: errorMessage || 'Failed to delete workspace',
+        error: errorMessage || m.workspaceService_deleteFailed_error(),
       };
     }
   }
@@ -1188,7 +1169,7 @@ export class WorkspaceService {
           ? (response as { workspace?: unknown }).workspace
           : response;
       if (!raw || typeof raw !== 'object') {
-        return { ok: false, error: 'Daemon returned an invalid workspace payload' };
+        return { ok: false, error: m.workspaceService_invalidDaemonPayload_error() };
       }
       const workspace = this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
 
@@ -1345,9 +1326,7 @@ export class WorkspaceService {
         directory,
       })) as { repositories?: unknown };
       const repositories = Array.isArray(response?.repositories)
-        ? (response.repositories as unknown[]).filter(
-            (r): r is string => typeof r === 'string',
-          )
+        ? (response.repositories as unknown[]).filter((r): r is string => typeof r === 'string')
         : [];
       return { ok: true, data: repositories };
     } catch (error) {
@@ -1373,7 +1352,7 @@ export class WorkspaceService {
     if (error && typeof error === 'object' && 'message' in error) {
       return String(error.message);
     }
-    return 'Unknown error occurred';
+    return m.workspaceService_unknown_error();
   }
 
   /**
@@ -1591,7 +1570,10 @@ export class WorkspaceService {
       return { ok: true, data: undefined };
     } catch (error) {
       logger.error('Failed to update current context', error as Error, { workspaceId });
-      const message = `Failed to update current context for workspace ${workspaceId}: ${this.extractErrorMessage(error)}`;
+      const message = m.workspaceService_updateContextFailed_error({
+        workspaceId,
+        error: this.extractErrorMessage(error),
+      });
       return { ok: false, error: message };
     }
   }

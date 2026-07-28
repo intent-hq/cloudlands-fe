@@ -112,39 +112,34 @@ export const EXECUTOR_CONFIGS: Record<
   string,
   { resultTag: string; timeout: number; name: string; agentType: string }
 > = {
-  // i18n-ignore (internal background-agent session names)
   commit: {
     resultTag: 'COMMIT_MESSAGE',
     timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS,
-    name: 'Commit Message Generator',
+    name: 'Commit Message Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'commit-message',
   },
-  // i18n-ignore (internal background-agent session names)
   'commit-merge': {
     resultTag: 'COMMIT_MESSAGE',
     timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS,
-    name: 'Merge Commit Generator',
+    name: 'Merge Commit Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'commit-message',
   },
-  // i18n-ignore (internal background-agent session names)
   pr: {
     resultTag: 'PR_DESCRIPTION',
     timeout: 180000,
-    name: 'PR Description Generator',
+    name: 'PR Description Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'pr-description',
   },
-  // i18n-ignore (internal background-agent session names)
   review: {
     resultTag: 'CODE_REVIEW',
     timeout: 120000,
-    name: 'Code Review Assistant',
+    name: 'Code Review Assistant', // i18n-ignore (internal background-agent session name)
     agentType: 'code-review',
   },
-  // i18n-ignore (internal background-agent session names)
   walkthrough: {
     resultTag: 'CODE_WALKTHROUGH',
     timeout: 120000,
-    name: 'Code Walkthrough Generator',
+    name: 'Code Walkthrough Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'code-walkthrough',
   },
 };

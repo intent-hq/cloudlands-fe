@@ -120,6 +120,7 @@ const logStartupTiming = (phase: string) => {
   const elapsed = Date.now() - startupStartTime;
   console.log(`[Startup ${elapsed}ms] ${phase}`);
 };
+// i18n-ignore (developer log message)
 logStartupTiming('Module initialization complete');
 
 // Seed PATH from the daemon (`host.env`, PROTOCOL §5.14) so child processes
@@ -164,6 +165,7 @@ async function seedPathFromHostEnv(): Promise<void> {
         } else if (result.path) {
           process.env.PATH = result.path;
         }
+        // i18n-ignore (developer log message)
         mainLogger.info('Seeded PATH from host.env', {
           pathEntries: result.pathEntries.length,
           shell: result.shell,
@@ -192,6 +194,7 @@ async function seedPathFromHostEnv(): Promise<void> {
 
 // Initialize warning suppression early
 initializeWarningSuppression();
+// i18n-ignore (developer log message)
 logStartupTiming('Warning suppression initialized');
 
 // Register custom protocols before app.whenReady()
@@ -376,6 +379,7 @@ async function gracefulShutdown() {
       logger.info('All script process managers disposed');
     } catch (error) {
       logger.error(
+        // i18n-ignore (developer log message)
         'Error disposing script process managers:',
         error instanceof Error ? error : new Error(String(error)),
       );
@@ -387,6 +391,7 @@ async function gracefulShutdown() {
       logger.info('Backend JSON-RPC client disposed');
     } catch (error) {
       logger.error(
+        // i18n-ignore (developer log message)
         'Error disposing backend client:',
         error instanceof Error ? error : new Error(String(error)),
       );
@@ -405,6 +410,7 @@ async function gracefulShutdown() {
         logger.info('Sidecar daemon stopped');
       } catch (error) {
         logger.error(
+          // i18n-ignore (developer log message)
           'Error stopping sidecar daemon:',
           error instanceof Error ? error : new Error(String(error)),
         );
@@ -421,6 +427,7 @@ async function gracefulShutdown() {
         logger.info('CDP MCP Server stopped');
       } catch (error) {
         logger.error(
+          // i18n-ignore (developer log message)
           'Error stopping CDP MCP Server:',
           error instanceof Error ? error : new Error(String(error)),
         );
@@ -1024,6 +1031,7 @@ app.whenReady().then(async () => {
                   });
                 } else {
                   logger.warn(
+                    // i18n-ignore (developer log message)
                     '[Menu] mainWindow not available for sending up-to-date notification',
                   );
                 }
@@ -1615,6 +1623,7 @@ app.on('window-all-closed', async () => {
         createWindow();
       } catch (err) {
         logger.error(
+          // i18n-ignore (developer log message)
           'Failed to re-open window after cancelled quit',
           err instanceof Error ? err : new Error(String(err)),
         );
@@ -1632,6 +1641,7 @@ app.on('window-all-closed', async () => {
       await saveWindowSessions();
     } catch (err) {
       logger.error(
+        // i18n-ignore (developer log message)
         'Failed to save window sessions on window-all-closed',
         err instanceof Error ? err : new Error(String(err)),
       );
@@ -1672,6 +1682,7 @@ app.on('window-all-closed', async () => {
       logger.info('CDP MCP Server stopped');
     } catch (error) {
       logger.error(
+        // i18n-ignore (developer log message)
         'Error stopping CDP MCP Server:',
         error instanceof Error ? error : new Error(String(error)),
       );
@@ -1710,6 +1721,7 @@ if (!gotTheLock) {
   // Log which path is contended before quitting so this isn't a silent no-op — a
   // common failure mode when a foreign Electron dev app shares the same userData dir.
   const contendedUserData = app.getPath('userData');
+  // i18n-ignore (developer log message)
   const message = `Another instance is already running; SingletonLock in userData=${contendedUserData} is held. Exiting.`;
   console.error(`[Main] ${message}`);
   try {

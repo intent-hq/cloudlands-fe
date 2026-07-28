@@ -16,6 +16,7 @@
   fade,
   fly,
 } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface ReleaseNotes {
     version: string;
@@ -67,8 +68,8 @@
             <Fa icon={faRocket} class="text-primary" />
           </div>
           <div>
-            <h2 class="text-lg font-semibold">What's New</h2>
-            <p class="text-sm text-subtle">Version {releaseNotes.version}</p>
+            <h2 class="text-lg font-semibold">{m.lib_releaseNotes_whatsNew_title()}</h2>
+            <p class="text-sm text-subtle">{m.lib_releaseNotes_version_label({ version: releaseNotes.version })}</p>
           </div>
         </div>
         <Button variant="ghost" size="icon" onclick={close}>
@@ -92,13 +93,13 @@
             {/each}
           </ul>
         {:else}
-          <p class="text-sm text-subtle">Bug fixes and performance improvements.</p>
+          <p class="text-sm text-subtle">{m.lib_releaseNotes_fallback_message()}</p>
         {/if}
       </div>
 
       <!-- Footer -->
       <div class="px-6 py-4 border-t border-border flex justify-end">
-        <Button onclick={close}>Got it</Button>
+        <Button onclick={close}>{m.lib_releaseNotes_gotIt_label()}</Button>
       </div>
     </div>
   </div>

@@ -27,10 +27,10 @@
  * `store.createSelector` during middleware-chain construction); state is read
  * directly off `appStore.state.specialists`.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import type { SpecialistDef } from "$lib/client/app-client";
-import { appClient } from "$lib/client";
-import { store as appStore } from "$store/renderer/store";
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { SpecialistDef } from '$lib/client/app-client';
+import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
 import {
   saveFileSpecialist,
   deleteFileSpecialist,
@@ -43,16 +43,17 @@ import {
   setOverridesLoaded,
   setCustomSpecialistsLoaded,
   type FileSpecialist,
-} from "$store/renderer/slices/specialists/specialists-slice";
-import { SPECIALISTS } from "$lib/constants/specialists";
-import type { ModelTier, SpecialistFileScope } from "$shared/specialist-file-types";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/specialists/specialists-slice';
+import { SPECIALISTS } from '$lib/constants/specialists';
+import type { ModelTier, SpecialistFileScope } from '$shared/specialist-file-types';
+import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
-const logger = createLogger("SpecialistsMutationService");
+const logger = createLogger('SpecialistsMutationService');
 
 /** Lazily pull the toast lib so this middleware-reachable module stays light. */
 async function getToast() {
-  const { toast } = await import("svelte-sonner");
+  const { toast } = await import('svelte-sonner');
   return toast;
 }
 
@@ -70,7 +71,7 @@ function readFileSpecialist(id: string): FileSpecialist | undefined {
 }
 
 /** Direct one-time read of bundledSpecialists state (dependency-light, no selector import). */
-function readBundledSpecialist(id: string): typeof SPECIALISTS[number] | undefined {
+function readBundledSpecialist(id: string): (typeof SPECIALISTS)[number] | undefined {
   const state = appStore.state as { specialists?: { bundledSpecialists: typeof SPECIALISTS } };
   const bundled = state.specialists?.bundledSpecialists;
   // Before the initial specialist.list load populates the store, fall back to
@@ -78,14 +79,16 @@ function readBundledSpecialist(id: string): typeof SPECIALISTS[number] | undefin
   return (bundled?.length ? bundled : SPECIALISTS).find((s) => s.id === id);
 }
 
-const MODEL_TIERS = new Set<ModelTier>(["fast", "balanced", "smart"]);
+const MODEL_TIERS = new Set<ModelTier>(['fast', 'balanced', 'smart']);
 
 function toModelTier(value: string | undefined): ModelTier | undefined {
-  return value !== undefined && MODEL_TIERS.has(value as ModelTier) ? (value as ModelTier) : undefined;
+  return value !== undefined && MODEL_TIERS.has(value as ModelTier)
+    ? (value as ModelTier)
+    : undefined;
 }
 
 /** Map a bundled-tier wire `SpecialistDef` (PROTOCOL §5.11) to the store's `Specialist`. */
-function toBundledSpecialist(def: SpecialistDef): typeof SPECIALISTS[number] {
+function toBundledSpecialist(def: SpecialistDef): (typeof SPECIALISTS)[number] {
   return {
     id: def.id,
     name: def.name,
@@ -93,9 +96,9 @@ function toBundledSpecialist(def: SpecialistDef): typeof SPECIALISTS[number] {
     codingAgent: def.codingAgent,
     defaultModel: def.model,
     defaultModelTier: toModelTier(def.modelTier),
-    defaultBehaviorPrompt: def.behaviorPrompt ?? def.prompt ?? "",
+    defaultBehaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
     roleReminder: def.roleReminder,
-    source: "bundled" as const,
+    source: 'bundled' as const,
     defaultAgentType: def.agentType,
     hidden: def.hidden,
   };
@@ -108,11 +111,11 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     name: def.name,
     description: def.description,
     codingAgent: def.codingAgent,
-    model: def.model ?? "",
+    model: def.model ?? '',
     modelTier: toModelTier(def.modelTier),
-    behaviorPrompt: def.behaviorPrompt ?? def.prompt ?? "",
+    behaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
     roleReminder: def.roleReminder,
-    filePath: def.path ?? "",
+    filePath: def.path ?? '',
     source: def.source as SpecialistFileScope,
     hidden: def.hidden,
   };
@@ -134,8 +137,8 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
  * the same split as the post-write refetch below.
  */
 export function dispatchSpecialistList(defs: SpecialistDef[]): void {
-  const bundledDefs = defs.filter((def) => def.source === "bundled");
-  const fileDefs = defs.filter((def) => def.source === "user" || def.source === "project");
+  const bundledDefs = defs.filter((def) => def.source === 'bundled');
+  const fileDefs = defs.filter((def) => def.source === 'user' || def.source === 'project');
 
   // Reconstruct the bundled set: start with SPECIALISTS (all built-ins), then
   // overlay daemon-returned bundled entries by ID (in case new bundled specialists
@@ -150,7 +153,7 @@ export function dispatchSpecialistList(defs: SpecialistDef[]): void {
     }
     // The SPECIALISTS constant entry doesn't have source="bundled" set, but we
     // know it's bundled. Ensure source is set for store consumers (e.g., UI source labels).
-    return { ...builtin, source: "bundled" as const };
+    return { ...builtin, source: 'bundled' as const };
   });
 
   // Add any daemon-returned bundled IDs not in SPECIALISTS (future-proof if the
@@ -176,9 +179,9 @@ async function refetchAndDispatch(): Promise<void> {
     const defs = await appClient.specialists.list();
     dispatchSpecialistList(defs);
   } catch (error) {
-    logger.error("Failed to refetch specialist list", error);
-    const { toast } = await import("$lib/components/ui/toast");
-    toast.error("Failed to refresh specialists list after write");
+    logger.error('Failed to refetch specialist list', error);
+    const { toast } = await import('$lib/components/ui/toast');
+    toast.error(m.specialists_mutation_refreshFailed_error());
   }
 }
 
@@ -201,10 +204,10 @@ async function handleSaveFileSpecialist(
       modelTier: payload.modelTier,
       roleReminder: payload.roleReminder,
       behaviorPrompt: payload.behaviorPrompt,
-      source: (payload.scope ?? "user") as "user" | "project",
+      source: (payload.scope ?? 'user') as 'user' | 'project',
       hidden,
     };
-    const scope = payload.scope ?? "user";
+    const scope = payload.scope ?? 'user';
     if (existing) {
       await appClient.specialists.edit(payload.id, spec, scope, payload.workspacePath);
     } else {
@@ -212,9 +215,9 @@ async function handleSaveFileSpecialist(
     }
     await refetchAndDispatch();
   } catch (error) {
-    logger.error("Failed to save file specialist", error);
+    logger.error('Failed to save file specialist', error);
     const toast = await getToast();
-    toast.error(errorMessage(error, "Failed to save specialist"));
+    toast.error(errorMessage(error, m.specialists_mutation_saveFailed_error()));
   }
 }
 
@@ -223,13 +226,13 @@ async function handleDeleteFileSpecialist(
 ): Promise<void> {
   const [ref] = action.payload;
   try {
-    const scope = ref.scope ?? "user";
+    const scope = ref.scope ?? 'user';
     await appClient.specialists.delete(ref.id, scope, ref.workspacePath);
     await refetchAndDispatch();
   } catch (error) {
-    logger.error("Failed to delete file specialist", error);
+    logger.error('Failed to delete file specialist', error);
     const toast = await getToast();
-    toast.error(errorMessage(error, "Failed to delete specialist"));
+    toast.error(errorMessage(error, m.specialists_mutation_deleteFailed_error()));
   }
 }
 
@@ -251,15 +254,15 @@ async function handleExportBuiltinToFile(
       modelTier: bundled.defaultModelTier,
       roleReminder: bundled.roleReminder,
       behaviorPrompt: bundled.defaultBehaviorPrompt,
-      source: "user",
+      source: 'user',
       hidden: bundled.hidden,
     };
-    await appClient.specialists.create(bundled.id, spec, "user");
+    await appClient.specialists.create(bundled.id, spec, 'user');
     await refetchAndDispatch();
   } catch (error) {
-    logger.error("Failed to export bundled specialist to file", error);
+    logger.error('Failed to export bundled specialist to file', error);
     const toast = await getToast();
-    toast.error(errorMessage(error, "Failed to export specialist"));
+    toast.error(errorMessage(error, m.specialists_mutation_exportFailed_error()));
   }
 }
 
@@ -275,7 +278,7 @@ async function handleLoadFileSpecialists(): Promise<void> {
 export function createSpecialistsMutationMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
-    if (!action || typeof action !== "object") return result;
+    if (!action || typeof action !== 'object') return result;
     const type = (action as { type?: unknown }).type;
     switch (type) {
       case saveFileSpecialist.type:

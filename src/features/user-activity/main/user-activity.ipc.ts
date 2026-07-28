@@ -7,14 +7,12 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { Logger } from '../../../shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { USER_ACTIVITY_CHANNELS } from '../../../shared/ipc/channels';
 import { UserActivityService } from './user-activity.service';
 import { FileSystemUserActivityRepository } from './user-activity.repository';
-import {
-  WorkspaceId,
-  NoteId,
-} from '../../../shared/types/branded-ids';
+import { WorkspaceId, NoteId } from '../../../shared/types/branded-ids';
 import { WorkspaceConfig } from '../../../shared/main/config';
 
 const logger = new Logger('UserActivityIPC');
@@ -77,7 +75,7 @@ export function setupUserActivityIPC(): void {
           logger.error('Failed to mark note as read', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.userActivity_ipc_unknown_error(),
           };
         }
       },
@@ -101,7 +99,7 @@ export function setupUserActivityIPC(): void {
           logger.error('Failed to get note read status', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.userActivity_ipc_unknown_error(),
           };
         }
       },
@@ -130,7 +128,7 @@ export function setupUserActivityIPC(): void {
           logger.error('Failed to get unread note IDs', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.userActivity_ipc_unknown_error(),
           };
         }
       },

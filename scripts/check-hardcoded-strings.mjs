@@ -33,6 +33,10 @@ import { join, relative, resolve } from 'node:path';
 // the settings pilot extraction adds the first entry. Individual files are
 // listed while their parent directory is only partially migrated.
 const ENFORCED_DIRS = [
+  'src/lib/components',
+  'src/lib/constants',
+  'src/lib/data',
+  'src/hooks.client.ts',
   'src/lib/components/settings',
   'src/features/settings',
   'src/routes/settings',
@@ -127,6 +131,49 @@ const ENFORCED_DIRS = [
   'src/features/opencode',
   'src/features/pi',
   'src/features/providers',
+  // remaining feature dirs (final flip). agent/main/instructions, agent/testing,
+  // agent/agent-launch-core, acp-official main/server + parsers/plans, and
+  // cortex/cortex-acp emit agent-facing prompt/wire content — intentionally
+  // not enforced.
+  'src/features/accept-changes',
+  'src/features/agent-testing',
+  'src/features/auto-update',
+  'src/features/backend',
+  'src/features/cdp',
+  'src/features/config',
+  'src/features/context',
+  'src/features/deeplink',
+  'src/features/diffs',
+  'src/features/events',
+  'src/features/export',
+  'src/features/external-editors',
+  'src/features/feature-codes',
+  'src/features/file',
+  'src/features/git',
+  'src/features/git-tracking',
+  'src/features/ide',
+  'src/features/ipc',
+  'src/features/line-changes',
+  'src/features/mcp',
+  'src/features/memory',
+  'src/features/metadata-fs',
+  'src/features/navigation',
+  'src/features/notifications',
+  'src/features/optimization',
+  'src/features/permission',
+  'src/features/protocol',
+  'src/features/rules',
+  'src/features/scripts',
+  'src/features/setup-scripts',
+  'src/features/specialists',
+  'src/features/storage',
+  'src/features/system',
+  'src/features/tasks',
+  'src/features/theme',
+  'src/features/token-usage',
+  'src/features/tools',
+  'src/features/user-activity',
+  'src/features/workspace',
 ];
 
 const ROOT = process.cwd();
@@ -446,7 +493,13 @@ function checkTemplateFallbacks(src, raw, start, violations) {
     const expr = raw.slice(i + 1, close);
     if (!/^[#:/@]/.test(expr.trim())) {
       for (const lit of extractStringLiterals(expr)) {
-        if (!raw.slice(i + 1, i + 1 + lit.start).trimEnd().endsWith('||')) continue;
+        if (
+          !raw
+            .slice(i + 1, i + 1 + lit.start)
+            .trimEnd()
+            .endsWith('||')
+        )
+          continue;
         if (!WORDS_RE.test(stripHtmlEntities(lit.value))) continue;
         violations.push({
           line: lineAt(src, start + i + 1 + lit.start),

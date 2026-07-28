@@ -4,10 +4,7 @@
  * IPC handlers for exporting chat conversations to HTML files.
  */
 
-import {
-  ipcMain,
-  dialog,
-} from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { promises as fs } from 'fs';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
@@ -21,6 +18,7 @@ const logger = new Logger('ChatExportIPC');
 // Zod schema for validation
 const ExportChatToHtmlSchema = z.object({
   messages: z.array(z.any()),
+  // i18n-ignore (IPC payload validation, developer-facing)
   title: z.string().min(1, 'Title is required'),
 });
 
@@ -88,7 +86,7 @@ export function registerChatExportHandlers(): void {
           });
           return {
             success: false,
-            error: errorMsg || 'Failed to export chat',
+            error: errorMsg || m.export_ipc_exportFailed_error(),
           };
         }
       },

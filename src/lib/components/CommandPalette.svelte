@@ -30,6 +30,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
@@ -164,7 +165,7 @@
         return {
           id: s.id,
           type: 'agent' as const,
-          label: s.name || 'Untitled Agent',
+          label: s.name || m.lib_commandPalette_untitledAgent_fallback(),
           description,
           icon: faCommentDots,
           timestamp: new Date(s.updatedAt || s.createdAt).getTime(),
@@ -235,15 +236,99 @@
 
   // Commands available in command mode
   const commands = [
-    { id: 'new-workspace', label: 'New Workspace', icon: faFolderOpen, shortcut: '⌘T' },
-    { id: 'settings', label: 'Settings', icon: faCog, shortcut: '⌘,' },
-    { id: 'new-agent', label: 'New Agent Chat', icon: faCommentDots },
-    { id: 'new-terminal', label: 'New Terminal', icon: faTerminal },
-    { id: 'new-note', label: 'New Note', icon: faFileAlt },
-    { id: 'new-file', label: 'New File', icon: faFile, shortcut: '⌘N' },
-    { id: 'open-url', label: 'Open URL in Browser', icon: faGlobe },
-    { id: 'show-onboarding', label: 'Show Onboarding', icon: faPlay },
+    {
+      id: 'new-workspace',
+      get label() {
+        return m.lib_commandPalette_newWorkspace_command();
+      },
+      get pillLabel() {
+        return m.lib_commandPalette_workspace_pill();
+      },
+      icon: faFolderOpen,
+      shortcut: '⌘T',
+    },
+    {
+      id: 'settings',
+      get label() {
+        return m.lib_commandPalette_settings_command();
+      },
+      icon: faCog,
+      shortcut: '⌘,',
+    },
+    {
+      id: 'new-agent',
+      get label() {
+        return m.lib_commandPalette_newAgentChat_command();
+      },
+      get pillLabel() {
+        return m.lib_commandPalette_agentChat_pill();
+      },
+      icon: faCommentDots,
+    },
+    {
+      id: 'new-terminal',
+      get label() {
+        return m.lib_commandPalette_newTerminal_command();
+      },
+      get pillLabel() {
+        return m.lib_commandPalette_terminal_pill();
+      },
+      icon: faTerminal,
+    },
+    {
+      id: 'new-note',
+      get label() {
+        return m.lib_commandPalette_newNote_command();
+      },
+      get pillLabel() {
+        return m.lib_commandPalette_note_pill();
+      },
+      icon: faFileAlt,
+    },
+    {
+      id: 'new-file',
+      get label() {
+        return m.lib_commandPalette_newFile_command();
+      },
+      get pillLabel() {
+        return m.lib_commandPalette_file_pill();
+      },
+      icon: faFile,
+      shortcut: '⌘N',
+    },
+    {
+      id: 'open-url',
+      get label() {
+        return m.lib_commandPalette_openUrl_command();
+      },
+      icon: faGlobe,
+    },
+    {
+      id: 'show-onboarding',
+      get label() {
+        return m.lib_commandPalette_showOnboarding_command();
+      },
+      icon: faPlay,
+    },
   ];
+
+  // Localized "Show N more …" labels per palette item type.
+  function showMoreLabel(count: number, itemType: string): string {
+    switch (itemType) {
+      case 'agent':
+        return m.lib_commandPalette_showMoreAgents_label({ count });
+      case 'note':
+        return m.lib_commandPalette_showMoreNotes_label({ count });
+      case 'change':
+        return m.lib_commandPalette_showMoreChanges_label({ count });
+      case 'terminal':
+        return m.lib_commandPalette_showMoreTerminals_label({ count });
+      case 'browser':
+        return m.lib_commandPalette_showMoreBrowsers_label({ count });
+      default:
+        return m.lib_commandPalette_showMoreFiles_label({ count });
+    }
+  }
 
   // MRU, formatRelativeTime, buildNoteBreadcrumbs, fuzzyScore, parseQueryFilter,
   // FILTER_PREFIXES, and WorkspaceObject types are now imported from
@@ -785,7 +870,7 @@
   <div
     class="fixed inset-0 z-50 bg-black/15 cursor-pointer"
     role="button"
-    aria-label="Close"
+    aria-label={m.lib_commandPalette_close_ariaLabel()}
     tabindex="0"
     onclick={onClose}
     onkeydown={(e) => {
@@ -804,7 +889,7 @@
     class="fixed top-[12%] left-1/2 -translate-x-1/2 w-full max-w-[560px] z-50"
     role="dialog"
     aria-modal="true"
-    aria-label="Quick actions"
+    aria-label={m.lib_commandPalette_quickActions_ariaLabel()}
     tabindex="-1"
     onkeydown={handleContainerKeyDown}
     transition:fly={{ y: 6, duration: 200 }}
@@ -825,8 +910,8 @@
           onkeydown={handleKeyDown}
           type="text"
           placeholder={isGoToLineMode
-            ? 'Type a line number to go to...'
-            : 'Type @ # > ~ / * to filter...'}
+            ? m.lib_commandPalette_goToLine_placeholder()
+            : m.lib_commandPalette_filter_placeholder()}
           class="flex-1 bg-transparent outline-none text-[15px] text-foreground placeholder:text-foreground/35 focus:outline-none! focus:ring-0!"
           autocorrect="off"
           autocapitalize="off"
@@ -836,13 +921,13 @@
           aria-live="polite"
           style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;"
         >
-          {searchResults.length} results
+          {m.lib_commandPalette_resultsCount_status({ count: searchResults.length })}
         </div>
 
         <kbd
           class="text-ui px-1.5 py-1 rounded-[5px] bg-foreground/6 text-subtle font-medium border border-foreground/6"
         >
-          ESC
+          {m.lib_commandPalette_esc_label()}
         </kbd>
       </div>
 
@@ -864,11 +949,11 @@
                 }}
               >
                 <span class="text-[14px] font-medium text-foreground"
-                  >Go to line {goToLineNumber}</span
+                  >{m.lib_commandPalette_goToLine_label({ line: goToLineNumber })}</span
                 >
               </button>
             {:else}
-              <p class="text-[13px] text-subtle px-3">Enter a valid line number</p>
+              <p class="text-[13px] text-subtle px-3">{m.lib_commandPalette_invalidLine_message()}</p>
             {/if}
           </div>
         </div>
@@ -895,7 +980,7 @@
                     >
                       <Fa icon={faPlus} class="text-ui text-subtle" />
                       <span class="text-[13px] font-medium text-subtle">
-                        {action.label.replace('New ', '')}
+                        {action.pillLabel ?? action.label}
                       </span>
                     </button>
                   {/each}
@@ -913,7 +998,7 @@
                   >
                     <Fa icon={faPlus} class="text-ui text-subtle" />
                     <span class="text-[13px] font-medium text-subtle">
-                      {wsAction.label.replace('New ', '')}
+                      {wsAction.pillLabel ?? wsAction.label}
                     </span>
                   </button>
                 {/each}
@@ -942,7 +1027,7 @@
                 onclick={() => selectItem(item)}
               >
                 <span class="text-[13px] text-subtle">
-                  Show {item._count} more {item._itemType}s...
+                  {showMoreLabel(item._count, item._itemType)}
                 </span>
               </button>
             {:else if !item._newAction}
@@ -1016,11 +1101,11 @@
         </div>
       {:else if searchQuery && !isLoadingFiles}
         <div class="px-3 py-6 text-center">
-          <p class="text-[13px] text-subtle">No results found for "{searchQuery}"</p>
+          <p class="text-[13px] text-subtle">{m.lib_commandPalette_noResults_message({ query: searchQuery })}</p>
         </div>
       {:else if !searchQuery}
         <div class="px-3 py-6 text-center">
-          <p class="text-[13px] text-subtle">Start typing to search...</p>
+          <p class="text-[13px] text-subtle">{m.lib_commandPalette_startTyping_message()}</p>
         </div>
       {/if}
 
@@ -1031,19 +1116,19 @@
           <kbd class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
             >↑↓</kbd
           >
-          <span>Navigate</span>
+          <span>{m.lib_commandPalette_navigate_label()}</span>
         </span>
         <span class="flex items-center gap-1.5">
           <kbd class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
             >↵</kbd
           >
-          <span>Select</span>
+          <span>{m.lib_commandPalette_select_label()}</span>
         </span>
         <span class="flex items-center gap-1.5">
           <kbd class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
-            >ESC</kbd
+            >{m.lib_commandPalette_esc_label()}</kbd
           >
-          <span>Close</span>
+          <span>{m.lib_commandPalette_footerClose_label()}</span>
         </span>
       </div>
     </div>

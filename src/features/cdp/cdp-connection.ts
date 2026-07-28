@@ -59,6 +59,7 @@ export class CdpConnectionManager {
     } catch (error) {
       this.logger.error(`Failed to connect to CDP on port ${this.port}:`, error as Error);
       throw new Error(
+        // i18n-ignore (developer diagnostics (CDP tooling))
         `Cannot connect to Electron app. Is it running with --remote-debugging-port=${this.port}?`,
       );
     }
