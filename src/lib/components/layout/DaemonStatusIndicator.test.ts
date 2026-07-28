@@ -413,6 +413,10 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByText('Stop Unsloth Server')).toBeTruthy();
       expect(screen.getByText(/2 agents are currently attached/)).toBeTruthy();
 
+      // Portaled to document.body so the fixed overlay escapes the title-bar
+      // region's containing block (same assertion as ChatMessage-edit-confirm).
+      expect(dialog.closest('.portal-container')?.parentElement).toBe(document.body);
+
       // Nothing dispatched until confirm.
       const stopCalls = () =>
         mockDispatch.mock.calls.filter(

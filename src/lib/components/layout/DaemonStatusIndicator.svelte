@@ -33,6 +33,7 @@
   import Header from '$lib/components/ui/Header.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
+  import Portal from '$lib/components/ui/Portal.svelte';
   import {
     selectDaemonHealth,
     selectDaemonHealthStats,
@@ -397,11 +398,20 @@
   {/snippet}
 </DropdownMenu>
 
-<BulkActionConfirmDialog
-  bind:open={stopUnslothDialogOpen}
-  title="Stop Unsloth Server"
-  description={stopUnslothDescription}
-  confirmText="Stop Server"
-  variant="destructive"
-  onConfirm={confirmStopUnsloth}
-/>
+<!--
+  Portaled to the document body (same pattern as EditRegenerateConfirmDialog)
+  so the fixed-position overlay escapes the title-bar region's containing
+  block — rendered inline it gets clipped inside the title bar.
+-->
+{#if stopUnslothDialogOpen}
+  <Portal target="body" zIndex={100}>
+    <BulkActionConfirmDialog
+      bind:open={stopUnslothDialogOpen}
+      title="Stop Unsloth Server"
+      description={stopUnslothDescription}
+      confirmText="Stop Server"
+      variant="destructive"
+      onConfirm={confirmStopUnsloth}
+    />
+  </Portal>
+{/if}
