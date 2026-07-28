@@ -233,10 +233,12 @@ async function dispatchToLifecycle(
   // "Try again" resends it verbatim if the turn fails (#941). `content`
   // already includes the workspace-context prefix, so a retry must not
   // re-prefix it. A model override (retry-with-model, #964) is recorded too,
-  // so a subsequent "Try again" keeps using the suggested model.
+  // so a subsequent "Try again" keeps using the suggested model. Image
+  // blocks are recorded as well so a retry resends the attachments (#965).
   const recordedOptions = {
     ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
     ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
   };
   appStore.dispatch(
     chatLastAttemptedMessageSet(agentId, {
@@ -399,7 +401,11 @@ async function dispatchRetryLastMessage(
       wsId,
       lastAttempted.text,
       undefined,
-      { noteIds: lastAttempted.options?.noteIds, model: lastAttempted.options?.model },
+      {
+        imageBlocks: lastAttempted.options?.imageBlocks,
+        noteIds: lastAttempted.options?.noteIds,
+        model: lastAttempted.options?.model,
+      },
       false,
     );
     appStore.dispatch(action.success(undefined as void));
@@ -453,7 +459,11 @@ async function dispatchRetryWithModel(
       wsId,
       lastAttempted.text,
       undefined,
-      { noteIds: lastAttempted.options?.noteIds, model },
+      {
+        imageBlocks: lastAttempted.options?.imageBlocks,
+        noteIds: lastAttempted.options?.noteIds,
+        model,
+      },
       false,
     );
     appStore.dispatch(action.success(undefined as void));
