@@ -64,6 +64,7 @@ import { createFileContentPruneService } from "./middlewares/file-content-prune-
 import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-persistence-service";
 import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
 import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
+import { createMenuIpcMiddleware } from "./middlewares/menu-ipc-service";
 import { createNotificationIpcMiddleware } from "./middlewares/notification-ipc-service";
 import { createWebNotificationMiddleware } from "$features/notifications/web-notification-service";
 import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
@@ -375,6 +376,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // ipc-saga.ts) so zoom-level changes from the main process (Cmd/Ctrl+Plus/
     // Minus or View menu) dispatch setZoomFactor and reach the Redux store again.
     createZoomSyncMiddleware(),
+    // Restore the menu bar IPC listeners (deleted app-layout/sagas/
+    // app-layout-saga.ts) so `navigate` and the `menu:*` channels the main
+    // process sends on menu clicks (Settings..., New Workspace, Open Recent,
+    // New Agent/Note/Terminal/Browser, Close Tab, Reopen Closed Tab, Select
+    // Previous/Next Tab, browser zoom) take effect in the renderer again.
+    createMenuIpcMiddleware(),
     // Restore the notification IPC listeners (deleted ui-notifications/sagas/
     // ui-notifications-saga.ts) so `notification:show` plays the notification
     // sound per the sound settings and `notification:navigate` (notification
