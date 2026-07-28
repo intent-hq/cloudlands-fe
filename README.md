@@ -49,6 +49,11 @@ pnpm install
 pnpm run dev
 ```
 
+Without a staged `intentd` sidecar, `pnpm run dev` falls back to the mock
+AppClient. For the full stack, run `make dev` from the monorepo root, which
+builds `intentd` and launches the app with it as a sidecar (see
+[intentd sidecar pin](#intentd-sidecar-pin)).
+
 ### Standalone
 
 You can also clone and run this repository on its own (the app falls back to the
