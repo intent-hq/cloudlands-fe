@@ -172,7 +172,14 @@ describe('chatStateReducer', () => {
   });
 
   it('chatLastAttemptedMessageSet records the retry payload (#941)', () => {
-    const attempted = { text: 'send this', options: { noteIds: ['note-1'] } };
+    const attempted = {
+      text: 'send this',
+      options: {
+        noteIds: ['note-1'],
+        // #965: image attachments ride the recorded payload so Try again resends them.
+        imageBlocks: [{ type: 'image' as const, data: 'aGVsbG8=', mimeType: 'image/png' }],
+      },
+    };
     const s1 = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
     expect(s1.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
     const s2 = chatStateReducer(s1, chatLastAttemptedMessageSet(AGENT, null));

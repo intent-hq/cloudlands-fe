@@ -1080,4 +1080,104 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(agentsQueue).not.toHaveBeenCalled();
     expect(toast.info).toHaveBeenCalledTimes(1);
   });
+
+  // -------------------------------------------------------------------------
+  // #965: retry resends the recorded image attachments
+  // -------------------------------------------------------------------------
+
+  const IMAGE_BLOCKS = [
+    { type: "image" as const, data: "aGVsbG8=", mimeType: "image/png" },
+  ];
+
+  it("#965: the lifecycle send records imageBlocks on lastAttemptedMessage", async () => {
+    appStore.dispatch(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: "look at this",
+        imageBlocks: IMAGE_BLOCKS,
+      }),
+    );
+    await flush();
+    await flush();
+
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "look at this",
+      options: { imageBlocks: IMAGE_BLOCKS },
+    });
+  });
+
+  it("#965: agentSessionRetryLastMessageRequested forwards the recorded imageBlocks to the lifecycle send", async () => {
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "look at this",
+        options: { imageBlocks: IMAGE_BLOCKS },
+      }),
+    );
+
+    const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [, , , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }> },
+    ];
+    expect(optionsArg.imageBlocks).toEqual(IMAGE_BLOCKS);
+  });
+
+  it("#965: agentSessionRetryWithModelRequested forwards the recorded imageBlocks alongside the model", async () => {
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "look at this",
+        options: { imageBlocks: IMAGE_BLOCKS },
+      }),
+    );
+
+    const action = agentSessionRetryWithModelRequested(AGENT, WS, "fast-model");
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [, , , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { model?: string; imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }> },
+    ];
+    expect(optionsArg.imageBlocks).toEqual(IMAGE_BLOCKS);
+    expect(optionsArg.model).toBe("fast-model");
+    // The re-recorded lastAttemptedMessage keeps the attachments so a later
+    // Try again still carries them.
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "look at this",
+      options: { model: "fast-model", imageBlocks: IMAGE_BLOCKS },
+    });
+  });
+
+  it("#965: retry without recorded attachments still sends with imageBlocks undefined", async () => {
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "plain text",
+        options: { noteIds: ["note-1"] },
+      }),
+    );
+
+    const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [, contentArg, , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { noteIds?: string[]; imageBlocks?: unknown },
+    ];
+    expect(contentArg).toBe("plain text");
+    expect(optionsArg.noteIds).toEqual(["note-1"]);
+    expect(optionsArg.imageBlocks).toBeUndefined();
+  });
 });
