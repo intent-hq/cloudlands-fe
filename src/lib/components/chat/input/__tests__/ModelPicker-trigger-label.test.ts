@@ -180,13 +180,14 @@ vi.mock('$store/renderer/slices/model/model-utils', () => ({
 
 vi.mock('$shared/config/provider-config', () => ({
   ACP_PROVIDERS: {
-    auggie: { id: 'auggie', displayName: 'Auggie' },
-    anthropic: { id: 'anthropic', displayName: 'Anthropic' },
+    auggie: { id: 'auggie', displayName: 'Auggie', shortName: 'Auggie' },
+    anthropic: { id: 'anthropic', displayName: 'Anthropic', shortName: 'Anthropic' },
   },
   getDefaultProviderId: () => 'auggie',
   getProviderConfig: (providerId?: string) => ({
     id: providerId || 'auggie',
     displayName: providerId || 'auggie',
+    shortName: providerId || 'auggie',
     command: providerId || 'auggie',
   }),
   isProviderAuthenticationError: () => false,

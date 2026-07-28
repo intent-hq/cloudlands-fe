@@ -6,6 +6,7 @@
  * counts degrade gracefully instead of rendering "0M". All helpers are pure
  * and NaN-safe: a zero-data period renders zeroes, never NaN.
  */
+import { ACP_PROVIDERS } from '$shared/config/provider-config';
 import type { UsageModelStats, UsageProviderStats, UsageTokenTotals } from '$lib/client/app-client';
 
 /** Sum of the 4 separate token counters (Spec D6). */
@@ -117,18 +118,12 @@ export function rankProviders(byProvider: UsageProviderStats[], limit = 4): Rank
 
 /**
  * Short app-style display names for the raw provider ids carried on the wire.
- * Dependency-light on purpose (no import of the main-process provider config);
- * unrecognized ids pass through as-is.
+ * Derived from the shared provider config (single source of truth), so new
+ * providers pick up a short name automatically; `unknown` covers
+ * pre-migration/unattributable usage and unrecognized ids pass through as-is.
  */
 const PROVIDER_SHORT_NAMES: Record<string, string> = {
-  auggie: 'Auggie',
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-  opencode: 'OpenCode',
-  pi: 'Pi',
-  droid: 'Droid',
-  grok: 'Grok',
-  unsloth: 'Unsloth',
+  ...Object.fromEntries(Object.values(ACP_PROVIDERS).map((p) => [p.id, p.shortName])),
   unknown: 'Unknown',
 };
 
