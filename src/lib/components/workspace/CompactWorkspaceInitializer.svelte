@@ -50,7 +50,6 @@
   selectSelectedModel,
   selectAvailableModels,
 } from '$store/renderer/slices/model/model-selectors';
-  import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
   setWorkspaceEntity,
@@ -1895,20 +1894,6 @@
         workspaceStorageManager.clearState(workspace.id);
       } catch (error) {
         logger.debug('Could not clear workspace storage state', { error });
-      }
-
-      // Set workspace default model to the EFFECTIVE model (the one the agent will actually use).
-      // resolvedModel has already been validated against available models above.
-      const effectiveModel = resolvedModel;
-
-      if (effectiveModel) {
-        appStore.dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
-        logger.info('Set workspace default model', {
-          workspaceId: workspace.id,
-          effectiveModel,
-          modelWasOverridden,
-          selectedSpecialist,
-        });
       }
 
       // Pre-populate Redux with the workspace entity so the workspace page

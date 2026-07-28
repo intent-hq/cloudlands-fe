@@ -5,7 +5,7 @@
 import { toast } from '$lib/components/ui/toast';
 import ErrorToast from '$lib/components/ui/toast/ErrorToast.svelte';
 import { errorReporter } from '$lib/utils/error-reporter';
-import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
+import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 import { selectCurrentWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
@@ -74,7 +74,7 @@ ${report.agentPrompt}`;
     workspaceId: WorkspaceId(workspace.id),
     agentType: createAgentTypeId('debug'),
     initialMessage: prompt,
-    model: selectWorkspaceDefaultModel.select(state, workspace.id),
+    model: selectSelectedModel.select(state),
     source: 'error-toast',
     metadata: {
       source: 'error-toast',

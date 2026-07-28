@@ -136,7 +136,7 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   }),
 }));
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectWorkspaceDefaultModel: () => mockState.defaultModel,
+  selectSelectedModel: () => mockState.defaultModel,
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectAgentFontStyleLabel: () => ({

@@ -68,7 +68,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectWorkspaceDefaultModel: { select: vi.fn(() => 'test-model') },
+  selectSelectedModel: { select: vi.fn(() => 'test-model') },
 }));
 
 vi.mock('$lib/utils/client-logger', () => ({

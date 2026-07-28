@@ -46,7 +46,7 @@ vi.mock('$features/agent/instruction-registry', () => ({
 
 // Mock model selectors
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectWorkspaceDefaultModel: Object.assign(
+  selectSelectedModel: Object.assign(
     () => ({
       subscribe: (fn: (v: string) => void) => {
         fn('test-model');
@@ -55,12 +55,6 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
     }),
     { select: vi.fn(() => 'test-model') },
   ),
-  selectSelectedModel: () => ({
-    subscribe: (fn: (v: string) => void) => {
-      fn('test-model');
-      return () => {};
-    },
-  }),
 }));
 
 vi.mock('$store/renderer/store', async () => {

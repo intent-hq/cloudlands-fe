@@ -12,7 +12,7 @@ const {
   generateReportMock,
   appStoreFactoryMock,
   selectCurrentWorkspaceMock,
-  selectWorkspaceDefaultModelMock,
+  selectSelectedModelMock,
   toastCustomMock,
 } = vi.hoisted(() => ({
   dismissMock: vi.fn(),
@@ -20,7 +20,7 @@ const {
   generateReportMock: vi.fn(),
   appStoreFactoryMock: vi.fn(),
   selectCurrentWorkspaceMock: vi.fn(),
-  selectWorkspaceDefaultModelMock: vi.fn(),
+  selectSelectedModelMock: vi.fn(),
   toastCustomMock: vi.fn(),
 }));
 
@@ -46,7 +46,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectWorkspaceDefaultModel: { select: selectWorkspaceDefaultModelMock },
+  selectSelectedModel: { select: selectSelectedModelMock },
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -70,7 +70,6 @@ describe('showErrorToast', () => {
   const legacyState = {
     model: {
       selectedModel: 'legacy-global-model',
-      workspaceModels: { 'ws-1': 'legacy-workspace-model' },
     },
   };
 
@@ -79,10 +78,10 @@ describe('showErrorToast', () => {
     generateReportMock.mockReturnValue({ agentPrompt: 'diagnostic context' });
     appStoreFactoryMock.mockReturnValue({ getState: () => legacyState, dispatch: dispatchMock });
     selectCurrentWorkspaceMock.mockReturnValue({ id: 'ws-1' });
-    selectWorkspaceDefaultModelMock.mockReturnValue('selector-workspace-model');
+    selectSelectedModelMock.mockReturnValue('selector-global-model');
   });
 
-  it('uses the workspace default selector when launching the debug agent', async () => {
+  it('uses the global selected model when launching the debug agent', async () => {
     const error = {
       id: 'error-1',
       title: 'Broken',
@@ -97,7 +96,7 @@ describe('showErrorToast', () => {
     const [, options] = toastCustomMock.mock.calls[0];
     await options.componentProps.onDebug();
 
-    expect(selectWorkspaceDefaultModelMock).toHaveBeenCalledWith(legacyState, 'ws-1');
+    expect(selectSelectedModelMock).toHaveBeenCalledWith(legacyState);
     expect(dispatchMock).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'workspaceAgents/createAgentFromConfigRequested',
@@ -106,7 +105,7 @@ describe('showErrorToast', () => {
           // 'Debug Agent' is a generated placeholder — the session must stay
           // self-renameable (nameExplicitlySet: false on the wire).
           expect.objectContaining({
-            model: 'selector-workspace-model',
+            model: 'selector-global-model',
             name: 'Debug Agent',
             nameExplicitlySet: false,
           }),
