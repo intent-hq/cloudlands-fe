@@ -1020,19 +1020,21 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
  * suppresses messages the user just deleted but the BE has not yet self-drained
  * out of the snapshot, preventing flicker.
  *
- * Queue-CLEAR detection (#1032): `agent.forceMessage` / `agent.editAndRegenerate`
- * call `clear_queue` (PROTOCOL §5.5) and publish an EMPTY snapshot — the
- * discarded entries never run, so their parked retry records must be dropped
- * WITHOUT promotion (see reduceQueueSnapshotDiff in chat-state-slice). The
- * reducer's own signature (empty snapshot + >1 vanishing PARKED id) misses a
- * clear where only ONE of the wiped entries had a parked record: that looks
- * like a genuine single-entry drain and would promote the discarded payload.
- * The bridge holds the extra signal the reducer cannot see — the MIRRORED
- * queue length before this snapshot — so when an empty snapshot wipes more
- * than one mirrored entry at once (a drain removes exactly one per cycle) it
- * dispatches `chatQueuedRetryRecordsCleared` BEFORE `replaceAgentQueue`,
- * synchronously, leaving nothing for the diff to mis-promote. forceMessage has
- * no FE flow site (only other clients call it), so this is the only place the
+ * Queue-CLEAR detection (#1032): `agent.editAndRegenerate` — the only
+ * remaining whole-queue discard (PROTOCOL §5.5 step 2; the atomic "Send now",
+ * `agent.sendQueuedMessageNow`, preserves the rest of the queue) — publishes
+ * an EMPTY snapshot. The discarded entries never run, so their parked retry
+ * records must be dropped WITHOUT promotion (see reduceQueueSnapshotDiff in
+ * chat-state-slice). The reducer's own signature (empty snapshot + >1
+ * vanishing PARKED id) misses a clear where only ONE of the wiped entries had
+ * a parked record: that looks like a genuine single-entry drain and would
+ * promote the discarded payload. The bridge holds the extra signal the
+ * reducer cannot see — the MIRRORED queue length before this snapshot — so
+ * when an empty snapshot wipes more than one mirrored entry at once (a drain
+ * removes exactly one per cycle) it dispatches
+ * `chatQueuedRetryRecordsCleared` BEFORE `replaceAgentQueue`, synchronously,
+ * leaving nothing for the diff to mis-promote. An editAndRegenerate issued by
+ * ANOTHER client has no FE flow site here, so this is the only place that
  * clear can be recognized. The count read is the RAW last-snapshot length
  * (`lastSnapshotCount`), NOT the tombstone-suppressed visible mirror: an
  * optimistic local removal (`dispatchQueueRemoval`) hides an entry the daemon

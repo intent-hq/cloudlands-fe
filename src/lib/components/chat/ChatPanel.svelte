@@ -2734,7 +2734,6 @@
         workspaceContextStr,
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
-        skipQueueCheck: true,
         forceSubmit: true,
         agentName,
         agentModel,

@@ -124,8 +124,6 @@ export interface SendMessagePayload {
    * that single wire call instead of the lifecycle send.
    */
   queuedMessageId?: string;
-  /** Whether this is a "send queued message now" flow that skips queue-vs-send decision */
-  skipQueueCheck?: boolean;
   /** Whether saga-owned stop orchestration should run before sending. */
   forceSubmit?: boolean;
   /** Agent name used for reinitializing chat on workspace change */
