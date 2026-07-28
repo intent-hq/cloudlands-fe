@@ -30,7 +30,10 @@ import {
   streamCompleted,
   streamTimedOut,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
-import type { LastAttemptedMessage } from "$store/renderer/slices/chat-state/chat-state-types";
+import type {
+  LastAttemptedMessage,
+  ModelUnavailableInfo,
+} from "$store/renderer/slices/chat-state/chat-state-types";
 import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
@@ -68,16 +71,26 @@ function clearSessionStreaming(
     // the chat-state reducer (which ran before this middleware handler) already
     // cleared `lastAttemptedMessage` on a successful completion and preserved
     // it on a failed turn, so the error banner's "Try again" can resend the
-    // correct message (#941).
+    // correct message (#941). Same for `modelUnavailable`: the reducer derived
+    // it from the complete event's metadata, and hardcoding null here wiped it
+    // before the "Retry with <model>" banner could ever render (#964).
     const state = appStore.state as {
       chatState?: {
-        byAgentId: Record<string, { lastAttemptedMessage: LastAttemptedMessage | null }>;
+        byAgentId: Record<
+          string,
+          {
+            lastAttemptedMessage: LastAttemptedMessage | null;
+            modelUnavailable: ModelUnavailableInfo | null;
+          }
+        >;
       };
     };
-    const lastAttemptedMessage =
-      state.chatState?.byAgentId[agentId]?.lastAttemptedMessage ?? null;
+    const chatAgent = state.chatState?.byAgentId[agentId];
     appStore.dispatch(
-      streamCompleted(agentId, { lastAttemptedMessage, modelUnavailable: null }),
+      streamCompleted(agentId, {
+        lastAttemptedMessage: chatAgent?.lastAttemptedMessage ?? null,
+        modelUnavailable: chatAgent?.modelUnavailable ?? null,
+      }),
     );
   } else if (eventType === "timeout") {
     appStore.dispatch(streamTimedOut(agentId));
