@@ -39,6 +39,7 @@ import { sendMessage as lifecycleSendMessage } from "$features/agent/agent-strea
 import { AgentStatus } from "$shared/types";
 import type { AgentSession, Workspace, QueuedMessage } from "$shared/types";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
+import { chatLastAttemptedMessageSet, chatReset } from "$store/renderer/slices/chat-state/chat-state-slice";
 
 const WS = "c6df5dce-f8c6-44fe-8a2d-227a8815f2af";
 const AGENT = "agent-373f33d3-0a26-4b8b-9ecf-f114bfa47df4";
@@ -118,6 +119,7 @@ describe("send path wire contract (pending agent, first message)", () => {
 
   afterEach(() => {
     appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
   });
 
   it("emits agent.sendMessage on the wire for a first send to a pending agent", async () => {
@@ -190,6 +192,57 @@ describe("send path wire contract (pending agent, first message)", () => {
       id: "queued-msg-1",
       content: "persist me please",
     });
+  }, 30000);
+
+  it("parks the retry record under the echoed queuedMessage id instead of lastAttemptedMessage (#1011)", async () => {
+    const queuedMessage: QueuedMessage = {
+      id: "queued-msg-2",
+      content: "auto-queued send",
+      queuedAt: "2026-07-17T14:00:00.000Z",
+      position: 0,
+    };
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === "agent.get") return { agent: daemonPendingAgent };
+      if (method === "agent.sendMessage") {
+        return { success: true, queued: true, queuedMessage };
+      }
+      return {};
+    });
+
+    // The send path (chat-send-service) records the attempt into the single
+    // slot BEFORE the lifecycle call — reproduce that mid-turn overwrite.
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "auto-queued send" }));
+
+    await lifecycleSendMessage(AGENT, "auto-queued send", workspace(), {});
+
+    const chatAgent = appStore.state.chatState.byAgentId[AGENT];
+    // The record is parked turn-scoped under the daemon-echoed id…
+    expect(chatAgent.queuedRetryRecords["queued-msg-2"]).toMatchObject({
+      record: { text: "auto-queued send" },
+    });
+    // …and the mid-turn overwrite of the single slot is undone.
+    expect(chatAgent.lastAttemptedMessage).toBeNull();
+  }, 30000);
+
+  it("keeps lastAttemptedMessage when the daemon queues WITHOUT echoing the entry (#1011)", async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === "agent.get") return { agent: daemonPendingAgent };
+      if (method === "agent.sendMessage") {
+        // Older daemon / degenerate envelope: queued but no queuedMessage.
+        return { success: true, queued: true };
+      }
+      return {};
+    });
+
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "no echo" }));
+
+    await lifecycleSendMessage(AGENT, "no echo", workspace(), {});
+
+    // No stable id to park under → current behavior preserved: the single
+    // slot keeps the payload and no record is parked.
+    const chatAgent = appStore.state.chatState.byAgentId[AGENT];
+    expect(chatAgent.lastAttemptedMessage).toEqual({ text: "no echo" });
+    expect(chatAgent.queuedRetryRecords).toEqual({});
   }, 30000);
 
   it("throws on a raw daemon error envelope ({success:false, error:string})", async () => {
