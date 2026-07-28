@@ -39,6 +39,8 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
+import { chatQueuedRetryRecordParked } from '$store/renderer/slices/chat-state/chat-state-slice';
+import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
 import { workspaceMetrics } from '$store/renderer/slices/workspace/utils/workspace-metrics';
@@ -414,6 +416,23 @@ export async function sendMessage(
                       // queue-on-send path does) so the UI immediately shows queued state
                       const queuedMessage = response.queuedMessage as QueuedMessage | undefined;
                       if (queuedMessage) {
+                        // #1011: the daemon echoed a stable id for the queued
+                        // entry, so park the retry payload under it (turn-scoped
+                        // records, #999) instead of leaving it in the caller's
+                        // mid-turn `lastAttemptedMessage` overwrite — the park
+                        // action also undoes that overwrite when the slot still
+                        // holds this payload. buildRecordedAttempt is the same
+                        // construction site chat-send-service records with, so
+                        // the structural match holds. Park BEFORE seeding the
+                        // queue slice so an immediate drain snapshot can
+                        // already promote it.
+                        dispatchRedux(
+                          chatQueuedRetryRecordParked(
+                            agentId,
+                            queuedMessage.id,
+                            buildRecordedAttempt(content, options),
+                          ),
+                        );
                         const existing = selectAgentQueueMessages.select(appStore.state, agentId);
                         const next = existing.some((m) => m.id === queuedMessage.id)
                           ? existing
