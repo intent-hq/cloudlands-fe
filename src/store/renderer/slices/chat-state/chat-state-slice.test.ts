@@ -206,13 +206,54 @@ describe('chatStateReducer', () => {
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
   });
 
-  it('agentStreamUpdateReceived(complete, success) clears lastAttemptedMessage (#941)', () => {
+  it('agentStreamUpdateReceived(complete, no failure) preserves lastAttemptedMessage until the disposition is known (#984)', () => {
+    // The terminal `complete` maps the daemon's `agent:stream:end`, which is
+    // disposition-NEUTRAL (PROTOCOL §7: complete/error payloads are identical
+    // by design) — a failed turn ends its stream the same way. Success is only
+    // confirmed by the follow-up `agent:idle`, which performs the clear (#941
+    // semantics ride the idle finalize, see the #973 describe below).
     let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'sent' }));
     s = chatStateReducer(s, agentStreamUpdateReceived({
       agentId: AGENT,
       handlerSessionId: AGENT,
       source: 'sendMessage',
       eventType: 'complete',
+    }));
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'sent' });
+  });
+
+  it('mid-turn provider failure: complete(stream:end) then chatSendFailed(agent:failed) keeps the retry payload (#984)', () => {
+    // Daemon emission order on a live mid-turn provider failure
+    // (agent_session.rs run_prompt_turn): ONE disposition-neutral
+    // `agent:stream:end` — mapped by the events bridge to eventType
+    // 'complete' with no error marker — THEN `agent:failed`, mapped to
+    // chatSendFailed. The complete must not wipe the record, or the failure
+    // banner's "Try again" resolves as a no-op.
+    const attempted = { text: 'failed mid-turn', options: { model: 'slow-model' } };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+    }));
+    s = chatStateReducer(s, chatSendFailed(AGENT, 'session/prompt failed: provider error'));
+    const agent = s.byAgentId[AGENT];
+    expect(agent.error).toBe('session/prompt failed: provider error');
+    expect(agent.lastAttemptedMessage).toEqual(attempted);
+  });
+
+  it('agentStreamUpdateReceived(complete, stopReason interrupted) clears lastAttemptedMessage', () => {
+    // A user stop's terminal stream:end carries stopReason "interrupted" and
+    // no agent:idle or agent:failed follows (PROTOCOL §7.2) — clear here so
+    // the abandoned payload does not stay resident (#965).
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'stopped' }));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+      stopReason: 'interrupted',
     }));
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
   });
@@ -665,6 +706,24 @@ describe('chatStateReducer', () => {
       };
       return eventReceived('ws-1', event);
     }
+
+    it('successful live turn: complete preserves, the follow-up agent:idle clears (#941/#984)', () => {
+      // The live success flow — the disposition-neutral terminal `complete`
+      // defers the clear to `agent:idle`, which always follows a successful
+      // turn on the same firehose (ready-to-send suppression aside, in which
+      // case the drained final turn's idle clears).
+      let s = chatStateReducer(initialState, chatSendStarted(AGENT));
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'sent ok' }));
+      s = chatStateReducer(s, agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+      }));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'sent ok' });
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+    });
 
     it('agent:idle reconcile after a missed terminal complete clears the record', () => {
       // Turn started, record set, terminal `complete` never observed (window
