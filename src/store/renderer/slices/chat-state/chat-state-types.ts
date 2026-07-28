@@ -63,7 +63,6 @@ export interface ChatAgentState {
   error: string | null;
   lastChunkTime: number | null;
   receivedFirstChunk: boolean;
-  isStalled: boolean;
   streamingStartTime: number | null;
   lastAttemptedMessage: LastAttemptedMessage | null;
   modelUnavailable: ModelUnavailableInfo | null;
@@ -76,13 +75,6 @@ export interface ChatAgentState {
   lastMessageTime: number;
   /** Timestamp of the last chunk received (for reconciliation skip logic) */
   lastChunkReceivedAt: number;
-  /**
-   * True when a queued message has just started a new turn and the next
-   * `agent:idle` event (belonging to the prior, now-finished turn) must NOT
-   * clear the fresh turn's streaming flags or retry payload. Consumed once by
-   * the chat-state reducer's `agent:idle` reconcile handler (#973).
-   */
-  idleReconcileSuppressed: boolean;
   /**
    * Transcript hydration status for this agent. Undefined means hydration has not
    * started; 'loading' means a fetch is in flight; 'settled' means the fetch completed
@@ -144,10 +136,6 @@ export interface ChatStateSlice {
 // Constants
 // ============================================================================
 
-export const STALL_DETECTION_MS = 90_000; // 90 seconds
-export const STATE_RECONCILIATION_INTERVAL_MS = 10_000; // Check every 10 seconds
-export const STATE_RECONCILIATION_FAILURE_THRESHOLD = 2;
-export const STUCK_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 export const STATUS_EVENTS_STORAGE_KEY = 'chat-status-events';
 
 /** Minimum time between messages in ms (rate limiting) */

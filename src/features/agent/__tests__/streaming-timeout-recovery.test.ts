@@ -293,14 +293,15 @@ describe('Behavior Tests', () => {
   });
 
   it('should fire stall detection after inactivity period', () => {
-    // Simulate the stall detection logic from chat-state sagas.
-    const STALL_DETECTION_MS = 90_000; // matches chat-state saga threshold
+    // Local simulation of a stall-detection pattern (the former chat-state
+    // stall saga has been removed from the app; these values are historical).
+    const STALL_DETECTION_MS = 90_000;
     const CHECK_INTERVAL_MS = 10_000;
     let isStalled = false;
     const lastChunkTime = Date.now();
     const isStreaming = true;
 
-    // Start stall detection interval (mirrors chat-state saga behavior)
+    // Start stall detection interval
     const timer = setInterval(() => {
       if (!isStreaming || !lastChunkTime) return;
       const timeSinceLastChunk = Date.now() - lastChunkTime;

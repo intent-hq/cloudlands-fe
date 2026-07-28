@@ -94,7 +94,6 @@
 } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
   selectChatError,
-  selectChatIsStalled,
   selectChatLastChunkTime,
   selectChatModelUnavailable,
   selectChatReceivedFirstChunk,
@@ -320,7 +319,6 @@
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
-  const chatIsStalled$ = selectChatIsStalled(agentIdStore);
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
   const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
@@ -3156,7 +3154,6 @@
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
                         sessionCorrupted={effectiveSessionCorrupted}
-                        isStalled={$chatIsStalled$}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
@@ -3181,7 +3178,6 @@
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
                       sessionCorrupted={effectiveSessionCorrupted}
-                      isStalled={$chatIsStalled$}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
@@ -3262,7 +3258,6 @@
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
                         sessionCorrupted={effectiveSessionCorrupted}
-                        isStalled={$chatIsStalled$}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
@@ -3287,7 +3282,6 @@
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
                       sessionCorrupted={effectiveSessionCorrupted}
-                      isStalled={$chatIsStalled$}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
@@ -3317,7 +3311,6 @@
                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
                 error={effectiveError}
                 sessionCorrupted={effectiveSessionCorrupted}
-                isStalled={$chatIsStalled$}
                 modelUnavailable={$chatModelUnavailable$}
                 {hasPendingPermission}
                 onRetry={handleRetry}
@@ -3524,7 +3517,6 @@
                             streamingContentLength={$chatStreamingContent$?.length ?? 0}
                             error={effectiveError}
                             sessionCorrupted={effectiveSessionCorrupted}
-                            isStalled={$chatIsStalled$}
                             modelUnavailable={$chatModelUnavailable$}
                             {hasPendingPermission}
                             onRetry={handleRetry}
@@ -3582,7 +3574,6 @@
                               streamingContentLength={$chatStreamingContent$?.length ?? 0}
                               error={effectiveError}
                               sessionCorrupted={effectiveSessionCorrupted}
-                              isStalled={$chatIsStalled$}
                               modelUnavailable={$chatModelUnavailable$}
                               {hasPendingPermission}
                               onRetry={handleRetry}
@@ -3630,7 +3621,6 @@
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
                   error={effectiveError}
                   sessionCorrupted={effectiveSessionCorrupted}
-                  isStalled={$chatIsStalled$}
                   modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}
                   onRetry={handleRetry}

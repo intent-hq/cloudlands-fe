@@ -31,7 +31,6 @@ import {
   chatStopCompleted,
   chatReset,
   chatStreamingReconciled,
-  chatStuckStateCleared,
   chatInitialized,
   streamCompleted,
   streamTimedOut,
@@ -1054,13 +1053,6 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     }),
   )
   .with(streamTimedOut, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, {
-      isStreaming: false,
-      isProcessing: false,
-      isResponding: false,
-    }),
-  )
-  .with(chatStuckStateCleared, (state, { payload: [agentId] }) =>
     updateSessionFields(state, agentId, {
       isStreaming: false,
       isProcessing: false,
