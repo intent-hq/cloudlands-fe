@@ -1,8 +1,14 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to ensure mocks are available before module resolution
-const { mockAppStore, mockState, mockIsElectron, mockGoto, mockToastSuccess, mockToastError } =
-  vi.hoisted(() => {
+const {
+  mockAppStore,
+  mockState,
+  mockIsElectron,
+  mockNavigateToRoute,
+  mockToastSuccess,
+  mockToastError,
+} = vi.hoisted(() => {
     const mockState: {
       workspace: {
         activeWorkspaceId: string | null;
@@ -17,7 +23,7 @@ const { mockAppStore, mockState, mockIsElectron, mockGoto, mockToastSuccess, moc
       mockState,
       mockAppStore: { state: mockState, dispatch: vi.fn() },
       mockIsElectron: vi.fn(() => true),
-      mockGoto: vi.fn(() => Promise.resolve()),
+      mockNavigateToRoute: vi.fn(() => Promise.resolve()),
       mockToastSuccess: vi.fn(),
       mockToastError: vi.fn(),
     };
@@ -31,8 +37,8 @@ vi.mock("$lib/electron-bridge", () => ({
   isElectron: mockIsElectron,
 }));
 
-vi.mock("$app/navigation", () => ({
-  goto: mockGoto,
+vi.mock("$lib/utils/navigation.client", () => ({
+  navigateToRoute: mockNavigateToRoute,
 }));
 
 vi.mock("svelte-sonner", () => ({
@@ -134,7 +140,7 @@ describe("createGitEventsIpcMiddleware", () => {
         action: { label: "Open", onClick: expect.any(Function) },
       });
       await mockToastSuccess.mock.calls[0][1].action.onClick();
-      expect(mockGoto).toHaveBeenCalledWith("/workspace/ws-2");
+      expect(mockNavigateToRoute).toHaveBeenCalledWith("/workspace/ws-2");
     });
 
     it("includes the PR number and title for create-pr", async () => {
@@ -235,7 +241,7 @@ describe("createGitEventsIpcMiddleware", () => {
         action: { label: "Open", onClick: expect.any(Function) },
       });
       await mockToastError.mock.calls[0][1].action.onClick();
-      expect(mockGoto).toHaveBeenCalledWith("/workspace/ws-2");
+      expect(mockNavigateToRoute).toHaveBeenCalledWith("/workspace/ws-2");
     });
 
     it("shows auto-commit failures even in the failing workspace", async () => {

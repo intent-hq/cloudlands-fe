@@ -26,7 +26,7 @@
  * Dependency-light per src/store/renderer/AGENTS.md: no selector imports —
  * reads `appStore.state` directly and imports the toast lib lazily.
  */
-import { goto } from "$app/navigation";
+import { navigateToRoute } from "$lib/utils/navigation.client";
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import { store as appStore } from "$store/renderer/store";
 import { isElectron } from "$lib/electron-bridge";
@@ -115,7 +115,7 @@ async function showGitOperationCompletedToast(
       toastOptions.action = {
         label: "Open",
         onClick: async () => {
-          await goto(`/workspace/${data.workspaceId}`);
+          await navigateToRoute(`/workspace/${data.workspaceId}`);
         },
       };
     }
@@ -174,7 +174,7 @@ async function showGitOperationFailedToast(
       toastOptions.action = {
         label: "Open",
         onClick: async () => {
-          await goto(`/workspace/${data.workspaceId}`);
+          await navigateToRoute(`/workspace/${data.workspaceId}`);
         },
       };
     }

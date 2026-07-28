@@ -67,6 +67,7 @@ import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
 import { createMenuIpcMiddleware } from "./middlewares/menu-ipc-service";
 import { createBrowserIpcMiddleware } from "./middlewares/browser-ipc-service";
 import { createNotificationIpcMiddleware } from "./middlewares/notification-ipc-service";
+import { createAgentEventsIpcMiddleware } from "./middlewares/agent-events-ipc-service";
 import { createGitEventsIpcMiddleware } from "./middlewares/git-events-ipc-service";
 import { createWebNotificationMiddleware } from "$features/notifications/web-notification-service";
 import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
@@ -394,6 +395,10 @@ function buildMiddleware(): StoreMiddleware[] {
     // sound per the sound settings and `notification:navigate` (notification
     // click) navigates to the emitting workspace again.
     createNotificationIpcMiddleware(),
+    // Restore the agent-events IPC listeners (deleted auth/sagas/auth-saga.ts)
+    // so `agent:auth-required` shows a warning toast (with an Open Terminal
+    // action) and `agent:plan-required` shows a plan-upgrade error toast again.
+    createAgentEventsIpcMiddleware(),
     // Restore the git event IPC listeners (deleted git/sagas/git-operations-saga.ts
     // + auth/sagas/auth-saga.ts) so `git:op-completed` / `git:op-failed` update
     // lastGitOperation/lastGitError and show result toasts again, and
