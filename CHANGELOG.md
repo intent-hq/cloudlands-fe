@@ -4,6 +4,49 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.8.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.7.0...v2.8.0) (2026-07-28)
+
+
+### 🚀 Features
+
+* distinct session-corrupted error surface with recreate-aware retry copy ([#477](https://github.com/intent-hq/cloudlands-fe/issues/477)) ([7e91796](https://github.com/intent-hq/cloudlands-fe/commit/7e91796d7fc032594b257d2a54d187259729f320))
+* **i18n:** add Simplified Chinese (zh-CN) locale ([#511](https://github.com/intent-hq/cloudlands-fe/issues/511)) ([c74e9e4](https://github.com/intent-hq/cloudlands-fe/commit/c74e9e42c53bb15b074246bda1fb0140a8a8661e))
+* **i18n:** add Traditional Chinese (zh-TW) locale ([#514](https://github.com/intent-hq/cloudlands-fe/issues/514)) ([ce97f40](https://github.com/intent-hq/cloudlands-fe/commit/ce97f40b6dc686a4d0201075fcd347a13cc88156))
+* **i18n:** extract all user-facing strings to Paraglide message catalog ([fd956be](https://github.com/intent-hq/cloudlands-fe/commit/fd956be7602559d632876d894e61d9cb29162c77))
+* **i18n:** pseudo-locale and completeness CI check ([#509](https://github.com/intent-hq/cloudlands-fe/issues/509)) ([a20911a](https://github.com/intent-hq/cloudlands-fe/commit/a20911aca9e2c4a65a90d426a512bcea93f09f65))
+* prefer OS native folder picker when daemon is local ([#479](https://github.com/intent-hq/cloudlands-fe/issues/479)) ([308766f](https://github.com/intent-hq/cloudlands-fe/commit/308766f5fd9cc2d8a13ba81016d3ca4ec13a5fc6))
+* render agent-authored workspace status screenshot in the sidebar ([#501](https://github.com/intent-hq/cloudlands-fe/issues/501)) ([d150073](https://github.com/intent-hq/cloudlands-fe/commit/d1500733ffd7994f0189a69b0f8e345b04d6eb7d))
+* restore legacy workspace import in settings ([#476](https://github.com/intent-hq/cloudlands-fe/issues/476)) ([7f45caa](https://github.com/intent-hq/cloudlands-fe/commit/7f45caaf48323786d8856e7f849ca2b61008d43b))
+
+
+### 🐛 Bug Fixes
+
+* always show all providers in model picker ([#951](https://github.com/intent-hq/cloudlands-fe/issues/951)) ([#474](https://github.com/intent-hq/cloudlands-fe/issues/474)) ([a26a53d](https://github.com/intent-hq/cloudlands-fe/commit/a26a53d19e7bb5b6530a1b5178c4569119ab4f28))
+* carry image attachments through Try Again retry ([#965](https://github.com/intent-hq/cloudlands-fe/issues/965)) ([#486](https://github.com/intent-hq/cloudlands-fe/issues/486)) ([ce88aa5](https://github.com/intent-hq/cloudlands-fe/commit/ce88aa5821d610dccd54b36869ea69d40f3cf875))
+* **chat:** clear stale chat error on queued retry and on queued-turn drain (monorepo[#1044](https://github.com/intent-hq/cloudlands-fe/issues/1044)) ([#515](https://github.com/intent-hq/cloudlands-fe/issues/515)) ([016c22a](https://github.com/intent-hq/cloudlands-fe/commit/016c22ad0b18f7e8d02c0fa2aa4398e1b75f37b2))
+* clear lastAttemptedMessage on idle-reconcile finalize ([#973](https://github.com/intent-hq/cloudlands-fe/issues/973)) ([#488](https://github.com/intent-hq/cloudlands-fe/issues/488)) ([a5cb73a](https://github.com/intent-hq/cloudlands-fe/commit/a5cb73a5745888f5f2867a3d0e552f7a06c1f288))
+* close 3 gaps in the turn-scoped retry-record design ([#510](https://github.com/intent-hq/cloudlands-fe/issues/510)) ([e4bfb02](https://github.com/intent-hq/cloudlands-fe/commit/e4bfb02fb487eebaf0e736d02ed2689a83299c51))
+* coalesce legacy-event refetch storms in delta subscriptions ([#503](https://github.com/intent-hq/cloudlands-fe/issues/503)) ([fe63352](https://github.com/intent-hq/cloudlands-fe/commit/fe63352ec30af51dcc1904c86ec5460c96c18d41))
+* derive stats provider short names from shared provider config ([#496](https://github.com/intent-hq/cloudlands-fe/issues/496)) ([e484719](https://github.com/intent-hq/cloudlands-fe/commit/e4847197e3779ddaa72780e6e63ff6608a83c7d6))
+* drop parked retry records on a multi-entry clear-queue snapshot ([#513](https://github.com/intent-hq/cloudlands-fe/issues/513)) ([3807e1f](https://github.com/intent-hq/cloudlands-fe/commit/3807e1f80370b00e874fb53604eae2d113e4e009))
+* keep retry records in sync on queued-message edit and lifecycle auto-queue ([#506](https://github.com/intent-hq/cloudlands-fe/issues/506)) ([3b6431a](https://github.com/intent-hq/cloudlands-fe/commit/3b6431abaeeca51e6fb4883aa2dbd5dfcecb5797))
+* never render empty tool-call expansion; route ws.app.* in workspace_api parser ([#485](https://github.com/intent-hq/cloudlands-fe/issues/485)) ([86a5e25](https://github.com/intent-hq/cloudlands-fe/commit/86a5e25f48e2784b63b6fe5c5f10aa262ce55b9d))
+* portal the Stop Server confirm dialog to body so it escapes the title bar ([#482](https://github.com/intent-hq/cloudlands-fe/issues/482)) ([ab7cefb](https://github.com/intent-hq/cloudlands-fe/commit/ab7cefb34dd7990665047260880fb4f86c082665))
+* preserve retry payload across disposition-neutral stream:end ([#984](https://github.com/intent-hq/cloudlands-fe/issues/984)) ([#494](https://github.com/intent-hq/cloudlands-fe/issues/494)) ([4a608ae](https://github.com/intent-hq/cloudlands-fe/commit/4a608ae4680cd70d059ec8d954636736b4ea8022))
+* re-home menu bar IPC listeners as a Redux middleware ([#498](https://github.com/intent-hq/cloudlands-fe/issues/498)) ([2776585](https://github.com/intent-hq/cloudlands-fe/commit/2776585aac8777652328b15a526757737ea2c8b4))
+* re-home orphaned renderer IPC listeners (browser, git events, agent auth) as Redux middlewares ([#507](https://github.com/intent-hq/cloudlands-fe/issues/507)) ([a2839ba](https://github.com/intent-hq/cloudlands-fe/commit/a2839ba49249e386f7ee18f7764788c9e95c4f9d))
+* record lastAttemptedMessage on the queue-on-send path ([#487](https://github.com/intent-hq/cloudlands-fe/issues/487)) ([fc1d533](https://github.com/intent-hq/cloudlands-fe/commit/fc1d533e31251f82929aa540d59d7d3f62757059))
+* remove double border on custom toasts ([#490](https://github.com/intent-hq/cloudlands-fe/issues/490)) ([1655fd6](https://github.com/intent-hq/cloudlands-fe/commit/1655fd645fe31b57ab646a36f0d5cc42a3e96484))
+* remove spurious leading space in user message bubble ([eb696ed](https://github.com/intent-hq/cloudlands-fe/commit/eb696ed0756bf76dc9eda89694f47994814140ae))
+* resend correct message on Try Again after failed turn ([#941](https://github.com/intent-hq/cloudlands-fe/issues/941)) ([#481](https://github.com/intent-hq/cloudlands-fe/issues/481)) ([8e821b0](https://github.com/intent-hq/cloudlands-fe/commit/8e821b067a0d7718dfb1a30ba188c145a843a67a))
+* resolve explicit specialist model over modelTier in main process (monorepo[#944](https://github.com/intent-hq/cloudlands-fe/issues/944)) ([#480](https://github.com/intent-hq/cloudlands-fe/issues/480)) ([0e80bf1](https://github.com/intent-hq/cloudlands-fe/commit/0e80bf1403d8c73537d6b5630c9bf51fd14794e2))
+* restore missing agent response after transcript hydration race ([#505](https://github.com/intent-hq/cloudlands-fe/issues/505)) ([00b3ab6](https://github.com/intent-hq/cloudlands-fe/commit/00b3ab6c28bd6252160f2f2993e7b27b25651604))
+* settings reset omits cowIsolation and repo search filter is unreachable ([#491](https://github.com/intent-hq/cloudlands-fe/issues/491)) ([b019023](https://github.com/intent-hq/cloudlands-fe/commit/b019023de42a4be37867a40beeedaf4645b401b2))
+* show Q&A wizard while agent waits on delegated agents ([#484](https://github.com/intent-hq/cloudlands-fe/issues/484)) ([9272087](https://github.com/intent-hq/cloudlands-fe/commit/92720872f55383bbf6463375098c374561ac211b))
+* suppress idle notifications when the agent awaits sub-agents ([#489](https://github.com/intent-hq/cloudlands-fe/issues/489)) ([a8de45b](https://github.com/intent-hq/cloudlands-fe/commit/a8de45bc18bb0ca0e53fa6d413e693cdf93ea022))
+* turn-scoped retry records so a failed drained turn retries its own message ([#499](https://github.com/intent-hq/cloudlands-fe/issues/499)) ([2cdee99](https://github.com/intent-hq/cloudlands-fe/commit/2cdee99f6c964e89ca827c64d7acf43f3b9cb6a8))
+* wire retry-with-model consumer and stop clobbering modelUnavailable ([#964](https://github.com/intent-hq/cloudlands-fe/issues/964)) ([#483](https://github.com/intent-hq/cloudlands-fe/issues/483)) ([aed4a8c](https://github.com/intent-hq/cloudlands-fe/commit/aed4a8c46e48b759dbba17c3f3e2b1f711e296a3))
+
 ## [2.7.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.6.0...v2.7.0) (2026-07-27)
 
 
