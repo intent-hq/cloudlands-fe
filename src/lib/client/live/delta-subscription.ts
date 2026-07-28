@@ -12,7 +12,10 @@
  * Item 3 (coexist + reconnect): the legacy `events.subscribe` firehose keeps
  * running. Until a valid push is seen for our subscription we serve today's
  * one-shot refetch (dual-mode-safe — the default when the daemon has no
- * live-state). Once live, legacy events are ignored to avoid double-application.
+ * live-state). Event-driven refetches are coalesced (leading edge + one
+ * trailing follow-up per window, single-flight) so an event storm while not
+ * live cannot fan out one fetchAll per event (intent-hq/monorepo#1010).
+ * Once live, legacy events are ignored to avoid double-application.
  * A sequence gap (or an unseeded delta) triggers reconnect-to-resnapshot: the
  * reconciler resets and the subscription re-registers to obtain a fresh seq-0
  * snapshot, with a one-shot refetch bridging the stale-UI window.
@@ -235,6 +238,17 @@ interface DynamicChannelState<T> {
 const MAX_BUFFERED_PUSHES = 32;
 
 /**
+ * Trailing window for coalescing legacy-event refetches. While a subscription
+ * is not live, daemon event storms (e.g. the agent-lifecycle burst after a
+ * restart) must not fan out one `fetchAll` per event — for the agents client
+ * that is one `agent.list` per workspace per event, the intent-hq/monorepo#1010
+ * slow-statement burst. Events arriving while a refetch is in flight (or a
+ * follow-up is already scheduled) collapse into a single trailing refetch
+ * this many ms after the in-flight one settles.
+ */
+const LEGACY_REFETCH_COALESCE_MS = 250;
+
+/**
  * Wire a dual-mode subscription with runtime-only live-state detection: live
  * mode is entered per-subscription when the first valid `subscription.push`
  * for THIS subscription is observed; until then legacy `events.event` matches
@@ -299,15 +313,48 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (!disposed) handler(currentValues());
   };
 
+  // Legacy-event refetch coalescing (intent-hq/monorepo#1010): single-flight
+  // tracking plus one trailing follow-up per coalesce window, so an event
+  // storm while not live costs at most ~1 fetchAll per (window + fetch)
+  // instead of one per event.
+  let refetchInFlight = false;
+  let refetchFollowUpWanted = false;
+  let refetchFollowUpTimer: ReturnType<typeof setTimeout> | undefined;
+
   const refetchEmit = () => {
     const epoch = refetchEpoch;
+    refetchInFlight = true;
     fetchAll()
       .then((items) => {
         if (!disposed && !live && epoch === refetchEpoch) handler(items);
       })
       .catch(() => {
         // Refresh failures are non-fatal for the subscription.
+      })
+      .finally(() => {
+        refetchInFlight = false;
+        if (!refetchFollowUpWanted || disposed) return;
+        // Events arrived mid-flight: their changes may postdate the fetch
+        // that just settled, so run exactly one trailing refetch after the
+        // coalesce window (unless a push flips us live first).
+        refetchFollowUpWanted = false;
+        refetchFollowUpTimer = setTimeout(() => {
+          refetchFollowUpTimer = undefined;
+          if (!disposed && !live) refetchEmit();
+        }, LEGACY_REFETCH_COALESCE_MS);
       });
+  };
+
+  // Legacy-event entry point: leading edge fires immediately; events landing
+  // while a refetch is in flight collapse into the single trailing follow-up;
+  // events landing while that follow-up is pending are already covered by it.
+  const coalescedRefetchEmit = () => {
+    if (refetchFollowUpTimer !== undefined) return;
+    if (refetchInFlight) {
+      refetchFollowUpWanted = true;
+      return;
+    }
+    refetchEmit();
   };
 
   const register = () => {
@@ -590,8 +637,9 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
       return;
     }
     // Legacy firehose: only drives a refetch while not in live-state mode, so
-    // the two paths never double-apply or diverge (R1 coexistence).
-    if (!live && matchLegacyEvent(n.method, n.params)) refetchEmit();
+    // the two paths never double-apply or diverge (R1 coexistence). Bursts
+    // are coalesced — see coalescedRefetchEmit.
+    if (!live && matchLegacyEvent(n.method, n.params)) coalescedRefetchEmit();
   });
 
   // Reconnect (RESUB-1): the daemon dropped its subscription registry on
@@ -651,6 +699,10 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
 
   return () => {
     disposed = true;
+    if (refetchFollowUpTimer !== undefined) {
+      clearTimeout(refetchFollowUpTimer);
+      refetchFollowUpTimer = undefined;
+    }
     off();
     offReconnect();
     offIds?.();
