@@ -15,8 +15,8 @@ From version 2.0.0 onward, release notes are published on the [GitHub Releases p
 
 ### 🐛 Bug Fixes
 
-* migrate electron-builder win config to 26.x signtoolOptions schema (intent-hq/monorepo[#1047](https://github.com/intent-hq/cloudlands-fe/issues/1047)) ([bb7d8f3](https://github.com/intent-hq/cloudlands-fe/commit/bb7d8f3b0fbdefaaf4a40d2f2fcdd20b1e09a7e8))
-* run generate:i18n before prebuild type-check so release builds pass (intent-hq/monorepo[#1046](https://github.com/intent-hq/cloudlands-fe/issues/1046)) ([1342eb1](https://github.com/intent-hq/cloudlands-fe/commit/1342eb19c226986bd4d7b4d819503b8a11ca7df1))
+* migrate electron-builder win config to 26.x signtoolOptions schema (intent-hq/monorepo[#1047](https://github.com/intent-hq/monorepo/issues/1047)) ([bb7d8f3](https://github.com/intent-hq/cloudlands-fe/commit/bb7d8f3b0fbdefaaf4a40d2f2fcdd20b1e09a7e8))
+* run generate:i18n before prebuild type-check so release builds pass (intent-hq/monorepo[#1046](https://github.com/intent-hq/monorepo/issues/1046)) ([1342eb1](https://github.com/intent-hq/cloudlands-fe/commit/1342eb19c226986bd4d7b4d819503b8a11ca7df1))
 
 ## [2.8.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.7.0...v2.8.0) (2026-07-28)
 
