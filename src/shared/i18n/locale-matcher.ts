@@ -6,8 +6,8 @@
  * 1. An explicit user preference wins when its catalog exists.
  * 2. Otherwise the system locale(s) are best-matched against the available
  *    catalogs via language + likely-script negotiation (`de-AT` → `de`;
- *    `zh`/`zh-SG`/`zh-Hans-*` → `zh-CN`; Traditional `zh-TW`/`zh-HK` stay
- *    unmatched until a zh-Hant catalog ships).
+ *    `zh`/`zh-SG`/`zh-Hans-*` → `zh-CN`; Traditional
+ *    `zh-TW`/`zh-HK`/`zh-MO`/`zh-Hant-*` → `zh-TW`).
  * 3. If nothing matches, the base locale (`en`) is used.
  *
  * The matcher is catalog-driven: it takes the available locales as input, so
@@ -57,7 +57,7 @@ function findExact(tag: string, available: readonly string[]): string | undefine
  * Best-match an ordered list of requested locales against the available
  * catalogs. For each requested tag: exact match first, then a
  * language + likely-script match (preferring a same-region catalog). Requested
- * tags whose script has no catalog (e.g. `zh-TW` with only `zh-CN` shipped)
+ * tags whose script has no catalog (e.g. `zh-Hant` if only `zh-CN` shipped)
  * are skipped rather than mismatched. Returns `fallback` when nothing matches.
  */
 export function matchLocale(

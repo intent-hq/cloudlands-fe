@@ -6,10 +6,13 @@ import {
   SYSTEM_LANGUAGE_PREFERENCE,
 } from './locale-matcher';
 
-// Simulated future catalog set — the matcher must stay catalog-driven, so the
+// Simulated catalog set — the matcher must stay catalog-driven, so the
 // spec's negotiation cases are asserted against a multi-locale list, not
 // hardcoded locale knowledge.
-const CATALOGS = ['en', 'de', 'zh-CN'] as const;
+const CATALOGS = ['en', 'de', 'zh-CN', 'zh-TW'] as const;
+// Catalog set without a zh-Hant entry — Traditional tags must skip to the
+// fallback rather than mismatch onto the Simplified catalog.
+const SIMPLIFIED_ONLY = ['en', 'de', 'zh-CN'] as const;
 const BASE = 'en';
 
 describe('matchLocale', () => {
@@ -33,17 +36,27 @@ describe('matchLocale', () => {
     expect(matchLocale(['zh-Hans-CN'], CATALOGS, BASE)).toBe('zh-CN');
   });
 
-  it('does not match Traditional Chinese to zh-CN (zh-TW/zh-HK → fallback)', () => {
-    expect(matchLocale(['zh-TW'], CATALOGS, BASE)).toBe(BASE);
-    expect(matchLocale(['zh-HK'], CATALOGS, BASE)).toBe(BASE);
-    expect(matchLocale(['zh-Hant'], CATALOGS, BASE)).toBe(BASE);
-    expect(matchLocale(['zh-Hant-MO'], CATALOGS, BASE)).toBe(BASE);
+  it('maps Traditional Chinese tags to zh-TW (zh-TW, zh-HK, zh-MO, zh-Hant-*)', () => {
+    expect(matchLocale(['zh-TW'], CATALOGS, BASE)).toBe('zh-TW');
+    expect(matchLocale(['zh-HK'], CATALOGS, BASE)).toBe('zh-TW');
+    expect(matchLocale(['zh-MO'], CATALOGS, BASE)).toBe('zh-TW');
+    expect(matchLocale(['zh-Hant'], CATALOGS, BASE)).toBe('zh-TW');
+    expect(matchLocale(['zh-Hant-TW'], CATALOGS, BASE)).toBe('zh-TW');
+    expect(matchLocale(['zh-Hant-HK'], CATALOGS, BASE)).toBe('zh-TW');
+    expect(matchLocale(['zh-Hant-MO'], CATALOGS, BASE)).toBe('zh-TW');
   });
 
-  it('matches Traditional Chinese once a zh-Hant catalog ships', () => {
-    const withHant = [...CATALOGS, 'zh-TW'];
-    expect(matchLocale(['zh-HK'], withHant, BASE)).toBe('zh-TW');
-    expect(matchLocale(['zh-Hant'], withHant, BASE)).toBe('zh-TW');
+  it('does not match Traditional Chinese to zh-CN when no zh-Hant catalog ships', () => {
+    expect(matchLocale(['zh-TW'], SIMPLIFIED_ONLY, BASE)).toBe(BASE);
+    expect(matchLocale(['zh-HK'], SIMPLIFIED_ONLY, BASE)).toBe(BASE);
+    expect(matchLocale(['zh-Hant'], SIMPLIFIED_ONLY, BASE)).toBe(BASE);
+    expect(matchLocale(['zh-Hant-MO'], SIMPLIFIED_ONLY, BASE)).toBe(BASE);
+  });
+
+  it('does not match Simplified Chinese to zh-TW when only zh-TW ships', () => {
+    const traditionalOnly = ['en', 'zh-TW'];
+    expect(matchLocale(['zh'], traditionalOnly, BASE)).toBe(BASE);
+    expect(matchLocale(['zh-Hans-CN'], traditionalOnly, BASE)).toBe(BASE);
   });
 
   it('walks the requested list in order until a match is found', () => {
@@ -72,7 +85,10 @@ describe('resolveLocale', () => {
   it('"system" best-matches the OS locales against the catalogs', () => {
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['de-AT'], CATALOGS, BASE)).toBe('de');
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['zh-SG'], CATALOGS, BASE)).toBe('zh-CN');
-    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['zh-TW'], CATALOGS, BASE)).toBe(BASE);
+    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['zh-HK'], CATALOGS, BASE)).toBe('zh-TW');
+    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['zh-TW'], SIMPLIFIED_ONLY, BASE)).toBe(
+      BASE,
+    );
   });
 
   it('falls back to the base locale when nothing matches', () => {
