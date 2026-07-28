@@ -180,30 +180,13 @@ That allows the app to preserve different background-agent model preferences for
 
 ## Provider System
 
-ACP provider metadata lives in `src/shared/config/provider-config.ts`.
+ACP provider metadata is served by the daemon's `providers.catalog` RPC (monorepo `docs/PROTOCOL.md` §5.38) — the single source of truth for provider identity, display names, CLI commands, default models, model tiers, and env-var/feature-code gating. There is no static provider table in the renderer.
 
-`ACP_PROVIDERS` currently includes:
+At connect time the catalog is hydrated into the `providerCatalog` Redux slice (`src/store/renderer/slices/provider-catalog/`); renderer code reads it through the slice's selectors. Main-process call sites that cannot import the renderer store use the cached catalog accessor in `src/main/utils/provider-catalog-accessor.ts`.
 
-- `auggie` (default)
-- `claude-code`
-- `codex`
-- `cortex`
-- `opencode`
+Compound model ids (`provider:model`) are parsed with the pure helpers in `src/shared/utils/compound-model-id.ts`, with the catalog's default provider threaded in explicitly for bare ids.
 
-Each provider config defines the provider identity plus its CLI command, default arguments, model-flag behavior, auth support, MCP/rules-file support, and related provider-specific capabilities.
-
-`activeProviderStore` in `src/lib/stores/active-provider.store.svelte.ts` manages which single provider is active at runtime.
-Per `docs/STATE_MANAGEMENT.md`, this `.store.svelte.ts` module is a transitional adapter; keep shared or durable app state in Redux under `src/store/renderer/` when extending this area.
-
-Key behaviors:
-
-- loads the active provider from `localStorage`
-- falls back to `getDefaultProviderId()` when needed
-- validates that stored IDs still exist in `ACP_PROVIDERS`
-- persists provider changes back to `localStorage`
-- switches provider-specific background-agent and specialist-model overrides when the active provider changes
-
-When you add or update provider-sensitive UI, make sure it reads from the active-provider store rather than assuming Auggie is always selected.
+The active provider is tracked in the `providerSettings` Redux slice; it starts empty and adopts the registry default when the catalog hydrates. When you add or update provider-sensitive UI, read the active provider and provider metadata from the store selectors rather than assuming Auggie is always selected.
 
 ## Testing and Validation
 
