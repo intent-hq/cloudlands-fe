@@ -14,6 +14,7 @@
   import type { WalkthroughData, WalkthroughAnnotation } from './types';
   import WalkthroughSection from './WalkthroughSection.svelte';
   import { splitDiffByFile } from './patch-utils';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     /** The walkthrough data from the agent */
@@ -53,14 +54,14 @@
     <!-- Loading state -->
     <div class="flex items-center justify-center py-12 text-subtle">
       <Fa icon={faSpinner} class="h-5 w-5 animate-spin mr-2" />
-      <span>Generating walkthrough...</span>
+      <span>{m.codeWalkthrough_main_generating_label()}</span>
     </div>
   {:else if error}
     <!-- Error state -->
     <div class="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive-foreground">
       <Fa icon={faExclamationTriangle} class="h-5 w-5 shrink-0" />
       <div>
-        <p class="font-medium">Failed to generate walkthrough</p>
+        <p class="font-medium">{m.codeWalkthrough_main_generateFailed_error()}</p>
         <p class="text-sm opacity-80">{error}</p>
       </div>
     </div>
@@ -73,7 +74,7 @@
           <Fa icon={faBook} class="h-5 w-5 text-primary" />
         </div>
         <div class="flex-1 min-w-0">
-          <h2 class="text-lg font-semibold">Code Walkthrough</h2>
+          <h2 class="text-lg font-semibold">{m.codeWalkthrough_main_title()}</h2>
           {#if walkthrough.summary}
             <p class="text-sm text-subtle mt-1">{walkthrough.summary}</p>
           {/if}
@@ -82,11 +83,11 @@
 
       <!-- Stats bar -->
       <div class="flex items-center gap-4 text-xs text-subtle px-1">
-        <span>{walkthrough.sections?.length || 0} sections</span>
+        <span>{m.codeWalkthrough_main_sectionCount_label({ count: walkthrough.sections?.length || 0 })}</span>
         <span>•</span>
-        <span>{fileDiffs.size} files</span>
+        <span>{m.codeWalkthrough_main_fileCount_label({ count: fileDiffs.size })}</span>
         <span>•</span>
-        <span>{annotationsWithIds.length} annotations</span>
+        <span>{m.codeWalkthrough_main_annotationCount_label({ count: annotationsWithIds.length })}</span>
       </div>
 
       <!-- Sections -->
@@ -122,8 +123,8 @@
     <!-- Empty state -->
     <div class="flex flex-col items-center justify-center py-12 text-subtle">
       <Fa icon={faBook} class="h-8 w-8 mb-3 opacity-50" />
-      <p class="text-sm">No walkthrough available</p>
-      <p class="text-xs mt-1">Stage some changes to generate a walkthrough</p>
+      <p class="text-sm">{m.codeWalkthrough_main_empty_title()}</p>
+      <p class="text-xs mt-1">{m.codeWalkthrough_main_empty_description()}</p>
     </div>
   {/if}
 </div>

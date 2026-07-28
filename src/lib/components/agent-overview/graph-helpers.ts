@@ -385,6 +385,7 @@ function looksLikeDirectory(path: string): boolean {
  */
 export function extractFilePathFromDisplayName(displayName: string): string | null {
   // Match backtick-enclosed path: Read `path` or Edit `path`
+  // i18n-ignore (scanner false positive: backticks in regex literal confuse the string tracker)
   const match = displayName.match(/`([^`]+)`/);
   if (match && match[1]) {
     const path = match[1];
@@ -409,6 +410,7 @@ export function extractFilePath(args: Record<string, unknown>, toolName?: string
     return path;
   }
 
+  // i18n-ignore (scanner false positive: backtick misparse cascade from the regex above)
   // Then try to extract from display name like "Read `path`"
   if (toolName) {
     return extractFilePathFromDisplayName(toolName);
@@ -588,6 +590,7 @@ function parseTasksFromArgs(args: Record<string, unknown>): Array<{
         if (name) {
           tasks.push({
             // Generate a unique ID from the name (since add_tasks doesn't provide IDs)
+            // i18n-ignore (scanner false positive: backtick misparse cascade, identifier not user-facing)
             taskId: `task-${name.toLowerCase().replace(/\s+/g, '-').slice(0, 30)}`,
             name,
             description: t.description as string | undefined,
@@ -810,6 +813,7 @@ export function extractDelegationBatchMap(
     // If this message had delegation tool calls, assign them a batch
     if (delegationToolUseIds.length > 1) {
       // Only create batches for messages with multiple delegation calls
+      // i18n-ignore (scanner false positive: backtick misparse cascade, identifier not user-facing)
       const batchId = `${parentAgentId}-batch-${batchIndex}`;
       for (const toolUseId of delegationToolUseIds) {
         toolUseToBatch.set(toolUseId, batchId);

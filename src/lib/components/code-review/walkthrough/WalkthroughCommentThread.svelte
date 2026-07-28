@@ -28,6 +28,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import type { WalkthroughAnnotation } from './types';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface ThreadMessage {
     id: string;
@@ -172,7 +173,7 @@
         type="button"
         onclick={onClose}
         class="shrink-0 p-1 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
-        title="Dismiss"
+        title={m.codeReview_commentThread_dismiss_tooltip()}
       >
         <Fa icon={faTimes} class="h-3.5 w-3.5" />
       </button>
@@ -187,7 +188,7 @@
         onclick={() => showSuggestedChanges = !showSuggestedChanges}
         class="w-full flex items-center justify-between px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
       >
-        <span class="font-medium">Suggested changes</span>
+        <span class="font-medium">{m.codeReview_commentThread_suggestedChanges_label()}</span>
         <Fa icon={showSuggestedChanges ? faChevronUp : faChevronDown} class="h-3 w-3" />
       </button>
 
@@ -223,7 +224,7 @@
   {#if isAgentResponding}
     <div class="flex items-center gap-2 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700">
       <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
-      <span>Agent is responding...</span>
+      <span>{m.codeReview_commentThread_agentResponding_label()}</span>
     </div>
   {/if}
 
@@ -235,7 +236,7 @@
           bind:this={inputElement}
           bind:value={replyText}
           onkeydown={handleKeydown}
-          placeholder="Ask a follow-up question..."
+          placeholder={m.codeReview_commentThread_followUp_placeholder()}
           disabled={isSending}
           class="flex-1 h-8 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/50 disabled:opacity-50"
         />
@@ -256,10 +257,10 @@
           onclick={() => { showReplyInput = false; replyText = ''; }}
           class="h-8 px-2 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
         >
-          Cancel
+          {m.codeReview_commentThread_cancel_label()}
         </button>
       </div>
-      <p class="text-ui text-slate-400 dark:text-slate-500 mt-1">Enter to send · Esc to cancel</p>
+      <p class="text-ui text-slate-400 dark:text-slate-500 mt-1">{m.codeReview_commentThread_inputHint_label()}</p>
     {:else}
       <button
         type="button"
@@ -267,7 +268,7 @@
         class="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
       >
         <Fa icon={faComment} class="h-3 w-3" />
-        <span>Ask a question</span>
+        <span>{m.codeReview_commentThread_askQuestion_label()}</span>
       </button>
     {/if}
   </div>

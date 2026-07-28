@@ -63,6 +63,11 @@ const ENFORCED_DIRS = [
   'src/features/file-explorer',
   'src/features/files',
   'src/features/file-tracking',
+  'src/lib/components/code-review',
+  'src/lib/components/agent-overview',
+  'src/lib/components/diagrams',
+  'src/lib/components/code-walkthrough',
+  'src/lib/components/visualization',
 ];
 
 const ROOT = process.cwd();

@@ -39,6 +39,7 @@
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import * as m from '$shared/paraglide/messages.js';
 
   const logger = createLogger('CodeReviewPanel');
   const activeWorkspace = selectActiveWorkspace();
@@ -167,7 +168,7 @@
         walkthrough = parsed;
         walkthroughStatus = 'complete';
       } else {
-        walkthroughError = 'Failed to parse walkthrough';
+        walkthroughError = m.codeReview_walkthrough_parseFailed_error();
         walkthroughStatus = 'error';
       }
     } else if (state.status === 'error' && state.error) {
@@ -228,6 +229,7 @@
     try {
       // Build context with file and line information
       const workspacePath = workspace.worktreePath || workspace.repositoryPath || '';
+      // i18n-ignore (agent-facing context message, kept in English)
       const contextMessage = `[Question about ${fileName}:${lineNumber}]\n\n${message}`;
 
       // Build workspace context for STDIN
@@ -327,8 +329,8 @@
 </script>
 
 <PanelWrapper
-  title="Code Review"
-  breadcrumbs={[{ label: 'Changes', icon: faCodeCompare, onClick: onNavigateToChanges }]}
+  title={m.codeReview_panel_title()}
+  breadcrumbs={[{ label: m.codeReview_panel_changesBreadcrumb_label(), icon: faCodeCompare, onClick: onNavigateToChanges }]}
   {canGoBack}
   {canGoForward}
   {onNavigateBack}
@@ -368,7 +370,7 @@
       {#if isRunning}
         <Badge variant="secondary" class="text-xs gap-1">
           <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
-          Reviewing...
+          {m.codeReview_panel_reviewing_label()}
         </Badge>
       {:else if isComplete && totalCount === 0}
         <Badge
@@ -376,31 +378,33 @@
           class="text-xs gap-1 bg-green-500/10 text-green-600 border-green-500/20"
         >
           <Fa icon={faCheck} class="h-3 w-3" />
-          Looks good
+          {m.codeReview_panel_looksGood_label()}
         </Badge>
       {:else if isComplete && totalCount > 0}
         <Badge variant="secondary" class="text-xs">
-          {totalCount} comment{totalCount === 1 ? '' : 's'}
+          {totalCount === 1
+            ? m.codeReview_panel_commentCount_one({ count: totalCount })
+            : m.codeReview_panel_commentCount_many({ count: totalCount })}
         </Badge>
       {:else if isStale}
-        <Badge variant="outline" class="text-xs text-amber-600">Outdated</Badge>
+        <Badge variant="outline" class="text-xs text-amber-600">{m.codeReview_panel_outdated_label()}</Badge>
       {/if}
 
       <!-- Action buttons -->
       {#if isRunning && onStop}
         <Button variant="ghost" size="xs" onclick={onStop}>
           <Fa icon={faStop} class="h-3 w-3 mr-1" />
-          Stop
+          {m.codeReview_panel_stop_label()}
         </Button>
       {:else if status === 'idle' && onTriggerReview}
         <Button variant="default" size="xs" onclick={onTriggerReview}>
           <Fa icon={faWandMagicSparkles} class="h-3 w-3 mr-1" />
-          Review
+          {m.codeReview_panel_review_label()}
         </Button>
       {:else if (isComplete || isStale) && onRerun}
         <Button variant="ghost" size="xs" onclick={onRerun}>
           <Fa icon={faRotateRight} class="h-3 w-3 mr-1" />
-          Re-review
+          {m.codeReview_panel_rereview_label()}
         </Button>
       {/if}
     </div>
@@ -415,14 +419,14 @@
       >
         <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-subtle" />
       </div>
-      <h3 class="text-sm font-medium text-foreground mb-2">No review yet</h3>
+      <h3 class="text-sm font-medium text-foreground mb-2">{m.codeReview_panel_noReview_title()}</h3>
       <p class="text-xs text-subtle mb-4 max-w-60">
-        Run a code review to get AI-powered feedback on your staged changes.
+        {m.codeReview_panel_noReview_description()}
       </p>
       {#if onTriggerReview}
         <Button variant="default" size="sm" onclick={onTriggerReview}>
           <Fa icon={faWandMagicSparkles} class="h-3 w-3 mr-1.5" />
-          Review Changes
+          {m.codeReview_panel_reviewChanges_label()}
         </Button>
       {/if}
     </div>
@@ -434,7 +438,7 @@
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
               <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-              <span class="text-sm font-medium text-foreground">Reviewing code...</span>
+              <span class="text-sm font-medium text-foreground">{m.codeReview_panel_reviewingCode_label()}</span>
             </div>
             {#if agentId}
               <Button
@@ -444,7 +448,7 @@
                 onclick={handleOpenAgent}
               >
                 <Fa icon={faRobot} class="h-3 w-3 mr-1" />
-                View Agent
+                {m.codeReview_panel_viewAgent_label()}
               </Button>
             {/if}
           </div>
@@ -458,7 +462,7 @@
               ></span>
             </div>
           {:else}
-            <div class="text-xs text-subtle">Analyzing staged changes...</div>
+            <div class="text-xs text-subtle">{m.codeReview_panel_analyzing_label()}</div>
           {/if}
         </div>
       </div>
@@ -471,7 +475,7 @@
           class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3"
         >
           <div class="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-            <span class="font-medium">Review failed:</span>
+            <span class="font-medium">{m.codeReview_panel_reviewFailed_label()}</span>
             <span>{error}</span>
           </div>
           {#if onRerun}
@@ -482,7 +486,7 @@
               onclick={onRerun}
             >
               <Fa icon={faRotateRight} class="h-3 w-3 mr-1" />
-              Try again
+              {m.codeReview_panel_tryAgain_label()}
             </Button>
           {/if}
         </div>
@@ -540,7 +544,7 @@
     {#if filteredComments.length > 0 || isRunning}
       <div class="px-5 pt-4 pb-2">
         <h3 class="text-sm font-medium text-foreground flex items-center gap-2">
-          Review Comments
+          {m.codeReview_panel_reviewComments_title()}
           {#if totalCount > 0}
             <Badge variant="secondary" class="text-xs">{totalCount}</Badge>
           {/if}
@@ -593,7 +597,7 @@
       <div class="px-5 py-4">
         <div class="flex items-center gap-2 text-sm text-green-600">
           <Fa icon={faCheck} class="h-4 w-4" />
-          No issues found - your code looks good!
+          {m.codeReview_panel_noIssues_label()}
         </div>
       </div>
     {/if}
