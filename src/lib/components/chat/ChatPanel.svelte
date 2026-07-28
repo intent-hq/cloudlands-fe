@@ -91,6 +91,7 @@
   chatTrackedWorkspaceSet,
   chatErrorCleared,
   chatSendFailed,
+  chatQueuedRetryRecordUpdated,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
   selectChatError,
@@ -2338,6 +2339,11 @@
     const result = await appClient.agents.editQueued(agentId, messageId, content, editing);
     if (!result.success) {
       logger.error('Failed to edit queued message', { messageId, error: result.error });
+    } else {
+      // #1011: the daemon's queued entry now carries `content` (save applies
+      // the edit; hold/cancel echo the original), so sync the parked retry
+      // record — otherwise a post-drain "Try again" resends the pre-edit text.
+      appStore.dispatch(chatQueuedRetryRecordUpdated(agentId, messageId, content));
     }
     return result;
   }
