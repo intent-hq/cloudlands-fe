@@ -2240,7 +2240,7 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     ]);
   });
 
-  it('an empty snapshot wiping a multi-entry mirrored queue drops a SINGLE parked record without promotion (#1032 forceMessage clear)', async () => {
+  it('an empty snapshot wiping a multi-entry mirrored queue drops a SINGLE parked record without promotion (#1032 remote editAndRegenerate clear)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -2257,8 +2257,8 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     );
     appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'q-mine', { text: 'mine' }));
 
-    // Another client's agent.forceMessage clears the whole queue (PROTOCOL
-    // §5.5) — the daemon publishes an EMPTY snapshot. Exactly ONE parked
+    // Another client's agent.editAndRegenerate clears the whole queue
+    // (PROTOCOL §5.5) — the daemon publishes an EMPTY snapshot. Exactly ONE parked
     // record vanishes, which the reducer alone cannot distinguish from a
     // genuine drain; the bridge's mirrored-count signal must recognize the
     // clear and drop the record instead of promoting the discarded payload.
@@ -2268,7 +2268,7 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
   });
 
-  it('a tombstone-suppressed mirror does not undercount the clear signal (optimistic removal racing a forceMessage clear)', async () => {
+  it('a tombstone-suppressed mirror does not undercount the clear signal (optimistic removal racing a remote editAndRegenerate clear)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -2287,7 +2287,7 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     // The user optimistically removes q-other locally (dispatchQueueRemoval's
     // reducer half): the tombstone hides it from the VISIBLE mirror
     // (count==1), but the daemon still holds 2 entries. If another client's
-    // forceMessage clear lands in that window, the empty snapshot is a
+    // editAndRegenerate clear lands in that window, the empty snapshot is a
     // daemon 2-entry clear — the clear signal must use the raw last-snapshot
     // count, not the suppressed visible count, or the clear masquerades as a
     // single-entry drain and promotes the discarded payload.

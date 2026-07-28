@@ -527,8 +527,8 @@ export class UnifiedAgentFactory {
       // user-row agent:message event and on conversation rows (PROTOCOL §5.5),
       // so the echoed canonical message merges with the optimistic one by id
       // (the authoritative path); content-hash dedup remains only as a
-      // fallback for older daemons and echo-less paths (agent.forceMessage
-      // emits no live agent:message echo).
+      // fallback for rows that lack an appMessageId (e.g. older daemons that
+      // do not echo it).
       // Callers may supply their own id (empty/whitespace values are ignored).
       const initialUserAppMessageId =
         hasInitialMessage || hasContextReferences || hasImageBlocks

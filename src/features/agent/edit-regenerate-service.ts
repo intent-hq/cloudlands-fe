@@ -105,9 +105,9 @@ async function handleEditAndRegenerate(
     }
     truncateLocalTranscript(agentId, messageId);
     // The daemon's editAndRegenerate discards the queue — PROTOCOL §5.5
-    // step (2): "same hard-cancel + queue-discard semantics as
-    // `agent.forceMessage`" — so the discarded queue entries never run and
-    // their parked retry records are dropped WITHOUT promotion (#999). This
+    // step (2): any in-flight turn is hard-cancelled and the pending queue
+    // is discarded — so the discarded queue entries never run and their
+    // parked retry records are dropped WITHOUT promotion (#999). This
     // must happen at the flow site:
     // the reducer's snapshot-diff clear-queue signature cannot distinguish a
     // single-entry discard from a genuine drain, and the late-arriving empty

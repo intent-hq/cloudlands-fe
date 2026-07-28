@@ -277,8 +277,8 @@ describe('chatStateReducer', () => {
     });
 
     it('an empty snapshot removing MULTIPLE records drops them without promotion (clear-queue signature)', () => {
-      // agent.forceMessage / agent.editAndRegenerate clear the whole queue
-      // (PROTOCOL §5.5) and publish an empty snapshot — the cleared entries
+      // agent.editAndRegenerate clears the whole queue (PROTOCOL §5.5) and
+      // publishes an empty snapshot — the cleared entries
       // never run, and the event may arrive AFTER the flow recorded its own
       // lastAttemptedMessage, so promotion must not clobber it. A genuine
       // drain removes exactly one entry per cycle.
