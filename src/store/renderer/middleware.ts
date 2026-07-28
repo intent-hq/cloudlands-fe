@@ -65,7 +65,10 @@ import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-pers
 import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
 import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
 import { createMenuIpcMiddleware } from "./middlewares/menu-ipc-service";
+import { createBrowserIpcMiddleware } from "./middlewares/browser-ipc-service";
 import { createNotificationIpcMiddleware } from "./middlewares/notification-ipc-service";
+import { createAgentEventsIpcMiddleware } from "./middlewares/agent-events-ipc-service";
+import { createGitEventsIpcMiddleware } from "./middlewares/git-events-ipc-service";
 import { createWebNotificationMiddleware } from "$features/notifications/web-notification-service";
 import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
 import { createUserPreferencesBetaPersistenceMiddleware } from "./middlewares/user-preferences-beta-persistence-service";
@@ -382,11 +385,26 @@ function buildMiddleware(): StoreMiddleware[] {
     // New Agent/Note/Terminal/Browser, Close Tab, Reopen Closed Tab, Select
     // Previous/Next Tab, browser zoom) take effect in the renderer again.
     createMenuIpcMiddleware(),
+    // Restore the browser:open-tab IPC listener (deleted app-layout/sagas/
+    // app-layout-saga.ts → watchBrowserOpenTabSaga) so agent/MCP-triggered
+    // browser tab opens forwarded by the main process take effect in the
+    // renderer again (replace / adjacent / plain-open semantics).
+    createBrowserIpcMiddleware(),
     // Restore the notification IPC listeners (deleted ui-notifications/sagas/
     // ui-notifications-saga.ts) so `notification:show` plays the notification
     // sound per the sound settings and `notification:navigate` (notification
     // click) navigates to the emitting workspace again.
     createNotificationIpcMiddleware(),
+    // Restore the agent-events IPC listeners (deleted auth/sagas/auth-saga.ts)
+    // so `agent:auth-required` shows a warning toast (with an Open Terminal
+    // action) and `agent:plan-required` shows a plan-upgrade error toast again.
+    createAgentEventsIpcMiddleware(),
+    // Restore the git event IPC listeners (deleted git/sagas/git-operations-saga.ts
+    // + auth/sagas/auth-saga.ts) so `git:op-completed` / `git:op-failed` update
+    // lastGitOperation/lastGitError and show result toasts again, and
+    // `git:auth-required` / `github:auth-required` open the git-credentials /
+    // GitHub-auth modals again.
+    createGitEventsIpcMiddleware(),
     // Web-platform substitute for the main-process NotificationService:
     // when `getPlatform() === 'web'` (no Electron main process), listen on
     // the relayed legacy `agent:idle` channel and show browser Notifications
