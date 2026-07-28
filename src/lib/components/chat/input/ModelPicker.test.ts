@@ -140,6 +140,7 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
         auggie: {
           id: 'auggie',
           displayName: 'Augment Auggie',
+          shortName: 'Auggie',
           command: 'auggie',
           canBeDisabled: true,
           loginCommandHint: 'auggie login',
@@ -147,6 +148,7 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
         codex: {
           id: 'codex',
           displayName: 'OpenAI Codex',
+          shortName: 'Codex',
           command: 'codex-acp',
           canBeDisabled: true,
           loginDocsUrl: 'https://developers.openai.com/codex/cli#cli-setup',
@@ -154,6 +156,7 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
         'claude-code': {
           id: 'claude-code',
           displayName: 'Anthropic Claude Code',
+          shortName: 'Claude Code',
           command: 'claude-agent-acp',
           canBeDisabled: true,
           loginDocsUrl: 'https://code.claude.com/docs/en/quickstart#step-2-log-in-to-your-account',
@@ -161,6 +164,7 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
         opencode: {
           id: 'opencode',
           displayName: 'OpenCode',
+          shortName: 'OpenCode',
           command: 'opencode',
           canBeDisabled: true,
         },
@@ -169,6 +173,7 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
         configs[(providerId ?? 'auggie') as keyof typeof configs] ?? {
           id: providerId ?? 'auggie',
           displayName: providerId ?? 'auggie',
+          shortName: providerId ?? 'auggie',
           command: providerId ?? 'auggie',
           canBeDisabled: true,
         }
@@ -189,14 +194,25 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
     },
     resolvePreferredModel: () => undefined,
     ACP_PROVIDERS: {
-      auggie: { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: true },
-      codex: { id: 'codex', displayName: 'OpenAI Codex', canBeDisabled: true },
+      auggie: {
+        id: 'auggie',
+        displayName: 'Augment Auggie',
+        shortName: 'Auggie',
+        canBeDisabled: true,
+      },
+      codex: { id: 'codex', displayName: 'OpenAI Codex', shortName: 'Codex', canBeDisabled: true },
       'claude-code': {
         id: 'claude-code',
         displayName: 'Anthropic Claude Code',
+        shortName: 'Claude Code',
         canBeDisabled: true,
       },
-      opencode: { id: 'opencode', displayName: 'OpenCode', canBeDisabled: true },
+      opencode: {
+        id: 'opencode',
+        displayName: 'OpenCode',
+        shortName: 'OpenCode',
+        canBeDisabled: true,
+      },
     },
   };
 });
