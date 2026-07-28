@@ -93,9 +93,9 @@ matching a `vX.Y.Z` / `vX.Y.Z-beta.N` tag on
 - **Fetching the pinned sidecar**: `node scripts/fetch-sidecar.cjs` downloads the
   cargo-dist release asset for the current platform/arch, verifies its sha256
   against the release's `.sha256` asset, and stages the binary at
-  `resources/sidecar/intentd[.exe]`. While the intentd repo is private, set
-  `INTENTD_READ_PAT` (or `GH_TOKEN`/`GITHUB_TOKEN`) to a token with read access.
-  The script is idempotent; use `--force` to re-fetch.
+  `resources/sidecar/intentd[.exe]`. A GitHub token with read access
+  (`INTENTD_READ_PAT`, or `GH_TOKEN`/`GITHUB_TOKEN`) is only needed while the
+  intentd repo is private. The script is idempotent; use `--force` to re-fetch.
 - **Local dev builds**: `scripts/copy-sidecar.cjs` still stages a locally built
   binary from `packages/intentd/target/release` (`make build-sidecar` /
   `make dev` in the monorepo).
