@@ -101,13 +101,14 @@ dmg:
 
 win:
   icon: src/assets/icons/icon.ico
-  publisherName: "Clement Pang"
   # Custom sign hook: uses DigiCert smctl when INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING=true,
   # silently skips for local dev builds.
+  # electron-builder 26 moved publisherName/signingHashAlgorithms under signtoolOptions
+  # and dropped signDlls (only the executable is signed by default).
   signtoolOptions:
     sign: scripts/windows-sign.cjs
-  signingHashAlgorithms: [sha256]
-  signDlls: false
+    publisherName: "Clement Pang"
+    signingHashAlgorithms: [sha256]
   target:
     - target: nsis
       arch:
