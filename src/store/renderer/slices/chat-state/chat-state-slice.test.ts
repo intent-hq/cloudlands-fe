@@ -249,13 +249,16 @@ describe('chatStateReducer', () => {
       });
     });
 
-    it('replaceAgentQueue promotes the LAST-enqueued record when several ids vanish in one snapshot', () => {
+    it('replaceAgentQueue promotes the LAST-enqueued record when several ids vanish in one non-empty snapshot', () => {
       let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
-      // Missed intermediate snapshots: both drained by the time this arrives.
-      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-3', { text: 'D' }));
+      // Missed intermediate snapshots: qm-1 and qm-2 both gone, qm-3 remains.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-3')]));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'C' });
-      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-3': { seq: 3, record: { text: 'D' } },
+      });
     });
 
     it('promotion picks the highest seq even with integer-like ids (Record key order trap)', () => {
@@ -264,8 +267,23 @@ describe('chatStateReducer', () => {
       // iteration. The per-record seq must decide the promotion instead.
       let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, '2', { text: 'first' }));
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, '1', { text: 'second' }));
-      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-rest', { text: 'third' }));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-rest')]));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'second' });
+    });
+
+    it('an empty snapshot removing MULTIPLE records drops them without promotion (clear-queue signature)', () => {
+      // agent.forceMessage / agent.editAndRegenerate clear the whole queue
+      // (PROTOCOL §5.5) and publish an empty snapshot — the cleared entries
+      // never run, and the event may arrive AFTER the flow recorded its own
+      // lastAttemptedMessage, so promotion must not clobber it. A genuine
+      // drain removes exactly one entry per cycle.
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'fresh' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'fresh' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
     });
 
     it('replaceAgentQueue with no parked records is a no-op (state identity preserved)', () => {

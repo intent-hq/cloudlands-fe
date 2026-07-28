@@ -147,11 +147,19 @@ function reduceAgentIdleReconcile(state: ChatStateSlice, agentId: string): ChatS
  * vanish in one snapshot (missed events), the LAST-enqueued of them is the
  * most recent turn — the per-record `seq` (a monotonic enqueue counter, see
  * QueuedRetryRecord) decides, because `Record` key iteration order is not
- * insertion order for integer-like keys. A queue-clear (force-send /
- * edit-and-regenerate, PROTOCOL §5.5) also lands here: the cleared entries
- * never run, but both flows immediately overwrite `lastAttemptedMessage`
- * with their own payload, so the transient promotion is harmless and the
- * dropped records stop a stale-payload leak.
+ * insertion order for integer-like keys.
+ *
+ * Queue-CLEAR flows (`agent.forceMessage` and `agent.editAndRegenerate`,
+ * PROTOCOL §5.5 — both call `clear_queue` and publish an empty snapshot;
+ * interrupt-priority ⌘Enter sends preserve the queue) also land here. The
+ * cleared entries never run, so promotion must be SKIPPED for them: both
+ * flows record their own `lastAttemptedMessage`, but Electron does not
+ * guarantee ordering between the event channel and the RPC response, so a
+ * late-arriving empty snapshot could otherwise clobber the fresh record
+ * with a discarded entry's payload. The clear-queue signature — an EMPTY
+ * incoming snapshot with more than one recorded id vanishing at once — is
+ * distinguishable from a genuine drain, which removes exactly one entry per
+ * cycle; on that signature the records are dropped without promotion.
  */
 function reduceQueueSnapshotDiff(
   state: ChatStateSlice,
@@ -163,15 +171,22 @@ function reduceQueueSnapshotDiff(
   if (Object.keys(agent.queuedRetryRecords).length === 0) return state;
   const presentIds = new Set(queue.map((message) => message.id));
   let promoted: QueuedRetryRecord | null = null;
+  let drainedCount = 0;
   const remaining: Record<string, QueuedRetryRecord> = {};
   for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
     if (presentIds.has(id)) {
       remaining[id] = parked;
-    } else if (promoted === null || parked.seq > promoted.seq) {
-      promoted = parked;
+    } else {
+      drainedCount += 1;
+      if (promoted === null || parked.seq > promoted.seq) {
+        promoted = parked;
+      }
     }
   }
   if (promoted === null) return state;
+  if (queue.length === 0 && drainedCount > 1) {
+    return updateAgent(state, agentId, { queuedRetryRecords: remaining });
+  }
   return updateAgent(state, agentId, {
     lastAttemptedMessage: promoted.record,
     queuedRetryRecords: remaining,
