@@ -114,7 +114,11 @@ function deepEqual(a: unknown, b: unknown): boolean {
  * MAX_QUEUED_RETRY_RECORDS (#973-family memory): records stranded by missed
  * snapshots or per-agent deletion would otherwise accumulate for the app
  * session, each potentially carrying MB-scale base64 imageBlocks — parking
- * beyond the cap evicts the oldest (lowest-seq) records first.
+ * beyond the cap evicts the oldest (lowest-seq) records first. Note evicted
+ * records also stop counting toward the promotion path's drainedCount, so at
+ * >MAX parked records a clear-queue discard can degrade into a
+ * single-vanishing-id diff and promote a discarded payload — keep the cap
+ * comfortably above any realistic queue depth if it is ever tuned.
  */
 function parkRetryRecord(
   agent: ChatAgentState,
@@ -184,6 +188,17 @@ function shouldPreserveLastAttemptedMessage(agent: ChatAgentState): boolean {
  * unparseable timestamp falls back to clearing (the pre-guard #973
  * semantics), and a fresh post-reload state has `lastMessageTime` 0, which
  * every idle postdates — the reload reconcile is preserved.
+ *
+ * Boundary/clock notes: the comparison is a strict `<`, so an idle stamped
+ * in the SAME millisecond as the send still clears — the deliberate
+ * tie-break direction, since the alternative (skipping on equality) would
+ * strand an MB-scale payload for a sub-ms turn, and both failure modes here
+ * lose a record rather than resend a wrong one. The two sides also come from
+ * different clocks (`lastMessageTime` is renderer-stamped, the idle
+ * `timestamp` daemon-stamped) — same host over UDS so skew is ~0, and a
+ * backward system-clock step between send and idle merely suppresses one
+ * finalize until the next postdating idle (self-healing, bounded to one
+ * record).
  */
 function reduceAgentIdleReconcile(
   state: ChatStateSlice,
