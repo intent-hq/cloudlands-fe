@@ -65,6 +65,7 @@ import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-pers
 import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
 import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
 import { createMenuIpcMiddleware } from "./middlewares/menu-ipc-service";
+import { createBrowserIpcMiddleware } from "./middlewares/browser-ipc-service";
 import { createNotificationIpcMiddleware } from "./middlewares/notification-ipc-service";
 import { createWebNotificationMiddleware } from "$features/notifications/web-notification-service";
 import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
@@ -382,6 +383,11 @@ function buildMiddleware(): StoreMiddleware[] {
     // New Agent/Note/Terminal/Browser, Close Tab, Reopen Closed Tab, Select
     // Previous/Next Tab, browser zoom) take effect in the renderer again.
     createMenuIpcMiddleware(),
+    // Restore the browser:open-tab IPC listener (deleted app-layout/sagas/
+    // app-layout-saga.ts → watchBrowserOpenTabSaga) so agent/MCP-triggered
+    // browser tab opens forwarded by the main process take effect in the
+    // renderer again (replace / adjacent / plain-open semantics).
+    createBrowserIpcMiddleware(),
     // Restore the notification IPC listeners (deleted ui-notifications/sagas/
     // ui-notifications-saga.ts) so `notification:show` plays the notification
     // sound per the sound settings and `notification:navigate` (notification
