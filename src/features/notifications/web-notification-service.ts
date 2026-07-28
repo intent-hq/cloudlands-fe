@@ -265,6 +265,18 @@ export async function handleWebAgentIdle(event: AgentIdleEvent): Promise<void> {
       return;
     }
 
+    // Fast path: the agent ended its turn while awaiting delegated
+    // sub-agents (pending completion watches) — the workspace isn't truly
+    // quiet even if the children haven't started responding yet. Absent on
+    // older daemons, in which case the agent.list gate below still applies.
+    if (event.data.isWaitingForOtherAgents === true) {
+      logger.debug('Skipping notification for agent waiting on other agents', {
+        workspaceId,
+        agentName: event.data.agentName,
+      });
+      return;
+    }
+
     // `agent.list` (PROTOCOL §5.5) serves two purposes: AgentLite `metadata`
     // carries `isBackground`/`specialist` (absent from the daemon idle
     // payload), and `isStreaming`/`isResponding` feed the other-agents-active
