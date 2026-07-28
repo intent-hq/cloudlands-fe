@@ -114,8 +114,11 @@
   const canGoNext = $derived(currentReviewIndex > 0);
   const currentVersionLabel = $derived(
     currentReviewIndex === 0
-      ? 'Current'
-      : `Review ${reviewArchive.length - currentReviewIndex}/${reviewArchive.length}`,
+      ? m.codeReview_panel_versionCurrent_label()
+      : m.codeReview_panel_versionPosition_label({
+          index: reviewArchive.length - currentReviewIndex,
+          total: reviewArchive.length,
+        }),
   );
 
   // Open agent in panel
