@@ -65,7 +65,10 @@ const mocks = vi.hoisted(() => {
   const externalEditorsPersistenceMiddleware = createPassthroughMiddleware();
   const zoomSyncMiddleware = createPassthroughMiddleware();
   const menuIpcMiddleware = createPassthroughMiddleware();
+  const browserIpcMiddleware = createPassthroughMiddleware();
   const notificationIpcMiddleware = createPassthroughMiddleware();
+  const agentEventsIpcMiddleware = createPassthroughMiddleware();
+  const gitEventsIpcMiddleware = createPassthroughMiddleware();
   const webNotificationMiddleware = createPassthroughMiddleware();
   const workspaceSettingsPersistenceMiddleware = createPassthroughMiddleware();
   const userPreferencesBetaPersistenceMiddleware = createPassthroughMiddleware();
@@ -137,7 +140,10 @@ const mocks = vi.hoisted(() => {
     createExternalEditorsPersistenceMiddleware: vi.fn(() => externalEditorsPersistenceMiddleware),
     createZoomSyncMiddleware: vi.fn(() => zoomSyncMiddleware),
     createMenuIpcMiddleware: vi.fn(() => menuIpcMiddleware),
+    createBrowserIpcMiddleware: vi.fn(() => browserIpcMiddleware),
     createNotificationIpcMiddleware: vi.fn(() => notificationIpcMiddleware),
+    createAgentEventsIpcMiddleware: vi.fn(() => agentEventsIpcMiddleware),
+    createGitEventsIpcMiddleware: vi.fn(() => gitEventsIpcMiddleware),
     createWebNotificationMiddleware: vi.fn(() => webNotificationMiddleware),
     createWorkspaceSettingsPersistenceMiddleware: vi.fn(
       () => workspaceSettingsPersistenceMiddleware,
@@ -211,7 +217,10 @@ const mocks = vi.hoisted(() => {
     externalEditorsPersistenceMiddleware,
     zoomSyncMiddleware,
     menuIpcMiddleware,
+    browserIpcMiddleware,
     notificationIpcMiddleware,
+    agentEventsIpcMiddleware,
+    gitEventsIpcMiddleware,
     webNotificationMiddleware,
     workspaceSettingsPersistenceMiddleware,
     userPreferencesBetaPersistenceMiddleware,
@@ -374,8 +383,17 @@ vi.mock("./middlewares/zoom-sync-service", () => ({
 vi.mock("./middlewares/menu-ipc-service", () => ({
   createMenuIpcMiddleware: mocks.createMenuIpcMiddleware,
 }));
+vi.mock("./middlewares/browser-ipc-service", () => ({
+  createBrowserIpcMiddleware: mocks.createBrowserIpcMiddleware,
+}));
 vi.mock("./middlewares/notification-ipc-service", () => ({
   createNotificationIpcMiddleware: mocks.createNotificationIpcMiddleware,
+}));
+vi.mock("./middlewares/agent-events-ipc-service", () => ({
+  createAgentEventsIpcMiddleware: mocks.createAgentEventsIpcMiddleware,
+}));
+vi.mock("./middlewares/git-events-ipc-service", () => ({
+  createGitEventsIpcMiddleware: mocks.createGitEventsIpcMiddleware,
 }));
 vi.mock("$features/notifications/web-notification-service", () => ({
   createWebNotificationMiddleware: mocks.createWebNotificationMiddleware,
@@ -518,7 +536,10 @@ describe("store middleware Redux logging gating", () => {
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
@@ -595,7 +616,10 @@ describe("store middleware Redux logging gating", () => {
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
@@ -672,7 +696,10 @@ describe("store middleware Redux logging gating", () => {
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
@@ -750,7 +777,10 @@ describe("store middleware Redux logging gating", () => {
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
@@ -845,7 +875,10 @@ describe("store middleware Redux logging gating", () => {
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.menuIpcMiddleware,
+      mocks.browserIpcMiddleware,
       mocks.notificationIpcMiddleware,
+      mocks.agentEventsIpcMiddleware,
+      mocks.gitEventsIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
