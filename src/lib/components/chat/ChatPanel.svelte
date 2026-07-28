@@ -476,10 +476,14 @@
   // user message (and not streaming) replace the composer with the sequential
   // wizard. Derivation is purely transcript-based (wire contract), so
   // restored sessions re-surface unanswered questions automatically.
+  // Gated on the agent's OWN active turn ($agentIsResponding$), NOT the broad
+  // $agentIsRunning$ gate — an agent paused on delegated agents
+  // (isWaitingForOtherAgents) has ended its turn and its questions must
+  // surface; the composer is already usable in that state.
   const pendingQuestions = $derived.by(() => {
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
-    return derivePendingQuestions($agentMessages$, $agentIsRunning$, showingPendingUserMessage);
+    return derivePendingQuestions($agentMessages$, $agentIsResponding$, showingPendingUserMessage);
   });
 
   // Ignore = collapse, not dismiss — transient component state, never
