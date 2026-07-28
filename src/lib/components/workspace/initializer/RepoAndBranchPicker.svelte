@@ -163,17 +163,13 @@
   );
   const repoTriggerClass = $derived(
     isMetadataPresentation
-      ? // i18n-ignore (Tailwind class list)
-        'group/metadata-trigger min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0!'
-      : // i18n-ignore (Tailwind class list)
-        'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1',
+      ? 'group/metadata-trigger min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0!' // i18n-ignore (Tailwind class list)
+      : 'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1', // i18n-ignore (Tailwind class list)
   );
   const branchTriggerClass = $derived(
     isMetadataPresentation
-      ? // i18n-ignore (Tailwind class list)
-        'group/metadata-trigger w-full min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0! overflow-hidden'
-      : // i18n-ignore (Tailwind class list)
-        'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none overflow-hidden',
+      ? 'group/metadata-trigger w-full min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0! overflow-hidden' // i18n-ignore (Tailwind class list)
+      : 'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none overflow-hidden', // i18n-ignore (Tailwind class list)
   );
   const metadataChevronClass = 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70';
   const metadataValueClass = 'text-foreground font-normal';

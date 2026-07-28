@@ -581,10 +581,8 @@ class EmbeddedBrowserCdpService {
     if (webContentsId === undefined) {
       throw new Error(
         tabId
-          ? // i18n-ignore (agent-facing protocol error, not user-facing)
-            `Tab ${tabId} not found. The tab may have been garbage collected. Try { action: "focusTab", tabId: "${tabId}" } to remount it.`
-          : // i18n-ignore (agent-facing protocol error, not user-facing)
-            'No browser tabs available. Open a browser tab in the app first.',
+          ? `Tab ${tabId} not found. The tab may have been garbage collected. Try { action: "focusTab", tabId: "${tabId}" } to remount it.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
       );
     }
 
@@ -661,10 +659,8 @@ class EmbeddedBrowserCdpService {
     if (webContentsId === undefined) {
       throw new Error(
         tabId
-          ? // i18n-ignore (agent-facing protocol error, not user-facing)
-            `Tab ${tabId} not found. The tab may have been garbage collected. Try { action: "focusTab", tabId: "${tabId}" } to remount it.`
-          : // i18n-ignore (agent-facing protocol error, not user-facing)
-            'No browser tabs available. Open a browser tab in the app first.',
+          ? `Tab ${tabId} not found. The tab may have been garbage collected. Try { action: "focusTab", tabId: "${tabId}" } to remount it.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
       );
     }
 
@@ -726,10 +722,8 @@ class EmbeddedBrowserCdpService {
     if (webContentsId === undefined) {
       throw new Error(
         tabId
-          ? // i18n-ignore (agent-facing protocol error, not user-facing)
-            `Tab ${tabId} not found. The tab may have been garbage collected. Try { action: "focusTab", tabId: "${tabId}" } to remount it.`
-          : // i18n-ignore (agent-facing protocol error, not user-facing)
-            'No browser tabs available. Open a browser tab in the app first.',
+          ? `Tab ${tabId} not found. The tab may have been garbage collected. Try { action: "focusTab", tabId: "${tabId}" } to remount it.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          : 'No browser tabs available. Open a browser tab in the app first.', // i18n-ignore (agent-facing protocol error, not user-facing)
       );
     }
 

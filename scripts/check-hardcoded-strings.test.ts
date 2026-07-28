@@ -178,6 +178,23 @@ describe('hardcoded user-facing string gate', () => {
     );
   });
 
+  it('does not let an inline i18n-ignore suppress the following line', () => {
+    withFixture(
+      {
+        'toast-service.ts': [
+          "const keep = 'Deliberate literal here'; // i18n-ignore",
+          "showToast('Failed to save note');",
+        ].join('\n'),
+      },
+      (dir) => {
+        const result = runGate(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('[string literal] "Failed to save note"');
+        expect(result.output).not.toContain('Deliberate literal here');
+      },
+    );
+  });
+
   it('exits 2 when an enforced directory is missing', () => {
     const result = runGate(join(tmpdir(), 'definitely-missing-dir-i18n-gate'));
     expect(result.exitCode).toBe(2);

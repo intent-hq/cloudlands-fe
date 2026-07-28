@@ -189,8 +189,7 @@ export async function probeCodexAppServerVersion(
     const version = parseCodexCliVersion(`${result.stdout || ''}\n${result.stderr || ''}`);
     const probeResult: CodexAppServerVersionProbeResult = version
       ? { ok: true, version }
-      : // i18n-ignore (internal version-probe diagnostic, logged not rendered)
-        { ok: false, reason: 'Unable to parse codex CLI version' };
+      : { ok: false, reason: 'Unable to parse codex CLI version' }; // i18n-ignore (internal version-probe diagnostic, logged not rendered)
     if (probeResult.ok) cachedCodexAppServerVersionProbe = probeResult;
     return probeResult;
   } catch (error) {

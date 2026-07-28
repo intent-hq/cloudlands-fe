@@ -247,9 +247,15 @@ function lineAt(src, index) {
 function ignoredLines(src) {
   const out = new Set();
   src.split('\n').forEach((line, idx) => {
-    if (line.includes('i18n-ignore')) {
-      out.add(idx + 1);
+    if (!line.includes('i18n-ignore')) return;
+    // A comment-only line suppresses the line below; an inline comment
+    // suppresses only its own line.
+    const commentStart = line.search(/\/\/|\/\*|<!--/);
+    const beforeComment = commentStart === -1 ? line : line.slice(0, commentStart);
+    if (beforeComment.trim() === '') {
       out.add(idx + 2);
+    } else {
+      out.add(idx + 1);
     }
   });
   return out;

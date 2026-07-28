@@ -572,8 +572,7 @@
       type="button"
       class="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/50 shrink-0 hover:bg-muted/70 transition-colors cursor-pointer"
       onclick={() => (isCollapsed = !isCollapsed)}
-      data-i18n-ignore="dev-only debug UI"
-      title="Click to {isCollapsed ? 'expand' : 'collapse'}"
+      data-i18n-ignore="dev-only debug UI" title="Click to {isCollapsed ? 'expand' : 'collapse'}"
     >
       <div class="flex items-center gap-2">
         <Fa icon={faBug} class="text-orange-500" size="sm" />
@@ -593,8 +592,7 @@
             e.stopPropagation();
             handleReset();
           }}
-          data-i18n-ignore="dev-only debug UI"
-          title="Reset to defaults"
+          data-i18n-ignore="dev-only debug UI" title="Reset to defaults"
           class="h-7 w-7 p-0"
         >
           <Fa icon={faRotate} size="xs" />

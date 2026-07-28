@@ -186,10 +186,8 @@ export function agentSubscribeToGroup(
   const canonicalId = canonical?.id ?? seed.id;
   logger.info(
     canonicalId === seed.id
-      ? // i18n-ignore (developer log message)
-        'Created delegation-group subscription'
-      : // i18n-ignore (developer log message)
-        'Added agent to existing delegation-group subscription',
+      ? 'Created delegation-group subscription' // i18n-ignore (developer log message)
+      : 'Added agent to existing delegation-group subscription', // i18n-ignore (developer log message)
     { groupId, parentAgentId, delegatedAgentId, subscriptionId: canonicalId },
   );
   return canonicalId;
