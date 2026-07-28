@@ -68,6 +68,10 @@ const ENFORCED_DIRS = [
   'src/lib/components/diagrams',
   'src/lib/components/code-walkthrough',
   'src/lib/components/visualization',
+  'src/lib/components/notes',
+  'src/lib/components/markdown',
+  'src/features/notes',
+  'src/features/comments',
 ];
 
 const ROOT = process.cwd();

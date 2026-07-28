@@ -27,6 +27,7 @@
   parseTaskStats,
 } from '../workspace/sidebar/utils';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   // Props
   let {
@@ -70,7 +71,7 @@
     if (!workspaceId) return;
 
     void createNoteWrite(workspaceId, {
-      title: 'New Note',
+      title: m.notes_panel_newNote_title(),
       content: '',
       tags: [],
     });
@@ -79,7 +80,7 @@
 
 <div class="h-full">
   <VSCodeScrollablePanel
-    title="Notes"
+    title={m.notes_panel_title()}
     class="h-full"
     collapsible={true}
     {collapsed}
@@ -87,7 +88,7 @@
     storageKey={collapsed === undefined ? 'workspace-notes-collapsed' : undefined}
     showAction={true}
     actionIcon={faPlus}
-    actionLabel="Create Note"
+    actionLabel={m.notes_panel_createNote_label()}
     onAction={createNote}
     contentClass="py-0.5 px-0"
   >
@@ -134,7 +135,12 @@
               {#snippet iconSnippet()}
                 {#if isAllComplete}
                   <!-- All tasks complete - show checked checkbox -->
-                  <div title="{taskStats.completed}/{taskStats.total} complete">
+                  <div
+                    title={m.workspace_notesPanel_taskProgress_tooltip({
+                      completed: taskStats.completed,
+                      total: taskStats.total,
+                    })}
+                  >
                     <input
                       type="checkbox"
                       checked
@@ -145,9 +151,16 @@
                 {:else}
                   <!-- Show progress ring -->
                   <div
-                    title="{taskStats.completed}/{taskStats.total} complete{taskStats.inProgress > 0
-                      ? `, ${taskStats.inProgress} in progress`
-                      : ''}"
+                    title={taskStats.inProgress > 0
+                      ? m.workspace_notesPanel_taskProgressInProgress_tooltip({
+                          completed: taskStats.completed,
+                          total: taskStats.total,
+                          inProgress: taskStats.inProgress,
+                        })
+                      : m.workspace_notesPanel_taskProgress_tooltip({
+                          completed: taskStats.completed,
+                          total: taskStats.total,
+                        })}
                   >
                     <svg width={size} height={size} class="transform -rotate-90">
                       <!-- Background ring -->
