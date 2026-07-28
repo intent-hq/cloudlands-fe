@@ -37,14 +37,16 @@ SvelteKit renderer  <->  AppClient (JSON-RPC boundary)  <->  intentd daemon
 of the monorepo:
 
 ```bash
-# Clone the monorepo with submodules
-git clone --recurse-submodules https://github.com/intent-hq/monorepo.git
+git clone https://github.com/intent-hq/monorepo.git
+cd monorepo
 
-# …or, in an existing monorepo checkout, initialize just this submodule
-git submodule update --init packages/cloudlands-fe
+# Initialize this submodule (some sibling submodules are still private,
+# so initialize selectively rather than cloning with --recurse-submodules)
+git submodule update --init --recursive packages/cloudlands-fe
 
 cd packages/cloudlands-fe
 pnpm install
+pnpm run dev
 ```
 
 ### Standalone
@@ -56,6 +58,7 @@ mock AppClient when no daemon is present):
 git clone https://github.com/intent-hq/cloudlands-fe.git
 cd cloudlands-fe
 pnpm install
+pnpm run dev
 ```
 
 ## Commands
@@ -66,7 +69,7 @@ Use `pnpm` (not `npm`). The following scripts are defined in `package.json`:
 pnpm install            # Install dependencies
 pnpm run dev            # Start the app in development (Vite + Electron)
 pnpm run build          # Production build (renderer, main, preload)
-pnpm run check          # svelte-check + TypeScript checks
+pnpm run check          # svelte-check (Svelte + TypeScript diagnostics)
 pnpm run lint           # ESLint
 pnpm run format         # Prettier (write)
 pnpm run test:unit      # Vitest unit suite
@@ -134,6 +137,13 @@ Key references under [`docs/`](./docs):
   safety conventions.
 - [EVENT_SYSTEM.md](./docs/EVENT_SYSTEM.md) — the unified event system.
 
+## Reporting issues
+
+Bug reports and feature requests for all Intent components — including this
+frontend — are tracked centrally on the
+[intent-hq/monorepo issue tracker](https://github.com/intent-hq/monorepo/issues),
+not on this repository.
+
 ## Network & privacy
 
 The desktop app is local-first and ships **no telemetry or analytics** —
@@ -166,3 +176,8 @@ Sentry), and the sitter self-update — are documented in the
 This repository is the frontend **ported from the prior Electron app** and
 wired to the `intentd` daemon through the AppClient JSON-RPC boundary. It
 **replaces the earlier Tauri v2 prototype** that previously occupied this repo.
+
+## License
+
+Licensed under the [Apache License 2.0](./LICENSE). See [NOTICE](./NOTICE) for
+attribution and lineage details.
