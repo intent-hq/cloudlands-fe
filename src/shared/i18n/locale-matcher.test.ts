@@ -29,12 +29,15 @@ describe('matchLocale', () => {
     expect(matchLocale(['zh-SG'], CATALOGS, BASE)).toBe('zh-CN');
     expect(matchLocale(['zh-Hans'], CATALOGS, BASE)).toBe('zh-CN');
     expect(matchLocale(['zh-Hans-HK'], CATALOGS, BASE)).toBe('zh-CN');
+    expect(matchLocale(['zh-Hans-SG'], CATALOGS, BASE)).toBe('zh-CN');
+    expect(matchLocale(['zh-Hans-CN'], CATALOGS, BASE)).toBe('zh-CN');
   });
 
   it('does not match Traditional Chinese to zh-CN (zh-TW/zh-HK → fallback)', () => {
     expect(matchLocale(['zh-TW'], CATALOGS, BASE)).toBe(BASE);
     expect(matchLocale(['zh-HK'], CATALOGS, BASE)).toBe(BASE);
     expect(matchLocale(['zh-Hant'], CATALOGS, BASE)).toBe(BASE);
+    expect(matchLocale(['zh-Hant-MO'], CATALOGS, BASE)).toBe(BASE);
   });
 
   it('matches Traditional Chinese once a zh-Hant catalog ships', () => {
