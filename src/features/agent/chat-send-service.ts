@@ -75,6 +75,7 @@ import {
 } from "$store/renderer/slices/sidebar-nav/chief-thread-title";
 import type { AgentSession } from "$shared/types";
 import { loadChatTranscript } from "$features/agent/chat-read-service";
+import { buildRecordedAttempt } from "$features/agent/utils/build-recorded-attempt";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("ChatSendService");
@@ -168,19 +169,10 @@ async function dispatchToLifecycle(
   }
 
   // The retry payload this attempt carries, for the error banner's "Try
-  // again" (#941). `content` already includes the workspace-context prefix,
-  // so a retry must not re-prefix it. A model override (retry-with-model,
-  // #964) rides along so a subsequent "Try again" re-sends it, and image
-  // blocks are included so a retry resends the attachments (#965).
-  const recordedOptions = {
-    ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
-    ...(options.model !== undefined ? { model: options.model } : {}),
-    ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
-  };
-  const recordedAttempt: LastAttemptedMessage = {
-    text: content,
-    ...(Object.keys(recordedOptions).length > 0 ? { options: recordedOptions } : {}),
-  };
+  // again" (#941/#964/#965) — see buildRecordedAttempt (shared with the
+  // lifecycle auto-queue park, #1011, whose structural-equality clear needs
+  // the identical shape).
+  const recordedAttempt: LastAttemptedMessage = buildRecordedAttempt(content, options);
 
   // Queue-on-send: derive in-flight status SOLELY from BE-returned session
   // state (selectAgentIsResponding reads `isResponding`/`isStreaming`/status

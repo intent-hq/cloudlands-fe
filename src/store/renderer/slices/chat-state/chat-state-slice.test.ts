@@ -243,8 +243,9 @@ describe('chatStateReducer', () => {
     it('replaceAgentQueue leaves still-queued records parked', () => {
       let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
-      // qm-1 drains, qm-2 is still queued.
-      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-2')]));
+      // qm-1 drains, qm-2 is still queued (snapshot content matches the
+      // parked text — content sync for divergent entries is covered below).
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [{ ...queuedEntry('qm-2'), content: 'C' }]));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
         'qm-2': { seq: 2, record: { text: 'C' } },
@@ -256,7 +257,7 @@ describe('chatStateReducer', () => {
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-3', { text: 'D' }));
       // Missed intermediate snapshots: qm-1 and qm-2 both gone, qm-3 remains.
-      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-3')]));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [{ ...queuedEntry('qm-3'), content: 'D' }]));
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'C' });
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
         'qm-3': { seq: 3, record: { text: 'D' } },
@@ -355,6 +356,32 @@ describe('chatStateReducer', () => {
         text: 'after',
         options: { noteIds: ['n-1'] },
       });
+    });
+
+    it('a snapshot syncs a present entry\u2019s edited content into its parked record (#1011 save-while-idle race)', () => {
+      // STAB-27 save with the agent idle: the daemon awaits the self-drain
+      // BEFORE returning the edit RPC response, so the post-edit snapshot and
+      // the drain snapshot both arrive before ChatPanel can dispatch
+      // chatQueuedRetryRecordUpdated. The snapshot diff must therefore pick up
+      // the daemon-authoritative content for still-present ids.
+      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'before', options: { noteIds: ['n-1'] } }));
+      // Post-edit snapshot: qm-1 still queued, content edited daemon-side.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [{ ...queuedEntry('qm-1'), content: 'after' }]));
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'after', options: { noteIds: ['n-1'] } } },
+      });
+      // Drain snapshot: the promotion carries the edited text.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({
+        text: 'after',
+        options: { noteIds: ['n-1'] },
+      });
+    });
+
+    it('a snapshot with unchanged content leaves parked records untouched (state identity preserved)', () => {
+      const s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'content of qm-1' }));
+      const s2 = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));
+      expect(s2).toBe(s);
     });
 
     it('chatQueuedRetryRecordUpdated is a no-op when nothing is parked under the id', () => {

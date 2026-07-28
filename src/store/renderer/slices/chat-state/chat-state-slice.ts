@@ -208,13 +208,28 @@ function reduceQueueSnapshotDiff(
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
   if (Object.keys(agent.queuedRetryRecords).length === 0) return state;
-  const presentIds = new Set(queue.map((message) => message.id));
+  const presentById = new Map(queue.map((message) => [message.id, message]));
   let promoted: QueuedRetryRecord | null = null;
   let drainedCount = 0;
+  let textSynced = false;
   const remaining: Record<string, QueuedRetryRecord> = {};
   for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
-    if (presentIds.has(id)) {
-      remaining[id] = parked;
+    const present = presentById.get(id);
+    if (present) {
+      // #1011: the snapshot is the daemon-authoritative content of the queued
+      // entry — sync the parked text so an edit is reflected even when the
+      // save's self-drain snapshot (agent idle at save, STAB-27 release awaits
+      // the drain BEFORE the RPC response returns) promotes the record before
+      // ChatPanel's post-response `chatQueuedRetryRecordUpdated` can run. The
+      // daemon publishes the post-edit snapshot ahead of the drain snapshot on
+      // the same ordered socket, so the promotion always carries the edited
+      // text. Also covers edits made from another client/window.
+      if (parked.record.text === present.content) {
+        remaining[id] = parked;
+      } else {
+        textSynced = true;
+        remaining[id] = { ...parked, record: { ...parked.record, text: present.content } };
+      }
     } else {
       drainedCount += 1;
       if (promoted === null || parked.seq > promoted.seq) {
@@ -222,7 +237,9 @@ function reduceQueueSnapshotDiff(
       }
     }
   }
-  if (promoted === null) return state;
+  if (promoted === null) {
+    return textSynced ? updateAgent(state, agentId, { queuedRetryRecords: remaining }) : state;
+  }
   if (queue.length === 0 && drainedCount > 1) {
     return updateAgent(state, agentId, { queuedRetryRecords: remaining });
   }

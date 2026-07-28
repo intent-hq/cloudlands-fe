@@ -37,7 +37,7 @@ import {
 } from './browser/services/error-recovery.service';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { chatQueuedRetryRecordParked } from '$store/renderer/slices/chat-state/chat-state-slice';
-import type { LastAttemptedMessage } from '$store/renderer/slices/chat-state/chat-state-types';
+import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
 import { workspaceMetrics } from '$store/renderer/slices/workspace/utils/workspace-metrics';
@@ -409,25 +409,17 @@ export async function sendMessage(
                         // records, #999) instead of leaving it in the caller's
                         // mid-turn `lastAttemptedMessage` overwrite — the park
                         // action also undoes that overwrite when the slot still
-                        // holds this payload. Mirror the caller's recorded shape
-                        // (chat-send-service `recordedAttempt`) so the structural
-                        // match holds. Park BEFORE seeding the queue slice so an
-                        // immediate drain snapshot can already promote it.
-                        const recordedOptions = {
-                          ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
-                          ...(options.model !== undefined ? { model: options.model } : {}),
-                          ...(options.imageBlocks !== undefined
-                            ? { imageBlocks: options.imageBlocks }
-                            : {}),
-                        };
-                        const recordedAttempt: LastAttemptedMessage = {
-                          text: content,
-                          ...(Object.keys(recordedOptions).length > 0
-                            ? { options: recordedOptions }
-                            : {}),
-                        };
+                        // holds this payload. buildRecordedAttempt is the same
+                        // construction site chat-send-service records with, so
+                        // the structural match holds. Park BEFORE seeding the
+                        // queue slice so an immediate drain snapshot can
+                        // already promote it.
                         dispatchRedux(
-                          chatQueuedRetryRecordParked(agentId, queuedMessage.id, recordedAttempt),
+                          chatQueuedRetryRecordParked(
+                            agentId,
+                            queuedMessage.id,
+                            buildRecordedAttempt(content, options),
+                          ),
                         );
                         const existing = selectAgentQueueMessages.select(appStore.state, agentId);
                         const next = existing.some((m) => m.id === queuedMessage.id)
