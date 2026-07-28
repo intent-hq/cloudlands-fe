@@ -1632,7 +1632,8 @@
                   <div class="p-3" transition:slide={{ duration: 150 }}>
                     <p class="text-xs text-subtle mb-3">
                       {#if hasStaged && totalExistingCommits === 0}
-                        {m.fileTracking_changeTimeline_mergeDirect_label({ branch: targetBranch })}
+                        {m.fileTracking_changeTimeline_mergeDirect_before()}
+                        <span class="font-medium">{targetBranch}</span>.
                       {:else if hasStaged}
                         {totalExistingCommits === 1
                           ? m.fileTracking_changeTimeline_mergeWithExisting_one({

@@ -946,7 +946,7 @@ function classifyToolInner(
         return {
           category: 'file-delete',
           icon: CATEGORY_ICONS['file-delete'],
-          verb: 'Delete',
+          verb: m.chat_toolClassifier_delete_label(),
           subject: filename(filePart),
           path: dirname(filePart) || null,
           filePath: filePart || null,
@@ -1003,7 +1003,7 @@ function classifyToolInner(
     return {
       category: 'search',
       icon: CATEGORY_ICONS.search,
-      verb: 'Check',
+      verb: m.chat_toolClassifier_check_label(),
       subject: input.paths
         ? Array.isArray(input.paths)
           ? input.paths.length === 1
@@ -1235,7 +1235,7 @@ function fileDeleteDisplay(name: string, input: Record<string, any>): ToolDispla
   return {
     category: 'file-delete',
     icon: CATEGORY_ICONS['file-delete'],
-    verb: 'Delete',
+    verb: m.chat_toolClassifier_delete_label(),
     subject,
     path,
     filePath,
@@ -1243,7 +1243,7 @@ function fileDeleteDisplay(name: string, input: Record<string, any>): ToolDispla
 }
 
 function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Run';
+  let verb = m.chat_toolClassifier_run_label();
   let subject: string | null = null;
 
   // Extract terminal ID from name like "read terminal 123", "kill terminal 5"
@@ -1260,7 +1260,7 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
     name.includes('read_process') ||
     (name.includes('read') && (name.includes('terminal') || name.includes('process')))
   ) {
-    verb = 'Read';
+    verb = m.chat_toolClassifier_read_label();
     subject = terminalSubject;
   } else if (
     name.includes('write-process') ||
@@ -1274,14 +1274,14 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
     name.includes('kill_process') ||
     (name.includes('kill') && (name.includes('terminal') || name.includes('process')))
   ) {
-    verb = 'Kill';
+    verb = m.chat_toolClassifier_kill_label();
     subject = terminalSubject;
   } else if (
     name.includes('list-process') ||
     name.includes('list_process') ||
     (name.includes('list') && name.includes('process'))
   ) {
-    verb = 'List';
+    verb = m.chat_toolClassifier_list_label();
     subject = 'processes';
   } else if (input.command) {
     // Prefer description as subject if available, otherwise use command (first line only)
@@ -1293,7 +1293,7 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
       verb = m.chat_toolClassifier_writeTo_label();
       subject = `terminal ${input.terminal_id}`;
     } else {
-      verb = 'Read';
+      verb = m.chat_toolClassifier_read_label();
       subject = `terminal ${input.terminal_id}`;
     }
   } else if (input.description) {
@@ -1309,19 +1309,19 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
       const rest = titleMatch[2].trim();
       if (rest.length > 0) {
         if (titleVerb === 'list') {
-          verb = 'List';
+          verb = m.chat_toolClassifier_list_label();
           subject = rest;
         } else if (titleVerb === 'read') {
-          verb = 'Read';
+          verb = m.chat_toolClassifier_read_label();
           subject = rest;
         } else if (titleVerb === 'kill') {
-          verb = 'Kill';
+          verb = m.chat_toolClassifier_kill_label();
           subject = rest;
         } else if (titleVerb === 'write') {
           verb = m.chat_toolClassifier_writeTo_label();
           subject = rest;
         } else if (titleVerb === 'launch') {
-          verb = 'Launch';
+          verb = m.chat_toolClassifier_launch_label();
           subject = truncate(rest.split('\n')[0], 80);
         } else {
           subject = truncate(rest.split('\n')[0], 80);
@@ -1375,7 +1375,7 @@ function contextEngineDisplay(name: string, input: Record<string, any>): ToolDis
 }
 
 function searchDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Search';
+  let verb = m.chat_toolClassifier_search_label();
   let subject: string | null = null;
 
   if (name.includes('git-commit') || name.includes('git_commit')) {
@@ -1383,7 +1383,7 @@ function searchDisplay(name: string, input: Record<string, any>): ToolDisplay {
   } else if (name.includes('web-search') || name.includes('web_search')) {
     verb = m.chat_toolClassifier_searchWeb_label();
   } else if (name.includes('glob') || name.includes('find')) {
-    verb = 'Find';
+    verb = m.chat_toolClassifier_find_label();
   } else if (name.includes('codebase') || name.includes('retrieval')) {
     // Context engine / codebase retrieval
     verb = m.chat_toolClassifier_contextEngineSentenceCase_label();
@@ -1414,7 +1414,7 @@ function searchDisplay(name: string, input: Record<string, any>): ToolDisplay {
 }
 
 function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'API';
+  let verb = 'API'; // i18n-ignore (technical acronym, untranslated across locales)
   let subject: string | null = null;
 
   // Detect tool type by name OR input shape (ACP titles lose the tool name).
@@ -1427,7 +1427,7 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
   const isGlean = name.includes('glean') || !!input.call?.payload?.query;
 
   if (isGitHub) {
-    verb = 'GitHub';
+    verb = 'GitHub'; // i18n-ignore (brand name)
     if (input.path) {
       // Show API path: "GET /repos/owner/repo/issues"
       const method = input.method || 'GET';
@@ -1437,13 +1437,13 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
       subject = truncate(input.summary, 60);
     }
   } else if (isLinear) {
-    verb = 'Linear';
+    verb = 'Linear'; // i18n-ignore (brand name)
     subject = input.summary ? truncate(input.summary, 300) : null;
   } else if (isGlean) {
-    verb = 'Glean';
+    verb = 'Glean'; // i18n-ignore (brand name)
     subject = input.call?.payload?.query ? truncate(input.call.payload.query, 300) : null;
   } else if (name.includes('sentry')) {
-    verb = 'Sentry';
+    verb = 'Sentry'; // i18n-ignore (brand name)
     // Sentry tools have various input shapes - try to find the most descriptive one
     if (input.naturalLanguageQuery) {
       subject = truncate(input.naturalLanguageQuery, 60);
@@ -1475,7 +1475,7 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
     name.includes('web_fetch') ||
     name === 'fetch'
   ) {
-    verb = 'Fetch';
+    verb = m.chat_toolClassifier_fetch_label();
     if (input.url) {
       try {
         const url = new URL(input.url);
@@ -1505,14 +1505,14 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
 }
 
 function agentDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Agent';
+  let verb = m.chat_toolClassifier_agent_label();
   let subject: string | null = null;
 
   if (name.includes('create_agent') || name.includes('create-agent')) {
     verb = m.chat_toolClassifier_createAgent_label();
     subject = input.name ? `"${truncate(input.name, 30)}"` : null;
   } else if (name.includes('delegate')) {
-    verb = 'Delegate';
+    verb = m.chat_toolClassifier_delegate_label();
     // Show task description or a friendly label instead of raw UUID
     if (input.taskDescription) {
       subject = truncate(input.taskDescription, 40);
@@ -1580,7 +1580,7 @@ function agentDisplay(name: string, input: Record<string, any>): ToolDisplay {
 }
 
 function taskDisplay(name: string, input: Record<string, any>, result?: any): ToolDisplay {
-  let verb = 'Task';
+  let verb = m.chat_toolClassifier_task_label();
   let subject: string | null = null;
 
   if (name.includes('get') && name.includes('my') && name.includes('task')) {
@@ -1591,10 +1591,10 @@ function taskDisplay(name: string, input: Record<string, any>, result?: any): To
     subject = noteTitle;
   } else if (name.includes('view') || name.includes('list') || name === 'task') {
     // "Task" with no other qualifiers is likely viewing the task list
-    verb = 'View';
+    verb = m.chat_toolClassifier_view_label();
     subject = 'task list';
   } else if (name.includes('add')) {
-    verb = 'Add';
+    verb = m.chat_toolClassifier_add_label();
     if (input.tasks && Array.isArray(input.tasks) && input.tasks.length > 0) {
       const firstName = input.tasks[0]?.name;
       subject =
@@ -1639,28 +1639,28 @@ function taskDisplay(name: string, input: Record<string, any>, result?: any): To
         // Format state nicely (COMPLETE -> complete, IN_PROGRESS -> in progress)
         const formattedState = state ? safeStr(state).toLowerCase().replace(/_/g, ' ') : null;
         if (taskName && formattedState) {
-          verb = 'Mark';
+          verb = m.chat_toolClassifier_mark_label();
           subject = `${taskName} ${formattedState}`;
         } else if (formattedState) {
-          verb = 'Mark';
+          verb = m.chat_toolClassifier_mark_label();
           subject = taskName ? `${taskName} ${formattedState}` : formattedState;
         } else if (taskName) {
-          verb = 'Update';
+          verb = m.chat_toolClassifier_update_label();
           subject = taskName;
         } else {
-          verb = 'Update';
+          verb = m.chat_toolClassifier_update_label();
           subject = 'task';
         }
       } else {
-        verb = 'Update';
+        verb = m.chat_toolClassifier_update_label();
         subject = `${count} tasks`;
       }
     } else {
-      verb = 'Update';
+      verb = m.chat_toolClassifier_update_label();
       subject = 'task';
     }
   } else if (name.includes('reorganize')) {
-    verb = 'Reorganize';
+    verb = m.chat_toolClassifier_reorganize_label();
     subject = 'task list';
   }
 
@@ -1678,7 +1678,7 @@ function workspaceDisplay(
   input: Record<string, any>,
   resultMetadata?: ResultMetadata | null,
 ): ToolDisplay {
-  let verb = 'Workspace';
+  let verb = m.chat_toolClassifier_workspace_label();
   let subject: string | null = null;
   let category: ToolCategory = 'workspace';
   let noteId: string | null = null;
@@ -1807,14 +1807,14 @@ function workspaceDisplay(
     verb = m.chat_toolClassifier_listNotes_label();
     subject = null;
   } else if (name.includes('timeline')) {
-    verb = 'Read';
+    verb = m.chat_toolClassifier_read_label();
     subject = 'timeline';
   } else if (name.includes('info') || name.includes('context') || name.includes('details')) {
-    verb = 'Get';
+    verb = m.chat_toolClassifier_get_label();
     subject = 'workspace info';
   } else if (input.title) {
     // Fallback for tools with a title input - likely a rename operation
-    verb = 'Rename';
+    verb = m.chat_toolClassifier_rename_label();
     subject = truncate(input.title, 30);
   }
 
@@ -1829,14 +1829,14 @@ function workspaceDisplay(
 }
 
 function metaDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Think';
+  let verb = m.chat_toolClassifier_think_label();
   let subject: string | null = null;
 
   if (name.includes('remember')) {
-    verb = 'Remember';
+    verb = m.chat_toolClassifier_remember_label();
     subject = input.memory ? truncate(input.memory, 50) : null;
   } else if (name.includes('think') || name.includes('sequential')) {
-    verb = 'Think';
+    verb = m.chat_toolClassifier_think_label();
     subject = input.thought ? truncate(input.thought, 40) : null;
   }
 
@@ -1850,7 +1850,7 @@ function metaDisplay(name: string, input: Record<string, any>): ToolDisplay {
 }
 
 function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
-  let verb = 'Browser';
+  let verb = m.chat_toolClassifier_browser_label();
   let subject: string | null = null;
 
   // ---- MCP browser_exec tool: input.actions is an array of action objects ----
@@ -1864,69 +1864,69 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
         subject = primaryAction.tabId || input.tabId ? 'tab' : 'page';
         break;
       case 'evaluate':
-        verb = 'Evaluate';
+        verb = m.chat_toolClassifier_evaluate_label();
         subject = primaryAction.expression
           ? truncate(safeStr(primaryAction.expression).split('\n')[0], 60)
           : 'script';
         break;
       case 'listTabs':
-        verb = 'List';
+        verb = m.chat_toolClassifier_list_label();
         subject = 'browser tabs';
         break;
       case 'focusTab':
-        verb = 'Focus';
+        verb = m.chat_toolClassifier_focus_label();
         subject = 'tab';
         break;
       case 'openTab':
-        verb = 'Open';
+        verb = m.chat_toolClassifier_open_label();
         subject = primaryAction.url ? truncate(primaryAction.url, 50) : 'new tab';
         break;
       case 'getAccessibilityTree':
-        verb = 'Inspect';
+        verb = m.chat_toolClassifier_inspect_label();
         subject = 'accessibility tree';
         break;
       case 'snapshot':
-        verb = 'Snapshot';
+        verb = m.chat_toolClassifier_snapshot_label();
         subject = primaryAction.name ? truncate(primaryAction.name, 40) : 'page';
         break;
       case 'resetTab':
-        verb = 'Reset';
+        verb = m.chat_toolClassifier_reset_label();
         subject = 'tab';
         break;
       case 'startSession':
-        verb = 'Start';
+        verb = m.chat_toolClassifier_start_label();
         subject = primaryAction.name ? `session "${truncate(primaryAction.name, 30)}"` : 'capture session';
         break;
       case 'endSession':
-        verb = 'End';
+        verb = m.chat_toolClassifier_end_label();
         subject = 'capture session';
         break;
       case 'captureStep':
-        verb = 'Capture';
+        verb = m.chat_toolClassifier_capture_label();
         subject = primaryAction.stepName ? truncate(primaryAction.stepName, 40) : 'step';
         break;
       case 'startCapture':
-        verb = 'Start';
+        verb = m.chat_toolClassifier_start_label();
         subject = 'capture';
         break;
       case 'endCapture':
-        verb = 'End';
+        verb = m.chat_toolClassifier_end_label();
         subject = 'capture';
         break;
       case 'startTrace':
-        verb = 'Start';
+        verb = m.chat_toolClassifier_start_label();
         subject = 'performance trace';
         break;
       case 'stopTrace':
-        verb = 'Stop';
+        verb = m.chat_toolClassifier_stop_label();
         subject = 'performance trace';
         break;
       case 'getSummary':
-        verb = 'Get';
+        verb = m.chat_toolClassifier_get_label();
         subject = 'session summary';
         break;
       default:
-        verb = 'Browser';
+        verb = m.chat_toolClassifier_browser_label();
         subject = actionType ? safeStr(actionType) : null;
         break;
     }
@@ -1954,13 +1954,13 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
     input.element ? truncate(input.element, 30) : null;
 
   if (name.includes('open-browser') || name.includes('open_browser')) {
-    verb = 'Open';
+    verb = m.chat_toolClassifier_open_label();
     subject = input.url ? truncate(input.url, 40) : 'browser';
   } else if (name.includes('navigate')) {
-    verb = 'Navigate';
+    verb = m.chat_toolClassifier_navigate_label();
     subject = input.url ? truncate(input.url, 40) : null;
   } else if (name.includes('click')) {
-    verb = 'Click';
+    verb = m.chat_toolClassifier_click_label();
     subject = getElement();
   } else if (name.includes('screenshot')) {
     verb = m.chat_toolClassifier_screenshot_label();
@@ -1981,70 +1981,70 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
     verb = m.chat_toolClassifier_drag_label();
     subject = input.startElement ? truncate(input.startElement, 30) : null;
   } else if (name.includes('select') && name.includes('option')) {
-    verb = 'Select';
+    verb = m.chat_toolClassifier_select_label();
     subject = input.values
       ? Array.isArray(input.values)
         ? truncate(input.values.join(', '), 30)
         : null
       : null;
   } else if (name.includes('upload') || name.includes('file_upload')) {
-    verb = 'Upload';
+    verb = m.chat_toolClassifier_upload_label();
     subject = input.filePath
       ? filename(input.filePath)
       : Array.isArray(input.paths)
         ? `${input.paths.length} file${input.paths.length > 1 ? 's' : ''}`
         : 'file';
   } else if (name.includes('press') || name.includes('key')) {
-    verb = 'Press';
+    verb = m.chat_toolClassifier_press_label();
     subject = input.key ? input.key : null;
   } else if (name.includes('wait')) {
-    verb = 'Wait';
+    verb = m.chat_toolClassifier_wait_label();
     subject = input.text
       ? `for "${truncate(input.text, 25)}"`
       : input.time
         ? `${input.time}s`
         : null;
   } else if (name.includes('resize')) {
-    verb = 'Resize';
+    verb = m.chat_toolClassifier_resize_label();
     subject = input.width && input.height ? `${input.width}×${input.height}` : 'page';
   } else if (name.includes('close')) {
-    verb = 'Close';
+    verb = m.chat_toolClassifier_close_label();
     subject = 'page';
   } else if (name.includes('dialog')) {
-    verb = 'Handle';
+    verb = m.chat_toolClassifier_handle_label();
     subject = input.accept ? 'accept dialog' : 'dismiss dialog';
   } else if (name.includes('evaluate') || name.includes('script')) {
-    verb = 'Evaluate';
+    verb = m.chat_toolClassifier_evaluate_label();
     subject = 'script';
   } else if (name.includes('console')) {
-    verb = 'Read';
+    verb = m.chat_toolClassifier_read_label();
     subject = 'console';
   } else if (name.includes('network')) {
-    verb = 'Check';
+    verb = m.chat_toolClassifier_check_label();
     subject = 'network';
   } else if (name.includes('emulate')) {
-    verb = 'Emulate';
+    verb = m.chat_toolClassifier_emulate_label();
     subject = input.viewport
       ? `${input.viewport.width}×${input.viewport.height}`
       : input.colorScheme
         ? input.colorScheme
         : 'device';
   } else if (name.includes('performance')) {
-    verb = 'Performance';
+    verb = m.chat_toolClassifier_performance_label();
     subject = name.includes('start') ? 'start trace' : name.includes('stop') ? 'stop trace' : 'trace';
   } else if (name.includes('tab') || name.includes('page')) {
     // list_pages, select_page, new_page, close_page
     if (name.includes('list')) {
-      verb = 'List';
+      verb = m.chat_toolClassifier_list_label();
       subject = 'pages';
     } else if (name.includes('new')) {
-      verb = 'Open';
+      verb = m.chat_toolClassifier_open_label();
       subject = input.url ? truncate(input.url, 40) : 'new page';
     } else if (name.includes('select')) {
-      verb = 'Select';
+      verb = m.chat_toolClassifier_select_label();
       subject = 'page';
     } else {
-      verb = 'Browser';
+      verb = m.chat_toolClassifier_browser_label();
       subject = 'page';
     }
   }
@@ -2088,7 +2088,9 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
     }
   }
 
-  const verb = words[0] ? words[0].charAt(0).toUpperCase() + words[0].slice(1) : 'Run';
+  const verb = words[0]
+    ? words[0].charAt(0).toUpperCase() + words[0].slice(1)
+    : m.chat_toolClassifier_run_label();
   const nameSubject = words.length > 1 ? words.slice(1).join(' ') : null;
 
   // Try to extract a useful subject from input
