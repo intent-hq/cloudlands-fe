@@ -129,6 +129,18 @@ describe('chatStateReducer', () => {
     expect(agent.modelUnavailable).toBeNull();
   });
 
+  it('chatSendFailed preserves lastAttemptedMessage so the banner retries the failed message (#969)', () => {
+    // The send paths record the attempt (chatLastAttemptedMessageSet) BEFORE
+    // the wire call; a failure must not wipe it — "Try again" pairs the error
+    // banner with exactly the recorded payload.
+    const attempted = { text: 'queued and failed', options: { model: 'fast-model' } };
+    const s1 = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    const s2 = chatStateReducer(s1, chatSendFailed(AGENT, 'queueMessage rejected'));
+    const agent = s2.byAgentId[AGENT];
+    expect(agent.error).toBe('queueMessage rejected');
+    expect(agent.lastAttemptedMessage).toEqual(attempted);
+  });
+
   it('chatInterrupted clears streaming start time', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
     const s2 = chatStateReducer(s1, chatInterrupted(AGENT));

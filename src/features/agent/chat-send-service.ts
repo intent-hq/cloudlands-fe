@@ -166,6 +166,21 @@ async function dispatchToLifecycle(
     }
   }
 
+  // The retry payload this attempt carries, for the error banner's "Try
+  // again" (#941). `content` already includes the workspace-context prefix,
+  // so a retry must not re-prefix it. A model override (retry-with-model,
+  // #964) rides along so a subsequent "Try again" re-sends it, and image
+  // blocks are included so a retry resends the attachments (#965).
+  const recordedOptions = {
+    ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
+    ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
+  };
+  const recordedAttempt: LastAttemptedMessage = {
+    text: content,
+    ...(Object.keys(recordedOptions).length > 0 ? { options: recordedOptions } : {}),
+  };
+
   // Queue-on-send: derive in-flight status SOLELY from BE-returned session
   // state (selectAgentIsResponding reads `isResponding`/`isStreaming`/status
   // off the daemon snapshot). When the daemon reports the agent is busy,
@@ -179,6 +194,27 @@ async function dispatchToLifecycle(
   // the entire point of force-send. The lifecycle send will pass
   // `priority: "interrupt"` to the daemon, which preempts the in-flight turn
   // keep-alive per PROTOCOL.md §5.5.
+  //
+  // #969: on the queue path, `recordedAttempt` is dispatched ONLY in the two
+  // enqueue-FAILURE branches (rejection / throw), immediately before each
+  // `chatSendFailed` — never on a successful enqueue. A successful enqueue
+  // must leave the in-flight turn's record alone: the queued message will
+  // drain FIFO daemon-side anyway, so if the IN-FLIGHT turn fails, "Try
+  // again" must retry the failed message, not resend the queued one (which
+  // would deliver it twice). Failure-branch recording pairs the banner with
+  // exactly the message that failed to queue for every queue-path
+  // `chatSendFailed`. Residual gap (pre-existing record-lifetime issue,
+  // #973 family): a message that enqueues successfully but whose DRAINED
+  // turn later fails is not covered — the in-flight turn's successful
+  // completion clears the record before the drain, so "Try again" no-ops.
+  //
+  // NOTE: neither a one-shot model override nor noteIds can ride the queued
+  // delivery — `agent.queueMessage` has no model/noteIds params (PROTOCOL
+  // §5.5), so the daemon drains the entry with the session model. On
+  // enqueue failure they stay recorded so a post-failure "Try again"
+  // re-SENDS them (not re-applies: daemon-side per-turn model extraction is
+  // deferred, PROTOCOL §5.5); the session model is never mutated (one-shot
+  // semantics, #483).
   if (!forceSubmit && deps.selectAgentIsResponding.select(appStore.state, agentId)) {
     appStore.dispatch(clearChatDraft(wsId, agentId));
     try {
@@ -198,6 +234,8 @@ async function dispatchToLifecycle(
           wsId,
           error: errMsg,
         });
+        // #969: pair the banner with the message that failed to queue.
+        appStore.dispatch(chatLastAttemptedMessageSet(agentId, recordedAttempt));
         appStore.dispatch(chatSendFailed(agentId, errMsg));
         return;
       }
@@ -221,6 +259,8 @@ async function dispatchToLifecycle(
       // silently drop the message.
       const message = error instanceof Error ? error.message : String(error);
       logger.error("agent.queueMessage threw", error);
+      // #969: pair the banner with the message that failed to queue.
+      appStore.dispatch(chatLastAttemptedMessageSet(agentId, recordedAttempt));
       appStore.dispatch(chatSendFailed(agentId, `Failed to queue message: ${message}`));
     }
     return;
@@ -229,23 +269,9 @@ async function dispatchToLifecycle(
   // Immediate loading-state dispatch so the UI doesn't have to wait for the
   // first lifecycle dispatch to surface the spinner / streaming indicator.
   appStore.dispatch(chatSendStarted(agentId, wsId));
-  // Record the exact content this attempt carries so the error banner's
-  // "Try again" resends it verbatim if the turn fails (#941). `content`
-  // already includes the workspace-context prefix, so a retry must not
-  // re-prefix it. A model override (retry-with-model, #964) is recorded too,
-  // so a subsequent "Try again" keeps using the suggested model. Image
-  // blocks are recorded as well so a retry resends the attachments (#965).
-  const recordedOptions = {
-    ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
-    ...(options.model !== undefined ? { model: options.model } : {}),
-    ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
-  };
-  appStore.dispatch(
-    chatLastAttemptedMessageSet(agentId, {
-      text: content,
-      ...(Object.keys(recordedOptions).length > 0 ? { options: recordedOptions } : {}),
-    }),
-  );
+  // Record the retry payload for the direct path (#941/#964/#965) — see
+  // `recordedAttempt` above for what it carries and why.
+  appStore.dispatch(chatLastAttemptedMessageSet(agentId, recordedAttempt));
   appStore.dispatch(clearChatDraft(wsId, agentId));
 
   try {
