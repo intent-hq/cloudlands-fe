@@ -352,7 +352,7 @@ describe('WorkspaceProgressCard status screenshot (intent-hq/monorepo#997)', () 
     // Bounded dimensions + rounded border per the acceptance criteria.
     expect(image.className).toContain('max-h-48');
     expect(image.className).toContain('rounded-md');
-    expect(image.className).toContain('border');
+    expect(image.className.split(/\s+/)).toContain('border');
 
     const statusButton = screen.getByRole('button', { name: 'Edit workspace status' });
     expect(

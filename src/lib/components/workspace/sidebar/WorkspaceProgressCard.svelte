@@ -1234,7 +1234,8 @@
               src={statusImageUrl}
               alt="Workspace status screenshot"
               class="w-full max-h-48 object-contain rounded-md border border-border"
-              onerror={() => (failedStatusImageUrl = statusImageUrl)}
+              onerror={(e) =>
+                (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
             />
           </button>
         </div>
