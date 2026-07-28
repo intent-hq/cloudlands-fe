@@ -17,38 +17,59 @@ export const PROVIDERS_CATALOG_METHOD = 'providers.catalog';
 export const ProviderCatalogRequestSchema = z.object({}).strict();
 
 /**
- * One registry row (§5.38). Optional fields are omitted when unset, never
- * null — clients detect by presence. `modelTiers` is the tier → model-id map
- * present only for static-tier providers.
+ * The static `{ fast, balanced, smart }` tier → model-id table (§5.38).
+ * Strict on the three documented tiers so a missing/misspelled tier fails
+ * loudly; `.passthrough()` keeps future additive keys.
  */
-export const ProviderCatalogEntrySchema = z.object({
-  id: z.string().min(1),
-  displayName: z.string(),
-  shortName: z.string(),
-  command: z.string(),
-  isDefault: z.boolean(),
-  canBeDisabled: z.boolean(),
-  loginCommandHint: z.string().optional(),
-  loginDocsUrl: z.string().optional(),
-  authErrorPatterns: z.array(z.string()).optional(),
-  requiresEnvVar: z.string().optional(),
-  requiresFeatureCode: z.string().optional(),
-  visible: z.boolean(),
-  modelTiers: z.record(z.string()).optional(),
-});
+export const ProviderModelTiersSchema = z
+  .object({
+    fast: z.string(),
+    balanced: z.string(),
+    smart: z.string(),
+  })
+  .passthrough();
+
+/**
+ * One registry row (§5.38). Optional fields are omitted when unset, never
+ * null — clients detect by presence. `modelTiers` is present only for
+ * static-tier providers. `.passthrough()` preserves unknown fields so future
+ * additive bumps (detected by presence per the PROTOCOL compatibility
+ * policy) survive validation instead of being silently stripped.
+ */
+export const ProviderCatalogEntrySchema = z
+  .object({
+    id: z.string().min(1),
+    displayName: z.string(),
+    shortName: z.string(),
+    command: z.string(),
+    isDefault: z.boolean(),
+    canBeDisabled: z.boolean(),
+    loginCommandHint: z.string().optional(),
+    loginDocsUrl: z.string().optional(),
+    authErrorPatterns: z.array(z.string()).optional(),
+    requiresEnvVar: z.string().optional(),
+    requiresFeatureCode: z.string().optional(),
+    visible: z.boolean(),
+    modelTiers: ProviderModelTiersSchema.optional(),
+  })
+  .passthrough();
 
 /**
  * `providers.catalog` response: ALL registered providers (gated-off rows
  * included) in registry order — clients must key rows by `id`, never by
- * array position — plus the registry's `isDefault` entry.
+ * array position — plus the registry's `isDefault` entry. `.passthrough()`
+ * for the same additive-field preservation as the entry schema.
  */
-export const ProviderCatalogResponseSchema = z.object({
-  providers: z.array(ProviderCatalogEntrySchema),
-  defaultProviderId: z.string(),
-});
+export const ProviderCatalogResponseSchema = z
+  .object({
+    providers: z.array(ProviderCatalogEntrySchema),
+    defaultProviderId: z.string(),
+  })
+  .passthrough();
 
 export type ProviderCatalogEntry = z.infer<typeof ProviderCatalogEntrySchema>;
 export type ProviderCatalogResult = z.infer<typeof ProviderCatalogResponseSchema>;
+export type ProviderModelTiersTable = z.infer<typeof ProviderModelTiersSchema>;
 
 /** Capability tier keys of the static `modelTiers` table. */
 export type ProviderModelTier = 'fast' | 'balanced' | 'smart';

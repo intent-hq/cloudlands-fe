@@ -186,5 +186,8 @@ describe('provider-catalog selectors', () => {
     expect(
       selectProviderEnabledFromCatalog.select(storeWith(withLocked, { auggie: false }), 'auggie'),
     ).toBe(true);
+    // An UNKNOWN id must not inherit the default row's canBeDisabled:false —
+    // it resolves through the persisted map / default-id check instead.
+    expect(selectProviderEnabledFromCatalog.select(storeWith(withLocked), 'nope')).toBe(false);
   });
 });

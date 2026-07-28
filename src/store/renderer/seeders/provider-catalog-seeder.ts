@@ -10,6 +10,11 @@
  * Failures are folded to a no-op (logged): the slice keeps its previous
  * hydration (`loaded` stays false on a failed first fetch) and consumers fall
  * back to the hardcoded `provider-config.ts` table until that file is retired.
+ *
+ * Boot-latency note: seeders run sequentially, so the awaited initial fetch
+ * gates the seeders behind it. This is deliberate — "catalog hydrated before
+ * pickers/settings first paint" is the contract — and on a slow/unreachable
+ * daemon the workspaces seed would stall on the same transport anyway.
  */
 import { createLogger } from "$lib/utils/client-logger";
 import { onBackendReconnected } from "$lib/client/live/backend-transport";

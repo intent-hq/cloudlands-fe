@@ -14,6 +14,7 @@
  */
 import {
   PROVIDERS_CATALOG_METHOD,
+  ProviderCatalogRequestSchema,
   ProviderCatalogResponseSchema,
   type ProviderCatalogResult,
 } from "$shared/provider-catalog";
@@ -22,7 +23,10 @@ import { backendRequest } from "./backend-transport";
 
 export class LiveProvidersClient implements ProvidersClient {
   async catalog(): Promise<ProviderCatalogResult> {
-    const result = await backendRequest<unknown>(PROVIDERS_CATALOG_METHOD, {});
+    // Parsing the empty params is living documentation that §5.38 takes no
+    // parameters — the strict schema throws if anything is ever added here.
+    const params = ProviderCatalogRequestSchema.parse({});
+    const result = await backendRequest<unknown>(PROVIDERS_CATALOG_METHOD, params);
     return ProviderCatalogResponseSchema.parse(result);
   }
 }

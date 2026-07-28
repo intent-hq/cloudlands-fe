@@ -9,6 +9,7 @@
  * tolerate `undefined`) before the first hydration lands.
  */
 import { getItem, getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import type { ProviderModelTiersTable } from '$shared/provider-catalog';
 import { store } from '../../store';
 import type { ProviderCatalogEntry, ProviderModelTier } from './provider-catalog-types';
 
@@ -56,7 +57,7 @@ export const selectProviderCatalogEntryOrDefault = store.createSelector(
  * fallback — callers must not receive another provider's model ids.
  */
 export const selectProviderModelTiers = store.createSelector(
-  (state, providerId: string): Record<string, string> | undefined =>
+  (state, providerId: string): ProviderModelTiersTable | undefined =>
     getItem(state.providerCatalog.providers, providerId)?.modelTiers,
 );
 
@@ -75,10 +76,12 @@ export const selectDefaultModelForProviderTier = store.createSelector(
  * cannot be disabled are always enabled; the default provider is enabled
  * when it has no persisted entry; every other provider defaults to disabled
  * when unset. Reads the persisted map from the providerSettings slice.
+ * The `canBeDisabled` check uses the EXACT row (no default fallback) so an
+ * unknown id cannot inherit the default provider's canBeDisabled:false.
  */
 export const selectProviderEnabledFromCatalog = store.createSelector(
   (state, providerId: string): boolean => {
-    const entry = selectProviderCatalogEntryOrDefault.select(state, providerId);
+    const entry = getItem(state.providerCatalog.providers, providerId);
     if (entry?.canBeDisabled === false) return true;
     const enabled = state.providerSettings.enabledProviders[providerId];
     return enabled ?? providerId === state.providerCatalog.defaultProviderId;

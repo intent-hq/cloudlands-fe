@@ -121,6 +121,35 @@ describe("LiveProvidersClient", () => {
     await expect(client.catalog()).rejects.toThrow();
   });
 
+  it("throws on an incomplete modelTiers table (missing documented tier)", async () => {
+    mockInvoke.mockResolvedValue({
+      ok: true,
+      result: {
+        providers: [
+          {
+            ...CATALOG.providers[0],
+            modelTiers: { fast: "haiku4.5", balanced: "sonnet4.5" },
+          },
+        ],
+        defaultProviderId: "auggie",
+      },
+    });
+
+    await expect(client.catalog()).rejects.toThrow();
+  });
+
+  it("preserves unknown additive fields (PROTOCOL compatibility policy: detect by presence)", async () => {
+    const withExtra = {
+      providers: [{ ...CATALOG.providers[0], futureField: "x" }],
+      defaultProviderId: "auggie",
+    };
+    mockInvoke.mockResolvedValue({ ok: true, result: withExtra });
+
+    const result = await client.catalog();
+
+    expect((result.providers[0] as Record<string, unknown>).futureField).toBe("x");
+  });
+
   it("throws on transport failure so the seeder keeps the previous catalog", async () => {
     mockInvoke.mockResolvedValue({
       ok: false,
