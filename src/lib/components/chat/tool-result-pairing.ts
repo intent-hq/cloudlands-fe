@@ -14,11 +14,10 @@ import type { ContentBlock } from '$shared/types';
 /**
  * Build a lookup map from tool_use identifiers to their tool_result blocks.
  *
- * First pass indexes each tool_result under every reference it carries — the
- * canonical `tool_use_id` plus any legacy `toolCallId` — so a lookup by either
- * `tool_use.id` or `tool_use.toolCallId` resolves. Second pass matches error
- * results with an empty `tool_use_id` to the nearest preceding tool_use that
- * has no result, stopping at the first tool_use found to avoid misattribution.
+ * Indexes each tool_result under every reference it carries — the canonical
+ * `tool_use_id` plus any legacy `toolCallId` — so a lookup by either
+ * `tool_use.id` or `tool_use.toolCallId` resolves. Results without an id
+ * reference stay unpaired; there is no position-based attribution.
  */
 export function buildToolResultsMap(blocks: ContentBlock[]): Map<string, ContentBlock> {
   const map = new Map<string, ContentBlock>();
@@ -27,26 +26,6 @@ export function buildToolResultsMap(blocks: ContentBlock[]): Map<string, Content
     if (block.type !== 'tool_result') continue;
     for (const ref of [block.tool_use_id, block.toolCallId]) {
       if (ref) map.set(ref, block);
-    }
-  }
-
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    if (block.type !== 'tool_result') continue;
-    const isError = block.is_error || block.isError;
-    if (!isError || block.tool_use_id) continue;
-    // Find the immediately preceding tool_use that doesn't have a result.
-    // Always break on the first tool_use found - either we matched it or it
-    // already has a result, in which case we can't safely attribute this error.
-    for (let j = i - 1; j >= 0; j--) {
-      const prevBlock = blocks[j];
-      if (prevBlock.type === 'tool_use') {
-        const key = prevBlock.id ?? prevBlock.toolCallId;
-        if (key && !findToolResult(map, prevBlock)) {
-          map.set(key, block);
-        }
-        break;
-      }
     }
   }
 
