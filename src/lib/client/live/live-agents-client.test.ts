@@ -363,79 +363,50 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result).toEqual({ success: false, error: 'not found: queued message' });
   });
 
-  it('force forwards agent.forceMessage with §5.5 params and folds the daemon body into success', async () => {
-    // PROTOCOL §5.5: `{ agentId, messageId, content, workspaceId,
-    // imageBlocks?, noteIds? }` → service result (stops the stream first).
-    backend.onRequest('agent.forceMessage', () => ({
+  it('sendQueuedNow forwards agent.sendQueuedMessageNow with §5.5 params and folds the daemon body into success', async () => {
+    // PROTOCOL §5.5: `{ agentId, workspaceId, messageId }` →
+    // `{ success, queued: false, messageId }` (atomic dequeue + interrupt send).
+    backend.onRequest('agent.sendQueuedMessageNow', () => ({
       success: true,
       queued: false,
-      messageId: 'msg-9',
+      messageId: 'qm-9',
     }));
     const client = new LiveAgentsClient();
 
-    const blocks = [{ type: 'image' as const, data: 'abc', mimeType: 'image/png' }];
-    const noteIds = ['note-1', 'note-2'];
-    const result = await client.force({
+    const result = await client.sendQueuedNow({
       agentId: 'agent-1',
-      messageId: 'msg-9',
-      content: 'stop and run this',
       workspaceId: 'ws-1',
-      imageBlocks: blocks,
-      noteIds,
+      messageId: 'qm-9',
     });
 
     expect(result.success).toBe(true);
     expect(backend.requests[0]).toEqual({
-      method: 'agent.forceMessage',
+      method: 'agent.sendQueuedMessageNow',
       params: {
         agentId: 'agent-1',
-        messageId: 'msg-9',
-        content: 'stop and run this',
         workspaceId: 'ws-1',
-        imageBlocks: blocks,
-        noteIds,
+        messageId: 'qm-9',
       },
     });
   });
 
-  it('force omits imageBlocks / noteIds when the caller does not supply them', async () => {
-    backend.onRequest('agent.forceMessage', () => ({ success: true, queued: false }));
-    const client = new LiveAgentsClient();
-
-    await client.force({
-      agentId: 'agent-1',
-      messageId: 'msg-9',
-      content: 'go',
-      workspaceId: 'ws-1',
-    });
-
-    const params = backend.requests[0]?.params as Record<string, unknown>;
-    expect(params).toEqual({
-      agentId: 'agent-1',
-      messageId: 'msg-9',
-      content: 'go',
-      workspaceId: 'ws-1',
-    });
-    expect(params).not.toHaveProperty('imageBlocks');
-    expect(params).not.toHaveProperty('noteIds');
-  });
-
-  it('force folds a raw BackendError into {success:false,error} (no throw)', async () => {
-    backend.onRequest('agent.forceMessage', () => {
+  it('sendQueuedNow folds the -32602 missing-entry rejection into {success:false,error} (no throw)', async () => {
+    // NOT idempotent (§5.5): an already-drained/removed entry rejects with
+    // -32602 — the seam folds it into a MutationResult instead of throwing.
+    backend.onRequest('agent.sendQueuedMessageNow', () => {
       throw new BackendError(
-        buildErrorPayload('BACKEND_ERROR', 'not found: agent session', { rpcCode: -32004 }),
+        buildErrorPayload('INVALID_PARAMS', 'not found: queued message', { rpcCode: -32602 }),
       );
     });
     const client = new LiveAgentsClient();
 
-    const result = await client.force({
-      agentId: 'agent-ghost',
-      messageId: 'msg-9',
-      content: 'go',
+    const result = await client.sendQueuedNow({
+      agentId: 'agent-1',
       workspaceId: 'ws-1',
+      messageId: 'qm-gone',
     });
     expect(result.success).toBe(false);
-    expect(result.error).toContain('not found: agent session');
+    expect(result.error).toContain('not found: queued message');
   });
 
   it('getQueue forwards agent.getQueue and returns the daemon queue array verbatim (incl. messageMetadata)', async () => {

@@ -4155,6 +4155,7 @@
   "agent_chatSend_workspaceNotFound_error": "Workspace not found: {id}",
   "agent_chatSend_queueRejected_error": "queueMessage rejected",
   "agent_chatSend_queueFailed_error": "Failed to queue message: {error}",
+  "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow rejected",
   "agent_chatSend_nothingToRetry_toast": "Nothing to retry — send a message to start a new turn.",
   "agent_ipc_activeStreamsFailed_error": "Failed to get active streams",
   "agent_ipc_circuitBreakerResetFailed_error": "Failed to reset circuit breaker",

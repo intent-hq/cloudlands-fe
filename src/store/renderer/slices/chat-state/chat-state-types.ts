@@ -118,7 +118,11 @@ export interface SendMessagePayload {
   noteIds?: string[];
   /** Image blocks extracted from serialized context items */
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
-  /** Queued message id to remove before replaying a queued message. */
+  /**
+   * Queued entry id for the atomic "Send now" path
+   * (`agent.sendQueuedMessageNow`): when present, the send middleware makes
+   * that single wire call instead of the lifecycle send.
+   */
   queuedMessageId?: string;
   /** Whether this is a "send queued message now" flow that skips queue-vs-send decision */
   skipQueueCheck?: boolean;

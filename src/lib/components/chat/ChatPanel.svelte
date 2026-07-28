@@ -2358,30 +2358,21 @@
     appStore.dispatch(removeQueuedMessageRequested(agentId, messageId));
   }
 
-  // Handle sending a queued message immediately (interrupts current stream)
+  // Handle sending a queued message immediately (interrupts current stream).
+  // One atomic daemon call (`agent.sendQueuedMessageNow`, monorepo#1032): the
+  // send middleware needs only agentId/wsId/queuedMessageId — the daemon owns
+  // the entry's content/attachments and dequeues + delivers transactionally.
   function handleSendQueuedMessageNow(messageId: string) {
     const message = $queuedMessages$.find((m) => m.id === messageId);
     if (!message || !workspace) return;
 
     logger.info('Send queued message now triggered', { messageId, agentId });
 
-    // Dispatch through the send-message saga with forceSubmit/skipQueueCheck so
-    // saga-owned queue removal and stop orchestration run before send.
-    const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
-
     appStore.dispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text: message.content,
         queuedMessageId: messageId,
-        serializedContextItems: message.contextItems as any,
-        noteIds,
-        imageBlocks: message.imageBlocks,
-        skipQueueCheck: true,
-        forceSubmit: true,
-        agentName,
-        agentModel,
-        isInitialWorkspaceAgent,
       }),
     );
 

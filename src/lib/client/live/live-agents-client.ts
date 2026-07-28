@@ -236,8 +236,8 @@ export class LiveAgentsClient implements AgentsClient {
     // `agent.queueMessage` returns `{ success, queuedMessage }` (§5.5); we
     // surface `queuedMessage` on the MutationResult so callers can render the
     // queue position / id without an extra `agent.getQueue` round-trip.
-    // Optional `imageBlocks` only ride along when supplied (like
-    // `agent.forceMessage`) so the daemon sees an omitted param otherwise.
+    // Optional `imageBlocks` only ride along when supplied so the daemon sees
+    // an omitted param otherwise.
     try {
       const params: Record<string, unknown> = { agentId, content: message };
       if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
@@ -275,26 +275,21 @@ export class LiveAgentsClient implements AgentsClient {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
-  async force(params: {
+  async sendQueuedNow(params: {
     agentId: string;
-    messageId: string;
-    content: string;
     workspaceId: string;
-    imageBlocks?: ImageBlock[];
-    noteIds?: string[];
+    messageId: string;
   }): Promise<MutationResult> {
-    // `agent.forceMessage` (§5.5) stops the current stream, dequeues, and
-    // delivers atomically. Optional arrays only ride along when supplied so
-    // the daemon sees omitted params rather than explicit nulls/undefined.
-    const rpcParams: Record<string, unknown> = {
+    // `agent.sendQueuedMessageNow` (§5.5) atomically dequeues the persisted
+    // entry and delivers its content as an interrupt send. NOT idempotent:
+    // a missing entry (already drained/removed) rejects with -32602, which
+    // `runMutation` folds into `{ success: false, error }` — callers surface
+    // it non-destructively (the entry is gone; nothing to roll back).
+    return runMutation("agent.sendQueuedMessageNow", {
       agentId: params.agentId,
-      messageId: params.messageId,
-      content: params.content,
       workspaceId: params.workspaceId,
-    };
-    if (params.imageBlocks !== undefined) rpcParams.imageBlocks = params.imageBlocks;
-    if (params.noteIds !== undefined) rpcParams.noteIds = params.noteIds;
-    return runMutation("agent.forceMessage", rpcParams);
+      messageId: params.messageId,
+    });
   }
   async getQueue(agentId: string): Promise<QueuedMessage[]> {
     // `agent.getQueue` (§5.5/§6.6) returns `{ success, queue }`; hand the
