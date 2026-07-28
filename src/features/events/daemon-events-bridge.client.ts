@@ -137,6 +137,7 @@ import { eventReceived } from '$store/renderer/slices/workspace-events/workspace
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
   streamStatusReceived,
+  chatQueuedRetryRecordsCleared,
   chatSendFailed,
   chatSendStarted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -1018,6 +1019,23 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
  * follow-up `agent.getQueue`. The reducer's recently-removed-id tombstone
  * suppresses messages the user just deleted but the BE has not yet self-drained
  * out of the snapshot, preventing flicker.
+ *
+ * Queue-CLEAR detection (#1032): `agent.forceMessage` / `agent.editAndRegenerate`
+ * call `clear_queue` (PROTOCOL §5.5) and publish an EMPTY snapshot — the
+ * discarded entries never run, so their parked retry records must be dropped
+ * WITHOUT promotion (see reduceQueueSnapshotDiff in chat-state-slice). The
+ * reducer's own signature (empty snapshot + >1 vanishing PARKED id) misses a
+ * clear where only ONE of the wiped entries had a parked record: that looks
+ * like a genuine single-entry drain and would promote the discarded payload.
+ * The bridge holds the extra signal the reducer cannot see — the MIRRORED
+ * queue length before this snapshot — so when an empty snapshot wipes more
+ * than one mirrored entry at once (a drain removes exactly one per cycle) it
+ * dispatches `chatQueuedRetryRecordsCleared` BEFORE `replaceAgentQueue`,
+ * synchronously, leaving nothing for the diff to mis-promote. forceMessage has
+ * no FE flow site (only other clients call it), so this is the only place the
+ * clear can be recognized. A clear that wipes a SINGLE-entry queue remains
+ * indistinguishable from a drain by snapshot alone (needs the daemon-side
+ * turn-correlation id, #1022).
  */
 function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1025,6 +1043,15 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   const queue = data.queue;
   if (typeof agentId !== 'string' || !Array.isArray(queue)) return;
+  if (queue.length === 0) {
+    const state = appStore.state as {
+      agentQueue?: { byAgentId: Record<string, { messages: { ids: string[] } }> };
+    };
+    const mirroredCount = state.agentQueue?.byAgentId[agentId]?.messages.ids.length ?? 0;
+    if (mirroredCount > 1) {
+      appStore.dispatch(chatQueuedRetryRecordsCleared(agentId));
+    }
+  }
   appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[]));
 }
 

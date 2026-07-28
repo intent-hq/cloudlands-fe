@@ -245,6 +245,11 @@ function reduceAgentIdleReconcile(
  * incoming snapshot with more than one recorded id vanishing at once — is
  * distinguishable from a genuine drain, which removes exactly one entry per
  * cycle; on that signature the records are dropped without promotion.
+ * This reducer-side signature only sees PARKED ids, so a clear that wipes a
+ * multi-entry queue holding exactly ONE parked record slips past it (#1032);
+ * the events bridge covers that case with the mirrored queue length it holds
+ * (see handleQueueUpdatedEvent), dispatching `chatQueuedRetryRecordsCleared`
+ * before the snapshot lands here.
  */
 function reduceQueueSnapshotDiff(
   state: ChatStateSlice,
