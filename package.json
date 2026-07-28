@@ -285,7 +285,7 @@
     "html-to-image": "^1.11.13",
     "ignore": "^7.0.5",
     "lowlight": "^3.3.0",
-    "marked": "^16.4.1",
+    "marked": "^18.0.7",
     "material-file-icons": "^2.4.0",
     "mermaid": "^11.12.2",
     "monaco-editor": "^0.54.0",
