@@ -5026,10 +5026,10 @@ describe('daemonEventsBridge (STAB-22 — agent:message triggers transcript hydr
     expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('agent:message with role=assistant skips loadChatTranscript when session already has messages', async () => {
-    // Seed a session with existing messages (already hydrated)
+  it('agent:message with role=assistant skips loadChatTranscript when the messageId is already present', async () => {
+    // Seed a session already holding the persisted assistant row.
     const existingMessage: AgentMessage = {
-      id: 'msg-existing',
+      id: 'msg-2',
       role: 'assistant',
       timestamp: '2026-01-01T00:00:00.000Z',
       contentBlocks: [{ type: 'text', text: 'existing message' }],
@@ -5042,7 +5042,76 @@ describe('daemonEventsBridge (STAB-22 — agent:message triggers transcript hydr
       notification('agent:message', { agentId: AGENT, messageId: 'msg-2', role: 'assistant' }),
     );
 
-    // Should not call loadChatTranscript because session already has messages
+    // Should not call loadChatTranscript because the messageId is already present
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it('agent:message with role=assistant refetches when the session holds only the user message (#1019)', async () => {
+    // Hydration race: the transcript hydrated before the assistant row
+    // persisted, so the session holds only the user message.
+    const userMessage: AgentMessage = {
+      id: 'msg-user-1',
+      role: 'user',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'hello' }],
+    } as AgentMessage;
+    seedSession({ messages: [userMessage] });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:message', {
+        agentId: AGENT,
+        messageId: 'msg_assistant-1',
+        role: 'assistant',
+      }),
+    );
+
+    // The persisted assistant row is missing from the transcript — refetch.
+    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
+    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('agent:message with role=assistant skips loadChatTranscript when the messageId matches an appMessageId', async () => {
+    // The persisted row can land in the transcript under its logical
+    // appMessageId (message-dedup merges compare both ids).
+    const existingMessage: AgentMessage = {
+      id: 'optimistic-1',
+      appMessageId: 'msg_assistant-1',
+      role: 'assistant',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'existing message' }],
+    } as AgentMessage;
+    seedSession({ messages: [existingMessage] });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:message', {
+        agentId: AGENT,
+        messageId: 'msg_assistant-1',
+        role: 'assistant',
+      }),
+    );
+
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it('agent:message with role=assistant and no messageId skips refetch for a non-empty session', async () => {
+    // Without a messageId there is nothing to verify against the transcript;
+    // preserve the empty-session-only refetch to avoid refetch storms.
+    const existingMessage: AgentMessage = {
+      id: 'msg-existing',
+      role: 'assistant',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'existing message' }],
+    } as AgentMessage;
+    seedSession({ messages: [existingMessage] });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:message', { agentId: AGENT, role: 'assistant' }));
+
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
