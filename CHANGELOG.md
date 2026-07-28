@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.9.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.8.0...v2.9.0) (2026-07-28)
+
+
+### 🚀 Features
+
+* providerCatalog Redux slice seeded from providers.catalog at connect time ([#517](https://github.com/intent-hq/cloudlands-fe/issues/517)) ([a1467a3](https://github.com/intent-hq/cloudlands-fe/commit/a1467a31e53423b83707dd0cedc0d8a8978fe7fa))
+* switch Send-now to atomic agent.sendQueuedMessageNow; remove force() seam ([#520](https://github.com/intent-hq/cloudlands-fe/issues/520)) ([d8fbdaf](https://github.com/intent-hq/cloudlands-fe/commit/d8fbdaf33f963d00c7431b818c8ce98223c63cf2))
+
+
+### 🐛 Bug Fixes
+
+* migrate electron-builder win config to 26.x signtoolOptions schema (intent-hq/monorepo[#1047](https://github.com/intent-hq/monorepo/issues/1047)) ([bb7d8f3](https://github.com/intent-hq/cloudlands-fe/commit/bb7d8f3b0fbdefaaf4a40d2f2fcdd20b1e09a7e8))
+* run generate:i18n before prebuild type-check so release builds pass (intent-hq/monorepo[#1046](https://github.com/intent-hq/monorepo/issues/1046)) ([1342eb1](https://github.com/intent-hq/cloudlands-fe/commit/1342eb19c226986bd4d7b4d819503b8a11ca7df1))
+
 ## [2.8.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.7.0...v2.8.0) (2026-07-28)
 
 
