@@ -979,8 +979,6 @@ export const EVENT_CHANNELS = [
   'browser:list-tabs-request',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
-  // MCP server error events (main → renderer)
-  'mcp:server-error',
   // Script events (main → renderer)
   'script:started',
   'script:stopped',
