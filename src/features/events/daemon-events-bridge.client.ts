@@ -1477,6 +1477,14 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   const changes: Partial<Workspace> = {};
   if (typeof raw.title === 'string') changes.title = raw.title;
   if (typeof raw.statusMessage === 'string') changes.statusMessage = raw.statusMessage;
+  // `statusImageAssetId` is clearable on the wire (PROTOCOL §5.1): a present
+  // string sets the status screenshot, an explicit JSON null clears it, and a
+  // missing key leaves it untouched. Same merge semantics as `archivedAt`.
+  if (typeof raw.statusImageAssetId === 'string') {
+    changes.statusImageAssetId = raw.statusImageAssetId;
+  } else if (raw.statusImageAssetId === null) {
+    changes.statusImageAssetId = undefined;
+  }
   if (typeof raw.branch === 'string') changes.branch = raw.branch;
   if (typeof raw.baseRef === 'string') changes.baseRef = raw.baseRef;
   if (typeof raw.baseCommitSha === 'string') changes.baseCommitSha = raw.baseCommitSha;

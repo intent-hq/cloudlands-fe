@@ -258,6 +258,10 @@ export interface Workspace {
   status: WorkspaceStatus;
   /** User-facing high-level work status message. Distinct from lifecycle status. */
   statusMessage?: string;
+  /** Agent-authored status screenshot reference (intent-hq/monorepo#997). A
+   *  content-addressed asset id rendered via `workspace-asset://{id}/{assetId}`;
+   *  omitted on the wire until an agent sets one. */
+  statusImageAssetId?: string;
   /** BE-derived in-flight agent state (green dot). Read-only; computed from agent runtime. */
   activity?: 'idle' | 'agent_running';
   /** BE-owned current-cycle display status (intent-hq/intentd#600). Precedence is
