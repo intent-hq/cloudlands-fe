@@ -81,6 +81,7 @@ import {
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import {
   chatLastAttemptedMessageSet,
+  chatSendFailed,
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
@@ -1093,13 +1094,14 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
   ];
 
   // -------------------------------------------------------------------------
-  // #969: queue-on-send records lastAttemptedMessage ONLY in the enqueue
+  // #969/#999: queue-on-send sets the BANNER POINTER only in the enqueue
   // FAILURE branches (rejection/throw), pairing the banner with exactly the
-  // message that failed to queue. A SUCCESSFUL enqueue must leave the
-  // in-flight turn's record alone: the queued message drains FIFO
-  // daemon-side anyway, so if the in-flight turn fails, "Try again" must
-  // retry the failed message — resending the queued one would deliver it
-  // twice.
+  // message that failed to queue. A SUCCESSFUL enqueue records a turn-scoped
+  // PENDING record instead (#999) without moving the pointer: the queued
+  // message drains FIFO daemon-side, so if the in-flight turn fails, "Try
+  // again" must retry the failed message — resending the queued one would
+  // deliver it twice. The pending record is promoted to the pointer when its
+  // drained turn's stream `started` is observed.
   // -------------------------------------------------------------------------
 
   it("#969: a failed enqueue records the full retry payload (context prefix included) and options", async () => {
@@ -1167,9 +1169,8 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     // 'complete') is disposition-neutral and no longer clears the record
     // (#984); with B queued ready-to-send the daemon also withholds
     // `agent:idle` until the drain finishes. The record clears on the final
-    // turn's `agent:idle` — so if B's DRAINED turn fails instead, the record
-    // is still present for "Try again" (though it holds A, not B — fixing
-    // that requires turn-scoped records, #973 family, out of scope here).
+    // turn's `agent:idle`. (Since #999, if B's DRAINED turn fails, the
+    // banner holds B — see the #999 tests below.)
     appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "message A" }));
     seedSession({ isStreaming: true, status: AgentStatus.Active });
 
@@ -1297,6 +1298,190 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       agentSessions?: { byAgentId: Record<string, AgentSession> };
     }).agentSessions?.byAgentId[AGENT];
     expect(session?.model).toBe("session-model");
+  });
+
+  // -------------------------------------------------------------------------
+  // #999: turn-scoped retry records — "Try again" retries the RIGHT turn when
+  // multiple messages are in flight / queued. End-to-end through the real
+  // send middleware + real chat-state reducer.
+  // -------------------------------------------------------------------------
+
+  it("#999: A direct-sends and succeeds, queued B drains and FAILS — Try again resends B, not A", async () => {
+    // A direct-sends while the agent is idle.
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message A" }));
+    await flush();
+    await flush();
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    // A's turn starts streaming.
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "started",
+        assistantMessageId: "msg-A",
+      }),
+    );
+
+    // B enqueues while A is in flight.
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({
+        success: true,
+        queuedMessage: {
+          id: "qm-B",
+          content: "message B",
+          queuedAt: "2026-01-01T00:00:00.000Z",
+          position: 0,
+        } as QueuedMessage,
+      }),
+    );
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
+    // Successful enqueue: the banner pointer still holds A (#969).
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "message A",
+    });
+
+    // A's turn ends (disposition-neutral stream:end).
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "complete",
+      }),
+    );
+    // B drains: its stream starts — the pointer moves to B.
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "started",
+        assistantMessageId: "msg-B",
+      }),
+    );
+    // B's turn fails mid-stream (stream:end then agent:failed → chatSendFailed).
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "complete",
+      }),
+    );
+    appStore.dispatch(chatSendFailed(AGENT, "session/prompt failed: provider error"));
+
+    const chatState = selectChatAgentState.select(appStore.state, AGENT);
+    expect(chatState?.error).toBe("session/prompt failed: provider error");
+    expect(chatState?.lastAttemptedMessage).toEqual({ text: "message B" });
+
+    // "Try again" resends B through the lifecycle seam.
+    seedSession();
+    lifecycleSendMessage.mockClear();
+    const retry = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(retry);
+    await retry.promise;
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("message B");
+  });
+
+  it("#999: queued B fails BEFORE its stream starts — the dequeue snapshot moves the pointer to B", async () => {
+    // A's record is resident from a finished turn; B is enqueued.
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message A" }));
+    await flush();
+    await flush();
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "started",
+        assistantMessageId: "msg-A",
+      }),
+    );
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({
+        success: true,
+        queuedMessage: {
+          id: "qm-B",
+          content: "message B",
+          queuedAt: "2026-01-01T00:00:00.000Z",
+          position: 0,
+        } as QueuedMessage,
+      }),
+    );
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+    // A ends cleanly (no stream for B yet).
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "complete",
+      }),
+    );
+    // The daemon dequeues B to attempt it: agent:queue:updated snapshot no
+    // longer contains qm-B (§6.5) — the pointer moves to B.
+    appStore.dispatch(replaceAgentQueue(AGENT, []));
+    // B's turn fails pre-first-token: only agent:failed arrives.
+    appStore.dispatch(chatSendFailed(AGENT, "spawn failed"));
+    const chatState = selectChatAgentState.select(appStore.state, AGENT);
+    expect(chatState?.error).toBe("spawn failed");
+    expect(chatState?.lastAttemptedMessage).toEqual({ text: "message B" });
+  });
+
+  it("#999: the drained final turn's agent:idle clears the turn-scoped records and pointer", async () => {
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message A" }));
+    await flush();
+    await flush();
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "started",
+        assistantMessageId: "msg-A",
+      }),
+    );
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: "sendMessage",
+        eventType: "complete",
+      }),
+    );
+    const idleEvent: AgentIdleEvent = {
+      id: "evt-idle-999",
+      type: "agent:idle",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      workspaceId: WS,
+      actor: { type: "agent", id: AGENT },
+      data: {
+        agentId: AGENT,
+        agentName: "Test Agent",
+        reason: "stream_complete",
+        finishReason: "end_turn",
+        status: "idle",
+        activationState: null,
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: null,
+      },
+    };
+    appStore.dispatch(eventReceived(WS, idleEvent));
+    const chatState = selectChatAgentState.select(appStore.state, AGENT);
+    expect(chatState?.lastAttemptedMessage).toBeNull();
+    expect(chatState?.turnRetryRecords).toEqual([]);
   });
 
   // -------------------------------------------------------------------------

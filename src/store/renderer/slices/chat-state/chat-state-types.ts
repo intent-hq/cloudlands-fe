@@ -18,6 +18,42 @@ export interface LastAttemptedMessage {
   options?: SendMessageOptions;
 }
 
+/**
+ * Lifecycle phase of a turn-scoped retry record (#999):
+ * - 'pending'   — send dispatched / message enqueued; the turn's
+ *                 `agent:stream:start` has not been observed yet.
+ * - 'streaming' — the turn's stream `started` was observed.
+ * - 'ended'     — the turn's terminal stream event was observed; the
+ *                 disposition (success/failure) rides the follow-up lifecycle
+ *                 event (`agent:idle` / `agent:failed`).
+ */
+export type TurnRetryRecordPhase = 'pending' | 'streaming' | 'ended';
+
+/**
+ * Turn-scoped retry record (#999): each send/enqueue attempt gets a
+ * client-generated `turnKey` so the error banner's "Try again" can pair with
+ * the payload of the turn that actually failed — not whatever single
+ * per-agent record happened to be resident. `lastAttemptedMessage` remains
+ * the banner resolver; records exist to move that pointer to the right turn
+ * as turns start/drain.
+ */
+export interface TurnRetryRecord {
+  /** Client-generated unique key assigned at send/enqueue time. */
+  turnKey: string;
+  attempt: LastAttemptedMessage;
+  phase: TurnRetryRecordPhase;
+  /**
+   * The daemon `QueuedMessage.id` for enqueued attempts — correlates the
+   * record with `agent:queue:updated` snapshots so a dequeue (drain start)
+   * promotes this record to the banner pointer.
+   */
+  queuedMessageId?: string;
+  /** Set when a queue snapshot no longer contains `queuedMessageId` (drain started). */
+  dequeued?: boolean;
+  /** The turn's assistant messageId, correlated from the stream `started` event. */
+  messageId?: string;
+}
+
 export interface ModelUnavailableInfo {
   failedModel: string;
   nextAvailableModel: string;
@@ -65,6 +101,18 @@ export interface ChatAgentState {
   receivedFirstChunk: boolean;
   streamingStartTime: number | null;
   lastAttemptedMessage: LastAttemptedMessage | null;
+  /**
+   * The `turnKey` the current `lastAttemptedMessage` belongs to (#999).
+   * `null` for legacy/unscoped records (hydration, edit-regenerate,
+   * enqueue-failure banners) — those keep the pre-#999 idle-clear semantics.
+   */
+  lastAttemptedTurnKey: string | null;
+  /**
+   * FIFO turn-scoped retry records (#999) for turns that are pending
+   * (queued/sent, awaiting stream start) or in flight. Bounded (capped and
+   * finalized on `agent:idle`), plain array per store serialization rules.
+   */
+  turnRetryRecords: TurnRetryRecord[];
   modelUnavailable: ModelUnavailableInfo | null;
   statusEvents: StatusEvent[];
   /** Workspace ID last recorded by the rebind tracker (mirrors WorkspaceRebindTracker). */

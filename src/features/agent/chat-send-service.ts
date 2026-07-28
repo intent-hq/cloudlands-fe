@@ -50,6 +50,7 @@ import {
   chatSendStarted,
   chatStopCompleted,
   chatStopInitiated,
+  chatTurnAttemptRecorded,
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
@@ -77,6 +78,18 @@ import { loadChatTranscript } from "$features/agent/chat-read-service";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("ChatSendService");
+
+/**
+ * Client-generated turn key (#999): assigned at send/enqueue time so retry
+ * records are scoped to a specific turn even when the daemon has not yet
+ * assigned a messageId (pre-first-token failures). Generated HERE (service),
+ * never in a reducer (store determinism rule).
+ */
+function newTurnKey(): string {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? `turn-${crypto.randomUUID()}`
+    : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 type LifecycleSendOptions = {
   imageBlocks?: SendMessagePayload["imageBlocks"];
@@ -195,22 +208,19 @@ async function dispatchToLifecycle(
   // `priority: "interrupt"` to the daemon, which preempts the in-flight turn
   // keep-alive per PROTOCOL.md §5.5.
   //
-  // #969: on the queue path, `recordedAttempt` is dispatched ONLY in the two
-  // enqueue-FAILURE branches (rejection / throw), immediately before each
-  // `chatSendFailed` — never on a successful enqueue. A successful enqueue
-  // must leave the in-flight turn's record alone: the queued message will
-  // drain FIFO daemon-side anyway, so if the IN-FLIGHT turn fails, "Try
-  // again" must retry the failed message, not resend the queued one (which
-  // would deliver it twice). Failure-branch recording pairs the banner with
-  // exactly the message that failed to queue for every queue-path
-  // `chatSendFailed`. Residual gap (pre-existing record-lifetime issue,
-  // #973 family): since #984 the in-flight turn's `complete` no longer
-  // clears the record (the success-clear rides `agent:idle`, which the
-  // daemon withholds while a ready-to-send queue drains), so in-flight A's
-  // record survives into queued B's drained turn. If B's turn then fails,
-  // "Try again" resends already-succeeded A — a duplicate delivery — rather
-  // than the old safe no-op. Deliberately pinned in the updated #969 test;
-  // fixing it requires turn-scoped records (#973 family), out of scope.
+  // #969/#999: on the queue path, the enqueue-FAILURE branches (rejection /
+  // throw) set the banner pointer directly (unscoped
+  // `chatLastAttemptedMessageSet`) immediately before each `chatSendFailed`,
+  // pairing the banner with exactly the message that failed to queue. A
+  // SUCCESSFUL enqueue records a turn-scoped PENDING record
+  // (`chatTurnAttemptRecorded` mode 'enqueue') WITHOUT touching the banner
+  // pointer — the in-flight turn still owns it, so if the in-flight turn
+  // fails, "Try again" retries the failed message, not the queued one
+  // (which would deliver it twice). When the queued message later drains,
+  // its stream `started` (or its dequeue from the `agent:queue:updated`
+  // snapshot) promotes the pending record to the banner pointer — closing
+  // the #999 gap where a drained turn's failure banner retried the previous
+  // turn's payload.
   //
   // NOTE: neither a one-shot model override nor noteIds can ride the queued
   // delivery — `agent.queueMessage` has no model/noteIds params (PROTOCOL
@@ -244,6 +254,17 @@ async function dispatchToLifecycle(
         return;
       }
       const queuedMessage = result.queuedMessage;
+      // #999: record the enqueued attempt as a turn-scoped pending record so
+      // its eventual drained turn can claim the failure banner. Correlated
+      // with the daemon QueuedMessage id when the response carries one.
+      appStore.dispatch(
+        chatTurnAttemptRecorded(agentId, {
+          turnKey: newTurnKey(),
+          attempt: recordedAttempt,
+          mode: "enqueue",
+          ...(queuedMessage ? { queuedMessageId: queuedMessage.id } : {}),
+        }),
+      );
       if (queuedMessage) {
         const existing = deps.selectAgentQueueMessages.select(appStore.state, agentId);
         const next = existing.some((m) => m.id === queuedMessage.id)
@@ -273,9 +294,17 @@ async function dispatchToLifecycle(
   // Immediate loading-state dispatch so the UI doesn't have to wait for the
   // first lifecycle dispatch to surface the spinner / streaming indicator.
   appStore.dispatch(chatSendStarted(agentId, wsId));
-  // Record the retry payload for the direct path (#941/#964/#965) — see
-  // `recordedAttempt` above for what it carries and why.
-  appStore.dispatch(chatLastAttemptedMessageSet(agentId, recordedAttempt));
+  // Record the retry payload for the direct path (#941/#964/#965) as a
+  // turn-scoped record (#999) — see `recordedAttempt` above for what it
+  // carries and why. Mode 'send' resets the records to this turn and moves
+  // the banner pointer to it.
+  appStore.dispatch(
+    chatTurnAttemptRecorded(agentId, {
+      turnKey: newTurnKey(),
+      attempt: recordedAttempt,
+      mode: "send",
+    }),
+  );
   appStore.dispatch(clearChatDraft(wsId, agentId));
 
   try {

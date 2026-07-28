@@ -27,6 +27,7 @@ import {
   transcriptHydrationStarted,
   transcriptHydrationSettled,
   chatLastAttemptedMessageSet,
+  chatTurnAttemptRecorded,
 } from './chat-state-slice';
 import {
   selectChatAgentState,
@@ -37,6 +38,11 @@ import {
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
+import {
+  replaceAgentQueue,
+  removeQueuedMessageFromAgentQueue,
+} from '../agent-queue/agent-queue-slice';
+import type { QueuedMessage } from '$shared/types';
 import type {
   AgentIdleEvent,
   AgentStatusChangedEvent,
@@ -803,6 +809,392 @@ describe('chatStateReducer', () => {
       };
       const next = chatStateReducer(state, eventReceived('ws-1', statusChangedEvent));
       expect(next).toBe(state);
+    });
+  });
+
+  describe('turn-scoped retry records (#999)', () => {
+    function agentIdleEvent(agentId: string, id = 'evt-idle-999') {
+      const event: AgentIdleEvent = {
+        id,
+        type: 'agent:idle',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        workspaceId: 'ws-1',
+        actor: { type: 'agent', id: agentId },
+        data: {
+          agentId,
+          agentName: 'Test Agent',
+          reason: 'stream_complete',
+          finishReason: 'end_turn',
+          status: 'idle',
+          activationState: null,
+          isActive: false,
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: null,
+        },
+      };
+      return eventReceived('ws-1', event);
+    }
+
+    function streamEvent(
+      eventType: 'started' | 'complete' | 'error',
+      extra: Record<string, unknown> = {},
+    ) {
+      return agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType,
+        ...extra,
+      });
+    }
+
+    function queuedMessage(id: string, content: string): QueuedMessage {
+      return { id, content, queuedAt: '2026-01-01T00:00:00.000Z' } as QueuedMessage;
+    }
+
+    it("mode 'send' resets records to one pending turn and moves the banner pointer", () => {
+      const s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          mode: 'send',
+        }),
+      );
+      const agent = s.byAgentId[AGENT];
+      expect(agent.lastAttemptedMessage).toEqual({ text: 'message A' });
+      expect(agent.lastAttemptedTurnKey).toBe('turn-A');
+      expect(agent.turnRetryRecords).toEqual([
+        { turnKey: 'turn-A', attempt: { text: 'message A' }, phase: 'pending' },
+      ]);
+    });
+
+    it("mode 'enqueue' appends a pending record WITHOUT touching the banner pointer (#969 semantics)", () => {
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(
+        s,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-B',
+          attempt: { text: 'message B' },
+          mode: 'enqueue',
+          queuedMessageId: 'qm-B',
+        }),
+      );
+      const agent = s.byAgentId[AGENT];
+      expect(agent.lastAttemptedMessage).toEqual({ text: 'message A' });
+      expect(agent.lastAttemptedTurnKey).toBe('turn-A');
+      expect(agent.turnRetryRecords).toHaveLength(2);
+      expect(agent.turnRetryRecords[1]).toEqual({
+        turnKey: 'turn-B',
+        attempt: { text: 'message B' },
+        phase: 'pending',
+        queuedMessageId: 'qm-B',
+      });
+    });
+
+    it('#999 core scenario: A succeeds, queued B drains and FAILS — Try again pairs with B, not A', () => {
+      // A direct-sends and starts.
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('started', { assistantMessageId: 'msg-A' }));
+      // B enqueues while A is in flight.
+      s = chatStateReducer(
+        s,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-B',
+          attempt: { text: 'message B', options: { model: 'fast-model' } },
+          mode: 'enqueue',
+          queuedMessageId: 'qm-B',
+        }),
+      );
+      // A's turn ends (disposition-neutral) — banner pointer still A.
+      s = chatStateReducer(s, streamEvent('complete'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'message A' });
+      // B drains: its stream starts — the pointer moves to B.
+      s = chatStateReducer(s, streamEvent('started', { assistantMessageId: 'msg-B' }));
+      expect(s.byAgentId[AGENT].lastAttemptedTurnKey).toBe('turn-B');
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({
+        text: 'message B',
+        options: { model: 'fast-model' },
+      });
+      // B's turn fails — the banner retries B verbatim, never resends A.
+      s = chatStateReducer(s, streamEvent('complete'));
+      s = chatStateReducer(s, chatSendFailed(AGENT, 'provider error'));
+      const agent = s.byAgentId[AGENT];
+      expect(agent.error).toBe('provider error');
+      expect(agent.lastAttemptedMessage).toEqual({
+        text: 'message B',
+        options: { model: 'fast-model' },
+      });
+    });
+
+    it('stream started correlates the assistant messageId on the promoted record', () => {
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('started', { assistantMessageId: 'msg-A' }));
+      expect(s.byAgentId[AGENT].turnRetryRecords).toEqual([
+        {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          phase: 'streaming',
+          messageId: 'msg-A',
+        },
+      ]);
+    });
+
+    it('delayed agent:idle from turn N does NOT clear turn N+1 pending record or its pointer', () => {
+      // Turn N ran and ended; its idle is in transit when N+1 direct-sends.
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-N',
+          attempt: { text: 'turn N' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('started'));
+      s = chatStateReducer(s, streamEvent('complete'));
+      // N+1 sends before idle-N arrives (records reset to N+1 pending).
+      s = chatStateReducer(
+        s,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-N1',
+          attempt: { text: 'turn N+1' },
+          mode: 'send',
+        }),
+      );
+      // The delayed idle-N lands: N+1 is 'pending' (its started not yet
+      // observed), so both its record and the banner pointer survive.
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      const agent = s.byAgentId[AGENT];
+      expect(agent.lastAttemptedMessage).toEqual({ text: 'turn N+1' });
+      expect(agent.lastAttemptedTurnKey).toBe('turn-N1');
+      expect(agent.turnRetryRecords).toEqual([
+        { turnKey: 'turn-N1', attempt: { text: 'turn N+1' }, phase: 'pending' },
+      ]);
+      // N+1 then starts and idles normally — the finalize clears it.
+      s = chatStateReducer(s, streamEvent('started'));
+      s = chatStateReducer(s, streamEvent('complete'));
+      s = chatStateReducer(s, agentIdleEvent(AGENT, 'evt-idle-n1'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+      expect(s.byAgentId[AGENT].turnRetryRecords).toEqual([]);
+    });
+
+    it("agent:idle finalizes 'streaming' records too (missed terminal, dropped subscription)", () => {
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'mid-stream drop' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('started'));
+      // Terminal missed; idle arrives via reconnect reconcile.
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      const agent = s.byAgentId[AGENT];
+      expect(agent.lastAttemptedMessage).toBeNull();
+      expect(agent.lastAttemptedTurnKey).toBeNull();
+      expect(agent.turnRetryRecords).toEqual([]);
+    });
+
+    it('agent:idle preserves the failed turn record while its banner is visible', () => {
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'failed turn' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('started'));
+      s = chatStateReducer(s, streamEvent('complete'));
+      s = chatStateReducer(s, chatSendFailed(AGENT, 'boom'));
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      const agent = s.byAgentId[AGENT];
+      expect(agent.error).toBe('boom');
+      expect(agent.lastAttemptedMessage).toEqual({ text: 'failed turn' });
+      expect(agent.lastAttemptedTurnKey).toBe('turn-A');
+      expect(agent.turnRetryRecords).toEqual([
+        { turnKey: 'turn-A', attempt: { text: 'failed turn' }, phase: 'ended' },
+      ]);
+    });
+
+    it('queue snapshot dequeue promotes the drained record when no turn is observably mid-stream', () => {
+      // B enqueued; queue snapshot includes it.
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-B',
+          attempt: { text: 'message B' },
+          mode: 'enqueue',
+          queuedMessageId: 'qm-B',
+        }),
+      );
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedMessage('qm-B', 'message B')]));
+      expect(s.byAgentId[AGENT].lastAttemptedTurnKey).toBeNull();
+      // The daemon dequeues B to drain it (pre-stream-start window): the
+      // snapshot no longer contains qm-B — the pointer moves to B so a
+      // pre-start agent:failed pairs the banner with B.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      const agent = s.byAgentId[AGENT];
+      expect(agent.lastAttemptedMessage).toEqual({ text: 'message B' });
+      expect(agent.lastAttemptedTurnKey).toBe('turn-B');
+      s = chatStateReducer(s, chatSendFailed(AGENT, 'session/prompt failed pre-start'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'message B' });
+    });
+
+    it('queue snapshot dequeue does NOT steal the pointer while a failure banner is visible', () => {
+      // A failed (banner visible), queued B dequeues — Try again must still
+      // retry A until the user acts; B's promotion rides its stream started.
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(
+        s,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-B',
+          attempt: { text: 'message B' },
+          mode: 'enqueue',
+          queuedMessageId: 'qm-B',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('started'));
+      s = chatStateReducer(s, streamEvent('complete'));
+      s = chatStateReducer(s, chatSendFailed(AGENT, 'turn A failed'));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      const agent = s.byAgentId[AGENT];
+      expect(agent.error).toBe('turn A failed');
+      expect(agent.lastAttemptedMessage).toEqual({ text: 'message A' });
+      expect(agent.lastAttemptedTurnKey).toBe('turn-A');
+    });
+
+    it('user-removed queued message drops its record without touching others', () => {
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-B',
+          attempt: { text: 'message B' },
+          mode: 'enqueue',
+          queuedMessageId: 'qm-B',
+        }),
+      );
+      s = chatStateReducer(
+        s,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-C',
+          attempt: { text: 'message C' },
+          mode: 'enqueue',
+          queuedMessageId: 'qm-C',
+        }),
+      );
+      s = chatStateReducer(s, removeQueuedMessageFromAgentQueue(AGENT, 'qm-B'));
+      expect(s.byAgentId[AGENT].turnRetryRecords).toEqual([
+        {
+          turnKey: 'turn-C',
+          attempt: { text: 'message C' },
+          phase: 'pending',
+          queuedMessageId: 'qm-C',
+        },
+      ]);
+      // A later stale snapshot without qm-B cannot promote the removed record.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedMessage('qm-C', 'message C')]));
+      expect(s.byAgentId[AGENT].lastAttemptedTurnKey).toBeNull();
+    });
+
+    it('interrupt clears the current turn but keeps pending (queued) records for the drain', () => {
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('started'));
+      s = chatStateReducer(
+        s,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-B',
+          attempt: { text: 'message B' },
+          mode: 'enqueue',
+          queuedMessageId: 'qm-B',
+        }),
+      );
+      s = chatStateReducer(s, streamEvent('complete', { stopReason: 'interrupted' }));
+      const agent = s.byAgentId[AGENT];
+      expect(agent.lastAttemptedMessage).toBeNull();
+      expect(agent.lastAttemptedTurnKey).toBeNull();
+      expect(agent.turnRetryRecords).toEqual([
+        {
+          turnKey: 'turn-B',
+          attempt: { text: 'message B' },
+          phase: 'pending',
+          queuedMessageId: 'qm-B',
+        },
+      ]);
+    });
+
+    it('legacy unscoped chatLastAttemptedMessageSet clears any prior turn scoping', () => {
+      let s = chatStateReducer(
+        initialState,
+        chatTurnAttemptRecorded(AGENT, {
+          turnKey: 'turn-A',
+          attempt: { text: 'message A' },
+          mode: 'send',
+        }),
+      );
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'edited text' }));
+      const agent = s.byAgentId[AGENT];
+      expect(agent.lastAttemptedMessage).toEqual({ text: 'edited text' });
+      expect(agent.lastAttemptedTurnKey).toBeNull();
+      // The legacy record still clears on idle (pre-#999 rule)…
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+    });
+
+    it('enqueue records are bounded FIFO (cap drops oldest)', () => {
+      let s = initialState;
+      for (let i = 0; i < 25; i++) {
+        s = chatStateReducer(
+          s,
+          chatTurnAttemptRecorded(AGENT, {
+            turnKey: `turn-${i}`,
+            attempt: { text: `message ${i}` },
+            mode: 'enqueue',
+          }),
+        );
+      }
+      const records = s.byAgentId[AGENT].turnRetryRecords;
+      expect(records).toHaveLength(20);
+      expect(records[0].turnKey).toBe('turn-5');
+      expect(records[19].turnKey).toBe('turn-24');
     });
   });
 
