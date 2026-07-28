@@ -116,4 +116,23 @@ describe('showErrorToast', () => {
     );
     expect(dismissMock).toHaveBeenCalledWith('error-1');
   });
+
+  // Content-only component — the severity tint rides the wrapper class.
+  it.each([
+    ['error', '!border-destructive/50'],
+    ['warning', '!border-amber-500/50'],
+    ['info', '!border-blue-500/50'],
+  ])('passes the %s severity wrapper border class', (type, expectedClass) => {
+    showErrorToast({
+      id: `error-${type}`,
+      title: 'Broken',
+      message: 'Something went wrong',
+      timestamp: new Date('2026-03-17T00:00:00.000Z'),
+      type,
+      recoverable: false,
+    } as any);
+
+    const [, options] = toastCustomMock.mock.calls[0];
+    expect(options.class).toBe(expectedClass);
+  });
 });

@@ -50,25 +50,11 @@
     }
   }
 
-  function getBorderColor(type: string) {
-    switch (type) {
-      case 'error':
-        return 'border-destructive/50';
-      case 'warning':
-        return 'border-amber-500/50';
-      case 'info':
-        return 'border-blue-500/50';
-      default:
-        return 'border-destructive/50';
-    }
-  }
 </script>
 
-<div
-  class="flex items-start gap-3 p-4 bg-card border {getBorderColor(
-    error.type,
-  )} shadow-lg min-w-[360px] max-w-[500px]"
->
+<!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
+     the severity border tint is passed as a wrapper class by error-toast.ts. -->
+<div class="flex items-start gap-3 max-w-[500px]">
   <!-- Icon -->
   <div class="flex-shrink-0 mt-0.5 {getIconColor(error.type)}">
     <Fa icon={getIcon(error.type)} class="w-5 h-5" />
