@@ -21,6 +21,7 @@ function createChatState(overrides: Partial<ChatPanelServiceState> = {}): ChatPa
     error: null,
     streamingStartTime: null,
     lastAttemptedMessage: null,
+    queuedRetryRecords: {},
     lastChunkTime: null,
     modelUnavailable: null,
     statusEvents: [],
