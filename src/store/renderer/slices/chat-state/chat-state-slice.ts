@@ -84,6 +84,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Structural equality over serializable retry payloads (plain objects, arrays,
+ * primitives — the only shapes Redux state may hold). Used by the parked-park
+ * reducer to recognize the caller's own mid-turn `lastAttemptedMessage`
+ * overwrite (#1011) without clobbering a concurrently recorded attempt.
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, index) => deepEqual(item, b[index]));
+  }
+  if (isRecord(a) && isRecord(b)) {
+    const aKeys = Object.keys(a);
+    return (
+      aKeys.length === Object.keys(b).length && aKeys.every((key) => deepEqual(a[key], b[key]))
+    );
+  }
+  return false;
+}
+
+/**
+ * Park a retry record under a queued-entry id with the next monotonic enqueue
+ * seq (promotion order cannot rely on Record key order — integer-like keys
+ * iterate first, breaking insertion order). Shared by the queue-on-send park
+ * (#999) and the lifecycle auto-queue park (#1011).
+ */
+function parkRetryRecord(
+  agent: ChatAgentState,
+  messageId: string,
+  record: LastAttemptedMessage,
+): Record<string, QueuedRetryRecord> {
+  const seq =
+    Object.values(agent.queuedRetryRecords).reduce(
+      (max, parked) => Math.max(max, parked.seq),
+      0,
+    ) + 1;
+  return { ...agent.queuedRetryRecords, [messageId]: { seq, record } };
+}
+
 function getModelUnavailableInfo(value: unknown): ModelUnavailableInfo | null {
   if (!isRecord(value) || !isRecord(value.metadata)) return null;
   const { metadata } = value;
@@ -169,13 +208,28 @@ function reduceQueueSnapshotDiff(
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
   if (Object.keys(agent.queuedRetryRecords).length === 0) return state;
-  const presentIds = new Set(queue.map((message) => message.id));
+  const presentById = new Map(queue.map((message) => [message.id, message]));
   let promoted: QueuedRetryRecord | null = null;
   let drainedCount = 0;
+  let textSynced = false;
   const remaining: Record<string, QueuedRetryRecord> = {};
   for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
-    if (presentIds.has(id)) {
-      remaining[id] = parked;
+    const present = presentById.get(id);
+    if (present) {
+      // #1011: the snapshot is the daemon-authoritative content of the queued
+      // entry — sync the parked text so an edit is reflected even when the
+      // save's self-drain snapshot (agent idle at save, STAB-27 release awaits
+      // the drain BEFORE the RPC response returns) promotes the record before
+      // ChatPanel's post-response `chatQueuedRetryRecordUpdated` can run. The
+      // daemon publishes the post-edit snapshot ahead of the drain snapshot on
+      // the same ordered socket, so the promotion always carries the edited
+      // text. Also covers edits made from another client/window.
+      if (parked.record.text === present.content) {
+        remaining[id] = parked;
+      } else {
+        textSynced = true;
+        remaining[id] = { ...parked, record: { ...parked.record, text: present.content } };
+      }
     } else {
       drainedCount += 1;
       if (promoted === null || parked.seq > promoted.seq) {
@@ -183,7 +237,9 @@ function reduceQueueSnapshotDiff(
       }
     }
   }
-  if (promoted === null) return state;
+  if (promoted === null) {
+    return textSynced ? updateAgent(state, agentId, { queuedRetryRecords: remaining }) : state;
+  }
   if (queue.length === 0 && drainedCount > 1) {
     return updateAgent(state, agentId, { queuedRetryRecords: remaining });
   }
@@ -366,6 +422,36 @@ export const chatQueuedRetryRecordSet = createAction<
   [agentId: string, messageId: string, record: LastAttemptedMessage]
 >('chatState/queuedRetryRecordSet');
 
+/**
+ * Park a retry payload for a send the DAEMON auto-queued mid-flight (#1011):
+ * `agent.sendMessage` answered `{ queued: true, queuedMessage }` instead of
+ * running a turn (agent mid-turn, quarantined session, or the turn-startup
+ * race). The caller already overwrote `lastAttemptedMessage` with this payload
+ * before the wire call — but no turn is running it, so leaving it there pairs
+ * an in-flight turn's failure banner with the WRONG message. This action parks
+ * the record under the queued entry's id (drain promotion then re-activates it
+ * for the turn that actually runs it, see reduceQueueSnapshotDiff) and undoes
+ * the mid-turn overwrite: `lastAttemptedMessage` is cleared only when it still
+ * structurally equals the parked payload, so a concurrently recorded attempt
+ * is never clobbered. Dispatched by the agent-stream-lifecycle queued branch.
+ */
+export const chatQueuedRetryRecordParked = createAction<
+  [agentId: string, messageId: string, record: LastAttemptedMessage]
+>('chatState/queuedRetryRecordParked');
+
+/**
+ * Sync a parked retry record after `agent.editQueuedMessage` succeeds (#1011):
+ * the daemon's queued entry now carries the edited content, so the parked
+ * payload must match — otherwise a post-drain "Try again" resends the
+ * PRE-edit text. Only the text changes (the edit RPC carries no
+ * model/noteIds/imageBlocks); `seq` and recorded options are preserved. A
+ * no-op when nothing is parked under the id (e.g. the entry predates this
+ * chat's records). Dispatched by ChatPanel's edit-queued handler.
+ */
+export const chatQueuedRetryRecordUpdated = createAction<
+  [agentId: string, messageId: string, text: string]
+>('chatState/queuedRetryRecordUpdated');
+
 /** Send failed (activation or network error) */
 export const chatSendFailed =
   createAction<[agentId: string, error: string]>('chatState/sendFailed');
@@ -508,16 +594,33 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   )
   .with(chatQueuedRetryRecordSet, (state, { payload: [agentId, messageId, record] }) => {
     const agent = getAgent(state, agentId);
-    // Monotonic enqueue sequence: promotion order cannot rely on Record key
-    // order (integer-like keys iterate first, breaking insertion order).
-    const seq =
-      Object.values(agent.queuedRetryRecords).reduce(
-        (max, parked) => Math.max(max, parked.seq),
-        0,
-      ) + 1;
     return updateAgent(state, agentId, {
       agentId,
-      queuedRetryRecords: { ...agent.queuedRetryRecords, [messageId]: { seq, record } },
+      queuedRetryRecords: parkRetryRecord(agent, messageId, record),
+    });
+  })
+  .with(chatQueuedRetryRecordParked, (state, { payload: [agentId, messageId, record] }) => {
+    const agent = getAgent(state, agentId);
+    return updateAgent(state, agentId, {
+      agentId,
+      queuedRetryRecords: parkRetryRecord(agent, messageId, record),
+      // Undo the caller's own mid-turn overwrite (#1011) — but only when the
+      // slot still holds this exact payload; a different value means another
+      // attempt recorded itself since and must keep its record.
+      lastAttemptedMessage: deepEqual(agent.lastAttemptedMessage, record)
+        ? null
+        : agent.lastAttemptedMessage,
+    });
+  })
+  .with(chatQueuedRetryRecordUpdated, (state, { payload: [agentId, messageId, text] }) => {
+    const agent = state.byAgentId[agentId];
+    const parked = agent?.queuedRetryRecords[messageId];
+    if (!parked) return state;
+    return updateAgent(state, agentId, {
+      queuedRetryRecords: {
+        ...agent.queuedRetryRecords,
+        [messageId]: { ...parked, record: { ...parked.record, text } },
+      },
     });
   })
   .with(replaceAgentQueue, (state, { payload: [agentId, messages] }) =>
