@@ -15,6 +15,8 @@
   import { Logger } from '$lib/utils/logger';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import { appClient } from '$lib/client';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger, formatNumber } from '$lib/i18n/format';
 
 
   const logger = new Logger({ category: 'AgentRulesEditor' });
@@ -76,7 +78,7 @@
       // null means the wire probe itself failed.
       const rule = await appClient.settings.getUserRule(RULE_TYPE);
       if (rule === null) {
-        showError('Failed to load rules. Please try again.');
+        showError(m.settings_agentRules_loadError());
         return;
       }
       rulesContent = rule.content;
@@ -84,7 +86,7 @@
       hasChanges = false;
     } catch (error) {
       logger.error('Failed to load rules', error instanceof Error ? error : undefined);
-      showError('Failed to load rules. Please try again.');
+      showError(m.settings_agentRules_loadError());
     } finally {
       loading = false;
     }
@@ -96,8 +98,10 @@
     // Block saving if over limit
     if (isOverLimit) {
       showError(
-        `Rules exceed the maximum length of ${MAX_RULES_LENGTH.toLocaleString()} characters. ` +
-          `Please reduce by ${excessChars.toLocaleString()} characters before saving.`,
+        m.settings_agentRules_overLimitError({
+          max: formatInteger(MAX_RULES_LENGTH),
+          excess: formatInteger(excessChars),
+        }),
       );
       return;
     }
@@ -123,12 +127,12 @@
         }, 2000);
       } else {
         saveStatus = 'idle';
-        showError(result.error || 'Failed to save rules');
+        showError(result.error || m.settings_agentRules_saveErrorShort());
       }
     } catch (error) {
       logger.error('Failed to save rules', error instanceof Error ? error : undefined);
       saveStatus = 'idle';
-      showError('Failed to save rules. Please try again.');
+      showError(m.settings_agentRules_saveError());
     }
   }
 
@@ -166,16 +170,16 @@
 <div class="h-full flex flex-col gap-4">
   <div class="flex items-start justify-between gap-4 shrink-0">
     <div>
-      <h2 class="text-sm font-medium text-foreground">Agent instructions</h2>
+      <h2 class="text-sm font-medium text-foreground">{m.settings_agentRules_title()}</h2>
       <p class="text-sm text-muted-foreground mt-1">
-        Custom instructions that will be included for all agents.
+        {m.settings_agentRules_description()}
       </p>
     </div>
 
     {#if hasChanges}
       <Button variant="ghost-light" size="xs" onclick={undoChanges} class="">
         <Fa icon={faRotateLeft} class="w-3 h-3" />
-        Undo changes
+        {m.settings_agentRules_undoChanges()}
       </Button>
     {/if}
   </div>
@@ -195,8 +199,10 @@
     >
       <Fa icon={faCircleExclamation} class="w-4 h-4 flex-shrink-0" />
       <span class="text-sm">
-        Rules exceed the maximum length of {MAX_RULES_LENGTH.toLocaleString()} characters. Please reduce
-        by {excessChars.toLocaleString()} characters to save.
+        {m.settings_agentRules_overLimitCallout({
+          max: formatInteger(MAX_RULES_LENGTH),
+          excess: formatInteger(excessChars),
+        })}
       </span>
     </div>
   {:else if isApproachingLimit}
@@ -205,8 +211,12 @@
     >
       <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
       <span class="text-sm">
-        Approaching character limit ({charCountPercentage}% used). Consider reducing rules to avoid
-        issues.
+        {m.settings_agentRules_approachingLimit({
+          percent: formatNumber(charCountPercentage / 100, {
+            style: 'percent',
+            maximumFractionDigits: 0,
+          }),
+        })}
       </span>
     </div>
   {/if}
@@ -216,7 +226,7 @@
       class="flex items-center justify-center py-16 text-subtle border border-border rounded-lg bg-muted/20 grow"
     >
       <Fa icon={faCircleNotch} class="w-4 h-4 animate-spin mr-2" />
-      Loading...
+      {m.settings_agentRules_loading()}
     </div>
   {:else}
     <div class="relative agent-rules-textarea grow flex flex-col min-h-0">
@@ -224,18 +234,7 @@
         bind:value={rulesContent}
         oninput={handleContentChange}
         noFocusStyle
-        placeholder="Add custom instructions for your agents...
-
-Example:
-# Development Guidelines
-- Always write tests for new features
-- Use TypeScript for type safety
-- Follow the existing code style
-
-# Agent Behavior
-- Be thorough in code reviews
-- Suggest improvements when appropriate
-- Explain complex changes clearly"
+        placeholder={m.settings_agentRules_placeholder()}
         class="text-sm leading-relaxed grow {isOverLimit ? 'border-destructive' : ''}"
       />
       <!-- Saved indicator -->
@@ -255,7 +254,14 @@ Example:
           ? 'text-destructive'
           : 'text-warning'}"
       >
-        <span>{charCountPercentage}% of limit used</span>
+        <span>
+          {m.settings_autoSave_limitUsed({
+            percent: formatNumber(charCountPercentage / 100, {
+              style: 'percent',
+              maximumFractionDigits: 0,
+            }),
+          })}
+        </span>
       </div>
     {/if}
   {/if}

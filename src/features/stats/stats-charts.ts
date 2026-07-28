@@ -8,22 +8,14 @@
  * the workspace spec). Token formatting comes from `stats-format.ts`.
  */
 import type { UsageHourStats, UsageMonthStats } from '$lib/client/app-client';
+import { formatDatePattern } from '$lib/i18n/format';
+import { m } from '$shared/paraglide/messages.js';
 import { formatTokens, totalTokens } from './stats-format';
 
-const MONTH_NAMES = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
+/** Abbreviated month name ("Jan") for a 0-based month index, in the active locale. */
+function monthName(index: number): string {
+  return formatDatePattern(new Date(2026, index, 1), 'MMM');
+}
 
 export interface GridLine {
   label: string;
@@ -53,13 +45,10 @@ export function gridLines(max: number): GridLine[] {
     .filter((l) => l.bottomPct <= 100);
 }
 
-/** Hour → "2pm"-style label for the peak-hour subtitle. */
+/** Hour → "2pm"-style label for the peak-hour subtitle, in the active locale. */
 export function hourAmPm(hour: number): string {
   const h = ((hour % 24) + 24) % 24;
-  if (h === 0) return '12am';
-  if (h < 12) return `${h}am`;
-  if (h === 12) return '12pm';
-  return `${h - 12}pm`;
+  return formatDatePattern(new Date(2026, 0, 1, h), 'haaa');
 }
 
 export const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -153,8 +142,11 @@ export function hourCardModel(
     peakLabel: peakIdx >= 0 ? `${pad2(cells[peakIdx].hour)}:00` : '—',
     peakSub:
       peakIdx >= 0
-        ? `${formatTokens(totals[peakIdx])} tokens in the ${hourAmPm(cells[peakIdx].hour)} hour`
-        : 'no activity in this period',
+        ? m.stats_hourCard_peakSub_label({
+            tokens: formatTokens(totals[peakIdx]),
+            hour: hourAmPm(cells[peakIdx].hour),
+          })
+        : m.stats_hourCard_noActivity_label(),
     grid: gridLines(max),
     bars,
     axis,
@@ -216,7 +208,7 @@ export function monthCardModel(byMonth: UsageMonthStats[], monthsElapsed: number
     return {
       heightPct: active ? (max > 0 ? +((totals[i] / max) * 100).toFixed(1) : 0) : 2,
       outPct: active && totals[i] > 0 ? +((c.outputTokens / totals[i]) * 100).toFixed(1) : 0,
-      letter: MONTH_NAMES[i][0],
+      letter: monthName(i)[0],
       active,
       best: i === bestIdx,
     };
@@ -226,13 +218,21 @@ export function monthCardModel(byMonth: UsageMonthStats[], monthsElapsed: number
   const hasDelta = bestIdx > 0 && prev > 0;
 
   return {
-    heroLabel: elapsed === 12 ? 'FULL YEAR' : 'YEAR TO DATE',
+    heroLabel: elapsed === 12 ? m.stats_monthCard_fullYear_label() : m.stats_monthCard_yearToDate_label(),
     heroValue: formatTokens(sum),
-    avgSub: `avg ${formatTokens(sum / elapsed)} / month`,
+    avgSub: m.stats_monthCard_avgSub_label({ amount: formatTokens(sum / elapsed) }),
     grid: gridLines(max),
     bars,
-    bestLabel: bestIdx >= 0 ? `${MONTH_NAMES[bestIdx]} · ${formatTokens(max)}` : '—',
-    deltaLabel: hasDelta ? `VS ${MONTH_NAMES[bestIdx - 1].toUpperCase()}` : 'TREND',
+    bestLabel:
+      bestIdx >= 0
+        ? m.stats_monthCard_bestMonthValue_label({
+            month: monthName(bestIdx),
+            tokens: formatTokens(max),
+          })
+        : '—',
+    deltaLabel: hasDelta
+      ? m.stats_monthCard_deltaVs_label({ month: monthName(bestIdx - 1).toUpperCase() })
+      : m.stats_monthCard_trend_label(),
     deltaValue: hasDelta ? `+${Math.round(((max - prev) / prev) * 100)}%` : '—',
   };
 }

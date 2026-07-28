@@ -1,5 +1,6 @@
 import { toast } from 'svelte-sonner';
 import { Logger } from '$shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger('ReversibleActions');
 
@@ -42,7 +43,7 @@ class ReversibleActionManager {
           const toastId = toast.warning(config.message, {
             duration: duration * 1000,
             action: {
-              label: 'Undo',
+              label: m.ui_reversibleActions_undo_label(),
               onClick: async () => {
                 try {
                   undoExecuted = true;
@@ -52,10 +53,11 @@ class ReversibleActionManager {
                   toast.dismiss(toastId);
                 } catch (error) {
                   logger.error(
+                    // i18n-ignore (developer log message)
                     'Failed to undo action:',
                     error instanceof Error ? error : new Error(String(error)),
                   );
-                  toast.error('Failed to undo action');
+                  toast.error(m.ui_reversibleActions_undoFailed_error());
                 }
               },
             },
@@ -71,6 +73,7 @@ class ReversibleActionManager {
               await config.onExpire();
             } catch (error) {
               logger.error(
+                // i18n-ignore (developer log message)
                 'Failed to execute onExpire callback:',
                 error instanceof Error ? error : new Error(String(error)),
               );
@@ -82,10 +85,16 @@ class ReversibleActionManager {
         return true;
       } catch (error) {
         logger.error(
+          // i18n-ignore (developer log message)
           'Failed to execute action:',
           error instanceof Error ? error : new Error(String(error)),
         );
-        toast.error(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        toast.error(
+          m.ui_reversibleActions_failed_error({
+            message:
+              error instanceof Error ? error.message : m.ui_reversibleActions_unknownError_label(),
+          }),
+        );
         return false;
       }
     } else if (showCountdown) {
@@ -101,14 +110,22 @@ class ReversibleActionManager {
 
           try {
             await config.action();
-            toast.success(`${config.message} - Completed`);
+            toast.success(m.ui_reversibleActions_completed_message({ message: config.message }));
             resolve(true);
           } catch (error) {
             logger.error(
+              // i18n-ignore (developer log message)
               'Failed to execute action:',
               error instanceof Error ? error : new Error(String(error)),
             );
-            toast.error(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            toast.error(
+              m.ui_reversibleActions_failed_error({
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : m.ui_reversibleActions_unknownError_label(),
+              }),
+            );
             resolve(false);
           }
         };
@@ -117,35 +134,47 @@ class ReversibleActionManager {
           clearTimeout(timeout);
           clearInterval(countdownInterval);
           this.pendingActions.delete(actionId);
-          toast.info('Action cancelled');
+          toast.info(m.ui_reversibleActions_cancelled_message());
           resolve(false);
         };
 
         // Show initial toast with countdown
-        const toastId = toast.warning(`${config.message} in ${remainingTime} seconds...`, {
-          duration: duration * 1000,
-          action: {
-            label: 'Cancel',
-            onClick: cancelAction,
+        const toastId = toast.warning(
+          m.ui_reversibleActions_countdown_message({
+            message: config.message,
+            seconds: remainingTime,
+          }),
+          {
+            duration: duration * 1000,
+            action: {
+              label: m.ui_reversibleActions_cancel_label(),
+              onClick: cancelAction,
+            },
+            onDismiss: cancelAction,
+            onAutoClose: executeAction,
           },
-          onDismiss: cancelAction,
-          onAutoClose: executeAction,
-        });
+        );
 
         // Update countdown every second
         countdownInterval = setInterval(() => {
           remainingTime--;
           if (remainingTime > 0) {
-            toast.warning(`${config.message} in ${remainingTime} seconds...`, {
-              id: toastId,
-              duration: remainingTime * 1000,
-              action: {
-                label: 'Cancel',
-                onClick: cancelAction,
+            toast.warning(
+              m.ui_reversibleActions_countdown_message({
+                message: config.message,
+                seconds: remainingTime,
+              }),
+              {
+                id: toastId,
+                duration: remainingTime * 1000,
+                action: {
+                  label: m.ui_reversibleActions_cancel_label(),
+                  onClick: cancelAction,
+                },
+                onDismiss: cancelAction,
+                onAutoClose: executeAction,
               },
-              onDismiss: cancelAction,
-              onAutoClose: executeAction,
-            });
+            );
           }
         }, 1000);
 
@@ -162,14 +191,22 @@ class ReversibleActionManager {
           this.pendingActions.delete(actionId);
           try {
             await config.action();
-            toast.success(`${config.message} - Completed`);
+            toast.success(m.ui_reversibleActions_completed_message({ message: config.message }));
             resolve(true);
           } catch (error) {
             logger.error(
+              // i18n-ignore (developer log message)
               'Failed to execute action:',
               error instanceof Error ? error : new Error(String(error)),
             );
-            toast.error(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            toast.error(
+              m.ui_reversibleActions_failed_error({
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : m.ui_reversibleActions_unknownError_label(),
+              }),
+            );
             resolve(false);
           }
         };
@@ -177,7 +214,7 @@ class ReversibleActionManager {
         const cancel = () => {
           clearTimeout(timeout);
           this.pendingActions.delete(actionId);
-          toast.info('Action cancelled');
+          toast.info(m.ui_reversibleActions_cancelled_message());
           resolve(false);
         };
 
@@ -187,18 +224,19 @@ class ReversibleActionManager {
             if (config.onExpire) await config.onExpire();
           } catch (error) {
             logger.error(
+              // i18n-ignore (developer log message)
               'Failed to execute onExpire callback:',
               error instanceof Error ? error : new Error(String(error)),
             );
           }
-          toast.info('Action expired');
+          toast.info(m.ui_reversibleActions_expired_message());
           resolve(false);
         };
 
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const toastId = toast.info(`${config.message}`, {
           duration: duration * 1000,
-          action: { label: 'Execute', onClick: executeNow },
+          action: { label: m.ui_reversibleActions_execute_label(), onClick: executeNow },
           onDismiss: cancel,
           onAutoClose: executeNow,
         });
@@ -217,7 +255,7 @@ class ReversibleActionManager {
     if (pending) {
       clearTimeout(pending.timeout);
       this.pendingActions.delete(actionId);
-      toast.info('Action cancelled');
+      toast.info(m.ui_reversibleActions_cancelled_message());
       return true;
     }
     return false;
@@ -233,7 +271,7 @@ class ReversibleActionManager {
     }
     this.pendingActions.clear();
     if (this.pendingActions.size > 0) {
-      toast.info('All pending actions cancelled');
+      toast.info(m.ui_reversibleActions_allCancelled_message());
     }
   }
 
@@ -262,7 +300,7 @@ export async function deleteWithUndo(
 ): Promise<boolean> {
   return reversibleActions.execute({
     id: globalThis.crypto.randomUUID(),
-    message: `Deleted ${itemName}`,
+    message: m.ui_reversibleActions_deleted_message({ itemName }),
     action: deleteAction,
     onUndo: undoAction,
     onExpire: options.onExpire,
@@ -280,7 +318,7 @@ export async function archiveWithUndo(
 ): Promise<boolean> {
   return reversibleActions.execute({
     id: globalThis.crypto.randomUUID(),
-    message: `Archived ${itemName}`,
+    message: m.ui_reversibleActions_archived_message({ itemName }),
     action: archiveAction,
     onUndo: unarchiveAction,
     immediate: options.immediate ?? true, // Default to immediate
@@ -327,7 +365,7 @@ export async function renameWithUndo(
 ): Promise<boolean> {
   return reversibleActions.execute({
     id: globalThis.crypto.randomUUID(),
-    message: `Renamed ${itemType} to "${newName}"`,
+    message: m.ui_reversibleActions_renamed_message({ itemType, newName }),
     action: renameAction,
     onUndo: undoAction,
     immediate: true,

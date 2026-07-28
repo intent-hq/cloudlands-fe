@@ -6,16 +6,14 @@
  */
 
 import { BaseMCPTool } from '../../mcp/main/mcp/tool';
-import {
-  ToolCall,
-  ToolResult,
-} from '../../mcp/main/mcp/protocol';
+import { ToolCall, ToolResult } from '../../mcp/main/mcp/protocol';
 import { CdpConnectionManager } from '../cdp-connection';
 
 export class GetConsoleLogsTool extends BaseMCPTool {
   constructor(private connectionManager: CdpConnectionManager) {
     super(
       'cdp.get_console_logs',
+      // i18n-ignore (agent-facing CDP tool)
       `Get browser console logs captured from the Electron renderer process.
 
 Console logs are automatically captured when the CDP connection is established. This tool retrieves the buffered logs (up to 1000 most recent entries) with optional filtering.`,
@@ -24,16 +22,19 @@ Console logs are automatically captured when the CDP connection is established. 
         properties: {
           count: {
             type: 'integer',
+            // i18n-ignore (agent-facing CDP tool)
             description: 'Maximum number of recent logs to return. Default: 100. Maximum: 1000.',
           },
           filter: {
             type: 'string',
             description:
+              // i18n-ignore (agent-facing CDP tool)
               'Optional filter string. Only logs containing this string (case-insensitive) will be returned. Useful for filtering by log level like "[DEBUG]" or "[ERROR]", or by specific keywords.',
           },
           types: {
             type: 'array',
             description:
+              // i18n-ignore (agent-facing CDP tool)
               'Optional array of console types to include. Valid types: "log", "error", "warn", "info", "debug". If not specified, all types are included.',
           },
         },
@@ -77,6 +78,7 @@ Console logs are automatically captured when the CDP connection is established. 
         })
         .join('\n');
 
+      // i18n-ignore (agent-facing CDP tool)
       const summary = `Retrieved ${logs.length} console log(s)${
         filter ? ` matching filter "${filter}"` : ''
       }${types ? ` of types [${types.join(', ')}]` : ''} (total buffered: ${totalBuffered})`;

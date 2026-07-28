@@ -20,6 +20,7 @@
   import DiffViewer from './DiffViewer.svelte';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Props {
@@ -39,7 +40,7 @@
 
   let {
     patches,
-    label = 'Patch',
+    label = m.ui_patchBlock_label(),
     lastApply,
     linkedAgentId,
     workspaceId,
@@ -71,9 +72,9 @@
   let diffStats = $derived(currentPatch ? countDiffStats(currentPatch.diff) : { addCount: 0, removeCount: 0 });
 
   let buttonState = $derived.by(() => {
-    if (applying) return { label: 'Applying...', icon: faSpinner, spin: true };
-    if (isApplied) return { label: 'Revert', icon: faRotateLeft, spin: false };
-    return { label: 'Apply', icon: faCheck, spin: false };
+    if (applying) return { label: m.ui_patchBlock_applying_label(), icon: faSpinner, spin: true };
+    if (isApplied) return { label: m.ui_patchBlock_revert_label(), icon: faRotateLeft, spin: false };
+    return { label: m.ui_patchBlock_apply_label(), icon: faCheck, spin: false };
   });
 
   let showActionButton = $derived(!!(onApply || onRevert));
@@ -100,7 +101,7 @@
             if (!workspaceId) return;
             appStore.dispatch(openAgentTabRequested(workspaceId, { agentId: linkedAgentId }));
           }}
-          title="View agent"
+          title={m.ui_patchBlock_viewAgent_tooltip()}
         >
           <AuggieAvatar agentId={linkedAgentId} size={16} />
         </button>
@@ -119,7 +120,7 @@
           <span class="text-red-600 ml-1">-{diffStats.removeCount}</span>
         </span>
         {#if isApplied}
-          <span class="text-xs text-green-600 font-medium">(applied)</span>
+          <span class="text-xs text-green-600 font-medium">{m.ui_patchBlock_applied_label()}</span>
         {/if}
       </button>
       {#if showActionButton}
@@ -170,5 +171,5 @@
     {/if}
   </div>
 {:else}
-  <div class="my-1.5 text-sm text-subtle">Invalid patch block</div>
+  <div class="my-1.5 text-sm text-subtle">{m.ui_patchBlock_invalid_error()}</div>
 {/if}

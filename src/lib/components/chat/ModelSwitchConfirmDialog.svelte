@@ -15,6 +15,7 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import Fa from 'svelte-fa';
   import { faXmark, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -80,10 +81,17 @@
               <Fa icon={faExclamationTriangle} size="lg" />
             </div>
             <h2 id="model-switch-dialog-title" class="text-lg font-semibold">
-              {isProviderChange ? 'Switch provider mid-conversation?' : 'Switch model mid-conversation?'}
+              {isProviderChange
+                ? m.chat_modelSwitchDialog_switchProvider_title()
+                : m.chat_modelSwitchDialog_switchModel_title()}
             </h2>
           </div>
-          <Button variant="ghost" size="icon" onclick={() => onCancel?.()} aria-label="Close">
+          <Button
+            variant="ghost"
+            size="icon"
+            onclick={() => onCancel?.()}
+            aria-label={m.chat_modelSwitchDialog_close_ariaLabel()}
+          >
             <Fa icon={faXmark} />
           </Button>
         </div>
@@ -97,30 +105,21 @@
             {/if}
           </p>
           {#if isProviderChange}
-            <p>
-              The agent restarts with the new provider and model when you send your next message.
-              The conversation history is replayed to the new provider as plain text, so tool-call
-              details lose fidelity, and your next message re-sends the entire conversation
-              (which can be costly in tokens).
-            </p>
+            <p>{m.chat_modelSwitchDialog_providerChange_description()}</p>
           {:else}
-            <p>
-              The agent restarts with the new model on your next message. Conversation history is
-              carried over, but cached context is lost and the new model may interpret earlier
-              turns differently.
-            </p>
+            <p>{m.chat_modelSwitchDialog_modelChange_description()}</p>
           {/if}
-          <p>
-            The switch takes effect when the next message is sent — an in-flight turn finishes on
-            the current model. Re-selecting the current model before sending cancels the switch
-            entirely, leaving no trace in the conversation.
-          </p>
+          <p>{m.chat_modelSwitchDialog_deferred_description()}</p>
         </div>
 
         <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-          <Button variant="ghost" onclick={() => onCancel?.()}>Cancel</Button>
+          <Button variant="ghost" onclick={() => onCancel?.()}>
+            {m.chat_modelSwitchDialog_cancel_label()}
+          </Button>
           <Button variant="default" onclick={() => onConfirm?.()}>
-            {isProviderChange ? 'Switch provider' : 'Switch model'}
+            {isProviderChange
+              ? m.chat_modelSwitchDialog_switchProvider_label()
+              : m.chat_modelSwitchDialog_switchModel_label()}
           </Button>
         </div>
       </div>

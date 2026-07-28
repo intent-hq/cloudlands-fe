@@ -20,6 +20,7 @@
   initBrowserWorkspace,
 } from '$store/renderer/slices/browser/browser-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -71,7 +72,7 @@
   function handleSubmit() {
     const normalized = normalizeUrl(urlInput);
     if (!normalized) {
-      urlError = 'Please enter a valid URL';
+      urlError = m.workspace_browserUrlPicker_invalidUrl_error();
       return;
     }
 
@@ -117,13 +118,13 @@
 <div class="p-4">
   <!-- URL Input -->
   <div class="space-y-2">
-    <label for="url-input" class="text-sm font-medium">Enter URL</label>
+    <label for="url-input" class="text-sm font-medium">{m.workspace_browserUrlPicker_enterUrl_label()}</label>
     <div class="flex gap-2">
       <div class="flex-1 relative">
         <Fa icon={faGlobe} class="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" size="sm" />
         <Input
           bind:value={urlInput}
-          placeholder="https://example.com"
+          placeholder={m.workspace_browserUrlPicker_url_placeholder()}
           class="pl-9 h-10"
           onkeydown={handleKeydown}
           id="url-input"
@@ -132,7 +133,7 @@
       </div>
       <Button onclick={handleSubmit} disabled={!urlInput.trim()}>
         <Fa icon={faPlus} class="mr-1.5" size="sm" />
-        Add
+        {m.workspace_browserUrlPicker_add_label()}
       </Button>
     </div>
     {#if urlError}
@@ -145,7 +146,7 @@
     <div class="mt-6">
       <div class="flex items-center gap-2 text-sm text-subtle mb-2">
         <Fa icon={faHistory} size="sm" />
-        <span>Recent URLs</span>
+        <span>{m.workspace_browserUrlPicker_recentUrls_label()}</span>
       </div>
       <div class="space-y-1 max-h-48 overflow-y-auto">
         {#each $recentUrls$.slice(0, 10) as entry (entry.url)}

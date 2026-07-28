@@ -4,6 +4,7 @@
   import type { SuggestedPrompt } from '$shared/types';
   import { fade } from 'svelte/transition';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Array of suggested prompts to display */
@@ -38,6 +39,11 @@
       handleClick(prompt);
     }
   }
+
+  // Only the first 3 prompts get keyboard shortcut hints
+  function hasShortcutHint(index: number): boolean {
+    return index < 3;
+  }
 </script>
 
 {#if prompts.length > 0}
@@ -67,17 +73,17 @@
                     e.stopPropagation();
                     onEdit(prompt);
                   }}
-                  aria-label="Edit in input"
+                  aria-label={m.chat_suggestedPrompts_editInInput_ariaLabel()}
                 >
                   <Fa icon={faPencil} size="xs" />
                 </button>
               {/snippet}
               {#snippet content()}
-                <span class="text-sm">Edit</span>
+                <span class="text-sm">{m.chat_suggestedPrompts_edit_tooltip()}</span>
               {/snippet}
             </Tooltip>
           {/if}
-          {#if index < 3 && showShortcutHints}
+          {#if hasShortcutHint(index) && showShortcutHints}
             <span
               class="shrink-0 text-ui font-medium text-ghost group-hover:text-muted-foreground/60 transition-colors duration-150"
             >

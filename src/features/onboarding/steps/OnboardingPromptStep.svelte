@@ -21,6 +21,7 @@
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -136,7 +137,7 @@
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
-        toast.error(`File "${file.name}" is too large (max 10MB)`);
+        toast.error(m.onboarding_promptStep_fileTooLarge_error({ name: file.name }));
         continue;
       }
       if (file.type.startsWith('image/')) {
@@ -215,7 +216,7 @@
             class="absolute inset-0 rounded-full border-2 border-transparent border-t-primary animate-spin"
           ></div>
         </div>
-        <span class="text-sm text-muted-foreground">Setting up your workspace…</span>
+        <span class="text-sm text-muted-foreground">{m.onboarding_promptStep_settingUpWorkspace_label()}</span>
       </div>
     </div>
   {:else}
@@ -256,7 +257,7 @@
               <div
                 class="flex flex-col gap-0.75 pointer-events-auto"
                 role="listbox"
-                aria-label="Prompt suggestions"
+                aria-label={m.onboarding_promptStep_promptSuggestions_ariaLabel()}
               >
                 {#each visibleSuggestions.slice(0, 4) as suggestion, i (suggestion)}
                   <button
@@ -337,7 +338,7 @@
               size="icon-xs"
               variant="ghost-light"
               disabled={!onboardingInputValue.trim() && !isOnboardingEnhancing}
-              tooltip="Enhance prompt  ⌘E"
+              tooltip={m.onboarding_promptStep_enhancePrompt_tooltip()}
             >
               {#if isOnboardingEnhancing}
                 <div class="animate-spin">
@@ -353,7 +354,7 @@
               onclick={handleFileSelect}
               size="icon-xs"
               variant="ghost-light"
-              tooltip="Add files"
+              tooltip={m.onboarding_promptStep_addFiles_tooltip()}
             >
               <Fa icon={faPaperclip} size="xs" />
             </Button>
@@ -381,7 +382,7 @@
             }
           }}
         >
-          <span class="text-muted-foreground">Branch off of</span>
+          <span class="text-muted-foreground">{m.onboarding_promptStep_branchOffOf_before()}</span>
           <BranchSelector
             variant="ghost"
             triggerClass="pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
@@ -422,7 +423,7 @@
             }
           }}
         >
-          <span class="text-muted-foreground">Branch off</span>
+          <span class="text-muted-foreground">{m.onboarding_promptStep_branchOff_label()}</span>
           <BranchSelector
             variant="ghost"
             triggerClass="pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
@@ -459,15 +460,15 @@
             class="flex items-center whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             onclick={() => onShowSetupScriptChange(!showSetupScript)}
           >
-            <span>Set up environment with</span>
+            <span>{m.onboarding_promptStep_setupEnvWith_before()}</span>
             {#if isRepoConfigLoading}
               <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
-              <span class="sr-only">Detecting setup script…</span>
+              <span class="sr-only">{m.onboarding_promptStep_detectingSetupScript_label()}</span>
             {:else}
               <span class="bg-card/50 px-1.5 py-0.5 font-medium"
                 >{setupScriptName}</span
               >
-              <span class="text-muted-foreground">script</span>
+              <span class="text-muted-foreground">{m.onboarding_promptStep_setupEnvWith_after()}</span>
             {/if}
           </button>
         </div>
@@ -499,7 +500,7 @@
           }}
         >
           <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
-          <span>Use PR branch <strong>{selectedPRBranch}</strong></span>
+          <span>{m.onboarding_promptStep_usePrBranch_before()} <strong>{selectedPRBranch}</strong></span>
         </button>
       </div>
     {/if}
@@ -522,7 +523,7 @@
         disabled={!onboardingInputValue.trim()}
         onclick={onSubmit}
       >
-        Create workspace
+        {m.onboarding_promptStep_createWorkspace_label()}
         {#if onboardingInputValue.trim()}
           <span class="mx-1 opacity-50" in:slide={{ axis: 'x', duration: 200 }}>
             ⌘↵</span

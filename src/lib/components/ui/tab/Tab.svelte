@@ -3,6 +3,7 @@
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
   import { cn } from '$lib/utils.js';
+  import { m } from '$shared/paraglide/messages.js';
   import UnsavedIndicator from '../indicators/UnsavedIndicator.svelte';
   import AgentBadge from '../indicators/AgentBadge.svelte';
   import AugieAvatarWithState, {
@@ -72,7 +73,7 @@
   tabindex={active ? 0 : -1}
   data-tab-id={id}
   aria-selected={active}
-  aria-label={`Space tab: ${id}`}
+  aria-label={m.ui_tab_spaceTab_ariaLabel({ id: id ?? '' })}
   class={cn(
     'tab-button group/tab-button relative h-9 px-1 text-sm font-medium cursor-pointer',
     active ? 'bg-sidebar text-foreground rounded-t-lg' : '',
@@ -187,8 +188,8 @@
                   e.stopPropagation();
                   onclose?.(e);
                 }}
-                aria-label="Close tab"
-                title="Close tab (Cmd+W)"
+                aria-label={m.ui_tab_close_ariaLabel()}
+                title={m.ui_tab_close_tooltip()}
               >
                 <Fa icon={faXmark} size="xs" />
               </button>

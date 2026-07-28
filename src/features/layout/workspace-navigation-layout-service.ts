@@ -44,6 +44,7 @@ import {
 import { openTab } from "$store/renderer/slices/panel-layout/panel-layout-slice";
 import { openAgentTabRequested } from "$store/renderer/slices/app-layout/app-layout-slice";
 import type { PanelTab } from "$store/renderer/slices/panel-layout/panel-layout-types";
+import { m } from "$shared/paraglide/messages.js";
 
 /**
  * Build the human-friendly title shown for a note tab. `"spec"` renders as the
@@ -51,7 +52,7 @@ import type { PanelTab } from "$store/renderer/slices/panel-layout/panel-layout-
  * everything else falls through to the raw id so the tab is at least openable.
  */
 function buildNoteTabTitle(noteId: string): string {
-  return noteId === "spec" ? "Spec" : noteId;
+  return noteId === "spec" ? m.layout_shared_spec_title() : noteId;
 }
 
 /**

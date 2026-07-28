@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import {
-  WorkspaceId as createWorkspaceId,
-} from '$shared/types/branded-ids';
+import { m } from '$shared/paraglide/messages.js';
+import { WorkspaceId as createWorkspaceId } from '$shared/types/branded-ids';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 /**
  * Protocol Adapter
@@ -92,7 +91,10 @@ export class ProtocolAdapter {
     return result as Result<any[], string>;
   }
 
-  async listAllWorkspaces(options?: { includeArchived?: boolean; lite?: boolean }): Promise<Result<any[], string>> {
+  async listAllWorkspaces(options?: {
+    includeArchived?: boolean;
+    lite?: boolean;
+  }): Promise<Result<any[], string>> {
     // Include archived workspaces by default - frontend handles filtering via "Show archived" toggle
     const result = await this.workspaceService.listWorkspaces({
       includeArchived: options?.includeArchived ?? true,
@@ -221,7 +223,9 @@ export class ProtocolAdapter {
     noteData?: any,
   ): Promise<any> {
     const isMcpStyle = typeof workspaceIdOrParams === 'string';
-    const workspaceId = isMcpStyle ? (workspaceIdOrParams as string) : workspaceIdOrParams.workspaceId;
+    const workspaceId = isMcpStyle
+      ? (workspaceIdOrParams as string)
+      : workspaceIdOrParams.workspaceId;
     const payload = isMcpStyle ? { workspaceId, ...noteData } : workspaceIdOrParams;
     logger.info(`Protocol: createNote (${isMcpStyle ? 'MCP' : 'IPC'} style)`, {
       workspaceId,
@@ -241,9 +245,7 @@ export class ProtocolAdapter {
       return isMcpStyle ? note : { ok: true, data: note };
     } catch (error) {
       logger.error('Failed to create note', error as Error);
-      return isMcpStyle
-        ? null
-        : { ok: false, error: (error as Error).message };
+      return isMcpStyle ? null : { ok: false, error: (error as Error).message };
     }
   }
 
@@ -300,9 +302,7 @@ export class ProtocolAdapter {
         workspaceId: actualWorkspaceId,
         noteId: actualNoteId,
       });
-      return isMcpStyle
-        ? null
-        : { ok: false, error: (error as Error).message };
+      return isMcpStyle ? null : { ok: false, error: (error as Error).message };
     }
   }
 
@@ -590,7 +590,8 @@ export class ProtocolAdapter {
       noteId: params.noteId,
       status: meta.status ?? 'not_started',
     };
-    if (meta.acceptanceCriteria !== undefined) daemonParams.acceptanceCriteria = meta.acceptanceCriteria;
+    if (meta.acceptanceCriteria !== undefined)
+      daemonParams.acceptanceCriteria = meta.acceptanceCriteria;
     if (meta.effort !== undefined) daemonParams.effort = meta.effort;
     try {
       const result = await getBackendClient().request<any>('task.markAsTask', daemonParams);
@@ -625,7 +626,8 @@ export class ProtocolAdapter {
       dependentNoteId: params.dependentNoteId,
       title: params.prerequisite.title,
     };
-    if (params.prerequisite.content !== undefined) daemonParams.content = params.prerequisite.content;
+    if (params.prerequisite.content !== undefined)
+      daemonParams.content = params.prerequisite.content;
     if (params.prerequisite.taskMetadata?.status !== undefined)
       daemonParams.status = params.prerequisite.taskMetadata.status;
     try {
@@ -777,7 +779,7 @@ export class ProtocolAdapter {
       logger.error('Unknown method', undefined, { method });
       return {
         ok: false,
-        error: `Unknown method: ${method}`,
+        error: m.protocol_adapter_unknownMethod_error({ method }),
       };
     }
 
@@ -848,7 +850,7 @@ export class ProtocolAdapter {
         params.workspaceId as WorkspaceId,
       );
       if (!workspaceResult.ok) {
-        return { ok: false, error: 'Workspace not found' };
+        return { ok: false, error: m.protocol_adapter_workspaceNotFound_error() };
       }
 
       // Initialize ACP server if not already done
@@ -1016,7 +1018,7 @@ export class ProtocolAdapter {
       } else {
         return {
           ok: false,
-          error: result.error || 'Tool execution failed',
+          error: result.error || m.protocol_adapter_toolExecutionFailed_error(),
         };
       }
     } catch (error) {

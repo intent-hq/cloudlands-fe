@@ -11,6 +11,7 @@
   import Fa from 'svelte-fa';
   import { faCircleQuestion, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Failure kind: `not_found` renders "<label> not found", `error` renders "Failed to load <label>". */
@@ -31,8 +32,8 @@
 
   const title = $derived(
     kind === 'not_found'
-      ? `${resourceLabel} not found`
-      : `Failed to load ${resourceLabel.toLowerCase()}`,
+      ? m.common_resourceNotFound_notFound_title({ resourceLabel })
+      : m.common_resourceNotFound_loadFailed_title({ resourceLabel: resourceLabel.toLowerCase() }),
   );
 </script>
 
@@ -61,7 +62,7 @@
         {/if}
       </div>
 
-      <Button variant="default" size="default" onclick={onGoHome}>Go to Home</Button>
+      <Button variant="default" size="default" onclick={onGoHome}>{m.common_resourceNotFound_goHome_label()}</Button>
     </div>
   </div>
 </div>

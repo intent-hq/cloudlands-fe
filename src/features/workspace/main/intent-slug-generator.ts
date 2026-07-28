@@ -41,6 +41,7 @@ export async function generateIntentBasedSlug(intent: string): Promise<string | 
     const truncatedIntent = intent.length > 200 ? `${intent.slice(0, 200)}...` : intent;
 
     const result: BackgroundRequestResult = await makeBackgroundRequest({
+      // i18n-ignore (LLM prompt content)
       prompt: `Task: "${truncatedIntent}"
 
 Extract a 2-word slug that describes this task. Output ONLY two lowercase words separated by a hyphen.
@@ -53,7 +54,10 @@ Examples:
 - "improve api performance" -> "api-perf"
 
 Output only the slug, nothing else.`,
-      systemPrompt: 'You extract 2-word slugs from task descriptions. Output ONLY the slug in format "word-word". No explanations, no quotes, just the slug.',
+      // i18n-ignore (LLM prompt content)
+      systemPrompt:
+        // i18n-ignore (LLM prompt content)
+        'You extract 2-word slugs from task descriptions. Output ONLY the slug in format "word-word". No explanations, no quotes, just the slug.',
       timeoutMs: SLUG_GENERATION_TIMEOUT_MS,
     });
 

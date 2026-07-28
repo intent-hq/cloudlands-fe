@@ -14,6 +14,7 @@
 
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
   import {
   navigateToSettings,
@@ -107,13 +108,13 @@
     label: string;
     badge?: () => number;
   }[] = [
-    { id: 'home', icon: faHome, label: 'Home' },
-    { id: 'new-workspace', icon: faPlus, label: 'New' },
-    { id: 'active', icon: faBell, label: 'Active', badge: () => unreadCount },
-    { id: 'all-workspaces', icon: faLayerGroup, label: 'All' },
-    { id: 'chief', icon: faWandMagicSparkles, label: 'Assistant' },
-    { id: 'stats', icon: faChartColumn, label: 'Stats' },
-    { id: 'settings', icon: faCog, label: 'Settings' },
+    { id: 'home', icon: faHome, label: m.layout_sidebarNav_home_label() },
+    { id: 'new-workspace', icon: faPlus, label: m.layout_sidebarNav_new_label() },
+    { id: 'active', icon: faBell, label: m.layout_sidebarNav_active_label(), badge: () => unreadCount },
+    { id: 'all-workspaces', icon: faLayerGroup, label: m.layout_sidebarNav_all_label() },
+    { id: 'chief', icon: faWandMagicSparkles, label: m.layout_sidebarNav_assistant_label() },
+    { id: 'stats', icon: faChartColumn, label: m.layout_sidebarNav_stats_label() },
+    { id: 'settings', icon: faCog, label: m.layout_sidebarNav_settings_label() },
   ];
 
   function isItemActive(id: SidebarNavItem): boolean {
@@ -245,7 +246,7 @@
 
 {#if !$onboardingActive$}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<nav class="group/nav sidebar-nav flex flex-col items-center pt-2 pb-1 gap-1 h-full shrink-0 w-13" aria-label="Global navigation">
+<nav class="group/nav sidebar-nav flex flex-col items-center pt-2 pb-1 gap-1 h-full shrink-0 w-13" aria-label={m.layout_sidebarNav_ariaLabel()}>
   <!-- Top nav items -->
   <div class="flex flex-col items-center gap-1 w-full px-1.5">
     {#each navItems.slice(0, 5) as item (item.id)}

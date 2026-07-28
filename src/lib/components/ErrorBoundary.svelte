@@ -5,6 +5,7 @@
 } from 'svelte';
   import { slide } from 'svelte/transition';
   import { Logger } from '../../shared/logger';
+  import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
@@ -26,7 +27,7 @@
   }
 
   let {
-    fallback = 'Something went wrong. Please refresh the page.',
+    fallback = m.lib_errorBoundary_fallback_message(),
     onError,
     componentName = 'Component',
     logger: customLogger,
@@ -61,7 +62,7 @@
     // Use queueMicrotask to avoid state_unsafe_mutation error when called from window event handlers
     queueMicrotask(() => {
       hasError = true;
-      errorMessage = error.message || 'An unexpected error occurred';
+      errorMessage = error.message || m.lib_errorBoundary_unexpected_error();
       errorDetails = error;
       errorInfo = error.stack || '';
     });
@@ -90,6 +91,7 @@
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleCopyDetails() {
     try {
+      // i18n-ignore (diagnostic text copied to clipboard for bug reports)
       const textToCopy = `Error: ${errorDetails?.message || 'Unknown error'}\n\nStack Trace:\n${errorInfo}`;
       await navigator.clipboard.writeText(textToCopy);
       copyFeedback = true;
@@ -118,6 +120,7 @@
       (msg) =>
         msg.includes('effect_update_depth_exceeded') ||
         msg.includes('svelte.dev/e/effect_update_depth_exceeded') ||
+        // i18n-ignore (matches Svelte's internal English error message)
         msg.includes('Maximum update depth exceeded'),
     );
   }
@@ -137,6 +140,7 @@
         }
 
         // Skip ResizeObserver loop errors - these are benign browser warnings
+        // i18n-ignore (matches the browser's internal English error message)
         if (errorMessage.includes('ResizeObserver loop')) {
           return;
         }
@@ -170,6 +174,7 @@
         // Skip Svelte transition reset errors - benign race condition when {#each} blocks
         // reconcile while crossfade transitions are in-flight (e.g., during workspace switching)
         if (
+          // i18n-ignore (matches the browser's internal English error message)
           errorMessage.includes("Cannot read properties of undefined (reading 'reset')") &&
           event.error?.stack?.includes('transitions')
         ) {
@@ -205,6 +210,7 @@
 
           // Skip Monaco TypeScript worker errors for inmemory diff models
           // These occur because the TS language service can't find in-memory models used by diff viewers
+          // i18n-ignore (matches Monaco's internal English error message)
           if (reason.includes('Could not find source file') && reason.includes('inmemory://')) {
             event.preventDefault();
             return;
@@ -236,7 +242,7 @@
 
           if (!hasError) {
             // Handle different types of rejection reasons
-            let errorMessage = 'Unhandled promise rejection';
+            let errorMessage: string = m.lib_errorBoundary_unhandledRejection_error();
             let stack = '';
 
             if (event.reason) {
@@ -291,6 +297,7 @@
   // Reusable error display snippet for both boundary and async errors
   function handleCopyDetailsForSnippet(errMsg: string, errStack: string) {
     try {
+      // i18n-ignore (diagnostic text copied to clipboard for bug reports)
       const textToCopy = `Error: ${errMsg}\n\nStack Trace:\n${errStack}`;
       navigator.clipboard.writeText(textToCopy);
       copyFeedback = true;
@@ -327,7 +334,7 @@
           <!-- Error Message - Centered -->
           <div class="space-y-3">
             <h3 class="text-2xl font-semibold text-foreground">
-              Something went wrong
+              {m.lib_errorBoundary_title()}
             </h3>
             <p class="text-base text-subtle leading-relaxed max-w-sm mx-auto break-words">
               {errMsg || fallback}
@@ -338,11 +345,11 @@
           <div class="flex items-center justify-center gap-3 flex-wrap">
             <Button variant="default" size="default" onclick={retryFn}>
               <Fa icon={faRotateRight} class="w-4 h-4" />
-              Try Again
+              {m.lib_errorBoundary_tryAgain_label()}
             </Button>
             <Button variant="outline" size="default" onclick={() => window.location.reload()}>
               <Fa icon={faArrowsRotate} class="w-4 h-4" />
-              Reload Page
+              {m.lib_errorBoundary_reloadPage_label()}
             </Button>
           </div>
 
@@ -356,7 +363,7 @@
                 class="text-foreground/60 hover:text-foreground"
                 onclick={() => (showDetails = !showDetails)}
               >
-                {showDetails ? 'Hide' : 'Show'} Technical Details
+                {showDetails ? m.lib_errorBoundary_hideDetails_label() : m.lib_errorBoundary_showDetails_label()}
               </Button>
 
           {#if showDetails}
@@ -364,7 +371,7 @@
                 variant="ghost"
                 size="icon-sm"
                 class="absolute right-1 transform translate-x-full text-foreground/60 hover:text-foreground"
-                title="Copy error details to clipboard"
+                title={m.lib_errorBoundary_copyDetails_tooltip()}
                 onclick={() => handleCopyDetailsForSnippet(errMsg, errStack)}
               >
                 <Fa icon={copyFeedback ? faCheck : faCopy} class="w-4 h-4" />
@@ -395,13 +402,14 @@
   // Skip Monaco "Canceled" errors - benign cancellations during editor disposal/navigation
   if (err.message === 'Canceled' || err.name === 'Canceled') return;
   // Skip Svelte transition reset errors - benign race condition during {#each} reconciliation
+  // i18n-ignore (matches the browser's internal English error message)
   if (err.message?.includes("Cannot read properties of undefined (reading 'reset')") && err.stack?.includes('transitions')) return;
   logger.error(`[ErrorBoundary] Render error in ${componentName}:`, err);
   if (onError) onError(err);
 }}>
   {#snippet failed(error: unknown, reset)}
     {@const err = error instanceof Error ? error : new Error(String(error))}
-    {@render errorDisplay(err.message || 'An unexpected error occurred', err.stack || '', reset)}
+    {@render errorDisplay(err.message || m.lib_errorBoundary_unexpected_error(), err.stack || '', reset)}
   {/snippet}
 
   {#if hasError}

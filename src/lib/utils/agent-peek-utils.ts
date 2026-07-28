@@ -8,6 +8,7 @@
 import type { AgentSession, AgentMessage, FileOperation, ToolUseBlock } from '$shared/types';
 import { AuggieTextParser } from './auggie-text-parser';
 import { stripGroupTags } from './text-utils';
+import { m } from '$shared/paraglide/messages.js';
 
 export interface AgentPeekData {
   id: string;
@@ -87,7 +88,7 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
 
   return {
     id: agent.id,
-    name: agent.name || 'New Chat',
+    name: agent.name || m.chat_chatHeader_newChat_fallback(),
     status: agent.status,
     lastUserMessage,
     lastResponse,

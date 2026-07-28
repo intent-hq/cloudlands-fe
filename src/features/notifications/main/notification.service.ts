@@ -14,18 +14,12 @@
  * when the daemon is unreachable.
  */
 
-import {
-  app,
-  BrowserWindow,
-  Notification,
-} from 'electron';
+import { app, BrowserWindow, Notification } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
-import type {
-  ConnectionStatus,
-  JsonRpcNotification,
-} from '../../backend/main/json-rpc-client';
+import type { ConnectionStatus, JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
 import {
   getFocusedWindowWorkspaceId,
@@ -90,20 +84,21 @@ async function refreshPrefs(): Promise<NotificationPrefs> {
 }
 
 /**
- * Map specialist ID to display name
+ * Map specialist ID to localized display name (message functions so the
+ * active main-process locale is applied at notification time)
  */
-const SPECIALIST_DISPLAY_NAMES: Record<string, string> = {
-  'spec-writer': 'Coordinator',
-  implementor: 'Implementor',
-  verifier: 'Verifier',
+const SPECIALIST_DISPLAY_NAMES: Record<string, () => string> = {
+  'spec-writer': () => m.notification_specialist_coordinator(),
+  implementor: () => m.notification_specialist_implementor(),
+  verifier: () => m.notification_specialist_verifier(),
 };
 
 /**
  * Get display name for a specialist type
  */
 function getSpecialistDisplayName(specialist?: string): string {
-  if (!specialist) return 'Agent';
-  return SPECIALIST_DISPLAY_NAMES[specialist] || 'Agent';
+  if (!specialist) return m.notification_specialist_agent();
+  return SPECIALIST_DISPLAY_NAMES[specialist]?.() || m.notification_specialist_agent();
 }
 
 /**
@@ -339,14 +334,16 @@ export class NotificationService {
       // other-agents-active suppression gate below.
       const agentList = (await getBackendClient().request('agent.list', {
         workspaceId,
-      })) as {
-        agents?: Array<{
-          id?: string;
-          isStreaming?: boolean;
-          isResponding?: boolean;
-          metadata?: { isBackground?: boolean; specialist?: string };
-        }>;
-      } | undefined;
+      })) as
+        | {
+            agents?: Array<{
+              id?: string;
+              isStreaming?: boolean;
+              isResponding?: boolean;
+              metadata?: { isBackground?: boolean; specialist?: string };
+            }>;
+          }
+        | undefined;
       const agents = agentList?.agents ?? [];
       const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
 
@@ -407,9 +404,7 @@ export class NotificationService {
       // click-to-focus; otherwise fall back to the focused (or any) window,
       // which navigates to the workspace on click.
       const focusWindow =
-        workspaceWindows[0] ??
-        BrowserWindow.getFocusedWindow() ??
-        BrowserWindow.getAllWindows()[0];
+        workspaceWindows[0] ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       this.showNotification(content, focusWindow ?? undefined, workspaceId, event.data.agentId);
     } catch (error) {
       logger.error('Failed to handle agent:idle event', error as Error);
@@ -431,8 +426,10 @@ export class NotificationService {
       const truncatedChatName =
         chatName && chatName.length > 40 ? `${chatName.slice(0, 37)}...` : chatName;
       return {
-        title: truncatedChatName ? `Assistant — ${truncatedChatName}` : 'Assistant',
-        body: taskTitle ? 'Task completed' : 'Finished',
+        title: truncatedChatName
+          ? m.notification_assistant_titled({ chatName: truncatedChatName })
+          : m.notification_assistant_title(),
+        body: taskTitle ? m.notification_body_task_completed() : m.notification_body_finished(),
       };
     }
 
@@ -469,7 +466,7 @@ export class NotificationService {
     }
 
     // Build body
-    const body = taskTitle ? 'Task completed' : 'Finished';
+    const body = taskTitle ? m.notification_body_task_completed() : m.notification_body_finished();
 
     return { title, body };
   }
@@ -491,8 +488,7 @@ export class NotificationService {
       sendToWorkspaceWindows(workspaceId, 'notification:show', payload);
       return;
     }
-    const fallbackWindow =
-      BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const fallbackWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
     if (
       fallbackWindow &&
       !fallbackWindow.isDestroyed() &&
@@ -600,17 +596,20 @@ export class NotificationService {
         logger.warn('Desktop notifications are not supported on this platform');
         return {
           success: false,
-          error: 'Desktop notifications are not supported on this platform',
+          error: m.notification_not_supported(),
         };
       }
 
-      const focusWindow =
-        BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const focusWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
 
-      this.showNotification({ title: 'Agent', body: 'Test notification' }, focusWindow ?? undefined);
+      this.showNotification(
+        { title: m.notification_specialist_agent(), body: m.notification_test_body() },
+        focusWindow ?? undefined,
+      );
       return { success: true };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : m.notifications_web_unknown_error();
       logger.error('Failed to show test notification', error as Error);
       return { success: false, error: errorMessage };
     }

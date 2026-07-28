@@ -36,22 +36,22 @@
  * evaluate `store.createSelector` while the store module is still
  * mid-initialization through the middleware chain).
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import { appClient } from "$lib/client";
-import { store as appStore } from "$store/renderer/store";
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
 import {
   MCP_SERVER_NAME_REGEX,
   MCP_SERVER_NAME_MAX_LENGTH,
   RESERVED_MCP_SERVER_NAMES,
-} from "$shared/config/mcp-constants";
+} from '$shared/config/mcp-constants';
 import {
   normalizeMcpServersPayload,
   toMcpErrorMessage,
-} from "$store/renderer/slices/mcp-settings/mcp-settings-normalization";
+} from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import type {
   McpServerConfig,
   McpServerStatus,
-} from "$store/renderer/slices/mcp-settings/mcp-settings-types";
+} from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import {
   addServer,
   bulkSetServerStatus,
@@ -76,10 +76,11 @@ import {
   toggleServer,
   toggleServerDisabled,
   updateServer,
-} from "$store/renderer/slices/mcp-settings/mcp-settings-slice";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
+import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
-const logger = createLogger("McpManagementService");
+const logger = createLogger('McpManagementService');
 
 /** Current persisted server list from the (post-reducer) store. */
 function currentServers(): McpServerConfig[] {
@@ -93,8 +94,8 @@ function currentDisabled(): Record<string, true> {
 
 /** Derive a status for a server (mirrors the boot seeder + disabled overlay). */
 function statusFor(server: McpServerConfig, disabled: boolean): McpServerStatus {
-  if (disabled) return "disabled";
-  return server.type === "stdio" ? "configured" : "connected";
+  if (disabled) return 'disabled';
+  return server.type === 'stdio' ? 'configured' : 'connected';
 }
 
 /**
@@ -116,10 +117,14 @@ async function persistServers(servers: McpServerConfig[]): Promise<void> {
   try {
     const result = await appClient.settings.setMcpServers(payload);
     if (!result.success) {
-      appStore.dispatch(setError(toMcpErrorMessage(result.error, "Failed to save MCP servers")));
+      appStore.dispatch(
+        setError(toMcpErrorMessage(result.error, m.mcp_management_saveServersFailed_error())),
+      );
     }
   } catch (error) {
-    appStore.dispatch(setError(toMcpErrorMessage(error, "Failed to save MCP servers")));
+    appStore.dispatch(
+      setError(toMcpErrorMessage(error, m.mcp_management_saveServersFailed_error())),
+    );
   }
 }
 
@@ -146,9 +151,11 @@ export async function refreshMcpServers(): Promise<void> {
     }
     appStore.dispatch(setDisabledServers(disabled));
     appStore.dispatch(bulkSetServerStatus(statusMap));
-    logger.info("Loaded MCP servers", { count: servers.length });
+    logger.info('Loaded MCP servers', { count: servers.length });
   } catch (error) {
-    appStore.dispatch(setError(toMcpErrorMessage(error, "Failed to load servers")));
+    appStore.dispatch(
+      setError(toMcpErrorMessage(error, m.mcp_management_loadServersFailed_error())),
+    );
   } finally {
     appStore.dispatch(setLoading(false));
   }
@@ -157,20 +164,18 @@ export async function refreshMcpServers(): Promise<void> {
 /** Validate a server name against the shared rules. Throws on invalid input. */
 function validateServerName(name: string, existing: McpServerConfig[]): void {
   const trimmed = name?.trim();
-  if (!trimmed) throw new Error("Server name is required");
+  if (!trimmed) throw new Error(m.mcp_management_serverNameRequired_error());
   if (!MCP_SERVER_NAME_REGEX.test(trimmed)) {
-    throw new Error(
-      "Server name can only contain letters, numbers, hyphens, underscores, and dots",
-    );
+    throw new Error(m.mcp_management_invalidServerName_error());
   }
   if (trimmed.length > MCP_SERVER_NAME_MAX_LENGTH) {
-    throw new Error(`Server name must be ${MCP_SERVER_NAME_MAX_LENGTH} characters or less`);
+    throw new Error(m.mcp_management_serverNameTooLong_error({ max: MCP_SERVER_NAME_MAX_LENGTH }));
   }
   if ((RESERVED_MCP_SERVER_NAMES as readonly string[]).includes(trimmed)) {
-    throw new Error(`Server name "${trimmed}" is reserved`);
+    throw new Error(m.mcp_management_serverNameReserved_error({ name: trimmed }));
   }
   if (existing.some((s) => s.name === trimmed)) {
-    throw new Error(`A server named "${trimmed}" already exists`);
+    throw new Error(m.mcp_management_serverNameExists_error({ name: trimmed }));
   }
 }
 
@@ -180,7 +185,7 @@ export async function addMcpServer(config: McpServerConfig): Promise<void> {
   try {
     validateServerName(config.name, currentServers());
   } catch (error) {
-    appStore.dispatch(setError(toMcpErrorMessage(error, "Failed to add server")));
+    appStore.dispatch(setError(toMcpErrorMessage(error, m.mcp_management_addServerFailed_error())));
     return;
   }
   const next = [...currentServers(), config];
@@ -188,18 +193,18 @@ export async function addMcpServer(config: McpServerConfig): Promise<void> {
   appStore.dispatch(setServerStatus(config.name, statusFor(config, false)));
   if (!appStore.state.mcpSettings.enabled) appStore.dispatch(setEnabled(true));
   await persistServers(next);
-  logger.info("Added MCP server", { name: config.name });
+  logger.info('Added MCP server', { name: config.name });
 }
 
 /** Optimistically remove a server from local state and persist the new list. */
 export async function removeMcpServer(name: string): Promise<void> {
   if (!currentServers().some((s) => s.name === name)) {
-    logger.warn("Cannot remove unknown MCP server", { name });
+    logger.warn('Cannot remove unknown MCP server', { name });
     return;
   }
   appStore.dispatch(removeServerFromState(name));
   await persistServers(currentServers());
-  logger.info("Removed MCP server", { name });
+  logger.info('Removed MCP server', { name });
 }
 
 /** Replace a server config (optionally renamed), purge stale maps, and persist. */
@@ -208,7 +213,7 @@ export async function updateMcpServer(name: string, config: McpServerConfig): Pr
   const servers = currentServers();
   const index = servers.findIndex((s) => s.name === name);
   if (index === -1) {
-    logger.warn("Cannot update unknown MCP server", { name });
+    logger.warn('Cannot update unknown MCP server', { name });
     return;
   }
   if (config.name !== name) {
@@ -218,7 +223,9 @@ export async function updateMcpServer(name: string, config: McpServerConfig): Pr
         servers.filter((s) => s.name !== name),
       );
     } catch (error) {
-      appStore.dispatch(setError(toMcpErrorMessage(error, "Failed to update server")));
+      appStore.dispatch(
+        setError(toMcpErrorMessage(error, m.mcp_management_updateServerFailed_error())),
+      );
       return;
     }
     appStore.dispatch(removeServerFromState(name));
@@ -227,7 +234,7 @@ export async function updateMcpServer(name: string, config: McpServerConfig): Pr
   appStore.dispatch(setServers(next));
   appStore.dispatch(setServerStatus(config.name, statusFor(config, false)));
   await persistServers(next);
-  logger.info("Updated MCP server", { name, newName: config.name });
+  logger.info('Updated MCP server', { name, newName: config.name });
 }
 
 /** Parse a JSON blob, append every valid + new server, persist, report the count. */
@@ -237,7 +244,7 @@ export async function importMcpServersFromJson(jsonString: string): Promise<void
   try {
     configs = normalizeMcpServersPayload(JSON.parse(jsonString));
   } catch (error) {
-    appStore.dispatch(setError(toMcpErrorMessage(error, "Failed to import servers")));
+    appStore.dispatch(setError(toMcpErrorMessage(error, 'Failed to import servers')));
     return;
   }
   const existing = currentServers();
@@ -246,7 +253,8 @@ export async function importMcpServersFromJson(jsonString: string): Promise<void
   for (const config of configs) {
     const trimmed = config.name?.trim();
     if (!trimmed || seen.has(config.name)) continue;
-    if (!MCP_SERVER_NAME_REGEX.test(trimmed) || trimmed.length > MCP_SERVER_NAME_MAX_LENGTH) continue;
+    if (!MCP_SERVER_NAME_REGEX.test(trimmed) || trimmed.length > MCP_SERVER_NAME_MAX_LENGTH)
+      continue;
     if ((RESERVED_MCP_SERVER_NAMES as readonly string[]).includes(trimmed)) continue;
     seen.add(config.name);
     added.push(config);
@@ -261,7 +269,7 @@ export async function importMcpServersFromJson(jsonString: string): Promise<void
     await persistServers(next);
   }
   appStore.dispatch(importFromJsonCompleted(added.length));
-  logger.info("Imported MCP servers", { count: added.length });
+  logger.info('Imported MCP servers', { count: added.length });
 }
 
 /** Flip a server's disabled flag locally and persist it via the server list. */
@@ -291,17 +299,17 @@ export function toggleMcpEnabled(): void {
 export function restartMcpServer(name: string): void {
   const server = currentServers().find((s) => s.name === name);
   if (!server) {
-    logger.warn("Cannot restart unknown MCP server", { name });
+    logger.warn('Cannot restart unknown MCP server', { name });
     return;
   }
   appStore.dispatch(clearServerErrorMessage(name));
   appStore.dispatch(setServerStatus(name, statusFor(server, false)));
-  logger.info("Restart requested for MCP server (optimistic — no restart seam)", { name });
+  logger.info('Restart requested for MCP server (optimistic — no restart seam)', { name });
 }
 
 /** No connection-test seam exists (BE gap); log and leave the status intact. */
 export function testMcpServerConnection(name: string): void {
-  logger.warn("MCP connection test unsupported — no seam method (BE gap)", { name });
+  logger.warn('MCP connection test unsupported — no seam method (BE gap)', { name });
 }
 
 /** How long the advanced editor shows "saved" before returning to idle. */
@@ -316,12 +324,12 @@ const ADVANCED_SAVED_RESET_MS = 2000;
  * surfaced via `setAdvancedSaveStatus` for the editor UI.
  */
 export async function saveAdvancedMcpJson(jsonString: string): Promise<void> {
-  appStore.dispatch(setAdvancedSaveStatus("saving"));
+  appStore.dispatch(setAdvancedSaveStatus('saving'));
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonString);
   } catch {
-    appStore.dispatch(setAdvancedSaveStatus("error", "Invalid JSON format"));
+    appStore.dispatch(setAdvancedSaveStatus('error', m.mcp_management_invalidJson_error()));
     return;
   }
   const configs = normalizeMcpServersPayload(parsed);
@@ -331,13 +339,19 @@ export async function saveAdvancedMcpJson(jsonString: string): Promise<void> {
       validateServerName(config.name, []);
     } catch (error) {
       appStore.dispatch(
-        setAdvancedSaveStatus("error", toMcpErrorMessage(error, "Invalid server config")),
+        setAdvancedSaveStatus(
+          'error',
+          toMcpErrorMessage(error, m.mcp_management_invalidServerConfig_error()),
+        ),
       );
       return;
     }
     if (seen.has(config.name)) {
       appStore.dispatch(
-        setAdvancedSaveStatus("error", `Duplicate server name "${config.name}"`),
+        setAdvancedSaveStatus(
+          'error',
+          m.mcp_management_duplicateServerName_error({ name: config.name }),
+        ),
       );
       return;
     }
@@ -358,21 +372,24 @@ export async function saveAdvancedMcpJson(jsonString: string): Promise<void> {
     const result = await appClient.settings.setMcpServers(configs);
     if (!result.success) {
       appStore.dispatch(
-        setAdvancedSaveStatus("error", toMcpErrorMessage(result.error, "Failed to save")),
+        setAdvancedSaveStatus(
+          'error',
+          toMcpErrorMessage(result.error, m.mcp_management_saveFailed_error()),
+        ),
       );
       return;
     }
   } catch (error) {
     appStore.dispatch(
-      setAdvancedSaveStatus("error", toMcpErrorMessage(error, "Failed to save")),
+      setAdvancedSaveStatus('error', toMcpErrorMessage(error, m.mcp_management_saveFailed_error())),
     );
     return;
   }
-  appStore.dispatch(setAdvancedSaveStatus("saved"));
-  logger.info("Saved MCP servers from advanced editor", { count: configs.length });
+  appStore.dispatch(setAdvancedSaveStatus('saved'));
+  logger.info('Saved MCP servers from advanced editor', { count: configs.length });
   setTimeout(() => {
-    if (appStore.state.mcpSettings.advancedSaveStatus === "saved") {
-      appStore.dispatch(setAdvancedSaveStatus("idle"));
+    if (appStore.state.mcpSettings.advancedSaveStatus === 'saved') {
+      appStore.dispatch(setAdvancedSaveStatus('idle'));
     }
   }, ADVANCED_SAVED_RESET_MS);
 }
@@ -380,9 +397,9 @@ export async function saveAdvancedMcpJson(jsonString: string): Promise<void> {
 /** Narrow an action-payload entry to an `McpServerConfig`. */
 function isServerConfig(value: unknown): value is McpServerConfig {
   return (
-    typeof value === "object" &&
+    typeof value === 'object' &&
     value !== null &&
-    typeof (value as McpServerConfig).name === "string"
+    typeof (value as McpServerConfig).name === 'string'
   );
 }
 
@@ -395,7 +412,7 @@ function isServerConfig(value: unknown): value is McpServerConfig {
 export function createMcpManagementMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
-    if (action && typeof action.type === "string") {
+    if (action && typeof action.type === 'string') {
       const payload = Array.isArray(action.payload) ? action.payload : [];
       switch (action.type) {
         case loadServers.type:
@@ -408,27 +425,27 @@ export function createMcpManagementMiddleware(): StoreMiddleware {
           if (isServerConfig(payload[0])) void addMcpServer(payload[0]);
           break;
         case removeServer.type:
-          if (typeof payload[0] === "string") void removeMcpServer(payload[0]);
+          if (typeof payload[0] === 'string') void removeMcpServer(payload[0]);
           break;
         case updateServer.type:
-          if (typeof payload[0] === "string" && isServerConfig(payload[1])) {
+          if (typeof payload[0] === 'string' && isServerConfig(payload[1])) {
             void updateMcpServer(payload[0], payload[1]);
           }
           break;
         case importFromJson.type:
-          if (typeof payload[0] === "string") void importMcpServersFromJson(payload[0]);
+          if (typeof payload[0] === 'string') void importMcpServersFromJson(payload[0]);
           break;
         case toggleServer.type:
-          if (typeof payload[0] === "string") void toggleMcpServer(payload[0]);
+          if (typeof payload[0] === 'string') void toggleMcpServer(payload[0]);
           break;
         case testServerConnection.type:
-          if (typeof payload[0] === "string") testMcpServerConnection(payload[0]);
+          if (typeof payload[0] === 'string') testMcpServerConnection(payload[0]);
           break;
         case restartServer.type:
-          if (typeof payload[0] === "string") restartMcpServer(payload[0]);
+          if (typeof payload[0] === 'string') restartMcpServer(payload[0]);
           break;
         case saveAdvancedJson.type:
-          if (typeof payload[0] === "string") void saveAdvancedMcpJson(payload[0]);
+          if (typeof payload[0] === 'string') void saveAdvancedMcpJson(payload[0]);
           break;
       }
     }

@@ -53,6 +53,8 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { toast } from '$lib/components/ui/toast';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import { invoke } from '$lib/electron-bridge';
   import { logger } from '$lib/utils/client-logger';
   import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
@@ -223,7 +225,9 @@
     const items: SidebarMenuEntry[] = [
       {
         id: 'set-base-commit',
-        label: isCurrentBase ? 'Base commit (current)' : 'Set as base commit',
+        label: isCurrentBase
+          ? m.workspace_commitsTimeline_baseCommitCurrent_label()
+          : m.workspace_commitsTimeline_setBaseCommit_label(),
         icon: faFlag,
         disabled: isCurrentBase,
         onClick: () => {
@@ -237,7 +241,7 @@
         { type: 'separator' as const },
         {
           id: 'clear-base-commit',
-          label: 'Reset to default base',
+          label: m.workspace_commitsTimeline_resetBase_label(),
           icon: faRotateLeft,
           onClick: () => {
             handleClearBaseCommit();
@@ -256,13 +260,13 @@
       if (result.ok) {
         appStore.dispatch(ftClearOlderCommits(workspaceId));
         appStore.dispatch(refreshRequested(workspaceId));
-        toast.success('Base commit updated — only newer commits will be shown');
+        toast.success(m.workspace_commitsTimeline_baseUpdated_label());
       } else {
-        toast.error('Failed to update base commit');
+        toast.error(m.workspace_commitsTimeline_baseUpdateFailed_error());
       }
     } catch (error) {
       logger.error('Failed to set base commit', error as Error);
-      toast.error('Failed to update base commit');
+      toast.error(m.workspace_commitsTimeline_baseUpdateFailed_error());
     }
   }
 
@@ -273,13 +277,13 @@
       if (result.ok) {
         appStore.dispatch(ftClearOlderCommits(workspaceId));
         appStore.dispatch(refreshRequested(workspaceId));
-        toast.success('Base commit reset to default');
+        toast.success(m.workspace_commitsTimeline_baseReset_label());
       } else {
-        toast.error('Failed to reset base commit');
+        toast.error(m.workspace_commitsTimeline_baseResetFailed_error());
       }
     } catch (error) {
       logger.error('Failed to clear base commit', error as Error);
-      toast.error('Failed to reset base commit');
+      toast.error(m.workspace_commitsTimeline_baseResetFailed_error());
     }
   }
 
@@ -355,10 +359,14 @@
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
             appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
-          toast.success(wasPushed ? 'Commit message updated and pushed' : 'Commit message updated');
+          toast.success(
+            wasPushed
+              ? m.workspace_commitsTimeline_messageUpdatedPushed_label()
+              : m.workspace_commitsTimeline_messageUpdated_label(),
+          );
         } catch (error) {
           logger.error('[saveCommitEdit] Failed to amend commit message', { error });
-          toast.error('Failed to update commit message');
+          toast.error(m.workspace_commitsTimeline_messageUpdateFailed_error());
         }
       }
     }
@@ -494,38 +502,41 @@
   async function openPullTerminal() {
     if (!workspaceId) return;
     const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
-    if (!worktreePath) { toast.error('Cannot find space path'); return; }
+    if (!worktreePath) { toast.error(m.workspace_commitsTimeline_noSpacePath_error()); return; }
     try {
       const remoteBranch = $workspace?.branch || 'HEAD';
       const pullCommand = `git pull --rebase origin ${remoteBranch}`;
+      const terminalTitle = m.workspace_commitsTimeline_pullFromOrigin_label({
+        branch: remoteBranch,
+      });
       const result = await invoke<any>('terminal:createWithCommand', {
         workspaceId, command: pullCommand, cwd: worktreePath,
-        title: `Pull from origin/${remoteBranch}`,
+        title: terminalTitle,
       });
       if (result.ok && result.terminalId) {
-        appStore.dispatch(addTerminal(workspaceId, result.terminalId, `Pull from origin/${remoteBranch}`));
+        appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
         appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
-        toast.success('Pull started in terminal', {
-          description: 'After pull completes, click Refresh then retry push.',
+        toast.success(m.workspace_commitsTimeline_pullStarted_label(), {
+          description: m.workspace_commitsTimeline_pullStarted_description(),
           action: {
-            label: 'Refresh',
+            label: m.workspace_commitsTimeline_refresh_label(),
             onClick: async () => {
               gitCache.invalidate(`git-status-${workspaceId}`);
               await Promise.all([
                 Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
                 appStore.dispatch(refreshRequested(workspaceId, true)),
               ]);
-              toast.success('Git status refreshed');
+              toast.success(m.workspace_commitsTimeline_statusRefreshed_label());
             },
           },
           duration: 30000,
         });
       } else {
-        toast.error(result.error || 'Failed to open terminal');
+        toast.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
       }
     } catch (error) {
       logger.error('Failed to open pull terminal', error as Error);
-      toast.error('Failed to open terminal');
+      toast.error(m.workspace_commitsTimeline_openTerminalFailed_error());
     }
   }
 
@@ -548,11 +559,15 @@
           ]);
         } catch { /* Refresh failed but push succeeded */ }
       } else {
-        const errorMsg = result.error || 'Failed to push';
+        const errorMsg = result.error || m.workspace_prSection_pushFailed_error();
+        // i18n-ignore (matching backend error strings)
         if (errorMsg.includes('Pull the latest changes') || errorMsg.includes('behind')) {
-          toast.error('Remote has new commits', {
-            description: 'Pull the latest changes before pushing.',
-            action: { label: 'Pull in Terminal', onClick: () => openPullTerminal() },
+          toast.error(m.workspace_commitsTimeline_remoteHasNewCommits_error(), {
+            description: m.workspace_commitsTimeline_pullBeforePush_description(),
+            action: {
+              label: m.workspace_commitsTimeline_pullInTerminal_label(),
+              onClick: () => openPullTerminal(),
+            },
             duration: 10000,
           });
         } else {
@@ -560,7 +575,7 @@
         }
       }
     } catch {
-      toast.error('Failed to push commits');
+      toast.error(m.workspace_prSection_pushCommitsFailed_error());
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
       undoState.commitHash = null;
@@ -579,7 +594,7 @@
       if ($workspace?.baseCommitSha) {
         resetToHash = $workspace.baseCommitSha;
       } else {
-        toast.error('Cannot undo - no base commit reference available');
+        toast.error(m.workspace_commitsTimeline_cannotUndo_error());
         return;
       }
     }
@@ -590,18 +605,23 @@
         upToCommitHash: resetToHash,
       });
       if (result.success) {
-        const commitWord = commitCount === 1 ? 'commit' : 'commits';
-        toast.warning(`${commitCount} ${commitWord} removed from remote`);
+        toast.warning(
+          commitCount === 1
+            ? m.workspace_commitsTimeline_removedFromRemote_one()
+            : m.workspace_commitsTimeline_removedFromRemote_many({
+                count: formatInteger(commitCount),
+              }),
+        );
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
           appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
       } else {
-        toast.error(result.error || 'Failed to undo push');
+        toast.error(result.error || m.workspace_commitsTimeline_undoPushFailed_error());
       }
     } catch {
-      toast.error('Failed to undo push');
+      toast.error(m.workspace_commitsTimeline_undoPushFailed_error());
     } finally {
       undoState.undoing = false;
       undoState.commitHash = null;
@@ -620,7 +640,7 @@
       if ($workspace?.baseCommitSha) {
         resetToHash = $workspace.baseCommitSha;
       } else {
-        toast.error('Cannot undo - no base commit reference available');
+        toast.error(m.workspace_commitsTimeline_cannotUndo_error());
         return;
       }
     }
@@ -649,18 +669,23 @@
         undoCommitsMetadata,
       });
       if (result.success) {
-        const commitWord = commitCount === 1 ? 'commit' : 'commits';
-        toast.warning(`${commitCount} ${commitWord} undone - changes moved to staging`);
+        toast.warning(
+          commitCount === 1
+            ? m.workspace_commitsTimeline_commitsUndone_one()
+            : m.workspace_commitsTimeline_commitsUndone_many({
+                count: formatInteger(commitCount),
+              }),
+        );
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
           appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
       } else {
-        toast.error(result.error || 'Failed to undo commit');
+        toast.error(result.error || m.workspace_commitsTimeline_undoCommitFailed_error());
       }
     } catch {
-      toast.error('Failed to undo commit');
+      toast.error(m.workspace_commitsTimeline_undoCommitFailed_error());
     } finally {
       undoState.undoingCommit = false;
       undoState.commitHash = null;
@@ -669,7 +694,11 @@
 </script>
 
 <!-- COMMITS SECTION -->
-<TimelineSection title="Commits" active={allCommits.length > 0} activeColor="bg-blue-500">
+<TimelineSection
+  title={m.workspace_commitsTimeline_commits_label()}
+  active={allCommits.length > 0}
+  activeColor="bg-blue-500"
+>
   {#if allCommits.length > 0}
     <div class="space-y-0.5">
       {#each allCommits as commit, index (commit.hash)}
@@ -677,7 +706,7 @@
         {#if hasRemote && commit.isPushed && index > 0 && !allCommits[index - 1].isPushed && commits.length > 0}
           <div class="flex items-center gap-2 px-1 py-1.5">
             <div class="flex-1 h-px bg-border"></div>
-            <span class="text-xs text-subtle">Pushed to remote</span>
+            <span class="text-xs text-subtle">{m.workspace_commitsTimeline_pushedToRemote_label()}</span>
             <div class="flex-1 h-px bg-border"></div>
           </div>
         {/if}
@@ -706,7 +735,7 @@
                 e.stopPropagation();
                 toggleCommitExpanded(commit);
               }}
-              title="Toggle file list"
+              title={m.workspace_prSection_toggleFileList_tooltip()}
             >
               <Fa
                 icon={faChevronDown}
@@ -792,7 +821,7 @@
                   class="{!isOperatingOnThis &&
                     'opacity-0!'} group-hover:opacity-100! transition-opacity shrink-0"
                   onclick={(e: MouseEvent) => openCommitInBrowser(commit.hash, e)}
-                  tooltip="Open in browser"
+                  tooltip={m.workspace_sidebar_openInBrowser_tooltip()}
                   tooltipSide="top"
                 >
                   <Fa icon={faArrowUpRightFromSquare} size="xs" class="text-subtle" />
@@ -909,7 +938,7 @@
         <span
           class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none"
         >
-          Workspace start
+          {m.workspace_commitsTimeline_workspaceStart_label()}
           {#if $ftLoadingOlderCommits$}
             <Fa icon={faSpinner} class="opacity-50 animate-spin" size="xs" />
           {:else}
@@ -952,7 +981,7 @@
                 e.stopPropagation();
                 toggleCommitExpanded(commit);
               }}
-              title="Toggle file list"
+              title={m.workspace_prSection_toggleFileList_tooltip()}
             >
               <Fa
                 icon={faChevronDown}
@@ -1023,7 +1052,7 @@
       {#if $ftLoadingOlderCommits$}
         <Fa icon={faSpinner} class="animate-spin mr-1" size="xs" />
       {/if}
-      Show more previous commits
+      {m.workspace_commitsTimeline_showMorePrevious_label()}
     </button>
   {/if}
 </TimelineSection>

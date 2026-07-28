@@ -24,6 +24,7 @@
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   const activeWorkspace = selectActiveWorkspace();
 
@@ -57,7 +58,10 @@
   }
   // Display name
   let displayName = $derived(
-    toSentenceCase(primitive?.label || `${primitive?.grammar} diagram` || 'Diagram'),
+    toSentenceCase(
+      primitive?.label ||
+        m.notes_diagramBlock_grammarDiagram_label({ grammar: primitive?.grammar ?? '' }),
+    ),
   );
 
   // Handle binding clicks - dispatch nav action directly
@@ -397,14 +401,14 @@
   async function handleCopyAsSvg() {
     await copyAsSvg();
     copiedSvg = true;
-    toast.success('SVG copied to clipboard');
+    toast.success(m.notes_diagramBlock_svgCopied_label());
     setTimeout(() => (copiedSvg = false), 2000);
   }
 
   async function handleCopyAsPng() {
     await copyAsPng();
     copiedPng = true;
-    toast.success('PNG copied to clipboard');
+    toast.success(m.notes_diagramBlock_pngCopied_label());
     setTimeout(() => (copiedPng = false), 2000);
   }
 
@@ -429,7 +433,7 @@
                 );
               }
             }}
-            title="View agent"
+            title={m.notes_diagramBlock_viewAgent_tooltip()}
           >
             <AuggieAvatar agentId={linkedAgentId} size={16} />
           </button>
@@ -449,7 +453,7 @@
           <span class="text-sm truncate">{displayName}</span>
           {#if primitive.states && primitive.states.length > 0}
             <span class="text-xs text-subtle">
-              ({primitive.states.length} states)
+              {m.notes_diagramBlock_stateCount_label({ count: primitive.states.length })}
             </span>
           {/if}
         </button>
@@ -457,7 +461,7 @@
         <!-- Copy dropdown -->
         <DropdownMenu align="end">
           {#snippet trigger({ toggle }: { toggle: () => void })}
-            <Tooltip content="Copy diagram" side="top" delayDuration={300}>
+            <Tooltip content={m.notes_diagramBlock_copyDiagram_tooltip()} side="top" delayDuration={300}>
               <button
                 type="button"
                 class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
@@ -485,7 +489,7 @@
                 }}
               >
                 <Fa icon={faCode} size="xs" class="text-ghost" />
-                Copy as SVG
+                {m.notes_diagramBlock_copyAsSvg_label()}
               </button>
               <button
                 type="button"
@@ -496,7 +500,7 @@
                 }}
               >
                 <Fa icon={faImage} size="xs" class="text-ghost" />
-                Copy as PNG
+                {m.notes_diagramBlock_copyAsPng_label()}
               </button>
             </div>
           {/snippet}
@@ -516,6 +520,6 @@
       {/if}
     </div>
   {:else}
-    <div class="my-2 text-sm text-subtle">Invalid diagram block</div>
+    <div class="my-2 text-sm text-subtle">{m.notes_diagramBlock_invalid_error()}</div>
   {/if}
 </NodeViewWrapper>

@@ -12,6 +12,7 @@
    * Positioned below the tab bar to avoid overlap.
    */
 
+  import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
 
   interface Props {
@@ -34,11 +35,11 @@
   } as const;
 
   const zoneLabels = {
-    left: 'Split left',
-    right: 'Split right',
-    top: 'Split top',
-    bottom: 'Split bottom',
-    center: 'Add to panel',
+    left: () => m.layout_panelDropZones_splitLeft_label(),
+    right: () => m.layout_panelDropZones_splitRight_label(),
+    top: () => m.layout_panelDropZones_splitTop_label(),
+    bottom: () => m.layout_panelDropZones_splitBottom_label(),
+    center: () => m.layout_panelDropZones_addToPanel_label(),
   } as const;
 </script>
 
@@ -54,7 +55,7 @@
       )}
     >
       <span class="text-sm font-medium text-primary px-3 py-1.5 bg-background/90 rounded-md shadow-sm">
-        {zoneLabels[activeZone]}
+        {zoneLabels[activeZone]()}
       </span>
     </div>
   </div>

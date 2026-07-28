@@ -82,8 +82,8 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(undefined)).toBe("");
   });
 
-  it("returns 'just now' for recent timestamps", () => {
-    expect(formatRelativeTime(new Date().toISOString())).toBe("just now");
+  it("returns 'now' for recent timestamps", () => {
+    expect(formatRelativeTime(new Date().toISOString())).toBe("now");
   });
 
   it("returns minutes ago for recent past", () => {

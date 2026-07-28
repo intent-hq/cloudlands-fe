@@ -12,6 +12,7 @@
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import type { TaskDiffSections, ParsedTask } from './tool-result-parser';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     sections: TaskDiffSections;
@@ -104,7 +105,7 @@
     {/each}
   </div>
 {:else}
-  <div class="empty-state">No task changes to display</div>
+  <div class="empty-state">{m.chat_taskDiffRenderer_noChanges_label()}</div>
 {/if}
 
 <style>

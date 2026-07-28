@@ -14,6 +14,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import type { WalkthroughSection as SectionType, WalkthroughAnnotation } from './types';
   import WalkthroughDiffViewer from './WalkthroughDiffViewer.svelte';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Section data */
@@ -73,7 +74,7 @@
 
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2">
-        <span class="text-xs font-medium text-subtle">Section {index + 1}</span>
+        <span class="text-xs font-medium text-subtle">{m.codeWalkthrough_section_sectionNumber_label({ number: index + 1 })}</span>
         <span class="text-sm font-medium truncate">{section.title}</span>
       </div>
       {#if section.description}
@@ -86,7 +87,9 @@
         <Fa icon={faFile} class="h-3 w-3" />
         {section.files.length}
       </span>
-      <span>{totalAnnotations} annotation{totalAnnotations === 1 ? '' : 's'}</span>
+      <span>{totalAnnotations === 1
+          ? m.codeWalkthrough_section_annotationCount_one({ count: totalAnnotations })
+          : m.codeWalkthrough_section_annotationCount_many({ count: totalAnnotations })}</span>
     </div>
   </button>
 
@@ -110,7 +113,7 @@
             <div class="flex items-center gap-2 text-sm text-subtle">
               <Fa icon={faFile} class="h-4 w-4" />
               <span class="font-mono">{filePath}</span>
-              <span class="text-xs">(no diff available)</span>
+              <span class="text-xs">{m.codeWalkthrough_section_noDiff_label()}</span>
             </div>
           </div>
         {/if}

@@ -9,6 +9,7 @@
  */
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { m } from '$shared/paraglide/messages.js';
 import type { WorkspaceId } from '../../shared/types/branded-ids';
 import type {
   WorkspaceGitStatus,
@@ -99,7 +100,7 @@ export class AcceptChangesClient {
       return await backendRequest<AcceptChangesResult>('accept-changes.execute', request);
     } catch (error) {
       // Preserve the historical contract: execute() reports failures in-band.
-      return toFailureResult(error, 'Failed to execute');
+      return toFailureResult(error, m.acceptChanges_client_executeFailed_error());
     }
   }
 
@@ -124,17 +125,14 @@ export class AcceptChangesClient {
         commitMessage: options?.commitMessage,
       });
     } catch (error) {
-      return toFailureResult(error, 'Failed to merge PR');
+      return toFailureResult(error, m.acceptChanges_client_mergePrFailed_error());
     }
   }
 
   /**
    * Add a git remote to the workspace repository
    */
-  static async addRemote(
-    workspaceId: WorkspaceId,
-    remoteUrl: string,
-  ): Promise<WorkspaceGitStatus> {
+  static async addRemote(workspaceId: WorkspaceId, remoteUrl: string): Promise<WorkspaceGitStatus> {
     return backendRequest<WorkspaceGitStatus>('accept-changes.addRemote', {
       workspaceId,
       remoteUrl,
@@ -152,7 +150,7 @@ export class AcceptChangesClient {
         action: 'reset-to-trunk',
       });
     } catch (error) {
-      return toFailureResult(error, 'Failed to reset to trunk');
+      return toFailureResult(error, m.acceptChanges_client_resetToTrunkFailed_error());
     }
   }
 }

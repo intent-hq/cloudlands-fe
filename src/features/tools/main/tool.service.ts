@@ -18,11 +18,7 @@ import type {
   WorkspaceInfo,
   ExecuteOptions,
 } from './types';
-import {
-  ToolCategory,
-  ToolError,
-  Tool,
-} from './types';
+import { ToolCategory, ToolError, Tool } from './types';
 import type { CommandResult } from '../types';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
@@ -36,9 +32,7 @@ const logger = new Logger('ToolService');
 export class ToolService implements IToolService {
   private tools: Map<string, ToolDefinition> = new Map();
 
-  constructor(
-    private workspaceService: WorkspaceService = new WorkspaceService(),
-  ) {
+  constructor(private workspaceService: WorkspaceService = new WorkspaceService()) {
     this.registerBuiltinTools();
   }
 
@@ -50,6 +44,7 @@ export class ToolService implements IToolService {
     this.registerTool({
       id: 'readFile',
       name: 'readFile',
+      // i18n-ignore (agent-facing tool descriptions/results)
       description: 'Read the contents of a file',
       category: ToolCategory.FILE,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -60,6 +55,7 @@ export class ToolService implements IToolService {
         inputSchema: {
           type: 'object',
           properties: {
+            // i18n-ignore (agent-facing tool descriptions/results)
             path: { type: 'string', description: 'File path relative to workspace' },
           },
           required: ['path'],
@@ -73,6 +69,7 @@ export class ToolService implements IToolService {
     this.registerTool({
       id: 'writeFile',
       name: 'writeFile',
+      // i18n-ignore (agent-facing tool descriptions/results)
       description: 'Write content to a file',
       category: ToolCategory.FILE,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -83,7 +80,9 @@ export class ToolService implements IToolService {
         inputSchema: {
           type: 'object',
           properties: {
+            // i18n-ignore (agent-facing tool descriptions/results)
             path: { type: 'string', description: 'File path relative to workspace' },
+            // i18n-ignore (agent-facing tool descriptions/results)
             content: { type: 'string', description: 'File content' },
           },
           required: ['path', 'content'],
@@ -107,6 +106,7 @@ export class ToolService implements IToolService {
         inputSchema: {
           type: 'object',
           properties: {
+            // i18n-ignore (agent-facing tool descriptions/results)
             path: { type: 'string', description: 'File path relative to workspace' },
           },
           required: ['path'],
@@ -120,6 +120,7 @@ export class ToolService implements IToolService {
     this.registerTool({
       id: 'listFiles',
       name: 'listFiles',
+      // i18n-ignore (agent-facing tool descriptions/results)
       description: 'List files in a directory',
       category: ToolCategory.FILE,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -130,6 +131,7 @@ export class ToolService implements IToolService {
         inputSchema: {
           type: 'object',
           properties: {
+            // i18n-ignore (agent-facing tool descriptions/results)
             directory: { type: 'string', description: 'Directory path relative to workspace' },
           },
           required: ['directory'],
@@ -141,6 +143,7 @@ export class ToolService implements IToolService {
     this.registerTool({
       id: 'createNote',
       name: 'createNote',
+      // i18n-ignore (agent-facing tool descriptions/results)
       description: 'Create a new note in the workspace',
       category: ToolCategory.NOTE,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -166,6 +169,7 @@ export class ToolService implements IToolService {
     this.registerTool({
       id: 'updateNote',
       name: 'updateNote',
+      // i18n-ignore (agent-facing tool descriptions/results)
       description: 'Update an existing note',
       category: ToolCategory.NOTE,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -192,6 +196,7 @@ export class ToolService implements IToolService {
     this.registerTool({
       id: 'listNotes',
       name: 'listNotes',
+      // i18n-ignore (agent-facing tool descriptions/results)
       description: 'List all notes in the workspace',
       category: ToolCategory.NOTE,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -204,6 +209,7 @@ export class ToolService implements IToolService {
     this.registerTool({
       id: 'getWorkspaceInfo',
       name: 'getWorkspaceInfo',
+      // i18n-ignore (agent-facing tool descriptions/results)
       description: 'Get information about the current workspace',
       category: ToolCategory.WORKSPACE,
       handler: async (context: ToolContext) =>
@@ -214,6 +220,7 @@ export class ToolService implements IToolService {
     this.registerTool({
       id: 'executeCommand',
       name: 'executeCommand',
+      // i18n-ignore (agent-facing tool descriptions/results)
       description: 'Execute a shell command in the workspace',
       category: ToolCategory.TERMINAL,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -396,9 +403,7 @@ export class ToolService implements IToolService {
     });
 
     const executor = this.getExecutorOrThrow(context);
-    const files = await executionManager.executeWithRetry(() =>
-      executor.listFiles(directory),
-    );
+    const files = await executionManager.executeWithRetry(() => executor.listFiles(directory));
     return files.map((file: string) => ({
       name: file,
       path: file,
@@ -422,6 +427,7 @@ export class ToolService implements IToolService {
     try {
       const result = await getBackendClient().request<{ note: any }>('note.create', {
         workspaceId: context.workspaceId,
+        // i18n-ignore (agent-facing tool descriptions/results)
         title: noteData.title || 'Untitled Note',
         ...(noteData.content !== undefined ? { content: noteData.content } : {}),
       });
@@ -460,7 +466,8 @@ export class ToolService implements IToolService {
       noteId,
     };
     if ((updateFields as any).title !== undefined) daemonParams.title = (updateFields as any).title;
-    if ((updateFields as any).content !== undefined) daemonParams.content = (updateFields as any).content;
+    if ((updateFields as any).content !== undefined)
+      daemonParams.content = (updateFields as any).content;
     if ((updateFields as any).tags !== undefined) daemonParams.tags = (updateFields as any).tags;
 
     let updated: any;
@@ -691,9 +698,7 @@ export class ToolService implements IToolService {
     });
 
     const executor = this.getExecutorOrThrow(context);
-    return await executionManager.executeWithRetry(() =>
-      executor.execute(command, options),
-    );
+    return await executionManager.executeWithRetry(() => executor.execute(command, options));
   }
 
   // ============================================================================
@@ -785,10 +790,12 @@ export class ToolService implements IToolService {
       logger.error(`Tool execution failed: ${name}`, error as Error);
 
       const err = error as Error & { code?: string };
+      // i18n-ignore (agent-facing tool descriptions/results)
       const toolError = new ToolError(err.message || 'Unknown error', err.code || 'TOOL_ERROR');
 
       return {
         success: false,
+        // i18n-ignore (agent-facing tool descriptions/results)
         error: toolError.message || 'Unknown error',
         metadata: {
           executionTime: Date.now() - startTime,

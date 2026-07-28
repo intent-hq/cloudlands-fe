@@ -8,8 +8,8 @@
  * trigger (`chat-send-service`) — keep it dependency-light per repo
  * convention (no stores, services, or side effects).
  */
-import { extractAllContent, type AgentSession } from "$shared/types";
-import { DEFAULT_CHIEF_THREAD_TITLE } from "./sidebar-nav-types";
+import { extractAllContent, type AgentSession } from '$shared/types';
+import { DEFAULT_CHIEF_THREAD_TITLE } from './sidebar-nav-types';
 
 /**
  * True when `name` is one of the creation placeholders a chief thread can
@@ -24,17 +24,15 @@ export function isPlaceholderChiefThreadName(name: string | undefined | null): b
   return (
     !trimmed ||
     trimmed === DEFAULT_CHIEF_THREAD_TITLE ||
-    trimmed === "Chief of Staff" ||
-    trimmed.startsWith("New thread ")
+    trimmed === 'Chief of Staff' || // i18n-ignore (matches daemon-stored legacy name)
+    trimmed.startsWith('New thread ') // i18n-ignore (matches daemon-generated placeholder)
   );
 }
 
-export function getChiefThreadTitle(
-  session: Pick<AgentSession, "messages" | "name">,
-): string {
-  const firstUserMessage = session.messages.find((message) => message.role === "user");
+export function getChiefThreadTitle(session: Pick<AgentSession, 'messages' | 'name'>): string {
+  const firstUserMessage = session.messages.find((message) => message.role === 'user');
   const firstMessage = firstUserMessage ?? session.messages[0];
-  const text = firstMessage ? extractAllContent(firstMessage).trim() : "";
+  const text = firstMessage ? extractAllContent(firstMessage).trim() : '';
   const fallbackName = session.name?.trim();
   if (!fallbackName || isPlaceholderChiefThreadName(fallbackName)) {
     return text || DEFAULT_CHIEF_THREAD_TITLE;

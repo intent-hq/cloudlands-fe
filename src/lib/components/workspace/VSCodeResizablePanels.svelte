@@ -17,6 +17,7 @@
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Props {
@@ -50,8 +51,9 @@
   // Panel configuration
   // Note: defaultHeight is the content height (excluding the 28px header)
   const panels = [
+    // i18n-ignore (panel titles are unused layout metadata, not rendered)
     { id: 'notes', title: 'Context', minHeight: 80, defaultHeight: 92 }, // Total will be 92 + 28 = 120px
-    { id: 'source-control', title: 'Code Changes', minHeight: 80, defaultHeight: 200 },
+    { id: 'source-control', title: 'Code Changes', minHeight: 80, defaultHeight: 200 }, // i18n-ignore (unused layout metadata)
     { id: 'explorer', title: 'Explorer', minHeight: 80, defaultHeight: 200 },
     { id: 'activity', title: 'Activity', minHeight: 80, defaultHeight: 200 },
   ];
@@ -414,13 +416,13 @@
           <button
             type="button"
             class="resize-divider {focusedDivider === 'notes' ? 'resize-divider-active' : ''}"
-            aria-label="Resize panels"
+            aria-label={m.workspace_resizablePanels_resize_ariaLabel()}
             tabindex="0"
             onkeydown={(e) => handleDividerKeydown(e, 'notes')}
             onmousedown={(e) => handleDividerMouseDown(e, 'notes')}
             onfocus={() => (focusedDivider = 'notes')}
             onblur={() => (focusedDivider = null)}
-            title="Drag to resize; use arrow keys; Enter to reset"
+            title={m.workspace_resizablePanels_resize_tooltip()}
           ></button>
         {/if}
       </div>
@@ -449,13 +451,13 @@
             class="resize-divider {focusedDivider === 'source-control'
               ? 'resize-divider-active'
               : ''}"
-            aria-label="Resize panels"
+            aria-label={m.workspace_resizablePanels_resize_ariaLabel()}
             tabindex="0"
             onkeydown={(e) => handleDividerKeydown(e, 'source-control')}
             onmousedown={(e) => handleDividerMouseDown(e, 'source-control')}
             onfocus={() => (focusedDivider = 'source-control')}
             onblur={() => (focusedDivider = null)}
-            title="Drag to resize; use arrow keys; Enter to reset"
+            title={m.workspace_resizablePanels_resize_tooltip()}
           ></button>
         {/if}
       </div>
@@ -486,13 +488,13 @@
           <button
             type="button"
             class="resize-divider {focusedDivider === 'explorer' ? 'resize-divider-active' : ''}"
-            aria-label="Resize panels"
+            aria-label={m.workspace_resizablePanels_resize_ariaLabel()}
             tabindex="0"
             onkeydown={(e) => handleDividerKeydown(e, 'explorer')}
             onmousedown={(e) => handleDividerMouseDown(e, 'explorer')}
             onfocus={() => (focusedDivider = 'explorer')}
             onblur={() => (focusedDivider = null)}
-            title="Drag to resize; use arrow keys; Enter to reset"
+            title={m.workspace_resizablePanels_resize_tooltip()}
           ></button>
         {/if}
       </div>
@@ -510,7 +512,7 @@
       >
         <div class="panel-wrapper">
           <VSCodeScrollablePanel
-            title="Activity"
+            title={m.workspace_resizablePanels_activity_label()}
             storageKey="activity"
             collapsed={collapsedStates['activity']}
             onCollapse={() => togglePanel('activity')}

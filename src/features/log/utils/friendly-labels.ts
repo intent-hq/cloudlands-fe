@@ -7,6 +7,7 @@
 
 import type { WorkspaceEvent } from '../../events/types';
 import { smartTruncate } from './smart-truncate';
+import { m } from '$shared/paraglide/messages.js';
 
 export interface EntityRef {
   type: 'file' | 'note' | 'agent' | 'branch' | 'command' | 'text' | 'blank';
@@ -42,7 +43,7 @@ function looksLikeAgentId(name: string): boolean {
 }
 
 function getActorName(event: WorkspaceEvent, resolver?: AgentNameResolver): string {
-  if (!event?.actor) return 'Agent';
+  if (!event?.actor) return m.log_friendlyLabels_agentFallback_label();
   if (event.actor.type === 'agent' || event.actor.type === 'external') {
     const name = event.actor.name;
     const actorId = event.actor.id;
@@ -55,7 +56,9 @@ function getActorName(event: WorkspaceEvent, resolver?: AgentNameResolver): stri
       }
     }
 
-    // Return 'Agent' if name is missing, is the placeholder 'Unknown', or is an agent ID
+    // Return the generic agent label if name is missing, is the wire placeholder
+    // 'Unknown', or is an agent ID
+    // i18n-ignore ('Unknown' is a wire placeholder value, not user-facing)
     if (!name || name === 'Unknown' || looksLikeAgentId(name)) {
       // Try to resolve from actorId if we have a resolver
       if (resolver && actorId) {
@@ -64,11 +67,11 @@ function getActorName(event: WorkspaceEvent, resolver?: AgentNameResolver): stri
           return resolvedName;
         }
       }
-      return 'Agent';
+      return m.log_friendlyLabels_agentFallback_label();
     }
     return name;
   }
-  return 'You';
+  return m.log_friendlyLabels_youFallback_label();
 }
 
 // Helper to create entity refs with proper typing
@@ -115,7 +118,7 @@ export function getFriendlyLabel(
 ): FriendlyLabel {
   // Guard against undefined event or type
   if (!event?.type) {
-    return { parts: ['Unknown activity'], verb: 'unknown' };
+    return { parts: [m.log_friendlyLabels_unknownActivity_label()], verb: 'unknown' };
   }
 
   const data = event.data as any;
@@ -133,19 +136,36 @@ export function getFriendlyLabel(
       const filePath = data?.path || data?.relativePath;
       const action = data?.action || event.type.split(':')[1];
       const verb = action === 'create' ? 'created' : action === 'delete' ? 'deleted' : 'updated';
+      const verbPhrases = {
+        created: {
+          byAgent: m.log_friendlyLabels_createdByAgent_middle,
+          standalone: m.log_friendlyLabels_created_before,
+          file: m.log_friendlyLabels_createdFile_after,
+        },
+        deleted: {
+          byAgent: m.log_friendlyLabels_deletedByAgent_middle,
+          standalone: m.log_friendlyLabels_deleted_before,
+          file: m.log_friendlyLabels_deletedFile_after,
+        },
+        updated: {
+          byAgent: m.log_friendlyLabels_updatedByAgent_middle,
+          standalone: m.log_friendlyLabels_updated_before,
+          file: m.log_friendlyLabels_updatedFile_after,
+        },
+      }[verb];
 
       if (filePath) {
         const { filename } = parseFilePath(filePath);
         return {
           parts: makeParts(
             isAgent ? agentRef(actorName, event.actor?.id) : null,
-            isAgent ? ` ${verb} ` : `${verb.charAt(0).toUpperCase()}${verb.slice(1)} `,
+            isAgent ? verbPhrases.byAgent() : verbPhrases.standalone(),
             fileRef(filename, filePath),
           ),
           verb,
         };
       }
-      return { parts: makeParts(agentRef(actorName, event.actor?.id), ` ${verb} a file`), verb };
+      return { parts: makeParts(agentRef(actorName, event.actor?.id), verbPhrases.file()), verb };
     }
 
     case 'file:renamed': {
@@ -157,7 +177,7 @@ export function getFriendlyLabel(
         return {
           parts: makeParts(
             isAgent ? agentRef(actorName, event.actor?.id) : null,
-            isAgent ? ' renamed ' : 'Renamed ',
+            isAgent ? m.log_friendlyLabels_renamedByAgent_middle() : m.log_friendlyLabels_renamed_before(),
             fileRef(oldName, oldPath),
             ' → ',
             fileRef(newName, newPath),
@@ -166,7 +186,7 @@ export function getFriendlyLabel(
         };
       }
       return {
-        parts: makeParts(agentRef(actorName, event.actor?.id), ' renamed a file'),
+        parts: makeParts(agentRef(actorName, event.actor?.id), m.log_friendlyLabels_renamedFile_after()),
         verb: 'renamed',
       };
     }
@@ -175,12 +195,17 @@ export function getFriendlyLabel(
     case 'note:created':
     case 'note:updated':
     case 'note:deleted': {
-      const title = data?.title || 'Untitled';
+      const title = data?.title || m.log_friendlyLabels_untitledNote_label();
       const verb = event.type.split(':')[1];
+      const notePhrases = {
+        created: { byAgent: m.log_friendlyLabels_createdByAgent_middle, standalone: m.log_friendlyLabels_created_before },
+        updated: { byAgent: m.log_friendlyLabels_updatedByAgent_middle, standalone: m.log_friendlyLabels_updated_before },
+        deleted: { byAgent: m.log_friendlyLabels_deletedByAgent_middle, standalone: m.log_friendlyLabels_deleted_before },
+      }[verb as 'created' | 'updated' | 'deleted'];
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? ` ${verb} ` : `${verb.charAt(0).toUpperCase()}${verb.slice(1)} `,
+          isAgent ? notePhrases.byAgent() : notePhrases.standalone(),
           noteRef(title),
         ),
         verb,
@@ -190,26 +215,26 @@ export function getFriendlyLabel(
     // Agent events
     case 'agent:started':
       return {
-        parts: [agentRef(actorName, event.actor?.id), ' started working'],
+        parts: [agentRef(actorName, event.actor?.id), m.log_friendlyLabels_startedWorking_after()],
         verb: 'started',
       };
 
     case 'agent:completed':
       return {
-        parts: [agentRef(actorName, event.actor?.id), ' finished the task'],
+        parts: [agentRef(actorName, event.actor?.id), m.log_friendlyLabels_finishedTask_after()],
         verb: 'completed',
       };
 
     case 'agent:failed':
       return {
-        parts: [agentRef(actorName, event.actor?.id), ' encountered an error'],
+        parts: [agentRef(actorName, event.actor?.id), m.log_friendlyLabels_encounteredError_after()],
         verb: 'failed',
       };
 
     case 'agent:tool:call': {
-      const toolName = data?.toolName || data?.name || 'a tool';
+      const toolName = data?.toolName || data?.name || m.log_friendlyLabels_toolFallback_label();
       return {
-        parts: [agentRef(actorName, event.actor?.id), ' used ', textRef(toolName)],
+        parts: [agentRef(actorName, event.actor?.id), m.log_friendlyLabels_usedTool_middle(), textRef(toolName)],
         verb: 'used',
       };
     }
@@ -217,7 +242,7 @@ export function getFriendlyLabel(
     case 'agent:created': {
       const agentId = data?.agentId || event.actor?.id;
       return {
-        parts: ['Started ', agentRef(actorName, agentId)],
+        parts: [m.log_friendlyLabels_startedAgent_before(), agentRef(actorName, agentId)],
         verb: 'started',
       };
     }
@@ -225,7 +250,7 @@ export function getFriendlyLabel(
     case 'agent:idle': {
       const agentId = data?.agentId || event.actor?.id;
       return {
-        parts: [agentRef(actorName, agentId), ' finished'],
+        parts: [agentRef(actorName, agentId), m.log_friendlyLabels_finished_after()],
         verb: 'finished',
       };
     }
@@ -236,13 +261,13 @@ export function getFriendlyLabel(
       // Skip showing status-changed for idle/responding - they're noisy
       if (status === 'idle') {
         return {
-          parts: [agentRef(actorName, agentId), ' finished'],
+          parts: [agentRef(actorName, agentId), m.log_friendlyLabels_finished_after()],
           verb: 'finished',
         };
       }
       if (status === 'responding' || status === 'streaming' || status === 'thinking') {
         return {
-          parts: [agentRef(actorName, agentId), ' is working'],
+          parts: [agentRef(actorName, agentId), m.log_friendlyLabels_isWorking_after()],
           verb: 'working',
         };
       }
@@ -258,7 +283,7 @@ export function getFriendlyLabel(
     case 'agent:message:sent': {
       const agentId = data?.fromAgentId || event.actor?.id;
       return {
-        parts: [agentRef(actorName, agentId), ' sent a message'],
+        parts: [agentRef(actorName, agentId), m.log_friendlyLabels_sentMessage_after()],
         verb: 'sent',
       };
     }
@@ -266,7 +291,7 @@ export function getFriendlyLabel(
     case 'agent:message:received': {
       const agentId = data?.toAgentId || event.actor?.id;
       return {
-        parts: [agentRef(actorName, agentId), ' received a message'],
+        parts: [agentRef(actorName, agentId), m.log_friendlyLabels_receivedMessage_after()],
         verb: 'received',
       };
     }
@@ -283,7 +308,7 @@ export function getFriendlyLabel(
         return {
           parts: makeParts(
             isAgent ? agentRef(actorName, event.actor?.id) : null,
-            isAgent ? ' marked ' : 'Marked ',
+            isAgent ? m.log_friendlyLabels_markedByAgent_middle() : m.log_friendlyLabels_marked_before(),
             noteRef(taskName, noteId),
             ` ${friendlyStatus.toLowerCase()}`,
           ),
@@ -295,8 +320,8 @@ export function getFriendlyLabel(
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
           isAgent
-            ? ` marked task ${friendlyStatus.toLowerCase()}`
-            : `Task marked ${friendlyStatus.toLowerCase()}`,
+            ? m.log_friendlyLabels_agentMarkedTask_after({ status: friendlyStatus.toLowerCase() })
+            : m.log_friendlyLabels_taskMarked_label({ status: friendlyStatus.toLowerCase() }),
         ),
         verb: 'updated',
       };
@@ -304,7 +329,7 @@ export function getFriendlyLabel(
 
     case 'task:ready-tasks-changed':
       return {
-        parts: ['Task queue updated'],
+        parts: [m.log_friendlyLabels_taskQueueUpdated_label()],
         verb: 'updated',
       };
 
@@ -315,8 +340,8 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? ' committed ' : 'Committed ',
-          truncated ? `"${truncated}"` : 'changes',
+          isAgent ? m.log_friendlyLabels_committedByAgent_middle() : m.log_friendlyLabels_committed_before(),
+          truncated ? `"${truncated}"` : m.log_friendlyLabels_changesFallback_label(),
         ),
         verb: 'committed',
       };
@@ -326,8 +351,8 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? ' pushed to ' : 'Pushed to ',
-          data?.branch ? branchRef(data.branch) : 'remote',
+          isAgent ? m.log_friendlyLabels_pushedToByAgent_middle() : m.log_friendlyLabels_pushedTo_before(),
+          data?.branch ? branchRef(data.branch) : m.log_friendlyLabels_remoteFallback_label(),
         ),
         verb: 'pushed',
       };
@@ -336,20 +361,20 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? ' pulled from ' : 'Pulled from ',
-          data?.branch ? branchRef(data.branch) : 'remote',
+          isAgent ? m.log_friendlyLabels_pulledFromByAgent_middle() : m.log_friendlyLabels_pulledFrom_before(),
+          data?.branch ? branchRef(data.branch) : m.log_friendlyLabels_remoteFallback_label(),
         ),
         verb: 'pulled',
       };
 
     // Terminal events
     case 'terminal:command': {
-      const cmd = data?.command || 'command';
+      const cmd = data?.command || m.log_friendlyLabels_commandFallback_label();
       const short = cmd.length > 40 ? `${cmd.slice(0, 37)}...` : cmd;
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? ' ran ' : 'Ran ',
+          isAgent ? m.log_friendlyLabels_ranByAgent_middle() : m.log_friendlyLabels_ran_before(),
           commandRef(short),
         ),
         verb: 'ran',
@@ -362,8 +387,8 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? ' started ' : 'Started ',
-          data?.url ? textRef(data.url) : 'dev server',
+          isAgent ? m.log_friendlyLabels_startedByAgent_middle() : m.log_friendlyLabels_startedAgent_before(),
+          data?.url ? textRef(data.url) : m.log_friendlyLabels_devServerFallback_label(),
         ),
         verb: 'started',
       };
@@ -373,7 +398,7 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? ' stopped dev server' : 'Dev server stopped',
+          isAgent ? m.log_friendlyLabels_stoppedDevServer_after() : m.log_friendlyLabels_devServerStopped_label(),
         ),
         verb: 'stopped',
       };
@@ -384,7 +409,7 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? ' opened browser' : 'Opened browser',
+          isAgent ? m.log_friendlyLabels_openedBrowser_after() : m.log_friendlyLabels_openedBrowser_label(),
           data?.url ? ` → ${data.url}` : null,
         ),
         verb: 'opened',
@@ -394,7 +419,7 @@ export function getFriendlyLabel(
       return {
         parts: makeParts(
           isAgent ? agentRef(actorName, event.actor?.id) : null,
-          isAgent ? ' took a screenshot' : 'Screenshot captured',
+          isAgent ? m.log_friendlyLabels_tookScreenshot_after() : m.log_friendlyLabels_screenshotCaptured_label(),
         ),
         verb: 'captured',
       };
@@ -431,30 +456,30 @@ function getStatusPhrase(status: string): string {
   const normalized = status.toLowerCase();
   switch (normalized) {
     case 'idle':
-      return ' is now idle';
+      return m.log_friendlyLabels_statusIdle_after();
     case 'responding':
     case 'streaming':
-      return ' is responding';
+      return m.log_friendlyLabels_statusResponding_after();
     case 'thinking':
-      return ' is thinking';
+      return m.log_friendlyLabels_statusThinking_after();
     case 'working':
-      return ' is working';
+      return m.log_friendlyLabels_isWorking_after();
     case 'waiting':
     case 'waiting_for_input':
     case 'waiting-for-input':
-      return ' is waiting for input';
+      return m.log_friendlyLabels_statusWaiting_after();
     case 'paused':
-      return ' was paused';
+      return m.log_friendlyLabels_statusPaused_after();
     case 'stopped':
-      return ' was stopped';
+      return m.log_friendlyLabels_statusStopped_after();
     case 'error':
     case 'failed':
-      return ' encountered an error';
+      return m.log_friendlyLabels_encounteredError_after();
     case 'completed':
     case 'done':
-      return ' completed';
+      return m.log_friendlyLabels_statusCompleted_after();
     default:
       // For unknown statuses, use a generic format
-      return ` is now ${normalized}`;
+      return m.log_friendlyLabels_statusGeneric_after({ status: normalized });
   }
 }

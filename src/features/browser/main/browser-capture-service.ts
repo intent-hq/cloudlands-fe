@@ -222,6 +222,7 @@ class BrowserCaptureService {
 
     if (!tab.mounted) {
       throw new Error(
+        // i18n-ignore (agent-facing protocol error, not user-facing)
         `Tab ${tab.tabId} is not mounted. Use { action: "focusTab", tabId: "${tab.tabId}" } first.`,
       );
     }
@@ -328,6 +329,7 @@ class BrowserCaptureService {
 
     if (!tab.mounted) {
       throw new Error(
+        // i18n-ignore (agent-facing protocol error, not user-facing)
         `Tab ${tab.tabId} is not mounted. Use { action: "focusTab", tabId: "${tab.tabId}" } first.`,
       );
     }
@@ -540,6 +542,7 @@ class BrowserCaptureService {
           });
         } catch (restartErr) {
           throw new Error(
+            // i18n-ignore (agent-facing protocol error, not user-facing)
             `Failed to restart tracing: ${(restartErr as Error).message}. Try { action: "resetTab" } first.`,
           );
         }
@@ -724,6 +727,7 @@ class BrowserCaptureService {
 
     // Report initial state for debugging
     const isAttachedBefore = embeddedBrowserCdp.isDebuggerAttached(tab.webContentsId);
+    // i18n-ignore (agent-facing diagnostic detail, not user-facing)
     details.push(`Initial state: isAttached=${isAttachedBefore}`);
 
     // Clean up any event listeners we have for this tab
@@ -731,6 +735,7 @@ class BrowserCaptureService {
     if (listeners) {
       listeners.cleanup();
       this.eventListeners.delete(tab.webContentsId);
+      // i18n-ignore (agent-facing diagnostic detail, not user-facing)
       details.push('Cleaned up event listeners');
     }
 
@@ -738,6 +743,7 @@ class BrowserCaptureService {
     for (const [sessionId, session] of this.sessions.entries()) {
       if (session.tabId === tab.tabId) {
         this.sessions.delete(sessionId);
+        // i18n-ignore (agent-facing diagnostic detail, not user-facing)
         details.push(`Cleaned up session ${sessionId}`);
         logger.info('Cleaned up stale session', { sessionId, tabId: tab.tabId });
       }
@@ -746,12 +752,15 @@ class BrowserCaptureService {
     // Force detach via centralized service (clears tracking state too)
     const didDetach = embeddedBrowserCdp.forceDetachDebugger(tab.webContentsId);
     if (didDetach) {
+      // i18n-ignore (agent-facing diagnostic detail, not user-facing)
       details.push('Force detached debugger');
     } else {
+      // i18n-ignore (agent-facing diagnostic detail, not user-facing)
       details.push('No debugger to detach');
     }
 
     const isAttachedAfter = embeddedBrowserCdp.isDebuggerAttached(tab.webContentsId);
+    // i18n-ignore (agent-facing diagnostic detail, not user-facing)
     details.push(`Final state: isAttached=${isAttachedAfter}`);
 
     logger.info('Tab reset complete', { tabId: tab.tabId, details });
@@ -857,6 +866,7 @@ class BrowserCaptureService {
           | undefined;
         if (pending) {
           pending.failed = true;
+          // i18n-ignore (agent-facing trace data, not user-facing)
           pending.failureReason = (p.errorText as string) || 'Unknown error';
           // Calculate duration even for failed requests
           if (pending._startTime) {

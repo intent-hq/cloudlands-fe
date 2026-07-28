@@ -25,6 +25,7 @@ import { dirname } from 'path';
 import { app } from 'electron';
 import { getSafeHomeDir } from '../../../shared/main/utils';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import {
   type SpecialistFile,
   type SpecialistFileFrontmatter,
@@ -106,7 +107,9 @@ export async function ensureProjectSpecialistsDirectory(workspacePath: string): 
     await fs.mkdir(dir, { recursive: true });
     return dir;
   } catch (error) {
-    logger.error('Failed to create project specialists directory', error as Error, { workspacePath });
+    logger.error('Failed to create project specialists directory', error as Error, {
+      workspacePath,
+    });
     throw error;
   }
 }
@@ -137,6 +140,7 @@ async function loadSpecialistFilesFromDirectory(
   };
 
   if (!(await fileExists(dir))) {
+    // i18n-ignore (developer log message)
     const message = options?.missingMessage ?? 'Specialists directory does not exist';
     const context = { dir, ...(options?.missingContext ?? {}) };
     if (options?.missingLevel === 'warn') {
@@ -167,7 +171,8 @@ async function loadSpecialistFilesFromDirectory(
             result.specialists.push(parsed);
           }
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const errorMessage =
+            error instanceof Error ? error.message : m.specialists_loader_unknown_error();
           result.errors.push({ filePath, error: errorMessage });
           logger.error(`Failed to load specialist file: ${filePath}`, error as Error);
         }
@@ -362,7 +367,10 @@ export function parseSpecialistFile(
   const modelTier = frontmatter.modelTier;
   if (modelTier && !validModelTiers.includes(modelTier)) {
     return {
-      error: `Invalid modelTier: "${modelTier}". Must be one of: ${validModelTiers.join(', ')}.`,
+      error: m.specialists_loader_invalidModelTier_error({
+        modelTier,
+        validTiers: validModelTiers.join(', '),
+      }),
     };
   }
 
@@ -392,6 +400,7 @@ export function parseSpecialistFile(
  */
 export async function loadSpecialistFiles(): Promise<SpecialistFilesResult> {
   return loadSpecialistFilesFromDirectory(getSpecialistsDirectory(), 'user', {
+    // i18n-ignore (developer log message)
     missingMessage: 'User specialists directory does not exist',
   });
 }
@@ -403,10 +412,15 @@ export async function loadProjectSpecialistFiles(
     return { specialists: [], errors: [] };
   }
 
-  return loadSpecialistFilesFromDirectory(getProjectSpecialistsDirectory(workspacePath), 'project', {
-    missingMessage: 'Project specialists directory does not exist',
-    missingContext: { workspacePath },
-  });
+  return loadSpecialistFilesFromDirectory(
+    getProjectSpecialistsDirectory(workspacePath),
+    'project',
+    {
+      // i18n-ignore (developer log message)
+      missingMessage: 'Project specialists directory does not exist',
+      missingContext: { workspacePath },
+    },
+  );
 }
 
 /**
@@ -423,9 +437,12 @@ export async function loadBundledSpecialistFiles(): Promise<SpecialistFilesResul
 
   return loadSpecialistFilesFromDirectory(dir, 'bundled', {
     missingLevel: 'warn',
-    missingMessage: 'Bundled specialists directory does not exist - specialists will not be available',
+    missingMessage:
+      // i18n-ignore (developer log message)
+      'Bundled specialists directory does not exist - specialists will not be available',
     missingContext: {
       __dirname,
+      // i18n-ignore (developer log message)
       hint: 'Ensure resources/specialists/ exists relative to the app root',
     },
   });
@@ -542,7 +559,8 @@ export async function writeSpecialistFile(specialist: {
     logger.info(`Wrote specialist file: ${filePath}`);
     return { success: true, filePath };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : m.specialists_loader_unknown_error();
     logger.error('Failed to write specialist file', error as Error);
     return { success: false, error: errorMessage };
   }
@@ -561,7 +579,7 @@ export async function deleteSpecialistFile(
   const filePath = path.join(dir, filename);
 
   if (!(await fileExists(filePath))) {
-    return { success: false, error: 'Specialist file not found' };
+    return { success: false, error: m.specialists_loader_fileNotFound_error() };
   }
 
   try {
@@ -569,7 +587,8 @@ export async function deleteSpecialistFile(
     logger.info(`Deleted specialist file: ${filePath}`);
     return { success: true };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : m.specialists_loader_unknown_error();
     logger.error(`Failed to delete specialist file: ${filePath}`, error as Error);
     return { success: false, error: errorMessage };
   }
@@ -588,4 +607,3 @@ export async function specialistFileExists(
   const filePath = path.join(dir, filename);
   return fileExists(filePath);
 }
-

@@ -37,6 +37,7 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Props {
@@ -216,7 +217,7 @@
 
   async function handleAskAgent(): Promise<void> {
     if (!workspaceId) {
-      toast.error('No workspace selected');
+      toast.error(m.terminal_scriptOutput_noWorkspace_error());
       return;
     }
 
@@ -226,11 +227,14 @@
     const failedText =
       exitCode !== null && exitCode !== 0 ? ` failed with exit code ${exitCode}` : '';
 
+    // i18n-ignore (agent-facing prompt, kept in English)
     const prompt = `The script '${$script$?.name}'${failedText}.\n\nCommand: \`${$script$?.command}\`\n\nOutput (last 100 lines):\n\`\`\`\n${lastLines}\n\`\`\`\n\nPlease analyze the error and suggest how to fix this script. If you can identify the issue, update the script command using the \`create_script\` MCP tool with scriptId="${scriptId}".`;
 
     try {
       appStore.dispatch(createAgentFromConfigRequested(workspaceId, {
-        name: `Fix: ${$script$?.name ?? 'script'}`,
+        name: m.terminal_scriptOutput_fixAgentName_label({
+          name: $script$?.name ?? m.terminal_scriptOutput_script_fallback(),
+        }),
         // Derived from the script name, not user-chosen — keep the session
         // self-renameable.
         nameExplicitlySet: false,
@@ -239,7 +243,7 @@
         source: 'error-notification',
       }, { openAgent: true }));
     } catch {
-      toast.error('Failed to create agent');
+      toast.error(m.workspace_modals_createAgentFailed_error());
     }
   }
 
@@ -282,7 +286,7 @@
         <div class="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
           <Fa icon={faXmark} size="xs" />
         </div>
-        <span>Build failed with exit code {$runtime$.exitCode}</span>
+        <span>{m.terminal_scriptOutput_buildFailed_label({ exitCode: $runtime$.exitCode ?? 0 })}</span>
       </div>
       <Button
         variant="outline"
@@ -291,7 +295,7 @@
         onclick={handleAskAgent}
       >
         <Fa icon={faWandMagicSparkles} size="sm" class="mr-1.5" />
-        Ask AI to Fix
+        {m.terminal_scriptOutput_askAiToFix_label()}
       </Button>
     </div>
   {/if}
@@ -311,7 +315,7 @@
           class="text-muted-foreground hover:text-foreground"
         >
           <Fa icon={faPlay} class="h-3 w-3 mr-1" />
-          Run
+          {m.terminal_scriptOutput_run_label()}
         </Button>
       </div>
     </div>

@@ -31,6 +31,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     questions: Question[];
@@ -144,21 +145,26 @@
       onclick={() => onToggleCollapsed?.(false)}
     >
       <Fa icon={faCircleQuestion} class="text-xs text-primary" />
-      <span class="text-xs font-medium text-foreground">Agent Has Questions</span>
+      <span class="text-xs font-medium text-foreground">{m.chat_questionWizard_title()}</span>
       <span
         class="text-[0.7rem] font-medium px-1.75 py-px rounded-full bg-primary/12 border border-primary/35 text-foreground"
       >
         {questions.length}
       </span>
-      <span class="ml-auto text-[0.7rem] text-subtle">Click to expand</span>
+      <span class="ml-auto text-[0.7rem] text-subtle">{m.chat_questionWizard_clickToExpand_label()}</span>
     </button>
   {:else}
     <!-- Header row -->
     <div class="flex items-center gap-2.5 px-3.5 pt-2.5">
       <Fa icon={faCircleQuestion} class="text-xs text-primary" />
-      <span class="text-xs font-medium text-foreground">Agent Has Questions</span>
+      <span class="text-xs font-medium text-foreground">{m.chat_questionWizard_title()}</span>
       {#if multiStep}
-        <span class="text-xs text-subtle">{idx + 1} of {questions.length}</span>
+        <span class="text-xs text-subtle"
+          >{m.chat_questionWizard_stepCounter_label({
+            current: idx + 1,
+            total: questions.length,
+          })}</span
+        >
         <span class="flex items-center gap-1">
           {#each questions as _, i (i)}
             <span
@@ -174,7 +180,7 @@
       {/if}
       {#if isMulti}
         <span class="text-[0.7rem] px-1.75 py-px rounded-full bg-secondary text-subtle">
-          select all that apply
+          {m.chat_questionWizard_selectAll_label()}
         </span>
       {/if}
       <button
@@ -182,7 +188,7 @@
         class="ml-auto border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
         onclick={() => onToggleCollapsed?.(true)}
       >
-        Ignore
+        {m.chat_questionWizard_ignore_label()}
       </button>
     </div>
 
@@ -245,8 +251,8 @@
               bind:value={draft.text}
               oninput={() => (draft.skipped = false)}
               onkeydown={handleKeydown}
-              aria-label="Type your own answer"
-              placeholder="Or type your own answer…"
+              aria-label={m.chat_questionWizard_ownAnswer_ariaLabel()}
+              placeholder={m.chat_questionWizard_ownAnswer_placeholder()}
               class="flex-1 border-none outline-none bg-transparent text-[1rem] leading-normal font-[inherit] text-foreground py-1"
             />
             <span class="text-[0.7rem] text-ghost pr-1.5">↵</span>
@@ -265,12 +271,12 @@
               onclick={handleBack}
             >
               <Fa icon={faChevronLeft} class="text-[9px] a11y-ignore" />
-              Back
+              {m.chat_questionWizard_back_label()}
             </button>
           {/if}
           {#if !isMulti && !isLast}
             <span class="text-[0.7rem] text-ghost">
-              Selecting an option moves to the next question
+              {m.chat_questionWizard_selectionAdvances_label()}
             </span>
           {/if}
           <span class="ml-auto flex items-center gap-1.5">
@@ -279,11 +285,11 @@
               class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-2 py-1 rounded-(--radius) hover:text-foreground"
               onclick={handleSkip}
             >
-              Skip
+              {m.chat_questionWizard_skip_label()}
             </button>
             {#if showNext}
               <Button size="sm" disabled={nextDisabled} onclick={handleNext}>
-                {isLast ? 'Send' : 'Next'}
+                {isLast ? m.chat_questionWizard_send_label() : m.chat_questionWizard_next_label()}
                 <Fa icon={isLast ? faArrowUp : faArrowRight} class="text-[10px] a11y-ignore" />
               </Button>
             {/if}

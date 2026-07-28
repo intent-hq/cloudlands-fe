@@ -38,6 +38,7 @@ export function setupPanelLayoutHistoryIPC() {
           return await repository.load(workspaceId);
         } catch (error) {
           logger.error(
+            // i18n-ignore (main-process log message, not user-facing)
             `[PanelLayoutHistoryIPC] Failed to load history for workspace: ${validated.workspaceId}`,
             error as Error,
           );
@@ -62,6 +63,7 @@ export function setupPanelLayoutHistoryIPC() {
           return true;
         } catch (error) {
           logger.error(
+            // i18n-ignore (main-process log message, not user-facing)
             `[PanelLayoutHistoryIPC] Failed to save history for workspace: ${validated.workspaceId}`,
             error as Error,
           );

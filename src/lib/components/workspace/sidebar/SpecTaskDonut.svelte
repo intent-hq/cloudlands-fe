@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
+
   interface TaskStats {
     total: number;
     completed: number;
@@ -71,9 +74,12 @@
         ? 'text-emerald-600 dark:text-emerald-400'
         : 'text-subtle'}
     >
-      {taskStats.completed} / {taskStats.total} tasks
+      {m.workspace_specTaskDonut_tasksRatio_label({
+        completed: formatInteger(taskStats.completed),
+        total: formatInteger(taskStats.total),
+      })}
     </span>
   </div>
 {:else}
-  <span class="text-subtle">No tasks</span>
+  <span class="text-subtle">{m.workspace_specTaskDonut_noTasks_label()}</span>
 {/if}

@@ -6,10 +6,8 @@
  */
 
 import { Logger } from '$shared/logger';
-import {
-  isValidWorkspaceIdFormat,
-  sanitizePath,
-} from '../../main/utils/workspace-validation';
+import { m } from '$shared/paraglide/messages.js';
+import { isValidWorkspaceIdFormat, sanitizePath } from '../../main/utils/workspace-validation';
 
 const logger = new Logger('IPCValidation');
 
@@ -29,21 +27,21 @@ export function validateIPCWorkspaceId(workspaceId: any): IPCValidationResult {
   if (!workspaceId) {
     return {
       valid: false,
-      error: 'Workspace ID is required',
+      error: m.ipcValidation_workspaceIdRequired_error(),
     };
   }
 
   if (typeof workspaceId !== 'string') {
     return {
       valid: false,
-      error: 'Workspace ID must be a string',
+      error: m.ipcValidation_workspaceIdMustBeString_error(),
     };
   }
 
   if (!isValidWorkspaceIdFormat(workspaceId)) {
     return {
       valid: false,
-      error: 'Invalid workspace ID format',
+      error: m.ipcValidation_workspaceIdInvalidFormat_error(),
     };
   }
 
@@ -61,14 +59,14 @@ export function validateIPCPath(path: any, basePath: string): IPCValidationResul
   if (!path) {
     return {
       valid: false,
-      error: 'Path is required',
+      error: m.ipcValidation_pathRequired_error(),
     };
   }
 
   if (typeof path !== 'string') {
     return {
       valid: false,
-      error: 'Path must be a string',
+      error: m.ipcValidation_pathMustBeString_error(),
     };
   }
 
@@ -76,7 +74,7 @@ export function validateIPCPath(path: any, basePath: string): IPCValidationResul
   if (!sanitized) {
     return {
       valid: false,
-      error: 'Invalid or unsafe path',
+      error: m.ipcValidation_pathInvalid_error(),
     };
   }
 
@@ -93,7 +91,7 @@ export function validateIPCPaths(paths: any, basePath: string): IPCValidationRes
   if (!Array.isArray(paths)) {
     return {
       valid: false,
-      error: 'Paths must be an array',
+      error: m.ipcValidation_pathsMustBeArray_error(),
     };
   }
 
@@ -123,21 +121,21 @@ export function validateIPCString(
   if (value === undefined || value === null) {
     return {
       valid: false,
-      error: `${name} is required`,
+      error: m.ipcValidation_paramRequired_error({ name }),
     };
   }
 
   if (typeof value !== 'string') {
     return {
       valid: false,
-      error: `${name} must be a string`,
+      error: m.ipcValidation_paramMustBeString_error({ name }),
     };
   }
 
   if (value.length > maxLength) {
     return {
       valid: false,
-      error: `${name} exceeds maximum length of ${maxLength}`,
+      error: m.ipcValidation_paramTooLong_error({ name, maxLength }),
     };
   }
 
@@ -159,7 +157,7 @@ export function validateIPCNumber(
   if (value === undefined || value === null) {
     return {
       valid: false,
-      error: `${name} is required`,
+      error: m.ipcValidation_paramRequired_error({ name }),
     };
   }
 
@@ -167,21 +165,21 @@ export function validateIPCNumber(
   if (isNaN(num)) {
     return {
       valid: false,
-      error: `${name} must be a number`,
+      error: m.ipcValidation_paramMustBeNumber_error({ name }),
     };
   }
 
   if (min !== undefined && num < min) {
     return {
       valid: false,
-      error: `${name} must be at least ${min}`,
+      error: m.ipcValidation_paramTooSmall_error({ name, min }),
     };
   }
 
   if (max !== undefined && num > max) {
     return {
       valid: false,
-      error: `${name} must be at most ${max}`,
+      error: m.ipcValidation_paramTooLarge_error({ name, max }),
     };
   }
 
@@ -198,14 +196,14 @@ export function validateIPCBoolean(value: any, name: string): IPCValidationResul
   if (value === undefined || value === null) {
     return {
       valid: false,
-      error: `${name} is required`,
+      error: m.ipcValidation_paramRequired_error({ name }),
     };
   }
 
   if (typeof value !== 'boolean') {
     return {
       valid: false,
-      error: `${name} must be a boolean`,
+      error: m.ipcValidation_paramMustBeBoolean_error({ name }),
     };
   }
 

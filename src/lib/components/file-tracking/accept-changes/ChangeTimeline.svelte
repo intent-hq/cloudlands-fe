@@ -53,6 +53,7 @@
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -285,7 +286,7 @@
 
   // Helper to get the display name for an agent, preferring session store name over attribution name
   function getAgentDisplayName(group: AgentChangeGroup): string {
-    if (!group.agentId) return 'Manual Changes';
+    if (!group.agentId) return m.fileTracking_changes_manualChanges_label();
 
     // Try to find the session by ID first
     const sessions = selectAllWorkspaceAgents.select(appStore.state, workspaceId);
@@ -294,12 +295,13 @@
       return id === group.agentId;
     });
 
+    // i18n-ignore (compares against the backend default agent name)
     if (session?.name && session.name !== 'New Workspace Agent') {
       return session.name;
     }
 
     // Fall back to attribution name
-    return group.agentName || 'Agent';
+    return group.agentName || m.fileTracking_changeTimeline_agent_fallback();
   }
 
   // Show grouped UI if there's any agent attribution (not just manual changes)
@@ -534,6 +536,7 @@
 
 {#snippet prForm()}
   {@const isFromStaged = selectedCommitIndex === null}
+  <!-- i18n-ignore (multiline expression, no user-facing text) -->
   {@const isFromLocalCommit =
     selectedCommitIndex !== null && selectedCommitIndex < localCommits.length}
   {@const localCommitIndex = isFromLocalCommit ? selectedCommitIndex : null}
@@ -550,15 +553,21 @@
     remoteCommitIndex !== null ? remoteCommits.length - remoteCommitIndex : remoteCommits.length}
   {@const stagedDescription =
     isFromStaged && hasStaged
-      ? `${stagedFiles.length} staged file${stagedFiles.length === 1 ? '' : 's'}`
+      ? stagedFiles.length === 1
+        ? m.fileTracking_changeTimeline_stagedFiles_one({ count: stagedFiles.length })
+        : m.fileTracking_changeTimeline_stagedFiles_many({ count: stagedFiles.length })
       : ''}
   {@const localDescription =
     includedLocalCount > 0
-      ? `${includedLocalCount} local commit${includedLocalCount === 1 ? '' : 's'}`
+      ? includedLocalCount === 1
+        ? m.fileTracking_changeTimeline_localCommits_one({ count: includedLocalCount })
+        : m.fileTracking_changeTimeline_localCommits_many({ count: includedLocalCount })
       : ''}
   {@const remoteDescription =
     includedRemoteCount > 0
-      ? `${includedRemoteCount} pushed commit${includedRemoteCount === 1 ? '' : 's'}`
+      ? includedRemoteCount === 1
+        ? m.fileTracking_changeTimeline_pushedCommits_one({ count: includedRemoteCount })
+        : m.fileTracking_changeTimeline_pushedCommits_many({ count: includedRemoteCount })
       : ''}
   {@const parts = [stagedDescription, localDescription, remoteDescription].filter(Boolean)}
   {@const isStreamingPR = isGeneratingPR || isAutofillAndCreatingPR}
@@ -584,27 +593,29 @@
   <div class="space-y-3">
     {#if parts.length > 0}
       <p class="text-xs text-subtle">
-        {parts.join(', ')} will be included in this PR.
+        {m.fileTracking_changeTimeline_includedInPr_label({ parts: parts.join(', ') })}
       </p>
     {/if}
     <div>
       {#if !isStreamingPR}
-        <span class="text-xs text-subtle mb-1 block">Title</span>
+        <span class="text-xs text-subtle mb-1 block">{m.fileTracking_changeTimeline_title_label()}</span>
         <Input
           value={prTitle}
           oninput={handlePRTitleInput}
-          placeholder="PR title..."
+          placeholder={m.fileTracking_changeTimeline_prTitle_placeholder()}
           class="text-sm h-8"
         />
       {/if}
     </div>
     <div>
-      <span class="text-xs text-subtle mb-1 block">Description</span>
+      <span class="text-xs text-subtle mb-1 block"
+        >{m.fileTracking_changeTimeline_description_label()}</span
+      >
       <div class="relative">
         <Textarea
           value={isStreamingPR ? generatingPRPreview || '' : prDescription}
           oninput={handlePRDescriptionInput}
-          placeholder="Describe your changes..."
+          placeholder={m.fileTracking_changeTimeline_prDescription_placeholder()}
           doesExpandToFit
           minHeight={120}
           maxHeight={300}
@@ -638,7 +649,7 @@
                 size="icon-xs"
                 class="h-6 w-6 text-muted-foreground hover:text-foreground"
                 onclick={onViewPRThoughtProcess}
-                tooltip="View thought process"
+                tooltip={m.fileTracking_changeTimeline_viewThoughtProcess_tooltip()}
                 tooltipSide="top"
                 tooltipDelayDuration={0}
               >
@@ -651,7 +662,7 @@
                 size="icon-xs"
                 class="h-6 w-6 text-muted-foreground hover:text-destructive-foreground"
                 onclick={onStopGeneratingPR}
-                tooltip="Stop generating"
+                tooltip={m.fileTracking_changeTimeline_stopGenerating_tooltip()}
                 tooltipSide="top"
                 tooltipDelayDuration={0}
               >
@@ -663,7 +674,9 @@
       </div>
     </div>
     <div>
-      <span class="text-xs text-subtle mb-1 block">Target Branch</span>
+      <span class="text-xs text-subtle mb-1 block"
+        >{m.fileTracking_changeTimeline_targetBranch_label()}</span
+      >
       {#if canEditTargetBranch}
         <select
           class="w-full h-8 px-2 text-sm bg-background border border-input rounded-md"
@@ -694,14 +707,14 @@
         {:else}
           <Fa icon={faCodePullRequest} class="h-3 w-3 opacity-50" />
         {/if}
-        <span>Create PR</span>
+        <span>{m.fileTracking_changeTimeline_createPr_label()}</span>
       </Button>
       <Button
         variant="outline"
         size="xs"
         onclick={handleGeneratePR}
         disabled={isGeneratingPR || isAutofillAndCreatingPR}
-        tooltip="Generate a title and description"
+        tooltip={m.fileTracking_changeTimeline_generateTitleDescription_tooltip()}
         tooltipSide="bottom"
         tooltipDelayDuration={0}
       >
@@ -710,7 +723,7 @@
         {:else}
           <Fa icon={faRobot} class="h-3 w-3 opacity-50" />
         {/if}
-        <span>Auto-fill</span>
+        <span>{m.fileTracking_changeTimeline_autofill_label()}</span>
       </Button>
       <Button
         variant="outline"
@@ -721,7 +734,7 @@
           prDrawerOpen = false;
         }}
         disabled={isAutofillAndCreatingPR || isGeneratingPR || isCreatingPR}
-        tooltip="Generate a title and description, then create the PR automatically in the background"
+        tooltip={m.fileTracking_changeTimeline_autofillCreate_tooltip()}
         tooltipSide="bottom"
         tooltipDelayDuration={0}
       >
@@ -730,7 +743,7 @@
         {:else}
           <Fa icon={faRobot} class="h-3 w-3 opacity-50" />
         {/if}
-        <span>Auto-fill & Create</span>
+        <span>{m.fileTracking_changeTimeline_autofillAndCreate_label()}</span>
       </Button>
     </div>
   </div>
@@ -738,7 +751,9 @@
 
 <div class="w-full p-6">
   {#if !hasAnyContent}
-    <div class="text-center py-8 text-sm text-subtle">No changes to show</div>
+    <div class="text-center py-8 text-sm text-subtle">
+      {m.fileTracking_changeTimeline_noChanges_label()}
+    </div>
   {:else}
     <div class="relative">
       <!-- Timeline vertical line -->
@@ -771,11 +786,11 @@
                     </div>
                     <span class="text-green-600 dark:text-green-400 font-medium">
                       {#if backgroundOperation.type === 'commit'}
-                        Committing changes...
+                        {m.fileTracking_acceptChanges_committingChanges_label()}
                       {:else if backgroundOperation.type === 'add-to-pr'}
-                        Pushing to PR...
+                        {m.fileTracking_changeTimeline_pushingToPr_label()}
                       {:else}
-                        Creating PR...
+                        {m.fileTracking_acceptChanges_creatingPr_label()}
                       {/if}
                     </span>
                   {:else}
@@ -783,9 +798,11 @@
                     <Fa icon={faSpinner} class="h-4 w-4 animate-spin text-primary" />
                     <span class="font-medium">
                       {#if isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr'}
-                        {generatingPRStatus || 'Generating PR description...'}
+                        {generatingPRStatus ||
+                          m.fileTracking_acceptChanges_generatingPrDescription_label()}
                       {:else}
-                        {generatingMessageStatus || 'Generating commit message...'}
+                        {generatingMessageStatus ||
+                          m.fileTracking_acceptChanges_generatingCommitMessage_label()}
                       {/if}
                     </span>
                   {/if}
@@ -803,7 +820,7 @@
                       </span>
                     {:else}
                       <span class="flex-1 text-xs text-subtle italic">
-                        Waiting for response...
+                        {m.fileTracking_changeTimeline_waitingForResponse_label()}
                       </span>
                     {/if}
                     <!-- Stop button with label -->
@@ -837,7 +854,7 @@
           <!-- Section Header -->
           <div class="pl-10 pr-3 pt-0.5 pb-2 flex items-center justify-between">
             <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide">
-              Local changes
+              {m.fileTracking_changeTimeline_localChanges_label()}
             </span>
             <div class="flex items-center gap-1">
               {#if hasStaged}
@@ -849,7 +866,7 @@
                     class="text-muted-foreground hover:text-foreground gap-1"
                   >
                     <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
-                    <span>Reviewing...</span>
+                    <span>{m.fileTracking_changeTimeline_reviewing_label()}</span>
                   </Button>
                 {:else if hasExistingReview && reviewStatus === 'complete'}
                   <Button
@@ -863,10 +880,18 @@
                         icon={faWandMagicSparkles}
                         class="h-3 w-3 {reviewHasCritical ? 'text-red-500' : 'text-green-500'}"
                       />
-                      <span>{reviewCommentCount} comment{reviewCommentCount === 1 ? '' : 's'}</span>
+                      <span>
+                        {reviewCommentCount === 1
+                          ? m.fileTracking_changeTimeline_commentCount_one({
+                              count: reviewCommentCount,
+                            })
+                          : m.fileTracking_changeTimeline_commentCount_many({
+                              count: reviewCommentCount,
+                            })}
+                      </span>
                     {:else}
                       <Fa icon={faWandMagicSparkles} class="h-3 w-3 text-green-500" />
-                      <span>View Review</span>
+                      <span>{m.fileTracking_changeTimeline_viewReview_label()}</span>
                     {/if}
                   </Button>
                 {:else if hasExistingReview && reviewStatus === 'stale'}
@@ -875,10 +900,10 @@
                     size="xs"
                     onclick={onReReview}
                     class="text-muted-foreground hover:text-foreground gap-1"
-                    tooltip="Staged files have changed. Click to generate a new review."
+                    tooltip={m.fileTracking_changeTimeline_reReview_tooltip()}
                   >
                     <Fa icon={faRotateRight} class="h-3 w-3 text-yellow-500" />
-                    <span>Re-review</span>
+                    <span>{m.fileTracking_changeTimeline_reReview_label()}</span>
                   </Button>
                 {:else if onReviewStaged}
                   <Button
@@ -888,7 +913,7 @@
                     class="text-muted-foreground hover:text-foreground gap-1"
                   >
                     <Fa icon={faWandMagicSparkles} class="h-3 w-3" />
-                    <span>Review staged changes</span>
+                    <span>{m.fileTracking_changeTimeline_reviewStaged_label()}</span>
                   </Button>
                 {/if}
 
@@ -897,7 +922,7 @@
                     variant="ghost-light"
                     size="xs"
                     class="text-muted-foreground hover:text-foreground px-1"
-                    tooltip="Previous reviews"
+                    tooltip={m.fileTracking_changeTimeline_previousReviews_tooltip()}
                     onclick={() => {
                       // For now, open the most recent archived review
                       // TODO: Add a proper dropdown menu
@@ -918,7 +943,7 @@
                   class="text-muted-foreground hover:text-foreground"
                 >
                   <Fa icon={faEye} class="h-3 w-3" />
-                  <span>View All</span>
+                  <span>{m.fileTracking_changeTimeline_viewAll_label()}</span>
                 </Button>
               {/if}
             </div>
@@ -974,7 +999,7 @@
                                   variant="ghost-light"
                                   size="xs"
                                   class="opacity-0 group-hover/agent-header:opacity-100 transition-opacity shrink-0"
-                                  tooltip="Unstage all files in this group"
+                                  tooltip={m.fileTracking_changeTimeline_unstageGroup_tooltip()}
                                   onclick={(e: MouseEvent) => {
                                     e.stopPropagation();
                                     const paths = group.files.map((f) => f.path);
@@ -986,7 +1011,7 @@
                                   }}
                                 >
                                   <Fa icon={faMinus} class="h-2.5 w-2.5" />
-                                  <span>Unstage All</span>
+                                  <span>{m.workspace_fileChanges_unstageAll_label()}</span>
                                 </Button>
                               {/if}
                               {#if group.agentId}
@@ -994,7 +1019,7 @@
                                   variant="ghost-light"
                                   size="icon-xs"
                                   class="-mr-1 opacity-0 group-hover/agent-header:opacity-100 transition-opacity shrink-0"
-                                  tooltip="Open agent"
+                                  tooltip={m.fileTracking_changeTimeline_openAgent_tooltip()}
                                   onclick={(e: MouseEvent) => {
                                     e.stopPropagation();
                                     openAgent(e, group.agentId!);
@@ -1006,7 +1031,13 @@
                               <span
                                 class="text-xs text-muted-foreground shrink-0 absolute right-3 group-hover/agent-header:opacity-0 pointer-events-none"
                               >
-                                {group.files.length} file{group.files.length === 1 ? '' : 's'}
+                                {group.files.length === 1
+                                  ? m.fileTracking_changeTimeline_fileCount_one({
+                                      count: group.files.length,
+                                    })
+                                  : m.fileTracking_changeTimeline_fileCount_many({
+                                      count: group.files.length,
+                                    })}
                               </span>
                             </div>
                             <!-- Files in group -->
@@ -1057,10 +1088,15 @@
                   >
                     <div class="flex items-center gap-2">
                       <span class="text-xs text-subtle py-1"
-                        >{unstagedFiles.length ? unstagedFiles.length : 'No'} unstaged file{unstagedFiles.length ===
-                        1
-                          ? ''
-                          : 's'}</span
+                        >{unstagedFiles.length === 0
+                          ? m.fileTracking_changeTimeline_unstagedFiles_none()
+                          : unstagedFiles.length === 1
+                            ? m.fileTracking_changeTimeline_unstagedFiles_one({
+                                count: unstagedFiles.length,
+                              })
+                            : m.fileTracking_changeTimeline_unstagedFiles_many({
+                                count: unstagedFiles.length,
+                              })}</span
                       >
                     </div>
                     <div class="flex items-center gap-px">
@@ -1074,7 +1110,7 @@
                           }}
                         >
                           <Fa icon={faMinus} class="h-2.5 w-2.5" />
-                          <span>Unstage All</span>
+                          <span>{m.workspace_fileChanges_unstageAll_label()}</span>
                         </Button>
                       {/if}
                       {#if unstagedFiles.length > 0 && onStageAll}
@@ -1087,7 +1123,7 @@
                           }}
                         >
                           <Fa icon={faPlus} class="h-2.5 w-2.5" />
-                          <span>Stage All</span>
+                          <span>{m.workspace_fileChanges_stageAll_label()}</span>
                         </Button>
                       {/if}
                     </div>
@@ -1133,7 +1169,7 @@
                                   variant="ghost-light"
                                   size="xs"
                                   class="opacity-0 group-hover/agent-header:opacity-100 transition-opacity shrink-0"
-                                  tooltip="Stage all files in this group"
+                                  tooltip={m.fileTracking_changeTimeline_stageGroup_tooltip()}
                                   onclick={(e: MouseEvent) => {
                                     e.stopPropagation();
                                     const paths = group.files.map((f) => f.path);
@@ -1145,7 +1181,7 @@
                                   }}
                                 >
                                   <Fa icon={faPlus} class="h-2.5 w-2.5" />
-                                  <span>Stage All</span>
+                                  <span>{m.workspace_fileChanges_stageAll_label()}</span>
                                 </Button>
                               {/if}
                               {#if group.agentId}
@@ -1153,7 +1189,7 @@
                                   variant="ghost-light"
                                   size="icon-xs"
                                   class="-mr-1 opacity-0 group-hover/agent-header:opacity-100 transition-opacity shrink-0"
-                                  tooltip="Open agent"
+                                  tooltip={m.fileTracking_changeTimeline_openAgent_tooltip()}
                                   onclick={(e: MouseEvent) => {
                                     e.stopPropagation();
                                     openAgent(e, group.agentId!);
@@ -1165,7 +1201,13 @@
                               <span
                                 class="text-xs text-muted-foreground shrink-0 absolute right-3 group-hover/agent-header:opacity-0 pointer-events-none"
                               >
-                                {group.files.length} file{group.files.length === 1 ? '' : 's'}
+                                {group.files.length === 1
+                                  ? m.fileTracking_changeTimeline_fileCount_one({
+                                      count: group.files.length,
+                                    })
+                                  : m.fileTracking_changeTimeline_fileCount_many({
+                                      count: group.files.length,
+                                    })}
                               </span>
                             </div>
                             <!-- Files in group -->
@@ -1233,11 +1275,11 @@
                           </div>
                           <span class="truncate flex-1">
                             {#if backgroundOperation.type === 'commit'}
-                              Committing...
+                              {m.fileTracking_changeTimeline_committing_label()}
                             {:else if backgroundOperation.type === 'add-to-pr'}
-                              Pushing to PR...
+                              {m.fileTracking_changeTimeline_pushingToPr_label()}
                             {:else}
-                              Creating PR...
+                              {m.fileTracking_acceptChanges_creatingPr_label()}
                             {/if}
                           </span>
                         {:else}
@@ -1248,12 +1290,13 @@
                           />
                           <span class="text-subtle truncate flex-1">
                             {#if isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr'}
-                              {generatingPRStatus || 'Generating PR description...'}
+                              {generatingPRStatus ||
+                                m.fileTracking_acceptChanges_generatingPrDescription_label()}
                             {:else}
                               {generatingMessageStatus ||
                                 (hasPRs
-                                  ? 'Adding to PR in background...'
-                                  : 'Committing in background...')}
+                                  ? m.fileTracking_acceptChanges_addingToPrInBackground_info()
+                                  : m.fileTracking_acceptChanges_committingInBackground_info())}
                             {/if}
                           </span>
                         {/if}
@@ -1271,7 +1314,7 @@
                             </span>
                           {:else}
                             <span class="flex-1 text-xs text-subtle italic">
-                              Waiting for response...
+                              {m.fileTracking_changeTimeline_waitingForResponse_label()}
                             </span>
                           {/if}
                           <!-- Stop button with label -->
@@ -1299,7 +1342,7 @@
                       onclick={() => toggleDrawer('commit')}
                     >
                       <Fa icon={faCodeCommit} class="h-3 w-3 opacity-50" />
-                      <span>Commit</span>
+                      <span>{m.fileTracking_changeTimeline_commit_label()}</span>
                     </Button>
                     {#if hasRemote}
                       {#if hasPRs}
@@ -1311,7 +1354,7 @@
                           onclick={() => toggleDrawer('addToPR')}
                         >
                           <Fa icon={faCodePullRequest} class="h-3 w-3 opacity-50" />
-                          <span>Add to PR</span>
+                          <span>{m.fileTracking_changeTimeline_addToPr_label()}</span>
                         </Button>
                       {:else}
                         <!-- No PR yet, show Create PR option -->
@@ -1327,7 +1370,7 @@
                           }}
                         >
                           <Fa icon={faCodePullRequest} class="h-3 w-3 opacity-50" />
-                          <span>Create PR</span>
+                          <span>{m.fileTracking_changeTimeline_createPr_label()}</span>
                         </Button>
                       {/if}
                     {/if}
@@ -1344,13 +1387,14 @@
                       }}
                     >
                       <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
-                      <span>Merge to trunk</span>
+                      <span>{m.fileTracking_changeTimeline_mergeToTrunk_label()}</span>
                     </Button>
                   {:else}
                     <p class="text-xs text-subtle pt-[0.3rem]">
                       <button class="underline cursor-pointer" onclick={onStageAll}
-                        >Stage files</button
-                      > to commit and create a pull request
+                        >{m.fileTracking_changeTimeline_stageFiles_before()}</button
+                      >
+                      {m.fileTracking_changeTimeline_stageFiles_after()}
                     </p>
                   {/if}
                 </div>
@@ -1363,7 +1407,7 @@
                       <Textarea
                         value={isStreamingCommit ? generatingMessagePreview || '' : commitMessage}
                         oninput={handleMessageInput}
-                        placeholder="Commit message..."
+                        placeholder={m.fileTracking_changeTimeline_commitMessage_placeholder()}
                         doesExpandToFit
                         minHeight={120}
                         maxHeight={300}
@@ -1399,7 +1443,7 @@
                               size="icon-xs"
                               class="h-6 w-6 text-muted-foreground hover:text-foreground"
                               onclick={onViewCommitThoughtProcess}
-                              tooltip="View thought process"
+                              tooltip={m.fileTracking_changeTimeline_viewThoughtProcess_tooltip()}
                               tooltipSide="top"
                               tooltipDelayDuration={0}
                             >
@@ -1412,7 +1456,7 @@
                               size="icon-xs"
                               class="h-6 w-6 text-muted-foreground hover:text-destructive-foreground"
                               onclick={onStopGeneratingMessage}
-                              tooltip="Stop generating"
+                              tooltip={m.fileTracking_changeTimeline_stopGenerating_tooltip()}
                               tooltipSide="top"
                               tooltipDelayDuration={0}
                             >
@@ -1434,14 +1478,14 @@
                         {:else}
                           <Fa icon={faCodeCommit} class="h-3 w-3 opacity-50" />
                         {/if}
-                        <span>Commit</span>
+                        <span>{m.fileTracking_changeTimeline_commit_label()}</span>
                       </Button>
                       <Button
                         variant="outline"
                         size="xs"
                         onclick={onGenerateMessage}
                         disabled={isGeneratingMessage || isAutofillAndCommitting}
-                        tooltip="Generate a commit message"
+                        tooltip={m.fileTracking_changeTimeline_generateCommitMessage_tooltip()}
                         tooltipSide="bottom"
                         tooltipDelayDuration={0}
                       >
@@ -1450,14 +1494,14 @@
                         {:else}
                           <Fa icon={faRobot} class="h-3 w-3 opacity-50" />
                         {/if}
-                        <span>Auto-fill</span>
+                        <span>{m.fileTracking_changeTimeline_autofill_label()}</span>
                       </Button>
                       <Button
                         variant="outline"
                         size="xs"
                         onclick={onAutofillAndCommit}
                         disabled={isAutofillAndCommitting || isGeneratingMessage || isCommitting}
-                        tooltip="Generate a commit message, then commit automatically in the background"
+                        tooltip={m.fileTracking_changeTimeline_autofillCommit_tooltip()}
                         tooltipSide="bottom"
                         tooltipDelayDuration={0}
                       >
@@ -1466,7 +1510,7 @@
                         {:else}
                           <Fa icon={faRobot} class="h-3 w-3 opacity-50" />
                         {/if}
-                        <span>Auto-fill & Commit</span>
+                        <span>{m.fileTracking_changeTimeline_autofillAndCommit_label()}</span>
                       </Button>
                     </div>
                   </div>
@@ -1484,14 +1528,17 @@
                         <div class="flex items-center justify-between mb-2">
                           <div class="flex items-center gap-2 text-xs text-subtle">
                             <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
-                            <span>{generatingMessageStatus || 'Generating commit message...'}</span>
+                            <span>
+                              {generatingMessageStatus ||
+                                m.fileTracking_acceptChanges_generatingCommitMessage_label()}
+                            </span>
                           </div>
                           <Button
                             variant="ghost"
                             size="xs"
                             class="h-5 px-1.5 text-muted-foreground hover:text-destructive-foreground"
                             onclick={onStopGeneratingMessage}
-                            tooltip="Stop generating"
+                            tooltip={m.fileTracking_changeTimeline_stopGenerating_tooltip()}
                             tooltipSide="left"
                           >
                             <Fa icon={faStop} class="h-3 w-3" />
@@ -1514,7 +1561,7 @@
                       <textarea
                         class="w-full resize-none rounded border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
                         rows="3"
-                        placeholder="Commit message..."
+                        placeholder={m.fileTracking_changeTimeline_commitMessage_placeholder()}
                         bind:value={commitMessage}
                       ></textarea>
                       <div class="flex items-center gap-2 flex-wrap mt-2">
@@ -1529,14 +1576,14 @@
                           {:else}
                             <Fa icon={faCodePullRequest} class="h-3 w-3 opacity-50" />
                           {/if}
-                          <span>Add to PR</span>
+                          <span>{m.fileTracking_changeTimeline_addToPr_label()}</span>
                         </Button>
                         <Button
                           variant="outline"
                           size="xs"
                           onclick={onGenerateMessage}
                           disabled={isGeneratingMessage || isAutofillAndCommitting}
-                          tooltip="Generate a commit message"
+                          tooltip={m.fileTracking_changeTimeline_generateCommitMessage_tooltip()}
                           tooltipSide="bottom"
                           tooltipDelayDuration={0}
                         >
@@ -1545,7 +1592,7 @@
                           {:else}
                             <Fa icon={faRobot} class="h-3 w-3 opacity-50" />
                           {/if}
-                          <span>Auto-fill</span>
+                          <span>{m.fileTracking_changeTimeline_autofill_label()}</span>
                         </Button>
                         <Button
                           variant="outline"
@@ -1555,7 +1602,7 @@
                             isGeneratingMessage ||
                             isCommitting ||
                             isPushing}
-                          tooltip="Generate a commit message, then add to PR automatically in the background"
+                          tooltip={m.fileTracking_changeTimeline_autofillAddToPr_tooltip()}
                           tooltipSide="bottom"
                           tooltipDelayDuration={0}
                         >
@@ -1564,7 +1611,7 @@
                           {:else}
                             <Fa icon={faRobot} class="h-3 w-3 opacity-50" />
                           {/if}
-                          <span>Auto-fill & Add</span>
+                          <span>{m.fileTracking_changeTimeline_autofillAndAdd_label()}</span>
                         </Button>
                       </div>
                     {/if}
@@ -1585,24 +1632,33 @@
                   <div class="p-3" transition:slide={{ duration: 150 }}>
                     <p class="text-xs text-subtle mb-3">
                       {#if hasStaged && totalExistingCommits === 0}
-                        Commit staged files and merge directly into <span class="font-medium"
-                          >{targetBranch}</span
-                        >.
+                        {m.fileTracking_changeTimeline_mergeDirect_before()}
+                        <span class="font-medium">{targetBranch}</span>.
                       {:else if hasStaged}
-                        Commit staged files and merge with {totalExistingCommits} existing commit{totalExistingCommits >
-                        1
-                          ? 's'
-                          : ''} into <span class="font-medium">{targetBranch}</span>.
+                        {totalExistingCommits === 1
+                          ? m.fileTracking_changeTimeline_mergeWithExisting_one({
+                              count: totalExistingCommits,
+                            })
+                          : m.fileTracking_changeTimeline_mergeWithExisting_many({
+                              count: totalExistingCommits,
+                            })}
+                        <span class="font-medium">{targetBranch}</span>.
                       {:else}
-                        Merge {localCommits.length} commit{localCommits.length > 1
-                          ? 's'
-                          : ''}{remoteCommits.length > 0
-                          ? ` (plus ${remoteCommits.length} already pushed)`
-                          : ''} into <span class="font-medium">{targetBranch}</span>.
+                        {localCommits.length === 1
+                          ? m.fileTracking_changeTimeline_mergeCommits_one({
+                              count: localCommits.length,
+                            })
+                          : m.fileTracking_changeTimeline_mergeCommits_many({
+                              count: localCommits.length,
+                            })}{remoteCommits.length > 0
+                          ? ` ${m.fileTracking_changeTimeline_plusPushed_part({ count: remoteCommits.length })}`
+                          : ''}
+                        {m.fileTracking_changeTimeline_into_middle()}
+                        <span class="font-medium">{targetBranch}</span>.
                       {/if}
                       {#if hasPRs}
                         <span class="text-amber-600 dark:text-amber-400"
-                          >The open PR will need to be closed manually.</span
+                          >{m.fileTracking_changeTimeline_prCloseManually_label()}</span
                         >
                       {/if}
                     </p>
@@ -1618,7 +1674,7 @@
                         {:else}
                           <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
                         {/if}
-                        <span>Merge</span>
+                        <span>{m.fileTracking_changeTimeline_merge_label()}</span>
                       </Button>
                       {#if totalAfterCommit > 1}
                         <Button
@@ -1635,7 +1691,7 @@
                           {:else}
                             <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
                           {/if}
-                          <span>Squash & Merge</span>
+                          <span>{m.fileTracking_changeTimeline_squashMerge_label()}</span>
                         </Button>
                       {/if}
                     </div>
@@ -1659,7 +1715,7 @@
           <div
             class="pl-10 pr-3 py-2 text-ui font-medium text-muted-foreground uppercase tracking-wide flex items-center"
           >
-            <div class="flex-1">On local branch</div>
+            <div class="flex-1">{m.fileTracking_changeTimeline_onLocalBranch_label()}</div>
             <span class="font-normal ml-1">{branch}</span>
           </div>
 
@@ -1693,11 +1749,11 @@
                               </div>
                               <span class="flex-1 text-left text-green-600 dark:text-green-400">
                                 {#if backgroundOperation.type === 'commit'}
-                                  Committing...
+                                  {m.fileTracking_changeTimeline_committing_label()}
                                 {:else if backgroundOperation.type === 'add-to-pr'}
-                                  Pushing to PR...
+                                  {m.fileTracking_changeTimeline_pushingToPr_label()}
                                 {:else}
-                                  Creating PR...
+                                  {m.fileTracking_acceptChanges_creatingPr_label()}
                                 {/if}
                               </span>
                             {:else}
@@ -1707,9 +1763,11 @@
                               />
                               <span class="flex-1 text-left text-subtle">
                                 {#if isAutofillAndCreatingPR || backgroundOperation?.type === 'create-pr'}
-                                  {generatingPRStatus || 'Generating PR description...'}
+                                  {generatingPRStatus ||
+                                    m.fileTracking_acceptChanges_generatingPrDescription_label()}
                                 {:else}
-                                  {generatingMessageStatus || 'Generating commit message...'}
+                                  {generatingMessageStatus ||
+                                    m.fileTracking_acceptChanges_generatingCommitMessage_label()}
                                 {/if}
                               </span>
                             {/if}
@@ -1732,7 +1790,7 @@
                                 <span
                                   class="flex-1 text-left text-xs text-subtle italic"
                                 >
-                                  Waiting for response...
+                                  {m.fileTracking_changeTimeline_waitingForResponse_label()}
                                 </span>
                               {/if}
                               <Button
@@ -1745,7 +1803,7 @@
                                   : onStopGeneratingMessage}
                               >
                                 <Fa icon={faStop} class="h-3 w-3" />
-                                <span>Stop</span>
+                                <span>{m.fileTracking_changeTimeline_stop_label()}</span>
                               </Button>
                             </div>
                           {/if}
@@ -1761,7 +1819,7 @@
                           onclick={() => selectCommitAndToggle(index, 'push')}
                         >
                           <Fa icon={faCodePullRequest} class="h-3 w-3 opacity-50" />
-                          <span>Add to PR</span>
+                          <span>{m.fileTracking_changeTimeline_addToPr_label()}</span>
                         </Button>
                         <Button
                           variant="ghost-light"
@@ -1772,7 +1830,7 @@
                           onclick={() => selectCommitAndToggleMerge(index)}
                         >
                           <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
-                          <span>Merge to trunk</span>
+                          <span>{m.fileTracking_changeTimeline_mergeToTrunk_label()}</span>
                         </Button>
                       {:else}
                         <!-- No PR (or no remote), show available options -->
@@ -1786,7 +1844,7 @@
                             onclick={() => selectCommitAndToggle(index, 'push')}
                           >
                             <Fa icon={faArrowRight} class="h-3 w-3 opacity-50" />
-                            <span>Push to remote</span>
+                            <span>{m.fileTracking_changeTimeline_pushToRemote_label()}</span>
                           </Button>
                           <Button
                             variant="ghost-light"
@@ -1795,7 +1853,7 @@
                             onclick={() => selectCommitAndToggle(index, 'pr')}
                           >
                             <Fa icon={faCodePullRequest} class="h-3 w-3 opacity-50" />
-                            <span>Create PR</span>
+                            <span>{m.fileTracking_changeTimeline_createPr_label()}</span>
                           </Button>
                         {/if}
                         <Button
@@ -1807,7 +1865,7 @@
                           onclick={() => selectCommitAndToggleMerge(index)}
                         >
                           <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
-                          <span>Merge to trunk</span>
+                          <span>{m.fileTracking_changeTimeline_mergeToTrunk_label()}</span>
                         </Button>
                       {/if}
                     </div>
@@ -1817,9 +1875,23 @@
                       <div class="p-3" transition:slide={{ duration: 150 }}>
                         <p class="text-xs text-subtle mb-2">
                           {#if hasPRs}
-                            Add {commitsFromHere} commit{commitsFromHere > 1 ? 's' : ''} to the open PR
+                            {commitsFromHere === 1
+                              ? m.fileTracking_changeTimeline_addCommitsToPr_one({
+                                  count: commitsFromHere,
+                                })
+                              : m.fileTracking_changeTimeline_addCommitsToPr_many({
+                                  count: commitsFromHere,
+                                })}
                           {:else}
-                            Push {commitsFromHere} commit{commitsFromHere > 1 ? 's' : ''} to origin/{branch}
+                            {commitsFromHere === 1
+                              ? m.fileTracking_changeTimeline_pushCommitsTo_one({
+                                  count: commitsFromHere,
+                                  branch,
+                                })
+                              : m.fileTracking_changeTimeline_pushCommitsTo_many({
+                                  count: commitsFromHere,
+                                  branch,
+                                })}
                           {/if}
                         </p>
                         <Button
@@ -1835,7 +1907,11 @@
                           {:else}
                             <Fa icon={faArrowRight} class="h-3 w-3 opacity-50" />
                           {/if}
-                          <span>{hasPRs ? 'Add to PR' : 'Push to remote'}</span>
+                          <span>
+                            {hasPRs
+                              ? m.fileTracking_changeTimeline_addToPr_label()
+                              : m.fileTracking_changeTimeline_pushToRemote_label()}
+                          </span>
                         </Button>
                       </div>
                     {/if}
@@ -1852,14 +1928,20 @@
                       {@const totalCommitsToMerge = commitsFromHere + remoteCommits.length}
                       <div class="p-3" transition:slide={{ duration: 150 }}>
                         <p class="text-xs text-subtle mb-3">
-                          Merge {commitsFromHere} commit{commitsFromHere > 1
-                            ? 's'
-                            : ''}{remoteCommits.length > 0
-                            ? ` (plus ${remoteCommits.length} already pushed)`
-                            : ''} into <span class="font-medium">{targetBranch}</span>.
+                          {commitsFromHere === 1
+                            ? m.fileTracking_changeTimeline_mergeCommits_one({
+                                count: commitsFromHere,
+                              })
+                            : m.fileTracking_changeTimeline_mergeCommits_many({
+                                count: commitsFromHere,
+                              })}{remoteCommits.length > 0
+                            ? ` ${m.fileTracking_changeTimeline_plusPushed_part({ count: remoteCommits.length })}`
+                            : ''}
+                          {m.fileTracking_changeTimeline_into_middle()}
+                          <span class="font-medium">{targetBranch}</span>.
                           {#if hasPRs}
                             <span class="text-amber-600 dark:text-amber-400"
-                              >The open PR will need to be closed manually.</span
+                              >{m.fileTracking_changeTimeline_prCloseManually_label()}</span
                             >
                           {/if}
                         </p>
@@ -1875,7 +1957,7 @@
                             {:else}
                               <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
                             {/if}
-                            <span>Merge</span>
+                            <span>{m.fileTracking_changeTimeline_merge_label()}</span>
                           </Button>
                           {#if totalCommitsToMerge > 1}
                             <Button
@@ -1889,7 +1971,7 @@
                               {:else}
                                 <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
                               {/if}
-                              <span>Squash & Merge</span>
+                              <span>{m.fileTracking_changeTimeline_squashMerge_label()}</span>
                             </Button>
                           {/if}
                         </div>
@@ -1915,7 +1997,8 @@
           <div
             class="pl-10 pr-3 py-2 text-ui font-medium text-muted-foreground uppercase tracking-wide flex items-center"
           >
-            <div class="flex-1">Pushed to remote branch</div>
+            <div class="flex-1">{m.fileTracking_changeTimeline_pushedToRemote_label()}</div>
+            <!-- i18n-ignore (git remote ref, not translatable) -->
             <span class="font-normal ml-1">origin/{branch}</span>
           </div>
 
@@ -1934,18 +2017,24 @@
                     onclick={() => selectCommitAndToggleMerge(-1)}
                   >
                     <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
-                    <span>Merge to trunk</span>
+                    <span>{m.fileTracking_changeTimeline_mergeToTrunk_label()}</span>
                   </Button>
                 </div>
 
                 {#if mergeDrawerOpen && selectedCommitIndex === -1}
                   <div class="p-3" transition:slide={{ duration: 150 }}>
                     <p class="text-xs text-subtle mb-2">
-                      Merge {totalBranchCommits} commit{totalBranchCommits > 1 ? 's' : ''} directly into
+                      {totalBranchCommits === 1
+                        ? m.fileTracking_changeTimeline_mergeDirectly_one({
+                            count: totalBranchCommits,
+                          })
+                        : m.fileTracking_changeTimeline_mergeDirectly_many({
+                            count: totalBranchCommits,
+                          })}
                       <span class="font-medium">{targetBranch}</span>.
                       {#if hasPRs}
                         <span class="text-amber-600 dark:text-amber-400"
-                          >The open PR will need to be closed manually.</span
+                          >{m.fileTracking_changeTimeline_prCloseManually_label()}</span
                         >
                       {/if}
                     </p>
@@ -1961,7 +2050,7 @@
                         {:else}
                           <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
                         {/if}
-                        <span>Merge</span>
+                        <span>{m.fileTracking_changeTimeline_merge_label()}</span>
                       </Button>
                       {#if totalBranchCommits > 1}
                         <Button
@@ -1975,7 +2064,7 @@
                           {:else}
                             <Fa icon={faCodeMerge} class="h-3 w-3 opacity-50" />
                           {/if}
-                          <span>Squash & Merge</span>
+                          <span>{m.fileTracking_changeTimeline_squashMerge_label()}</span>
                         </Button>
                       {/if}
                     </div>
@@ -2015,7 +2104,7 @@
                           onclick={() => selectCommitAndToggle(remoteCommitIndex, 'pr')}
                         >
                           <Fa icon={faCodePullRequest} class="h-3 w-3 opacity-50" />
-                          <span>Create PR</span>
+                          <span>{m.fileTracking_changeTimeline_createPr_label()}</span>
                         </Button>
                       </div>
 
@@ -2055,22 +2144,24 @@
           <div
             class="pl-10 pr-3 py-2 text-ui font-medium text-muted-foreground uppercase tracking-wide flex items-center"
           >
-            <div class="flex-1">Connect remote</div>
+            <div class="flex-1">{m.fileTracking_changeTimeline_connectRemote_label()}</div>
           </div>
 
           <div class="pl-10 pr-3 pb-3">
             <div class="border border-border rounded-md overflow-hidden shadow-xs bg-background p-3 space-y-3">
               <p class="text-xs text-subtle">
-                Add a git remote to enable pushing and pull requests.
+                {m.fileTracking_changeTimeline_addRemote_description()}
               </p>
               {#if connectRemoteOpen}
                 <div transition:slide={{ duration: 150 }} class="space-y-3">
                   <div>
-                    <span class="text-xs text-subtle mb-1 block">Remote URL</span>
+                    <span class="text-xs text-subtle mb-1 block"
+                      >{m.fileTracking_changeTimeline_remoteUrl_label()}</span
+                    >
                     <input
                       type="text"
                       class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
-                      placeholder="https://github.com/user/repo.git or git@github.com:user/repo.git"
+                      placeholder={m.fileTracking_changeTimeline_remoteUrl_placeholder()}
                       bind:value={connectRemoteUrl}
                       onkeydown={(e) => {
                         if (e.key === 'Enter') {
@@ -2089,10 +2180,10 @@
                     >
                       {#if isAddingRemote}
                         <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
-                        <span>Adding...</span>
+                        <span>{m.fileTracking_changeTimeline_adding_label()}</span>
                       {:else}
                         <Fa icon={faLink} class="h-3 w-3 opacity-50" />
-                        <span>Add Remote</span>
+                        <span>{m.fileTracking_changeTimeline_addRemote_label()}</span>
                       {/if}
                     </Button>
                     <Button
@@ -2100,17 +2191,17 @@
                       size="xs"
                       onclick={() => { connectRemoteOpen = false; connectRemoteUrl = ''; }}
                     >
-                      Cancel
+                      {m.terminal_sidebar_cancel_label()}
                     </Button>
                   </div>
                   <p class="text-xs text-subtle">
-                    Don't have a repo?
+                    {m.fileTracking_changeTimeline_noRepo_before()}
                     <a
                       href="https://github.com/new"
                       class="text-primary hover:underline inline-flex items-center gap-0.5"
                       onclick={(e) => { e.preventDefault(); handleLink('https://github.com/new', { workspaceId: workspaceId as WorkspaceId, event: e }); }}
                     >
-                      Create one on GitHub
+                      {m.fileTracking_changeTimeline_createOnGithub_label()}
                       <Fa icon={faArrowUpRightFromSquare} class="h-2.5 w-2.5 opacity-70" />
                     </a>
                   </p>
@@ -2122,7 +2213,7 @@
                   onclick={() => { connectRemoteOpen = true; }}
                 >
                   <Fa icon={faLink} class="h-3 w-3 opacity-50" />
-                  <span>Connect Remote</span>
+                  <span>{m.fileTracking_changeTimeline_connectRemoteButton_label()}</span>
                 </Button>
               {/if}
             </div>
@@ -2144,7 +2235,11 @@
           <div
             class="pl-10 pr-3 py-2 text-ui font-medium text-muted-foreground uppercase tracking-wide flex items-center"
           >
-            <div class="flex-1">{isAllDone ? 'Merged to trunk' : 'Pushed to trunk'}</div>
+            <div class="flex-1">
+              {isAllDone
+                ? m.fileTracking_changeTimeline_mergedToTrunk_label()
+                : m.fileTracking_changeTimeline_pushedToTrunk_label()}
+            </div>
             <span class="font-normal ml-1">{targetBranch}</span>
           </div>
 
@@ -2159,16 +2254,17 @@
                     <Fa icon={faCheckCircle} class="h-4 w-4 text-green-500" />
                   </div>
                   <div class="flex-1 min-w-0">
-                    <h3 class="text-sm font-medium text-foreground">All done!</h3>
+                    <h3 class="text-sm font-medium text-foreground">
+                      {m.fileTracking_changeTimeline_allDone_title()}
+                    </h3>
                     <p class="text-xs text-subtle mt-0.5">
-                      Your changes have been merged into {targetBranch}. Ready to start something
-                      new?
+                      {m.fileTracking_changeTimeline_allDone_description({ branch: targetBranch })}
                     </p>
                     {#if onStartNewSpace}
                       <div class="flex items-center gap-2 mt-3">
                         <Button variant="default" size="sm" onclick={onStartNewSpace}>
                           <Fa icon={faRocket} class="h-3 w-3 opacity-70" />
-                          <span>Start new Space</span>
+                          <span>{m.fileTracking_changeTimeline_startNewSpace_label()}</span>
                         </Button>
                       </div>
                     {/if}
@@ -2177,7 +2273,7 @@
               </div>
             {:else}
               <p class="text-xs text-subtle">
-                Changes have been merged into {targetBranch}
+                {m.fileTracking_changeTimeline_changesMergedInto_label({ branch: targetBranch })}
               </p>
             {/if}
           </div>

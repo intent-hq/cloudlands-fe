@@ -1,6 +1,7 @@
 <script lang="ts">
   import { faMinus } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     onCollapse: () => void;
@@ -17,5 +18,5 @@
   <span class="shrink-0 flex ml-1.25 items-center justify-center opacity-50">
     <Fa icon={faMinus} size={12} />
   </span>
-  <span>Hide older workspaces</span>
+  <span>{m.workspace_tableCollapse_hideOlder_label()}</span>
 </button>

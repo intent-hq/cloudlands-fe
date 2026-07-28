@@ -33,6 +33,8 @@
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
   import { sortWorkingAgentsFirst } from './delegation-ordering';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   import {
   selectAgentSubscriptions,
@@ -213,15 +215,20 @@
         <Tooltip.Trigger>
           <div class="shrink-0 flex items-center pb-1 gap-2 text-subtle">
             <Fa icon={faBell} size="xs" />
-            <span>Woken up</span>
+            <span>{m.chat_agentSubscriptions_wokenUp_label()}</span>
             <span class="text-subtle">
-              ({$wokenUpInfo$.eventCount}
-              {$wokenUpInfo$.eventCount === 1 ? 'event' : 'events'})
+              {$wokenUpInfo$.eventCount === 1
+                ? m.chat_agentSubscriptions_eventCount_one({
+                    count: formatInteger($wokenUpInfo$.eventCount),
+                  })
+                : m.chat_agentSubscriptions_eventCount_many({
+                    count: formatInteger($wokenUpInfo$.eventCount),
+                  })}
             </span>
           </div>
         </Tooltip.Trigger>
         <Tooltip.Content side="top" class="text-xs">
-          <p>Agent was woken by subscription events:</p>
+          <p>{m.chat_agentSubscriptions_wokenByEvents_tooltip()}</p>
           <ul class="mt-1 text-subtle">
             {#each $wokenUpInfo$.eventTypes as eventType, i (`eventType-${i}-${eventType}`)}
               <li>• {eventType}</li>
@@ -252,7 +259,7 @@
           transition:fade={{ duration: 200 }}
         >
           <Fa icon={faCircleCheck} size="13" />
-          Completed
+          {m.chat_agentSubscriptions_completed_label()}
         </span>
       {:else if waitMode === 'all'}
         <button
@@ -262,10 +269,10 @@
         >
           {#if hasUndeliveredCompleteGroup}
             <Fa icon={faTriangleExclamation} size="13" class="text-warning" />
-            <span class="text-warning">Delivery pending</span>
+            <span class="text-warning">{m.chat_agentSubscriptions_deliveryPending_label()}</span>
           {:else}
             <Fa icon={faHourglass} size="13" />
-            Waiting for all
+            {m.chat_agentSubscriptions_waitingForAll_label()}
           {/if}
           {#if $completionStatus$.total > 0}
             <span class="text-subtle">
@@ -279,7 +286,13 @@
           class="shrink-0 cursor-pointer hover:text-muted-foreground transition-colors"
           onclick={toggleCollapsed}
         >
-          Waiting for {watchedAgentIds.length} agent{watchedAgentIds.length === 1 ? '' : 's'}
+          {watchedAgentIds.length === 1
+            ? m.chat_agentSubscriptions_waitingForAgents_one({
+                count: formatInteger(watchedAgentIds.length),
+              })
+            : m.chat_agentSubscriptions_waitingForAgents_many({
+                count: formatInteger(watchedAgentIds.length),
+              })}
         </button>
       {/if}
 
@@ -293,13 +306,18 @@
                 transition:fade={{ duration: 200 }}
               >
                 <Fa icon={faBell} size="xs" />
-                Woken up
+                {m.chat_agentSubscriptions_wokenUp_label()}
               </span>
             </Tooltip.Trigger>
             <Tooltip.Content side="top" class="text-xs">
               <p>
-                Agent was woken by {$wokenUpInfo$.eventCount}
-                {$wokenUpInfo$.eventCount === 1 ? 'event' : 'events'}:
+                {$wokenUpInfo$.eventCount === 1
+                  ? m.chat_agentSubscriptions_wokenByCount_one({
+                      count: formatInteger($wokenUpInfo$.eventCount),
+                    })
+                  : m.chat_agentSubscriptions_wokenByCount_many({
+                      count: formatInteger($wokenUpInfo$.eventCount),
+                    })}
               </p>
               <ul class="mt-1 text-subtle">
                 {#each $wokenUpInfo$.eventTypes as eventType, i (`eventType-${i}-${eventType}`)}
@@ -348,7 +366,7 @@
               </Button>
             </Tooltip.Trigger>
             <Tooltip.Content side="top" class="text-xs">
-              <p>Stop all agents</p>
+              <p>{m.chat_agentSubscriptions_stopAll_tooltip()}</p>
             </Tooltip.Content>
           </Tooltip.Root>
         </Tooltip.Provider>
@@ -366,7 +384,7 @@
               </Button>
             </Tooltip.Trigger>
             <Tooltip.Content side="top" class="text-xs">
-              <p>Cancel subscription</p>
+              <p>{m.chat_agentSubscriptions_cancelSubscription_tooltip()}</p>
             </Tooltip.Content>
           </Tooltip.Root>
         </Tooltip.Provider>
@@ -395,7 +413,7 @@
       {/each}
       {#if watchedAgentIds.length > 5}
         <div class="text-ui text-subtle text-center py-1">
-          +{watchedAgentIds.length - 5} more agents
+          {m.chat_shared_moreAgents_label({ count: formatInteger(watchedAgentIds.length - 5) })}
         </div>
       {/if}
     </div>

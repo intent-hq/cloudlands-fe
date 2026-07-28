@@ -87,6 +87,7 @@ export class CdpMcpBridge {
           jsonrpc: '2.0',
           error: {
             code: -32603,
+            // i18n-ignore (MCP wire-protocol error consumed by agents)
             message: 'Internal server error',
             data: (error as Error).message,
           },
@@ -141,6 +142,7 @@ export class CdpMcpBridge {
     }
 
     throw new Error(
+      // i18n-ignore (developer diagnostic error)
       `Could not find available port after ${maxAttempts} attempts starting from ${this.port}`,
     );
   }

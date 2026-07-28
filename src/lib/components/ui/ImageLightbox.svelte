@@ -12,6 +12,7 @@
   import Portal from './Portal.svelte';
   import Button from './button/button.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -25,7 +26,7 @@
   let {
     open = $bindable(false),
     imageUrl,
-    imageName = 'Image',
+    imageName = m.ui_imageLightbox_image_alt(),
     onClose,
     openerElement = null,
   }: Props = $props();
@@ -108,7 +109,7 @@
       onkeydown={handleKeydown}
       role="dialog"
       aria-modal="true"
-      aria-label="Image preview"
+      aria-label={m.ui_imageLightbox_preview_ariaLabel()}
       tabindex="-1"
       transition:fade={{ duration: 200 }}
     >
@@ -118,7 +119,7 @@
         size="icon"
         class="absolute top-4 right-4 z-[1002] text-white hover:bg-white/20"
         onclick={close}
-        aria-label="Close preview"
+        aria-label={m.ui_imageLightbox_close_ariaLabel()}
         bind:ref={closeButtonElement}
       >
         <Fa icon={faXmark} size="lg" />

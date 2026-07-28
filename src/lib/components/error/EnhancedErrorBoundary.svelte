@@ -29,6 +29,7 @@
   faCheck,
 } from '@fortawesome/free-solid-svg-icons';
   import { goto } from '$app/navigation';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('EnhancedErrorBoundary');
   const errorHandler = ErrorHandler.getInstance();
@@ -68,6 +69,7 @@
       (msg) =>
         msg.includes('effect_update_depth_exceeded') ||
         msg.includes('svelte.dev/e/effect_update_depth_exceeded') ||
+        // i18n-ignore (matches Svelte's internal English error message)
         msg.includes('Maximum update depth exceeded'),
     );
   }
@@ -130,7 +132,7 @@
     // Skip if we already have an error
     if (error) return;
 
-    error = new Error(event.reason?.message || 'Unhandled promise rejection');
+    error = new Error(event.reason?.message || m.error_boundary_unhandledRejection_error());
     errorInfo = event.reason?.stack || '';
 
     logger.error(`Unhandled rejection in ${componentName}:`, { error, errorInfo });
@@ -185,6 +187,7 @@
 
   async function handleCopyDetails() {
     try {
+      // i18n-ignore (diagnostic text copied to clipboard for bug reports)
       const textToCopy = `Error: ${error?.message || 'Unknown error'}\n\nStack Trace:\n${errorInfo}`;
       await navigator.clipboard.writeText(textToCopy);
       copyFeedback = true;
@@ -239,16 +242,16 @@
             <div class="space-y-3">
               <h3 class="text-2xl font-semibold text-foreground">
                 {#if isRecovering}
-                  Attempting recovery...
+                  {m.error_boundary_recovering_title()}
                 {:else}
-                  Something went wrong
+                  {m.error_boundary_title()}
                 {/if}
               </h3>
               <p class="text-base text-subtle leading-relaxed max-w-sm mx-auto">
                 {#if isRecovering}
-                  Trying to recover automatically (attempt {recoveryAttempts}/3)
+                  {m.error_boundary_recovering_description({ attempt: recoveryAttempts, maxAttempts: 3 })}
                 {:else}
-                  {error.message || `Error in ${componentName}`}
+                  {error.message || m.error_boundary_componentError_message({ componentName })}
                 {/if}
               </p>
             </div>
@@ -258,11 +261,11 @@
               <div class="flex items-center justify-center gap-3 flex-wrap">
                 <Button variant="default" size="default" onclick={handleReset}>
                   <Fa icon={faRotateRight} class="w-4 h-4" />
-                  Try Again
+                  {m.error_boundary_tryAgain_label()}
                 </Button>
                 <Button variant="outline" size="default" onclick={handleReload}>
                   <Fa icon={faArrowsRotate} class="w-4 h-4" />
-                  Reload Page
+                  {m.error_boundary_reloadPage_label()}
                 </Button>
               </div>
 
@@ -270,7 +273,7 @@
               <div class="flex items-center justify-center gap-3 flex-wrap">
                 <Button variant="ghost" size="sm" onclick={handleGoHome}>
                   <Fa icon={faHouse} class="w-4 h-4" />
-                  Go Home
+                  {m.error_boundary_goHome_label()}
                 </Button>
                 {#if errorInfo}
                   <div class="relative">
@@ -280,7 +283,7 @@
                       class="text-foreground/60 hover:text-foreground"
                       onclick={() => (showDetails = !showDetails)}
                     >
-                      {showDetails ? 'Hide' : 'Show'} Technical Details
+                      {showDetails ? m.error_boundary_hideDetails_label() : m.error_boundary_showDetails_label()}
                     </Button>
 
                     {#if showDetails}
@@ -288,7 +291,7 @@
                         variant="ghost"
                         size="icon-sm"
                         class="absolute right-1 transform translate-x-full text-foreground/60 hover:text-foreground"
-                        title="Copy error details to clipboard"
+                        title={m.error_boundary_copyDetails_tooltip()}
                         onclick={handleCopyDetails}
                       >
                         <Fa icon={copyFeedback ? faCheck : faCopy} class="w-4 h-4" />

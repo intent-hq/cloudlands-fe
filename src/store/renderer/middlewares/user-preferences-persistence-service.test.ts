@@ -15,8 +15,11 @@ import {
   setNoteFontStyle,
   setCodeFontFamily,
   saveActivityLogPreset,
+  setLanguagePreference,
   type ActivityLogPresetPreference,
 } from "../slices/user-preferences/user-preferences-slice";
+import { getActiveLocale } from "$lib/i18n/locale";
+import { isElectron } from "$lib/electron-bridge";
 
 const mem = new Map<string, string>();
 function installMemoryLocalStorage(): void {
@@ -107,6 +110,35 @@ describe("userPreferencesPersistenceService (real store)", () => {
     expect(safeLocalStorage.getItem("workspace-list:showArchived")).toBeTruthy();
     expect(safeLocalStorage.getItem("workspace-list:groupByRepo")).toBeTruthy();
     expect(safeLocalStorage.getItem("workspace-list:completedProviderSetup")).toBeTruthy();
+  });
+
+  it("persists the language preference and applies it to the locale service", () => {
+    appStore.dispatch(setLanguagePreference("de"));
+    expect(safeLocalStorage.getJSON("language-preference")).toBe("de");
+    // Only the `en` catalog ships, so any preference resolves to `en`.
+    expect(getActiveLocale()).toBe("en");
+
+    appStore.dispatch(setLanguagePreference("system"));
+    expect(safeLocalStorage.getJSON("language-preference")).toBe("system");
+    expect(getActiveLocale()).toBe("en");
+  });
+
+  it("syncs the language preference to the main process over IPC", () => {
+    // test-setup mocks isElectron() to false globally; the sync is electron-only.
+    vi.mocked(isElectron).mockReturnValue(true);
+    try {
+      appStore.dispatch(setLanguagePreference("de"));
+      expect(window.electronAPI.invoke).toHaveBeenCalledWith("app:set-language-preference", {
+        preference: "de",
+      });
+
+      appStore.dispatch(setLanguagePreference("system"));
+      expect(window.electronAPI.invoke).toHaveBeenCalledWith("app:set-language-preference", {
+        preference: "system",
+      });
+    } finally {
+      vi.mocked(isElectron).mockReturnValue(false);
+    }
   });
 
   it("uses legacy font settings storage keys", () => {

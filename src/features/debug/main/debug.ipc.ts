@@ -96,8 +96,11 @@ export function setupDebugIPC(): void {
 
       const content =
         message ||
+        // i18n-ignore (dev-only debug test message)
         `[DEBUG] Backend-initiated wake test at ${new Date().toISOString()}. ` +
+          // i18n-ignore (dev-only debug test message)
           'This message was sent to test the frontend handshake flow. ' +
+          // i18n-ignore (dev-only debug test message)
           'Please acknowledge receipt.';
 
       try {

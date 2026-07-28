@@ -18,6 +18,7 @@
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { shell } from '$lib/electron-bridge';
+  import { m } from '$shared/paraglide/messages.js';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
 
   import { selectProviderLoadingMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
@@ -151,16 +152,16 @@
     onclick={handleCardClick}
     onkeydown={handleKeydown}
     aria-label={checking
-      ? `${provider.name} (checking\u2026)`
+      ? m.onboarding_providerCard_checking_ariaLabel({ name: provider.name })
       : needsUpdate
-        ? `${provider.name} (update needed)`
+        ? m.onboarding_providerCard_updateNeeded_ariaLabel({ name: provider.name })
         : provider.available && !needsLogin
           ? selected
-            ? `${provider.name} (selected)`
-            : `Use ${provider.name}`
+            ? m.onboarding_providerCard_selected_ariaLabel({ name: provider.name })
+            : m.onboarding_providerCard_use_ariaLabel({ name: provider.name })
           : needsLogin
-            ? `${provider.name} (not logged in)`
-            : `${provider.name} (not installed)`}
+            ? m.onboarding_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
+            : m.onboarding_providerCard_notInstalled_ariaLabel({ name: provider.name })}
   >
     <!-- Gradient overlay — always present, opacity animates on install -->
     <div
@@ -195,7 +196,7 @@
         data-testid="provider-card-selected-banner"
         class="absolute top-0 inset-x-0 z-20 flex items-center justify-center bg-primary text-primary-foreground py-1 text-xs font-semibold uppercase tracking-widest"
       >
-        Selected
+        {m.onboarding_providerCard_selected_label()}
       </div>
     {/if}
 
@@ -219,8 +220,8 @@
             type="button"
             class="group/button shrink-0 opacity-50 flex items-center gap-1.5 hover:opacity-100 transition-colors p-0.5 cursor-pointer"
             onclick={(e) => openDocs(provider.docsUrl, e)}
-            title="Open {provider.name} docs"
-            aria-label="Open {provider.name} docs"
+            title={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
+            aria-label={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
           >
             <!-- <span class="text-xs w-0 overflow-hidden group-hover/button:w-8 transition-all"
               >Docs</span
@@ -238,9 +239,9 @@
 
       <div class="text-xs flex items-center gap-1.5">
         {#if checking}
-          <span class="opacity-50">Checking…</span>
+          <span class="opacity-50">{m.onboarding_providerCard_checking_label()}</span>
         {:else if needsUpdate}
-          <span class="opacity-70">Update needed</span>
+          <span class="opacity-70">{m.onboarding_providerCard_updateNeeded_label()}</span>
         {:else if provider.available && !needsLogin}
           <div class="flex items-center whitespace-nowrap min-w-0">
             <div class="flex items-center -ml-3.5" transition:slide={{ axis: 'x', duration: 200 }}>
@@ -248,14 +249,14 @@
               <Fa icon={faPlug} class="mr-1.5 transform rotate-90" size={12} />
             </div>
             <div class="flex items-center whitespace-nowrap truncate font-medium">
-              Connected
+              {m.onboarding_providerCard_connected_label()}
               {#if provider.authDetails}
                 <Tooltip side="top" content={provider.authDetails} disableHoverableContent>
                   <div
                     class="text-xs opacity-70 font-normal truncate pl-1"
                     transition:slide={{ axis: 'y', duration: 200 }}
                   >
-                    as {provider.authDetails}
+                    {m.onboarding_providerCard_connectedAs_label({ details: provider.authDetails })}
                   </div>
                 </Tooltip>
               {/if}
@@ -264,12 +265,12 @@
         {:else if needsLogin}
           <span
             class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
-            >Log in</span
+            >{m.onboarding_providerCard_logIn_label()}</span
           >
         {:else}
           <span
             class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
-            >Not installed</span
+            >{m.onboarding_providerCard_notInstalled_label()}</span
           >
         {/if}
 
@@ -285,8 +286,8 @@
                 appStore.dispatch(checkSingleProviderRequested(provider.id));
               }}
               disabled={$providerLoadingMap$[provider.id]}
-              title="Refresh {provider.name} status"
-              aria-label="Refresh {provider.name} status"
+              title={m.onboarding_providerCard_refreshStatus_tooltip({ name: provider.name })}
+              aria-label={m.onboarding_providerCard_refreshStatus_tooltip({ name: provider.name })}
             >
               <span
                 class={cn('inline-block', {
@@ -305,17 +306,17 @@
         <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
-            Requires Node.js (npx) — <button
+            {m.onboarding_providerCard_requiresNpx_before()} <button
               type="button"
               class="underline hover:no-underline"
-              onclick={() => shell.open('https://nodejs.org')}>install from nodejs.org</button
+              onclick={() => shell.open('https://nodejs.org')}>{m.onboarding_providerCard_installFromNodejs_label()}</button
             >
           </span>
         </div>
       {:else if showNpxOldHint}
         <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
-          <span>npm/npx too old — npm 7+ required</span>
+          <span>{m.onboarding_providerCard_npxTooOld_label()}</span>
         </div>
       {/if}
 
@@ -328,7 +329,8 @@
               — <button
                 type="button"
                 class="underline hover:no-underline"
-                onclick={() => void shell.open('https://nodejs.org')}>nodejs.org</button
+                onclick={() => void shell.open('https://nodejs.org')}
+                ><!-- i18n-ignore (domain name) -->nodejs.org</button
               >
             {/if}
           </span>

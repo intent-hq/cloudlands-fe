@@ -6,10 +6,7 @@
  */
 
 import path from 'path';
-import {
-  ipcMain,
-  IpcMainInvokeEvent,
-} from 'electron';
+import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { ipcDebugTracker } from '../shared/main/ipc-debug-tracker';
 import { Logger } from '../shared/logger';
 import { writeJsonAsync } from '../shared/main/async-utils';
@@ -77,6 +74,7 @@ export function getRegisteredHandlers(): string[] {
 export function setupIPCInterceptor(): void {
   // Listen for IPC-related unhandled rejections to detect missing handlers
   process.on('unhandledRejection', (reason: any) => {
+    // i18n-ignore (matches Electron's internal English error message)
     if (reason?.message?.includes('No handler registered')) {
       const match = reason.message.match(/No handler registered for '([^']+)'/);
       if (match) {

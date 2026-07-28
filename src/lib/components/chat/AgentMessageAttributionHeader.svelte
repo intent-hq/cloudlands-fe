@@ -11,6 +11,7 @@
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     attribution: AgentMessageAttribution;
@@ -47,12 +48,12 @@
   class="flex items-center gap-1.5 rounded-md text-xs cursor-pointer transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring {className}"
   onclick={handleClick}
   ondblclick={(e) => e.stopPropagation()}
-  title="Open agent {attribution.displayName}"
+  title={m.chat_msgAttribution_openAgent_title({ name: attribution.displayName })}
   data-testid="agent-message-attribution"
 >
   <AuggieAvatar agentId={attribution.fromAgentId} size={14} />
   <span class="text-foreground truncate max-w-[150px] font-medium">
     {attribution.displayName}
   </span>
-  <span class="text-subtle">sent a message</span>
+  <span class="text-subtle">{m.chat_msgAttribution_sentMessage_after()}</span>
 </button>

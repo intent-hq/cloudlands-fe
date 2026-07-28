@@ -20,6 +20,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     id: string;
@@ -124,7 +125,7 @@
       class="w-16 h-16 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-primary"
       onclick={openLightbox}
       onkeydown={handleThumbnailKeydown}
-      aria-label="View {name} full size"
+      aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name })}
       title={name}
     >
       <img
@@ -139,7 +140,7 @@
         size="icon-xs"
         class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 bg-background/80 hover:bg-background shadow-sm"
         onclick={handleRemoveClick}
-        aria-label="Remove {name}"
+        aria-label={m.chat_attachmentPreview_remove_ariaLabel({ name })}
       >
         <Fa icon={faXmark} size="10" />
       </Button>
@@ -178,7 +179,7 @@
         size="icon-xs"
         class="shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 -my-1 -mr-1"
         onclick={() => onRemove(id)}
-        aria-label="Remove attachment"
+        aria-label={m.chat_attachmentPreview_removeAttachment_ariaLabel()}
       >
         <Fa icon={faXmark} size="10" />
       </Button>

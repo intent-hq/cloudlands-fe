@@ -5,6 +5,7 @@
  */
 
 import { Logger } from '$shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import type { Result } from '$shared/types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -56,7 +57,7 @@ export class RulesService {
       logger.error('Failed to list rules', error as Error);
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to list rules',
+        error: (error as Error).message || m.rules_service_listFailed_error(),
       };
     }
   }
@@ -98,10 +99,13 @@ export class RulesService {
           if (ruleFile.includes('CONTRIBUTING')) {
             category = 'Contributing';
           } else if (ruleFile.includes('CODE_OF_CONDUCT')) {
+            // i18n-ignore (agent-facing rules content)
             category = 'Code of Conduct';
           } else if (ruleFile.includes('.intent')) {
+            // i18n-ignore (agent-facing rules content)
             category = 'Intent Rules';
           } else if (ruleFile.includes('.augment')) {
+            // i18n-ignore (agent-facing rules content)
             category = 'Augment Rules';
           } else if (ruleFile.includes('guidelines')) {
             category = 'Guidelines';
@@ -112,7 +116,8 @@ export class RulesService {
             title,
             content,
             category,
-            priority: ruleFile.includes('.intent') || ruleFile.includes('.augment') ? 'high' : 'medium',
+            priority:
+              ruleFile.includes('.intent') || ruleFile.includes('.augment') ? 'high' : 'medium',
             workspaceId: projectPath,
             filePath,
             createdAt: new Date(),
@@ -121,7 +126,7 @@ export class RulesService {
 
           rules.push(rule);
           rulesStore.set(rule.id, rule);
-        } catch  {
+        } catch {
           // File doesn't exist or can't be read, skip it
           logger.debug(`Rule file not found: ${filePath}`);
         }
@@ -150,7 +155,7 @@ export class RulesService {
             rulesStore.set(rule.id, rule);
           }
         }
-      } catch  {
+      } catch {
         logger.debug('No .intent/config.json found');
       }
 
@@ -162,7 +167,7 @@ export class RulesService {
       logger.error('Failed to load project rules', error as Error);
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to load project rules',
+        error: (error as Error).message || m.rules_service_loadProjectFailed_error(),
       };
     }
   }
@@ -199,7 +204,7 @@ export class RulesService {
       logger.error('Failed to get rules as context', error as Error);
       return {
         ok: false,
-        error: (error as Error).message || 'Failed to get rules as context',
+        error: (error as Error).message || m.rules_service_contextFailed_error(),
       };
     }
   }
@@ -212,7 +217,9 @@ export class RulesService {
     const defaults = [
       {
         id: 'default-1',
+        // i18n-ignore (agent-facing rules content)
         title: 'Code Quality Standards',
+        // i18n-ignore (agent-facing rules content)
         content: `# Code Quality Standards
 
 - Write clean, readable, and maintainable code
@@ -221,6 +228,7 @@ export class RulesService {
 - Write tests for new features
 - Keep functions small and focused
 - Use meaningful variable and function names`,
+        // i18n-ignore (agent-facing rules content)
         category: 'Best Practices',
         priority: 'high' as const,
         createdAt: new Date(),
@@ -228,13 +236,16 @@ export class RulesService {
       },
       {
         id: 'default-2',
+        // i18n-ignore (agent-facing rules content)
         title: 'Git Commit Guidelines',
+        // i18n-ignore (agent-facing rules content)
         content: `# Git Commit Guidelines
 
 - Use conventional commit format: type(scope): description
 - Types: feat, fix, docs, style, refactor, test, chore
 - Keep commit messages concise but descriptive
 - Reference issue numbers when applicable`,
+        // i18n-ignore (agent-facing rules content)
         category: 'Version Control',
         priority: 'medium' as const,
         createdAt: new Date(),
@@ -242,7 +253,9 @@ export class RulesService {
       },
       {
         id: 'default-3',
+        // i18n-ignore (agent-facing rules content)
         title: 'Documentation Requirements',
+        // i18n-ignore (agent-facing rules content)
         content: `# Documentation Requirements
 
 - Document all public APIs

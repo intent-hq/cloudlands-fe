@@ -19,6 +19,7 @@
 
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   // View type definition
@@ -81,7 +82,7 @@
     >
       <Fa icon={faGear} class="w-3 h-3" />
     </div>
-    <span class="text-sm font-medium">All agents</span>
+    <span class="text-sm font-medium">{m.settings_aiBehavior_sidebar_allAgents()}</span>
   </button>
 
   <!-- Specialists section - scrollable with max height -->
@@ -90,14 +91,18 @@
       class="px-3 py-1.5 flex items-center justify-between"
     >
       <span class="text-ui font-semibold text-muted-foreground uppercase tracking-wider">
-        Specialists
+        {m.settings_aiBehavior_sidebar_specialistsSection()}
       </span>
-      <Tooltip content="Open specialists folder" side="right" delayDuration={300}>
+      <Tooltip
+        content={m.settings_aiBehavior_sidebar_openFolderTooltip()}
+        side="right"
+        delayDuration={300}
+      >
         <button
           type="button"
           onclick={() => appStore.dispatch(openSpecialistsFolder())}
           class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-          aria-label="Open specialists folder in file manager"
+          aria-label={m.settings_aiBehavior_sidebar_openFolderAriaLabel()}
         >
           <Fa icon={faArrowUpRightFromSquare} size="xs" />
         </button>
@@ -133,21 +138,21 @@
             <span class="text-sm truncate">{specialist.name}</span>
             {#if sourceLabel === 'Project'}
               <Tooltip
-                content="Project specialists are shared with your team via Git."
+                content={m.settings_aiBehavior_sidebar_projectBadgeTooltip()}
                 side="right"
                 delayDuration={400}
               >
                 <span
                   class="text-ui px-1 py-0.5 rounded font-medium shrink-0 bg-primary/15 text-primary"
                 >
-                  Project
+                  {m.settings_aiBehavior_sidebar_projectBadge()}
                 </span>
               </Tooltip>
             {/if}
           </div>
         </div>
         {#if isCustomized}
-          <span class="text-primary shrink-0" title="Modified">
+          <span class="text-primary shrink-0" title={m.settings_aiBehavior_sidebar_modifiedTitle()}>
             <Fa icon={faPencil} class="w-2.5 h-2.5" />
           </span>
         {/if}
@@ -169,7 +174,7 @@
     >
       <Fa icon={faPlus} class="w-2.5 h-2.5" />
     </div>
-    <span class="text-sm">Create Specialist</span>
+    <span class="text-sm">{m.settings_aiBehavior_sidebar_createSpecialist()}</span>
   </button>
 </div>
 

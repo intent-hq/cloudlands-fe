@@ -5,6 +5,7 @@
   import { faBars } from '@fortawesome/free-solid-svg-icons';
   import type { ComponentProps } from 'svelte';
   import { useSidebar } from './context.svelte.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     ref = $bindable(null),
@@ -32,5 +33,5 @@
   {...restProps}
 >
   <Fa icon={faBars} />
-  <span class="sr-only">Toggle Sidebar</span>
+  <span class="sr-only">{m.ui_sidebar_toggle_label()}</span>
 </Button>

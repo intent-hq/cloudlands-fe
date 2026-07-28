@@ -10,6 +10,7 @@
    */
   import Logo from '$lib/components/Logo.svelte';
   import type { UsageStatsResult } from '$lib/client/app-client';
+  import { m } from '$shared/paraglide/messages.js';
   import type { StatsMode } from './stats-period';
   import { DEFAULT_WORKING_HOURS, hourCardModel, pad2, stepHourWindow } from './stats-charts';
 
@@ -46,21 +47,21 @@
 
 <div class="hour-card" data-stats-card="by-hour" data-loading={loading}>
   <div class="head">
-    <div class="brand"><Logo width={26} /><span class="title">TOKENS BY HOUR</span></div>
+    <div class="brand"><Logo width={26} /><span class="title">{m.stats_hourCard_title_label()}</span></div>
     <span class="corner mono">{label}</span>
   </div>
   <div class="rule"></div>
 
   <div class="hero">
-    <div class="hero-label">PEAK HOUR</div>
+    <div class="hero-label">{m.stats_hourCard_peakHour_label()}</div>
     <div class="hero-value mono">{model.peakLabel}</div>
     <div class="hero-sub mono">{model.peakSub}</div>
   </div>
 
   <div class="chart-block">
     <div class="legend">
-      <span class="legend-item"><span class="swatch swatch-in"></span>input</span>
-      <span class="legend-item"><span class="swatch swatch-out"></span>output</span>
+      <span class="legend-item"><span class="swatch swatch-in"></span>{m.stats_card_legendInput_label()}</span>
+      <span class="legend-item"><span class="swatch swatch-out"></span>{m.stats_card_legendOutput_label()}</span>
     </div>
     <div class="chart">
       {#each model.grid as line (line.label)}
@@ -86,7 +87,7 @@
 
   <div class="stat-grid">
     <div>
-      <div class="stat-label">WORKING HOURS</div>
+      <div class="stat-label">{m.stats_hourCard_workingHours_label()}</div>
       <div class="stat-value mono">
         {#snippet hourBound(bound: 'start' | 'end', value: number)}
           <!-- Hover-only stepper chrome: arrows are absolutely positioned
@@ -97,11 +98,11 @@
             >{pad2(value)}<button
               class="wh-arrow wh-arrow-up"
               onclick={() => stepBound(bound, 1)}
-              aria-label="Increase working hours {bound}">▲</button
+              aria-label={m.stats_hourCard_increaseBound_ariaLabel({ bound })}>▲</button
             ><button
               class="wh-arrow wh-arrow-down"
               onclick={() => stepBound(bound, -1)}
-              aria-label="Decrease working hours {bound}">▼</button
+              aria-label={m.stats_hourCard_decreaseBound_ariaLabel({ bound })}>▼</button
             ></span
           >
         {/snippet}
@@ -109,14 +110,15 @@
       </div>
     </div>
     <div>
-      <div class="stat-label">OVERNIGHT</div>
+      <div class="stat-label">{m.stats_hourCard_overnight_label()}</div>
       <div class="stat-value mono">{model.overnight}</div>
     </div>
   </div>
 
   <div class="footer-wrap">
     <div class="footer">
-      <span class="footer-brand">Built with Intent</span>
+      <span class="footer-brand">{m.stats_card_builtWith_label()}</span>
+      <!-- i18n-ignore (brand URL) -->
       <span class="footer-url mono">intentapp.dev</span>
     </div>
   </div>

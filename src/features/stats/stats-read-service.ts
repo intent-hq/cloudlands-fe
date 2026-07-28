@@ -19,6 +19,7 @@ import type { UsageStatsPeriod } from "$lib/client/app-client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
+import { m } from "$shared/paraglide/messages.js";
 import {
   loadUsageStatsRequested,
   usageStatsFailed,
@@ -40,7 +41,7 @@ async function fetchUsageStats(
     );
     appStore.dispatch(usageStatsLoaded(mode, key, data));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load usage stats";
+    const message = error instanceof Error ? error.message : m.stats_readService_loadFailed_error();
     logger.warn("stats.getUsage failed", { mode, key, error });
     appStore.dispatch(usageStatsFailed(mode, key, message));
   }

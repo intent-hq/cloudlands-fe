@@ -21,6 +21,7 @@
 } from './patch-utils';
   import type { WalkthroughAnnotation } from './types';
   import WalkthroughAnnotationCard from './WalkthroughAnnotationCard.svelte';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     /** The unified diff/patch string */
@@ -118,7 +119,9 @@
     <Fa icon={collapsed ? faChevronRight : faChevronDown} class="h-3 w-3 text-ghost" />
     <span class="text-sm font-mono truncate flex-1">{fileName}</span>
     <span class="text-xs text-subtle">
-      {annotations.length} annotation{annotations.length === 1 ? '' : 's'}
+      {annotations.length === 1
+        ? m.codeWalkthrough_diffViewer_annotationCount_one({ count: annotations.length })
+        : m.codeWalkthrough_diffViewer_annotationCount_many({ count: annotations.length })}
     </span>
   </button>
 
@@ -168,7 +171,7 @@
           class="w-full py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           onclick={toggleCollapsed}
         >
-          Show {totalLineCount - previewLines} more lines...
+          {m.codeWalkthrough_diffViewer_showMore_label({ count: totalLineCount - previewLines })}
         </button>
       {/if}
     </div>

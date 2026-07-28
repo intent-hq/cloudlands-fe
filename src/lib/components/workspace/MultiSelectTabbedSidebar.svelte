@@ -100,6 +100,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -150,35 +151,55 @@
   const TAB_DEFINITIONS: TabDefinition[] = [
     {
       id: 'overview',
-      label: 'Overview',
+      get label() {
+        return m.workspace_multiSelectSidebar_overviewTab_label();
+      },
       icon: faAsterisk,
-      description: 'Workspace status, progress, and key metrics at a glance.',
+      get description() {
+        return m.workspace_multiSelectSidebar_overviewTab_description();
+      },
       hideLabel: true,
       hideHeader: true,
     },
     {
       id: 'agents',
-      label: 'Agents',
+      get label() {
+        return m.workspace_multiSelectSidebar_agentsTab_label();
+      },
       icon: faRobot,
-      description: 'Agents working on your task in this space.',
+      get description() {
+        return m.workspace_multiSelectSidebar_agentsTab_description();
+      },
     },
     {
       id: 'context',
-      label: 'Context',
+      get label() {
+        return m.workspace_multiSelectSidebar_contextTab_label();
+      },
       icon: faNote,
-      description: 'Notes about the task, shared with all agents in this space.',
+      get description() {
+        return m.workspace_multiSelectSidebar_contextTab_description();
+      },
     },
     {
       id: 'changes',
-      label: 'Changes',
+      get label() {
+        return m.workspace_multiSelectSidebar_changesTab_label();
+      },
       icon: faPencil,
-      description: 'Files changed manually or by agents working in this space.',
+      get description() {
+        return m.workspace_multiSelectSidebar_changesTab_description();
+      },
     },
     {
       id: 'files',
-      label: 'Files',
+      get label() {
+        return m.workspace_multiSelectSidebar_filesTab_label();
+      },
       icon: faFolderTree,
-      description: 'The agents in this space are working off a copy of your files.',
+      get description() {
+        return m.workspace_multiSelectSidebar_filesTab_description();
+      },
     },
   ];
 
@@ -243,7 +264,7 @@
   // Dynamic tab description overrides for coordinator mode
   function getTabDescription(tabId: string, defaultDescription: string): string {
     if (tabId === 'agents' && isCoordinator)
-      return 'A coordinator agent writes a spec and manages the work of different agents.';
+      return m.workspace_multiSelectSidebar_coordinatorAgents_description();
     return defaultDescription;
   }
 
@@ -436,8 +457,12 @@
   // Memoize to avoid creating new object references on every evaluation
   const defaultPhaseInfo: WorkspacePhaseInfo = {
     phase: 'planning',
-    label: 'Planning',
-    subtitle: 'Describe what you want to build',
+    get label() {
+      return m.workspace_phase_planning_label();
+    },
+    get subtitle() {
+      return m.workspace_phase_describeWhatToBuild_label();
+    },
     isActive: false,
   };
   const defaultPhaseStats: WorkspacePhaseStats = {
@@ -566,7 +591,7 @@
 
   function handleOpenNoteInPanel(noteId: string) {
     const note = $notes.find((n) => n.id === noteId);
-    const title = note?.title || 'Note';
+    const title = note?.title || m.workspace_addContext_note_label();
     panelLayoutManager.openTab({
       type: 'note',
       title,
@@ -593,7 +618,7 @@
   function handleOpenCodeReviewInPanel() {
     panelLayoutManager.openTab({
       type: 'code-review',
-      title: 'Code Review',
+      title: m.workspace_multiSelectSidebar_codeReview_label(),
       closable: true,
       workspaceId,
     });
@@ -602,7 +627,7 @@
   function handleOpenAgentOverview() {
     panelLayoutManager.openTab({
       type: 'agent-overview',
-      title: 'Agent Overview',
+      title: m.workspace_multiSelectSidebar_agentOverview_label(),
       closable: true,
       workspaceId,
     });
@@ -653,15 +678,15 @@
   async function handleArchiveWorkspace() {
     if (!$workspace) return;
     const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || 'space';
+    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
 
     const result = await workspaceClient.archive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(`Archived space ${workspaceTitle}`, {
+      toast.warning(m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }), {
         duration: 15000,
         action: {
-          label: 'Undo',
+          label: m.workspace_multiSelectSidebar_undo_label(),
           onClick: async () => {
             const undoResult = await workspaceClient.unarchive($workspace.id);
             if (undoResult.ok) {
@@ -672,7 +697,7 @@
       });
       goto('/');
     } else {
-      toast.error('Failed to archive space');
+      toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
     }
   }
 
@@ -719,7 +744,7 @@
         if (workspacePath) {
           navigator.clipboard.writeText(workspacePath);
           import('$lib/components/ui/toast').then(({ toast }) => {
-            toast.success('Path copied to clipboard');
+            toast.success(m.ui_openCombo_pathCopied_label());
           });
         }
       }
@@ -914,7 +939,7 @@
                   class="text-sm font-semibold text-foreground flex items-center gap-2 mb-0.5 mt-2"
                 >
                   {#if tabId === 'agents' && isCoordinator}
-                    Agent orchestration
+                    {m.workspace_multiSelectSidebar_agentOrchestration_label()}
                   {:else}
                     {tab.label}
                   {/if}
@@ -936,7 +961,7 @@
                           const newItem = {
                             type: 'browser-url' as const,
                             provider: 'browser' as const,
-                            title: 'Browser',
+                            title: m.workspace_multiSelectSidebar_browser_label(),
                             url: defaultUrl,
                             id: uuidv4(),
                             createdAt: now,
@@ -953,14 +978,16 @@
                 </h6>
                 <p class="text-ui text-subtle mt-0.5 leading-snug transition-all duration-200">
                   {#if tabId === 'context' && $workspace?.isRemote}
-                    {getTabDescription(tab.id, tab.description)} Your notes live on
+                    {getTabDescription(tab.id, tab.description)}
+                    {m.workspace_multiSelectSidebar_notesLiveOn_before()}
                     <span class="font-mono text-subtle"
                       >{$workspace.environmentConfig?.ssh?.host
                         ? `${$workspace.environmentConfig.ssh.host}:`
-                        : ''}{$workspace.id}/.workspace</span
+                        : ''}{$workspace.id}<!-- i18n-ignore (file path) -->/.workspace</span
                     >.
                   {:else if tabId === 'context' && $workspace?.path}
-                    {getTabDescription(tab.id, tab.description)} Your notes live in
+                    {getTabDescription(tab.id, tab.description)}
+                    {m.workspace_multiSelectSidebar_notesLiveIn_before()}
                     <span class="inline-flex items-baseline gap-1">
                       <OpenComboButton
                         filePath={$workspace.path + '/.workspace'}
@@ -971,14 +998,14 @@
                       >
                         <span
                           class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                          >/{$workspace.path.split(/[/\\]/).slice(-1)[0]}/.workspace</span
+                          ><!-- i18n-ignore (file path) -->/{$workspace.path.split(/[/\\]/).slice(-1)[0]}/.workspace</span
                         >
                       </OpenComboButton></span
                     >.
                   {:else if tabId === 'files' && $fileExplorerWorkspacePath}
                     {$workspace?.skipWorktree
-                      ? 'Working directly in'
-                      : 'The workspace contains a copy of your repo that lives in'}
+                      ? m.workspace_multiSelectSidebar_workingDirectlyIn_before()
+                      : m.workspace_multiSelectSidebar_repoCopyLivesIn_before()}
                     <span class="inline-flex items-baseline gap-1">
                       <OpenComboButton
                         filePath={$fileExplorerWorkspacePath}
@@ -1155,7 +1182,7 @@
                           bind:this={fileSearchInputRef}
                           bind:value={fileSearchQuery}
                           type="text"
-                          placeholder="Search files..."
+                          placeholder={m.workspace_multiSelectSidebar_searchFiles_placeholder()}
                           class="h-7 pl-7 pr-6 text-xs bg-transparent! border-0 placeholder:text-muted-foreground/50!"
                           noFocusStyle
                           onkeydown={(e: KeyboardEvent) => filesPanelRef?.handleSearchKeyDown(e)}
@@ -1177,7 +1204,7 @@
                         variant="ghost"
                         size="icon-xs"
                         class="shrink-0 text-subtle"
-                        tooltip="New file"
+                        tooltip={m.workspace_multiSelectSidebar_newFile_tooltip()}
                         onclick={() => filesPanelRef?.startCreatingFile()}
                       >
                         <Fa icon={faPlus} class="w-3 h-3" />
@@ -1187,8 +1214,8 @@
                         size="icon-xs"
                         class="shrink-0 {showOnlyChangedFiles ? 'text-primary' : 'text-subtle'}"
                         tooltip={showOnlyChangedFiles
-                          ? 'Show all files'
-                          : 'Show only changed files'}
+                          ? m.workspace_multiSelectSidebar_showAllFiles_tooltip()
+                          : m.workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip()}
                         onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
                       >
                         <Fa icon={faPencil} class="w-3 h-3" />
@@ -1197,7 +1224,9 @@
                         variant="ghost"
                         size="icon-xs"
                         class="shrink-0 text-subtle"
-                        tooltip={hasExpandedDirectories ? 'Collapse all' : 'Expand all'}
+                        tooltip={hasExpandedDirectories
+                          ? m.workspace_multiSelectSidebar_collapseAll_tooltip()
+                          : m.workspace_multiSelectSidebar_expandAll_tooltip()}
                         onclick={async () => {
                           if (hasExpandedDirectories) {
                             filesPanelRef?.collapseAll();

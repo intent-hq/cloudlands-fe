@@ -343,6 +343,7 @@ export function resolveSocketPath(env: NodeJS.ProcessEnv): string {
     return path.join(dataDir, 'intentd.sock');
   }
   // Default per intentd's Config::resolve (crates/intent-core/src/config.rs)
+  // i18n-ignore (filesystem path)
   return path.join(os.homedir(), 'Library', 'Application Support', 'intentd', 'intentd.sock');
 }
 
@@ -524,7 +525,11 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
 
         // Kill the process with graceful escalation
         // Check if process is still alive before attempting to kill
-        if (sidecarProcess && sidecarProcess.exitCode === null && sidecarProcess.signalCode === null) {
+        if (
+          sidecarProcess &&
+          sidecarProcess.exitCode === null &&
+          sidecarProcess.signalCode === null
+        ) {
           const proc = sidecarProcess;
 
           // Send SIGTERM first
@@ -765,7 +770,11 @@ export async function startIntentdSidecar(
       comparison,
     };
     if (versionMismatch) {
-      logger.warn('Adopted external intentd whose version differs from the pinned version', details);
+      logger.warn(
+        // i18n-ignore (developer log message)
+        'Adopted external intentd whose version differs from the pinned version',
+        details,
+      );
     } else {
       logger.info('Adopted external intentd (no sidecar spawned)', details);
     }
@@ -798,7 +807,8 @@ export async function startIntentdSidecar(
 
   logger.info('Resolved intentd binary', {
     binaryPath,
-    source: env.INTENTD_BIN?.trim() === binaryPath ? 'INTENTD_BIN' : isPackaged ? 'packaged' : 'dev',
+    source:
+      env.INTENTD_BIN?.trim() === binaryPath ? 'INTENTD_BIN' : isPackaged ? 'packaged' : 'dev',
   });
 
   isShuttingDown = false;

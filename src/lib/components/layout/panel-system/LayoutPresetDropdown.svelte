@@ -21,6 +21,7 @@
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -85,61 +86,61 @@
   const presets = [
     {
       id: 'planning' as const,
-      label: 'Planning',
-      description: 'Orchestrator + Spec',
+      label: () => m.layout_presets_planning_label(),
+      description: () => m.layout_presets_planning_description(),
       icon: faFileLines,
       iconClass: 'transform scale-90',
       group: 'content',
     },
     {
       id: 'agents-row' as const,
-      label: 'Agents in row',
-      description: 'Tile agents in columns',
+      label: () => m.layout_presets_agentsRow_label(),
+      description: () => m.layout_presets_agentsRow_description(),
       icon: faRobot,
       iconClass: 'transform scale-125',
       group: 'content',
     },
     {
       id: 'changes' as const,
-      label: 'Changes',
-      description: 'Tile changed files',
+      label: () => m.layout_presets_changes_label(),
+      description: () => m.layout_presets_changes_description(),
       icon: faCodeBranch,
       group: 'content',
     },
     {
       id: 'review' as const,
-      label: 'Review changes',
-      description: 'Coordinator + All Changes',
+      label: () => m.layout_presets_review_label(),
+      description: () => m.layout_presets_review_description(),
       icon: faCodeBranch,
       group: 'content',
     },
     { divider: true },
     {
       id: 'single' as const,
-      label: 'Single Panel',
-      description: 'Full width',
+      label: () => m.layout_presets_single_label(),
+      description: () => m.layout_presets_single_description(),
       icon: faGripLines,
       group: 'structure',
     },
     {
       id: 'split-horizontal' as const,
-      label: 'Side by Side',
-      description: 'Two columns',
+      label: () => m.layout_presets_sideBySide_label(),
+      description: () => m.layout_presets_sideBySide_description(),
       icon: faColumns,
       group: 'structure',
     },
     {
       id: 'split-vertical' as const,
-      label: 'Stacked',
-      description: 'Two rows',
+      label: () => m.layout_presets_stacked_label(),
+      description: () => m.layout_presets_stacked_description(),
       icon: faTableColumns,
       iconClass: 'transform rotate-90',
       group: 'structure',
     },
     {
       id: 'three-column' as const,
-      label: 'Three Columns',
-      description: 'Three panels',
+      label: () => m.layout_presets_threeColumns_label(),
+      description: () => m.layout_presets_threeColumns_description(),
       icon: faColumns,
       group: 'structure',
     },
@@ -162,7 +163,7 @@
         onclick={toggle}
         class="gap-1 px-1.5 text-muted-foreground hover:text-foreground"
       >
-        <span class="font-medium text-xs">Presets</span>
+        <span class="font-medium text-xs">{m.layout_presets_trigger_label()}</span>
         <Fa
           icon={faChevronDown}
           size="xs"
@@ -174,7 +175,7 @@
 
   {#snippet content({ close }: { close: () => void })}
     <div class="w-48 max-w-48">
-      <Header class="px-3 pt-1.5 pb-1" size={6}>Panel layouts</Header>
+      <Header class="px-3 pt-1.5 pb-1" size={6}>{m.layout_presets_header()}</Header>
 
       <!-- Navigation buttons -->
       {#if onGoBack || onGoForward}
@@ -233,8 +234,8 @@
               class={cn('size-2.5 text-ghost', preset.iconClass || '')}
             />
             <div class="flex-1 min-w-0">
-              <div class="text-xs font-medium truncate">{preset.label}</div>
-              <div class="text-xs text-subtle truncate">{preset.description}</div>
+              <div class="text-xs font-medium truncate">{preset.label()}</div>
+              <div class="text-xs text-subtle truncate">{preset.description()}</div>
             </div>
             {#if currentPreset === preset.id}
               <Fa icon={faCheck} size="xs" class="text-primary shrink-0" />
@@ -254,7 +255,7 @@
               oninput={(e) => onPromptChange?.(e.currentTarget.value)}
               onkeydown={onPromptKeydown}
               type="text"
-              placeholder="Describe layout..."
+              placeholder={m.layout_presets_describeLayout_placeholder()}
               disabled={isGenerating}
               class={cn('flex-1 pl-3 pr-0! pt-0.5! pb-0.75! h-auto text-xs border-0 bg-transparent')}
             />
@@ -263,7 +264,7 @@
               size="icon-xs"
               onclick={onGenerateLayout}
               disabled={!promptValue?.trim() || isGenerating}
-              tooltip="Generate layout"
+              tooltip={m.layout_presets_generateLayout_tooltip()}
               tooltipSide="bottom"
             >
               {#if isGenerating}

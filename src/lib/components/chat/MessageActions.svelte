@@ -22,6 +22,7 @@
   faCodeBranch,
   faArrowUp,
 } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   type MessageRole = 'user' | 'assistant';
 
@@ -87,8 +88,8 @@
   {#if role === 'user'}
     <!-- User message actions: Edit, Copy -->
     {#if onEdit}
-      <TooltipShortcut label="Edit" shortcut="e" side="top" delayDuration={300}>
-        <Button variant="ghost-light" size="icon-xs" onclick={onEdit} aria-label="Edit message">
+      <TooltipShortcut label={m.chat_messageActions_edit_label()} shortcut="e" side="top" delayDuration={300}>
+        <Button variant="ghost-light" size="icon-xs" onclick={onEdit} aria-label={m.chat_messageActions_editMessage_ariaLabel()}>
           <Fa icon={faPencil} class="w-2.5! h-2.5!" />
         </Button>
       </TooltipShortcut>
@@ -96,12 +97,12 @@
   {:else}
     <!-- Assistant message actions: Regenerate, Fork, Vote, Copy -->
     {#if onRegenerate}
-      <TooltipShortcut label="Regenerate" side="top" delayDuration={300}>
+      <TooltipShortcut label={m.chat_messageActions_regenerate_label()} side="top" delayDuration={300}>
         <Button
           variant="ghost-light"
           size="icon-xs"
           onclick={onRegenerate}
-          aria-label="Regenerate response"
+          aria-label={m.chat_messageActions_regenerate_ariaLabel()}
         >
           <Fa icon={faRotateRight} class="w-2.5! h-2.5!" />
         </Button>
@@ -109,12 +110,12 @@
     {/if}
 
     {#if onFork}
-      <TooltipShortcut label="Fork conversation" side="top" delayDuration={300}>
+      <TooltipShortcut label={m.chat_messageActions_fork_label()} side="top" delayDuration={300}>
         <Button
           variant="ghost-light"
           size="icon-xs"
           onclick={onFork}
-          aria-label="Fork conversation from this message"
+          aria-label={m.chat_messageActions_fork_ariaLabel()}
         >
           <Fa icon={faCodeBranch} class="w-2.5! h-2.5!" />
         </Button>
@@ -122,24 +123,24 @@
     {/if}
 
     {#if onVote}
-      <TooltipShortcut label="Good response" side="top" delayDuration={300}>
+      <TooltipShortcut label={m.chat_messageActions_goodResponse_label()} side="top" delayDuration={300}>
         <Button
           variant="ghost-light"
           size="icon-xs"
           onclick={() => handleVote('up')}
-          aria-label="Good response"
+          aria-label={m.chat_messageActions_goodResponse_label()}
           class={currentVote === 'up' ? 'text-green-500' : ''}
         >
           <Fa icon={faThumbsUp} class="w-2.5! h-2.5!" />
         </Button>
       </TooltipShortcut>
 
-      <TooltipShortcut label="Bad response" side="top" delayDuration={300}>
+      <TooltipShortcut label={m.chat_messageActions_badResponse_label()} side="top" delayDuration={300}>
         <Button
           variant="ghost-light"
           size="icon-xs"
           onclick={() => handleVote('down')}
-          aria-label="Bad response"
+          aria-label={m.chat_messageActions_badResponse_label()}
           class={currentVote === 'down' ? 'text-red-500' : ''}
         >
           <Fa icon={faThumbsDown} class="w-2.5! h-2.5!" />
@@ -156,7 +157,7 @@
           variant="ghost-light"
           size="icon-xs"
           onclick={handleCopy}
-          aria-label="Copy message (Shift+click to copy session ID)"
+          aria-label={m.chat_messageActions_copyMessage_ariaLabel()}
         >
           {#if copied || copiedSessionId}
             <div in:slide={{ axis: 'x', duration: 150 }}>
@@ -172,11 +173,11 @@
       {#snippet content()}
       <div class="w-full flex flex-col">
         <div class="flex items-center gap-3">
-          <span class="text-sm">Copy message</span>
+          <span class="text-sm">{m.chat_messageActions_copyMessage_label()}</span>
         </div>
         {#if requestId}
           <div class="text-subtle text-sm">
-            Hold Shift to copy session ID
+            {m.chat_messageActions_copySessionIdHint_label()}
           </div>
         {/if}
         </div>
@@ -186,12 +187,12 @@
 
   <!-- Scroll to previous button for user messages -->
   {#if role === 'user' && onScrollToPrevious}
-    <TooltipShortcut label="Scroll to previous message" side="top" delayDuration={300}>
+    <TooltipShortcut label={m.chat_messageActions_scrollToPrevious_label()} side="top" delayDuration={300}>
       <Button
         variant="ghost-light"
         size="icon-xs"
         onclick={() => onScrollToPrevious?.()}
-        aria-label="Scroll to previous message"
+        aria-label={m.chat_messageActions_scrollToPrevious_label()}
       >
         <Fa icon={faArrowUp} class="w-2.5! h-2.5!" />
       </Button>

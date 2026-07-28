@@ -8,6 +8,8 @@
  * - Context-aware formatting
  */
 
+import { m } from '../paraglide/messages.js';
+
 /**
  * Help documentation links for different error categories
  */
@@ -23,69 +25,180 @@ export const HELP_LINKS = {
 /**
  * Message templates with placeholders
  * Use {placeholder} syntax for dynamic values
+ *
+ * Property getters re-render the Paraglide message on every access so
+ * templates follow the active locale. Each getter feeds the message's own
+ * `{placeholder}` markers back in as parameter values, reconstructing the
+ * placeholder-bearing template that `formatErrorMessage()` /
+ * `hasAllPlaceholders()` substitute later with real context values.
  */
 export const ERROR_MESSAGE_TEMPLATES: Record<string, string> = {
-  AGENT_CREATION_FAILED: "Failed to create agent '{agentName}'. {details}",
-  AGENT_ALREADY_EXISTS: "An agent named '{agentName}' already exists in this space.",
-  INVALID_AGENT_CONFIG: 'Invalid agent configuration: {details}',
-  INVALID_CONFIG: 'Invalid configuration: {details}',
-  SESSION_NOT_FOUND: 'The chat session (ID: {sessionId}) could not be found. It may have expired.',
-  SESSION_ALREADY_ACTIVE: 'This agent session is already active. Cannot start another session.',
-  SESSION_INITIALIZATION_FAILED: 'Failed to initialize agent session: {details}',
-  STREAM_CONNECTION_FAILED: 'Failed to establish streaming connection to agent. {details}',
-  STREAM_TIMEOUT:
-    'Response timeout after {timeout}ms. The agent may be processing a complex request.',
-  STREAM_INTERRUPTED:
-    'Connection interrupted. Attempting to reconnect... (Attempt {attempt}/{maxAttempts})',
-  STREAM_RECOVERY_FAILED: 'Failed to recover streaming connection after {attempts} attempts.',
-  MESSAGE_SEND_FAILED: 'Failed to send message: {details}',
-  MESSAGE_VALIDATION_FAILED: 'Invalid message format: {details}',
-  MESSAGE_TOO_LONG:
-    'Message exceeds maximum length of {maxLength} characters. Current: {currentLength}',
-  PROVIDER_NOT_FOUND: "Agent provider '{provider}' not found.",
-  PROVIDER_CONNECTION_FAILED: "Failed to connect to provider '{provider}': {details}",
-  PROVIDER_PROCESS_DIED: "Agent process for provider '{provider}' terminated unexpectedly.",
-  STORAGE_READ_FAILED: 'Failed to load agent data from storage: {details}',
-  STORAGE_WRITE_FAILED: 'Failed to save agent data to storage: {details}',
-  STORAGE_CORRUPTED: 'Agent data appears to be corrupted. Last backup: {lastBackup}',
-  MEMORY_LIMIT_EXCEEDED:
-    'Memory limit exceeded ({currentUsage}MB / {limit}MB). Please close some agents.',
-  RATE_LIMIT_EXCEEDED: 'Too many requests ({count} in {window}ms). Please slow down.',
-  CONCURRENT_LIMIT_EXCEEDED:
-    'Too many concurrent agents ({current}/{max}). Please close some agents.',
-} as const;
+  get AGENT_CREATION_FAILED() {
+    return m.errors_catalog_agentCreationFailed_template({
+      agentName: '{agentName}',
+      details: '{details}',
+    });
+  },
+  get AGENT_ALREADY_EXISTS() {
+    return m.errors_catalog_agentAlreadyExists_template({ agentName: '{agentName}' });
+  },
+  get INVALID_AGENT_CONFIG() {
+    return m.errors_catalog_invalidAgentConfig_template({ details: '{details}' });
+  },
+  get INVALID_CONFIG() {
+    return m.errors_catalog_invalidConfig_template({ details: '{details}' });
+  },
+  get SESSION_NOT_FOUND() {
+    return m.errors_catalog_sessionNotFound_template({ sessionId: '{sessionId}' });
+  },
+  get SESSION_ALREADY_ACTIVE() {
+    return m.errors_catalog_sessionAlreadyActive_template();
+  },
+  get SESSION_INITIALIZATION_FAILED() {
+    return m.errors_catalog_sessionInitializationFailed_template({ details: '{details}' });
+  },
+  get STREAM_CONNECTION_FAILED() {
+    return m.errors_catalog_streamConnectionFailed_template({ details: '{details}' });
+  },
+  get STREAM_TIMEOUT() {
+    return m.errors_catalog_streamTimeout_template({ timeout: '{timeout}' });
+  },
+  get STREAM_INTERRUPTED() {
+    return m.errors_catalog_streamInterrupted_template({
+      attempt: '{attempt}',
+      maxAttempts: '{maxAttempts}',
+    });
+  },
+  get STREAM_RECOVERY_FAILED() {
+    return m.errors_catalog_streamRecoveryFailed_template({ attempts: '{attempts}' });
+  },
+  get MESSAGE_SEND_FAILED() {
+    return m.errors_catalog_messageSendFailed_template({ details: '{details}' });
+  },
+  get MESSAGE_VALIDATION_FAILED() {
+    return m.errors_catalog_messageValidationFailed_template({ details: '{details}' });
+  },
+  get MESSAGE_TOO_LONG() {
+    return m.errors_catalog_messageTooLong_template({
+      maxLength: '{maxLength}',
+      currentLength: '{currentLength}',
+    });
+  },
+  get PROVIDER_NOT_FOUND() {
+    return m.errors_catalog_providerNotFound_template({ provider: '{provider}' });
+  },
+  get PROVIDER_CONNECTION_FAILED() {
+    return m.errors_catalog_providerConnectionFailed_template({
+      provider: '{provider}',
+      details: '{details}',
+    });
+  },
+  get PROVIDER_PROCESS_DIED() {
+    return m.errors_catalog_providerProcessDied_template({ provider: '{provider}' });
+  },
+  get STORAGE_READ_FAILED() {
+    return m.errors_catalog_storageReadFailed_template({ details: '{details}' });
+  },
+  get STORAGE_WRITE_FAILED() {
+    return m.errors_catalog_storageWriteFailed_template({ details: '{details}' });
+  },
+  get STORAGE_CORRUPTED() {
+    return m.errors_catalog_storageCorrupted_template({ lastBackup: '{lastBackup}' });
+  },
+  get MEMORY_LIMIT_EXCEEDED() {
+    return m.errors_catalog_memoryLimitExceeded_template({
+      currentUsage: '{currentUsage}',
+      limit: '{limit}',
+    });
+  },
+  get RATE_LIMIT_EXCEEDED() {
+    return m.errors_catalog_rateLimitExceeded_template({ count: '{count}', window: '{window}' });
+  },
+  get CONCURRENT_LIMIT_EXCEEDED() {
+    return m.errors_catalog_concurrentLimitExceeded_template({
+      current: '{current}',
+      max: '{max}',
+    });
+  },
+};
 
 /**
  * User-friendly fallback messages
+ *
+ * Property getters resolve the Paraglide message at lookup time so the
+ * catalog follows the active locale.
  */
 export const USER_FRIENDLY_MESSAGES: Record<string, string> = {
-  AGENT_CREATION_FAILED: "We couldn't create your agent. Please check your settings and try again.",
-  AGENT_ALREADY_EXISTS: 'An agent with this name already exists. Please choose a different name.',
-  INVALID_AGENT_CONFIG: 'Your agent configuration is invalid. Please review and correct it.',
-  INVALID_CONFIG: 'The configuration provided is invalid. Please check and try again.',
-  SESSION_NOT_FOUND: 'The chat session has expired. Please start a new conversation.',
-  SESSION_ALREADY_ACTIVE: 'This agent session is already running. Please wait or close it first.',
-  SESSION_INITIALIZATION_FAILED: "We couldn't start the agent session. Please try again.",
-  STREAM_CONNECTION_FAILED:
-    "We couldn't connect to the agent. Please check your connection and try again.",
-  STREAM_TIMEOUT:
-    "The agent took too long to respond. Please try again or check if it's still running.",
-  STREAM_INTERRUPTED: "Your connection was interrupted. We're trying to reconnect...",
-  STREAM_RECOVERY_FAILED: "We couldn't reconnect to the agent. Please try again.",
-  MESSAGE_SEND_FAILED: "We couldn't send your message. Please try again.",
-  MESSAGE_VALIDATION_FAILED: 'Your message format is invalid. Please check and try again.',
-  MESSAGE_TOO_LONG: 'Your message is too long. Please shorten it and try again.',
-  PROVIDER_NOT_FOUND: 'The agent provider is not available. Please check your setup.',
-  PROVIDER_CONNECTION_FAILED:
-    "We couldn't connect to the agent provider. Please check your configuration.",
-  PROVIDER_PROCESS_DIED: 'The agent process stopped unexpectedly. Please restart it.',
-  STORAGE_READ_FAILED: "We couldn't load your agent data. Please try again.",
-  STORAGE_WRITE_FAILED: "We couldn't save your agent data. Please try again.",
-  STORAGE_CORRUPTED: 'Your agent data appears to be corrupted. Please restore from backup.',
-  MEMORY_LIMIT_EXCEEDED: "You're using too much memory. Please close some agents.",
-  RATE_LIMIT_EXCEEDED: "You're making too many requests. Please slow down.",
-  CONCURRENT_LIMIT_EXCEEDED: 'You have too many agents running. Please close some.',
-} as const;
+  get AGENT_CREATION_FAILED() {
+    return m.errors_catalog_agentCreationFailed_friendly();
+  },
+  get AGENT_ALREADY_EXISTS() {
+    return m.errors_catalog_agentAlreadyExists_friendly();
+  },
+  get INVALID_AGENT_CONFIG() {
+    return m.errors_catalog_invalidAgentConfig_friendly();
+  },
+  get INVALID_CONFIG() {
+    return m.errors_catalog_invalidConfig_friendly();
+  },
+  get SESSION_NOT_FOUND() {
+    return m.errors_catalog_sessionNotFound_friendly();
+  },
+  get SESSION_ALREADY_ACTIVE() {
+    return m.errors_catalog_sessionAlreadyActive_friendly();
+  },
+  get SESSION_INITIALIZATION_FAILED() {
+    return m.errors_catalog_sessionInitializationFailed_friendly();
+  },
+  get STREAM_CONNECTION_FAILED() {
+    return m.errors_catalog_streamConnectionFailed_friendly();
+  },
+  get STREAM_TIMEOUT() {
+    return m.errors_catalog_streamTimeout_friendly();
+  },
+  get STREAM_INTERRUPTED() {
+    return m.errors_catalog_streamInterrupted_friendly();
+  },
+  get STREAM_RECOVERY_FAILED() {
+    return m.errors_catalog_streamRecoveryFailed_friendly();
+  },
+  get MESSAGE_SEND_FAILED() {
+    return m.errors_catalog_messageSendFailed_friendly();
+  },
+  get MESSAGE_VALIDATION_FAILED() {
+    return m.errors_catalog_messageValidationFailed_friendly();
+  },
+  get MESSAGE_TOO_LONG() {
+    return m.errors_catalog_messageTooLong_friendly();
+  },
+  get PROVIDER_NOT_FOUND() {
+    return m.errors_catalog_providerNotFound_friendly();
+  },
+  get PROVIDER_CONNECTION_FAILED() {
+    return m.errors_catalog_providerConnectionFailed_friendly();
+  },
+  get PROVIDER_PROCESS_DIED() {
+    return m.errors_catalog_providerProcessDied_friendly();
+  },
+  get STORAGE_READ_FAILED() {
+    return m.errors_catalog_storageReadFailed_friendly();
+  },
+  get STORAGE_WRITE_FAILED() {
+    return m.errors_catalog_storageWriteFailed_friendly();
+  },
+  get STORAGE_CORRUPTED() {
+    return m.errors_catalog_storageCorrupted_friendly();
+  },
+  get MEMORY_LIMIT_EXCEEDED() {
+    return m.errors_catalog_memoryLimitExceeded_friendly();
+  },
+  get RATE_LIMIT_EXCEEDED() {
+    return m.errors_catalog_rateLimitExceeded_friendly();
+  },
+  get CONCURRENT_LIMIT_EXCEEDED() {
+    return m.errors_catalog_concurrentLimitExceeded_friendly();
+  },
+};
 
 /**
  * Extract placeholder keys from a template string
@@ -117,7 +230,7 @@ export function formatErrorMessage(template: string, context: Record<string, any
  * message is suitable for a toast.
  */
 export function cleanErrorMessage(message: string): string {
-  const FALLBACK = 'Something went wrong. Please try again.';
+  const FALLBACK = m.errors_cleanMessage_fallback_error();
   if (!message) return FALLBACK;
 
   let cleaned = message;
@@ -159,7 +272,7 @@ export function getUserFriendlyMessage(code: string, context?: Record<string, an
     return formatErrorMessage(ERROR_MESSAGE_TEMPLATES[code], context);
   }
   // Otherwise use the pre-written user-friendly message
-  return USER_FRIENDLY_MESSAGES[code] || 'An unexpected error occurred.';
+  return USER_FRIENDLY_MESSAGES[code] || m.errors_userFriendly_fallback_error();
 }
 
 /**
@@ -208,5 +321,5 @@ export const LOCALE_MESSAGES: Record<SupportedLocale, Record<string, string>> = 
  * Get localized message
  */
 export function getLocalizedMessage(code: string, locale: SupportedLocale = 'en'): string {
-  return LOCALE_MESSAGES[locale][code] || USER_FRIENDLY_MESSAGES[code] || 'An error occurred.';
+  return LOCALE_MESSAGES[locale][code] || USER_FRIENDLY_MESSAGES[code] || m.errors_localized_fallback_error();
 }

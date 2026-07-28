@@ -71,6 +71,7 @@ export function parseContextMentions(mentions: ContextMention[]): ContextReferen
     if (parsedMetadata.state) parts.push(`Status: ${parsedMetadata.state as string}`);
     if (parsedMetadata.teamName) parts.push(`Team: ${parsedMetadata.teamName as string}`);
     if (parsedMetadata.priority !== undefined) {
+      // i18n-ignore — agent-directed context payload, not rendered UI text
       const priorityLabels = ['No priority', 'Urgent', 'High', 'Medium', 'Low'];
       parts.push(
         `Priority: ${priorityLabels[parsedMetadata.priority as number] || parsedMetadata.priority}`,
@@ -155,6 +156,7 @@ export async function parseRuntimeMentions(
           });
         }
       } catch (error) {
+        // i18n-ignore — developer log message
         logger?.warn('[OnboardingContext] Failed to read terminal buffer:', error);
       }
     }
@@ -183,6 +185,7 @@ export async function parseRuntimeMentions(
           const lastLines = outputLines.slice(-100).join('\n');
           content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
         } else {
+          // i18n-ignore — agent-directed context payload, not rendered UI text
           content += '\nNo output yet.';
         }
 
@@ -199,6 +202,7 @@ export async function parseRuntimeMentions(
           },
         });
       } catch (error) {
+        // i18n-ignore — developer log message
         logger?.warn('[OnboardingContext] Failed to resolve script context:', error);
       }
     }

@@ -38,6 +38,7 @@ import {
   startGitHubAuth,
 } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('GitHubAuthService');
 
@@ -152,7 +153,7 @@ export async function pollForGitHubAuthCompletion(
     await delay(pollIntervalMs);
     if (token.cancelled) return;
     if (Date.now() - startTime > timeoutMs) {
-      appStore.dispatch(setGitHubAuthError('Authentication timed out. Please try again.'));
+      appStore.dispatch(setGitHubAuthError(m.githubAuth_service_timedOut_error()));
       break;
     }
     if (await checkAuthCompleteOnce()) break;
@@ -166,7 +167,7 @@ export async function startGitHubAuthFlow(): Promise<void> {
   try {
     const result = await githubAuthClient.startAuth();
     if (!result.success) {
-      appStore.dispatch(setGitHubAuthError(result.error || 'Failed to start authentication'));
+      appStore.dispatch(setGitHubAuthError(result.error || m.githubAuth_service_startFailed_error()));
       return;
     }
     if (result.alreadyAuthenticated) {
@@ -189,7 +190,7 @@ export async function startGitHubAuthFlow(): Promise<void> {
       logger.error('startAuth returned an incomplete device-flow payload', {
         keys: Object.keys(result),
       });
-      appStore.dispatch(setGitHubAuthError('GitHub device flow could not be started.'));
+      appStore.dispatch(setGitHubAuthError(m.githubAuth_service_deviceFlowFailed_error()));
       return;
     }
     appStore.dispatch(setOAuthInfo(result.oauthUrl ?? null, result.needsScopeUpdate ?? false));
@@ -200,11 +201,12 @@ export async function startGitHubAuthFlow(): Promise<void> {
     const pollMs = Math.max(interval * 1000, AUTH_POLL_INTERVAL);
     await pollForGitHubAuthCompletion(pollMs);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    const message = error instanceof Error ? error.message : m.githubAuth_service_unknown_error();
     appStore.dispatch(
       setGitHubAuthError(
+        // i18n-ignore — matching an internal error string, not rendered text
         message.includes('Unauthorized channel')
-          ? 'GitHub auth IPC was blocked. Please restart the app so the preload allowlist is refreshed.'
+          ? m.githubAuth_service_ipcBlocked_error()
           : message,
       ),
     );
@@ -228,13 +230,13 @@ export async function cancelGitHubAuthFlow(): Promise<void> {
     const result = await githubAuthClient.cancelAuth();
     if (result?.success !== true) {
       appStore.dispatch(
-        setGitHubAuthError(result?.error || 'Failed to cancel GitHub authentication.'),
+        setGitHubAuthError(result?.error || m.githubAuth_service_cancelFailed_error()),
       );
       return;
     }
   } catch (error) {
     logger.error('cancelAuth error', error);
-    appStore.dispatch(setGitHubAuthError('Failed to cancel GitHub authentication.'));
+    appStore.dispatch(setGitHubAuthError(m.githubAuth_service_cancelFailed_error()));
     return;
   }
   appStore.dispatch(authCancelled());
@@ -250,12 +252,12 @@ export async function logoutGitHubFlow(): Promise<void> {
   try {
     const result = await githubAuthClient.logout();
     if (result?.success !== true) {
-      appStore.dispatch(setGitHubAuthError(result?.error || 'Failed to log out of GitHub.'));
+      appStore.dispatch(setGitHubAuthError(result?.error || m.githubAuth_service_logoutFailed_error()));
       return;
     }
   } catch (error) {
     logger.error('logout error', error);
-    appStore.dispatch(setGitHubAuthError('Failed to log out of GitHub.'));
+    appStore.dispatch(setGitHubAuthError(m.githubAuth_service_logoutFailed_error()));
     return;
   }
   appStore.dispatch(logoutCompleted());
@@ -291,15 +293,15 @@ export async function handleGitHubAuthChanged(
     }
     case 'expired':
       cancelActivePoll();
-      appStore.dispatch(setGitHubAuthError('The device code expired. Please try again.'));
+      appStore.dispatch(setGitHubAuthError(m.githubAuth_service_codeExpired_error()));
       break;
     case 'denied':
       cancelActivePoll();
-      appStore.dispatch(setGitHubAuthError('Authorization was denied on GitHub.'));
+      appStore.dispatch(setGitHubAuthError(m.githubAuth_service_denied_error()));
       break;
     case 'error':
       cancelActivePoll();
-      appStore.dispatch(setGitHubAuthError('GitHub authorization failed. Please try again.'));
+      appStore.dispatch(setGitHubAuthError(m.githubAuth_service_failed_error()));
       break;
     case 'revoked':
       cancelActivePoll();

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
@@ -21,9 +22,12 @@
     if (isEnabled) {
       const reason = $providerInUseReasons$[providerId];
       if (reason) {
-        toast.error(`Cannot disable ${ACP_PROVIDERS[providerId]?.displayName || providerId}`, {
-          description: reason,
-        });
+        toast.error(
+          m.settings_additionalAgents_cannotDisable({
+            name: ACP_PROVIDERS[providerId]?.displayName || providerId,
+          }),
+          { description: reason },
+        );
         return;
       }
     }
@@ -33,10 +37,9 @@
 
 <div class="space-y-4">
   <div>
-    <p class="text-sm font-medium text-foreground mb-1">Additional Agents</p>
+    <p class="text-sm font-medium text-foreground mb-1">{m.settings_additionalAgents_title()}</p>
     <p class="text-xs text-subtle">
-      Enable additional ACP-compatible agents. When enabled, their models will appear in the model
-      picker grouped by agent.
+      {m.settings_additionalAgents_description()}
     </p>
   </div>
 
@@ -46,8 +49,9 @@
         <div>
           <p class="text-sm font-medium text-foreground mb-1">{provider.displayName}</p>
           <p class="text-xs text-subtle">
-            Use <code class="px-1 py-0.5 bg-muted rounded text-ui">{provider.command}</code> CLI as
-            an agent
+            {m.settings_additionalAgents_cliDescription_before()}
+            <code class="px-1 py-0.5 bg-muted rounded text-ui">{provider.command}</code>
+            {m.settings_additionalAgents_cliDescription_after()}
           </p>
         </div>
         <Toggle
@@ -55,13 +59,15 @@
           onclick={() => handleToggle(provider.id)}
           variant="indicator"
           size="xs"
-          ariaLabel={`Enable ${provider.displayName}`}
+          ariaLabel={m.settings_additionalAgents_enableToggleAriaLabel({
+            name: provider.displayName,
+          })}
         />
       </div>
     {/each}
 
     {#if additionalProviders.length === 0}
-      <p class="text-sm text-subtle italic">No additional agents available</p>
+      <p class="text-sm text-subtle italic">{m.settings_additionalAgents_empty()}</p>
     {/if}
   </div>
 </div>

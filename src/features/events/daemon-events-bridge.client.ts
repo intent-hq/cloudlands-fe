@@ -115,6 +115,7 @@
  * mirrors the same fan-out dedupe `live-terminals-client.ts` applies to
  * `terminal:*` deliveries.
  */
+import { m } from '$shared/paraglide/messages.js';
 import type { StoreMiddleware } from '$lib/store-shim/types';
 import type {
   ContentBlock,
@@ -160,10 +161,7 @@ import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-view
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
-import {
-  recordAgentFailure,
-  removeAgentFailure,
-} from '$features/agent/agent-failure-registry';
+import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
 import { refreshWorkspaceSubscriptionEntries } from '$features/agent/agent-subscription-read-service';
 import {
   permissionRequestReceived,
@@ -749,7 +747,7 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
         agentId,
         {
           phase: 'tool-call',
-          message: 'Calling tool',
+          message: m.events_bridge_callingTool_status(),
           level: 'info',
           timestamp: Date.now(),
         },
@@ -762,7 +760,10 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
         agentId,
         {
           phase: 'tool-waiting',
-          message: status === 'error' ? 'Tool call failed' : 'Awaiting tool response',
+          message:
+            status === 'error'
+              ? m.events_bridge_toolCallFailed_status()
+              : m.events_bridge_awaitingToolResponse_status(),
           level: status === 'error' ? 'error' : 'info',
           timestamp: Date.now(),
         },
@@ -1371,7 +1372,9 @@ function handleActivityChangedEvent(event: WorkspaceEvent, workspaceId: string):
   if (!data) return;
   const activity = data.activity;
   if (activity !== 'idle' && activity !== 'agent_running') return;
-  appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]));
+  appStore.dispatch(
+    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]),
+  );
 }
 
 /**
@@ -1409,7 +1412,10 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
  * `workspace.get` and merge the fresh activity value. On `agent:idle` we
  * always refetch — the daemon knows if other agents remain busy.
  */
-async function reconcileWorkspaceActivity(workspaceId: string, impliesBusy: boolean): Promise<void> {
+async function reconcileWorkspaceActivity(
+  workspaceId: string,
+  impliesBusy: boolean,
+): Promise<void> {
   const { getItem } = await import('$lib/store-shim/utils/collections/collection-utils');
   const state = appStore.state as { workspace: { workspaces: unknown } };
   const current = getItem(state.workspace.workspaces as never, workspaceId as never) as
@@ -1438,9 +1444,12 @@ async function reconcileWorkspaceActivity(workspaceId: string, impliesBusy: bool
       // partial merge. Otherwise, seed the full workspace entity with
       // setWorkspaceEntity so future events can merge into it.
       if (current) {
-        appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]));
+        appStore.dispatch(
+          bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]),
+        );
       } else {
-        const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+        const { setWorkspaceEntity } =
+          await import('$store/renderer/slices/workspace/workspace-slice');
         appStore.dispatch(setWorkspaceEntity(workspace));
       }
     } catch (_error) {
@@ -1876,7 +1885,9 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
         // Defer the highlight dispatch slightly so the target element has time
         // to render after navigation completes.
         requestAnimationFrame(() => {
-          appStore.dispatch(requestUiHighlight(highlightId, durationMs ? { durationMs } : undefined));
+          appStore.dispatch(
+            requestUiHighlight(highlightId, durationMs ? { durationMs } : undefined),
+          );
         });
       }
     })
@@ -1929,7 +1940,12 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
     invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route })
       .then(async (result: unknown) => {
         // window:open-new resolves {success: false, error} on failure
-        if (typeof result === 'object' && result !== null && 'success' in result && result.success === false) {
+        if (
+          typeof result === 'object' &&
+          result !== null &&
+          'success' in result &&
+          result.success === false
+        ) {
           logger.warn('[app:workspace-open] New window open returned failure, navigating instead', {
             workspaceId,
             error: 'error' in result ? result.error : undefined,

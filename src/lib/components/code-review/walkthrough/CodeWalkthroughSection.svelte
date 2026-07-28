@@ -25,6 +25,7 @@
   } from './types';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import * as m from '$shared/paraglide/messages.js';
 
   const activeWorkspace = selectActiveWorkspace();
 
@@ -244,7 +245,7 @@
   >
     <Fa icon={isExpanded ? faChevronDown : faChevronRight} class="h-3 w-3 text-subtle" />
     <Fa icon={faWandMagicSparkles} class="h-4 w-4 text-purple-500" />
-    <span class="text-sm font-medium">Code Walkthrough</span>
+    <span class="text-sm font-medium">{m.codeReview_walkthroughSection_title()}</span>
     {#if isRunning}
       <Fa icon={faSpinner} class="h-3 w-3 animate-spin text-ghost ml-auto" />
     {/if}
@@ -256,7 +257,7 @@
       {#if isRunning}
         <div class="flex items-center gap-2 text-sm text-subtle py-2">
           <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
-          <span>Generating...</span>
+          <span>{m.codeReview_walkthroughSection_generating_label()}</span>
         </div>
       {/if}
 
@@ -267,7 +268,7 @@
           {#if onRegenerate}
             <Button variant="ghost" size="xs" class="mt-2" onclick={onRegenerate}>
               <Fa icon={faRotateRight} class="h-3 w-3 mr-1" />
-              Try again
+              {m.codeReview_walkthroughSection_tryAgain_label()}
             </Button>
           {/if}
         </div>
@@ -337,7 +338,7 @@
                 />
                 <Fa icon={faFolderOpen} class="h-3 w-3 text-ghost" />
                 <span class="text-sm font-medium text-subtle">
-                  Other Changes ({otherFiles.length})
+                  {m.codeReview_walkthroughSection_otherChanges_label({ count: otherFiles.length })}
                 </span>
               </button>
 
@@ -368,7 +369,7 @@
             <div class="flex justify-end pt-2">
               <Button variant="ghost" size="xs" onclick={onRegenerate}>
                 <Fa icon={faRotateRight} class="h-3 w-3 mr-1" />
-                Regenerate
+                {m.codeReview_walkthroughSection_regenerate_label()}
               </Button>
             </div>
           {/if}

@@ -9,6 +9,7 @@
   setCollapsiblePanelCollapsed,
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { selectCollapsiblePanelCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   import { slide } from 'svelte/transition';
@@ -160,7 +161,7 @@
         size="xs"
         onclick={toggleCollapsed}
         type="button"
-        aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
+        aria-label={collapsed ? m.ui_vscodePanel_expand_ariaLabel() : m.ui_vscodePanel_collapse_ariaLabel()}
         class="h-full px-2 text-subtle"
       >
         <div

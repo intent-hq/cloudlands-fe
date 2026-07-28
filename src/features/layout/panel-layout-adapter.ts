@@ -9,6 +9,7 @@
  */
 
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 import {
   openTab,
   openTabInAdjacentOrSplit,
@@ -109,7 +110,7 @@ export class PanelLayoutAdapter {
   openBrowserPanel(url?: string, contextItemId?: string): void {
     this.openTab({
       type: 'browser',
-      title: 'Browser',
+      title: m.layout_tabTypes_browser_title(),
       browserUrl: url ?? 'https://google.com',
       contextItemId,
       closable: true,

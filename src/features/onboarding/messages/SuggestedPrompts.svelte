@@ -6,6 +6,7 @@
    * Clicking a prompt populates the chat input.
    */
   import { fly } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Called when a prompt is clicked */
@@ -18,33 +19,57 @@
 
   const prompts = [
     {
-      label: 'Fix a bug',
-      prompt: 'Help me fix a bug in this project',
+      get label() {
+        return m.onboarding_suggestedPrompts_fixBug_label();
+      },
+      get prompt() {
+        return m.onboarding_suggestedPrompts_fixBug_prompt();
+      },
       icon: '🐛',
     },
     {
-      label: 'Add a feature',
-      prompt: 'Help me add a new feature',
+      get label() {
+        return m.onboarding_suggestedPrompts_addFeature_label();
+      },
+      get prompt() {
+        return m.onboarding_suggestedPrompts_addFeature_prompt();
+      },
       icon: '✨',
     },
     {
-      label: 'Write tests',
-      prompt: 'Help me write tests for this project',
+      get label() {
+        return m.onboarding_suggestedPrompts_writeTests_label();
+      },
+      get prompt() {
+        return m.onboarding_suggestedPrompts_writeTests_prompt();
+      },
       icon: '🧪',
     },
     {
-      label: 'Refactor code',
-      prompt: 'Help me refactor and improve the code quality',
+      get label() {
+        return m.onboarding_suggestedPrompts_refactor_label();
+      },
+      get prompt() {
+        return m.onboarding_suggestedPrompts_refactor_prompt();
+      },
       icon: '🔧',
     },
     {
-      label: 'Review code',
-      prompt: 'Review the recent changes and suggest improvements',
+      get label() {
+        return m.onboarding_suggestedPrompts_review_label();
+      },
+      get prompt() {
+        return m.onboarding_suggestedPrompts_review_prompt();
+      },
       icon: '👀',
     },
     {
-      label: 'Explain codebase',
-      prompt: 'Help me understand how this codebase is structured',
+      get label() {
+        return m.onboarding_suggestedPrompts_explain_label();
+      },
+      get prompt() {
+        return m.onboarding_suggestedPrompts_explain_prompt();
+      },
       icon: '📖',
     },
   ];

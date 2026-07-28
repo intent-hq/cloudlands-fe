@@ -10,9 +10,8 @@
  * This utility extracts these into structured context items and clean user message.
  */
 
-
-
 import type { ContextItem } from '$lib/components/chat/input/context-api';
+import { m } from '$shared/paraglide/messages.js';
 
 export interface ParsedMessage {
   contextItems: ContextItem[];
@@ -33,8 +32,8 @@ const contextPatterns: ContextPattern[] = [
     getContextItem: (match) => ({
       id: `edit-spec-${Date.now()}`,
       type: 'note',
-      label: 'Spec',
-      description: 'Space specification',
+      label: 'Spec', // i18n-ignore (note identifier)
+      description: m.chat_storedContext_spec_description(),
       content: match[1] || undefined,
       metadata: { kind: 'spec', noteId: 'spec' },
     }),
@@ -60,7 +59,7 @@ const contextPatterns: ContextPattern[] = [
       id: `edit-diff-${Date.now()}`,
       type: 'file',
       label: match[1].split('/').pop() || match[1],
-      description: `Diff for ${match[1]}`,
+      description: m.chat_storedContext_diffFor_label({ path: match[1] }),
       path: match[1],
       content: match[2] || undefined,
       metadata: { kind: 'diff' },
@@ -85,7 +84,7 @@ const contextPatterns: ContextPattern[] = [
     getContextItem: (match) => ({
       id: `edit-selection-${Date.now()}`,
       type: 'selection',
-      label: `Selection from ${match[1].split('/').pop()}`,
+      label: m.chat_storedContext_selectionFrom_label({ file: match[1].split('/').pop() ?? '' }),
       description: match[1],
       content: match[2],
       path: match[1],

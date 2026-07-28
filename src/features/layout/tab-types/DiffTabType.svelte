@@ -44,6 +44,7 @@
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { toast } from '$lib/components/ui/toast';
+  import { m } from '$shared/paraglide/messages.js';
   import Fa from 'svelte-fa';
   import {
   faFile,
@@ -250,18 +251,18 @@
       patchLength: hunkPatch.length,
     });
     if (!workspaceId) {
-      toast.error('No workspace available');
+      toast.error(m.layout_diffTab_noWorkspace_error());
       return;
     }
     const result = await gitClient.stageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
     if (result.ok) {
-      toast.success('Hunk staged');
+      toast.success(m.layout_diffTab_hunkStaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
       appStore.dispatch(refreshRequested(workspaceId, true));
     } else {
-      toast.error(result.error || 'Failed to stage hunk');
+      toast.error(result.error || m.layout_diffTab_stageHunkFailed_error());
     }
   }
 
@@ -272,18 +273,18 @@
       patchLength: hunkPatch.length,
     });
     if (!workspaceId) {
-      toast.error('No workspace available');
+      toast.error(m.layout_diffTab_noWorkspace_error());
       return;
     }
     const result = await gitClient.unstageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
     if (result.ok) {
-      toast.success('Hunk unstaged');
+      toast.success(m.layout_diffTab_hunkUnstaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
       appStore.dispatch(refreshRequested(workspaceId, true));
     } else {
-      toast.error(result.error || 'Failed to unstage hunk');
+      toast.error(result.error || m.layout_diffTab_unstageHunkFailed_error());
     }
   }
 </script>
@@ -293,7 +294,7 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={handleGoToFile}
-    tooltip="Go to file"
+    tooltip={m.layout_diffHeader_goToFile_tooltip()}
     tooltipSide="bottom"
   >
     <Fa icon={faFile} size="xs" />
@@ -302,7 +303,9 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleLineWrapping())}
-    tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
+    tooltip={$lineWrapping
+      ? m.layout_diffHeader_wrappingOn_tooltip()
+      : m.layout_diffHeader_wrapLines_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$lineWrapping}
     class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -314,8 +317,8 @@
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleFoldUnchanged())}
     tooltip={$foldUnchanged
-      ? 'Folding unchanged lines. Click to disable.'
-      : 'Click to fold unchanged lines'}
+      ? m.layout_diffHeader_foldingOn_tooltip()
+      : m.layout_diffHeader_foldLines_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$foldUnchanged}
     class={$foldUnchanged ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -326,7 +329,9 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleDiffSideBySide())}
-    tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
+    tooltip={$diffSideBySide
+      ? m.layout_diffHeader_unifiedView_tooltip()
+      : m.layout_diffHeader_splitView_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$diffSideBySide}
     class={$diffSideBySide ? headerToggleActiveClass : headerToggleInactiveClass}

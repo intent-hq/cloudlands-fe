@@ -10,6 +10,7 @@
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { selectResizablePanelGroupLayout } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Panel {
@@ -404,6 +405,7 @@
     </div>
 
     <!-- Divider (between panels, not after the last one) -->
+    <!-- i18n-ignore (scanner false positive on the < comparison) -->
     {#if index < panels.length - 1}
       {@const nextCollapsed = collapsedPanels.has(panels[index + 1].id)}
       {#if !isCollapsed && !nextCollapsed}
@@ -434,8 +436,8 @@
               adjustPanelSizes(index, delta);
             }
           }}
-          title="Drag to resize, double-click to reset"
-          aria-label="Resize panels (double-click to reset)"
+          title={m.layout_resizable_dragToResize_tooltip()}
+          aria-label={m.layout_resizable_resizePanels_ariaLabel()}
         >
           <!-- Visual indicator on hover (matching ResizablePanel style) -->
           <div

@@ -44,6 +44,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   type AgentNameResolver,
 } from '../utils/friendly-labels';
   import { faNote } from '$lib/icons/faNote';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -189,7 +190,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     {:else if $events$.length === 0}
       <div class="flex flex-col items-center justify-center h-full text-subtle py-8">
         <Fa icon={faFile} class="text-2xl mb-2 opacity-40" />
-        <p class="text-sm">No activity yet</p>
+        <p class="text-sm">{m.log_timeline_noActivity_label()}</p>
       </div>
     {:else}
       <!-- Timeline (same as sandbox) -->
@@ -310,7 +311,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 type="button"
                 class="shrink-0 -my-1 p-0.5 rounded-full hover:bg-muted/50 hover:ring-2 hover:ring-primary/20 transition-all cursor-pointer"
                 onclick={(e) => onShowAgent?.(event.actor.id!, e)}
-                title="Open agent"
+                title={m.log_timeline_openAgent_tooltip()}
               >
                 <AuggieAvatar size={24} agentId={event.actor.id} />
               </button>

@@ -9,6 +9,7 @@
    */
   import Fa from 'svelte-fa';
   import { faArrowRightArrowLeft } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
   import {
     formatModelChangeLabel,
     type ModelChangeNoticeInfo,
@@ -20,7 +21,7 @@
     fallbackText?: string;
   }
 
-  let { notice, fallbackText = 'Model changed' }: Props = $props();
+  let { notice, fallbackText = m.chat_modelChangeNotice_fallback_label() }: Props = $props();
 
   const label = $derived(formatModelChangeLabel(notice, fallbackText));
 </script>

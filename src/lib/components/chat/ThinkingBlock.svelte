@@ -13,6 +13,7 @@
   faBrain,
 } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     content: string;
@@ -71,7 +72,7 @@
       <Fa icon={faBrain} class="w-3.5 h-3.5" />
     </div>
     <span class="font-medium text-foreground shrink-0">
-      {isStreaming ? 'Thinking...' : 'Reasoning'}
+      {isStreaming ? m.chat_thinkingBlock_thinking_label() : m.chat_thinkingBlock_reasoning_label()}
     </span>
     <div
       class="flex items-center justify-center shrink-0 transition-transform duration-200 {isExpanded

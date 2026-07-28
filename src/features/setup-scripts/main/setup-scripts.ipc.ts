@@ -11,11 +11,9 @@ import { ipcMain } from 'electron';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import type { ProjectType } from '../types';
-import {
-  SETUP_SCRIPT_TEMPLATES,
-  getTemplateContent,
-} from '../types';
+import { SETUP_SCRIPT_TEMPLATES, getTemplateContent } from '../types';
 
 const logger = new Logger('SetupScriptsIPC');
 
@@ -109,11 +107,13 @@ async function detectProjectType(repoPath: string): Promise<ProjectAnalysis> {
     // Add suggestions based on analysis
     if (analysis.gitIgnoredFiles.length > 0) {
       analysis.suggestions.push(
-        `Copy ${analysis.gitIgnoredFiles.join(', ')} from parent directory`,
+        m.setupScripts_ipc_copySuggestion_message({ files: analysis.gitIgnoredFiles.join(', ') }),
       );
     }
     if (analysis.packageManager) {
-      analysis.suggestions.push(`Install dependencies with ${analysis.packageManager}`);
+      analysis.suggestions.push(
+        m.setupScripts_ipc_installSuggestion_message({ packageManager: analysis.packageManager }),
+      );
     }
   } catch (error) {
     logger.error('Failed to analyze project', error as Error);
@@ -166,7 +166,7 @@ export function registerSetupScriptsHandlers(): void {
       logger.error('Failed to generate setup script', error as Error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : m.setupScripts_ipc_unknown_error(),
       };
     }
   });
@@ -181,7 +181,7 @@ export function registerSetupScriptsHandlers(): void {
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : m.setupScripts_ipc_unknown_error(),
         };
       }
     },
@@ -189,4 +189,3 @@ export function registerSetupScriptsHandlers(): void {
 
   logger.info('Setup scripts IPC handlers registered');
 }
-

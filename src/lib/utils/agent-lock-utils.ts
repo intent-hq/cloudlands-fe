@@ -13,11 +13,15 @@
  */
 
 import type { TrackedChange } from '$features/file-tracking/types';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * The tooltip message to show when a file is locked.
+ * Getter so the string re-resolves when the locale changes.
  */
-export const LOCKED_TOOLTIP = 'This file will be auto-committed when the agent completes';
+export function getLockedTooltip(): string {
+  return m.chat_changesPanel_lockedFile_tooltip();
+}
 
 /**
  * Check if a specific file path belongs to a locked agent.

@@ -35,8 +35,7 @@ import {
   computeCompletedEvents,
   deriveErrorDisplay,
   shouldAppendStreamingEvent,
-  SESSION_CORRUPTED_MESSAGE,
-  SESSION_CORRUPTED_TITLE,
+  SESSION_CORRUPTED,
   type StatusEvent,
 } from '../streaming-status-utils';
 
@@ -252,8 +251,8 @@ describe('StreamingStatus utilities', () => {
     it('maps a corrupted-session error to recreate-aware copy with the raw error as detail', () => {
       expect(deriveErrorDisplay('JSON-RPC error -32603: invalid argument', true)).toEqual({
         corrupted: true,
-        title: SESSION_CORRUPTED_TITLE,
-        message: SESSION_CORRUPTED_MESSAGE,
+        title: SESSION_CORRUPTED.title,
+        message: SESSION_CORRUPTED.message,
         detail: 'JSON-RPC error -32603: invalid argument',
       });
     });

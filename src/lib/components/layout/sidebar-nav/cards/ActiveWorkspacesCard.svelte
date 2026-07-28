@@ -9,6 +9,7 @@
    * Supports mark-as-read and pin/unpin actions.
    */
   import { goto } from '$app/navigation';
+  import { m } from '$shared/paraglide/messages.js';
   import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import {
@@ -267,9 +268,9 @@
     </div>
   {:else if totalCount === 0}
     <div class="px-3 py-4">
-      <p class="text-sm text-subtle">No active workspaces</p>
+      <p class="text-sm text-subtle">{m.layout_activeCard_noActive_label()}</p>
       <p class="text-sm text-subtle mt-1 leading-tight">
-        Pin workspaces from All Spaces for quick access
+        {m.layout_activeCard_pinHint_description()}
       </p>
     </div>
   {:else}
@@ -278,7 +279,7 @@
         <input
           bind:this={searchInputEl}
           type="text"
-          placeholder="Search spaces..."
+          placeholder={m.layout_activeCard_search_placeholder()}
           bind:value={searchQuery}
           class="w-full px-2.5 py-1.5 text-sm bg-background/30 rounded-md text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
         />
@@ -288,7 +289,7 @@
     <!-- Unread section -->
     {#if filteredUnread.length > 0}
       <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
-        <Header size={3} class="truncate">Unread</Header>
+        <Header size={3} class="truncate">{m.layout_activeCard_unread_header()}</Header>
       </div>
       {#each filteredUnread as { workspace, unreadIds }, _i (workspace.id)}
         <WorkspaceCard
@@ -311,7 +312,7 @@
     <!-- Running section -->
     {#if filteredRunning.length > 0}
       <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
-        <Header size={3} class="truncate">Running</Header>
+        <Header size={3} class="truncate">{m.layout_activeCard_running_header()}</Header>
         <span class="text-ui text-subtle shrink-0">{runningWorkspaces.length}</span>
       </div>
       {#each filteredRunning as { workspace, streamingIds }, _i (workspace.id)}
@@ -334,7 +335,7 @@
     <!-- Pinned section -->
     {#if filteredPinned.length > 0}
       <div class="section-header px-3 pt-2 pb-1 flex items-center gap-1.5 min-w-0">
-        <Header size={3} class="truncate">Pinned</Header>
+        <Header size={3} class="truncate">{m.layout_activeCard_pinned_header()}</Header>
       </div>
       {#each filteredPinned as { workspace }, _i (workspace.id)}
         <WorkspaceCard

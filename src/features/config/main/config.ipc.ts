@@ -16,13 +16,10 @@
 import { ipcMain } from 'electron';
 import { ConfigManager } from '../../../shared/services/config-manager';
 import { Logger } from '../../../shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { CONFIG_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import {
-  ConfigGetSchema,
-  ConfigSetSchema,
-  ConfigGetAllSchema,
-} from '../../../main/ipc-schemas';
+import { ConfigGetSchema, ConfigSetSchema, ConfigGetAllSchema } from '../../../main/ipc-schemas';
 import {
   hydrateFromDaemon,
   isDaemonOwnedKey,
@@ -105,7 +102,7 @@ export async function setupConfigIPC() {
           if (!configManager) throw new Error('ConfigManager not initialized');
 
           if (validated.value === undefined) {
-            return { success: false, error: 'Config value cannot be undefined' };
+            return { success: false, error: m.config_ipc_valueUndefined_error() };
           }
 
           configManager.set(validated.key, validated.value);

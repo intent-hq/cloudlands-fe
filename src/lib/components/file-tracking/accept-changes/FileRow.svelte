@@ -16,6 +16,7 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     file: UIFileChange;
@@ -104,11 +105,11 @@
   const revertTooltip = $derived.by(() => {
     switch (changeType) {
       case 'added':
-        return 'Delete new file';
+        return m.fileTracking_changes_deleteNewFile_tooltip();
       case 'deleted':
-        return 'Restore deleted file';
+        return m.fileTracking_changes_restoreDeletedFile_tooltip();
       default:
-        return 'Discard changes';
+        return m.fileTracking_changes_discardChanges_tooltip();
     }
   });
 
@@ -117,7 +118,7 @@
     const items: SidebarMenuEntry[] = [
       {
         id: 'open',
-        label: 'Open',
+        label: m.fileExplorer_tree_open_label(),
         icon: faArrowUpRightFromSquare,
         onClick: (event?: MouseEvent) => {
           onFileClick?.(file.path, undefined, file.staged, event);
@@ -130,7 +131,7 @@
     if (onOpenFile) {
       items.push({
         id: 'open-file',
-        label: 'Open File',
+        label: m.fileTracking_fileRow_openFile_label(),
         icon: faFileAlt,
         onClick: () => {
           onOpenFile?.(file.path);
@@ -145,7 +146,9 @@
       if (showStageAction) {
         items.push({
           id: file.staged ? 'unstage' : 'stage',
-          label: file.staged ? 'Unstage' : 'Stage',
+          label: file.staged
+            ? m.fileTracking_fileRow_unstage_label()
+            : m.fileTracking_fileRow_stage_label(),
           icon: file.staged ? faMinus : faPlus,
           onClick: () => {
             if (file.staged) {
@@ -234,7 +237,7 @@
             e.stopPropagation();
             onOpenFile?.(file.path);
           }}
-          tooltip="Open file"
+          tooltip={m.fileTracking_fileRow_openFile_tooltip()}
         >
           <Fa icon={faFileAlt} class="h-2.5! w-2.5!" />
         </Button>
@@ -270,7 +273,9 @@
               onStage?.(file.path);
             }
           }}
-          tooltip={file.staged ? 'Unstage' : 'Stage'}
+          tooltip={file.staged
+            ? m.fileTracking_fileRow_unstage_label()
+            : m.fileTracking_fileRow_stage_label()}
         >
           <Fa icon={file.staged ? faMinus : faPlus} class="h-2.5! w-2.5!" />
         </Button>

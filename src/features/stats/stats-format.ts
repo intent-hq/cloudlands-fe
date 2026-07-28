@@ -7,7 +7,13 @@
  * and NaN-safe: a zero-data period renders zeroes, never NaN.
  */
 import { ACP_PROVIDERS } from '$shared/config/provider-config';
-import type { UsageModelStats, UsageProviderStats, UsageTokenTotals } from '$lib/client/app-client';
+import type {
+  UsageModelStats,
+  UsageProviderStats,
+  UsageTokenTotals,
+} from '$lib/client/app-client';
+import { formatInteger, formatNumber } from '$lib/i18n/format';
+import { m } from '$shared/paraglide/messages.js';
 
 /** Sum of the 4 separate token counters (Spec D6). */
 export function totalTokens(t: UsageTokenTotals): number {
@@ -32,24 +38,26 @@ export function formatTokens(count: number): string {
 
 /** "2h 14m" / "42m" longest-run duration (design's h/m format, padded minutes). */
 export function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return '0m';
+  if (!Number.isFinite(ms) || ms <= 0) return m.stats_format_durationMinutes_label({ minutes: 0 });
   const totalMinutes = Math.round(ms / 60_000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes}m`;
-  return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  if (hours === 0) return m.stats_format_durationMinutes_label({ minutes });
+  return m.stats_format_durationHoursMinutes_label({
+    hours,
+    minutes: String(minutes).padStart(2, '0'),
+  });
 }
 
-/** Thousands-separated integer (the design uses en-US grouping). */
+/** Thousands-separated integer in the active locale. */
 export function formatInt(n: number): string {
-  if (!Number.isFinite(n)) return '0';
-  return Math.round(n).toLocaleString('en-US');
+  return formatInteger(n);
 }
 
 /** "61%" share label for a 0..1 fraction. */
 export function formatShare(share: number): string {
-  if (!Number.isFinite(share) || share <= 0) return '0%';
-  return `${Math.round(share * 100)}%`;
+  const value = Number.isFinite(share) && share > 0 ? share : 0;
+  return formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
 }
 
 /** Share-bar / rank palette from the design (1st → 4th). */

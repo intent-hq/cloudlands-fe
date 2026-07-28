@@ -1,6 +1,7 @@
 /**
  * Linear Integration Constants
  */
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * IPC channel names for Linear authentication
@@ -56,57 +57,88 @@ export const LINEAR_ISSUE_FILTER_OPTIONS: Array<{
 }> = [
   {
     value: 'assigned',
-    label: 'Assigned to me',
-    description: 'Issues currently assigned to you',
+    get label() {
+      return m.linearAuth_filter_assigned_label();
+    },
+    get description() {
+      return m.linearAuth_filter_assigned_description();
+    },
   },
   {
     value: 'created',
-    label: 'Created by me',
-    description: 'Issues you created',
+    get label() {
+      return m.linearAuth_filter_created_label();
+    },
+    get description() {
+      return m.linearAuth_filter_created_description();
+    },
   },
   {
     value: 'subscribed',
-    label: 'Subscribed',
-    description: 'Issues you are watching',
+    get label() {
+      return m.linearAuth_filter_subscribed_label();
+    },
+    get description() {
+      return m.linearAuth_filter_subscribed_description();
+    },
   },
   {
     value: 'team',
-    label: 'My teams',
-    description: 'All active issues from your teams',
+    get label() {
+      return m.linearAuth_filter_team_label();
+    },
+    get description() {
+      return m.linearAuth_filter_team_description();
+    },
   },
   {
     value: 'all',
-    label: 'All accessible',
-    description: 'All issues you have access to',
+    get label() {
+      return m.linearAuth_filter_all_label();
+    },
+    get description() {
+      return m.linearAuth_filter_all_description();
+    },
   },
 ];
 
 /**
  * Natural language queries for each filter type
+ * (i18n-ignore: agent-directed prompt content, not rendered UI text)
  */
 export const LINEAR_ISSUE_FILTER_QUERIES: Record<
   LinearIssueFilter,
   { summary: string; query: string }
 > = {
   assigned: {
+    // i18n-ignore — agent-directed prompt content
     summary: 'Fetch issues assigned to current user',
+    // i18n-ignore — agent-directed prompt content
     query: 'List all issues assigned to me that are not completed or canceled, grouped by team',
   },
   created: {
+    // i18n-ignore — agent-directed prompt content
     summary: 'Fetch issues created by current user',
+    // i18n-ignore — agent-directed prompt content
     query: 'List all issues I created that are not completed or canceled, grouped by team',
   },
   subscribed: {
+    // i18n-ignore — agent-directed prompt content
     summary: 'Fetch issues user is subscribed to',
+    // i18n-ignore — agent-directed prompt content
     query: 'List all issues I am subscribed to that are not completed or canceled, grouped by team',
   },
   team: {
+    // i18n-ignore — agent-directed prompt content
     summary: 'Fetch all active issues from user teams',
     query:
+      // i18n-ignore — agent-directed prompt content
       'List all active issues from my teams that are not completed or canceled, grouped by team',
   },
   all: {
+    // i18n-ignore — agent-directed prompt content
     summary: 'Fetch all accessible issues',
+    // i18n-ignore — agent-directed prompt content
     query: 'List all issues I have access to that are not completed or canceled, grouped by team',
   },
 };

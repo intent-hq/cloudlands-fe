@@ -7,6 +7,7 @@
    * and CommandPalette for the onboarding flow.
    */
   import { onMount } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -61,7 +62,7 @@
       if (repo.path && !repo.path.includes('/.clones/')) {
         repoMap.set(repo.path, {
           path: repo.path,
-          name: repo.name || repo.path.split('/').pop() || 'Unknown',
+          name: repo.name || repo.path.split('/').pop() || m.onboarding_localRepoTab_unknownProject_label(),
           owner: repo.owner,
         });
       }
@@ -146,7 +147,7 @@
 
   function handleSelectFolder() {
     void pickDirectory({
-      title: 'Select Repository Folder',
+      title: m.onboarding_localRepoTab_selectRepoFolder_title(),
       defaultPath: selectedPath,
       openModal: () => (pickerOpen = true),
       onSelect: handlePickerSelect,
@@ -191,7 +192,7 @@
 
 <div class="space-y-3">
   <p class="text-base text-muted-foreground pb-3">
-    Pick a project from your machine. You can select any folder on disk.
+    {m.onboarding_localRepoTab_pick_description()}
   </p>
   <!--
     Search input — acts as the combobox trigger for the listbox below.
@@ -204,7 +205,7 @@
       bind:ref={searchInputRef}
       bind:value={searchQuery}
       type="text"
-      placeholder="Search projects..."
+      placeholder={m.onboarding_localRepoTab_search_placeholder()}
       class="w-full py-5! pr-11"
       noFocusStyle
       onkeydown={handleKeydown}
@@ -215,7 +216,7 @@
       aria-activedescendant={filteredRepos[focusedIndex]
         ? `local-repo-option-${focusedIndex}`
         : undefined}
-      aria-label="Search local projects"
+      aria-label={m.onboarding_localRepoTab_search_ariaLabel()}
     />
     <div class="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
       {#if searchQuery}
@@ -226,15 +227,15 @@
             searchQuery = '';
             searchInputRef?.focus();
           }}
-          aria-label="Clear search">✕</button
+          aria-label={m.onboarding_localRepoTab_clearSearch_ariaLabel()}>✕</button
         >
       {/if}
       <button
         type="button"
         class="text-muted-foreground/60 hover:text-foreground cursor-pointer p-1.5 mr-0.5 rounded hover:bg-muted/40 transition-colors"
         onclick={handleSelectFolder}
-        aria-label="Browse for a folder"
-        title="Browse for a folder"
+        aria-label={m.onboarding_localRepoTab_browse_ariaLabel()}
+        title={m.onboarding_localRepoTab_browse_ariaLabel()}
       >
         <Fa icon={faFolder} size="sm" />
       </button>
@@ -253,7 +254,7 @@
     bind:this={listContainerRef}
     id="local-repo-list"
     role="listbox"
-    aria-label="Recent local projects"
+    aria-label={m.onboarding_localRepoTab_repoList_ariaLabel()}
     class="max-h-70 overflow-y-auto -mx-1 px-1"
   >
     {#if filteredRepos.length > 0}
@@ -336,19 +337,19 @@
       </div>
     {:else if searchQuery}
       <div class="py-4 text-center text-sm text-muted-foreground">
-        No projects match "{searchQuery}"
+        {m.onboarding_localRepoTab_noMatches_label({ query: searchQuery })}
       </div>
     {:else}
-      <div class="py-4 text-center text-sm text-muted-foreground">No recent projects found</div>
+      <div class="py-4 text-center text-sm text-muted-foreground">{m.onboarding_localRepoTab_noRecent_label()}</div>
     {/if}
   </div>
 </div>
 
 <DirectoryPickerModal
   open={pickerOpen}
-  title="Select Repository Folder"
+  title={m.onboarding_localRepoTab_selectRepoFolder_title()}
   initialPath={selectedPath}
-  selectLabel="Select folder"
+  selectLabel={m.onboarding_dirPicker_selectFolder_label()}
   onSelect={handlePickerSelect}
   onClose={() => (pickerOpen = false)}
 />

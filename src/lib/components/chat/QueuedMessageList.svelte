@@ -27,6 +27,8 @@
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import { summarizeEventWake } from './event-wake-summary';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     messages: QueuedMessage[];
@@ -58,7 +60,7 @@
     index: number,
   ) {
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
-    lightboxImageName = `Attached image ${index + 1}`;
+    lightboxImageName = m.chat_chatMessage_attachedImage_alt({ number: formatInteger(index + 1) });
     lightboxOpenerElement = openerElement;
     lightboxOpen = true;
   }
@@ -253,11 +255,14 @@
             e.stopPropagation();
             openImageLightbox(block, e.currentTarget, i);
           }}
-          aria-label="View attached image {i + 1} of {message.imageBlocks.length} full size"
+          aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
+            number: formatInteger(i + 1),
+            total: formatInteger(message.imageBlocks?.length ?? 0),
+          })}
         >
           <img
             src="data:{block.mimeType};base64,{block.data}"
-            alt="Attached image {i + 1}"
+            alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
             class="h-[1.1em] w-[1.1em] rounded-sm border border-border object-cover hover:opacity-90 transition-opacity"
           />
         </button>
@@ -270,7 +275,7 @@
   <div class="relative border-t border-border/50 pt-3 pb-2 px-2 z-20" transition:slide={{ duration: 200 }}>
     <div class="flex items-center gap-1.5 text-xs text-subtle mb-2 px-2.5">
         <Fa icon={faListOl} class="w-3 h-3" />
-        <span>Queued messages ({messages.length})</span>
+        <span>{m.chat_queuedMessages_header_label({ count: formatInteger(messages.length) })}</span>
       </div>
 
       <div class="space-y-px">
@@ -279,7 +284,7 @@
           <div
             class="group flex items-start gap-2 px-2.5 py-1 text-subtle text-sm grid {message.editing ? 'opacity-60' : ''}"
             transition:fly={{ y: 10, duration: 200 }}
-            title={message.editing ? 'Held for editing' : undefined}
+            title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
           >
             {#if editingId === message.id}
               <!-- Edit mode -->
@@ -304,7 +309,7 @@
                   size="icon-xs"
                   class="-my-1"
                   onclick={saveEdit}
-                  tooltip="Save"
+                  tooltip={m.chat_queuedMessages_save_tooltip()}
                 >
                   <Fa icon={faCheck} class="w-3 h-3" />
                 </Button>
@@ -313,7 +318,7 @@
                   size="icon-xs"
                   class="-my-1"
                   onclick={cancelEdit}
-                  tooltip="Cancel"
+                  tooltip={m.chat_queuedMessages_cancel_tooltip()}
                 >
                   <Fa icon={faTimes} class="w-3 h-3" />
                 </Button>
@@ -325,12 +330,12 @@
                 {#if message.requeuedAfterFailure}
                   <div
                     class="flex items-center gap-1 text-warning text-xs shrink-0"
-                    title="Failed — will retry"
+                    title={m.chat_queuedMessages_failedWillRetry_label()}
                   >
                     <div aria-hidden="true">
                       <Fa icon={faRotateRight} class="w-3 h-3" />
                     </div>
-                    <span class="sr-only">Failed — will retry</span>
+                    <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
                   </div>
                 {/if}
                 <div aria-hidden="true" class="shrink-0">
@@ -355,7 +360,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => onsendnow?.(message.id)}
-                      tooltip="Send now (interrupts current stream)"
+                      tooltip={m.chat_queuedMessages_sendNow_tooltip()}
                     >
                       <Fa icon={faPaperPlane} class="w-3 h-3" />
                     </Button>
@@ -364,7 +369,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => handleRemove(message.id)}
-                      tooltip="Remove"
+                      tooltip={m.chat_queuedMessages_remove_tooltip()}
                     >
                       <Fa icon={faTrash} class="w-3 h-3" />
                     </Button>
@@ -377,12 +382,12 @@
                 {#if message.requeuedAfterFailure}
                   <div
                     class="flex items-center gap-1 text-warning text-xs shrink-0"
-                    title="Failed — will retry"
+                    title={m.chat_queuedMessages_failedWillRetry_label()}
                   >
                     <div aria-hidden="true">
                       <Fa icon={faRotateRight} class="w-3 h-3" />
                     </div>
-                    <span class="sr-only">Failed — will retry</span>
+                    <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
                   </div>
                 {/if}
                 <div class="shrink-0" data-testid="queued-agent-message-avatar">
@@ -406,7 +411,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => onsendnow?.(message.id)}
-                      tooltip="Send now (interrupts current stream)"
+                      tooltip={m.chat_queuedMessages_sendNow_tooltip()}
                     >
                       <Fa icon={faPaperPlane} class="w-3 h-3" />
                     </Button>
@@ -415,7 +420,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => handleRemove(message.id)}
-                      tooltip="Remove"
+                      tooltip={m.chat_queuedMessages_remove_tooltip()}
                     >
                       <Fa icon={faTrash} class="w-3 h-3" />
                     </Button>
@@ -428,12 +433,12 @@
                 {#if message.requeuedAfterFailure}
                   <div
                     class="flex items-center gap-1 text-warning text-xs shrink-0"
-                    title="Failed — will retry"
+                    title={m.chat_queuedMessages_failedWillRetry_label()}
                   >
                     <div aria-hidden="true">
                       <Fa icon={faRotateRight} class="w-3 h-3" />
                     </div>
-                    <span class="sr-only">Failed — will retry</span>
+                    <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
                   </div>
                 {/if}
                 {@render imageThumbnails(message)}
@@ -442,7 +447,9 @@
                   transition:slide={{ axis: 'y', duration: 200 }}
                   onclick={() => startEdit(message)}
                 >
-                  {message.requeuedAfterFailure ? '(Failed — will retry) ' : ''}{message.content}
+                  {message.requeuedAfterFailure
+                    ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '
+                    : ''}{message.content}
                 </button>
                 {#if !disabled}
                   <div
@@ -453,7 +460,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => onsendnow?.(message.id)}
-                      tooltip="Send now (interrupts current stream)"
+                      tooltip={m.chat_queuedMessages_sendNow_tooltip()}
                     >
                       <Fa icon={faPaperPlane} class="w-3 h-3" />
                     </Button>
@@ -462,7 +469,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => startEdit(message)}
-                      tooltip="Edit"
+                      tooltip={m.chat_queuedMessages_edit_tooltip()}
                     >
                       <Fa icon={faPen} class="w-3 h-3" />
                     </Button>
@@ -471,7 +478,7 @@
                       size="icon-xs"
                       class="-my-1"
                       onclick={() => handleRemove(message.id)}
-                      tooltip="Remove"
+                      tooltip={m.chat_queuedMessages_remove_tooltip()}
                     >
                       <Fa icon={faTrash} class="w-3 h-3" />
                     </Button>

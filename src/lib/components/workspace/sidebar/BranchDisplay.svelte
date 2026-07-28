@@ -10,6 +10,7 @@
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
+  import { m } from '$shared/paraglide/messages.js';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { getBranchNameValidationError } from './sidebar-changes-utils';
   import { logger } from '$lib/utils/client-logger';
@@ -109,12 +110,12 @@
         await persistWorkspaceChanges({ branch: newBranch });
       } else {
         logger.error('Failed to rename branch', { error: result.error });
-        toast.error(result.error || 'Failed to rename branch');
+        toast.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
         branchRename.value = $workspace.branch || '';
       }
     } catch (error) {
       logger.error('Error renaming branch:', error);
-      toast.error('Failed to rename branch');
+      toast.error(m.workspace_sidebarHeader_renameBranchFailed_error());
       branchRename.value = $workspace.branch || '';
     } finally {
       branchRename.active = false;
@@ -166,14 +167,16 @@
                outline-none min-w-[60px] max-w-[150px] leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150 disabled:opacity-50"
-        placeholder="branch name"
+        placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
         style="width: {Math.max(60, Math.min(150, (branchRename.value || '').length * 6 + 20))}px"
       />
     {:else}
       <Tooltip side="top" disableCloseOnTriggerClick bind:open={branchCopy.workingTooltip}>
         {#snippet content()}<span
-            >Working on the {$workspace?.branch || 'no branch'} branch. Click to change name.</span
-          ><br /><span class="text-ghost">Shift+click to copy</span
+            >{m.workspace_branchDisplay_workingOn_tooltip({
+              branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
+            })}</span
+          ><br /><span class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
           >{#if branchCopy.copiedWorking}<span
               class="text-green-500 ml-1.5 inline-flex items-center gap-1"
               ><Fa icon={faCheck} size="xs" /></span
@@ -202,7 +205,7 @@
           disabled={!$workspace || branchRename.saving}
         >
           {#if $workspace}
-            {$workspace.branch || 'no branch'}
+            {$workspace.branch || m.workspace_branchDisplay_noBranch_label()}
           {/if}
         </button>
       </Tooltip>
@@ -224,9 +227,9 @@
       disableCloseOnTriggerClick
       bind:open={branchCopy.trunkTooltip}
     >
-      {#snippet content()}{#if canChangeTrunk}<span>Trunk branch - click to change</span
-          >{:else}<span>Trunk branch (cannot change after pushing)</span>{/if}<br /><span
-          class="text-ghost">Shift+click to copy</span
+      {#snippet content()}{#if canChangeTrunk}<span>{m.workspace_branchDisplay_trunkChange_tooltip()}</span
+          >{:else}<span>{m.workspace_branchDisplay_trunkLocked_tooltip()}</span>{/if}<br /><span
+          class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
         >{#if branchCopy.copiedTrunk}<span
             class="text-green-500 ml-1.5 inline-flex items-center gap-1"
             ><Fa icon={faCheck} size="xs" /></span

@@ -5,6 +5,7 @@
   scale,
 } from 'svelte/transition';
   import type { Snippet } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface TabOverflowMenuSlotProps {
     close: () => void;
@@ -80,10 +81,10 @@
     type="button"
     onclick={toggle}
     class="flex-shrink-0 flex items-center justify-center w-6 h-full hover:bg-sidebar/50 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-    aria-label="Show more tabs"
+    aria-label={m.ui_tabOverflow_showMore_ariaLabel()}
     aria-expanded={isOpen}
     aria-haspopup="menu"
-    title="More tabs"
+    title={m.ui_tabOverflow_more_tooltip()}
   >
     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path

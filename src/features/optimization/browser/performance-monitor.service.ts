@@ -239,21 +239,25 @@ class PerformanceMonitorService {
     // Check memory usage
     const memoryUsageMB = this.metrics.memoryUsage.usedJSHeapSize / 1024 / 1024;
     if (memoryUsageMB > this.thresholds.memoryUsageMB) {
+      // i18n-ignore (developer diagnostics)
       warnings.push(`High memory usage: ${Math.round(memoryUsageMB)}MB`);
     }
 
     // Check DOM nodes
     if (this.metrics.domNodes > this.thresholds.domNodes) {
+      // i18n-ignore (developer diagnostics)
       warnings.push(`Too many DOM nodes: ${this.metrics.domNodes}`);
     }
 
     // Check event listeners
     if (this.metrics.eventListeners > this.thresholds.eventListeners) {
+      // i18n-ignore (developer diagnostics)
       warnings.push(`Too many event listeners: ${this.metrics.eventListeners}`);
     }
 
     // Check FPS
     if (this.metrics.fps < this.thresholds.minFPS) {
+      // i18n-ignore (developer diagnostics)
       warnings.push(`Low FPS: ${Math.round(this.metrics.fps)}`);
     }
 
@@ -301,6 +305,7 @@ class PerformanceMonitorService {
    * Get performance report
    */
   getReport(): string {
+    // i18n-ignore (developer diagnostics)
     if (!this.metrics) return 'No metrics available';
 
     const memoryUsageMB = Math.round(this.metrics.memoryUsage.usedJSHeapSize / 1024 / 1024);
@@ -308,6 +313,7 @@ class PerformanceMonitorService {
       (this.metrics.memoryUsage.usedJSHeapSize / this.metrics.memoryUsage.jsHeapSizeLimit) * 100,
     );
 
+    // i18n-ignore (developer diagnostics)
     return `
 Performance Report:
 ==================

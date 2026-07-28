@@ -1,7 +1,4 @@
-import {
-  app,
-  protocol,
-} from 'electron';
+import { app, protocol } from 'electron';
 import { decodeUrlPath } from './utils/decode-url-path';
 import { logger } from '../shared/logger';
 import path from 'path';
@@ -49,9 +46,11 @@ async function serveFile(
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
       logger.error('File not found:', filePath);
+      // i18n-ignore (internal protocol response body)
       return new Response('File not found', { status: 404 });
     }
     logger.error('Failed to serve file:', error);
+    // i18n-ignore (internal protocol response body)
     return new Response('Failed to serve file', { status: 500 });
   }
 }
@@ -66,6 +65,7 @@ export function setupAppProtocolHandler() {
       logger.warn('Rejected protocol request with invalid path encoding', {
         originalPath: url.pathname,
       });
+      // i18n-ignore (internal protocol response body)
       return new Response('Invalid path', { status: 400 });
     }
 
@@ -105,6 +105,7 @@ export function setupAppProtocolHandler() {
     // Reject .ts requests in production
     if (filePath.endsWith('.ts')) {
       logger.warn('TypeScript file requested in production:', filePath);
+      // i18n-ignore (internal protocol response body)
       return new Response('TypeScript files should not be loaded in production', {
         status: 404,
         headers: { 'Content-Type': 'text/plain' },
@@ -142,6 +143,7 @@ export function setupAppProtocolHandler() {
 
     if (!fullPath) {
       logger.warn('Rejected protocol request with unsafe path', { filePath });
+      // i18n-ignore (internal protocol response body)
       return new Response('Invalid path', { status: 400 });
     }
 
@@ -157,6 +159,7 @@ export function setupAppProtocolHandler() {
     }
 
     logger.error('File not found:', { filePath, fullPath });
+    // i18n-ignore (internal protocol response body)
     return new Response('File not found', {
       status: 404,
       headers: { 'Content-Type': 'text/plain' },
@@ -174,6 +177,7 @@ export function setupWorkspaceAssetProtocolHandler() {
       logger.warn('Rejected workspace-asset request with invalid path encoding', {
         originalPath: url.pathname,
       });
+      // i18n-ignore (internal protocol response body)
       return new Response('Invalid asset URL', { status: 400 });
     }
 
@@ -181,6 +185,7 @@ export function setupWorkspaceAssetProtocolHandler() {
 
     if (!workspaceId || !assetId) {
       logger.warn('Invalid workspace-asset URL:', request.url);
+      // i18n-ignore (internal protocol response body)
       return new Response('Invalid asset URL', { status: 400 });
     }
 
@@ -189,6 +194,7 @@ export function setupWorkspaceAssetProtocolHandler() {
         workspaceId,
         assetId,
       });
+      // i18n-ignore (internal protocol response body)
       return new Response('Invalid asset URL', { status: 400 });
     }
 
@@ -213,6 +219,7 @@ export function setupWorkspaceAssetProtocolHandler() {
         assetId,
         error: error instanceof Error ? error.message : String(error),
       });
+      // i18n-ignore (internal protocol response body)
       return new Response('Asset not found', { status: 404 });
     }
   });

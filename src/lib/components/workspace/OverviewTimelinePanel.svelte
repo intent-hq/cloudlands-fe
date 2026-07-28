@@ -35,6 +35,8 @@
 
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Header from '../ui/Header.svelte';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface OverviewAgent {
     id: string;
@@ -245,9 +247,9 @@
   {#if agentsLoading}
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
-        <h3 class="text-sm font-semibold text-foreground">Agents</h3>
+        <h3 class="text-sm font-semibold text-foreground">{m.workspace_multiSelectSidebar_agentsTab_label()}</h3>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
-          Agents working on your task in this space.
+          {m.workspace_multiSelectSidebar_agentsTab_description()}
         </p>
       </div>
       <div class="px-4 pb-3">
@@ -269,12 +271,11 @@
           class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('agents')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">Agent orchestration</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_agentOrchestration_label()}</h3>
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
-          A coordinator agent breaks down your task into a spec, then delegates work to specialist
-          agents that run in parallel.
+          {m.workspace_overviewTimeline_coordinatorOrchestration_description()}
         </p>
       </div>
 
@@ -306,9 +307,17 @@
                 {/each}
               </div>
               <span class="text-subtle text-xs">
-                {delegatedCount} delegated agent{delegatedCount !== 1 ? 's' : ''}
+                {delegatedCount === 1
+                  ? m.workspace_overviewTimeline_delegatedAgents_one()
+                  : m.workspace_overviewTimeline_delegatedAgents_many({
+                      count: formatInteger(delegatedCount),
+                    })}
                 {#if runningDelegatedCount > 0}
-                  <span class="text-emerald-500 font-medium">· {runningDelegatedCount} working</span>
+                  <span class="text-emerald-500 font-medium"
+                    >{m.workspace_overviewTimeline_working_label({
+                      count: formatInteger(runningDelegatedCount),
+                    })}</span
+                  >
                 {/if}
               </span>
             </button>
@@ -318,9 +327,9 @@
         <!-- Non-delegated agents (hide preview unless actively running) -->
         {#if otherAgents.length > 0}
           <div class="pt-2 pb-0.5 px-2">
-            <Header size={6}>Your Agents</Header>
+            <Header size={6}>{m.workspace_overviewTimeline_yourAgents_label()}</Header>
             <p class="text-xs text-subtle mt-0.5">
-              The Coordinator can delegate and verify tasks for these agents
+              {m.workspace_overviewTimeline_coordinatorDelegates_description()}
             </p>
           </div>
           <div class="flex flex-col gap-0.5 mt-1">
@@ -340,7 +349,11 @@
                 onclick={() => onSwitchTab?.('agents')}
               >
                 <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
-                {otherAgents.length - 3} more agent{otherAgents.length - 3 === 1 ? '' : 's'}
+                {otherAgents.length - 3 === 1
+                  ? m.workspace_overviewTimeline_moreAgents_one()
+                  : m.workspace_overviewTimeline_moreAgents_many({
+                      count: formatInteger(otherAgents.length - 3),
+                    })}
               </button>
             {/if}
           </div>
@@ -352,7 +365,7 @@
           onclick={() => onOpenAgentOverview?.()}
         >
           <Fa icon={faSitemap} size="xs" class="opacity-50" />
-          <span>View agent tree</span>
+          <span>{m.workspace_overviewTimeline_viewAgentTree_label()}</span>
         </button>
       {/if}
     </section>
@@ -363,11 +376,11 @@
           class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('agents')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">Agents</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_agentsTab_label()}</h3>
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
-          Agents working on your task in this space.
+          {m.workspace_multiSelectSidebar_agentsTab_description()}
         </p>
       </div>
 
@@ -386,7 +399,7 @@
             class="text-ui text-subtle text-left px-2 py-0.5 flex items-center cursor-pointer"
             onclick={() => onSwitchTab?.('agents')}
           >
-            See all...
+            {m.workspace_overviewTimeline_seeAll_label()}
           </button>
         {/if}
       </div>
@@ -396,7 +409,7 @@
           onclick={() => onOpenAgentOverview?.()}
         >
           <Fa icon={faSitemap} size="xs" class="opacity-50" />
-          <span>View agent tree</span>
+          <span>{m.workspace_overviewTimeline_viewAgentTree_label()}</span>
         </button>
       {/if}
     </section>
@@ -408,9 +421,9 @@
   {#if notesLoading}
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
-        <h3 class="text-sm font-semibold text-foreground">Context</h3>
+        <h3 class="text-sm font-semibold text-foreground">{m.workspace_multiSelectSidebar_contextTab_label()}</h3>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
-          Notes about the task, shared with all agents in this space.
+          {m.workspace_multiSelectSidebar_contextTab_description()}
         </p>
       </div>
       <div class="px-4 pb-3">
@@ -435,11 +448,11 @@
           class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('context')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">Context</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_contextTab_label()}</h3>
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
-          Notes about the task, shared with all agents in this space.
+          {m.workspace_multiSelectSidebar_contextTab_description()}
         </p>
       </div>
 
@@ -464,7 +477,7 @@
           {@const taskStatus = task.metadata?.task?.status ?? 'not_started'}
           {@const depth = getNoteDepth(task, notes)}
           <ListItem
-            title={task.title || 'Untitled task'}
+            title={task.title || m.workspace_overviewTimeline_untitledTask_label()}
             titleClass={taskStatus === 'complete' ? 'text-muted-foreground' : ''}
             indent={depth}
             variant="subtle"
@@ -500,7 +513,7 @@
             onclick={() => onSwitchTab?.('context')}
           >
             <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
-            {moreContextCount} more notes
+            {m.workspace_overviewTimeline_moreNotes_label({ count: formatInteger(moreContextCount) })}
           </button>
         {/if}
       </div>
@@ -513,9 +526,9 @@
   {#if changesLoading}
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
-        <h3 class="text-sm font-semibold text-foreground">Changes</h3>
+        <h3 class="text-sm font-semibold text-foreground">{m.workspace_multiSelectSidebar_changesTab_label()}</h3>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
-          Files changed manually or by agents working in this space.
+          {m.workspace_multiSelectSidebar_changesTab_description()}
         </p>
       </div>
       <div class="px-4 pb-3">
@@ -543,11 +556,11 @@
           class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('changes')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">Changes</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_changesTab_label()}</h3>
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
-          Files changed manually or by agents working in this space.
+          {m.workspace_multiSelectSidebar_changesTab_description()}
         </p>
       </div>
 
@@ -558,7 +571,9 @@
               <Fa icon={faCodeBranch} size="xs" class="text-ghost" />
               <Tooltip side="top" disableCloseOnTriggerClick bind:open={workingBranchTooltipOpen}>
                 {#snippet content()}<span
-                    >Working on the {workspace.branch} branch. Click to copy.</span
+                    >{m.workspace_overviewTimeline_workingOnBranch_tooltip({
+                      branch: workspace.branch,
+                    })}</span
                   >{#if copiedWorkingBranch}<span
                       class="text-green-500 ml-1.5 inline-flex items-center gap-1"
                       ><Fa icon={faCheck} size="xs" /></span
@@ -581,7 +596,7 @@
               {#if workspace.baseRef}
                 <Fa icon={faArrowRight} size="xs" class="text-ghost" />
                 <Tooltip side="top" disableCloseOnTriggerClick bind:open={trunkBranchTooltipOpen}>
-                  {#snippet content()}<span>Trunk branch. Click to copy.</span
+                  {#snippet content()}<span>{m.workspace_overviewTimeline_trunkBranch_tooltip()}</span
                     >{#if copiedTrunkBranch}<span
                         class="text-green-500 ml-1.5 inline-flex items-center gap-1"
                         ><Fa icon={faCheck} size="xs" /></span
@@ -629,7 +644,9 @@
               }}
             >
               <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
-              {moreFilesCount} more changed files
+              {m.workspace_overviewTimeline_moreChangedFiles_label({
+                count: formatInteger(moreFilesCount),
+              })}
             </button>
           {/if}
         </div>
@@ -665,7 +682,9 @@
                   onclick={() => onSwitchTab?.('changes')}
                 >
                   <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
-                  {commits.length - 6} more commits
+                  {m.workspace_overviewTimeline_moreCommits_label({
+                    count: formatInteger(commits.length - 6),
+                  })}
                 </button>
               {/if}
             </div>
@@ -697,9 +716,9 @@
               />
               <span class="text-ui text-muted-foreground truncate">
                 {#if stats.pr.number}
-                  PR #{stats.pr.number}
+                  {m.workspace_overviewTimeline_prNumber_label({ number: stats.pr.number })}
                 {:else}
-                  Pull request
+                  {m.workspace_overviewTimeline_pullRequest_label()}
                 {/if}
               </span>
               {#if stats.pr.hasOpen || stats.pr.hasMerged || stats.pr.hasClosed}
@@ -711,7 +730,11 @@
                       ? 'text-emerald-500 bg-emerald-500/10'
                       : 'text-red-500 bg-red-500/10'}"
                 >
-                  {stats.pr.hasMerged ? 'merged' : stats.pr.hasOpen ? 'open' : 'closed'}
+                  {stats.pr.hasMerged
+                    ? m.workspace_overviewTimeline_prMerged_label()
+                    : stats.pr.hasOpen
+                      ? m.workspace_overviewTimeline_prOpen_label()
+                      : m.workspace_overviewTimeline_prClosed_label()}
                 </span>
               {/if}
             </button>
@@ -726,7 +749,7 @@
           onclick={() => onOpenAllChanges?.()}
         >
           <Fa icon={faPencil} size="xs" class="opacity-50" />
-          <span>View full diff</span>
+          <span>{m.workspace_overviewTimeline_viewFullDiff_label()}</span>
         </button>
       {/if}
     </section>
@@ -742,7 +765,7 @@
           class="flex items-center gap-1 text-left cursor-pointer"
           onclick={() => onSwitchTab?.('files')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">Files</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_filesTab_label()}</h3>
         </button>
         {#if workspace?.worktreePath}
           <div class="ml-auto -my-1">
@@ -759,7 +782,7 @@
       </div>
       <p class="text-ui text-subtle mt-0.5 leading-tight text-pretty">
         {#if workspace?.worktreePath}
-          The workspace contains a copy of your repo that lives in
+          {m.workspace_multiSelectSidebar_repoCopyLivesIn_before()}
           <span class="inline-flex items-baseline gap-1">
             <OpenComboButton
               filePath={workspace.worktreePath}
@@ -769,12 +792,12 @@
               class="inline-flex"
             >
               <span class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                >/{workspace.worktreePath.split('/').slice(-2).join('/')}</span
+                ><!-- i18n-ignore (file path) -->/{workspace.worktreePath.split('/').slice(-2).join('/')}</span
               >
             </OpenComboButton></span
           >.
         {:else}
-          The workspace contains a copy of your repo.
+          {m.workspace_overviewTimeline_repoCopy_label()}
         {/if}
       </p>
     </div>
@@ -784,7 +807,7 @@
       onclick={() => onSwitchTab?.('files')}
     >
       <Fa icon={faFolder} size="xs" class="opacity-50" />
-      <span>View or edit files directly</span>
+      <span>{m.workspace_overviewTimeline_viewEditFiles_label()}</span>
     </button>
   </section>
 </div>

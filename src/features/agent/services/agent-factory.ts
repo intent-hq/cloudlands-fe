@@ -35,6 +35,7 @@ import {
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger('UnifiedAgentFactory');
 
@@ -155,7 +156,7 @@ export class UnifiedAgentFactory {
         logger.error('Invalid workspace: missing ID');
         return {
           success: false,
-          error: 'Invalid workspace: missing ID',
+          error: m.agent_factory_invalidWorkspace_error(),
         };
       }
 
@@ -171,7 +172,7 @@ export class UnifiedAgentFactory {
           });
           return {
             success: false,
-            error: `Agent creation blocked: ${circuitCheck.reason}`,
+            error: m.agent_factory_creationBlocked_error({ reason: circuitCheck.reason ?? '' }),
           };
         }
         // Record the agent start
@@ -229,6 +230,7 @@ export class UnifiedAgentFactory {
                 }));
             } else {
               logger.debug(
+                // i18n-ignore (log line)
                 'Panel layout manager not yet initialized, skipping open panels context',
               );
             }
@@ -238,10 +240,7 @@ export class UnifiedAgentFactory {
 
           // Get linked references from context store (Redux)
           try {
-            const topLevelItems = selectTopLevelContextItems.select(
-              appStore.state,
-              workspace.id,
-            );
+            const topLevelItems = selectTopLevelContextItems.select(appStore.state, workspace.id);
             workspaceContext.linkedReferences = topLevelItems.map((item) => {
               let identifier: string | undefined;
               if (item.type === 'linear-issue') {
@@ -413,7 +412,7 @@ export class UnifiedAgentFactory {
       if (!workspacePath) {
         return {
           success: false,
-          error: 'Workspace does not have a valid path',
+          error: m.agent_factory_invalidWorkspacePath_error(),
           sessionId,
         };
       }
@@ -539,6 +538,7 @@ export class UnifiedAgentFactory {
           let messageText = normalized.initialMessage?.trim() || '';
           if (!messageText && hasContextReferences) {
             messageText =
+              // i18n-ignore (agent prompt content sent on the wire; must stay English)
               'I have linked some context above. Please review it and help me with this task.';
           }
 
@@ -575,6 +575,7 @@ export class UnifiedAgentFactory {
         let messageToSend = normalized.initialMessage?.trim() || '';
         if (!messageToSend && hasContextReferences) {
           messageToSend =
+            // i18n-ignore (agent prompt content sent on the wire; must stay English)
             'I have linked some context above. Please review it and help me with this task.';
         }
 
@@ -632,7 +633,7 @@ export class UnifiedAgentFactory {
         sessionId,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : m.agent_factory_unknown_error();
       logger.error('Failed to create agent', {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
@@ -777,7 +778,7 @@ export class UnifiedAgentFactory {
       logger.error('Daemon agent.create failed', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Daemon error',
+        error: error instanceof Error ? error.message : m.agent_factory_daemon_error(),
       };
     }
   }

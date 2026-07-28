@@ -1,3 +1,5 @@
+import { m } from '$shared/paraglide/messages.js';
+
 /**
  * Format duration with human-readable units:
  * - Under 10s: 'Xs' or 'X.Xs' (skip .0)
@@ -96,9 +98,14 @@ export function shouldAppendStreamingEvent(
 }
 
 /** Copy for the corrupted-session error surface (monorepo#940). */
-export const SESSION_CORRUPTED_TITLE = 'Agent session corrupted';
-export const SESSION_CORRUPTED_MESSAGE =
-  'Try again will start a fresh session and carry over the conversation history';
+export const SESSION_CORRUPTED = {
+  get title() {
+    return m.chat_streamingStatus_sessionCorrupted_title();
+  },
+  get message() {
+    return m.chat_streamingStatus_sessionCorrupted_message();
+  },
+};
 
 export interface ErrorDisplay {
   corrupted: boolean;
@@ -123,10 +130,15 @@ export function deriveErrorDisplay(
   if (sessionCorrupted === true) {
     return {
       corrupted: true,
-      title: SESSION_CORRUPTED_TITLE,
-      message: SESSION_CORRUPTED_MESSAGE,
+      title: SESSION_CORRUPTED.title,
+      message: SESSION_CORRUPTED.message,
       detail: error,
     };
   }
-  return { corrupted: false, title: 'Response failed', message: error, detail: null };
+  return {
+    corrupted: false,
+    title: m.chat_streamingStatus_responseFailed_label(),
+    message: error,
+    detail: null,
+  };
 }

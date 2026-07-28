@@ -15,6 +15,7 @@
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Type of context item */
@@ -97,7 +98,7 @@
   <button
     type="button"
     class="group/button flex items-center gap-1.5 px-2 py-0.5 bg-muted/70 text-muted-foreground rounded text-xs whitespace-nowrap cursor-pointer hover:bg-muted transition-colors shrink-0"
-    title={tooltip ?? `Open ${label}`}
+    title={tooltip ?? m.chat_contextChip_open_title({ label })}
     {onclick}
   >
     <Fa icon={displayIcon} size="15" class="opacity-30" />
@@ -111,8 +112,8 @@
           e.stopPropagation();
           onRemove?.();
         }}
-        title="Remove"
-        aria-label="Remove"
+        title={m.chat_contextChip_remove_label()}
+        aria-label={m.chat_contextChip_remove_label()}
       >
         <Fa icon={faXmark} size="10" />
       </Button>
@@ -131,8 +132,8 @@
         size="icon-xs"
         class="opacity-0 group-hover/button:opacity-100 -my-1 -mr-2 -ml-2 transition-opacity"
         onclick={() => onRemove?.()}
-        title="Remove"
-        aria-label="Remove"
+        title={m.chat_contextChip_remove_label()}
+        aria-label={m.chat_contextChip_remove_label()}
       >
         <Fa icon={faXmark} size="10" />
       </Button>

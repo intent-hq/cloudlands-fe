@@ -26,6 +26,7 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   const availableModels$ = selectAvailableModels();
@@ -67,7 +68,7 @@
 
   // Model options for override dropdowns - includes "Use default" option
   const overrideModelOptions = $derived<DropdownOption[]>([
-    { value: USE_DEFAULT_VALUE, label: 'Use default quick action model' },
+    { value: USE_DEFAULT_VALUE, label: m.settings_backgroundAgent_useDefaultOption() },
     ...$availableModels$.map((model) => ({
       value: model.value,
       label: model.label,
@@ -76,15 +77,15 @@
 
   // Get display label for an override value
   function getOverrideLabel(value: string): string {
-    if (value === USE_DEFAULT_VALUE) return 'Use default quick action model';
-    return $availableModels$.find((m) => m.value === value)?.label || value;
+    if (value === USE_DEFAULT_VALUE) return m.settings_backgroundAgent_useDefaultOption();
+    return $availableModels$.find((model) => model.value === value)?.label || value;
   }
 </script>
 
 <!-- Default Model -->
 <div class="flex items-center justify-between gap-4 mb-6">
   <div class="flex-1 min-w-0">
-    <p class="text-sm font-semibold text-foreground">Default quick action model</p>
+    <p class="text-sm font-semibold text-foreground">{m.settings_backgroundAgent_defaultModel_label()}</p>
   </div>
   <div class="shrink-0 w-72">
     <ModelPicker
@@ -99,7 +100,7 @@
 
 <!-- Per-type Overrides -->
 <div>
-  <p class="text-sm font-semibold text-foreground mb-3">Per-action overrides</p>
+  <p class="text-sm font-semibold text-foreground mb-3">{m.settings_backgroundAgent_overrides_title()}</p>
 
   <div class="space-y-4">
     <!-- Commit message -->
@@ -111,7 +112,7 @@
           >
           {#if $hasCommitOverride$}
             <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
-              >Custom</span
+              >{m.settings_backgroundAgent_customBadge()}</span
             >
           {/if}
         </div>
@@ -143,7 +144,7 @@
           >
           {#if $hasPrOverride$}
             <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
-              >Custom</span
+              >{m.settings_backgroundAgent_customBadge()}</span
             >
           {/if}
         </div>
@@ -175,7 +176,7 @@
           >
           {#if $hasFastOverride$}
             <span class="text-ui px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium"
-              >Custom</span
+              >{m.settings_backgroundAgent_customBadge()}</span
             >
           {/if}
         </div>

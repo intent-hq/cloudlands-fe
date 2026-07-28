@@ -9,12 +9,13 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { cn } from '$lib/utils';
+  import { m } from '$shared/paraglide/messages.js';
   import type { PanelFindBarProps } from './types';
 
   let {
     query = $bindable(''),
     inputRef = $bindable<HTMLInputElement | null>(null),
-    placeholder = 'Find...',
+    placeholder = m.ui_panelFindBar_find_placeholder(),
     disabled = false,
     inputDisabled = false,
     navigationDisabled = false,
@@ -26,23 +27,23 @@
     currentMatchIndex = 0,
     totalMatches,
     resultText = undefined,
-    emptyResultText = 'No matches',
+    emptyResultText = m.ui_panelFindBar_noMatches_label(),
     showResultText = true,
     showResultWhenQueryEmpty = false,
     resultFormat = 'slash',
     resultVariant = undefined,
-    searchAriaLabel = 'Find in panel',
-    previousLabel = 'Previous match',
-    previousShortcutLabel = 'Shift+Enter',
-    previousKeyShortcuts = 'Shift+Enter',
+    searchAriaLabel = m.ui_panelFindBar_search_ariaLabel(),
+    previousLabel = m.ui_panelFindBar_previous_label(),
+    previousShortcutLabel = 'Shift+Enter', // i18n-ignore (keyboard shortcut)
+    previousKeyShortcuts = 'Shift+Enter', // i18n-ignore (keyboard shortcut)
     previousTitle = undefined,
-    nextLabel = 'Next match',
-    nextShortcutLabel = 'Enter',
-    nextKeyShortcuts = 'Enter',
+    nextLabel = m.ui_panelFindBar_next_label(),
+    nextShortcutLabel = 'Enter', // i18n-ignore (keyboard shortcut)
+    nextKeyShortcuts = 'Enter', // i18n-ignore (keyboard shortcut)
     nextTitle = undefined,
-    closeLabel = 'Close find',
-    closeShortcutLabel = 'Esc',
-    closeKeyShortcuts = 'Escape',
+    closeLabel = m.ui_panelFindBar_close_label(),
+    closeShortcutLabel = 'Esc', // i18n-ignore (keyboard shortcut)
+    closeKeyShortcuts = 'Escape', // i18n-ignore (keyboard shortcut)
     closeTitle = undefined,
     layout = 'floating',
     class: className,
@@ -73,7 +74,7 @@
 
     const displayIndex = Math.min(Math.max(currentMatchIndex + 1, 1), totalMatches);
     return resultFormat === 'of'
-      ? `${displayIndex} of ${totalMatches}`
+      ? m.ui_panelFindBar_matchOf_label({ current: displayIndex, total: totalMatches })
       : `${displayIndex} / ${totalMatches}`;
   });
   const effectiveResultVariant = $derived(

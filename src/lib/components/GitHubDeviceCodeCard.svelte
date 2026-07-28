@@ -4,6 +4,7 @@
 
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { handleLink } from '$features/navigation/link-handler';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Device-flow code the user enters on GitHub (PROTOCOL §5.27). */
@@ -35,7 +36,7 @@
     >
       {userCode}
     </span>
-    <CopyButton text={userCode} size={compact ? 'xs' : 'sm'} label="Copy code" />
+    <CopyButton text={userCode} size={compact ? 'xs' : 'sm'} label={m.lib_githubDeviceCode_copyCode_label()} />
   </div>
   <button
     type="button"
@@ -44,11 +45,11 @@
       : 'px-6 py-3 text-base w-full'}"
     onclick={handleOpenGitHub}
   >
-    <span>Open GitHub</span>
+    <span>{m.lib_githubDeviceCode_openGithub_label()}</span>
     <Fa icon={faArrowUpRightFromSquare} size="xs" />
   </button>
   <p class="text-xs text-subtle">
-    Enter this code at
+    {m.lib_githubDeviceCode_enterCodeAt_before()}
     <span class="font-mono break-all">{verificationUri}</span>
   </p>
 </div>

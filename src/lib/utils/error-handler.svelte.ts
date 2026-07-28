@@ -1,4 +1,5 @@
 import { Logger } from '$shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { shouldSuppressMonacoUnhandledRejection } from './monaco-error-suppression';
 import {
   isSvelteErrorUrl,
@@ -63,9 +64,11 @@ class ErrorHandler {
     if (typeof window !== 'undefined') {
       window.addEventListener('error', (event) => {
         // Check if event has a message
-        const errorMessage = event.message || event.error?.message || 'Unknown error';
+        const errorMessage =
+          event.message || event.error?.message || m.lib_errorHandler_unknown_error();
 
         // Suppress non-critical ResizeObserver errors
+        // i18n-ignore (matches the browser's internal English error message)
         if (errorMessage.includes('ResizeObserver loop completed with undelivered notifications')) {
           return;
         }
@@ -76,6 +79,7 @@ class ErrorHandler {
           errorMessage.includes('svelte.dev/e/effect_update_depth_exceeded')
         ) {
           logger.warn(
+            // i18n-ignore (developer log message)
             '[ErrorHandler] Suppressing Svelte effect depth error to prevent infinite loop:',
             errorMessage,
           );
@@ -95,6 +99,7 @@ class ErrorHandler {
             /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(errorMessage))
         ) {
           logger.debug(
+            // i18n-ignore (developer log message)
             '[ErrorHandler] Suppressing bits-ui cleanup error during component unmount:',
             errorMessage,
           );
@@ -131,6 +136,7 @@ class ErrorHandler {
         // Suppress non-critical ResizeObserver errors
         if (
           event.reason?.message?.includes(
+            // i18n-ignore (matches the browser's internal English error message)
             'ResizeObserver loop completed with undelivered notifications',
           )
         ) {
@@ -144,6 +150,7 @@ class ErrorHandler {
           errorMessage?.includes('svelte.dev/e/effect_update_depth_exceeded')
         ) {
           logger.warn(
+            // i18n-ignore (developer log message)
             '[ErrorHandler] Suppressing Svelte effect depth error in unhandledrejection:',
             errorMessage,
           );
@@ -172,6 +179,7 @@ class ErrorHandler {
             /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(errorMessage ?? ''))
         ) {
           logger.debug(
+            // i18n-ignore (developer log message)
             '[ErrorHandler] Suppressing bits-ui cleanup error during component unmount:',
             errorMessage,
           );
@@ -199,6 +207,7 @@ class ErrorHandler {
       errorMessage?.includes('svelte.dev/e/effect_update_depth_exceeded')
     ) {
       logger.warn(
+        // i18n-ignore (developer log message)
         '[ErrorHandler] Suppressing Svelte effect depth error in handleError:',
         errorMessage,
       );
@@ -206,6 +215,7 @@ class ErrorHandler {
     }
 
     // Suppress ResizeObserver loop errors - these are benign browser warnings
+    // i18n-ignore (matches the browser's internal English error message)
     if (errorMessage?.includes('ResizeObserver loop')) {
       return 'suppressed-resize-observer-error';
     }
@@ -230,6 +240,7 @@ class ErrorHandler {
         /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(errorMessage ?? ''))
     ) {
       logger.debug(
+        // i18n-ignore (developer log message)
         '[ErrorHandler] Suppressing bits-ui cleanup error during component unmount:',
         errorMessage,
       );
@@ -250,10 +261,10 @@ class ErrorHandler {
       memory:
         typeof performance !== 'undefined' && (performance as any).memory
           ? {
-            usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
-            totalJSHeapSize: (performance as any).memory.totalJSHeapSize,
-            jsHeapSizeLimit: (performance as any).memory.jsHeapSizeLimit,
-          }
+              usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
+              totalJSHeapSize: (performance as any).memory.totalJSHeapSize,
+              jsHeapSizeLimit: (performance as any).memory.jsHeapSizeLimit,
+            }
           : undefined,
       // Add timing information
       timing: {
@@ -274,7 +285,7 @@ class ErrorHandler {
     const errorObj: AppError = {
       id: globalThis.crypto.randomUUID(),
       type: 'error',
-      title: 'An error occurred',
+      title: m.error_handler_generic_title(),
       message: errorMessage,
       timestamp: new Date(),
       context: enhancedContext,
@@ -331,7 +342,7 @@ class ErrorHandler {
     const warning: AppError = {
       id: globalThis.crypto.randomUUID(),
       type: 'warning',
-      title: 'Warning',
+      title: m.error_handler_warning_title(),
       message,
       timestamp: new Date(),
       context,
@@ -346,7 +357,7 @@ class ErrorHandler {
     const info: AppError = {
       id: globalThis.crypto.randomUUID(),
       type: 'info',
-      title: 'Information',
+      title: m.error_handler_info_title(),
       message,
       timestamp: new Date(),
       context,
@@ -366,29 +377,29 @@ class ErrorHandler {
       if (svelteInfo) {
         return svelteInfo.title;
       }
-      return 'Svelte Error';
+      return m.error_handler_svelte_title();
     }
 
     if (message.includes('network') || message.includes('fetch')) {
-      return 'Network Error';
+      return m.error_handler_network_title();
     }
     if (message.includes('auth') || message.includes('unauthorized')) {
-      return 'Authentication Error';
+      return m.error_handler_auth_title();
     }
     if (message.includes('permission') || message.includes('denied')) {
-      return 'Permission Denied';
+      return m.error_handler_permission_title();
     }
     if (message.includes('file') || message.includes('directory')) {
-      return 'File System Error';
+      return m.error_handler_fileSystem_title();
     }
     if (message.includes('ssh') || message.includes('connection')) {
-      return 'Connection Error';
+      return m.error_handler_connection_title();
     }
     if (message.includes('api') || message.includes('endpoint')) {
-      return 'API Error';
+      return m.error_handler_api_title();
     }
 
-    return 'Application Error';
+    return m.error_handler_application_title();
   }
 
   private addError(error: AppError) {
@@ -403,11 +414,13 @@ class ErrorHandler {
 
     // Show toast notification using the built-in toast system
     // Import dynamically to avoid circular dependencies
-    import('./error-toast').then(({ showErrorToast }) => {
-      showErrorToast(error);
-    }).catch(() => {
-      // Toast not available yet - might be during initial load
-    });
+    import('./error-toast')
+      .then(({ showErrorToast }) => {
+        showErrorToast(error);
+      })
+      .catch(() => {
+        // Toast not available yet - might be during initial load
+      });
   }
 
   dismiss(errorId: string) {
@@ -501,8 +514,12 @@ export const errorHandler = new ErrorHandler();
 
 // Expose on window for easy testing in dev tools
 if (typeof window !== 'undefined') {
-  (window as any).testError = () => errorHandler.handleError(new Error('Test error: Something went wrong'), { source: 'devtools' });
-  (window as any).testWarning = () => errorHandler.handleWarning('Test warning: Rate limit approaching');
+  (window as any).testError = () =>
+    errorHandler.handleError(new Error('Test error: Something went wrong'), { source: 'devtools' });
+  (window as any).testWarning = () =>
+    // i18n-ignore (dev-tools test helper)
+    errorHandler.handleWarning('Test warning: Rate limit approaching');
+  // i18n-ignore (dev-tools test helper)
   (window as any).testInfo = () => errorHandler.handleInfo('Test info: Operation completed');
 }
 

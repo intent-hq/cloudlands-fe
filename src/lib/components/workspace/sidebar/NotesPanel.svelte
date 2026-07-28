@@ -26,6 +26,7 @@
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -424,10 +425,10 @@
     <button
       onclick={onCreateNote}
       class="-mt-1 mb-2 text-muted-foreground hover:text-foreground p-1 cursor-pointer transition-colors flex items-center gap-1 text-xs"
-      title="New note"
+      title={m.workspace_notesPanel_newNote_tooltip()}
     >
       <Fa icon={faPlus} size="xs" />
-      <span>Attach more context</span>
+      <span>{m.workspace_notesPanel_attachContext_label()}</span>
     </button>
   {/if}
 
@@ -568,7 +569,7 @@
                   {#if isUnread}
                     <span
                       class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
-                      title="Has unread changes"
+                      title={m.workspace_notesPanel_unreadChanges_tooltip()}
                     ></span>
                   {/if}
                 </ListItem>
@@ -581,7 +582,7 @@
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
-                        title="Click to open agent"
+                        title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
                         <AugieAvatarWithState {agentId} size={16} {state} {specialist} />
                       </button>
@@ -618,10 +619,16 @@
                 >
                   {#snippet iconSnippet()}
                     <div
-                      title="{taskStats.completed}/{taskStats.total} complete{taskStats.inProgress >
-                      0
-                        ? `, ${taskStats.inProgress} in progress`
-                        : ''}"
+                      title={taskStats.inProgress > 0
+                        ? m.workspace_notesPanel_taskProgressInProgress_tooltip({
+                            completed: taskStats.completed,
+                            total: taskStats.total,
+                            inProgress: taskStats.inProgress,
+                          })
+                        : m.workspace_notesPanel_taskProgress_tooltip({
+                            completed: taskStats.completed,
+                            total: taskStats.total,
+                          })}
                     >
                       <svg width={size} height={size} class="transform -rotate-90">
                         <!-- Background ring -->
@@ -672,7 +679,7 @@
                   {#if isUnread}
                     <span
                       class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
-                      title="Has unread changes"
+                      title={m.workspace_notesPanel_unreadChanges_tooltip()}
                     ></span>
                   {/if}
                 </ListItem>
@@ -695,7 +702,7 @@
                   {#if isUnread}
                     <span
                       class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
-                      title="Has unread changes"
+                      title={m.workspace_notesPanel_unreadChanges_tooltip()}
                     ></span>
                   {/if}
                 </ListItem>
@@ -708,7 +715,7 @@
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
-                        title="Click to open agent"
+                        title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
                         <AugieAvatarWithState {agentId} size={16} {state} {specialist} />
                       </button>
@@ -727,7 +734,9 @@
                 type="button"
                 class="shrink-0 p-1 mr-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100"
                 onclick={(e) => toggleCollapse(note.id as string, e)}
-                aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                aria-label={isCollapsed
+                  ? m.workspace_notesPanel_expand_ariaLabel()
+                  : m.workspace_notesPanel_collapse_ariaLabel()}
               >
                 <div
                   class="transition-transform duration-150 ease-out"

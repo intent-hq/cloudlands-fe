@@ -4,6 +4,7 @@
   import { faPaperPlane } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
   import type { Workspace } from '$shared/types';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     x: number;
@@ -83,7 +84,7 @@
   <button
     class="fixed inset-0 z-50 bg-transparent"
     onclick={handleClose}
-    aria-label="Close dialog"
+    aria-label={m.tiptap_launchDialog_close_ariaLabel()}
     type="button"
   ></button>
 
@@ -98,7 +99,7 @@
       <textarea
         bind:this={textareaRef}
         bind:value={userMessage}
-        placeholder="What should the agent do?"
+        placeholder={m.tiptap_launchDialog_message_placeholder()}
         onkeydown={handleKeyDown}
         class="launch-textarea"
         rows="1"
@@ -106,13 +107,13 @@
       <button
         onclick={handleSubmit}
         class="launch-submit-btn"
-        aria-label="Send to agent"
+        aria-label={m.tiptap_launchDialog_send_ariaLabel()}
       >
         <Fa icon={faPaperPlane} size="xs" />
       </button>
     </div>
     <div class="launch-hint">
-      Press <kbd>Enter</kbd> to send · <kbd>Esc</kbd> to cancel
+      {m.tiptap_launchDialog_hint_before()} <kbd>{m.tiptap_launchDialog_enterKey_label()}</kbd> {m.tiptap_launchDialog_hint_middle()} <kbd>{m.tiptap_launchDialog_escKey_label()}</kbd> {m.tiptap_launchDialog_hint_after()}
     </div>
   </div>
 </Portal>

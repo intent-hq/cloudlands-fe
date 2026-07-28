@@ -84,6 +84,7 @@ class PerformanceMonitor {
       );
     } else if (metric.duration > this.thresholds.verySlow) {
       logger.warn(
+        // i18n-ignore (developer diagnostics)
         `Very slow: ${metric.name} took ${metric.duration.toFixed(2)}ms`,
         metric.metadata,
       );
@@ -123,9 +124,7 @@ class PerformanceMonitor {
       allMetrics.push(...metrics);
 
       // Calculate average
-      const durations = metrics
-        .map((m) => m.duration)
-        .filter((d): d is number => d !== undefined);
+      const durations = metrics.map((m) => m.duration).filter((d): d is number => d !== undefined);
 
       if (durations.length > 0) {
         const avg = durations.reduce((a, b) => a + b, 0) / durations.length;

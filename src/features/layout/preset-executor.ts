@@ -18,6 +18,7 @@ import {
 } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 import type { PanelLayoutManager } from './panel-layout-adapter';
 import { calculateTiling } from './tiling-utils';
 import { store as appStore } from '$store/renderer/store';
@@ -87,7 +88,7 @@ async function applyPlanningPreset(
       layoutManager.openTab(
         {
           type: 'agent',
-          title: orchestrator.name || 'Agent',
+          title: orchestrator.name || m.layout_tabTypes_agent_title(),
           agentId: orchestrator.id,
           closable: true,
           workspaceId,
@@ -100,7 +101,7 @@ async function applyPlanningPreset(
     layoutManager.openTab(
       {
         type: 'note',
-        title: 'Spec',
+        title: m.layout_shared_spec_title(),
         noteId: 'spec',
         closable: true,
         workspaceId,
@@ -190,7 +191,7 @@ async function applyAgentsRowPreset(
         layoutManager.openTab(
           {
             type: 'agent',
-            title: agents[i].name || 'Agent',
+            title: agents[i].name || m.layout_tabTypes_agent_title(),
             agentId: agents[i].id,
             closable: true,
             workspaceId,
@@ -251,7 +252,7 @@ async function applyChangesPreset(
       layoutManager.openTab(
         {
           type: 'changes',
-          title: 'Changes',
+          title: m.layout_tabTypes_changes_title(),
           closable: true,
           workspaceId,
         },
@@ -322,7 +323,7 @@ async function applyReviewPreset(
       layoutManager.openTab(
         {
           type: 'agent',
-          title: coordinator.name || 'Coordinator',
+          title: coordinator.name || m.layout_presetExecutor_coordinator_fallback(),
           agentId: coordinator.id,
           closable: true,
           workspaceId,
@@ -335,7 +336,7 @@ async function applyReviewPreset(
     layoutManager.openTab(
       {
         type: 'local-changes',
-        title: 'All Changes',
+        title: m.layout_presetExecutor_allChanges_title(),
         closable: true,
         workspaceId,
       },

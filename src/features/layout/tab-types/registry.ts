@@ -14,6 +14,7 @@
 import type { Component } from 'svelte';
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * Props that all tab type components must accept
@@ -105,7 +106,7 @@ class TabTypeRegistry {
    * Get category label for a tab type
    */
   getCategoryLabel(type: string): string {
-    return this.types.get(type)?.categoryLabel ?? 'Panel';
+    return this.types.get(type)?.categoryLabel ?? m.layout_tabTypes_panel_category();
   }
 
   /**

@@ -30,6 +30,7 @@
   faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     warning?: string;
@@ -45,9 +46,9 @@
     warning,
     docsUrl,
     show,
-    title = 'Showing default model list.',
-    description = 'Install Codex CLI to see all your available models.',
-    linkText = 'Setup docs',
+    title = m.chat_modelPicker_defaultModelList_title(),
+    description = m.chat_modelPicker_installCodex_description(),
+    linkText = m.chat_modelPicker_setupDocs_label(),
     variant = 'warning',
   }: Props = $props();
 

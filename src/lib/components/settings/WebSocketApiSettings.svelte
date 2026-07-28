@@ -29,6 +29,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { toast } from '$lib/components/ui/toast';
   import { appClient } from '$lib/client';
+  import { m } from '$shared/paraglide/messages.js';
 
   let enabled = $state(false);
   let token = $state('');
@@ -81,7 +82,11 @@
         _hostname = info.hostname;
       }
     } catch (error) {
-      toast.error(`Failed to load WebSocket API status: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        m.settings_wsApi_loadStatusError({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     } finally {
       loading = false;
     }
@@ -96,7 +101,7 @@
       // Check if the daemon rolled back the setting on failure
       const applied = result.find((r: { path: string; value: unknown }) => r.path === 'server.wsApi.enabled');
       if (applied && applied.value !== checked) {
-        toast.error('Failed to start WebSocket listener; setting rolled back');
+        toast.error(m.settings_wsApi_startListenerError());
         enabled = false;
         return;
       }
@@ -106,7 +111,11 @@
         await loadStatus();
       }
     } catch (error) {
-      toast.error(`Failed to toggle WebSocket API: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        m.settings_wsApi_toggleError({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
       enabled = !checked;
     }
   }
@@ -128,7 +137,7 @@
       if (applied && applied.value !== newPort) {
         // Daemon rolled back to a different value (could be the old value or a different one)
         const rolledBackValue = typeof applied.value === 'number' ? applied.value : persistedPort;
-        toast.error('Failed to change port; setting rolled back');
+        toast.error(m.settings_wsApi_portRollbackError());
         persistedPort = rolledBackValue;
         editedPort = String(rolledBackValue);
         return;
@@ -144,13 +153,17 @@
         } catch {
           // Pairing info refresh failed, but the setting was saved successfully
         }
-        toast.success(`Port changed to ${newPort}`);
+        toast.success(m.settings_wsApi_portChanged({ port: String(newPort) }));
       } else {
-        toast.success(`Port saved (will be used when enabled)`);
+        toast.success(m.settings_wsApi_portSaved());
       }
     } catch (error) {
       // Daemon error (e.g., port already in use)
-      toast.error(`Failed to change port: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(
+        m.settings_wsApi_portChangeError({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
       editedPort = String(persistedPort);
     } finally {
       portSaving = false;
@@ -162,13 +175,13 @@
       regenerating = true;
       const result = await appClient.server.rotateToken();
       token = result.token;
-      toast.success('Token regenerated successfully');
+      toast.success(m.settings_wsApi_tokenRegenerated());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes('INTENTD_AUTH_TOKEN') || message.includes('token is fixed')) {
-        toast.error('Cannot rotate token: INTENTD_AUTH_TOKEN environment variable is set');
+        toast.error(m.settings_wsApi_tokenRotateFixedError());
       } else {
-        toast.error(`Failed to regenerate token: ${message}`);
+        toast.error(m.settings_wsApi_tokenRegenerateError({ error: message }));
       }
     } finally {
       regenerating = false;
@@ -178,15 +191,15 @@
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(token);
-      toast.success('Token copied to clipboard');
+      toast.success(m.settings_wsApi_tokenCopied());
     } catch {
-      toast.error('Failed to copy token');
+      toast.error(m.settings_wsApi_tokenCopyError());
     }
   }
 
   async function handleShowQr() {
     if (!port) {
-      toast.error('WebSocket API server is not running');
+      toast.error(m.settings_wsApi_serverNotRunning());
       return;
     }
     try {
@@ -210,7 +223,7 @@
         qrDataUrl = '';
       }, 30_000);
     } catch {
-      toast.error('Failed to generate QR code');
+      toast.error(m.settings_wsApi_qrGenerateError());
     }
   }
 
@@ -234,10 +247,9 @@
   <section class="px-6 py-5">
     <div class="flex items-center justify-between">
       <div>
-        <p class="text-sm font-medium text-foreground">Enable WebSocket API</p>
+        <p class="text-sm font-medium text-foreground">{m.settings_wsApi_enable_label()}</p>
         <p class="text-xs text-subtle mt-1">
-          When enabled, external tools can connect to Intent via WebSocket to interact with
-          workspaces and agents programmatically.
+          {m.settings_wsApi_enable_description()}
         </p>
       </div>
       <Toggle
@@ -247,7 +259,7 @@
         size="xs"
         class="mb-auto"
         disabled={loading}
-        ariaLabel="Enable WebSocket API"
+        ariaLabel={m.settings_wsApi_enable_label()}
       />
     </div>
   </section>
@@ -256,9 +268,10 @@
   <section class="px-6 py-4">
     {#snippet portValidation()}
       {@const portNum = Number(editedPort)}
+      <!-- i18n-ignore (template expression, not user-facing text) -->
       {@const isValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535}
       <div class="flex items-center justify-between gap-3">
-        <span class="text-sm text-muted-foreground">Port</span>
+        <span class="text-sm text-muted-foreground">{m.settings_wsApi_port_label()}</span>
         <div class="flex items-center gap-2">
           <div class="shrink-0 w-32">
             <Input
@@ -267,7 +280,7 @@
               max="65535"
               bind:value={editedPort}
               disabled={portSaving}
-              aria-label="WebSocket API port"
+              aria-label={m.settings_wsApi_port_ariaLabel()}
               class="h-9 text-sm"
             />
           </div>
@@ -278,16 +291,18 @@
               disabled={portSaving || !isValid}
               class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {portSaving ? 'Saving...' : 'Save'}
+              {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
             </button>
           {/if}
         </div>
       </div>
       {#if !isValid}
-        <p class="text-xs text-amber-500/90 mt-1">Port must be an integer between 1024 and 65535</p>
+        <p class="text-xs text-amber-500/90 mt-1">{m.settings_wsApi_port_invalid()}</p>
       {/if}
       {#if enabled && port}
-        <p class="text-xs text-subtle mt-1">Currently bound to port {port}</p>
+        <p class="text-xs text-subtle mt-1">
+          {m.settings_wsApi_port_currentlyBound({ port: String(port) })}
+        </p>
       {/if}
     {/snippet}
     {@render portValidation()}
@@ -299,9 +314,9 @@
       <section class="px-6 py-5">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm font-medium text-foreground">Connect Mobile App</p>
+            <p class="text-sm font-medium text-foreground">{m.settings_wsApi_mobilePairing_label()}</p>
             <p class="text-xs text-subtle mt-1">
-              Scan a QR code with the Intent iOS app to pair instantly
+              {m.settings_wsApi_mobilePairing_description()}
             </p>
           </div>
           <button
@@ -310,7 +325,7 @@
             class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
           >
             <Fa icon={faQrcode} size="sm" />
-            Show QR Code
+            {m.settings_wsApi_showQrCode()}
           </button>
         </div>
       </section>
@@ -319,7 +334,7 @@
       {#if certFingerprint}
         <section class="px-6 py-4">
           <div class="flex items-center justify-between">
-            <span class="text-sm text-muted-foreground">TLS Fingerprint</span>
+            <span class="text-sm text-muted-foreground">{m.settings_wsApi_tlsFingerprint_label()}</span>
             <code
               class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
               title={certFingerprint}
@@ -331,7 +346,7 @@
       <!-- Token -->
       <section class="px-6 py-4 space-y-3">
         <div class="flex items-center justify-between">
-          <span class="text-sm text-muted-foreground">API Token</span>
+          <span class="text-sm text-muted-foreground">{m.settings_wsApi_apiToken_label()}</span>
           <div class="flex items-center gap-2">
             <code
               class="text-xs font-mono text-foreground bg-muted px-2 py-1 rounded max-w-[280px] truncate select-all"
@@ -342,7 +357,7 @@
               type="button"
               onclick={() => (showToken = !showToken)}
               class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
-              title={showToken ? 'Hide token' : 'Show token'}
+              title={showToken ? m.settings_wsApi_hideToken() : m.settings_wsApi_showToken()}
             >
               <Fa icon={showToken ? faEyeSlash : faEye} size="sm" />
             </button>
@@ -350,7 +365,7 @@
               type="button"
               onclick={handleCopy}
               class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
-              title="Copy token"
+              title={m.settings_wsApi_copyToken()}
             >
               <Fa icon={faCopy} size="sm" />
             </button>
@@ -359,14 +374,14 @@
               onclick={handleRegenerate}
               disabled={regenerating}
               class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
-              title="Regenerate token"
+              title={m.settings_wsApi_regenerateToken()}
             >
               <Fa icon={faRotateRight} size="sm" class={regenerating ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
         <p class="text-xs text-amber-500/90">
-          ⚠ Keep this token secret. Anyone with it can access your workspaces.
+          {m.settings_wsApi_tokenSecretWarning()}
         </p>
       </section>
     </div>
@@ -381,29 +396,35 @@
     onkeydown={(e) => e.key === 'Escape' && handleCloseQr()}
     role="dialog"
     aria-modal="true"
-    aria-label="QR code for mobile pairing"
+    aria-label={m.settings_wsApi_qrDialogAriaLabel()}
     tabindex="-1"
   >
     <div
       class="bg-card rounded-xl p-6 shadow-xl max-w-xs text-center"
       onclick={(e) => e.stopPropagation()}
     >
-      <h3 class="text-sm font-medium text-foreground mb-3">Scan to connect</h3>
+      <h3 class="text-sm font-medium text-foreground mb-3">{m.settings_wsApi_scanToConnect()}</h3>
       {#if qrDataUrl}
-        <img src={qrDataUrl} alt="QR code for pairing" class="mx-auto rounded-lg" width="200" height="200" />
+        <img
+          src={qrDataUrl}
+          alt={m.settings_wsApi_qrImageAlt()}
+          class="mx-auto rounded-lg"
+          width="200"
+          height="200"
+        />
       {/if}
       <p class="text-xs text-subtle mt-3">
-        Scan with the Intent mobile app to connect automatically.
+        {m.settings_wsApi_scanDescription()}
       </p>
       <p class="text-xs text-amber-500/90 mt-2">
-        ⚠ This QR code contains your API token. It will auto-dismiss in 30 seconds.
+        {m.settings_wsApi_qrTokenWarning()}
       </p>
       <button
         type="button"
         onclick={handleCloseQr}
         class="mt-4 px-4 py-1.5 text-xs font-medium text-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer"
       >
-        Close
+        {m.settings_wsApi_close()}
       </button>
     </div>
   </div>

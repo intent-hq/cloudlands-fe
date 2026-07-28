@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { m } from '$shared/paraglide/messages.js';
   import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import {
@@ -192,7 +193,7 @@
   const groupedByRepo = $derived.by(() => {
     const groups = new Map<string, { workspaces: Workspace[]; owner?: string; label: string }>();
     for (const ws of filteredWorkspaces) {
-      const { key, label, owner } = getGroupKey(ws, sidebarRepoPathLookup, 'No Repository');
+      const { key, label, owner } = getGroupKey(ws, sidebarRepoPathLookup, m.layout_allCard_noRepository_label());
 
       if (!groups.has(key)) groups.set(key, { workspaces: [], owner, label });
       groups.get(key)!.workspaces.push(ws);
@@ -204,14 +205,14 @@
     });
   });
 
-  const statusLabels: Record<GroupingStatus, string> = {
-    idle: 'Idle',
-    not_started: 'No Code Changes',
-    in_progress: 'In Progress',
-    complete: 'Complete',
-    pr_ready: 'PR Mergeable',
-    pr_open: 'PR Open',
-    pr_merged: 'PR Merged',
+  const statusLabels: Record<GroupingStatus, () => string> = {
+    idle: () => m.layout_allCard_statusIdle_label(),
+    not_started: () => m.layout_allCard_statusNoChanges_label(),
+    in_progress: () => m.layout_allCard_statusInProgress_label(),
+    complete: () => m.layout_allCard_statusComplete_label(),
+    pr_ready: () => m.layout_allCard_statusPrReady_label(),
+    pr_open: () => m.layout_allCard_statusPrOpen_label(),
+    pr_merged: () => m.layout_allCard_statusPrMerged_label(),
   };
 
   const statusOrder: GroupingStatus[] = [
@@ -240,7 +241,7 @@
     }
     return statusOrder
       .filter((s) => groups.has(s))
-      .map((s) => [statusLabels[s], groups.get(s)!] as [string, Workspace[]]);
+      .map((s) => [statusLabels[s](), groups.get(s)!] as [string, Workspace[]]);
   });
 
   function _isRunning(ws: Workspace): boolean {
@@ -357,7 +358,7 @@
 >
   <div class="flex flex-col gap-1 px-3 pt-1 pb-1 shrink-0 w-full">
     <div class="view-mode-tabs gap-0.5 bg-slate-500/10 rounded-lg p-0.5 mb-2 w-full">
-      {#each [['recent', 'Recent'], ['repo', 'Repo'], ['status', 'Status']] as [mode, label]}
+      {#each [['recent', m.layout_allCard_recent_label()], ['repo', m.layout_allCard_repo_label()], ['status', m.layout_allCard_status_label()]] as [mode, label]}
         <button
           class="view-mode-tab px-1.5 py-1 text-xs rounded-md transition-all duration-150 cursor-pointer text-center truncate
             {$viewMode$ === mode
@@ -376,7 +377,7 @@
       <input
         bind:this={searchInputEl}
         type="text"
-        placeholder="Search spaces..."
+        placeholder={m.layout_activeCard_search_placeholder()}
         bind:value={searchQuery}
         class="w-full px-2.5 py-1.5 text-sm bg-background/30 rounded-md text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
       />
@@ -391,7 +392,7 @@
       {/each}
     </div>
   {:else if allWorkspaces.length === 0}
-    <div class="px-3 pb-3 text-xs text-subtle">No workspaces yet</div>
+    <div class="px-3 pb-3 text-xs text-subtle">{m.layout_allCard_noWorkspaces_label()}</div>
   {:else}
     <div class="overflow-y-auto flex-1 min-h-0 pb-2">
       {#if $viewMode$ === 'recent'}

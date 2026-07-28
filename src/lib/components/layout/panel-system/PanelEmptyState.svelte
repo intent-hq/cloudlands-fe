@@ -6,6 +6,7 @@
    */
 
   import { getContext } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
   import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
   import Fa from 'svelte-fa';
@@ -110,10 +111,12 @@
   function formatTime(timestamp: number): string {
     const now = Date.now();
     const diff = now - timestamp;
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return `${Math.floor(diff / 86400000)}d ago`;
+    if (diff < 60000) return m.layout_panelEmptyState_justNow_label();
+    if (diff < 3600000)
+      return m.layout_panelEmptyState_minutesAgo_label({ minutes: Math.floor(diff / 60000) });
+    if (diff < 86400000)
+      return m.layout_panelEmptyState_hoursAgo_label({ hours: Math.floor(diff / 3600000) });
+    return m.layout_panelEmptyState_daysAgo_label({ days: Math.floor(diff / 86400000) });
   }
 
   function handleReopenItem() {
@@ -124,13 +127,13 @@
   // The browser action is only shown when a handler is provided — PanelLayout
   // omits it when the embedded browser panel capability is unavailable (web).
   const nonAgentQuickActions = $derived([
-    { id: 'note', label: 'Note', icon: faNote, action: () => onCreateNote?.() },
-    { id: 'terminal', label: 'Terminal', icon: faTerminal, action: () => onCreateTerminal?.() },
+    { id: 'note', label: m.layout_panelEmptyState_note_label(), icon: faNote, action: () => onCreateNote?.() },
+    { id: 'terminal', label: m.layout_panelEmptyState_terminal_label(), icon: faTerminal, action: () => onCreateTerminal?.() },
     ...(onOpenBrowser
-      ? [{ id: 'browser', label: 'Browser', icon: faGlobe, action: () => onOpenBrowser?.() }]
+      ? [{ id: 'browser', label: m.layout_panelEmptyState_browser_label(), icon: faGlobe, action: () => onOpenBrowser?.() }]
       : []),
   ]);
-  const agentQuickAction = { id: 'agent', label: 'Agent', icon: faRobot, action: () => onCreateAgent?.() };
+  const agentQuickAction = { id: 'agent', label: m.layout_panelEmptyState_agent_label(), icon: faRobot, action: () => onCreateAgent?.() };
 
   // Keyboard shortcuts to display with their actions
   const keyboardShortcuts = [
@@ -146,7 +149,7 @@
     },
     {
       key: 'mod+shift+]',
-      label: 'Cycle through panels',
+      label: m.layout_panelEmptyState_cyclePanels_label(),
     },
     {
       key: SHORTCUTS.NEW_AGENT.key,
@@ -165,7 +168,7 @@
     },
     {
       key: 'mod+?',
-      label: 'Keyboard Shortcuts',
+      label: m.layout_panelEmptyState_keyboardShortcuts_label(),
       action: () => appStore.dispatch(openCheatSheet('global')),
     },
   ];
@@ -188,18 +191,18 @@
         <button
           class="quick-action flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           onclick={agentQuickAction.action}
-          title="New Agent"
+          title={m.layout_panelEmptyState_newItem_tooltip({ label: agentQuickAction.label })}
         >
           <Fa icon={faPlus} class="w-2.5 h-2.5 opacity-50" />
           <Fa icon={faRobot} class="w-3 h-3" />
-          <span class="font-medium">Agent</span>
+          <span class="font-medium">{agentQuickAction.label}</span>
         </button>
       {/if}
       {#each nonAgentQuickActions as action (action.id)}
         <button
           class="quick-action flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           onclick={action.action}
-          title="New {action.label}"
+          title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
           <Fa icon={faPlus} class="w-2.5 h-2.5 opacity-50" />
           <Fa icon={action.icon} class="w-3 h-3" />
@@ -215,7 +218,7 @@
           <button
             class="recent-item w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
             onclick={handleReopenItem}
-            title="Reopen {item.tab.title}"
+            title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
           >
             <Fa icon={getTabIcon(item.tab.type)} class="w-3 h-3 flex-shrink-0 opacity-60" />
             <span class="truncate flex-1">{item.tab.title}</span>

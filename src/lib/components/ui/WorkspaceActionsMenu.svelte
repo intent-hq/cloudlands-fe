@@ -38,6 +38,7 @@
   isWindowsPlatform,
 } from '$lib/utils/path-utils';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { m } from '$shared/paraglide/messages.js';
   import {
   faBoxArchive,
   faBoxOpen,
@@ -277,7 +278,12 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open in VSCode:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to open in VS Code');
+      // i18n-ignore (brand name)
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : m.ui_workspaceActions_openFailed_error({ name: 'VS Code' }),
+      );
     }
   }
 
@@ -303,7 +309,12 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open in JetBrains:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to open in JetBrains');
+      // i18n-ignore (brand name)
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : m.ui_workspaceActions_openFailed_error({ name: 'JetBrains' }),
+      );
     }
   }
 
@@ -355,7 +366,12 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open in Xcode:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to open in Xcode');
+      // i18n-ignore (brand name)
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : m.ui_workspaceActions_openFailed_error({ name: 'Xcode' }),
+      );
     }
   }
 
@@ -406,6 +422,7 @@
         default: {
           // Use the editor ID to open via the external-editors handler
           logger.info(
+            // i18n-ignore (log line)
             `[WorkspaceActionsMenu] openInEditor: Invoking external-editors:open for ${editor.id}`,
           );
           const result = await invoke('external-editors:open', {
@@ -420,7 +437,9 @@
     } catch (error) {
       logger.error(`[WorkspaceActionsMenu] Failed to open in ${editor.appName}:`, error);
       toast.error(
-        error instanceof Error ? error.message : `Failed to open in ${editor.appName}`,
+        error instanceof Error
+          ? error.message
+          : m.ui_workspaceActions_openFailed_error({ name: editor.appName }),
       );
     }
   }
@@ -453,9 +472,10 @@
         // User cancelled or error - don't log/toast for a user cancel; surface
         // every other failure (bridge-absent, spawn error) as a toast so the
         // action fails loudly instead of silently no-oping.
+        // i18n-ignore (IPC sentinel string from the main process, not UI copy)
         if (result?.error !== 'No application selected') {
           logger.error('Failed to open with other app:', result?.error);
-          toast.error(result?.error || 'Failed to open with other app');
+          toast.error(result?.error || m.ui_workspaceActions_openOtherFailed_error());
         }
         return;
       }
@@ -463,7 +483,9 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open with other app:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to open with other app');
+      toast.error(
+        error instanceof Error ? error.message : m.ui_workspaceActions_openOtherFailed_error(),
+      );
     }
   }
 
@@ -549,10 +571,10 @@
         onFileDeleted?.();
         onClose?.();
 
-        const toastId = toast.warning(`Deleted "${fileName}"`, {
+        const toastId = toast.warning(m.ui_workspaceActions_deletedFile_label({ name: fileName }), {
           duration: 15000,
           action: {
-            label: 'Undo',
+            label: m.ui_workspaceActions_undo_label(),
             onClick: async () => {
               try {
                 await invoke('file:write', {
@@ -568,17 +590,21 @@
                 toast.dismiss(toastId);
               } catch (err) {
                 logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
-                toast.error('Failed to restore file');
+                toast.error(m.ui_workspaceActions_restoreFileFailed_error());
               }
             },
           },
         });
       } else {
-        toast.error(`Failed to delete file: ${result?.error || 'Unknown error'}`);
+        toast.error(
+          m.ui_workspaceActions_deleteFileFailedDetail_error({
+            error: result?.error || m.ui_workspaceActions_unknown_error(),
+          }),
+        );
       }
     } catch (err) {
       logger.error('[WorkspaceActionsMenu] Error deleting file', err);
-      toast.error('Failed to delete file');
+      toast.error(m.ui_workspaceActions_deleteFileFailed_error());
     } finally {
       isDeletingFile = false;
     }
@@ -624,7 +650,9 @@
             {:else}
               <Fa icon={faCode} size="12" class="mr-1.5 opacity-50" />
             {/if}
-            <span class="truncate" title="Open in {editor.name}">Open in {editor.name}</span>
+            <span class="truncate" title={m.ui_workspaceActions_openIn_label({ name: editor.name })}
+              >{m.ui_workspaceActions_openIn_label({ name: editor.name })}</span
+            >
           </Button>
         {/each}
 
@@ -636,7 +664,7 @@
           size="sm"
         >
           <Fa icon={faUpRightFromSquare} size="12" class="ml-1.25 mr-2 opacity-50" />
-          <span>Choose app</span>
+          <span>{m.ui_workspaceActions_chooseApp_label()}</span>
         </Button>
       </div>
 
@@ -654,7 +682,7 @@
         <div class="text-xs font-black font-mono mr-1 w-3 opacity-50">
           {isWindowsPlatform() ? '\\' : '/'}
         </div>
-        <span>Copy Absolute Path</span>
+        <span>{m.ui_workspaceActions_copyAbsolutePath_label()}</span>
       </Button>
 
       {#if !isWorkspaceRoot}
@@ -666,7 +694,7 @@
         >
           <div class="text-xs font-black font-mono mr-1 w-3 opacity-50">./</div>
           <!-- <Fa icon={faCopy} size="12" class="mr-1.5" />  -->
-          <span>Copy Relative Path</span>
+          <span>{m.ui_workspaceActions_copyRelativePath_label()}</span>
         </Button>
       {/if}
 
@@ -678,7 +706,7 @@
           size="sm"
         >
           <Fa icon={faFile} size="12" class="ml-1 mr-1.5 opacity-50" />
-          <span>Copy File Name</span>
+          <span>{m.ui_workspaceActions_copyFileName_label()}</span>
         </Button>
       {/if}
     </div>
@@ -722,7 +750,11 @@
       size="sm"
     >
       <Fa icon={isArchived ? faBoxOpen : faBoxArchive} size="12" class="mr-1.5 opacity-50" />
-      <span>{isArchived ? 'Unarchive Space' : 'Archive Space'}</span>
+      <span
+        >{isArchived
+          ? m.ui_workspaceActions_unarchiveSpace_label()
+          : m.ui_workspaceActions_archiveSpace_label()}</span
+      >
     </Button>
   {/if}
 
@@ -735,7 +767,7 @@
       size="sm"
     >
       <Fa icon={faTrash} size="12" class="mr-1.5 opacity-50" />
-      <span>Delete Space…</span>
+      <span>{m.ui_workspaceActions_deleteSpace_label()}</span>
     </Button>
   {/if}
 
@@ -754,7 +786,7 @@
       {:else}
         <Fa icon={faTrash} size="12" class="mr-1.5 opacity-50" />
       {/if}
-      <span>Delete File</span>
+      <span>{m.ui_workspaceActions_deleteFile_label()}</span>
     </Button>
   {/if}
 </div>

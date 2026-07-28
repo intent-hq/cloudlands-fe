@@ -16,6 +16,7 @@
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import TreeNode from './TreeNode.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     node: any;
@@ -75,11 +76,11 @@
     const type = getChangeType(change);
     switch (type) {
       case 'added':
-        return 'Delete';
+        return m.fileTracking_changes_delete_label();
       case 'deleted':
-        return 'Restore';
+        return m.fileTracking_changes_restore_label();
       default:
-        return 'Discard';
+        return m.fileTracking_changes_discard_label();
     }
   }
 
@@ -88,11 +89,11 @@
     const type = getChangeType(change);
     switch (type) {
       case 'added':
-        return 'Delete new file';
+        return m.fileTracking_changes_deleteNewFile_tooltip();
       case 'deleted':
-        return 'Restore deleted file';
+        return m.fileTracking_changes_restoreDeletedFile_tooltip();
       default:
-        return 'Discard changes';
+        return m.fileTracking_changes_discardChanges_tooltip();
     }
   }
 
@@ -187,7 +188,10 @@
       {#if !expanded && agentIds.length > 0}
         <div class="flex items-center -space-x-1 mr-2">
           {#each agentIds.slice(0, 3) as agentId (agentId)}
-            <div class="rounded-full overflow-hidden" title="Recently edited by agent">
+            <div
+              class="rounded-full overflow-hidden"
+              title={m.fileTracking_changes_recentlyEdited_tooltip()}
+            >
               <AuggieAvatar {agentId} size={16} />
             </div>
           {/each}
@@ -291,7 +295,10 @@
       {#if agentIds.length > 0}
         <div class="flex items-center -space-x-1">
           {#each agentIds.slice(0, 3) as agentId (agentId)}
-            <div class="rounded-full overflow-hidden" title="Recently edited by agent">
+            <div
+              class="rounded-full overflow-hidden"
+              title={m.fileTracking_changes_recentlyEdited_tooltip()}
+            >
               <AuggieAvatar {agentId} size={16} />
             </div>
           {/each}

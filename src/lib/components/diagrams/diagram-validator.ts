@@ -5,6 +5,7 @@
  */
 
 import { DiagramPrimitiveSchema } from '$shared/types/notes-primitives';
+import { m } from '$shared/paraglide/messages.js';
 
 export interface ValidationError {
   field: string;
@@ -47,7 +48,7 @@ export function validateDiagram(diagram: unknown): ValidationResult {
   if (nodeIds.size !== d.model.nodes.length) {
     errors.push({
       field: 'model.nodes',
-      message: 'Duplicate node IDs found',
+      message: m.diagram_validator_duplicateNodeIds_error(),
       severity: 'error',
     });
   }
@@ -57,14 +58,14 @@ export function validateDiagram(diagram: unknown): ValidationResult {
     if (!nodeIds.has(edge.from)) {
       errors.push({
         field: `model.edges[${i}].from`,
-        message: `Edge references non-existent node: ${edge.from}`,
+        message: m.diagram_validator_edgeNonexistentNode_error({ nodeId: edge.from }),
         severity: 'error',
       });
     }
     if (!nodeIds.has(edge.to)) {
       errors.push({
         field: `model.edges[${i}].to`,
-        message: `Edge references non-existent node: ${edge.to}`,
+        message: m.diagram_validator_edgeNonexistentNode_error({ nodeId: edge.to }),
         severity: 'error',
       });
     }
@@ -77,7 +78,7 @@ export function validateDiagram(diagram: unknown): ValidationResult {
         if (!nodeIds.has(nodeId)) {
           errors.push({
             field: `model.groups[${i}].nodeIds`,
-            message: `Group references non-existent node: ${nodeId}`,
+            message: m.diagram_validator_groupNonexistentNode_error({ nodeId }),
             severity: 'error',
           });
         }
@@ -91,7 +92,7 @@ export function validateDiagram(diagram: unknown): ValidationResult {
       if (!nodeIds.has(nodeId)) {
         warnings.push({
           field: `states[${i}].visibleNodes`,
-          message: `State references non-existent node: ${nodeId}`,
+          message: m.diagram_validator_stateNonexistentNode_error({ nodeId }),
           severity: 'warning',
         });
       }
@@ -102,7 +103,7 @@ export function validateDiagram(diagram: unknown): ValidationResult {
       if (!edgeIds.has(edgeId)) {
         warnings.push({
           field: `states[${i}].visibleEdges`,
-          message: `State references non-existent edge: ${edgeId}`,
+          message: m.diagram_validator_stateNonexistentEdge_error({ edgeId }),
           severity: 'warning',
         });
       }
@@ -111,7 +112,7 @@ export function validateDiagram(diagram: unknown): ValidationResult {
     if (state.camera?.focus && !nodeIds.has(state.camera.focus)) {
       warnings.push({
         field: `states[${i}].camera.focus`,
-        message: `Camera focus references non-existent node: ${state.camera.focus}`,
+        message: m.diagram_validator_cameraFocusNonexistentNode_error({ nodeId: state.camera.focus }),
         severity: 'warning',
       });
     }
@@ -121,7 +122,7 @@ export function validateDiagram(diagram: unknown): ValidationResult {
   if (d.model.nodes.length === 0) {
     warnings.push({
       field: 'model.nodes',
-      message: 'Diagram has no nodes',
+      message: m.diagram_validator_noNodes_warning(),
       severity: 'warning',
     });
   }
@@ -129,7 +130,7 @@ export function validateDiagram(diagram: unknown): ValidationResult {
   if (d.model.edges.length === 0 && d.model.nodes.length > 1) {
     warnings.push({
       field: 'model.edges',
-      message: 'Diagram has multiple nodes but no edges',
+      message: m.diagram_validator_noEdges_warning(),
       severity: 'warning',
     });
   }
@@ -137,7 +138,7 @@ export function validateDiagram(diagram: unknown): ValidationResult {
   if (d.states && d.states.length > 0 && !d.states.some((s) => s.narrative)) {
     warnings.push({
       field: 'states',
-      message: 'States exist but none have narratives - consider adding explanatory text',
+      message: m.diagram_validator_noNarratives_warning(),
       severity: 'warning',
     });
   }
@@ -156,14 +157,14 @@ export function formatValidationErrors(result: ValidationResult): string {
   const parts: string[] = [];
 
   if (result.errors.length > 0) {
-    parts.push('Errors:');
+    parts.push(m.diagram_validator_errors_label());
     result.errors.forEach((err) => {
       parts.push(`  - ${err.field}: ${err.message}`);
     });
   }
 
   if (result.warnings.length > 0) {
-    parts.push('Warnings:');
+    parts.push(m.diagram_validator_warnings_label());
     result.warnings.forEach((warn) => {
       parts.push(`  - ${warn.field}: ${warn.message}`);
     });

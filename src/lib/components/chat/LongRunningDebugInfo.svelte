@@ -17,6 +17,8 @@
   faChevronUp,
 } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils/cn';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     /** When streaming/processing started (timestamp in ms) */
@@ -94,7 +96,8 @@
     >
       <Fa icon={faInfoCircle} class="shrink-0" />
       <span class="flex-1">
-        Agent has been processing for <strong>{formattedTime}</strong>
+        {m.chat_longRunningDebug_processingFor_before()}
+        <strong>{formattedTime}</strong>
       </span>
       <Fa icon={isExpanded ? faChevronUp : faChevronDown} class="shrink-0 opacity-60" />
     </button>
@@ -106,43 +109,55 @@
         transition:slide={{ duration: 150 }}
       >
         <p class="text-amber-600/80 dark:text-amber-400/80">
-          If the agent appears stuck, here's some debug info:
+          {m.chat_longRunningDebug_intro_label()}
         </p>
 
         <div class="grid grid-cols-2 gap-x-4 gap-y-1 font-mono">
-          <span class="text-amber-600/60 dark:text-amber-400/60">Agent ID:</span>
-          <span class="truncate">{agentId || 'N/A'}</span>
+          <span class="text-amber-600/60 dark:text-amber-400/60"
+            >{m.chat_longRunningDebug_agentId_label()}</span
+          >
+          <span class="truncate">{agentId || m.chat_longRunningDebug_notAvailable_fallback()}</span>
 
-          <span class="text-amber-600/60 dark:text-amber-400/60">Session ID:</span>
-          <span class="truncate">{sessionId || 'Not activated'}</span>
+          <span class="text-amber-600/60 dark:text-amber-400/60"
+            >{m.chat_longRunningDebug_sessionId_label()}</span
+          >
+          <span class="truncate">{sessionId || m.chat_longRunningDebug_notActivated_fallback()}</span>
 
-          <span class="text-amber-600/60 dark:text-amber-400/60">Messages:</span>
-          <span>{messageCount}</span>
+          <span class="text-amber-600/60 dark:text-amber-400/60"
+            >{m.chat_longRunningDebug_messages_label()}</span
+          >
+          <span>{formatInteger(messageCount)}</span>
 
-          <span class="text-amber-600/60 dark:text-amber-400/60">Response size:</span>
+          <span class="text-amber-600/60 dark:text-amber-400/60"
+            >{m.chat_longRunningDebug_responseSize_label()}</span
+          >
           <span
             >{streamingContentLength > 0
-              ? `${streamingContentLength} chars`
-              : 'No response yet'}</span
+              ? m.chat_longRunningDebug_chars_label({
+                  count: formatInteger(streamingContentLength),
+                })
+              : m.chat_longRunningDebug_noResponseYet_label()}</span
           >
 
-          <span class="text-amber-600/60 dark:text-amber-400/60">Elapsed:</span>
+          <span class="text-amber-600/60 dark:text-amber-400/60"
+            >{m.chat_longRunningDebug_elapsed_label()}</span
+          >
           <span>{formattedTime}</span>
         </div>
 
         <div class="pt-1.5 text-amber-600/70 dark:text-amber-400/70">
-          <p class="font-medium mb-1">Possible causes:</p>
+          <p class="font-medium mb-1">{m.chat_longRunningDebug_possibleCauses_label()}</p>
           <ul class="list-disc list-inside space-y-0.5 pl-1">
             {#if !sessionId}
-              <li>Agent session not activated (backend may be unavailable)</li>
+              <li>{m.chat_longRunningDebug_causeNotActivated_label()}</li>
             {/if}
             {#if streamingContentLength === 0}
-              <li>No response received (network issue or backend error)</li>
+              <li>{m.chat_longRunningDebug_causeNoResponse_label()}</li>
             {:else}
-              <li>Agent is working on a complex task</li>
-              <li>Waiting for tool execution to complete</li>
+              <li>{m.chat_longRunningDebug_causeComplexTask_label()}</li>
+              <li>{m.chat_longRunningDebug_causeToolExecution_label()}</li>
             {/if}
-            <li>Try pressing Stop and sending your message again</li>
+            <li>{m.chat_longRunningDebug_tryStop_label()}</li>
           </ul>
         </div>
       </div>

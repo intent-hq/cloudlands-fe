@@ -11,12 +11,10 @@ import { BrowserWindow, ipcMain } from 'electron';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { z } from 'zod';
 import { Logger } from '$shared/logger';
-import {
-  agentCircuitBreaker,
-  type CircuitStatus,
-} from '$shared/services/agent-circuit-breaker';
+import { agentCircuitBreaker, type CircuitStatus } from '$shared/services/agent-circuit-breaker';
 import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 import { getBackendClient } from '../../backend/main/backend.ipc';
+import { m } from '../../../shared/paraglide/messages.js';
 
 const logger = new Logger('AgentMissing-IPC');
 
@@ -131,13 +129,9 @@ export function registerMissingAgentHandlers(): void {
                   }>;
                 }
               | undefined;
-            const agents = Array.isArray(agentListResult?.agents)
-              ? agentListResult!.agents!
-              : [];
+            const agents = Array.isArray(agentListResult?.agents) ? agentListResult!.agents! : [];
             return agents
-              .filter(
-                (agent) => agent.isStreaming === true || agent.isResponding === true,
-              )
+              .filter((agent) => agent.isStreaming === true || agent.isResponding === true)
               .map((agent) => {
                 const agentId = String(agent.id ?? '');
                 const parsed = agent.updatedAt ? Date.parse(agent.updatedAt) : NaN;
@@ -170,7 +164,7 @@ export function registerMissingAgentHandlers(): void {
       logger.error('Failed to get active streams', error as Error);
       return {
         success: false,
-        error: (error as Error).message || 'Failed to get active streams',
+        error: (error as Error).message || m.agent_ipc_activeStreamsFailed_error(),
         data: [],
       };
     }
@@ -195,7 +189,10 @@ export function registerMissingAgentHandlers(): void {
           logger.error('Failed to reset circuit breaker', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to reset circuit breaker',
+            error:
+              error instanceof Error
+                ? error.message
+                : m.agent_ipc_circuitBreakerResetFailed_error(),
           };
         }
       },
@@ -226,7 +223,7 @@ export function registerMissingAgentHandlers(): void {
           logger.error('Failed to enhance prompt', error as Error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : m.agent_ipc_unknown_error(),
           };
         }
       },

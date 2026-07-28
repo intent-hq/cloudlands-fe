@@ -72,6 +72,7 @@
   });
 </script>
 
+<!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
 {#snippet Button({ props }: { props?: Record<string, unknown> })}
   {@const mergedProps = mergeProps(buttonProps, props)}
   {#if child}

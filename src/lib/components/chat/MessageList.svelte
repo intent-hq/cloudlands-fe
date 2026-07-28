@@ -16,6 +16,7 @@
   groupMessagesByDate,
   shouldShowTimeSeparator,
 } from '$lib/utils/timeFormatting';
+  import { formatTime as formatClockTime } from '$lib/i18n/format';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
   import TypingIndicator from './TypingIndicator.svelte';
@@ -261,11 +262,7 @@
   }
 
   function formatTime(date: Date): string {
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
+    return formatClockTime(date);
   }
 </script>
 

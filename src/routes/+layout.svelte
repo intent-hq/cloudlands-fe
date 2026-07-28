@@ -91,7 +91,7 @@
     selectWorkspaceItems,
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectHasCompletedProviderSetup, selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     clearActiveWorkspace,
     loadWorkspacesRequested,
@@ -136,6 +136,7 @@
   import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
+  import { m } from '$shared/paraglide/messages.js';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
@@ -164,6 +165,7 @@
   const workspaceLoading = selectWorkspaceLoading();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
   const hasCompletedProviderSetup = selectHasCompletedProviderSetup();
+  const resolvedLocale$ = selectResolvedLocale(); // {#key} on this re-renders m.*() strings on language change
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabOrder = selectWorkspaceTabOrder();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
@@ -384,6 +386,7 @@
 
     const handleNavigationError = (event: CustomEvent) => {
       // Check if this is a "Not found" error (routeId is null)
+      // i18n-ignore (framework error-string comparison, not user-facing)
       if (event.detail?.error?.message?.includes('Not found')) {
         navigationFailureCount++;
         logger.warn('[Layout] Navigation failure detected', {
@@ -532,6 +535,7 @@
       try {
         const shortcuts = await invoke<any>('config:get', { key: 'shortcuts' });
         if (shortcuts && typeof shortcuts === 'object') {
+          // i18n-ignore (shortcut registry metadata, not rendered in UI)
           registerChord(shortcuts['command-palette'], 'Open Command Palette (Config)', openCmd);
         }
       } catch {
@@ -543,37 +547,21 @@
     const openCommandPalette = () => {
       appStore.dispatch(togglePalette());
     };
-    register({
-      key: 'k',
-      meta: true,
-      description: 'Command Palette (Mac)',
-      action: openCommandPalette,
-    });
+    // i18n-ignore (shortcut registry metadata, not rendered in UI)
+    register({ key: 'k', meta: true, description: 'Command Palette (Mac)', action: openCommandPalette });
     if (!isMac) {
-      register({
-        key: 'k',
-        ctrl: true,
-        description: 'Command Palette (Win/Linux)',
-        action: openCommandPalette,
-      });
+      // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      register({ key: 'k', ctrl: true, description: 'Command Palette (Win/Linux)', action: openCommandPalette });
     }
     // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
     const toggleAllSpaces = () => {
       appStore.dispatch(togglePanel('all-workspaces'));
     };
-    register({
-      key: 'o',
-      meta: true,
-      description: 'Toggle All Spaces (Mac)',
-      action: toggleAllSpaces,
-    });
+    // i18n-ignore (shortcut registry metadata, not rendered in UI)
+    register({ key: 'o', meta: true, description: 'Toggle All Spaces (Mac)', action: toggleAllSpaces });
     if (!isMac) {
-      register({
-        key: 'o',
-        ctrl: true,
-        description: 'Toggle All Spaces (Win/Linux)',
-        action: toggleAllSpaces,
-      });
+      // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      register({ key: 'o', ctrl: true, description: 'Toggle All Spaces (Win/Linux)', action: toggleAllSpaces });
     }
     // Cmd+T (Mac) / Ctrl+T (Win/Linux) - New Tab (creates new agent with specialist picker)
     const newTab = () => {
@@ -582,12 +570,13 @@
         appStore.dispatch(createAgentWithSpecialistRequested(wsId, null));
       }
     };
+    // i18n-ignore (shortcut registry metadata, not rendered in UI)
     register({ key: 't', meta: true, description: 'New Tab (Mac)', action: newTab });
     if (!isMac) {
       register({
         key: 't',
         ctrl: true,
-        description: 'New Tab (Win/Linux)',
+        description: 'New Tab (Win/Linux)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
         action: newTab,
       });
     }
@@ -595,11 +584,14 @@
     const goToDefinition = () => {
       dispatchWindowEvent('editor:go-to-definition');
     };
+    // i18n-ignore (shortcut registry metadata, not rendered in UI)
     register({ key: 'F12', description: 'Go to Definition', action: goToDefinition });
     // Cmd+P (Mac) / Ctrl+P (Win/Linux)
     // Note: On macOS, Ctrl+P is an Emacs shortcut (previous line) and should NOT open quick open
+    // i18n-ignore (shortcut registry metadata, not rendered in UI)
     register({ key: 'p', meta: true, description: 'Quick Open (Mac)', action: openFile });
     if (!isMac) {
+      // i18n-ignore (shortcut registry metadata, not rendered in UI)
       register({ key: 'p', ctrl: true, description: 'Quick Open (Win/Linux)', action: openFile });
     }
     // Cmd+Shift+P (Mac) / Ctrl+Shift+P (Win/Linux) -> command palette (VS Code-style)
@@ -608,17 +600,18 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
-      description: 'Command Palette (Alt)',
+      description: 'Command Palette (Alt)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openCmd,
     });
     // Cmd+G (Mac) / Ctrl+G (Win/Linux) -> Go to Line
     const openGoToLineAction = () => appStore.dispatch(openGoToLine());
+    // i18n-ignore (shortcut registry metadata, not rendered in UI)
     register({ key: 'g', meta: true, description: 'Go to Line (Mac)', action: openGoToLineAction });
     if (!isMac) {
       register({
         key: 'g',
         ctrl: true,
-        description: 'Go to Line (Win/Linux)',
+        description: 'Go to Line (Win/Linux)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
         action: openGoToLineAction,
       });
     }
@@ -628,14 +621,14 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
-      description: 'Search in files',
+      description: 'Search in files', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openSearch,
     });
     // Alt/Option + Z -> toggle word wrap (like VS Code)
     register({
       key: 'z',
       alt: true,
-      description: 'Toggle Word Wrap',
+      description: 'Toggle Word Wrap', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => appStore.dispatch(toggleLineWrapping()),
     });
     // Ctrl+` -> toggle terminal overlay (matches VS Code behavior - Ctrl on all platforms including Mac)
@@ -658,7 +651,7 @@
       key: '`',
       ctrl: true, // Ctrl on all platforms (including Mac) to match VS Code
       global: true, // Must work even when an input is focused
-      description: 'Toggle Terminal Overlay',
+      description: 'Toggle Terminal Overlay', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: toggleTerminal,
     });
     // NOTE: Cmd+` is intentionally NOT registered here — it is the native macOS shortcut
@@ -670,7 +663,7 @@
       key: 'j',
       meta: isMac,
       ctrl: !isMac,
-      description: 'Toggle Terminal Overlay',
+      description: 'Toggle Terminal Overlay', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: toggleTerminal,
     });
     // Cmd+, (Mac) / Ctrl+, (Win/Linux) -> toggle settings
@@ -678,7 +671,7 @@
       key: ',',
       meta: isMac,
       ctrl: !isMac,
-      description: 'Toggle Settings',
+      description: 'Toggle Settings', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => {
         const isOnSettings = $page.url.pathname.startsWith('/settings');
         if (isOnSettings) {
@@ -697,7 +690,7 @@
       key: '/',
       meta: isMac,
       ctrl: !isMac,
-      description: 'Enhance Prompt',
+      description: 'Enhance Prompt', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => dispatchWindowEvent('chat:enhance-prompt'),
     });
 
@@ -708,7 +701,7 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
-      description: 'Toggle Keyboard Shortcuts',
+      description: 'Toggle Keyboard Shortcuts', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => appStore.dispatch(toggleCheatSheet('global')),
     });
     // Also register with '/' for keyboards where e.key stays as '/' even with shift
@@ -717,7 +710,7 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
-      description: 'Toggle Keyboard Shortcuts',
+      description: 'Toggle Keyboard Shortcuts', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => appStore.dispatch(toggleCheatSheet('global')),
     });
 
@@ -727,7 +720,7 @@
       ctrl: true,
       shift: true,
       global: true,
-      description: 'Feature Code Entry',
+      description: 'Feature Code Entry', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => {
         appStore.dispatch(toggleFeatureCodeDialog());
       },
@@ -739,7 +732,7 @@
       key: 'ArrowUp',
       meta: isMac,
       ctrl: !isMac,
-      description: 'Scroll Conversation Up',
+      description: 'Scroll Conversation Up', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       skipInEditableElements: true,
       action: () => dispatchWindowEvent('navigate-message', { direction: 'previous' }),
     });
@@ -750,7 +743,7 @@
       key: 'ArrowDown',
       meta: isMac,
       ctrl: !isMac,
-      description: 'Scroll Conversation Down',
+      description: 'Scroll Conversation Down', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       skipInEditableElements: true,
       action: () => dispatchWindowEvent('navigate-message', { direction: 'next' }),
     });
@@ -761,7 +754,7 @@
       meta: isMac,
       ctrl: !isMac,
       alt: true,
-      description: 'Open Model Picker',
+      description: 'Open Model Picker', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => dispatchWindowEvent('chat:open-model-picker'),
     });
 
@@ -769,7 +762,7 @@
     register({
       key: 'Enter',
       alt: true,
-      description: 'Resend Message',
+      description: 'Resend Message', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => dispatchWindowEvent('chat:resend-message'),
     });
 
@@ -827,17 +820,15 @@
       logger.info('Resolved interrupted agents', { result });
       // Import toast lazily
       import('svelte-sonner').then(({ toast }) => {
-        if (result.resumed.length > 0) {
-          toast.success(`Resumed ${result.resumed.length} agent${result.resumed.length !== 1 ? 's' : ''}`);
-        }
-        if (result.failed.length > 0) {
-          toast.error(`Failed to resolve ${result.failed.length} agent${result.failed.length !== 1 ? 's' : ''}`);
-        }
+        const resumed = result.resumed.length;
+        const failed = result.failed.length;
+        if (resumed > 0) toast.success(resumed === 1 ? m.layout_appShell_resumedAgents_one({ count: resumed }) : m.layout_appShell_resumedAgents_many({ count: resumed }));
+        if (failed > 0) toast.error(failed === 1 ? m.layout_appShell_resolveFailedCount_one({ count: failed }) : m.layout_appShell_resolveFailedCount_many({ count: failed }));
       }).catch(() => {});
     } catch (error) {
       logger.error('Failed to resolve interrupted agents', { error });
       import('svelte-sonner').then(({ toast }) => {
-        toast.error('Failed to resolve interrupted agents');
+        toast.error(m.layout_appShell_resolveInterruptedFailed_error());
       }).catch(() => {});
     }
   }
@@ -852,12 +843,13 @@
       const result = await appClient.agents.resolveInterrupted(params);
       logger.info('Abandoned all interrupted agents', { result });
       import('svelte-sonner').then(({ toast }) => {
-        toast.info(`Abandoned ${result.abandoned.length} agent${result.abandoned.length !== 1 ? 's' : ''}`);
+        const abandoned = result.abandoned.length;
+        toast.info(abandoned === 1 ? m.layout_appShell_abandonedAgents_one({ count: abandoned }) : m.layout_appShell_abandonedAgents_many({ count: abandoned }));
       }).catch(() => {});
     } catch (error) {
       logger.error('Failed to abandon interrupted agents', { error });
       import('svelte-sonner').then(({ toast }) => {
-        toast.error('Failed to abandon interrupted agents');
+        toast.error(m.layout_appShell_abandonInterruptedFailed_error());
       }).catch(() => {});
     }
   }
@@ -876,7 +868,7 @@
 
     import('svelte-sonner')
       .then(({ toast }) => {
-        toast.success('GitHub connected', {
+        toast.success(m.layout_appShell_githubConnected_toast(), {
           duration: 3000,
         });
       })
@@ -907,7 +899,7 @@
         workspaceId: gitCredentialsError.workspaceId,
         command: gitCredentialsError.command,
         cwd: gitCredentialsError.cwd,
-        title: `Retry: git ${gitCredentialsError.operation}`,
+        title: m.layout_appShell_retryGit_title({ operation: gitCredentialsError.operation }),
       });
 
       if (result.ok && result.terminalId) {
@@ -1001,7 +993,7 @@
   <!-- Main Layout with Title Bar -->
   <div
     class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col bg-app-background"
-    aria-label="Application shell"
+    aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
     <!-- Title bar at top -->
@@ -1024,10 +1016,10 @@
         <!-- Content area with rounded corners -->
         <main
           class="flex flex-1 min-h-0 flex-col mr-1.5 mb-1.5 rounded-xl overflow-hidden bg-sidebar border border-border/30 shadow-sm"
-          aria-label="Main content"
+          aria-label={m.layout_appShell_mainContent_ariaLabel()}
         >
           <div class="flex-1 min-h-0 overflow-auto">
-            {@render children?.()}
+            {#key $resolvedLocale$}{@render children?.()}{/key}
           </div>
 
           <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->

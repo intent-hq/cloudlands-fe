@@ -20,6 +20,7 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     message: AgentMessage;
@@ -99,7 +100,7 @@
         const inner = captured.slice(8, -1);
         let provider = 'browser', identifier = '', title = '';
         if (inner.startsWith('eyJ')) {
-          try { const j = JSON.parse(atob(inner)); provider = j.provider || 'browser'; identifier = j.identifier || ''; title = j.title || identifier || 'Context'; } catch { const p = inner.split('|'); provider = p[0] || 'browser'; identifier = p[1] || ''; title = p[2] || identifier; }
+          try { const j = JSON.parse(atob(inner)); provider = j.provider || 'browser'; identifier = j.identifier || ''; title = j.title || identifier || m.chat_shared_context_fallback(); } catch { const p = inner.split('|'); provider = p[0] || 'browser'; identifier = p[1] || ''; title = p[2] || identifier; }
         } else {
           const p = inner.split('|'); provider = p[0] || 'browser'; identifier = p[1] || ''; title = p[2] || identifier;
         }
@@ -125,7 +126,7 @@
   function metadataPills(refs: any[]): Pill[] {
     return refs.map((ref) => {
       const provider = ref.provider || ref.source || ref.type || ref.itemType || '';
-      const label = ref.identifier || ref.title || 'Context';
+      const label = ref.identifier || ref.title || m.chat_shared_context_fallback();
       const mentionType = ['linear', 'github', 'sentry'].includes(provider) ? provider : undefined;
       return { type: provider || 'external', label, icon: faFile, mentionType };
     });
@@ -187,7 +188,7 @@
           e.stopPropagation();
           onScrollToPrevious();
         }}
-        title="Scroll to previous message"
+        title={m.chat_stickyMessageHeader_scrollToPrevious_title()}
       >
         <Fa icon={faArrowUp} class="w-2.5! h-2.5!" />
       </Button>

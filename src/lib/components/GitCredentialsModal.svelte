@@ -9,6 +9,7 @@
   faTerminal,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -71,7 +72,7 @@
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
     role="button"
     tabindex="0"
-    aria-label="Close modal"
+    aria-label={m.lib_gitCredentials_closeModal_ariaLabel()}
     onclick={handleClose}
     onkeydown={(e) => e.key === 'Escape' && handleClose()}
   >
@@ -83,7 +84,7 @@
       <div class="flex justify-between items-center p-4 border-b border-border">
         <h2 class="m-0 text-lg font-semibold flex items-center gap-2">
           <Fa icon={faKey} class="text-amber-500" />
-          Git Credentials Required
+          {m.lib_gitCredentials_title()}
         </h2>
         <button
           class="bg-transparent border-none text-2xl cursor-pointer text-muted-foreground hover:text-foreground"
@@ -99,13 +100,13 @@
             class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-2"
           >
             <div class="flex justify-between items-center">
-              <p class="text-sm font-medium text-red-800 dark:text-red-200 m-0">Failed Operation</p>
+              <p class="text-sm font-medium text-red-800 dark:text-red-200 m-0">{m.lib_gitCredentials_failedOperation_label()}</p>
               {#if canRetry}
                 <button
                   class="text-sm text-blue-600 dark:text-blue-400 underline bg-transparent border-none cursor-pointer p-0 hover:text-blue-800 dark:hover:text-blue-300"
                   onclick={() => onRetryInTerminal?.()}
                 >
-                  try in terminal
+                  {m.lib_gitCredentials_tryInTerminal_label()}
                 </button>
               {/if}
             </div>
@@ -127,19 +128,21 @@
         <div class="border border-border rounded-lg p-4">
           <h3 class="text-base font-semibold flex items-center gap-2 m-0 mb-3">
             <Fa icon={faKey} class="text-green-500" />
-            Option 1: SSH Keys (Recommended)
+            {m.lib_gitCredentials_sshOption_title()}
           </h3>
           <p class="text-sm text-subtle mb-3">
-            SSH keys are secure and don't require entering passwords.
+            {m.lib_gitCredentials_sshOption_description()}
           </p>
           <div class="bg-muted rounded p-3 font-mono text-xs space-y-1">
             <p class="m-0">
-              <span class="text-subtle"># Generate a new SSH key</span>
+              <span class="text-subtle">{m.lib_gitCredentials_generateKey_comment()}</span>
             </p>
+            <!-- i18n-ignore (shell command) -->
             <p class="m-0">ssh-keygen -t ed25519 -C "your_email@example.com"</p>
             <p class="m-0 mt-2">
-              <span class="text-subtle"># Add to SSH agent</span>
+              <span class="text-subtle">{m.lib_gitCredentials_addToAgent_comment()}</span>
             </p>
+            <!-- i18n-ignore (shell command) -->
             <p class="m-0">eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519</p>
           </div>
           <button
@@ -147,7 +150,7 @@
             onclick={openGitHubSSHDocs}
           >
             <Fa icon={faExternalLink} size="xs" />
-            GitHub SSH Setup Guide
+            {m.lib_gitCredentials_sshGuide_label()}
           </button>
         </div>
 
@@ -155,19 +158,21 @@
         <div class="border border-border rounded-lg p-4">
           <h3 class="text-base font-semibold flex items-center gap-2 m-0 mb-3">
             <Fa icon={faTerminal} class="text-purple-500" />
-            Option 2: Git Credential Manager
+            {m.lib_gitCredentials_gcmOption_title()}
           </h3>
           <p class="text-sm text-subtle mb-3">
-            Stores HTTPS credentials securely in your system keychain.
+            {m.lib_gitCredentials_gcmOption_description()}
           </p>
           <div class="bg-muted rounded p-3 font-mono text-xs space-y-1">
             <p class="m-0">
-              <span class="text-subtle"># Install on macOS</span>
+              <span class="text-subtle">{m.lib_gitCredentials_installMacos_comment()}</span>
             </p>
+            <!-- i18n-ignore (shell command) -->
             <p class="m-0">brew install git-credential-manager</p>
             <p class="m-0 mt-2">
-              <span class="text-subtle"># Configure git to use it</span>
+              <span class="text-subtle">{m.lib_gitCredentials_configureGit_comment()}</span>
             </p>
+            <!-- i18n-ignore (shell command) -->
             <p class="m-0">git credential-manager configure</p>
           </div>
           <button
@@ -175,7 +180,7 @@
             onclick={openGitCredentialManagerDocs}
           >
             <Fa icon={faExternalLink} size="xs" />
-            Git Credential Manager Docs
+            {m.lib_gitCredentials_gcmDocs_label()}
           </button>
         </div>
 
@@ -183,8 +188,7 @@
         <div class="flex items-start gap-3">
           <Fa icon={faGithub} class="text-ghost mt-0.5" />
           <p class="text-sm text-subtle m-0">
-            <strong>Note:</strong> Connecting GitHub through Augment enables API features like creating
-            pull requests and listing repositories, but git push/pull still requires local credentials.
+            <strong>{m.lib_gitCredentials_note_before()}</strong> {m.lib_gitCredentials_note_after()}
           </p>
         </div>
       </div>
@@ -195,7 +199,7 @@
           class="bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"
           onclick={handleClose}
         >
-          Close
+          {m.lib_gitCredentials_close_label()}
         </button>
       </div>
     </div>

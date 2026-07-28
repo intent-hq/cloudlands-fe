@@ -61,6 +61,8 @@
 
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { toast } from '$lib/components/ui/toast';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   import { syncWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
@@ -288,6 +290,7 @@
     const storeLoading = selectFtLoading.select(appStore.state, workspaceId);
     if (!storeLoading && storeWsId === workspaceId) {
       logger.debug(
+        // i18n-ignore (log line)
         '[SidebarChangesPanel] Store already loaded on mount, setting hasLoadedForWorkspace',
         {
           workspaceId,
@@ -353,6 +356,7 @@
       // call setWorkspace() with an old workspace ID, hijacking the singleton store.
       // Re-trigger setWorkspace for our workspace to recover.
       logger.warn(
+        // i18n-ignore (log line)
         '[SidebarChangesPanel] Store on wrong workspace, skipping recovery (activeWorkspaceId is source of truth)',
         {
           expected: workspaceId,
@@ -400,6 +404,7 @@
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('timed out')) {
         logger.warn(
+          // i18n-ignore (log line)
           '[SidebarChangesPanel] Git refresh timed out - this may indicate network issues or pending credential prompts',
         );
       } else {
@@ -842,10 +847,10 @@
         commitDrawerOpen = false;
         // Toast is handled by git:op-completed event in +layout.svelte
       } else {
-        toast.error(result.error || 'Failed to commit');
+        toast.error(result.error || m.workspace_sidebarChanges_commitFailed_error());
       }
     } catch {
-      toast.error('Failed to commit');
+      toast.error(m.workspace_sidebarChanges_commitFailed_error());
     } finally {
       isCommitting = false;
     }
@@ -860,37 +865,39 @@
 
     const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (!worktreePath) {
-      toast.error('Cannot find space path');
+      toast.error(m.workspace_commitsTimeline_noSpacePath_error());
       return;
     }
 
     try {
       // Rebase command: fetch origin first, then rebase onto origin/trunk
       const rebaseCommand = `git fetch origin ${targetBranch || trunkBranch} && git rebase origin/${targetBranch || trunkBranch}`;
+      const terminalTitle = m.workspace_prSection_rebaseOnto_label({
+        branch: targetBranch || trunkBranch,
+      });
 
       // Create terminal with the rebase command
       const result = await invoke<any>('terminal:createWithCommand', {
         workspaceId,
         command: rebaseCommand,
         cwd: worktreePath,
-        title: `Rebase onto ${targetBranch || trunkBranch}`,
+        title: terminalTitle,
       });
 
       if (result.ok && result.terminalId) {
         // Open the terminal in the quake terminal bar
-        const terminalTitle = `Rebase onto ${targetBranch || trunkBranch}`;
         appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
         appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
-        toast.success('Rebase started in terminal', {
-          description: 'After rebase completes, retry the merge.',
+        toast.success(m.workspace_sidebarChanges_rebaseStarted_label(), {
+          description: m.workspace_sidebarChanges_rebaseStarted_description(),
         });
       } else {
-        toast.error(result.error || 'Failed to open terminal');
+        toast.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
       }
     } catch (error) {
       logger.error('Failed to open rebase terminal', error as Error);
-      toast.error('Failed to open terminal');
+      toast.error(m.workspace_commitsTimeline_openTerminalFailed_error());
     }
   }
 
@@ -938,6 +945,7 @@
             <div class="relative pl-4 mb-4">
               <div class="absolute -left-1 top-1 w-2 h-2 rounded-full bg-muted"></div>
               <Skeleton class="h-3 w-16 mb-2" />
+              <!-- i18n-ignore (scanner false positive on the < comparison) -->
               {#if i < 2}
                 <Skeleton class="h-5 w-full rounded mb-1" />
                 <Skeleton class="h-5 w-3/4 rounded" />
@@ -954,12 +962,12 @@
         class="sidebar-changes-container min-h-full flex flex-col flex-1 overflow-y-auto pl-3 pr-3 outline-none"
         tabindex="0"
         role="listbox"
-        aria-label="File changes"
+        aria-label={m.workspace_sidebarChanges_fileChanges_ariaLabel()}
         onkeydown={handleChangesKeydown}
       >
         <div class="branch-labels w-full flex justify-between mb-1 mt-1">
-          <p class="text-subtle leading-snug text-ui">Your code lives in:</p>
-          <p class="text-subtle leading-snug text-ui">and will be merged into:</p>
+          <p class="text-subtle leading-snug text-ui">{m.workspace_sidebarChanges_codeLivesIn_label()}</p>
+          <p class="text-subtle leading-snug text-ui">{m.workspace_sidebarChanges_mergedInto_label()}</p>
         </div>
 
         <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
@@ -970,7 +978,7 @@
             class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
             onclick={handleRefreshGitStatus}
             disabled={isRefreshingGitStatus}
-            title="Refresh git status"
+            title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
           >
             <Fa
               icon={faArrowsRotate}
@@ -992,7 +1000,11 @@
               <div class="flex items-center gap-1.5 flex-1 min-w-0">
                 <!-- <Fa icon={faFolderOpen} class="opacity-30" size="xs" /> -->
                 <span class="text-ui truncate min-w-0 text-left flex-1">
-                  {totalFilesChanged} file{totalFilesChanged !== 1 ? 's' : ''} changed in Space
+                  {totalFilesChanged === 1
+                    ? m.workspace_sidebarChanges_filesChangedInSpace_one()
+                    : m.workspace_sidebarChanges_filesChangedInSpace_many({
+                        count: formatInteger(totalFilesChanged),
+                      })}
                 </span>
                 <!-- <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" /> -->
               </div>
@@ -1001,7 +1013,7 @@
             <div
               class="flex flex-1 items-center gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
             >
-              <span class="text-ui truncate min-w-0 text-left flex-1">No changes yet</span>
+              <span class="text-ui truncate min-w-0 text-left flex-1">{m.workspace_sidebarChanges_noChangesYet_label()}</span>
             </div>
           {/if}
 
@@ -1025,12 +1037,18 @@
             class="mb-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-xs text-amber-600 dark:text-amber-400"
           >
             <span class="font-medium"
-              >Showing {unstagedChanges.length + stagedChanges.length} of {totalChangesCount} changes.</span
+              >{m.workspace_sidebarChanges_showingChanges_label({
+                shown: formatInteger(unstagedChanges.length + stagedChanges.length),
+                total: formatInteger(totalChangesCount),
+              })}</span
             >
             {#if hiddenChangesCount > 0}
               <span class="opacity-80">
-                {hiddenChangesCount} older change{hiddenChangesCount !== 1 ? 's' : ''} hidden to improve
-                performance.
+                {hiddenChangesCount === 1
+                  ? m.workspace_sidebarChanges_olderChangesHidden_one()
+                  : m.workspace_sidebarChanges_olderChangesHidden_many({
+                      count: formatInteger(hiddenChangesCount),
+                    })}
               </span>
             {/if}
           </div>

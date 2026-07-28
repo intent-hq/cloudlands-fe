@@ -12,6 +12,7 @@
     type IsolationMode,
   } from './isolation-mode';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   type RepoSelectorHandle = {
     focusInput: () => void;
@@ -118,6 +119,43 @@
     );
   });
   const isolationLabel = $derived(isolationNoun(isolationMode));
+
+  // Whole-sentence messages split around the widget slots ('\u0000') so
+  // translators control word order; chunks render in the existing spans
+  // (spacing comes from CSS, hence the trim).
+  const SLOT = '\u0000';
+  const sentenceParts = (message: string) => message.split(SLOT).map((part) => part.trim());
+  const workOnRepoParts = $derived(
+    sentenceParts(m.workspace_repoAndBranchPicker_workOnRepo_label({ repo: SLOT })),
+  );
+  const workOnRepoOffBranchParts = $derived(
+    sentenceParts(
+      m.workspace_repoAndBranchPicker_workOnRepoOffBranch_label({ repo: SLOT, branch: SLOT }),
+    ),
+  );
+  const repoOffBranchParts = $derived(
+    sentenceParts(m.workspace_repoAndBranchPicker_repoOffBranch_label({ repo: SLOT, branch: SLOT })),
+  );
+  const cloneRepoParts = $derived(
+    sentenceParts(
+      m.workspace_repoAndBranchPicker_cloneRepoAndCreateOffBranch_label({
+        repo: SLOT,
+        isolationLabel,
+        branch: SLOT,
+      }),
+    ),
+  );
+  const workOnRemoteParts = $derived(
+    sentenceParts(
+      (skipIsolation
+        ? m.workspace_repoAndBranchPicker_workOnRemoteOnBranch_label
+        : m.workspace_repoAndBranchPicker_workOnRemoteOffBranch_label)({
+        repo: SLOT,
+        path: SLOT,
+        branch: SLOT,
+      }),
+    ),
+  );
   const pickerClass = $derived(
     isMetadataPresentation
       ? 'block w-full min-w-0 text-sm text-foreground'
@@ -125,13 +163,13 @@
   );
   const repoTriggerClass = $derived(
     isMetadataPresentation
-      ? 'group/metadata-trigger min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0!'
-      : 'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1',
+      ? 'group/metadata-trigger min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0!' // i18n-ignore (Tailwind class list)
+      : 'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none ml-1', // i18n-ignore (Tailwind class list)
   );
   const branchTriggerClass = $derived(
     isMetadataPresentation
-      ? 'group/metadata-trigger w-full min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0! overflow-hidden'
-      : 'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none overflow-hidden',
+      ? 'group/metadata-trigger w-full min-w-0 rounded-md px-2! py-1! text-sm leading-5 font-normal text-foreground bg-transparent! hover:bg-muted/40! focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0! overflow-hidden' // i18n-ignore (Tailwind class list)
+      : 'pl-2.5 pr-1.5 font-medium bg-background! py-1.25! rounded-none overflow-hidden', // i18n-ignore (Tailwind class list)
   );
   const metadataChevronClass = 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70';
   const metadataValueClass = 'text-foreground font-normal';
@@ -273,8 +311,8 @@
     </div>
   {:else if !hasRepo}
     <!-- No repo selected: show repo selector pill -->
-    {#if !isMetadataPresentation}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Work on</span>
+    {#if !isMetadataPresentation && workOnRepoParts[0]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workOnRepoParts[0]}</span>
     {/if}
     <RepoSelector
       bind:this={repoSelector}
@@ -287,11 +325,14 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
     />
+    {#if !isMetadataPresentation && workOnRepoParts[1]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 ml-1">{workOnRepoParts[1]}</span>
+    {/if}
   {:else if isNewRepo}
     <!-- New repo mode: show create with repo selector -->
     {#if !isMetadataPresentation}
       <Fa icon={faPlus} size="sm" class="ml-0.75 mr-2 shrink-0" />
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Create new repo</span>
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{m.workspace_repoAndBranchPicker_createNewRepo_label()}</span>
     {/if}
     <RepoSelector
       variant="ghost"
@@ -320,7 +361,9 @@
     <!-- GitHub clone flow -->
     {#if !isMetadataPresentation}
       <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Clone</span>
+      {#if cloneRepoParts[0]}
+        <span class="text-sm text-subtle whitespace-nowrap shrink-0">{cloneRepoParts[0]}</span>
+      {/if}
     {/if}
     <RepoSelector
       variant="ghost"
@@ -332,9 +375,11 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
     />
-    <span class="text-sm text-subtle whitespace-nowrap shrink-0 ml-1">
-      {isMetadataPresentation ? 'off' : `and create ${isolationLabel} off`}
-    </span>
+    {#if isMetadataPresentation ? repoOffBranchParts[1] : cloneRepoParts[1]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 ml-1">
+        {isMetadataPresentation ? repoOffBranchParts[1] : cloneRepoParts[1]}
+      </span>
+    {/if}
     <BranchSelector
       variant="ghost"
       triggerClass={branchTriggerClass}
@@ -356,6 +401,11 @@
       {onBranchesLoaded}
       onchange={handleBranchChange}
     />
+    {#if isMetadataPresentation ? repoOffBranchParts[2] : cloneRepoParts[2]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 ml-1">
+        {isMetadataPresentation ? repoOffBranchParts[2] : cloneRepoParts[2]}
+      </span>
+    {/if}
   {:else if repoType === 'remote' && remoteSetup && isMetadataPresentation}
     <RepoSelector
       variant="ghost"
@@ -372,7 +422,9 @@
     <!-- Remote server flow -->
     {#if !isMetadataPresentation}
       <ServerIcon size={16} class="text-ghost ml-0.75 -mb-px mr-2 shrink-0" />
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Work on</span>
+      {#if workOnRemoteParts[0]}
+        <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workOnRemoteParts[0]}</span>
+      {/if}
     {/if}
     <RepoSelector
       variant="ghost"
@@ -384,20 +436,24 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
     />
+    {#if workOnRemoteParts[1]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">{workOnRemoteParts[1]}</span>
+    {/if}
     <span
       class="text-xs text-subtle whitespace-nowrap shrink-0 ml-1 font-mono truncate max-w-60"
       title={remoteDisplayPath}
     >
       {remoteDisplayPath}
     </span>
-    {#if skipIsolation}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">on</span>
-    {:else}
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
+    {#if workOnRemoteParts[2]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">{workOnRemoteParts[2]}</span>
     {/if}
     <span class="text-sm font-medium whitespace-nowrap shrink-0 font-mono"
-      >{remoteSetup.branch || 'main'}</span
+      >{remoteSetup.branch || 'main' /* i18n-ignore (git branch name) */}</span
     >
+    {#if workOnRemoteParts[3]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">{workOnRemoteParts[3]}</span>
+    {/if}
     <!-- Skip isolation toggle for remote -->
     {#if typeof onSkipIsolationChange === 'function'}
       <button
@@ -410,7 +466,7 @@
           class="-mb-0.5"
           onCheckedChange={(value) => onSkipIsolationChange?.(value)}
         />
-        <span class="text-ui text-subtle whitespace-nowrap"> Work directly in your folder </span>
+        <span class="text-ui text-subtle whitespace-nowrap"> {m.workspace_repoAndBranchPicker_workDirectly_label()} </span>
       </button>
     {/if}
   {:else if isMetadataPresentation}
@@ -429,7 +485,9 @@
     <!-- Local repo flow -->
     {#if !isMetadataPresentation}
       <GitRepoIcon size={16} class="ml-0.75 -mb-px mr-2 shrink-0" />
-      <span class="text-sm text-subtle whitespace-nowrap shrink-0">Work on</span>
+      {#if workOnRepoOffBranchParts[0]}
+        <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workOnRepoOffBranchParts[0]}</span>
+      {/if}
     {/if}
     <RepoSelector
       variant="ghost"
@@ -442,7 +500,9 @@
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
     />
-    <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">off</span>
+    {#if workOnRepoOffBranchParts[1]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1 ml-2">{workOnRepoOffBranchParts[1]}</span>
+    {/if}
     <BranchSelector
       variant="ghost"
       triggerClass={branchTriggerClass}
@@ -464,5 +524,8 @@
       {onBranchesLoaded}
       onchange={handleBranchChange}
     />
+    {#if workOnRepoOffBranchParts[2]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0 mx-1">{workOnRepoOffBranchParts[2]}</span>
+    {/if}
   {/if}
 </div>

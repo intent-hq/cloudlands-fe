@@ -3,6 +3,7 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import {
   initializeGitHubAuth,
@@ -80,6 +81,7 @@
   <div class="space-y-1">
     <div class="flex items-center gap-2">
       <Fa icon={faGithub} class="w-4 h-4 text-ghost" />
+      <!-- i18n-ignore (brand name) -->
       <span class="text-sm text-foreground">GitHub</span>
       {#if $isAuthenticated$}
         <span class="text-xs text-subtle flex items-center gap-1">
@@ -87,13 +89,13 @@
           {#if $user$}
             @{$user$.login}
           {:else}
-            Connected
+            {m.settings_connections_connected()}
           {/if}
         </span>
       {/if}
     </div>
     <p class="text-xs text-subtle pl-6">
-      Push changes and create pull requests directly from workspaces.
+      {m.settings_connections_github_description()}
     </p>
     {#if $error$}
       <p class="text-xs text-destructive-foreground pl-6">{$error$}</p>
@@ -102,14 +104,14 @@
 
   <div class="flex items-center gap-2 text-xs">
     {#if $isAuthenticating$}
-      <span class="text-subtle">Waiting for authorization...</span>
+      <span class="text-subtle">{m.settings_connections_github_waitingForAuthorization()}</span>
     {:else if $isAuthenticated$}
       <button
         type="button"
         class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
         onclick={handleGitHubReconnect}
       >
-        Reconnect
+        {m.settings_connections_reconnect()}
       </button>
       <span class="text-ghost">·</span>
       <button
@@ -118,7 +120,9 @@
         onclick={handleGitHubDisconnect}
         disabled={isDisconnectingGitHub}
       >
-        {isDisconnectingGitHub ? 'Disconnecting...' : 'Disconnect'}
+        {isDisconnectingGitHub
+          ? m.settings_connections_disconnecting()
+          : m.settings_connections_disconnect()}
       </button>
     {:else if !$requiresDaemonAuth$}
       <button
@@ -126,10 +130,10 @@
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
         onclick={handleGitHubConnect}
       >
-        Connect
+        {m.settings_connections_connect()}
       </button>
     {:else}
-      <span class="text-xs text-subtle">Requires daemon authentication</span>
+      <span class="text-xs text-subtle">{m.settings_connections_requiresDaemonAuth()}</span>
     {/if}
   </div>
 </div>

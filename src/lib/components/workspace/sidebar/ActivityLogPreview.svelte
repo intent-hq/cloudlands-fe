@@ -7,6 +7,7 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Fa from 'svelte-fa';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     events?: WorkspaceEvent[];
@@ -78,7 +79,7 @@
           onclick={() => onViewAll?.()}
         >
           <Fa icon={faPlus} size="xs" class="text-ghost shrink-0 w-3.5 mr-0.5" />
-          <div class="flex-1 text-left text-ui">See all activity</div>
+          <div class="flex-1 text-left text-ui">{m.workspace_activityPreview_seeAll_label()}</div>
         </button>
       {/if}
     </div>

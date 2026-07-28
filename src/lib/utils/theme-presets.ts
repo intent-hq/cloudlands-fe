@@ -162,7 +162,7 @@ export const themePresets: ThemePresetSet[] = [
       },
     },
     light: {
-      name: 'Dracula Light',
+      name: 'Dracula Light', // i18n-ignore (theme brand name)
       type: 'light',
       colors: {
         'editor.background': '#f8f8f2',
@@ -322,7 +322,7 @@ export const themePresets: ThemePresetSet[] = [
       },
     },
     light: {
-      name: 'Nord Light',
+      name: 'Nord Light', // i18n-ignore (theme brand name)
       type: 'light',
       colors: {
         'editor.background': '#eceff4',
@@ -402,7 +402,7 @@ export const themePresets: ThemePresetSet[] = [
       },
     },
     light: {
-      name: 'Rosé Pine Dawn',
+      name: 'Rosé Pine Dawn', // i18n-ignore (theme brand name)
       type: 'light',
       colors: {
         'editor.background': '#faf4ed',
@@ -441,13 +441,13 @@ export const themePresets: ThemePresetSet[] = [
 
   {
     id: 'tokyo-night',
-    label: 'Tokyo Night',
+    label: 'Tokyo Night', // i18n-ignore (theme brand name)
     previewColors: {
       dark: ['#1a1b26', '#a9b1d6', '#7aa2f7', '#bb9af7'],
       light: ['#d5d6db', '#343b58', '#34548a', '#5a4a78'],
     },
     dark: {
-      name: 'Tokyo Night',
+      name: 'Tokyo Night', // i18n-ignore (theme brand name)
       type: 'dark',
       colors: {
         'editor.background': '#1a1b26',
@@ -483,7 +483,7 @@ export const themePresets: ThemePresetSet[] = [
       },
     },
     light: {
-      name: 'Tokyo Night Light',
+      name: 'Tokyo Night Light', // i18n-ignore (theme brand name)
       type: 'light',
       colors: {
         'editor.background': '#d5d6db',
@@ -607,7 +607,7 @@ export const themePresets: ThemePresetSet[] = [
       light: ['#fdf6e3', '#657b83', '#268bd2', '#2aa198'],
     },
     dark: {
-      name: 'Solarized Dark',
+      name: 'Solarized Dark', // i18n-ignore (theme brand name)
       type: 'dark',
       colors: {
         'editor.background': '#002b36',
@@ -643,7 +643,7 @@ export const themePresets: ThemePresetSet[] = [
       },
     },
     light: {
-      name: 'Solarized Light',
+      name: 'Solarized Light', // i18n-ignore (theme brand name)
       type: 'light',
       colors: {
         'editor.background': '#fdf6e3',
@@ -687,7 +687,7 @@ export const themePresets: ThemePresetSet[] = [
       light: ['#ffffff', '#24292f', '#0969da', '#8250df'],
     },
     dark: {
-      name: 'GitHub Dark',
+      name: 'GitHub Dark', // i18n-ignore (theme brand name)
       type: 'dark',
       colors: {
         'editor.background': '#0d1117',
@@ -723,7 +723,7 @@ export const themePresets: ThemePresetSet[] = [
       },
     },
     light: {
-      name: 'GitHub Light',
+      name: 'GitHub Light', // i18n-ignore (theme brand name)
       type: 'light',
       colors: {
         'editor.background': '#ffffff',
@@ -761,13 +761,13 @@ export const themePresets: ThemePresetSet[] = [
   },
   {
     id: 'high-contrast',
-    label: 'High Contrast',
+    label: 'High Contrast', // i18n-ignore (theme brand name)
     previewColors: {
       dark: ['#000000', '#ffffff', '#60a5fa', '#f87171'],
       light: ['#ffffff', '#111111', '#2563eb', '#dc2626'],
     },
     dark: {
-      name: 'High Contrast Dark',
+      name: 'High Contrast Dark', // i18n-ignore (theme brand name)
       type: 'dark',
       colors: {
         'editor.background': '#000000',
@@ -803,7 +803,7 @@ export const themePresets: ThemePresetSet[] = [
       },
     },
     light: {
-      name: 'High Contrast Light',
+      name: 'High Contrast Light', // i18n-ignore (theme brand name)
       type: 'light',
       colors: {
         'editor.background': '#ffffff',
@@ -858,6 +858,7 @@ function assertThemePresetManifestMatchesPresets(): void {
   for (const { id, label } of THEME_PRESET_MANIFEST) {
     if (presetById.get(id) !== label) {
       throw new Error(
+        // i18n-ignore (developer diagnostic error)
         `Theme preset manifest entry ${id} (${label}) is missing from renderer presets`,
       );
     }

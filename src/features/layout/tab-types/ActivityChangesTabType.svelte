@@ -47,6 +47,7 @@
   faTextWidth,
 } from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
@@ -207,7 +208,7 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={handleGoToFile}
-    tooltip="Go to file"
+    tooltip={m.layout_diffHeader_goToFile_tooltip()}
     tooltipSide="bottom"
   >
     <Fa icon={faFile} size="xs" />
@@ -216,7 +217,9 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleLineWrapping())}
-    tooltip={$lineWrapping ? 'Wrapping lines. Click to disable.' : 'Click to wrap lines'}
+    tooltip={$lineWrapping
+      ? m.layout_diffHeader_wrappingOn_tooltip()
+      : m.layout_diffHeader_wrapLines_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$lineWrapping}
     class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -228,8 +231,8 @@
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleFoldUnchanged())}
     tooltip={$foldUnchanged
-      ? 'Folding unchanged lines. Click to disable.'
-      : 'Click to fold unchanged lines'}
+      ? m.layout_diffHeader_foldingOn_tooltip()
+      : m.layout_diffHeader_foldLines_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$foldUnchanged}
     class={$foldUnchanged ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -240,7 +243,9 @@
     variant="ghost-light"
     size="icon-xs"
     onclick={() => appStore.dispatch(toggleDiffSideBySide())}
-    tooltip={$diffSideBySide ? 'Click to show unified view' : 'Click to show split view'}
+    tooltip={$diffSideBySide
+      ? m.layout_diffHeader_unifiedView_tooltip()
+      : m.layout_diffHeader_splitView_tooltip()}
     tooltipSide="bottom"
     aria-pressed={$diffSideBySide}
     class={$diffSideBySide ? headerToggleActiveClass : headerToggleInactiveClass}
@@ -263,7 +268,7 @@
       <div
         class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-subtle bg-muted/50 border-b border-border"
       >
-        <span>Showing partial diff starting at line {lineOffset}</span>
+        <span>{m.layout_activityChanges_partialDiff_label({ line: lineOffset ?? 0 })}</span>
       </div>
     {/if}
     <div class="flex-1 min-h-0">
@@ -282,14 +287,14 @@
 {:else if filePath}
   <!-- No diff content available -->
   <div class="flex flex-col items-center justify-center h-full text-subtle gap-4">
-    <p class="text-sm">No diff stored for this event</p>
-    <p class="text-xs opacity-70">The file change was recorded but the diff was not captured</p>
+    <p class="text-sm">{m.layout_activityChanges_noDiffStored_label()}</p>
+    <p class="text-xs opacity-70">{m.layout_activityChanges_diffNotCaptured_description()}</p>
   </div>
 {:else}
   <div class="flex flex-col items-center justify-center h-full text-subtle gap-4">
-    <p class="text-sm">No changes found in this event</p>
+    <p class="text-sm">{m.layout_activityChanges_noChanges_label()}</p>
     {#if activityEvent}
-      <p class="text-xs opacity-70">Event type: {activityEvent.type}</p>
+      <p class="text-xs opacity-70">{m.layout_activityChanges_eventType_label({ type: activityEvent.type })}</p>
     {/if}
   </div>
 {/if}

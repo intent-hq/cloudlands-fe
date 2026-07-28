@@ -29,6 +29,8 @@
 } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import { downloadUpdate, installUpdate } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatNumber, formatInteger } from '$lib/i18n/format';
 
   interface Props {
     /** Callback when toast should be dismissed */
@@ -56,12 +58,17 @@
   // Format bytes per second
   function formatSpeed(bytesPerSecond: number): string {
     if (bytesPerSecond >= 1024 * 1024) {
-      return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
+      return m.ui_updateToast_speedMbps_label({
+        speed: formatNumber(bytesPerSecond / (1024 * 1024), {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        }),
+      });
     }
     if (bytesPerSecond >= 1024) {
-      return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
+      return m.ui_updateToast_speedKbps_label({ speed: formatInteger(bytesPerSecond / 1024) });
     }
-    return `${bytesPerSecond} B/s`;
+    return m.ui_updateToast_speedBps_label({ speed: formatInteger(bytesPerSecond) });
   }
 
   function handleInstall() {
@@ -86,7 +93,7 @@
 
 <div class="update-toast">
   {#if $status$ === 'downloaded' || $status$ === 'downloading' || $status$ === 'error'}
-    <button class="close-btn" onclick={handleClose} aria-label="Close">
+    <button class="close-btn" onclick={handleClose} aria-label={m.ui_updateToast_close_ariaLabel()}>
       <Fa icon={faXmark} size="xs" />
     </button>
   {/if}
@@ -96,7 +103,7 @@
         <Fa icon={faArrowsRotate} class="animate-spin" />
       </div>
       <div class="text">
-        <div class="title">Checking for updates...</div>
+        <div class="title">{m.ui_updateToast_checking_label()}</div>
       </div>
     </div>
   {:else if $status$ === 'available'}
@@ -105,12 +112,14 @@
         <Fa icon={faDownload} class="animate-pulse" />
       </div>
       <div class="text flex-1">
-        <div class="title">Update {$updateInfo$?.version || ''} available</div>
-        <div class="description">Ready to download</div>
+        <div class="title">
+          {m.ui_updateToast_available_label({ version: $updateInfo$?.version || '' })}
+        </div>
+        <div class="description">{m.ui_updateToast_readyToDownload_description()}</div>
       </div>
       <button class="action-btn success" onclick={handleDownload}>
         <Fa icon={faDownload} class="mr-1" />
-        Download
+        {m.ui_updateToast_download_label()}
       </button>
     </div>
   {:else if $status$ === 'downloading'}
@@ -120,7 +129,9 @@
           <Fa icon={faDownload} />
         </div>
         <div class="text flex-1">
-          <div class="title">Downloading update {$updateInfo$?.version || ''}</div>
+          <div class="title">
+            {m.ui_updateToast_downloading_label({ version: $updateInfo$?.version || '' })}
+          </div>
           <div class="description">
             {progressPercent}%{$progress$ ? ` · ${formatSpeed($progress$.bytesPerSecond)}` : ''}
           </div>
@@ -136,14 +147,14 @@
         <Fa icon={faCakeCandles} size="2x" />
       </div>
       <div class="text flex-1">
-        <div class="title">Update Ready</div>
+        <div class="title">{m.ui_updateToast_updateReady_label()}</div>
         <div class="description">
-          Version {$updateInfo$?.version} is ready to install
+          {m.ui_updateToast_readyToInstall_description({ version: $updateInfo$?.version ?? '' })}
         </div>
       </div>
       <button class="action-btn success" onclick={handleInstall}>
         <Fa icon={faRotateRight} class="mr-1" />
-        Install
+        {m.ui_updateToast_install_label()}
       </button>
     </div>
   {:else if $status$ === 'not-available'}
@@ -152,9 +163,9 @@
         <Fa icon={faCakeCandles} size="2x" />
       </div>
       <div class="text">
-        <div class="title">You're up to date</div>
+        <div class="title">{m.ui_updateToast_upToDate_label()}</div>
         <div class="description">
-          Running version {$currentVersion$}
+          {m.ui_updateToast_runningVersion_description({ version: $currentVersion$ ?? '' })}
         </div>
       </div>
     </div>
@@ -164,9 +175,9 @@
         <Fa icon={faTriangleExclamation} />
       </div>
       <div class="text flex-1">
-        <div class="title">Update check failed</div>
+        <div class="title">{m.ui_updateToast_checkFailed_label()}</div>
         <div class="description">
-          {$error$ || 'An unknown error occurred'}
+          {$error$ || m.ui_updateToast_unknown_error()}
         </div>
       </div>
     </div>

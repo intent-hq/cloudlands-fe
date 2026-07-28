@@ -30,6 +30,8 @@
   import Fa from 'svelte-fa';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     workspaceId: string;
@@ -128,8 +130,12 @@
     >
       <Fa icon={faChevronDown} size="xs" class="opacity-50 transition-transform duration-200 {isExpanded ? '' : '-rotate-90'}" />
       <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
-      <span>MCP Servers</span>
-      <span class="ml-auto text-ui opacity-60">{enabledServerCount} enabled</span>
+      <span>{m.workspace_mcpServers_title()}</span>
+      <span class="ml-auto text-ui opacity-60"
+        >{m.workspace_mcpServers_enabledCount_label({
+          count: formatInteger(enabledServerCount),
+        })}</span
+      >
     </button>
 
     {#if isExpanded}
@@ -157,7 +163,7 @@
               {:else if faviconUrl}
                 <img
                   src={faviconUrl}
-                  alt="{server.name} icon"
+                  alt={m.workspace_mcpServers_serverIcon_alt({ name: server.name })}
                   class="size-3.5"
                   onerror={() => handleFaviconError(server.name)}
                 />
@@ -212,7 +218,7 @@
           onclick={() => navigateToSettings({ hash: 'mcp-servers' })}
         >
           <Fa icon={faGear} size={13} class="opacity-50 mx-[2px]" />
-          <span>Manage servers</span>
+          <span>{m.workspace_mcpServers_manageServers_label()}</span>
         </button>
       </div>
     {/if}

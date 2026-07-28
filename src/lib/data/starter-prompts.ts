@@ -3,6 +3,8 @@
  * These rotate in a floating button to inspire first-time users.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 export interface StarterPrompt {
   /** Short label shown on the button */
   label: string;
@@ -14,7 +16,10 @@ export interface StarterPrompt {
 
 export const starterPrompts: StarterPrompt[] = [
   {
-    label: 'Create a Sudoku app',
+    get label() {
+      return m.starterPrompts_sudoku_label();
+    },
+    // i18n-ignore (agent prompt content consumed by LLM)
     prompt: `Create a Sudoku puzzle game with the following features:
 - Generate valid Sudoku puzzles with multiple difficulty levels (easy, medium, hard)
 - Clean, minimal UI with a 9x9 grid
@@ -27,7 +32,10 @@ Tech stack: React + TypeScript + Vite + Tailwind CSS`,
     repoName: 'sudoku-app',
   },
   {
-    label: 'Create a Tic Tac Toe game',
+    get label() {
+      return m.starterPrompts_ticTacToe_label();
+    },
+    // i18n-ignore (agent prompt content consumed by LLM)
     prompt: `Create a Tic Tac Toe game with the following features:
 - Two-player mode (X and O take turns)
 - Clean, responsive UI with a 3x3 grid
@@ -40,7 +48,10 @@ Tech stack: React + TypeScript + Vite + Tailwind CSS`,
     repoName: 'tic-tac-toe',
   },
   {
-    label: 'Create a Connect Four game',
+    get label() {
+      return m.starterPrompts_connectFour_label();
+    },
+    // i18n-ignore (agent prompt content consumed by LLM)
     prompt: `Create a Connect Four game with the following features:
 - Two-player mode (Red and Yellow take turns)
 - 7 columns x 6 rows grid with drop animation
@@ -53,7 +64,10 @@ Tech stack: React + TypeScript + Vite + Tailwind CSS`,
     repoName: 'connect-four',
   },
   {
-    label: 'Create a Memory Match game',
+    get label() {
+      return m.starterPrompts_memoryMatch_label();
+    },
+    // i18n-ignore (agent prompt content consumed by LLM)
     prompt: `Create a Memory Match (concentration) card game with the following features:
 - 4x4 grid of cards (8 pairs)
 - Cards flip with a smooth animation
@@ -66,7 +80,10 @@ Tech stack: React + TypeScript + Vite + Tailwind CSS`,
     repoName: 'memory-match',
   },
   {
-    label: 'Create a Snake game',
+    get label() {
+      return m.starterPrompts_snake_label();
+    },
+    // i18n-ignore (agent prompt content consumed by LLM)
     prompt: `Create a classic Snake game with the following features:
 - Snake moves continuously in the current direction
 - Arrow keys or WASD to change direction

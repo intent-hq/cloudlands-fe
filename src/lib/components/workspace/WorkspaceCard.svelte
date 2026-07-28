@@ -50,6 +50,8 @@
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
   import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface ActionDef {
     label: string;
@@ -274,7 +276,7 @@
     if (onOpenInNewWindow) {
       items.push({
         id: 'open-new-window',
-        label: 'Open in New Window',
+        label: m.workspace_card_openNewWindow_label(),
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           onOpenInNewWindow?.();
@@ -285,7 +287,7 @@
 
     items.push({
       id: 'archive',
-      label: 'Archive',
+      label: m.workspace_card_archive_label(),
       icon: faBoxArchive,
       onClick: () => {
         appStore.dispatch(requestArchiveWorkspace(workspace.id));
@@ -295,7 +297,7 @@
 
     items.push({
       id: 'delete',
-      label: 'Delete Space…',
+      label: m.workspace_card_deleteSpace_label(),
       icon: faTrash,
       destructive: true,
       onClick: () => {
@@ -323,8 +325,12 @@
   );
   let statusPrLabel = $derived.by(() => {
     if (!stats) return '';
-    if (stats.pr.hasMerged) return `PR #${stats.pr.number ?? ''} merged`;
-    if (stats.pr.hasOpen) return `PR ${stats.pr.number ? `#${stats.pr.number}` : ''} open`;
+    if (stats.pr.hasMerged)
+      return m.workspace_card_prMerged_label({ number: stats.pr.number ?? '' });
+    if (stats.pr.hasOpen)
+      return m.workspace_card_prOpen_label({
+        number: stats.pr.number ? `#${stats.pr.number}` : '',
+      });
     return '';
   });
 
@@ -332,36 +338,36 @@
     if (phase?.phase === 'planning') {
       if (isAgentRunning) {
         return {
-          primary: { label: 'Show Coordinator', action: 'show-coordinator' },
-          secondary: { label: 'Pause', action: 'pause' },
+          primary: { label: m.workspace_card_showCoordinator_label(), action: 'show-coordinator' },
+          secondary: { label: m.workspace_card_pause_label(), action: 'pause' },
         };
       }
       if (hasSpec || (stats?.tasks.total ?? 0) > 0) {
         return {
-          primary: { label: 'Approve & Start', action: 'approve' },
-          secondary: { label: 'View Spec', action: 'view-spec' },
+          primary: { label: m.workspace_card_approveStart_label(), action: 'approve' },
+          secondary: { label: m.workspace_card_viewSpec_label(), action: 'view-spec' },
         };
       }
       return {
-        primary: { label: 'Show Coordinator', action: 'show-coordinator' },
-        secondary: { label: 'View Spec', action: 'view-spec' },
+        primary: { label: m.workspace_card_showCoordinator_label(), action: 'show-coordinator' },
+        secondary: { label: m.workspace_card_viewSpec_label(), action: 'view-spec' },
       };
     }
     if (phase?.phase === 'building') {
       return {
-        primary: { label: 'Show Coordinator', action: 'show-coordinator' },
-        secondary: { label: 'Pause', action: 'pause' },
+        primary: { label: m.workspace_card_showCoordinator_label(), action: 'show-coordinator' },
+        secondary: { label: m.workspace_card_pause_label(), action: 'pause' },
       };
     }
     if (phase?.phase === 'reviewing') {
       return {
-        primary: { label: 'Create PR', action: 'create-pr' },
-        secondary: { label: 'Show changes', action: 'show-changes' },
+        primary: { label: m.workspace_card_createPr_label(), action: 'create-pr' },
+        secondary: { label: m.workspace_card_showChanges_label(), action: 'show-changes' },
       };
     }
     return {
-      primary: { label: 'Archive', action: 'archive' },
-      secondary: { label: 'Show changes', action: 'show-changes' },
+      primary: { label: m.workspace_card_archive_label(), action: 'archive' },
+      secondary: { label: m.workspace_card_showChanges_label(), action: 'show-changes' },
     };
   });
 
@@ -425,7 +431,7 @@
               ? 'text-foreground'
               : 'text-subtle'}"
         >
-          {workspace.title || 'Untitled'}
+          {workspace.title || m.workspace_links_untitled_label()}
         </span>
 
         {#if isRunning && streamingAgentIds.length > 0 && workspace?.activity !== 'idle'}
@@ -475,7 +481,7 @@
             <span
               class="wc-secondary text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}"
             >
-              PR{prNumber ? ` #${prNumber}` : ''}
+              {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
             </span>
           </Tooltip>
         {/if}
@@ -520,8 +526,8 @@
           <button
             class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground"
             onclick={onMarkAsRead}
-            aria-label="Mark as read"
-            title="Mark as read"
+            aria-label={m.workspace_card_markAsRead_label()}
+            title={m.workspace_card_markAsRead_label()}
           >
             <Fa icon={faCheck} size="xs" />
           </button>
@@ -531,8 +537,8 @@
             class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50 hover:text-foreground
               {isPinned ? 'text-primary/60' : 'text-ghost'}"
             onclick={onTogglePin}
-            aria-label={isPinned ? 'Unpin' : 'Pin'}
-            title={isPinned ? 'Unpin from Active list' : 'Pin to Active list'}
+            aria-label={isPinned ? m.workspace_card_unpin_ariaLabel() : m.workspace_card_pin_ariaLabel()}
+            title={isPinned ? m.workspace_card_unpin_tooltip() : m.workspace_card_pin_tooltip()}
           >
             <Fa icon={faThumbtack} size="xs" />
           </button>
@@ -667,7 +673,9 @@
         {/if}
         {#if stats.files.changed > 0}
           <div class="flex items-center justify-between text-ui">
-            <span class="text-subtle">{stats.files.changed} files</span>
+            <span class="text-subtle"
+              >{m.workspace_card_files_label({ count: formatInteger(stats.files.changed) })}</span
+            >
             <span class="tabular-nums">
               <span class="text-green-500/70">+{stats.files.additions}</span>
               <span class="text-red-500/70 ml-1">-{stats.files.deletions}</span>
@@ -676,7 +684,9 @@
         {/if}
         {#if stats.commits.total > 0}
           <div class="flex items-center justify-between text-ui">
-            <span class="text-subtle">{stats.commits.total} commits</span>
+            <span class="text-subtle"
+              >{m.workspace_card_commits_label({ count: formatInteger(stats.commits.total) })}</span
+            >
           </div>
         {/if}
         {#if statusPrLabel}

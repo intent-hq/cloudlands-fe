@@ -15,6 +15,8 @@
   faArrowRight,
 } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     unstagedChanges?: TrackedChange[];
@@ -124,7 +126,7 @@
     <!-- Staged Changes -->
     {#if stagedChanges.length > 0}
       <div class="mt-2">
-        <p class="text-ui uppercase tracking-wider text-muted-foreground px-2 mb-1">Staged</p>
+        <p class="text-ui uppercase tracking-wider text-muted-foreground px-2 mb-1">{m.workspace_fileChanges_staged_label()}</p>
         <FileChangesList
           changes={stagedChanges}
           {viewMode}
@@ -198,7 +200,11 @@
           >
             <Fa icon={faCodeCommit} size="xs" class="opacity-50" />
             <span
-              >{effectiveUnpushedCount} commit{effectiveUnpushedCount === 1 ? '' : 's'} ready to push</span
+              >{effectiveUnpushedCount === 1
+                ? m.workspace_codeChanges_readyToPush_one()
+                : m.workspace_codeChanges_readyToPush_many({
+                    count: formatInteger(effectiveUnpushedCount),
+                  })}</span
             >
           </button>
         </div>

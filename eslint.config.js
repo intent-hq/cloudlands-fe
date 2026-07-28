@@ -284,6 +284,7 @@ export default [
       '**/logs/**',
       '**/*.log',
       '**/src/shared/generated/**',
+      '**/src/shared/paraglide/**',
       '**/.backup-state-migration/**',
       '**/.test-data/**',
       '**/*.cjs',

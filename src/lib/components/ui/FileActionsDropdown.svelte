@@ -6,6 +6,7 @@
   import Fa from 'svelte-fa';
   import { faArrowUpRightFromSquare, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import type { MenuAction } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('FileActionsDropdown');
 
@@ -34,7 +35,7 @@
     isDirectory = false,
     variant = 'ghost',
     size = 'sm',
-    label = 'Open',
+    label = m.ui_fileActions_open_label(),
     isCompact = false,
     workspaceFolderPath = '',
     isDiff = false,
@@ -129,7 +130,7 @@
   </DropdownMenu>
 {:else}
   <!-- Show a disabled Button with tooltip when no path is available -->
-  <div class="relative inline-flex flex-col" title="No repository path configured for this space">
+  <div class="relative inline-flex flex-col" title={m.ui_fileActions_noRepoPath_tooltip()}>
     <Button
       variant="ghost"
       size={buttonSize}

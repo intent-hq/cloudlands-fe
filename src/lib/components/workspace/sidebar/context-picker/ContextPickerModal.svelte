@@ -18,6 +18,7 @@
   import SentryPicker from './SentryPicker.svelte';
   import BrowserUrlPicker from './BrowserUrlPicker.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     provider: ContextProvider;
@@ -30,11 +31,21 @@
   let { provider, workspaceId, isOpen, onClose, onSelect }: Props = $props();
 
   const providerTitles: Record<ContextProvider, string> = {
-    linear: 'Linear Issues',
-    github: 'GitHub Issues',
-    sentry: 'Sentry Issues',
-    browser: 'Add URL',
-    internal: 'Context',
+    get linear() {
+      return m.workspace_contextPicker_linearIssues_label();
+    },
+    get github() {
+      return m.workspace_contextPicker_githubIssues_label();
+    },
+    get sentry() {
+      return m.workspace_contextPicker_sentryIssues_label();
+    },
+    get browser() {
+      return m.workspace_contextPicker_addUrl_label();
+    },
+    get internal() {
+      return m.workspace_multiSelectSidebar_contextTab_label();
+    },
   };
 
   function handleBackdropClick(e: MouseEvent) {
@@ -56,7 +67,7 @@
     <button
       type="button"
       class="absolute inset-0 bg-black/50 backdrop-blur-sm border-0 p-0"
-      aria-label="Close modal"
+      aria-label={m.workspace_contextPicker_closeModal_ariaLabel()}
       onclick={handleBackdropClick}
     ></button>
     <div class="absolute inset-0 flex items-center justify-center">
@@ -89,12 +100,12 @@
           <BrowserUrlPicker {workspaceId} {onSelect} {onClose} />
         {:else if provider === 'github'}
           <div class="p-8 text-center text-subtle">
-            <p class="text-sm">GitHub issues coming soon...</p>
-            <p class="text-xs mt-2">Use browser URLs to link to GitHub issues for now.</p>
+            <p class="text-sm">{m.workspace_contextPicker_githubComingSoon_label()}</p>
+            <p class="text-xs mt-2">{m.workspace_contextPicker_useBrowserUrls_label()}</p>
           </div>
         {:else}
           <div class="p-8 text-center text-subtle">
-            <p class="text-sm">Select a different provider</p>
+            <p class="text-sm">{m.workspace_contextPicker_selectProvider_label()}</p>
           </div>
         {/if}
       </div>

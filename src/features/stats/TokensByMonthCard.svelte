@@ -6,6 +6,7 @@
    */
   import Logo from '$lib/components/Logo.svelte';
   import type { UsageStatsResult } from '$lib/client/app-client';
+  import { m } from '$shared/paraglide/messages.js';
   import { monthCardModel } from './stats-charts';
 
   let {
@@ -30,7 +31,7 @@
 
 <div class="month-card" data-stats-card="by-month" data-loading={loading}>
   <div class="head">
-    <div class="brand"><Logo width={26} /><span class="title">TOKENS BY MONTH</span></div>
+    <div class="brand"><Logo width={26} /><span class="title">{m.stats_monthCard_title_label()}</span></div>
     <span class="corner mono">{yearKey}</span>
   </div>
   <div class="rule"></div>
@@ -43,8 +44,8 @@
 
   <div class="chart-block">
     <div class="legend">
-      <span class="legend-item"><span class="swatch swatch-in"></span>input</span>
-      <span class="legend-item"><span class="swatch swatch-out"></span>output</span>
+      <span class="legend-item"><span class="swatch swatch-in"></span>{m.stats_card_legendInput_label()}</span>
+      <span class="legend-item"><span class="swatch swatch-out"></span>{m.stats_card_legendOutput_label()}</span>
     </div>
     <div class="chart">
       {#each model.grid as line (line.label)}
@@ -70,7 +71,7 @@
 
   <div class="stat-grid">
     <div>
-      <div class="stat-label">BEST MONTH</div>
+      <div class="stat-label">{m.stats_monthCard_bestMonth_label()}</div>
       <div class="stat-value mono">{model.bestLabel}</div>
     </div>
     <div>
@@ -81,7 +82,8 @@
 
   <div class="footer-wrap">
     <div class="footer">
-      <span class="footer-brand">Built with Intent</span>
+      <span class="footer-brand">{m.stats_card_builtWith_label()}</span>
+      <!-- i18n-ignore (brand URL) -->
       <span class="footer-url mono">intentapp.dev</span>
     </div>
   </div>

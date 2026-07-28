@@ -9,14 +9,8 @@ import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
-import {
-  Plugin,
-  PluginKey,
-} from '@tiptap/pm/state';
-import {
-  Decoration,
-  DecorationSet,
-} from '@tiptap/pm/view';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { createCommentDecorationsPlugin } from '$lib/components/tiptap/CommentDecorations';
 import { createWorkspacesLink } from './tiptap-link-extension';
@@ -43,11 +37,9 @@ import {
   selectCommentById,
 } from '$store/renderer/slices/comments/comments-selectors';
 import { createMentionSuggestionRenderer } from '$lib/components/chat/input/mention-suggestion-renderer';
-import {
-  getMentionSystem,
-  type SearchContext,
-} from '$lib/services/mentions';
+import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
 import { toPromptToken } from '$lib/services/mentions/format';
+import { m } from '$shared/paraglide/messages.js';
 
 // Import note primitives extensions
 import { ReferenceBlockNode } from './tiptap-primitives/reference-block-node';
@@ -57,11 +49,7 @@ import { PatchBlockNode } from './tiptap-primitives/patch-block-node';
 import { DiagramBlockNode } from './tiptap-primitives/diagram-block-node';
 
 // Import details block extension
-import {
-  DetailsBlock,
-  DetailsSummary,
-  DetailsContent,
-} from '$lib/components/tiptap/DetailsBlock';
+import { DetailsBlock, DetailsSummary, DetailsContent } from '$lib/components/tiptap/DetailsBlock';
 
 // Import context mention extension for inline context pills
 import { ContextMention } from '$lib/components/tiptap/ContextMention';
@@ -150,8 +138,10 @@ export const mentionRenderText = ({ node }: { node: ProseMirrorNode }): string =
   }
 };
 
-export const PLACEHOLDER_TEXT =
-  'Start drafting a specification for what you want to build. Or brainstorm with an agent ←';
+// Getter so the placeholder re-resolves when the locale changes.
+function getPlaceholderText(): string {
+  return m.editor_specEditor_placeholder();
+}
 
 /**
  * Extension that visually preserves text selection when editor loses focus.
@@ -417,7 +407,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         // Tasks Block extension for proposed tasks from agents
         TasksBlock,
         Placeholder.configure({
-          placeholder: PLACEHOLDER_TEXT,
+          placeholder: getPlaceholderText(),
           emptyEditorClass: 'is-editor-empty',
           emptyNodeClass: 'is-empty',
           showOnlyWhenEditable: false,
@@ -829,7 +819,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         // Tasks Block extension for proposed tasks from agents
         TasksBlock,
         Placeholder.configure({
-          placeholder: PLACEHOLDER_TEXT,
+          placeholder: getPlaceholderText(),
           emptyEditorClass: 'is-editor-empty',
           emptyNodeClass: 'is-empty',
           showOnlyWhenEditable: false,
@@ -1157,9 +1147,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
           event.preventDefault();
           const openInAdjacentPanel = event.metaKey || event.ctrlKey;
           logger.debug('[EditorConfig] File path clicked', { filePath, openInAdjacentPanel });
-          appStore.dispatch(
-            openWorkspaceFile(workspace.id, filePath, { openInAdjacentPanel }),
-          );
+          appStore.dispatch(openWorkspaceFile(workspace.id, filePath, { openInAdjacentPanel }));
           return true;
         }
 

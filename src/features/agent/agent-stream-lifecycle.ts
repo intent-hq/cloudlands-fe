@@ -12,7 +12,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { createMessageId } from '$shared/types/branded-ids';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
-import type { Workspace, ContentBlock, AgentMessage, AgentSession, QueuedMessage } from '$shared/types';
+import type {
+  Workspace,
+  ContentBlock,
+  AgentMessage,
+  AgentSession,
+  QueuedMessage,
+} from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { createAppMessageId } from '$shared/utils/app-message-id';
 import { AgentActivationState } from '$shared/types/agent-session';
@@ -31,10 +37,7 @@ import {
   setAgentStreaming,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
-import {
-  errorRecovery,
-  DEFAULT_STRATEGIES,
-} from './browser/services/error-recovery.service';
+import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { chatQueuedRetryRecordParked } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
@@ -42,6 +45,7 @@ import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queu
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
 import { workspaceMetrics } from '$store/renderer/slices/workspace/utils/workspace-metrics';
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('AgentStreamLifecycle');
 
@@ -57,15 +61,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isInFlightPromptDedupResponse(response: unknown): boolean {
   const candidate =
-    isRecord(response) && response.success === true && 'data' in response ? response.data : response;
+    isRecord(response) && response.success === true && 'data' in response
+      ? response.data
+      : response;
 
   if (!isRecord(candidate) || candidate.success !== false) {
     return false;
   }
 
   return (
-    typeof candidate.error === 'string' &&
-    candidate.error.includes(IN_FLIGHT_PROMPT_DROPPED_ERROR)
+    typeof candidate.error === 'string' && candidate.error.includes(IN_FLIGHT_PROMPT_DROPPED_ERROR)
   );
 }
 
@@ -134,7 +139,7 @@ export async function sendMessage(
       dispatchRedux(restoreAction);
       let session = await restoreAction.promise;
       if (!session) {
-        throw new Error(`Session not found: ${agentId}`);
+        throw new Error(m.agent_streamLifecycle_sessionNotFound_error({ agentId }));
       }
       session = { ...session, isStreaming: session.isStreaming ?? false };
 
@@ -177,7 +182,7 @@ export async function sendMessage(
               hasRepositoryPath: !!workspace.repositoryPath,
               hasPath: !!workspace.path,
             });
-            throw new Error('Space not ready for agent activation. Please wait for space to load.');
+            throw new Error(m.agent_streamLifecycle_spaceNotReady_error());
           }
         } else if (session && session.status === 'pending' && session.backendSessionId) {
           // Agent was already activated but status wasn't updated - fix it
@@ -305,6 +310,7 @@ export async function sendMessage(
 
                   // Send message to backend
                   logger.info(
+                    // i18n-ignore (log line)
                     'Agent Service: Sending message to backend with image and file blocks',
                     {
                       agentId,
@@ -329,7 +335,7 @@ export async function sendMessage(
                     },
                   );
 
-                  const wireModel = (options.model ?? options.modelId ?? session.model) ?? undefined;
+                  const wireModel = options.model ?? options.modelId ?? session.model ?? undefined;
                   // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
                   // the BackendTransport seam. History is daemon-owned (loaded from
                   // persistence); legacy-only fields (messages, resetHistory,
@@ -374,7 +380,9 @@ export async function sendMessage(
                         typeof rawError === 'string'
                           ? rawError
                           : (rawError as { message?: string } | undefined)?.message;
-                      throw new Error(errorMessage || 'Failed to send message to backend');
+                      throw new Error(
+                        errorMessage || m.agent_streamLifecycle_sendToBackendFailed_error(),
+                      );
                     }
 
                     // Handle queued responses (agent mid-turn, or the auto-queue race
@@ -385,11 +393,15 @@ export async function sendMessage(
                     // the local queue when the daemon echoes the queued entry
                     // (agent:queue:updated reconciles either way).
                     if ('queued' in response && response.queued === true) {
-                      logger.info('sendMessage auto-queued by daemon (mid-turn or turn-startup race)', {
-                        agentId,
-                        sessionId: session.id,
-                        queuedMessageId: (response.queuedMessage as QueuedMessage | undefined)?.id,
-                      });
+                      logger.info(
+                        'sendMessage auto-queued by daemon (mid-turn or turn-startup race)',
+                        {
+                          agentId,
+                          sessionId: session.id,
+                          queuedMessageId: (response.queuedMessage as QueuedMessage | undefined)
+                            ?.id,
+                        },
+                      );
 
                       // Remove the optimistic streaming placeholder so no stale
                       // assistant message remains in the transcript. The
@@ -455,7 +467,7 @@ export async function sendMessage(
           if (!result.success) {
             // Don't re-wrap - the error already has a clean user-facing message
             // from the error boundary service
-            throw result.error || new Error('Something went wrong. Please try again.');
+            throw result.error || new Error(m.agent_streamLifecycle_sendFailed_error());
           }
         } catch (streamingError) {
           // If saveSession or any pre-retry-boundary code throws after
@@ -469,7 +481,9 @@ export async function sendMessage(
               source: 'sendMessage',
               eventType: 'error',
               finishReason: 'sendMessage_setup_error',
-              error: getStreamErrorMessage(streamingError) || 'Something went wrong',
+              error:
+                getStreamErrorMessage(streamingError) ||
+                m.agent_streamLifecycle_somethingWentWrong_error(),
             }),
           );
           throw streamingError;

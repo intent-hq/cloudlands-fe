@@ -1,4 +1,5 @@
 import type { Note } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 import type { WorkspaceEvent } from '$features/events/types';
 import { getActivityLabel } from '$features/events/activity-labels';
 import { isSpecNote } from '$shared/constants/notes';
@@ -39,7 +40,7 @@ export function getNoteIconClass(note: Note) {
  */
 export function getNoteTitle(note: Note): string {
   if (isSpecNote(note.id)) return 'Spec';
-  return note.title || 'Untitled';
+  return note.title || m.workspace_links_untitled_label();
 }
 
 /**

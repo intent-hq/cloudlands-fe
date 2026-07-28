@@ -3,6 +3,7 @@
   import type { NodeViewProps } from '@tiptap/core';
   import type { PatchPrimitive } from '$shared/types/notes-primitives';
   import { PatchBlockContent } from '$lib/components/ui/diff';
+  import { m } from '$shared/paraglide/messages.js';
 
   // TipTap NodeViewProps
   let { node, extension }: NodeViewProps = $props();
@@ -17,7 +18,7 @@
 <NodeViewWrapper>
   <PatchBlockContent
     patches={primitive?.patches ?? []}
-    label={primitive?.label || 'Patch'}
+    label={primitive?.label || m.ui_patchBlock_label()}
     lastApply={primitive?.lastApply}
     linkedAgentId={primitive?.createdByAgentId}
     {workspaceId}

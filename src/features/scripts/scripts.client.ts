@@ -33,6 +33,7 @@ import { appClient } from '$lib/client';
 import type { MutationResult } from '$lib/client';
 import { detectScriptCandidates, type PackageManager } from './detect-scripts';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('ScriptsClient');
 
@@ -113,7 +114,7 @@ export const scriptsClient = {
     const scripts = await appClient.scripts.list(workspaceId);
     const existing = scripts.find((script) => script.id === scriptId);
     if (!existing) {
-      return { success: false, error: `Script not found: ${scriptId}` };
+      return { success: false, error: m.scripts_client_notFound_error({ scriptId }) };
     }
     const result = await appClient.scripts.create(workspaceId, {
       scriptId,
@@ -158,7 +159,7 @@ export const scriptsClient = {
     const status = await appClient.scripts.status(workspaceId, scriptId);
     return status
       ? { success: true, status }
-      : { success: false, error: 'Failed to read script status' };
+      : { success: false, error: m.scripts_client_statusFailed_error() };
   },
 
   /**
@@ -180,9 +181,7 @@ export const scriptsClient = {
    * `removed` = auto-detected rows removed), so repeat clicks resolve to
    * `{ added: 0, removed: 0 }` when nothing changed.
    */
-  async detect(
-    workspaceId: string,
-  ): Promise<{
+  async detect(workspaceId: string): Promise<{
     success: boolean;
     detected?: number;
     added?: number;
@@ -243,9 +242,7 @@ export const scriptsClient = {
             category: candidate.category,
             ...(existingAuto.cwd !== undefined ? { cwd: existingAuto.cwd } : {}),
             ...(existingAuto.env !== undefined ? { env: existingAuto.env } : {}),
-            ...(existingAuto.autoStart !== undefined
-              ? { autoStart: existingAuto.autoStart }
-              : {}),
+            ...(existingAuto.autoStart !== undefined ? { autoStart: existingAuto.autoStart } : {}),
           });
           if (!upsertResult.success) {
             logger.warn('script.create upsert failed for detected candidate', {

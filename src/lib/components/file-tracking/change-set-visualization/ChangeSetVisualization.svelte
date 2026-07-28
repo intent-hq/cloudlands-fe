@@ -15,6 +15,7 @@
   import FileColumn from './FileColumn.svelte';
   import LineHoverCard from './LineHoverCard.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   // Union type for both change types
   type AnyChange = TrackedChange | ChatFileChange;
@@ -221,5 +222,5 @@
     </Portal>
   {/if}
 {:else}
-  <div class="px-4 py-3 text-xs text-subtle">No file changes to visualize</div>
+  <div class="px-4 py-3 text-xs text-subtle">{m.fileTracking_changeSetViz_noChanges_label()}</div>
 {/if}

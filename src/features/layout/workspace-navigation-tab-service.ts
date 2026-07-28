@@ -48,11 +48,12 @@ import {
 } from "$store/renderer/slices/panel-layout/panel-layout-slice";
 import type { PanelTab } from "$store/renderer/slices/panel-layout/panel-layout-types";
 import type { TrackedChange } from "$features/file-tracking/types";
+import { m } from "$shared/paraglide/messages.js";
 
 /** Build the human-friendly tab title shown for a commit changeset. */
 function buildCommitTabTitle(commitHash: string, commitMessage?: string): string {
   const shortHash = commitHash.substring(0, 7);
-  if (!commitMessage) return `Commit ${shortHash}`;
+  if (!commitMessage) return m.layout_navigation_commit_title({ hash: shortHash });
   const trimmed = commitMessage.length > 20 ? `${commitMessage.substring(0, 20)}...` : commitMessage;
   return `${shortHash}: ${trimmed}`;
 }
@@ -145,7 +146,7 @@ export function openFileTab(
 
   const tab: Omit<PanelTab, "id"> = {
     type: "file",
-    title: filePath.split("/").pop() || "File",
+    title: filePath.split("/").pop() || m.layout_tabTypes_file_title(),
     filePath,
     workspaceId: wsId,
     closable: true,
@@ -211,7 +212,7 @@ export function openDiffTab(
 
   const tab: Omit<PanelTab, "id"> = {
     type: "diff",
-    title: filePath.split("/").pop() || "Diff",
+    title: filePath.split("/").pop() || m.layout_tabTypes_diff_title(),
     diffPath: filePath,
     workspaceId: wsId,
     closable: true,

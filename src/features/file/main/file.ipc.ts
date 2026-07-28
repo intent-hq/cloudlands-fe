@@ -10,6 +10,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { homedir } from 'os';
 import { Logger } from '../../../shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import {
   isBinaryExtension,
@@ -19,10 +20,7 @@ import {
 } from '../../../shared/binary-file-extensions';
 import { FILE_CHANNELS } from '$shared/ipc/channels';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import {
-  type IpcResponse,
-  FileIpc,
-} from '$shared/ipc';
+import { type IpcResponse, FileIpc } from '$shared/ipc';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
   FileReadSchema,
@@ -55,7 +53,6 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
  * Maximum file size for preview/mention context (1MB)
  * Used when maxSize option is passed
  */
-
 
 /**
  * Expand tilde (~) to home directory
@@ -91,7 +88,7 @@ export function setupFileIPC() {
               success: false,
               error: {
                 code: 'IS_DIRECTORY',
-                message: `Cannot read directory as file: ${validated.path}`,
+                message: m.file_ipc_isDirectory_error({ path: validated.path }),
               },
             };
           }
@@ -117,7 +114,10 @@ export function setupFileIPC() {
                 success: false,
                 error: {
                   code: 'FILE_TOO_LARGE',
-                  message: `File is too large (${Math.round(stats.size / 1024)}KB). Maximum size is ${Math.round(effectiveMaxSize / 1024)}KB.`,
+                  message: m.file_ipc_fileTooLarge_error({
+                    sizeKb: Math.round(stats.size / 1024),
+                    maxKb: Math.round(effectiveMaxSize / 1024),
+                  }),
                 },
                 data: {
                   content: '',
@@ -198,7 +198,7 @@ export function setupFileIPC() {
             success: false,
             error: {
               code: 'FILE_READ_FAILED',
-              message: error instanceof Error ? error.message : 'Failed to read file',
+              message: error instanceof Error ? error.message : m.file_ipc_readFailed_error(),
             },
           };
         }
@@ -283,12 +283,18 @@ export function setupFileIPC() {
             // Refresh backend specialist cache immediately for specialist file saves
             if (expandedPath.includes('.augment/specialists/') && expandedPath.endsWith('.md')) {
               try {
-                const { refreshSpecialistsFromFiles } = await import('../../agent/main/specialists.service');
+                const { refreshSpecialistsFromFiles } =
+                  await import('../../agent/main/specialists.service');
                 const specialistDirIndex = expandedPath.indexOf('.augment/specialists/');
-                const workspacePath = specialistDirIndex > 0 ? expandedPath.substring(0, specialistDirIndex) : undefined;
+                const workspacePath =
+                  specialistDirIndex > 0
+                    ? expandedPath.substring(0, specialistDirIndex)
+                    : undefined;
                 await refreshSpecialistsFromFiles(workspacePath);
               } catch (e) {
-                logger.warn('Failed to refresh specialist cache after file save', { error: (e as Error).message });
+                logger.warn('Failed to refresh specialist cache after file save', {
+                  error: (e as Error).message,
+                });
               }
             }
 
@@ -329,7 +335,7 @@ export function setupFileIPC() {
             // Clean up temp file if it exists
             try {
               await fs.unlink(tempPath);
-            } catch  {
+            } catch {
               // Ignore unlink errors
             }
             throw writeError;
@@ -345,7 +351,7 @@ export function setupFileIPC() {
             success: false,
             error: {
               code: 'FILE_WRITE_FAILED',
-              message: error instanceof Error ? error.message : 'Failed to write file',
+              message: error instanceof Error ? error.message : m.file_ipc_writeFailed_error(),
               details: {
                 errorCode: errnoError.code,
                 errorPath: errnoError.path,
@@ -409,7 +415,7 @@ export function setupFileIPC() {
                 if (entry.isDirectory()) {
                   try {
                     await walkDir(fullPath);
-                  } catch  {
+                  } catch {
                     // Skip directories we can't read
                     logger.debug(`[FileIPC] Skipping unreadable directory: ${fullPath}`);
                   }
@@ -586,7 +592,10 @@ export function setupFileIPC() {
             logger.error('Directory does not exist or is not accessible', accessError as Error, {
               dirPath: expandedPath,
             });
-            return { success: false, error: `Directory not accessible: ${expandedPath}` };
+            return {
+              success: false,
+              error: m.file_ipc_dirNotAccessible_error({ path: expandedPath }),
+            };
           }
 
           const entries = await fs.readdir(expandedPath, { withFileTypes: true });
@@ -607,7 +616,7 @@ export function setupFileIPC() {
                   size: stats.size,
                   modified: stats.mtime.toISOString(),
                 };
-              } catch  {
+              } catch {
                 // If we can't stat the file, return basic info
                 return {
                   name: entry.name,
@@ -650,7 +659,7 @@ export function setupFileIPC() {
             .map((line) => line.trim())
             .filter((line) => line && !line.startsWith('#'));
           return { success: true, data: patterns };
-        } catch  {
+        } catch {
           // If no .gitignore file, return empty array
           return { success: true, data: [] };
         }
@@ -786,7 +795,7 @@ export function setupFileIPC() {
 
             // Wait for all file reads to complete
             await Promise.all(fileReadPromises);
-          } catch  {
+          } catch {
             // Ignore errors from git diff (might happen if no changes)
           }
 
@@ -870,7 +879,7 @@ export function setupFileIPC() {
               } else {
                 return { name, path: relativePath, size: stats.size };
               }
-            } catch  {
+            } catch {
               // Skip files/dirs we can't access
               return null;
             }
@@ -888,7 +897,7 @@ export function setupFileIPC() {
             success: false,
             error: {
               code: 'FILE_TREE_FAILED',
-              message: error instanceof Error ? error.message : 'Failed to get file tree',
+              message: error instanceof Error ? error.message : m.file_ipc_fileTreeFailed_error(),
             },
           };
         }

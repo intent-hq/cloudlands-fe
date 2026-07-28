@@ -926,6 +926,7 @@ export function recoverAllPartialAnchors(
           recoveredMarkdown: currentMarkdown,
           state: problem.state,
           success: false,
+          // i18n-ignore (debug-file diagnostic, not rendered UI text)
           reason: 'Degenerate anchor: both anchors present but no text between them',
         });
       }

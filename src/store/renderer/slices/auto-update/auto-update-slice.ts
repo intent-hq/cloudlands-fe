@@ -1,15 +1,16 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
-import type { AutoUpdateState } from "./auto-update-types";
-import type { UpdateChannel, UpdateProgress, UpdateState } from "$features/auto-update/types";
+import { createAction } from '$lib/store-shim/utils/store/create-action';
+import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import type { AutoUpdateState } from './auto-update-types';
+import type { UpdateChannel, UpdateProgress, UpdateState } from '$features/auto-update/types';
+import { m } from '$shared/paraglide/messages.js';
 
 export const initialState: AutoUpdateState = {
-  status: "idle",
-  currentVersion: "",
+  status: 'idle',
+  currentVersion: '',
   updateInfo: null,
   progress: null,
   error: null,
-  channel: "stable",
+  channel: 'stable',
   toastVisible: false,
   downloadedToastDismissedAt: null,
 };
@@ -17,60 +18,62 @@ export const initialState: AutoUpdateState = {
 // --- Actions ---
 
 /** Replace the entire update state (from IPC status-changed or initial fetch) */
-export const setUpdateState = createAction<[state: UpdateState]>("autoUpdate/setUpdateState");
+export const setUpdateState = createAction<[state: UpdateState]>('autoUpdate/setUpdateState');
 
 /** Set download progress */
-export const setProgress = createAction<[progress: UpdateProgress]>("autoUpdate/setProgress");
+export const setProgress = createAction<[progress: UpdateProgress]>('autoUpdate/setProgress');
 
 /** Set update error */
-export const setUpdateError = createAction<[error: string]>("autoUpdate/setUpdateError");
+export const setUpdateError = createAction<[error: string]>('autoUpdate/setUpdateError');
 
 /** Set the update channel */
-export const setChannel = createAction<[channel: UpdateChannel]>("autoUpdate/setChannel");
+export const setChannel = createAction<[channel: UpdateChannel]>('autoUpdate/setChannel');
 
 /** Show the update toast */
-export const showToast = createAction("autoUpdate/showToast");
+export const showToast = createAction('autoUpdate/showToast');
 
 /** Hide the update toast */
-export const hideToast = createAction("autoUpdate/hideToast");
+export const hideToast = createAction('autoUpdate/hideToast');
 
 /** Dismiss the "downloaded" toast — records timestamp for 24h cooldown */
-export const dismissDownloadedToast = createAction<[dismissedAt: number]>("autoUpdate/dismissDownloadedToast");
+export const dismissDownloadedToast = createAction<[dismissedAt: number]>(
+  'autoUpdate/dismissDownloadedToast',
+);
 
 /** Menu-triggered: show toast + set checking immediately */
-export const showToastChecking = createAction("autoUpdate/showToastChecking");
+export const showToastChecking = createAction('autoUpdate/showToastChecking');
 
 /** Up-to-date event received */
-export const setUpToDate = createAction<[version: string]>("autoUpdate/setUpToDate");
+export const setUpToDate = createAction<[version: string]>('autoUpdate/setUpToDate');
 
 /** Check timed out — set error state */
-export const setCheckTimedOut = createAction("autoUpdate/setCheckTimedOut");
+export const setCheckTimedOut = createAction('autoUpdate/setCheckTimedOut');
 
 // --- Dev-only simulation actions ---
 export const simulateSetState = createAction(
-  "autoUpdate/simulateSetState",
+  'autoUpdate/simulateSetState',
   (state: Partial<AutoUpdateState>) => state,
 );
 
 // --- Trigger-only actions (handled by sagas, not reducers) ---
 
 /** Trigger: check for updates */
-export const checkForUpdates = createAction("autoUpdate/checkForUpdates");
+export const checkForUpdates = createAction('autoUpdate/checkForUpdates');
 
 /** Trigger: manual check for updates (shows toast) */
-export const checkForUpdatesManual = createAction("autoUpdate/checkForUpdatesManual");
+export const checkForUpdatesManual = createAction('autoUpdate/checkForUpdatesManual');
 
 /** Trigger: download the available update */
-export const downloadUpdate = createAction("autoUpdate/downloadUpdate");
+export const downloadUpdate = createAction('autoUpdate/downloadUpdate');
 
 /** Trigger: install the downloaded update */
-export const installUpdate = createAction("autoUpdate/installUpdate");
+export const installUpdate = createAction('autoUpdate/installUpdate');
 
 /** Trigger: set the channel via IPC */
-export const setChannelIPC = createAction<[channel: UpdateChannel]>("autoUpdate/setChannelIPC");
+export const setChannelIPC = createAction<[channel: UpdateChannel]>('autoUpdate/setChannelIPC');
 
 /** Trigger: initialize auto-update (IPC fetch + subscriptions) */
-export const initAutoUpdate = createAction("autoUpdate/initAutoUpdate");
+export const initAutoUpdate = createAction('autoUpdate/initAutoUpdate');
 
 // --- Reducer ---
 
@@ -90,7 +93,7 @@ export const autoUpdateReducer = createReducer<AutoUpdateState>(initialState)
   }))
   .with(setUpdateError, (state, { payload: [error] }) => ({
     ...state,
-    status: "error" as const,
+    status: 'error' as const,
     error,
   }))
   .with(setChannel, (state, { payload: [channel] }) => ({
@@ -113,19 +116,19 @@ export const autoUpdateReducer = createReducer<AutoUpdateState>(initialState)
   .with(showToastChecking, (state) => ({
     ...state,
     toastVisible: true,
-    status: "checking" as const,
+    status: 'checking' as const,
   }))
   .with(setUpToDate, (state, { payload: [version] }) => ({
     ...state,
-    status: "not-available" as const,
+    status: 'not-available' as const,
     currentVersion: version || state.currentVersion,
   }))
   .with(setCheckTimedOut, (state) => {
-    if (state.status !== "checking") return state;
+    if (state.status !== 'checking') return state;
     return {
       ...state,
-      status: "error" as const,
-      error: "Update check timed out. Please check your network connection.",
+      status: 'error' as const,
+      error: m.autoUpdate_check_timeout_error(),
     };
   })
   .with(simulateSetState, (state, action) => ({

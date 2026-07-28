@@ -4,6 +4,8 @@
  * Types for the AI-powered code review feature
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 export type ReviewStatus = 'idle' | 'running' | 'complete' | 'error' | 'stale';
 
 export type ReviewSeverity = 'critical' | 'important' | 'minor';
@@ -68,21 +70,27 @@ export const SEVERITY_CONFIG: Record<
   }
 > = {
   critical: {
-    label: 'Critical',
+    get label() {
+      return m.codeReview_types_severityCritical_label();
+    },
     color: 'text-red-600 dark:text-red-400',
     bgColor: 'bg-red-50 dark:bg-red-950/30',
     borderColor: 'border-red-200 dark:border-red-800',
     icon: '🔴',
   },
   important: {
-    label: 'Important',
+    get label() {
+      return m.codeReview_types_severityImportant_label();
+    },
     color: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-50 dark:bg-amber-950/30',
     borderColor: 'border-amber-200 dark:border-amber-800',
     icon: '🟡',
   },
   minor: {
-    label: 'Minor',
+    get label() {
+      return m.codeReview_types_severityMinor_label();
+    },
     color: 'text-blue-600 dark:text-blue-400',
     bgColor: 'bg-blue-50 dark:bg-blue-950/30',
     borderColor: 'border-blue-200 dark:border-blue-800',
@@ -94,11 +102,21 @@ export const SEVERITY_CONFIG: Record<
  * Category display labels
  */
 export const CATEGORY_LABELS: Record<ReviewCategory, string> = {
-  bug: 'Bug',
-  security: 'Security',
-  api: 'API',
-  documentation: 'Documentation',
-  other: 'Other',
+  get bug() {
+    return m.codeReview_types_categoryBug_label();
+  },
+  get security() {
+    return m.codeReview_types_categorySecurity_label();
+  },
+  get api() {
+    return m.codeReview_types_categoryApi_label();
+  },
+  get documentation() {
+    return m.codeReview_types_categoryDocumentation_label();
+  },
+  get other() {
+    return m.codeReview_types_categoryOther_label();
+  },
 };
 
 /**
@@ -203,7 +221,7 @@ export function parseReviewComment(text: string): ReviewComment | null {
     // Extract title and description (after the header line)
     const contentAfterHeader = text.substring(text.indexOf('\n') + 1).trim();
     const lines = contentAfterHeader.split('\n');
-    const title = lines[0]?.trim() || 'Untitled';
+    const title = lines[0]?.trim() || m.codeReview_types_untitled_fallback();
     const description = lines.slice(1).join('\n').trim();
 
     return {
@@ -230,7 +248,7 @@ export function parseReviewComment(text: string): ReviewComment | null {
 
     // Extract a title from the first sentence of the description
     const descParts = description.split(/[.!?]\s/);
-    const title = descParts[0]?.trim() || 'Issue found';
+    const title = descParts[0]?.trim() || m.codeReview_types_issueFound_fallback();
     const fullDescription = description.trim();
 
     return {
@@ -263,7 +281,7 @@ export function parseAllReviewComments(reviewText: string): ReviewComment[] {
       id: crypto.randomUUID(),
       severity: issue.severity as ReviewSeverity,
       category: 'other' as ReviewCategory, // JSON format doesn't include category
-      title: issue.title || 'Issue found',
+      title: issue.title || m.codeReview_types_issueFound_fallback(),
       description: issue.description || '',
       location: issue.file
         ? {
@@ -293,6 +311,7 @@ export function parseAllReviewComments(reviewText: string): ReviewComment[] {
 
   // Pattern 2: Inline format (single line per issue)
   // Matches: - **Severity** file:line - description
+  // i18n-ignore (scanner false positive: backticks in regex literals confuse the string tracker)
   // or: **Important** - `file.tsx:24` - Description
   const inlinePattern =
     /[-*]?\s*\*\*(Critical|Important|Minor)\*\*\s*[-–]?\s*`?[^:`\s]+(?:\.[a-z]+)?:\d+(?:-\d+)?`?\s*[-–]?\s*[^\n]+/gi;

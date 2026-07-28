@@ -22,6 +22,8 @@
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatNumber } from '$lib/i18n/format';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { playNotificationSound } from '$lib/utils/notification-sound';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
@@ -56,14 +58,17 @@
 
   // Derive volume percentage from store (0-1 to 0-100)
   const volumePercentage = $derived(Math.round($notificationVolume * 100));
+  const volumePercentageLabel = $derived(
+    formatNumber(volumePercentage / 100, { style: 'percent', maximumFractionDigits: 0 }),
+  );
 </script>
 
 <div class="grid grid-cols-[repeat(auto-fit,_minmax(220px,_1fr))] gap-x-10 gap-y-6">
   <!-- Desktop notifications -->
   <div class="flex justify-between">
     <div>
-      <p class="text-sm font-medium text-foreground">Desktop notifications</p>
-      <p class="text-xs text-subtle">Show system notifications when tasks complete</p>
+      <p class="text-sm font-medium text-foreground">{m.settings_notifications_desktop_label()}</p>
+      <p class="text-xs text-subtle">{m.settings_notifications_desktop_description()}</p>
     </div>
     <Toggle
       pressed={$notificationEnabled}
@@ -71,15 +76,15 @@
       variant="indicator"
       size="xs"
       class="mb-auto"
-      ariaLabel="Desktop notifications"
+      ariaLabel={m.settings_notifications_desktop_label()}
     />
   </div>
 
   <!-- Sound notifications -->
   <div class="flex justify-between">
     <div>
-      <p class="text-sm font-medium text-foreground">Sound</p>
-      <p class="text-xs text-subtle">Play a sound when notifications arrive</p>
+      <p class="text-sm font-medium text-foreground">{m.settings_notifications_sound_label()}</p>
+      <p class="text-xs text-subtle">{m.settings_notifications_sound_description()}</p>
     </div>
     <Toggle
       pressed={$soundEnabled}
@@ -87,15 +92,17 @@
       variant="indicator"
       size="xs"
       class="mb-auto"
-      ariaLabel="Sound"
+      ariaLabel={m.settings_notifications_sound_label()}
     />
   </div>
 
   <!-- Sound only when unfocused -->
   <div class="flex justify-between">
     <div>
-      <p class="text-sm font-medium text-foreground">Only when unfocused</p>
-      <p class="text-xs text-subtle">Only play sounds when the app is in the background</p>
+      <p class="text-sm font-medium text-foreground">
+        {m.settings_notifications_unfocusedOnly_label()}
+      </p>
+      <p class="text-xs text-subtle">{m.settings_notifications_unfocusedOnly_description()}</p>
     </div>
     <Toggle
       pressed={$soundOnlyWhenUnfocused}
@@ -103,15 +110,15 @@
       variant="indicator"
       size="xs"
       class="mb-auto"
-      ariaLabel="Only when unfocused"
+      ariaLabel={m.settings_notifications_unfocusedOnly_label()}
     />
   </div>
 
   <!-- Volume control -->
   <div class="flex justify-between">
     <div>
-      <p class="text-sm font-medium text-foreground">Volume</p>
-      <p class="text-xs text-subtle">Notification sound volume</p>
+      <p class="text-sm font-medium text-foreground">{m.settings_notifications_volume_label()}</p>
+      <p class="text-xs text-subtle">{m.settings_notifications_volume_description()}</p>
     </div>
     <div class="flex items-center gap-3">
       <Button
@@ -130,7 +137,7 @@
         oninput={handleVolumeChange}
         class="w-24 h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
       />
-      <span class="text-xs text-subtle w-8 text-right">{volumePercentage}%</span>
+      <span class="text-xs text-subtle w-8 text-right">{volumePercentageLabel}</span>
     </div>
   </div>
 </div>

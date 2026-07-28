@@ -4,6 +4,9 @@
  * EventWakeupBanner (divider banner) and QueuedMessageList (queued rows).
  */
 
+import { m } from '$shared/paraglide/messages.js';
+import { formatInteger } from '$lib/i18n/format';
+
 export interface EventWakeMetadata {
   type?: string;
   eventCount?: number;
@@ -87,24 +90,24 @@ export function parseAgentEvents(text: string, metadata?: EventWakeMetadata): Pa
 }
 
 /** Ordered mapping of non-agent event-type prefixes to human category labels. */
-const EVENT_CATEGORY_LABELS: ReadonlyArray<readonly [prefix: string, label: string]> = [
-  ['file:', 'file changes'],
-  ['task:', 'task updates'],
-  ['note:', 'note changes'],
-  ['git:', 'git activity'],
-  ['terminal:', 'terminal activity'],
-  ['test:', 'test activity'],
-  ['build:', 'build activity'],
-  ['comment:', 'comment updates'],
-  ['workspace:', 'workspace updates'],
-  ['spec:', 'spec updates'],
-  ['goal:', 'goal updates'],
+const EVENT_CATEGORY_LABELS: ReadonlyArray<readonly [prefix: string, label: () => string]> = [
+  ['file:', () => m.chat_eventWake_category_fileChanges()],
+  ['task:', () => m.chat_eventWake_category_taskUpdates()],
+  ['note:', () => m.chat_eventWake_category_noteChanges()],
+  ['git:', () => m.chat_eventWake_category_gitActivity()],
+  ['terminal:', () => m.chat_eventWake_category_terminalActivity()],
+  ['test:', () => m.chat_eventWake_category_testActivity()],
+  ['build:', () => m.chat_eventWake_category_buildActivity()],
+  ['comment:', () => m.chat_eventWake_category_commentUpdates()],
+  ['workspace:', () => m.chat_eventWake_category_workspaceUpdates()],
+  ['spec:', () => m.chat_eventWake_category_specUpdates()],
+  ['goal:', () => m.chat_eventWake_category_goalUpdates()],
 ];
 
 /** Map non-agent event types to human category labels (e.g. "file changes"). */
 export function categorizeEventTypes(types: string[]): string[] {
   return EVENT_CATEGORY_LABELS.filter(([prefix]) => types.some((t) => t.startsWith(prefix))).map(
-    ([, label]) => label,
+    ([, label]) => label(),
   );
 }
 
@@ -152,14 +155,20 @@ export function summarizeEventWake(
   const created = events.filter((e) => e.type === 'agent:created');
   const parts: string[] = [];
   if (completed.length === 1) {
-    parts.push(`Child agent ${completed[0].agentName ?? completed[0].agentId} completed`);
+    parts.push(
+      m.chat_eventWake_childCompleted_named({
+        name: completed[0].agentName ?? completed[0].agentId,
+      }),
+    );
   } else if (completed.length > 1) {
-    parts.push(`${completed.length} child agents completed`);
+    parts.push(m.chat_eventWake_childCompleted_count({ count: formatInteger(completed.length) }));
   }
   if (created.length === 1) {
-    parts.push(`Child agent ${created[0].agentName ?? created[0].agentId} created`);
+    parts.push(
+      m.chat_eventWake_childCreated_named({ name: created[0].agentName ?? created[0].agentId }),
+    );
   } else if (created.length > 1) {
-    parts.push(`${created.length} child agents created`);
+    parts.push(m.chat_eventWake_childCreated_count({ count: formatInteger(created.length) }));
   }
 
   const types = Array.isArray(metadata?.eventTypes)
@@ -176,7 +185,12 @@ export function summarizeEventWake(
       typeof metadata?.eventCount === 'number' && metadata.eventCount > 0
         ? metadata.eventCount
         : structured?.events?.length || eventLines.length;
-    label = count > 0 ? `${count} workspace event${count === 1 ? '' : 's'}` : 'Workspace events';
+    label =
+      count > 0
+        ? count === 1
+          ? m.chat_eventWake_workspaceEvents_one({ count: formatInteger(count) })
+          : m.chat_eventWake_workspaceEvents_many({ count: formatInteger(count) })
+        : m.chat_eventWake_workspaceEvents_fallback();
   }
 
   const withReport = completed.find((e) => e.completionReport || e.lastResponseSummary);

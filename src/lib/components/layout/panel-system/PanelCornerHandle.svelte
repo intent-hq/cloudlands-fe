@@ -6,6 +6,7 @@
    * Allows resizing in both directions simultaneously.
    */
 
+  import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
 
   interface Props {
@@ -67,7 +68,7 @@
 <button
   type="button"
   class={cn('panel-corner-handle', isDragging && 'dragging')}
-  aria-label="Resize panel corner"
+  aria-label={m.layout_panelCornerHandle_resize_ariaLabel()}
   {style}
   onmousedown={handleMouseDown}
 ></button>

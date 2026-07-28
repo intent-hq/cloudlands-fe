@@ -36,6 +36,8 @@
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     editor: Editor;
@@ -76,11 +78,15 @@
     const ageHours = Math.floor(ageMs / (1000 * 60 * 60));
 
     if (ageMinutes < 1) {
-      return 'Just now';
+      return m.tiptap_attributionGutter_justNow_label();
     } else if (ageMinutes < 60) {
-      return `${ageMinutes} minute${ageMinutes === 1 ? '' : 's'} ago`;
+      return ageMinutes === 1
+        ? m.tiptap_attributionGutter_minutesAgo_one()
+        : m.tiptap_attributionGutter_minutesAgo_many({ count: formatInteger(ageMinutes) });
     } else {
-      return `${ageHours} hour${ageHours === 1 ? '' : 's'} ago`;
+      return ageHours === 1
+        ? m.tiptap_attributionGutter_hoursAgo_one()
+        : m.tiptap_attributionGutter_hoursAgo_many({ count: formatInteger(ageHours) });
     }
   }
 
@@ -198,6 +204,7 @@
     const rangeMinutes = Math.floor((newestTimestamp - oldestTimestamp) / (60 * 1000));
 
     logger.debug(
+      // i18n-ignore (developer log message)
       `[LineAttributionGutter] Color scale range: oldest=${oldestAgeMinutes}min ago, newest=${newestAgeMinutes}min ago, range=${rangeMinutes}min`,
     );
 
@@ -270,21 +277,26 @@
     // Build final span indicators with rendering info
     const newSpans: SpanIndicator[] = coalescedSpans.map((span) => {
       // Build tooltip with author info if available
-      let tooltip = `Edited ${formatTimestamp(span.timestamp)}`;
+      let tooltip: string = m.tiptap_attributionGutter_edited_tooltip({
+        time: formatTimestamp(span.timestamp),
+      });
       if (span.author) {
-        const authorLabel = span.author.type === 'agent' ? 'Agent' : 'User';
-        tooltip += ` by ${authorLabel}: ${span.author.name}`;
+        const authorLabel =
+          span.author.type === 'agent'
+            ? m.tiptap_attributionGutter_agent_label()
+            : m.tiptap_attributionGutter_user_label();
+        tooltip += ` ${m.tiptap_attributionGutter_byAuthor_tooltip({ author: authorLabel, name: span.author.name })}`;
 
         // Add turn number for agent edits
         if (span.author.type === 'agent' && span.author.turnNumber !== undefined) {
-          tooltip += ` (Turn ${span.author.turnNumber})`;
+          tooltip += ` ${m.tiptap_attributionGutter_turn_tooltip({ number: formatInteger(span.author.turnNumber) })}`;
         }
       }
 
       // Build aria-label for accessibility
-      let ariaLabel = tooltip;
+      let ariaLabel: string = tooltip;
       if (span.author?.type === 'agent') {
-        ariaLabel += '. Click to view in chat';
+        ariaLabel += `. ${m.tiptap_attributionGutter_clickToView_ariaLabel()}`;
       }
 
       const opacity = getAttributionOpacity(

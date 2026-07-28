@@ -15,10 +15,7 @@ import { shouldSkipFileForAI } from '$shared/binary-file-extensions';
 import { store as appStore } from '$store/renderer/store';
 import type { Workspace } from '$shared/types';
 import type { AgentExecutorContext } from '../background-agent-executor-types';
-import {
-  MAX_DIFF_SIZE_PER_FILE,
-  MAX_TOTAL_DIFF_SIZE,
-} from '../background-agent-executor-types';
+import { MAX_DIFF_SIZE_PER_FILE, MAX_TOTAL_DIFF_SIZE } from '../background-agent-executor-types';
 
 const logger = createLogger('BgExecutorContextPrep');
 
@@ -51,7 +48,8 @@ export async function prepareContext(
     default:
       return typeof context?.message === 'string'
         ? context.message
-        : 'Please analyze the current context and provide assistance.';
+        : // i18n-ignore (LLM prompt content, not user-facing UI)
+          'Please analyze the current context and provide assistance.';
   }
 }
 
@@ -191,8 +189,10 @@ async function prepareCommitContext(
     throw new Error('No files are staged for commit. Please stage some files first.');
   }
 
-  const { combinedDiff, skippedFiles, largeDiffFiles, filesToDiff } =
-    await getStagedDiffs(workspace, stagedFiles);
+  const { combinedDiff, skippedFiles, largeDiffFiles, filesToDiff } = await getStagedDiffs(
+    workspace,
+    stagedFiles,
+  );
 
   logger.info('Filtered staged files for commit message', {
     total: stagedFiles.length,
@@ -211,11 +211,13 @@ async function prepareCommitContext(
     logger.warn('Failed to get recent commits:', error);
   }
 
+  // i18n-ignore (LLM prompt content, not user-facing UI)
   let message = `Generate a commit message for the following STAGED changes only.
 Note: Only staged files will be committed. Any unstaged changes will NOT be included in this commit.
 `;
 
   if (workspace.initialPrompt) {
+    // i18n-ignore (LLM prompt content, not user-facing UI)
     message += `
 ## Original Task
 The user created this workspace with the following request:
@@ -226,6 +228,7 @@ Use this context to understand the intent behind the changes and write a more me
 `;
   }
 
+  // i18n-ignore (LLM prompt content, not user-facing UI)
   message += `Please follow the conventional commit format:
 <type>(<scope>): <subject>
 
@@ -247,8 +250,11 @@ Files changed (${stagedFiles.length}):
 
   stagedFiles.forEach((file) => {
     const statusMap: Record<string, string> = {
-      added: 'new file', deleted: 'deleted', renamed: 'renamed',
-      modified: 'modified', untracked: 'new file',
+      added: 'new file',
+      deleted: 'deleted',
+      renamed: 'renamed',
+      modified: 'modified',
+      untracked: 'new file',
     };
     const fileStatus = statusMap[file.status] || file.status;
     const isSkipped = skippedFiles.some((s) => s.path === file.path);
@@ -258,25 +264,34 @@ Files changed (${stagedFiles.length}):
 
   if (skippedFiles.length > 0) {
     message += `\n## Note: ${skippedFiles.length} file(s) had their diffs skipped:\n`;
-    skippedFiles.forEach((f) => { message += `- ${f.path} (${f.reason})\n`; });
+    skippedFiles.forEach((f) => {
+      message += `- ${f.path} (${f.reason})\n`;
+    });
+    // i18n-ignore (LLM prompt content, not user-facing UI)
     message += `These files are still part of the commit, but their content was not analyzed.\n`;
   }
 
   if (largeDiffFiles.length > 0) {
     message += `\n## Note: ${largeDiffFiles.length} file(s) had their diffs truncated due to size:\n`;
-    largeDiffFiles.forEach((f) => { message += `- ${f.path} (${Math.round(f.size / 1024)}KB)\n`; });
+    largeDiffFiles.forEach((f) => {
+      message += `- ${f.path} (${Math.round(f.size / 1024)}KB)\n`;
+    });
   }
 
   if (recentCommits.length > 0) {
     message += '\n## Recent commit messages for context:\n';
-    recentCommits.slice(0, 3).forEach((commit) => { message += `- ${commit}\n`; });
+    recentCommits.slice(0, 3).forEach((commit) => {
+      message += `- ${commit}\n`;
+    });
   }
 
   if (combinedDiff) {
     message += '\n## Diff:\n```diff\n' + combinedDiff + '\n```\n';
   } else if (skippedFiles.length === stagedFiles.length) {
     message += '\n## Diff:\n[All staged files are binary/media/large files - no diff available]\n';
-    message += 'Please write a commit message based on the file names and your understanding of the changes.\n';
+    // i18n-ignore (LLM prompt content, not user-facing UI)
+    message +=
+      'Please write a commit message based on the file names and your understanding of the changes.\n';
   } else {
     message += '\n## Diff:\n[No diff available - please check git status]\n';
   }
@@ -327,6 +342,7 @@ async function preparePRContext(
   const includeStagedFiles = context?.includeStagedFiles ?? true;
   const stagedFiles = includeStagedFiles ? status?.files.filter((f) => f.staged) || [] : [];
 
+  // i18n-ignore (LLM prompt content, not user-facing UI)
   let message = `Generate a pull request description for the following changes.
 
 Please provide a comprehensive PR description with sections for Summary, Changes, Testing, and Checklist.
@@ -336,6 +352,7 @@ Wrap your final PR description in <<<${resultTag}>>> and <<</${resultTag}>>> tag
 `;
 
   if (workspace.initialPrompt) {
+    // i18n-ignore (LLM prompt content, not user-facing UI)
     message += `## Original Task
 The user created this workspace with the following request:
 "${workspace.initialPrompt}"
@@ -346,8 +363,11 @@ Use this context to write a PR description that explains how these changes fulfi
   }
 
   if (stagedFiles.length > 0) {
+    // i18n-ignore (LLM prompt content, not user-facing UI)
     message += '## Staged Files (will be committed):\n';
-    stagedFiles.forEach((file) => { message += `- ${file.path} (${file.status})\n`; });
+    stagedFiles.forEach((file) => {
+      message += `- ${file.path} (${file.status})\n`;
+    });
     message += '\n';
   }
 
@@ -359,7 +379,9 @@ Use this context to write a PR description that explains how these changes fulfi
   }
 
   message += '\n## Branch Information:\n';
+  // i18n-ignore (LLM prompt content, not user-facing UI)
   message += `- Current branch: ${status?.branch || 'unknown'}\n`;
+  // i18n-ignore (LLM prompt content, not user-facing UI)
   message += `- Base branch: ${context?.baseBranch || context?.targetBranch || 'main'}\n`;
 
   return message;
@@ -376,6 +398,7 @@ async function prepareReviewContext(
   const filesToReview = context?.reviewFiles || context?.files;
 
   if (filesToReview && Array.isArray(filesToReview) && filesToReview.length > 0) {
+    // i18n-ignore (LLM prompt content, not user-facing UI)
     let message = `Please review the following code changes.
 
 Provide feedback on:
@@ -451,6 +474,7 @@ async function prepareWalkthroughContext(
 
   const { combinedDiff, skippedFiles } = await getStagedDiffs(workspace, stagedFiles);
 
+  // i18n-ignore (LLM prompt content, not user-facing UI)
   let message = `Output ONLY a JSON object (no markdown, no explanation) with this structure:
 {"title":"Brief title","overview":"One sentence","annotations":[{"file":"path","line":10,"message":"Note"}]}
 
@@ -462,14 +486,15 @@ Analyze these staged changes and create 3-5 annotations highlighting the key cha
     message += `Context: "${workspace.initialPrompt}"\n\n`;
   }
 
+  // i18n-ignore (LLM prompt content, not user-facing UI)
   message += `Staged files: ${stagedFiles.map((f) => f.path).join(', ')}\n\n`;
 
   if (skippedFiles.length > 0) {
     message += `Note: ${skippedFiles.length} file(s) skipped (binary/media/large): ${skippedFiles.map((f) => f.path).join(', ')}\n\n`;
   }
 
+  // i18n-ignore (LLM prompt content, not user-facing UI)
   message += `Diff:\n\`\`\`diff\n${combinedDiff}\n\`\`\`\n\nRespond with ONLY the JSON object.`;
 
   return message;
 }
-

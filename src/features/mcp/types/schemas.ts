@@ -11,11 +11,14 @@ import { z } from 'zod';
 // Common Schemas
 // ============================================================================
 
+// i18n-ignore (MCP tool schema descriptions consumed by agents)
 export const WorkspaceIdSchema = z.string().describe('Workspace identifier');
 export const VersionSchema = z
   .string()
   .optional()
+  // i18n-ignore (MCP tool schema descriptions consumed by agents)
   .describe('Resource version for optimistic concurrency');
+// i18n-ignore (MCP tool schema descriptions consumed by agents)
 export const RequestIdSchema = z.string().optional().describe('Idempotency key for retries');
 
 export const ActorSchema = z.object({

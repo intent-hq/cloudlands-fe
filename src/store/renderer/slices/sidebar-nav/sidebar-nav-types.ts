@@ -6,6 +6,7 @@
  */
 
 export const CHIEF_WORKSPACE_ID = '__chief__';
+// i18n-ignore (sentinel compared against daemon-stored names; localizing would break placeholder detection)
 export const DEFAULT_CHIEF_THREAD_TITLE = 'New chat with Intent';
 
 export type SidebarNavItem =

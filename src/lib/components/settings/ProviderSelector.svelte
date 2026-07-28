@@ -49,6 +49,7 @@
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
+  import { m } from '$shared/paraglide/messages.js';
   import GrokLogo from '../ui/GrokLogo.svelte';
   import Logo from '../Logo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
@@ -241,9 +242,12 @@
     if (!enabled) {
       const reason = $providerInUseReasons$[providerId];
       if (reason) {
-        toast.error(`Cannot disable ${ACP_PROVIDERS[providerId]?.displayName || providerId}`, {
-          description: reason,
-        });
+        toast.error(
+          m.settings_providers_cannotDisable({
+            name: ACP_PROVIDERS[providerId]?.displayName || providerId,
+          }),
+          { description: reason },
+        );
         return;
       }
     }
@@ -373,7 +377,7 @@
       }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
 
       if (!providerResult.success) {
-        checkError = providerResult.error || 'Failed to check providers';
+        checkError = providerResult.error || m.settings_providers_checkError();
         return;
       }
       providerAvailability = providerResult.data || null;
@@ -383,7 +387,7 @@
       }
     } catch (err) {
       logger.error('Failed to check provider availability', { error: err });
-      checkError = err instanceof Error ? err.message : 'Unknown error';
+      checkError = err instanceof Error ? err.message : m.settings_providers_unknownError();
     } finally {
       loading = false;
       hasLoadedOnce = true;
@@ -409,16 +413,16 @@
       const result = await installPiMcpAdapter();
       if (result?.success) {
         await loadPiMcpAdapterStatus();
-        toast.success('pi-mcp-adapter installed successfully');
+        toast.success(m.settings_providers_piAdapterInstalled());
       } else {
-        toast.error('pi-mcp-adapter install failed', {
-          description: result?.error || 'Unknown error',
+        toast.error(m.settings_providers_piAdapterInstallFailed(), {
+          description: result?.error || m.settings_providers_unknownError(),
         });
       }
     } catch (err) {
       logger.error('Failed to install pi-mcp-adapter', err);
-      toast.error('pi-mcp-adapter install failed', {
-        description: err instanceof Error ? err.message : 'Unknown error',
+      toast.error(m.settings_providers_piAdapterInstallFailed(), {
+        description: err instanceof Error ? err.message : m.settings_providers_unknownError(),
       });
     } finally {
       setupInProgress = { ...setupInProgress, pi: false };
@@ -452,7 +456,8 @@
       const result = await invoke<InstructionResponse>(AUGGIE_CHANNELS.INSTALL);
       applyInstructionResponse(result);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch install instructions';
+      const message =
+        err instanceof Error ? err.message : m.settings_providers_installInstructionsError();
       auggieInstructions = [message];
       auggieCommand = null;
     } finally {
@@ -468,7 +473,7 @@
         action: 'start',
       });
       if (result.success && result.data?.authenticated) {
-        toast.success('Logged in successfully');
+        toast.success(m.settings_providers_loggedIn());
         auggieInstructions = null;
         auggieCommand = null;
         await checkProviderAvailability();
@@ -477,7 +482,8 @@
       }
       applyInstructionResponse(result);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch login instructions';
+      const message =
+        err instanceof Error ? err.message : m.settings_providers_loginInstructionsError();
       auggieInstructions = [message];
       auggieCommand = null;
     } finally {
@@ -493,7 +499,7 @@
       if (auggieStatus?.installed && auggieStatus?.versionOk && auggieStatus?.authenticated) {
         auggieInstructions = null;
         auggieCommand = null;
-        toast.success('Auggie ready');
+        toast.success(m.settings_providers_auggieReady());
         appStore.dispatch(reloadModelsForProvider());
         return;
       }
@@ -533,7 +539,11 @@
       });
       appStore.dispatch(setActiveProvider(providerId));
       appStore.dispatch(reloadModelsForProvider());
-      toast.success(`Switched to ${ACP_PROVIDERS[providerId]?.displayName || providerId}`);
+      toast.success(
+        m.settings_providers_switchedTo({
+          name: ACP_PROVIDERS[providerId]?.displayName || providerId,
+        }),
+      );
     } finally {
       selectingProviderId = null;
     }
@@ -578,7 +588,7 @@
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors text-xs font-medium"
         onclick={() => checkProviderAvailability(true)}
       >
-        Try Again
+        {m.settings_providers_tryAgain()}
       </button>
     </div>
   {/if}
@@ -615,7 +625,10 @@
             </div>
             {#if needsUpdate}
               <p class="text-xs text-amber-500">
-                v{auggieStatus?.version} installed (needs {MINIMUM_AUGGIE_VERSION}+)
+                {m.settings_providers_needsUpdate({
+                  version: auggieStatus?.version ?? '',
+                  minimum: MINIMUM_AUGGIE_VERSION,
+                })}
               </p>
             {/if}
           </div>
@@ -623,38 +636,38 @@
           <div class="flex items-center gap-3 text-xs">
             {#if !auggieStatus?.managedBinaryInstalled && (!auggieStatus?.installed || (!auggieStatus?.nodeVersionOk && auggieStatus?.binaryInstallAvailable))}
               {#if actionInProgress}
-                <span class="text-subtle">Installing...</span>
+                <span class="text-subtle">{m.settings_providers_installing()}</span>
               {:else}
                 <button
                   type="button"
                   class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
                   onclick={installAuggie}
                 >
-                  Install
+                  {m.settings_providers_install()}
                 </button>
               {/if}
             {:else if needsUpdate}
               {#if actionInProgress}
-                <span class="text-subtle">Updating...</span>
+                <span class="text-subtle">{m.settings_providers_updating()}</span>
               {:else}
                 <button
                   type="button"
                   class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
                   onclick={installAuggie}
                 >
-                  Update
+                  {m.settings_providers_update()}
                 </button>
               {/if}
             {:else if !auggieStatus?.authenticated}
               {#if authInProgress}
-                <span class="text-subtle">Loading…</span>
+                <span class="text-subtle">{m.settings_providers_loading()}</span>
               {:else}
                 <button
                   type="button"
                   class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
                   onclick={startAuth}
                 >
-                  Login
+                  {m.settings_providers_login()}
                 </button>
               {/if}
             {/if}
@@ -669,7 +682,7 @@
                 title={auggieInUseReason ?? undefined}
                 onclick={() => handleToggleProvider('auggie', false)}
               >
-                Disable
+                {m.settings_providers_disable()}
               </button>
             {:else if canManageAuggieEnablement && !isAuggieActive && !isAuggieEnabled && isAuggieReady}
               <button
@@ -677,7 +690,7 @@
                 class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
                 onclick={() => handleToggleProvider('auggie', true)}
               >
-                Enable
+                {m.settings_providers_enable()}
               </button>
             {/if}
 
@@ -688,10 +701,14 @@
                 onclick={() => handleSelectProvider('auggie')}
                 disabled={selectingProviderId !== null}
               >
-                {selectingProviderId === 'auggie' ? 'Switching...' : 'Set as default'}
+                {selectingProviderId === 'auggie'
+                  ? m.settings_providers_switching()
+                  : m.settings_providers_setAsDefault()}
               </button>
             {:else if isAuggieActive}
-              <span class="text-xs text-subtle flex items-center gap-1"> Default </span>
+              <span class="text-xs text-subtle flex items-center gap-1">
+                {m.settings_providers_default()}
+              </span>
             {/if}
           </div>
         </div>
@@ -709,12 +726,13 @@
             <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
             <span class="text-xs">
               {#if auggieStatus.installed}
-                Your current auggie installation requires Node.js 22+, which isn't available. Click <strong
-                  >Install</strong
-                > to switch to the standalone binary instead.
+                {m.settings_providers_nodeWarning_installed_before()}
+                <strong>{m.settings_providers_install()}</strong>
+                {m.settings_providers_nodeWarning_installed_after()}
               {:else}
-                Node.js 22+ is not available. Click <strong>Install</strong> to download the standalone
-                binary.
+                {m.settings_providers_nodeWarning_notInstalled_before()}
+                <strong>{m.settings_providers_install()}</strong>
+                {m.settings_providers_nodeWarning_notInstalled_after()}
               {/if}
             </span>
           </div>
@@ -762,7 +780,7 @@
             {#if provider.id === 'pi' && provider.available && piMcpAdapterInstalled === false}
               <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
                 <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-                <span>Pi needs the pi-mcp-adapter package to use workspace tools</span>
+                <span>{m.settings_providers_piAdapterNeeded()}</span>
                 <Button
                   onclick={handleInstallPiMcpAdapter}
                   disabled={setupInProgress.pi}
@@ -772,9 +790,9 @@
                 >
                   {#if setupInProgress.pi}
                     <Fa icon={faCircleNotch} class="w-3 h-3 text-ghost animate-spin" />
-                    <span>Installing...</span>
+                    <span>{m.settings_providers_installing()}</span>
                   {:else}
-                    <span>Install</span>
+                    <span>{m.settings_providers_install()}</span>
                   {/if}
                 </Button>
               </div>
@@ -783,17 +801,18 @@
               <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
                 <Fa icon={faTriangleExclamation} class="w-3 h-3" />
                 <span>
-                  Requires Node.js (npx) — <button
+                  {m.settings_providers_requiresNodejs()}
+                  <button
                     type="button"
                     class="underline hover:no-underline"
                     onclick={() => shell.open('https://nodejs.org')}
-                  >install from nodejs.org</button>
+                  >{m.settings_providers_installFromNodejs()}</button>
                 </span>
               </div>
             {:else if provider.hasNpxFallback && !provider.available && providerAvailability?.npx?.resolvedPath !== null && providerAvailability?.npx?.versionOk === false}
               <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
                 <Fa icon={faTriangleExclamation} class="w-3 h-3" />
-                <span>npm/npx too old — npm 7+ required</span>
+                <span>{m.settings_providers_npmTooOld()}</span>
               </div>
             {/if}
             <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
@@ -806,7 +825,7 @@
                       type="button"
                       class="underline hover:no-underline"
                       onclick={() => void shell.open('https://nodejs.org')}
-                    >nodejs.org</button>
+                    ><!-- i18n-ignore (URL) -->nodejs.org</button>
                   {/if}
                 </span>
               </div>
@@ -819,7 +838,7 @@
               {#if provider.authenticated === true}
                 <span class="text-xs text-subtle flex items-center gap-1">
                   <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
-                  Logged in
+                  {m.settings_providers_loggedInStatus()}
                 </span>
               {:else if provider.authenticated === false && provider.loginDocsUrl}
                 <button
@@ -827,7 +846,7 @@
                   class="text-yellow-600 dark:text-yellow-500 hover:text-yellow-700 dark:hover:text-yellow-400 cursor-pointer transition-colors"
                   onclick={() => openDocs(provider.loginDocsUrl!)}
                 >
-                  Log in
+                  {m.settings_providers_logIn()}
                 </button>
               {/if}
 
@@ -841,7 +860,7 @@
                   title={inUseReason ?? undefined}
                   onclick={() => handleToggleProvider(provider.id, false)}
                 >
-                  Disable
+                  {m.settings_providers_disable()}
                 </button>
               {:else if canManageEnablement && !isActive && !isEnabled && isReady}
                 <button
@@ -849,12 +868,14 @@
                   class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
                   onclick={() => handleToggleProvider(provider.id, true)}
                 >
-                  Enable
+                  {m.settings_providers_enable()}
                 </button>
               {/if}
 
               {#if isActive}
-                <span class="text-xs text-subtle flex items-center gap-1"> Default </span>
+                <span class="text-xs text-subtle flex items-center gap-1">
+                  {m.settings_providers_default()}
+                </span>
               {:else if isReady}
                 <button
                   type="button"
@@ -862,7 +883,9 @@
                   onclick={() => handleSelectProvider(provider.id)}
                   disabled={selectingProviderId !== null}
                 >
-                  {selectingProviderId === provider.id ? 'Switching...' : 'Set as default'}
+                  {selectingProviderId === provider.id
+                    ? m.settings_providers_switching()
+                    : m.settings_providers_setAsDefault()}
                 </button>
               {/if}
             {:else}
@@ -871,7 +894,7 @@
                 class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
                 onclick={() => openDocs(provider.docsUrl)}
               >
-                Install
+                {m.settings_providers_install()}
               </button>
             {/if}
           </div>
@@ -903,7 +926,7 @@
         viewBox="0 0 24 24"
         role="img"
         xmlns="http://www.w3.org/2000/svg"
-        ><title>OpenAI icon</title><path
+        ><!-- i18n-ignore (brand name) --><title>OpenAI icon</title><path
           fill-rule="evenodd"
           clip-rule="evenodd"
           d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"

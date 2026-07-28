@@ -1,7 +1,8 @@
 <script lang="ts">
   import { getContext } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
-  let { placeholder = 'Select an option' }: { placeholder?: string } = $props();
+  let { placeholder = m.ui_select_value_placeholder() }: { placeholder?: string } = $props();
 
   const selectContext = getContext<{
     value: string;

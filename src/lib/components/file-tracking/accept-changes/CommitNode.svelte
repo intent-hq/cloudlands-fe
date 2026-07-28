@@ -21,6 +21,7 @@
   import FileRow from './FileRow.svelte';
   import type { UIFileChange } from './types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     commit: LocalCommitInfo;
@@ -135,7 +136,9 @@
             e.stopPropagation();
             copyCommitHash();
           }}
-          tooltip={copied ? 'Copied!' : `Copy commit ID: ${commit.hash.slice(0, 7)}`}
+          tooltip={copied
+            ? m.fileTracking_commitNode_copied_tooltip()
+            : m.fileTracking_commitNode_copyCommitId_tooltip({ hash: commit.hash.slice(0, 7) })}
         >
           <Fa icon={copied ? faCheck : faCopy} class="h-2.5 w-2.5" />
         </Button>
@@ -155,7 +158,7 @@
         variant="ghost-light"
         size="icon-xs"
         onclick={() => onView?.(commit.hash)}
-        tooltip="View commit"
+        tooltip={m.fileTracking_commitNode_viewCommit_tooltip()}
       >
         <Fa icon={faExternalLink} class="h-2.5 w-2.5" />
       </Button>

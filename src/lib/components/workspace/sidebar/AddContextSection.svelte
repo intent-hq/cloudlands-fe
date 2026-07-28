@@ -24,6 +24,7 @@
   } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     onAddNote?: () => void;
@@ -158,7 +159,7 @@
       onclick={() => (isExpanded = !isExpanded)}
     >
       <Fa icon={faPlus} size="xs" class="opacity-60 ml-1.75 mr-1.25" />
-      Add context
+      {m.workspace_addContext_addContext_label()}
     </Button>
   </div>
 {/if}
@@ -182,8 +183,8 @@
             <ProviderIcon provider="internal" size={12} class="opacity-70" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium">Note</div>
-            <div class="text-xs text-subtle">Add a new note</div>
+            <div class="text-sm font-medium">{m.workspace_addContext_note_label()}</div>
+            <div class="text-xs text-subtle">{m.workspace_addContext_note_description()}</div>
           </div>
         </button>
 
@@ -213,8 +214,8 @@
             <Fa icon={faGlobe} size="xs" class="opacity-70" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium">Browser</div>
-            <div class="text-xs text-subtle">Open browser panel</div>
+            <div class="text-sm font-medium">{m.workspace_multiSelectSidebar_browser_label()}</div>
+            <div class="text-xs text-subtle">{m.workspace_addContext_browser_description()}</div>
           </div>
         </button>
       </div>

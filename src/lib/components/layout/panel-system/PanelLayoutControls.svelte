@@ -21,6 +21,7 @@
   import { generateLayout } from '$lib/client/live/live-prompt-enhancement';
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
+  import { m } from '$shared/paraglide/messages.js';
   import { toast } from 'svelte-sonner';
   import LayoutPresetDropdown from './LayoutPresetDropdown.svelte';
   import PanelMinimap from './PanelMinimap.svelte';
@@ -92,17 +93,17 @@
         logger.info('Parsed layout', { layout });
         applyParsedLayout(layout);
         promptValue = '';
-        toast.success('Layout updated!');
+        toast.success(m.layout_layoutControls_updated_label());
       } else {
         logger.warn('Failed to parse layout response', { response: result.enhanced });
-        toast.error('Could not parse layout suggestion');
+        toast.error(m.layout_layoutControls_parseFailed_error());
       }
     } catch (error) {
       logger.error('Layout generation failed', error);
       toast.error(
         error instanceof Error && error.message
-          ? `Layout generation failed: ${error.message}`
-          : 'Layout generation failed',
+          ? m.layout_layoutControls_generationFailedWithMessage_error({ message: error.message })
+          : m.layout_layoutControls_generationFailed_error(),
       );
     } finally {
       isGenerating = false;
@@ -131,6 +132,7 @@
     const { agents, notes } = getWorkspaceContext();
     const agentCount = agents.length;
 
+    // i18n-ignore (agent-facing prompt, kept in English)
     return `You are a layout configuration assistant. Generate a FLAT panel layout.
 
 Available agents (${agentCount} total): ${JSON.stringify(agents)}

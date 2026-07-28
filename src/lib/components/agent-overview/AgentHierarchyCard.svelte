@@ -28,6 +28,7 @@
   faFile,
   faStickyNote,
 } from '@fortawesome/free-solid-svg-icons';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     agent: AgentNode;
@@ -48,7 +49,7 @@
   // Get names of agents we're waiting for
   const waitingForNames = $derived.by(() => {
     if (!agent.waitingForAgentIds || agent.waitingForAgentIds.length === 0) return [];
-    return agent.waitingForAgentIds.map((id) => agentNames?.get(id) || 'Agent').slice(0, 2);
+    return agent.waitingForAgentIds.map((id) => agentNames?.get(id) || m.agentOverview_hierarchyCard_agent_fallback()).slice(0, 2);
   });
 
   // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
@@ -119,7 +120,7 @@
         <!-- Waiting for other agents -->
         <div class="text-sm text-primary flex items-center justify-center gap-1">
           <Fa icon={faHourglass} size="xs" class="animate-pulse" />
-          <span class="truncate">Waiting for {waitingForNames.join(', ')}</span>
+          <span class="truncate">{m.agentOverview_hierarchyCard_waitingFor_label({ names: waitingForNames.join(', ') })}</span>
         </div>
       {:else if $agentIsResponding$ || $agentIsThinking$}
         <!-- Active: always show spinner + descriptive label -->
@@ -128,7 +129,7 @@
           <div class="flex items-center justify-center gap-1.5">
             <Spinner seed={agent.agentId} size={4} />
             {#if $agentIsThinking$}
-              <span class="text-xs text-subtle">Thinking...</span>
+              <span class="text-xs text-subtle">{m.agentOverview_hierarchyCard_thinking_label()}</span>
             {:else if toolDisplay && toolDisplay.subject}
               <span class="status-pill text-xs px-1.5 py-0.5 bg-muted/80 rounded-md text-subtle truncate max-w-[130px]">
                 {toolDisplay.verb} {toolDisplay.subject}
@@ -136,7 +137,7 @@
             {:else if toolDisplay}
               <span class="text-xs text-subtle">{toolDisplay.verb}...</span>
             {:else}
-              <span class="text-xs text-subtle">Responding...</span>
+              <span class="text-xs text-subtle">{m.agentOverview_hierarchyCard_responding_label()}</span>
             {/if}
           </div>
           {#if !toolDisplay && (agent.streamingText || agent.lastResponse)}
@@ -159,7 +160,7 @@
     <div
       class="activity-pill shrink-0 text-xs px-3 py-1.5 bg-muted/60 border border-border rounded-lg text-subtle max-w-32 truncate"
     >
-      <Fa icon={faStickyNote} size="xs" class="inline" /> Note
+      <Fa icon={faStickyNote} size="xs" class="inline" /> {m.agentOverview_hierarchyCard_note_label()}
     </div>
   {/if}
 </div>

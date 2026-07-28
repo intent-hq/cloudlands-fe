@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   /**
    * PRSection - Pull request creation, push/pull/sync, force push, rebase, connect remote, PR list
    * Manages all PR-related UI state and handlers.
@@ -56,6 +57,8 @@
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
   import { toast } from '$lib/components/ui/toast';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -356,7 +359,7 @@
       }
       if (!$githubAuthIsAuthenticated$) {
         pendingActionAfterAuth = 'refresh-pr';
-        toast.info('Connect to GitHub using the banner below');
+        toast.info(m.workspace_prSection_connectGithub_label());
         return;
       }
       try {
@@ -392,7 +395,7 @@
     if (!$githubAuthIsAuthenticated$) {
       pendingActionAfterAuth = 'create-pr';
       pendingPRWorkspaceId = wsId;
-      toast.info('Connect to GitHub using the banner below');
+      toast.info(m.workspace_prSection_connectGithub_label());
       return;
     }
     isCreatingPR = true;
@@ -411,12 +414,12 @@
       } else if (result.needsAuth) {
         pendingActionAfterAuth = 'create-pr';
         pendingPRWorkspaceId = wsId;
-        toast.info('Connect to GitHub using the banner below');
+        toast.info(m.workspace_prSection_connectGithub_label());
       } else {
-        toast.error(result.error || 'Failed to create pull request');
+        toast.error(result.error || m.workspace_prCreator_createFailed_error());
       }
     } catch {
-      toast.error('Failed to create pull request');
+      toast.error(m.workspace_prCreator_createFailed_error());
     } finally {
       isCreatingPR = false;
     }
@@ -491,10 +494,10 @@
           ]);
         } catch { /* Refresh failed but push succeeded */ }
       } else {
-        toast.error(result.error || 'Failed to push');
+        toast.error(result.error || m.workspace_prSection_pushFailed_error());
       }
     } catch {
-      toast.error('Failed to push commits');
+      toast.error(m.workspace_prSection_pushCommitsFailed_error());
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
     }
@@ -505,7 +508,7 @@
     try {
       const result = await gitClient.push(workspaceId as WorkspaceId, undefined, true);
       if (result.ok) {
-        toast.warning('Force push completed');
+        toast.warning(m.workspace_prSection_forcePushDone_label());
         forcePushDrawerOpen = false;
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
@@ -513,11 +516,11 @@
           appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
       } else {
-        toast.error(result.error || 'Force push failed');
+        toast.error(result.error || m.workspace_prSection_forcePushFailed_error());
       }
     } catch (error) {
       logger.error('Force push failed', error as Error);
-      toast.error('Force push failed');
+      toast.error(m.workspace_prSection_forcePushFailed_error());
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isForcePushing', false));
     }
@@ -548,9 +551,9 @@
           appStore.dispatch(refreshRequested(capturedWsId, true)),
         ]);
         appStore.dispatch(refreshAcceptChangesStatus(capturedWsId));
-        toast.success(`Rebased onto ${trunkBranch}`);
+        toast.success(m.workspace_prSection_rebasedOnto_label({ branch: trunkBranch }));
       } else {
-        const mainError = result.error || 'Rebase failed';
+        const mainError = result.error || m.workspace_prSection_rebaseFailed_error();
         const stepErrors = result.steps
           ?.filter((s) => s.status === 'failed' && s.error && s.error !== mainError)
           .map((s) => s.error);
@@ -561,7 +564,9 @@
       }
     } catch (error) {
       logger.error('Rebase onto trunk failed', error as Error);
-      toast.error(`Rebase failed: ${(error as Error).message}`);
+      toast.error(
+        m.workspace_prSection_rebaseFailedDetail_error({ error: (error as Error).message }),
+      );
     } finally {
       appStore.dispatch(setGitOperationFlag(capturedWsId, 'isRebasing', false));
     }
@@ -576,19 +581,23 @@
       const repoPath = $workspace$?.worktreePath || $workspace$?.path;
       const branch = $workspace$?.branch;
       if (!repoPath || !branch) {
-        toast.error('Failed to pull: workspace path or branch unavailable');
+        toast.error(m.workspace_prSection_pullUnavailable_error());
         return;
       }
       const result = await appClient.git.pull(repoPath, branch);
       if (result.success) {
-        toast.success('Pulled remote commits successfully');
+        toast.success(m.workspace_prSection_pullSuccess_label());
         gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
         appStore.dispatch(loadGitStatus(workspaceId, true));
       } else {
-        toast.error(`Failed to pull: ${result.error}`);
+        toast.error(m.workspace_prSection_pullFailed_error({ error: result.error ?? '' }));
       }
     } catch (error) {
-      toast.error(`Pull failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(
+        m.workspace_prSection_pullFailedDetail_error({
+          error: error instanceof Error ? error.message : m.workspace_prSection_unknownError_label(),
+        }),
+      );
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', false));
     }
@@ -615,12 +624,14 @@
         workspaceId as WorkspaceId,
         connectRemote.url.trim(),
       );
-      toast.success('Remote added successfully');
+      toast.success(m.workspace_prSection_remoteAdded_label());
       appStore.dispatch(refreshAcceptChangesStatus(workspaceId));
       connectRemote.drawerOpen = false;
       connectRemote.url = '';
     } catch (error) {
-      toast.error(`Failed to add remote: ${(error as Error).message}`);
+      toast.error(
+        m.workspace_prSection_addRemoteFailed_error({ error: (error as Error).message }),
+      );
     } finally {
       connectRemote.adding = false;
     }
@@ -681,14 +692,16 @@
         disabled={isPushing}
         loading={isPushing}
       >
-        Push {unpushedCount} Commit{unpushedCount === 1 ? '' : 's'}
+        {unpushedCount === 1
+          ? m.workspace_prSection_pushCommit_one()
+          : m.workspace_prSection_pushCommit_many({ count: formatInteger(unpushedCount) })}
       </DividerButton>
     {:else if (!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge)}
       <!-- Show Create PR + Merge buttons when no open PR and not post-merge -->
       <div class="w-full flex gap-1">
         <DividerButton
           tooltipContents={!hasStaged && !hasCommits
-            ? 'No staged changes or commits to create PR from'
+            ? m.workspace_prSection_noChangesForPr_tooltip()
             : ''}
           onclick={() => {
             prDrawerOpen = !prDrawerOpen;
@@ -697,11 +710,11 @@
           expanded={prDrawerOpen}
           disabled={!hasStaged && !hasCommits}
         >
-          Create PR
+          {m.workspace_prSection_createPr_label()}
         </DividerButton>
         <DividerButton
           tooltipContents={!hasStaged && !hasCommits
-            ? 'No staged changes or commits to merge'
+            ? m.workspace_prSection_noChangesToMerge_tooltip()
             : ''}
           onclick={() => {
             onMergeDrawerToggle(!mergeDrawerOpen);
@@ -710,7 +723,7 @@
           expanded={mergeDrawerOpen}
           disabled={!hasStaged && !hasCommits}
         >
-          Merge
+          {m.workspace_prSection_merge_label()}
         </DividerButton>
       </div>
       <DividerPanel open={prDrawerOpen}>
@@ -720,26 +733,34 @@
           />
         {:else}
           {@const stagedDescription = hasStaged
-            ? `${stagedChanges.length} staged file${stagedChanges.length === 1 ? '' : 's'}`
+            ? stagedChanges.length === 1
+              ? m.workspace_prSection_stagedFiles_one()
+              : m.workspace_prSection_stagedFiles_many({
+                  count: formatInteger(stagedChanges.length),
+                })
             : ''}
           {@const commitDescription = hasCommits
-            ? `${allCommits.length} commit${allCommits.length === 1 ? '' : 's'}`
+            ? allCommits.length === 1
+              ? m.workspace_prSection_commits_one()
+              : m.workspace_prSection_commits_many({ count: formatInteger(allCommits.length) })
             : ''}
           {@const prParts = [stagedDescription, commitDescription].filter(Boolean)}
           {#if prParts.length > 0}
             <p class="text-xs text-subtle">
-              {prParts.join(' and ')} will be included in this PR.
+              {m.workspace_prSection_includedInPr_label({
+                parts: prParts.join(m.workspace_prSection_and_separator()),
+              })}
             </p>
           {/if}
 
           <!-- Title -->
           {#if !isGeneratingPR}
             <div>
-              <span class="text-xs text-subtle mb-1 block">Title</span>
+              <span class="text-xs text-subtle mb-1 block">{m.workspace_prCreator_titleField_label()}</span>
               <input
                 type="text"
                 class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
-                placeholder="PR title..."
+                placeholder={m.workspace_prSection_prTitle_placeholder()}
                 bind:value={prTitle}
               />
             </div>
@@ -747,12 +768,12 @@
 
           <!-- Description -->
           <div>
-            <span class="text-xs text-subtle mb-1 block">Description</span>
+            <span class="text-xs text-subtle mb-1 block">{m.workspace_prCreator_descriptionField_label()}</span>
             <div class="relative">
               <Textarea
                 value={prDescription}
                 oninput={(e) => (prDescription = (e.target as HTMLTextAreaElement).value)}
-                placeholder="Describe your changes..."
+                placeholder={m.workspace_prSection_describeChanges_placeholder()}
                 doesExpandToFit
                 minHeight={80}
                 maxHeight={200}
@@ -764,7 +785,7 @@
 
           <!-- Target Branch -->
           <div>
-            <span class="text-xs text-subtle mb-1 block">Target Branch</span>
+            <span class="text-xs text-subtle mb-1 block">{m.workspace_prSection_targetBranch_label()}</span>
             <BranchSelector
               variant="default"
               value={targetBranch}
@@ -789,10 +810,14 @@
             >
               {#if isCreatingPR || (isGeneratingPR && $createPRWhenReady$)}
                 <Fa icon={faSpinner} size="xs" class="animate-spin" />
-                <span>{isCreatingPR ? 'Creating PR...' : 'Preparing...'}</span>
+                <span
+                  >{isCreatingPR
+                    ? m.workspace_prSection_creatingPr_label()
+                    : m.workspace_prSection_preparing_label()}</span
+                >
               {:else}
                 <Fa icon={faCodePullRequest} size="xs" class="opacity-50" />
-                <span>Create PR</span>
+                <span>{m.workspace_prSection_createPr_label()}</span>
               {/if}
             </Button>
             {#if isGeneratingPR}
@@ -804,7 +829,7 @@
                   onclick={handleStopGeneratingPR}
                 >
                   <Fa icon={faSpinner} size="xs" class="animate-spin" />
-                  <span class="mr-1">Auto-fill</span>
+                  <span class="mr-1">{m.workspace_prCreator_autoFill_label()}</span>
                   <Fa icon={faStop} size="xs" />
                 </Button>
                 {#if prAgentId}
@@ -813,7 +838,7 @@
                     size="icon-xs"
                     class="rounded-none h-7!"
                     onclick={viewPRThoughtProcess}
-                    tooltip="View thought process"
+                    tooltip={m.workspace_prSection_viewThoughtProcess_tooltip()}
                     tooltipSide="top"
                     tooltipDelayDuration={0}
                   >
@@ -829,7 +854,7 @@
                   {#if $createPRWhenReady$}
                     <Fa icon={faCheck} size="xs" />
                   {/if}
-                  Create PR when done
+                  {m.workspace_prSection_createPrWhenDone_label()}
                 </Button>
               </div>
             {:else}
@@ -841,7 +866,7 @@
                   onclick={handleAutoFillPR}
                 >
                   <Fa icon={faRobot} size="xs" class="opacity-50" />
-                  <span>Auto-fill</span>
+                  <span>{m.workspace_prCreator_autoFill_label()}</span>
                 </Button>
                 {#if prAgentId}
                   <Button
@@ -849,7 +874,7 @@
                     size="icon-xs"
                     class="rounded-l-none border-l-0 h-7!"
                     onclick={viewPRThoughtProcess}
-                    tooltip="View thought process"
+                    tooltip={m.workspace_prSection_viewThoughtProcess_tooltip()}
                     tooltipSide="top"
                     tooltipDelayDuration={0}
                   >
@@ -873,7 +898,9 @@
         loading={isPulling}
         showArrow={false}
       >
-        Pull {behindCount} Commit{behindCount === 1 ? '' : 's'}
+        {behindCount === 1
+          ? m.workspace_prSection_pullCommit_one()
+          : m.workspace_prSection_pullCommit_many({ count: formatInteger(behindCount) })}
         <Fa icon={faArrowDown} size="xs" class="text-ghost rotate-180" />
       </DividerButton>
     {:else if !isDiverged && !isBehind}
@@ -881,7 +908,7 @@
         class="relative z-20 text-xs text-subtle flex items-center gap-1 py-1.5 px-3 rounded-md bg-background"
       >
         <Fa icon={faCheck} size="xs" />
-        <span>Synced</span>
+        <span>{m.workspace_prSection_synced_label()}</span>
       </span>
     {/if}
 
@@ -893,7 +920,7 @@
         loading={isRebasing}
         showArrow={false}
       >
-        Rebase onto {trunkBranch}
+        {m.workspace_prSection_rebaseOnto_label({ branch: trunkBranch })}
         <Fa icon={faArrowsRotate} size="xs" class="text-muted-foreground/50" />
       </DividerButton>
     {/if}
@@ -905,14 +932,33 @@
         expanded={forcePushDrawerOpen}
         showArrow={true}
       >
-        Force Push
+        {m.workspace_prSection_forcePush_label()}
       </DividerButton>
       <DividerPanel open={forcePushDrawerOpen}>
+        {@const aheadPhrase =
+          ($gitAheadStore ?? 0) === 1
+            ? m.workspace_prSection_commitsAhead_one()
+            : m.workspace_prSection_commitsAhead_many({
+                count: formatInteger($gitAheadStore ?? 0),
+              })}
+        {@const behindPhrase =
+          ($gitBehindStore ?? 0) === 1
+            ? m.workspace_prSection_commitsBehind_one()
+            : m.workspace_prSection_commitsBehind_many({
+                count: formatInteger($gitBehindStore ?? 0),
+              })}
         <p class="text-xs text-subtle">
-          Your local <span class="font-medium">{$workspace$?.branch || 'branch'}</span> is {$gitAheadStore ?? 0}
-          commit{($gitAheadStore ?? 0) === 1 ? '' : 's'} ahead and {$gitBehindStore ?? 0} commit{($gitBehindStore ?? 0) === 1 ? '' : 's'} behind
-          <span class="font-medium">origin/{$workspace$?.branch || 'branch'}</span>. Force
-          pushing will overwrite the GitHub version with your local commits.
+          {m.workspace_prSection_forcePushLocal_before()}
+          <span class="font-medium"
+            >{$workspace$?.branch || m.workspace_prSection_branchFallback_label()}</span
+          >
+          {m.workspace_prSection_forcePushAheadBehind_middle({
+            ahead: aheadPhrase,
+            behind: behindPhrase,
+          })}
+          <span class="font-medium"
+            ><!-- i18n-ignore (git ref) -->origin/{$workspace$?.branch || 'branch'}</span
+          >{m.workspace_prSection_forcePushOverwrite_after()}
         </p>
         <div class="flex items-center gap-2">
           <Button
@@ -923,9 +969,9 @@
           >
             {#if isForcePushing}
               <Fa icon={faSpinner} size="xs" class="animate-spin" />
-              <span>Pushing...</span>
+              <span>{m.workspace_prSection_pushing_label()}</span>
             {:else}
-              <span>Force Push</span>
+              <span>{m.workspace_prSection_forcePush_label()}</span>
             {/if}
           </Button>
           <Button
@@ -933,7 +979,7 @@
             size="xs"
             onclick={() => { forcePushDrawerOpen = false; }}
           >
-            Cancel
+            {m.workspace_prCreator_cancel_label()}
           </Button>
         </div>
       </DividerPanel>
@@ -943,7 +989,11 @@
   <!-- PULL REQUESTS SECTION -->
   {#if hasPRs}
     <div transition:slide={{ duration: 200 }}>
-      <TimelineSection title="Pull Requests" active={hasPRs} activeColor="bg-purple-500">
+      <TimelineSection
+        title={m.workspace_prSection_pullRequests_label()}
+        active={hasPRs}
+        activeColor="bg-purple-500"
+      >
         {#snippet action()}
           {#if hasPRs || $githubAuthIsAuthenticated$}
             <button
@@ -959,8 +1009,8 @@
               }}
               disabled={isRefreshingPR}
               title={$githubAuthIsAuthenticated$
-                ? 'Refresh PR status'
-                : 'Connect to GitHub'}
+                ? m.workspace_prSection_refreshPrStatus_tooltip()
+                : m.workspace_prSection_connectToGithub_label()}
             >
               <Fa
                 icon={faArrowsRotate}
@@ -972,7 +1022,7 @@
         {#if !$githubAuthIsAuthenticated$}
           {#key authBannerKey}
             <GitHubAuthBanner
-              message="Connect to GitHub"
+              message={m.workspace_prSection_connectToGithub_label()}
               onSuccess={handleGitHubAuthSuccess}
               autoStart={authBannerKey > 0}
             />
@@ -1007,7 +1057,7 @@
                         e.stopPropagation();
                         togglePRExpanded(pr.number);
                       }}
-                      title="Toggle file list"
+                      title={m.workspace_prSection_toggleFileList_tooltip()}
                     >
                       <Fa
                         icon={faChevronDown}
@@ -1033,9 +1083,9 @@
                     <span class="text-ui text-subtle truncate flex-1">{pr.title}</span>
                     <span class="text-ui text-subtle">#{pr.number}</span>
                     {#if pr.status === 'merged'}
-                      <span class="text-ui text-purple-500 font-medium">Merged</span>
+                      <span class="text-ui text-purple-500 font-medium">{m.workspace_prSection_merged_label()}</span>
                     {:else if pr.status === 'closed'}
-                      <span class="text-ui text-red-500 font-medium">Closed</span>
+                      <span class="text-ui text-red-500 font-medium">{m.workspace_prSection_closed_label()}</span>
                     {/if}
                   </button>
 
@@ -1051,7 +1101,7 @@
                           workspaceId: workspaceId as WorkspaceId,
                           forceExternal: true,
                         })}
-                      tooltip="Open in browser"
+                      tooltip={m.workspace_sidebar_openInBrowser_tooltip()}
                       tooltipSide="top"
                     >
                       <Fa icon={faArrowUpRightFromSquare} size="xs" />
@@ -1097,7 +1147,7 @@
       <div class="w-full flex gap-1">
         <DividerButton
           tooltipContents={!hasStaged && !hasCommits
-            ? 'No staged changes or commits to merge'
+            ? m.workspace_prSection_noChangesToMerge_tooltip()
             : ''}
           onclick={() => {
             onMergeDrawerToggle(!mergeDrawerOpen);
@@ -1106,7 +1156,7 @@
           expanded={mergeDrawerOpen}
           disabled={!hasStaged && !hasCommits}
         >
-          Merge
+          {m.workspace_prSection_merge_label()}
         </DividerButton>
         <DividerButton
           onclick={() => {
@@ -1117,13 +1167,13 @@
           icon={faLink}
           arrowRight
         >
-          Connect Remote
+          {m.workspace_prSection_connectRemote_label()}
         </DividerButton>
       </div>
     {:else if hasOpenPR}
       <DividerButton
         tooltipContents={!hasStaged && !hasCommits
-          ? 'No staged changes or commits to merge'
+          ? m.workspace_prSection_noChangesToMerge_tooltip()
           : ''}
         onclick={() => {
           onMergeDrawerToggle(!mergeDrawerOpen);
@@ -1131,19 +1181,19 @@
         expanded={mergeDrawerOpen}
         disabled={!hasStaged && !hasCommits}
       >
-        Merge
+        {m.workspace_prSection_merge_label()}
       </DividerButton>
     {/if}
     <DividerPanel open={connectRemote.drawerOpen}>
       <p class="text-xs text-subtle">
-        Add a git remote to enable pushing and pull requests.
+        {m.workspace_prSection_addRemote_description()}
       </p>
       <div>
-        <span class="text-xs text-subtle mb-1 block">Remote URL</span>
+        <span class="text-xs text-subtle mb-1 block">{m.workspace_prSection_remoteUrl_label()}</span>
         <input
           type="text"
           class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
-          placeholder="https://github.com/user/repo.git or git@github.com:user/repo.git"
+          placeholder={m.workspace_prSection_remoteUrl_placeholder()}
           bind:value={connectRemote.url}
           onkeydown={(e) => {
             if (e.key === 'Enter') {
@@ -1162,15 +1212,15 @@
         >
           {#if connectRemote.adding}
             <Fa icon={faSpinner} size="xs" class="animate-spin" />
-            <span>Adding...</span>
+            <span>{m.workspace_prSection_adding_label()}</span>
           {:else}
             <Fa icon={faLink} size="xs" class="opacity-50" />
-            <span>Add Remote</span>
+            <span>{m.workspace_prSection_addRemote_label()}</span>
           {/if}
         </Button>
       </div>
       <p class="text-xs text-subtle">
-        Don't have a repo?
+        {m.workspace_prSection_noRepo_label()}
         <a
           href="https://github.com/new"
           class="text-primary hover:underline inline-flex items-center gap-0.5"
@@ -1182,7 +1232,7 @@
             });
           }}
         >
-          Create one on GitHub
+          {m.workspace_prSection_createOnGithub_label()}
           <Fa icon={faArrowUpRightFromSquare} size="xs" class="opacity-70" />
         </a>
       </p>

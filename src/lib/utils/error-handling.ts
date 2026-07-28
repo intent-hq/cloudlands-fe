@@ -4,6 +4,7 @@
 
 import { createLogger } from '$lib/utils/client-logger';
 import { debugConfig } from '$lib/config/debug';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('ErrorHandling');
 
@@ -169,7 +170,7 @@ export function toAppError(error: unknown, context?: ErrorContext): AppError {
       return new AppError(
         error.message,
         ErrorCodes.NETWORK_ERROR,
-        'Network error. Please check your connection.',
+        m.error_handling_network_error(),
         true,
         context,
       );
@@ -179,7 +180,7 @@ export function toAppError(error: unknown, context?: ErrorContext): AppError {
       return new AppError(
         error.message,
         ErrorCodes.GIT_PERMISSION_DENIED,
-        'Permission denied. Please check your access rights.',
+        m.error_handling_permission_error(),
         false,
         context,
       );
@@ -189,7 +190,7 @@ export function toAppError(error: unknown, context?: ErrorContext): AppError {
       return new AppError(
         error.message,
         ErrorCodes.RATE_LIMIT,
-        'API rate limit exceeded. Please wait and try again.',
+        m.error_handling_rateLimit_error(),
         true,
         context,
       );
@@ -198,7 +199,7 @@ export function toAppError(error: unknown, context?: ErrorContext): AppError {
     return new AppError(
       error.message,
       ErrorCodes.UNKNOWN_ERROR,
-      'An unexpected error occurred.',
+      m.error_handling_unexpected_error(),
       true,
       context,
     );
@@ -207,7 +208,7 @@ export function toAppError(error: unknown, context?: ErrorContext): AppError {
   return new AppError(
     String(error),
     ErrorCodes.UNKNOWN_ERROR,
-    'An unexpected error occurred.',
+    m.error_handling_unexpected_error(),
     true,
     context,
   );

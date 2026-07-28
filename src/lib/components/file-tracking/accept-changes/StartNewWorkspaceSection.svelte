@@ -17,6 +17,7 @@
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import type { Workspace } from '$shared/types';
   import { generateNoteLink } from '$lib/utils/workspaces-link-handler';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspace: Workspace | null;
@@ -44,9 +45,9 @@
     const title = workspaceTitle || workspace?.title || '';
     // Create a markdown link to the previous workspace's spec
     const workspaceRef = specLink
-      ? `[${title || 'previous workspace'}](${specLink})`
-      : title || 'the previous workspace';
-    return `I just finished ${workspaceRef}. Next, I want to `;
+      ? `[${title || m.fileTracking_startNew_previousWorkspace_fallback()}](${specLink})`
+      : title || m.fileTracking_startNew_thePreviousWorkspace_fallback();
+    return m.fileTracking_startNew_seedPrompt_label({ workspace: workspaceRef });
   });
 
   // Initialize prompt with seed on first expand
@@ -62,7 +63,7 @@
 
   // Extract display values from workspace
   const repoName = $derived.by(() => {
-    if (!workspace?.repositoryPath) return 'No repository';
+    if (!workspace?.repositoryPath) return m.fileTracking_startNew_noRepository_label();
     const parts = workspace.repositoryPath.split('/');
     return parts[parts.length - 1] || workspace.repositoryPath;
   });
@@ -94,7 +95,7 @@
         ? 'rotate-90'
         : ''}"
     />
-    <span class="text-sm text-subtle">Archive and start new Space</span>
+    <span class="text-sm text-subtle">{m.fileTracking_startNew_archiveAndStart_label()}</span>
   </button>
 
   <!-- Expanded Content - styled like WorkspaceInitializer -->
@@ -104,7 +105,7 @@
       <RichTextarea
         bind:this={richTextarea}
         bind:value={promptValue}
-        placeholder="What would you like to work on next?"
+        placeholder={m.fileTracking_startNew_prompt_placeholder()}
         {workspace}
         minHeight={120}
         maxHeight={300}
@@ -147,9 +148,9 @@
       >
         {#if isCreating}
           <Fa icon={faSpinner} class="h-3.5 w-3.5 animate-spin" />
-          <span>Creating...</span>
+          <span>{m.fileTracking_startNew_creating_label()}</span>
         {:else}
-          <span>Create new Space</span>
+          <span>{m.fileTracking_startNew_create_label()}</span>
           <Fa
             icon={faArrowRight}
             class="h-3.5 w-3.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity"

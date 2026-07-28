@@ -6,6 +6,8 @@
  * Supports structured labels with styling for rich text rendering.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 import type { WorkspaceEvent } from './types';
 
 /**
@@ -34,10 +36,10 @@ function truncate(str: string, maxLength: number = 40): string {
 /**
  * Get the actor name from an event, with truncation
  */
-function getActorName(event: WorkspaceEvent, fallback: string = 'Agent'): string {
+function getActorName(event: WorkspaceEvent, fallback?: string): string {
   const name = event.actor?.name;
   if (name) return truncate(name, 30);
-  return fallback;
+  return fallback ?? m.events_activity_agent_fallback();
 }
 
 /**
@@ -67,91 +69,102 @@ const labelGenerators: Record<string, LabelGenerator> = {
   // File events - include actor name when available
   'file:changed': (event) => {
     const data = event.data as any;
-    const filename = data?.path ? truncate(parseFilePath(data.path).filename, 35) : 'file';
+    const filename = data?.path
+      ? truncate(parseFilePath(data.path).filename, 35)
+      : m.events_activity_file_fallback();
     const actor = getActorName(event, '');
     const action = data?.action;
 
     const verb =
       action === 'create'
-        ? 'created'
+        ? m.events_activity_verbCreated_label()
         : action === 'delete'
-          ? 'deleted'
+          ? m.events_activity_verbDeleted_label()
           : action === 'rename'
-            ? 'renamed'
-            : 'updated';
+            ? m.events_activity_verbRenamed_label()
+            : m.events_activity_verbUpdated_label();
 
     if (actor) {
-      return `${actor} ${verb} ${filename}`;
+      return m.events_activity_actorVerbFile_label({ actor, verb, filename });
     }
-    return `${verb.charAt(0).toUpperCase() + verb.slice(1)} ${filename}`;
+    return m.events_activity_verbFile_label({
+      verb: verb.charAt(0).toUpperCase() + verb.slice(1),
+      filename,
+    });
   },
 
   'file:created': (event) => {
     const data = event.data as any;
-    const filename = data?.path ? truncate(parseFilePath(data.path).filename, 35) : 'file';
+    const filename = data?.path
+      ? truncate(parseFilePath(data.path).filename, 35)
+      : m.events_activity_file_fallback();
     const actor = getActorName(event, '');
     if (actor) {
-      return `${actor} created ${filename}`;
+      return m.events_activity_actorCreatedFile_label({ actor, filename });
     }
-    return `Created ${filename}`;
+    return m.events_activity_createdFile_label({ filename });
   },
 
   'file:deleted': (event) => {
     const data = event.data as any;
-    const filename = data?.path ? truncate(parseFilePath(data.path).filename, 35) : 'file';
+    const filename = data?.path
+      ? truncate(parseFilePath(data.path).filename, 35)
+      : m.events_activity_file_fallback();
     const actor = getActorName(event, '');
     if (actor) {
-      return `${actor} deleted ${filename}`;
+      return m.events_activity_actorDeletedFile_label({ actor, filename });
     }
-    return `Deleted ${filename}`;
+    return m.events_activity_deletedFile_label({ filename });
   },
 
   'file:renamed': (event) => {
     const data = event.data as any;
-    const filename = data?.path ? truncate(parseFilePath(data.path).filename, 30) : 'file';
+    const filename = data?.path
+      ? truncate(parseFilePath(data.path).filename, 30)
+      : m.events_activity_file_fallback();
     const oldFilename = data?.oldPath ? truncate(parseFilePath(data.oldPath).filename, 20) : null;
     const actor = getActorName(event, '');
     if (oldFilename) {
       if (actor) {
-        return `${actor} renamed ${oldFilename} → ${filename}`;
+        return m.events_activity_actorRenamedFileArrow_label({ actor, oldFilename, filename });
       }
-      return `Renamed ${oldFilename} → ${filename}`;
+      return m.events_activity_renamedFileArrow_label({ oldFilename, filename });
     }
     if (actor) {
-      return `${actor} renamed ${filename}`;
+      return m.events_activity_actorRenamedFile_label({ actor, filename });
     }
-    return `Renamed ${filename}`;
+    return m.events_activity_renamedFile_label({ filename });
   },
 
   // Note events - include note title with truncation
   'note:created': (event) => {
     const data = event.data as any;
-    const title = truncate(data?.title || data?.name || 'note', 35);
+    const title = truncate(data?.title || data?.name || m.events_activity_note_fallback(), 35);
     const actor = getActorName(event, '');
     if (actor) {
-      return `${actor} created "${title}"`;
+      return m.events_activity_actorCreatedNote_label({ actor, title });
     }
-    return `Created "${title}"`;
+    return m.events_activity_createdNote_label({ title });
   },
 
   'note:updated': (event) => {
     const data = event.data as any;
-    const title = truncate(data?.title || data?.name || 'note', 35);
+    const title = truncate(data?.title || data?.name || m.events_activity_note_fallback(), 35);
     const actor = getActorName(event, '');
     if (actor) {
-      return `${actor} updated "${title}"`;
+      return m.events_activity_actorUpdatedNote_label({ actor, title });
     }
-    return `Updated "${title}"`;
+    return m.events_activity_updatedNote_label({ title });
   },
 
   'note:deleted': (event) => {
     const data = event.data as any;
-    const title = truncate(data?.title || data?.name || 'note', 35);
+    const title = truncate(data?.title || data?.name || m.events_activity_note_fallback(), 35);
     const actor = getActorName(event, '');
     if (actor) {
-      return `${actor} deleted "${title}"`;
+      return m.events_activity_actorDeletedNote_label({ actor, title });
     }
-    return `Deleted "${title}"`;
+    return m.events_activity_deletedNote_label({ title });
   },
 
   // Git events
@@ -161,31 +174,31 @@ const labelGenerators: Record<string, LabelGenerator> = {
     if (message) {
       // Truncate long commit messages
       const truncated = message.length > 40 ? `${message.slice(0, 37)}...` : message;
-      return `Committed: ${truncated}`;
+      return m.events_activity_committed_label({ message: truncated });
     }
-    return 'Made a commit';
+    return m.events_activity_madeCommit_label();
   },
 
-  'git:push': () => 'Pushed changes',
+  'git:push': () => m.events_activity_pushedChanges_label(),
 
-  'git:pull': () => 'Pulled changes',
+  'git:pull': () => m.events_activity_pulledChanges_label(),
 
   'git:branch': (event) => {
     const data = event.data as any;
     const branch = data?.branch || data?.name;
     if (branch) {
-      return `Switched to ${branch}`;
+      return m.events_activity_switchedTo_label({ branch });
     }
-    return 'Changed branch';
+    return m.events_activity_changedBranch_label();
   },
 
   'git:merge': (event) => {
     const data = event.data as any;
     const branch = data?.branch || data?.source;
     if (branch) {
-      return `Merged ${branch}`;
+      return m.events_activity_merged_label({ branch });
     }
-    return 'Merged branches';
+    return m.events_activity_mergedBranches_label();
   },
 
   // Agent events - always try to show agent name from actor or data
@@ -197,83 +210,83 @@ const labelGenerators: Record<string, LabelGenerator> = {
       35,
     );
     if (name) {
-      return `${name} started working`;
+      return m.events_activity_startedWorking_label({ name });
     }
-    return 'Agent started';
+    return m.events_activity_agentStarted_label();
   },
 
   'agent:completed': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 35);
     if (name) {
-      return `${name} completed`;
+      return m.events_activity_nameCompleted_label({ name });
     }
-    return 'Agent completed';
+    return m.events_activity_agentCompleted_label();
   },
 
   'agent:failed': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 35);
     if (name) {
-      return `${name} failed`;
+      return m.events_activity_nameFailed_label({ name });
     }
-    return 'Agent failed';
+    return m.events_activity_agentFailed_label();
   },
 
   'agent:deleted': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 35);
     if (name) {
-      return `Deleted ${name}`;
+      return m.events_activity_deletedName_label({ name });
     }
-    return 'Agent deleted';
+    return m.events_activity_agentDeleted_label();
   },
 
   'agent:message': (event) => {
     const name = truncate(getActorName(event, ''), 30);
     if (name) {
-      return `${name} sent a message`;
+      return m.events_activity_nameSentMessage_label({ name });
     }
-    return 'Agent sent message';
+    return m.events_activity_agentSentMessage_label();
   },
 
   'agent:idle': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 35);
     if (name) {
-      return `${name} finished`;
+      return m.events_activity_nameFinished_label({ name });
     }
-    return 'Agent finished';
+    return m.events_activity_agentFinished_label();
   },
 
   'agent:status-changed': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 30);
     const status = data?.status || data?.newStatus;
-    const displayName = name || 'Agent';
+    const displayName = name || m.events_activity_agent_fallback();
 
     // Map status to friendly phrase
     switch (status) {
       case 'idle':
-        return `${displayName} finished`;
+        return m.events_activity_nameFinished_label({ name: displayName });
       case 'responding':
       case 'streaming':
       case 'thinking':
-        return `${displayName} is working`;
+        return m.events_activity_nameIsWorking_label({ name: displayName });
       case 'waiting':
       case 'waiting_for_input':
-        return `${displayName} is waiting`;
+        return m.events_activity_nameIsWaiting_label({ name: displayName });
       case 'completed':
       case 'done':
-        return `${displayName} completed`;
+        return m.events_activity_nameCompleted_label({ name: displayName });
       case 'error':
       case 'failed':
-        return `${displayName} encountered an error`;
+        return m.events_activity_nameEncounteredError_label({ name: displayName });
       default:
         if (status) {
-          return `${displayName} is ${status}`;
+          return m.events_activity_nameIsStatus_label({ name: displayName, status });
         }
-        return `${displayName} status changed`;
+        return m.events_activity_nameStatusChanged_label({ name: displayName });
     }
   },
 
@@ -282,12 +295,12 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const toolName = truncate(data?.toolName || data?.name || '', 25);
     const actor = truncate(getActorName(event, ''), 25);
     if (toolName && actor) {
-      return `${actor} used ${toolName}`;
+      return m.events_activity_actorUsedTool_label({ actor, toolName });
     }
     if (toolName) {
-      return `Used ${toolName}`;
+      return m.events_activity_usedTool_label({ toolName });
     }
-    return 'Used a tool';
+    return m.events_activity_usedATool_label();
   },
 
   'agent:created': (event) => {
@@ -296,15 +309,15 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const agentName = truncate(data?.agentName || data?.name || '', 20);
     const creatorName = truncate(getActorName(event, ''), 20);
     if (agentName && creatorName) {
-      return `${creatorName} created ${agentName}`;
+      return m.events_activity_creatorCreatedAgent_label({ creator: creatorName, agentName });
     }
     if (agentName) {
-      return `Created agent ${agentName}`;
+      return m.events_activity_createdAgentName_label({ agentName });
     }
     if (creatorName) {
-      return `${creatorName} created an agent`;
+      return m.events_activity_creatorCreatedAnAgent_label({ creator: creatorName });
     }
-    return 'Created new agent';
+    return m.events_activity_createdNewAgent_label();
   },
 
   // Task events - show task name and status clearly
@@ -315,15 +328,15 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const actor = truncate(getActorName(event, ''), 25);
 
     // Convert status to friendly format
-    let friendlyStatus = 'updated';
+    let friendlyStatus = m.events_activity_statusUpdated_label();
     if (newStatus) {
       const statusLower = newStatus.toLowerCase().replace(/_/g, ' ');
       if (statusLower === 'complete' || statusLower === 'completed' || statusLower === 'done') {
-        friendlyStatus = 'complete';
+        friendlyStatus = m.events_activity_statusComplete_label();
       } else if (statusLower === 'in progress' || statusLower === 'in_progress') {
-        friendlyStatus = 'in progress';
+        friendlyStatus = m.events_activity_statusInProgress_label();
       } else if (statusLower === 'cancelled' || statusLower === 'canceled') {
-        friendlyStatus = 'cancelled';
+        friendlyStatus = m.events_activity_statusCancelled_label();
       } else {
         friendlyStatus = statusLower;
       }
@@ -331,23 +344,25 @@ const labelGenerators: Record<string, LabelGenerator> = {
 
     if (taskName && taskName !== 'task') {
       if (actor) {
-        return `${actor} marked "${taskName}" ${friendlyStatus}`;
+        return m.events_activity_actorMarkedTask_label({ actor, taskName, status: friendlyStatus });
       }
-      return `"${taskName}" marked ${friendlyStatus}`;
+      return m.events_activity_taskMarkedStatus_label({ taskName, status: friendlyStatus });
     }
     if (actor) {
-      return `${actor} updated task status`;
+      return m.events_activity_actorUpdatedTaskStatus_label({ actor });
     }
-    return `Task marked ${friendlyStatus}`;
+    return m.events_activity_taskMarked_label({ status: friendlyStatus });
   },
 
   'task:ready-tasks-changed': (event) => {
     const data = event.data as any;
     const count = data?.count || data?.taskCount;
     if (typeof count === 'number') {
-      return count === 1 ? '1 task ready' : `${count} tasks ready`;
+      return count === 1
+        ? m.events_activity_oneTaskReady_label()
+        : m.events_activity_tasksReady_label({ count });
     }
-    return 'Ready tasks updated';
+    return m.events_activity_readyTasksUpdated_label();
   },
 
   // Terminal events
@@ -358,14 +373,14 @@ const labelGenerators: Record<string, LabelGenerator> = {
     if (command) {
       const truncatedCmd = truncate(command, 25);
       if (actor) {
-        return `${actor} ran ${truncatedCmd}`;
+        return m.events_activity_actorRanCommand_label({ actor, command: truncatedCmd });
       }
-      return `Ran ${truncatedCmd}`;
+      return m.events_activity_ranCommandName_label({ command: truncatedCmd });
     }
     if (actor) {
-      return `${actor} ran a command`;
+      return m.events_activity_actorRanACommand_label({ actor });
     }
-    return 'Ran command';
+    return m.events_activity_ranCommand_label();
   },
 
   // Test events
@@ -375,14 +390,14 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const actor = truncate(getActorName(event, ''), 25);
     if (testName) {
       if (actor) {
-        return `${actor} started testing ${testName}`;
+        return m.events_activity_actorStartedTesting_label({ actor, testName });
       }
-      return `Started testing ${testName}`;
+      return m.events_activity_startedTestingName_label({ testName });
     }
     if (actor) {
-      return `${actor} started tests`;
+      return m.events_activity_actorStartedTests_label({ actor });
     }
-    return 'Started tests';
+    return m.events_activity_startedTests_label();
   },
 
   'test:completed': (event) => {
@@ -391,11 +406,17 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const testName = truncate(data?.testName || data?.testSuite || '', 30);
 
     if (status === 'passed') {
-      return testName ? `Tests passed: ${testName}` : 'Tests passed';
+      return testName
+        ? m.events_activity_testsPassedName_label({ testName })
+        : m.events_activity_testsPassed_label();
     } else if (status === 'failed') {
-      return testName ? `Tests failed: ${testName}` : 'Tests failed';
+      return testName
+        ? m.events_activity_testsFailedName_label({ testName })
+        : m.events_activity_testsFailed_label();
     }
-    return testName ? `Tests completed: ${testName}` : 'Tests completed';
+    return testName
+      ? m.events_activity_testsCompletedName_label({ testName })
+      : m.events_activity_testsCompleted_label();
   },
 
   // Build events
@@ -405,14 +426,14 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const actor = truncate(getActorName(event, ''), 25);
     if (target) {
       if (actor) {
-        return `${actor} started building ${target}`;
+        return m.events_activity_actorStartedBuilding_label({ actor, target });
       }
-      return `Started building ${target}`;
+      return m.events_activity_startedBuildingTarget_label({ target });
     }
     if (actor) {
-      return `${actor} started build`;
+      return m.events_activity_actorStartedBuild_label({ actor });
     }
-    return 'Started build';
+    return m.events_activity_startedBuild_label();
   },
 
   'build:completed': (event) => {
@@ -421,11 +442,17 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const target = truncate(data?.target || '', 30);
 
     if (status === 'success') {
-      return target ? `Build succeeded: ${target}` : 'Build succeeded';
+      return target
+        ? m.events_activity_buildSucceededTarget_label({ target })
+        : m.events_activity_buildSucceeded_label();
     } else if (status === 'failed') {
-      return target ? `Build failed: ${target}` : 'Build failed';
+      return target
+        ? m.events_activity_buildFailedTarget_label({ target })
+        : m.events_activity_buildFailed_label();
     }
-    return target ? `Build completed: ${target}` : 'Build completed';
+    return target
+      ? m.events_activity_buildCompletedTarget_label({ target })
+      : m.events_activity_buildCompleted_label();
   },
 
   // Workspace events
@@ -433,41 +460,41 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const data = event.data as any;
     const name = truncate(data?.name || '', 35);
     if (name) {
-      return `Created workspace "${name}"`;
+      return m.events_activity_createdWorkspaceName_label({ name });
     }
-    return 'Created workspace';
+    return m.events_activity_createdWorkspace_label();
   },
   'workspace:updated': (event) => {
     const data = event.data as any;
     const name = truncate(data?.name || '', 35);
     if (name) {
-      return `Updated workspace "${name}"`;
+      return m.events_activity_updatedWorkspaceName_label({ name });
     }
-    return 'Updated workspace';
+    return m.events_activity_updatedWorkspace_label();
   },
   'workspace:deleted': (event) => {
     const data = event.data as any;
     const name = truncate(data?.name || '', 35);
     if (name) {
-      return `Deleted workspace "${name}"`;
+      return m.events_activity_deletedWorkspaceName_label({ name });
     }
-    return 'Deleted workspace';
+    return m.events_activity_deletedWorkspace_label();
   },
   'workspace:opened': (event) => {
     const data = event.data as any;
     const name = truncate(data?.name || '', 35);
     if (name) {
-      return `Opened "${name}"`;
+      return m.events_activity_openedName_label({ name });
     }
-    return 'Opened workspace';
+    return m.events_activity_openedWorkspace_label();
   },
   'workspace:closed': (event) => {
     const data = event.data as any;
     const name = truncate(data?.name || '', 35);
     if (name) {
-      return `Closed "${name}"`;
+      return m.events_activity_closedName_label({ name });
     }
-    return 'Closed workspace';
+    return m.events_activity_closedWorkspace_label();
   },
   'workspace:activity': (event) => {
     const data = event.data as any;
@@ -475,7 +502,7 @@ const labelGenerators: Record<string, LabelGenerator> = {
     if (description) {
       return description;
     }
-    return 'Workspace activity';
+    return m.events_activity_workspaceActivity_label();
   },
 
   // Spec events
@@ -485,22 +512,22 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const actor = truncate(getActorName(event, ''), 25);
     if (section) {
       if (actor) {
-        return `${actor} updated spec: ${section}`;
+        return m.events_activity_actorUpdatedSpecSection_label({ actor, section });
       }
-      return `Updated spec: ${section}`;
+      return m.events_activity_updatedSpecSection_label({ section });
     }
     if (actor) {
-      return `${actor} updated spec`;
+      return m.events_activity_actorUpdatedSpec_label({ actor });
     }
-    return 'Updated spec';
+    return m.events_activity_updatedSpec_label();
   },
 
   'goal:updated': (event) => {
     const actor = truncate(getActorName(event, ''), 30);
     if (actor) {
-      return `${actor} updated goal`;
+      return m.events_activity_actorUpdatedGoal_label({ actor });
     }
-    return 'Updated goal';
+    return m.events_activity_updatedGoal_label();
   },
 
   // Comment events
@@ -509,66 +536,84 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const author = truncate(event.actor?.name || data?.author || data?.authorName || '', 30);
     const preview = truncate(data?.preview || data?.text || '', 25);
     if (author && preview) {
-      return `${author} commented: "${preview}"`;
+      return m.events_activity_authorCommentedPreview_label({ author, preview });
     }
     if (author) {
-      return `${author} commented`;
+      return m.events_activity_authorCommented_label({ author });
     }
     if (preview) {
-      return `Comment: "${preview}"`;
+      return m.events_activity_commentPreview_label({ preview });
     }
-    return 'Comment added';
+    return m.events_activity_commentAdded_label();
   },
 
   // Agent message events (for agent-to-agent communication)
   'agent:message:sent': (event) => {
     const data = event.data as any;
-    const fromName = truncate(event.actor?.name || data?.fromAgentName || 'Agent', 25);
+    const fromName = truncate(
+      event.actor?.name || data?.fromAgentName || m.events_activity_agent_fallback(),
+      25,
+    );
     const toName = truncate(data?.toAgentName || '', 25);
     if (toName) {
-      return `${fromName} messaged ${toName}`;
+      return m.events_activity_fromMessagedTo_label({ fromName, toName });
     }
-    return `${fromName} sent a message`;
+    return m.events_activity_fromSentMessage_label({ fromName });
   },
 
   'agent:message:received': (event) => {
     const data = event.data as any;
     const fromName = truncate(data?.fromAgentName || '', 25);
-    const toName = truncate(event.actor?.name || data?.toAgentName || 'Agent', 25);
+    const toName = truncate(
+      event.actor?.name || data?.toAgentName || m.events_activity_agent_fallback(),
+      25,
+    );
     if (fromName) {
-      return `${toName} received message from ${fromName}`;
+      return m.events_activity_receivedMessageFrom_label({ toName, fromName });
     }
-    return `${toName} received a message`;
+    return m.events_activity_receivedAMessage_label({ toName });
   },
 
   // Agent subscription events
   'agent:subscribed': (event) => {
     const data = event.data as any;
-    const name = truncate(event.actor?.name || data?.agentName || 'Agent', 30);
+    const name = truncate(
+      event.actor?.name || data?.agentName || m.events_activity_agent_fallback(),
+      30,
+    );
     const eventTypes = data?.eventTypes;
     if (eventTypes?.length === 1) {
-      return `${name} is watching ${eventTypes[0].split(':')[0]} events`;
+      return m.events_activity_watchingCategoryEvents_label({
+        name,
+        category: eventTypes[0].split(':')[0],
+      });
     }
     if (eventTypes?.length > 1) {
-      return `${name} is watching for updates`;
+      return m.events_activity_watchingForUpdates_label({ name });
     }
-    return `${name} started watching`;
+    return m.events_activity_startedWatching_label({ name });
   },
 
   'agent:unsubscribed': (event) => {
     const data = event.data as any;
-    const name = truncate(event.actor?.name || data?.agentName || 'Agent', 30);
-    return `${name} stopped watching`;
+    const name = truncate(
+      event.actor?.name || data?.agentName || m.events_activity_agent_fallback(),
+      30,
+    );
+    return m.events_activity_stoppedWatching_label({ name });
   },
 
   'agent:woken-by-subscription': (event) => {
     const data = event.data as any;
-    const name = truncate(event.actor?.name || data?.agentName || 'Agent', 30);
+    const name = truncate(
+      event.actor?.name || data?.agentName || m.events_activity_agent_fallback(),
+      30,
+    );
     const eventCount = data?.eventCount || 1;
     if (eventCount === 1) {
-      return `${name} resumed`;
+      return m.events_activity_nameResumed_label({ name });
     }
-    return `${name} resumed (${eventCount} events)`;
+    return m.events_activity_nameResumedEvents_label({ name, count: eventCount });
   },
 
   // Agent resumed event (different from woken-by-subscription)
@@ -576,9 +621,9 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.agentName || data?.name || '', 35);
     if (name) {
-      return `${name} resumed`;
+      return m.events_activity_nameResumed_label({ name });
     }
-    return 'Agent resumed';
+    return m.events_activity_agentResumed_label();
   },
 };
 
@@ -588,7 +633,7 @@ const labelGenerators: Record<string, LabelGenerator> = {
 export function getActivityLabel(event: WorkspaceEvent): string {
   // Guard against undefined event or type
   if (!event?.type) {
-    return 'Unknown activity';
+    return m.events_activity_unknownActivity_label();
   }
 
   const generator = labelGenerators[event.type];
@@ -621,40 +666,40 @@ export function getActivityVerb(event: WorkspaceEvent): string {
     case 'file:changed':
       switch (data?.action) {
         case 'create':
-          return 'Created';
+          return m.events_activity_verbCreated_short();
         case 'delete':
-          return 'Deleted';
+          return m.events_activity_verbDeleted_short();
         case 'rename':
-          return 'Renamed';
+          return m.events_activity_verbRenamed_short();
         default:
-          return 'Updated';
+          return m.events_activity_verbUpdated_short();
       }
     case 'file:created':
-      return 'Created';
+      return m.events_activity_verbCreated_short();
     case 'file:deleted':
-      return 'Deleted';
+      return m.events_activity_verbDeleted_short();
     case 'file:renamed':
-      return 'Renamed';
+      return m.events_activity_verbRenamed_short();
     case 'note:created':
-      return 'Created';
+      return m.events_activity_verbCreated_short();
     case 'note:updated':
-      return 'Updated';
+      return m.events_activity_verbUpdated_short();
     case 'note:deleted':
-      return 'Deleted';
+      return m.events_activity_verbDeleted_short();
     case 'git:commit':
-      return 'Committed';
+      return m.events_activity_verbCommitted_short();
     case 'git:push':
-      return 'Pushed';
+      return m.events_activity_verbPushed_short();
     case 'git:pull':
-      return 'Pulled';
+      return m.events_activity_verbPulled_short();
     case 'agent:started':
-      return 'Started';
+      return m.events_activity_verbStarted_short();
     case 'agent:completed':
-      return 'Completed';
+      return m.events_activity_verbCompleted_short();
     case 'terminal:command':
-      return 'Ran';
+      return m.events_activity_verbRan_short();
     default:
-      return event.type.split(':')[1] || 'Activity';
+      return event.type.split(':')[1] || m.events_activity_activity_short();
   }
 }
 
@@ -692,183 +737,218 @@ const structuredLabelGenerators: Record<string, StructuredLabelGenerator> = {
   // File events - actor and filename get emphasis
   'file:changed': (event) => {
     const data = event.data as any;
-    const filename = data?.path ? truncate(parseFilePath(data.path).filename, 35) : 'file';
+    const filename = data?.path
+      ? truncate(parseFilePath(data.path).filename, 35)
+      : m.events_activity_file_fallback();
     const actor = getActorName(event, '');
     const action = data?.action;
     const verb =
       action === 'create'
-        ? 'created'
+        ? m.events_activity_verbCreated_label()
         : action === 'delete'
-          ? 'deleted'
+          ? m.events_activity_verbDeleted_label()
           : action === 'rename'
-            ? 'renamed'
-            : 'updated';
+            ? m.events_activity_verbRenamed_label()
+            : m.events_activity_verbUpdated_label();
     if (actor) {
       return [
         { text: actor, emphasis: true },
-        { text: ` ${verb} ` },
+        { text: m.events_activity_partVerbSpace_label({ verb }) },
         { text: filename, emphasis: true },
       ];
     }
-    return [{ text: `${verb.charAt(0).toUpperCase() + verb.slice(1)} ` }, { text: filename, emphasis: true }];
+    return [
+      {
+        text: m
+          .events_activity_partVerbSpace_label({
+            verb: verb.charAt(0).toUpperCase() + verb.slice(1),
+          })
+          .trimStart(),
+      },
+      { text: filename, emphasis: true },
+    ];
   },
 
   'file:created': (event) => {
     const data = event.data as any;
-    const filename = data?.path ? truncate(parseFilePath(data.path).filename, 35) : 'file';
+    const filename = data?.path
+      ? truncate(parseFilePath(data.path).filename, 35)
+      : m.events_activity_file_fallback();
     const actor = getActorName(event, '');
     if (actor) {
       return [
         { text: actor, emphasis: true },
-        { text: ' created ' },
+        { text: m.events_activity_partCreatedSpace_label() },
         { text: filename, emphasis: true },
       ];
     }
-    return [{ text: 'Created ' }, { text: filename, emphasis: true }];
+    return [
+      { text: m.events_activity_partCreatedPrefix_label() },
+      { text: filename, emphasis: true },
+    ];
   },
 
   'file:deleted': (event) => {
     const data = event.data as any;
-    const filename = data?.path ? truncate(parseFilePath(data.path).filename, 35) : 'file';
+    const filename = data?.path
+      ? truncate(parseFilePath(data.path).filename, 35)
+      : m.events_activity_file_fallback();
     const actor = getActorName(event, '');
     if (actor) {
       return [
         { text: actor, emphasis: true },
-        { text: ' deleted ' },
+        { text: m.events_activity_partDeletedSpace_label() },
         { text: filename, emphasis: true },
       ];
     }
-    return [{ text: 'Deleted ' }, { text: filename, emphasis: true }];
+    return [
+      { text: m.events_activity_partDeletedPrefix_label() },
+      { text: filename, emphasis: true },
+    ];
   },
 
   'file:renamed': (event) => {
     const data = event.data as any;
-    const filename = data?.path ? truncate(parseFilePath(data.path).filename, 30) : 'file';
+    const filename = data?.path
+      ? truncate(parseFilePath(data.path).filename, 30)
+      : m.events_activity_file_fallback();
     const oldFilename = data?.oldPath ? truncate(parseFilePath(data.oldPath).filename, 20) : null;
     const actor = getActorName(event, '');
     if (oldFilename) {
       if (actor) {
         return [
           { text: actor, emphasis: true },
-          { text: ' renamed ' },
+          { text: m.events_activity_partRenamedSpace_label() },
           { text: oldFilename, emphasis: true },
-          { text: ' → ' },
+          { text: m.events_activity_partArrow_label() },
           { text: filename, emphasis: true },
         ];
       }
       return [
-        { text: 'Renamed ' },
+        { text: m.events_activity_partRenamedPrefix_label() },
         { text: oldFilename, emphasis: true },
-        { text: ' → ' },
+        { text: m.events_activity_partArrow_label() },
         { text: filename, emphasis: true },
       ];
     }
     if (actor) {
       return [
         { text: actor, emphasis: true },
-        { text: ' renamed ' },
+        { text: m.events_activity_partRenamedSpace_label() },
         { text: filename, emphasis: true },
       ];
     }
-    return [{ text: 'Renamed ' }, { text: filename, emphasis: true }];
+    return [
+      { text: m.events_activity_partRenamedPrefix_label() },
+      { text: filename, emphasis: true },
+    ];
   },
 
   // Note events - actor and note title get emphasis (no quotes)
   'note:created': (event) => {
     const data = event.data as any;
-    const title = truncate(data?.title || data?.name || 'note', 35);
+    const title = truncate(data?.title || data?.name || m.events_activity_note_fallback(), 35);
     const actor = getActorName(event, '');
     if (actor) {
       return [
         { text: actor, emphasis: true },
-        { text: ' created ' },
+        { text: m.events_activity_partCreatedSpace_label() },
         { text: title, emphasis: true },
       ];
     }
-    return [{ text: 'Created ' }, { text: title, emphasis: true }];
+    return [{ text: m.events_activity_partCreatedPrefix_label() }, { text: title, emphasis: true }];
   },
 
   'note:updated': (event) => {
     const data = event.data as any;
-    const title = truncate(data?.title || data?.name || 'note', 35);
+    const title = truncate(data?.title || data?.name || m.events_activity_note_fallback(), 35);
     const actor = getActorName(event, '');
     if (actor) {
       return [
         { text: actor, emphasis: true },
-        { text: ' updated ' },
+        { text: m.events_activity_partUpdatedSpace_label() },
         { text: title, emphasis: true },
       ];
     }
-    return [{ text: 'Updated ' }, { text: title, emphasis: true }];
+    return [{ text: m.events_activity_partUpdatedPrefix_label() }, { text: title, emphasis: true }];
   },
 
   'note:deleted': (event) => {
     const data = event.data as any;
-    const title = truncate(data?.title || data?.name || 'note', 35);
+    const title = truncate(data?.title || data?.name || m.events_activity_note_fallback(), 35);
     const actor = getActorName(event, '');
     if (actor) {
       return [
         { text: actor, emphasis: true },
-        { text: ' deleted ' },
+        { text: m.events_activity_partDeletedSpace_label() },
         { text: title, emphasis: true },
       ];
     }
-    return [{ text: 'Deleted ' }, { text: title, emphasis: true }];
+    return [{ text: m.events_activity_partDeletedPrefix_label() }, { text: title, emphasis: true }];
   },
 
   // Agent events - agent name gets emphasis
   'agent:started': (event) => {
     const data = event.data as any;
-    const name = truncate(event.actor?.name || data?.name || data?.agentName || data?.taskTitle || '', 35);
+    const name = truncate(
+      event.actor?.name || data?.name || data?.agentName || data?.taskTitle || '',
+      35,
+    );
     if (name) {
-      return [{ text: name, emphasis: true }, { text: ' started working' }];
+      return [
+        { text: name, emphasis: true },
+        { text: m.events_activity_partStartedWorking_label() },
+      ];
     }
-    return [{ text: 'Agent started' }];
+    return [{ text: m.events_activity_agentStarted_label() }];
   },
 
   'agent:completed': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 35);
     if (name) {
-      return [{ text: name, emphasis: true }, { text: ' completed' }];
+      return [{ text: name, emphasis: true }, { text: m.events_activity_partCompleted_label() }];
     }
-    return [{ text: 'Agent completed' }];
+    return [{ text: m.events_activity_agentCompleted_label() }];
   },
 
   'agent:failed': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 35);
     if (name) {
-      return [{ text: name, emphasis: true }, { text: ' failed' }];
+      return [{ text: name, emphasis: true }, { text: m.events_activity_partFailed_label() }];
     }
-    return [{ text: 'Agent failed' }];
+    return [{ text: m.events_activity_agentFailed_label() }];
   },
 
   'agent:deleted': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 35);
     if (name) {
-      return [{ text: 'Deleted ' }, { text: name, emphasis: true }];
+      return [
+        { text: m.events_activity_partDeletedPrefix_label() },
+        { text: name, emphasis: true },
+      ];
     }
-    return [{ text: 'Agent deleted' }];
+    return [{ text: m.events_activity_agentDeleted_label() }];
   },
 
   'agent:idle': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 35);
     if (name) {
-      return [{ text: name, emphasis: true }, { text: ' finished' }];
+      return [{ text: name, emphasis: true }, { text: m.events_activity_partFinished_label() }];
     }
-    return [{ text: 'Agent finished' }];
+    return [{ text: m.events_activity_agentFinished_label() }];
   },
 
   'agent:created': (event) => {
     const data = event.data as any;
     const name = truncate(data?.agentName || data?.name || event.actor?.name || '', 35);
     if (name) {
-      return [{ text: name, emphasis: true }, { text: ' created' }];
+      return [{ text: name, emphasis: true }, { text: m.events_activity_partCreated_label() }];
     }
-    return [{ text: 'Agent created' }];
+    return [{ text: m.events_activity_agentCreated_label() }];
   },
 };
 

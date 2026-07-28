@@ -21,6 +21,7 @@
  * requested path so rapid dispatches collapse into a single fetch.
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
+import { m } from "$shared/paraglide/messages.js";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
@@ -115,7 +116,7 @@ async function navigateToTypedPath(path: string): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn("host.listDirectory failed for typed path", { path, error: message });
-    const hint = isMissingPathError(message) ? "Path not found" : message;
+    const hint = isMissingPathError(message) ? m.onboarding_dirPicker_pathNotFound_error() : message;
     appStore.dispatch(pathNavigationFailed(path, hint));
   }
 }
