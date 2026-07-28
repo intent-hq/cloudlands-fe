@@ -168,4 +168,56 @@ describe('tool-result-parser', () => {
       expect(result.content).toBe('Search: Find all API endpoints');
     });
   });
+
+  describe('workspace_api ws.app.* routing', () => {
+    it('routes ws.app.question.ask to confirmation carrying the result text', () => {
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        {
+          code: 'return await ws.app.question.ask({ question: "Pick one", header: "Choice", options: [] })',
+          summary: 'Ask the user a clarifying question',
+        },
+        'Question queued; answers arrive in the next user message.',
+      );
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('Question queued; answers arrive in the next user message.');
+    });
+
+    it('routes ws.app.* to confirmation even when later ws.* namespaces appear in the code', () => {
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        {
+          code: 'const r = await ws.app.question.ask({ question: "Q" }); await ws.note.add("spec", { content: "x" }); return r;',
+          summary: 'Ask then note',
+        },
+        'ok',
+      );
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('ok');
+    });
+
+    it('extracts MCP content-item text for ws.app.question.ask results', () => {
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        { code: 'await ws.app.question.ask({ question: "Q" })', summary: 'Ask' },
+        [{ type: 'text', text: '{"ok":true,"attachmentId":"att-1","message":"Question queued"}' }],
+      );
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBe('{"ok":true,"attachmentId":"att-1","message":"Question queued"}');
+    });
+
+    it('leaves content undefined when no text is extractable from the result payload', () => {
+      const result = parseToolResult(
+        'workspace_api_workspace-mcp',
+        { code: 'await ws.app.question.ask({ question: "Q" })', summary: 'Ask' },
+        { ok: true, attachmentId: 'att-1', message: 'Question queued' },
+      );
+
+      expect(result.type).toBe('confirmation');
+      expect(result.content).toBeUndefined();
+    });
+  });
 });
