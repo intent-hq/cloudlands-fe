@@ -41,39 +41,40 @@
  * evaluated while the store is still initializing through the middleware
  * chain.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import { appClient } from "$lib/client";
-import { store as appStore } from "$store/renderer/store";
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
 import {
   chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
   chatStopInitiated,
   sendMessage,
-} from "$store/renderer/slices/chat-state/chat-state-slice";
-import { agentSessionStopChatRequested } from "$store/renderer/slices/agent-session/agent-session-slice";
-import { clearChatDraft } from "$store/renderer/slices/transient-ui/transient-ui-slice";
+} from '$store/renderer/slices/chat-state/chat-state-slice';
+import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { clearChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import {
   removeQueuedMessageFromAgentQueue,
   removeQueuedMessageRequested,
   replaceAgentQueue,
-} from "$store/renderer/slices/agent-queue/agent-queue-slice";
-import type { SendMessagePayload } from "$store/renderer/slices/chat-state/chat-state-types";
-import { CHIEF_WORKSPACE_ID } from "$store/renderer/slices/sidebar-nav/sidebar-nav-types";
+} from '$store/renderer/slices/agent-queue/agent-queue-slice';
+import type { SendMessagePayload } from '$store/renderer/slices/chat-state/chat-state-types';
+import { CHIEF_WORKSPACE_ID } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
 import {
   getChiefThreadTitle,
   isPlaceholderChiefThreadName,
-} from "$store/renderer/slices/sidebar-nav/chief-thread-title";
-import type { AgentSession } from "$shared/types";
-import { loadChatTranscript } from "$features/agent/chat-read-service";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/sidebar-nav/chief-thread-title';
+import type { AgentSession } from '$shared/types';
+import { loadChatTranscript } from '$features/agent/chat-read-service';
+import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
-const logger = createLogger("ChatSendService");
+const logger = createLogger('ChatSendService');
 
 type LifecycleSendOptions = {
-  imageBlocks?: SendMessagePayload["imageBlocks"];
+  imageBlocks?: SendMessagePayload['imageBlocks'];
   noteIds?: string[];
-  priority?: "interrupt";
+  priority?: 'interrupt';
 };
 
 /**
@@ -83,10 +84,10 @@ type LifecycleSendOptions = {
  */
 async function loadSendDeps() {
   const [wsSel, asSel, queueSel, lifecycle] = await Promise.all([
-    import("$store/renderer/slices/workspace/workspace-selectors"),
-    import("$store/renderer/slices/agent-session/agent-session-selectors"),
-    import("$store/renderer/slices/agent-queue/agent-queue-selectors"),
-    import("$features/agent/agent-stream-lifecycle"),
+    import('$store/renderer/slices/workspace/workspace-selectors'),
+    import('$store/renderer/slices/agent-session/agent-session-selectors'),
+    import('$store/renderer/slices/agent-queue/agent-queue-selectors'),
+    import('$features/agent/agent-stream-lifecycle'),
   ]);
   return {
     selectWorkspaceById: wsSel.selectWorkspaceById,
@@ -112,21 +113,23 @@ async function dispatchToLifecycle(
     // AUDIT-P0-2: surface the failure through `chatSendFailed` so the UI
     // renders an error state instead of silently dropping the message.
     const message = error instanceof Error ? error.message : String(error);
-    logger.error("Failed to load chat send deps", error);
-    appStore.dispatch(chatSendFailed(agentId, `Failed to load chat dependencies: ${message}`));
+    logger.error('Failed to load chat send deps', error);
+    appStore.dispatch(
+      chatSendFailed(agentId, m.agent_chatSend_loadDepsFailed_error({ error: message })),
+    );
     return;
   }
 
   const workspace = deps.selectWorkspaceById.select(appStore.state, wsId);
   if (!workspace) {
-    logger.warn("Cannot send: workspace not found", { agentId, wsId });
-    appStore.dispatch(chatSendFailed(agentId, `Workspace not found: ${wsId}`));
+    logger.warn('Cannot send: workspace not found', { agentId, wsId });
+    appStore.dispatch(
+      chatSendFailed(agentId, m.agent_chatSend_workspaceNotFound_error({ id: wsId })),
+    );
     return;
   }
 
-  const content = workspaceContextStr
-    ? `${workspaceContextStr}\n\n${text.trim()}`
-    : text.trim();
+  const content = workspaceContextStr ? `${workspaceContextStr}\n\n${text.trim()}` : text.trim();
 
   // STAB-55: sending to a NON-HYDRATED agent (no session in the store, or a
   // session whose transcript was never loaded — e.g. the workspace was already
@@ -150,7 +153,7 @@ async function dispatchToLifecycle(
     } catch (error) {
       // loadChatTranscript swallows its own errors; this guard only covers an
       // unexpected throw so hydration failure can never block the send.
-      logger.warn("Pre-send transcript hydration threw; proceeding with send", {
+      logger.warn('Pre-send transcript hydration threw; proceeding with send', {
         agentId,
         error,
       });
@@ -183,8 +186,8 @@ async function dispatchToLifecycle(
       if (!result.success) {
         // AUDIT-P0-2: surface the daemon-rejected queue attempt so the UI
         // can render the error instead of silently dropping the message.
-        const errMsg = result.error ?? "queueMessage rejected";
-        logger.warn("agent.queueMessage rejected by daemon", {
+        const errMsg = result.error ?? m.agent_chatSend_queueRejected_error();
+        logger.warn('agent.queueMessage rejected by daemon', {
           agentId,
           wsId,
           error: errMsg,
@@ -211,8 +214,10 @@ async function dispatchToLifecycle(
       // AUDIT-P0-2: a queue-on-send failure must surface to the UI; do not
       // silently drop the message.
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("agent.queueMessage threw", error);
-      appStore.dispatch(chatSendFailed(agentId, `Failed to queue message: ${message}`));
+      logger.error('agent.queueMessage threw', error);
+      appStore.dispatch(
+        chatSendFailed(agentId, m.agent_chatSend_queueFailed_error({ error: message })),
+      );
     }
     return;
   }
@@ -237,7 +242,7 @@ async function dispatchToLifecycle(
     // AUDIT-P0-2: dispatch chatSendFailed so the error appears in the UI
     // instead of being swallowed in a fire-and-forget background promise.
     const message = error instanceof Error ? error.message : String(error);
-    logger.error("lifecycle.sendMessage threw", error);
+    logger.error('lifecycle.sendMessage threw', error);
     appStore.dispatch(chatSendFailed(agentId, message));
   }
 }
@@ -277,21 +282,21 @@ async function renameChiefThreadIfPlaceholder(
   const session = state.agentSessions?.byAgentId[agentId];
   if (!session) return;
   if (!isPlaceholderChiefThreadName(session.name)) return;
-  const hasUserMessage = session.messages.some((message) => message.role === "user");
-  const name = hasUserMessage ? getChiefThreadTitle(session) : (fallbackText?.trim() ?? "");
+  const hasUserMessage = session.messages.some((message) => message.role === 'user');
+  const name = hasUserMessage ? getChiefThreadTitle(session) : (fallbackText?.trim() ?? '');
   if (isPlaceholderChiefThreadName(name)) return;
   try {
     const result = await appClient.agents.rename(agentId, name, undefined, {
       skipIfExplicitlySet: true,
     });
     if (!result.success) {
-      logger.warn("agent.rename (chief first-message) reported a non-success result", {
+      logger.warn('agent.rename (chief first-message) reported a non-success result', {
         agentId,
         error: result.error,
       });
     }
   } catch (error) {
-    logger.warn("agent.rename (chief first-message) threw", { agentId, error });
+    logger.warn('agent.rename (chief first-message) threw', { agentId, error });
   }
 }
 
@@ -318,17 +323,20 @@ async function dispatchQueueRemoval(agentId: string, messageId: string): Promise
     // in either case we deliberately keep the optimistic delete in place — the
     // BE's next `agent:queue:updated` snapshot will reconcile.
     if (!result.success) {
-      logger.warn("agent.removeQueuedMessage reported a non-success result; keeping optimistic delete in place", {
-        agentId,
-        messageId,
-        error: result.error,
-      });
+      logger.warn(
+        'agent.removeQueuedMessage reported a non-success result; keeping optimistic delete in place',
+        {
+          agentId,
+          messageId,
+          error: result.error,
+        },
+      );
     }
   } catch (error) {
     // The seam should not throw, but if it does we still do NOT roll back —
     // matches the §5.5 idempotency contract and the §6.5 invariant that the
     // BE's next queue snapshot is the source of truth.
-    logger.error("agent.removeQueuedMessage threw; keeping optimistic delete in place", {
+    logger.error('agent.removeQueuedMessage threw; keeping optimistic delete in place', {
       agentId,
       messageId,
       error,
@@ -360,7 +368,7 @@ async function dispatchStopChat(
   try {
     const result = await appClient.agents.stop(agentId);
     if (!result.success) {
-      logger.warn("agent.stop reported a non-success result", {
+      logger.warn('agent.stop reported a non-success result', {
         agentId,
         error: result.error,
       });
@@ -370,11 +378,9 @@ async function dispatchStopChat(
   } catch (error) {
     // The seam should not throw; if it does, still clear the interrupting
     // flag so the Stop button doesn't wedge, then reject the promise.
-    logger.error("agent.stop threw", error);
+    logger.error('agent.stop threw', error);
     appStore.dispatch(chatStopCompleted(agentId));
-    appStore.dispatch(
-      action.failure(error instanceof Error ? error : new Error(String(error))),
-    );
+    appStore.dispatch(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
 }
 
@@ -386,7 +392,7 @@ async function dispatchStopChat(
 export function createChatSendMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
-    if (!action || typeof action !== "object") return result;
+    if (!action || typeof action !== 'object') return result;
 
     if ((action as { type?: unknown }).type === sendMessage.type) {
       const payload = (action as { payload?: unknown }).payload as
@@ -395,12 +401,12 @@ export function createChatSendMiddleware(): StoreMiddleware {
       const agentId = payload?.agentId;
       const inner = payload?.payload;
       if (
-        typeof agentId === "string" &&
+        typeof agentId === 'string' &&
         agentId.length > 0 &&
         inner &&
-        typeof inner.wsId === "string" &&
+        typeof inner.wsId === 'string' &&
         inner.wsId.length > 0 &&
-        typeof inner.text === "string" &&
+        typeof inner.text === 'string' &&
         inner.text.length > 0
       ) {
         // Capture strings upfront so TypeScript knows they're definitely strings
@@ -420,11 +426,11 @@ export function createChatSendMiddleware(): StoreMiddleware {
         // after the interrupt turn. The removal is idempotent (PROTOCOL §5.5),
         // so failures are logged but do not block the send.
         void (async () => {
-          if (typeof queuedMessageId === "string" && queuedMessageId.length > 0) {
+          if (typeof queuedMessageId === 'string' && queuedMessageId.length > 0) {
             try {
               await dispatchQueueRemoval(agentIdStr, queuedMessageId);
             } catch (error) {
-              logger.warn("Queue removal failed; proceeding with send (removal is idempotent)", {
+              logger.warn('Queue removal failed; proceeding with send (removal is idempotent)', {
                 agentId: agentIdStr,
                 queuedMessageId,
                 error,
@@ -442,7 +448,7 @@ export function createChatSendMiddleware(): StoreMiddleware {
               noteIds,
               // STAB-38 fix: set priority: "interrupt" when force-send is active.
               // The daemon will preempt the in-flight turn per PROTOCOL.md §5.5.
-              priority: forceSubmit ? "interrupt" : undefined,
+              priority: forceSubmit ? 'interrupt' : undefined,
             },
             forceSubmit,
           );
@@ -455,9 +461,9 @@ export function createChatSendMiddleware(): StoreMiddleware {
       const agentId = payload?.[0];
       const messageId = payload?.[1];
       if (
-        typeof agentId === "string" &&
+        typeof agentId === 'string' &&
         agentId.length > 0 &&
-        typeof messageId === "string" &&
+        typeof messageId === 'string' &&
         messageId.length > 0
       ) {
         void dispatchQueueRemoval(agentId, messageId);
@@ -465,7 +471,7 @@ export function createChatSendMiddleware(): StoreMiddleware {
     } else if ((action as { type?: unknown }).type === agentSessionStopChatRequested.type) {
       const stopAction = action as ReturnType<typeof agentSessionStopChatRequested>;
       const [agentId] = stopAction.payload ?? [];
-      if (typeof agentId === "string" && agentId.length > 0) {
+      if (typeof agentId === 'string' && agentId.length > 0) {
         void dispatchStopChat(stopAction);
       }
     }

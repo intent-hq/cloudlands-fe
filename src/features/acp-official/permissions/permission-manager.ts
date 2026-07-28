@@ -10,6 +10,7 @@ import type { AgentId } from '$shared/types/branded-ids';
 import { Logger } from '../../../shared/logger';
 import { invoke as invokeIpc } from '../../../shared/generated/ipc-client';
 import type { PermissionOption, RequestPermissionOutcome } from '../types/base';
+import { m } from '../../../shared/paraglide/messages.js';
 
 const logger = new Logger('PermissionManager');
 
@@ -224,7 +225,7 @@ export class PermissionManager extends EventEmitter {
   /**
    * Check cached rules for a permission
    */
-   
+
   private checkCachedRules(title: string, _sessionId: AgentId): RequestPermissionOutcome | null {
     // Remove expired rules
     this.rules = this.rules.filter((rule) => !rule.expiresAt || rule.expiresAt > Date.now());
@@ -296,9 +297,21 @@ export class PermissionManager extends EventEmitter {
    */
   private getDefaultOptions(): PermissionOption[] {
     return [
-      { id: 'allow', label: 'Allow', description: 'Grant this permission' },
-      { id: 'deny', label: 'Deny', description: 'Deny this permission' },
-      { id: 'allow_once', label: 'Allow Once', description: 'Grant permission for this time only' },
+      {
+        id: 'allow',
+        label: m.acp_permission_allow_label(),
+        description: m.acp_permission_allow_description(),
+      },
+      {
+        id: 'deny',
+        label: m.acp_permission_deny_label(),
+        description: m.acp_permission_deny_description(),
+      },
+      {
+        id: 'allow_once',
+        label: m.acp_permission_allowOnce_label(),
+        description: m.acp_permission_allowOnce_description(),
+      },
     ];
   }
 
@@ -351,7 +364,7 @@ export class PermissionManager extends EventEmitter {
             this.rules = [];
             logger.info('No saved permission rules found, starting with empty rules');
           }
-        } catch  {
+        } catch {
           // Config IPC might not be available in tests
           this.rules = [];
           logger.debug('Config IPC not available, starting with empty rules');
@@ -404,9 +417,7 @@ export class PermissionManager extends EventEmitter {
 
       if (!result.success) {
         const errMsg =
-          typeof result.error === 'string'
-            ? result.error
-            : 'config:set rejected permission rules';
+          typeof result.error === 'string' ? result.error : 'config:set rejected permission rules';
         logger.warn('Failed to save permission rules to config store', { error: result.error });
         throw new Error(errMsg);
       }

@@ -11,11 +11,12 @@
 
 import { createLogger } from '$lib/utils/client-logger';
 import type { Result } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('ErrorHandler');
 
 /** Generic event listener type - uses any for compatibility with various event handlers */
- 
+
 type EventListenerFn = (...args: any[]) => void;
 
 // Simple event emitter for browser compatibility
@@ -31,7 +32,6 @@ class SimpleEventEmitter {
     listeners.add(listener);
   }
 
-   
   emit(event: string, ...args: any[]): void {
     const listeners = this.listeners.get(event);
     if (listeners) {
@@ -553,7 +553,7 @@ export class ErrorHandler extends SimpleEventEmitter {
       if (breaker.getState() === CircuitState.OPEN) {
         return {
           ok: false,
-          error: new AgentError('Service unavailable due to circuit breaker', {
+          error: new AgentError(m.agent_errorHandler_serviceUnavailable_error(), {
             code: ErrorCode.PROVIDER_UNAVAILABLE,
             category: ErrorCategory.PROVIDER,
             severity: ErrorSeverity.HIGH,
@@ -1028,7 +1028,7 @@ export class ErrorHandler extends SimpleEventEmitter {
     recoveryRate: number;
     activeDegradations: string[];
     circuitBreakerStates: Map<string, CircuitState>;
-    } {
+  } {
     const stats = {
       totalErrors: this.errorHistory.length,
       errorsByCategory: new Map<ErrorCategory, number>(),
@@ -1134,7 +1134,7 @@ export class ErrorHandler extends SimpleEventEmitter {
   async withTimeout<T>(fn: () => Promise<T>, timeoutMs: number, message?: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(new Error(message || 'Operation timed out'));
+        reject(new Error(message || m.agent_errorHandler_timeout_error()));
       }, timeoutMs);
 
       fn()

@@ -38,33 +38,34 @@
  * they are never evaluated while the store is still initializing through the
  * middleware chain.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import type { AgentSession, Workspace } from "$shared/types";
-import { AgentStatus } from "$shared/types";
-import { createAgentTypeId, parseAgentTypeId } from "$shared/types/agent.types";
-import { WorkspaceId, CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
-import { getAgentProvider } from "$shared/types/agent-session";
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { AgentSession, Workspace } from '$shared/types';
+import { AgentStatus } from '$shared/types';
+import { createAgentTypeId, parseAgentTypeId } from '$shared/types/agent.types';
+import { WorkspaceId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { getAgentProvider } from '$shared/types/agent-session';
 import {
   getDefaultModelForProvider,
   parseCompoundModelId,
   PROVIDER_MODEL_TIERS,
-} from "$shared/config/provider-config";
-import { cleanErrorMessage } from "$shared/errors/messages";
-import { SPECIALISTS } from "$lib/constants/specialists";
-import { generateSpecialistAgentName } from "$lib/utils/agent-name-generator";
-import { createChiefVirtualWorkspace } from "$store/renderer/slices/workspace-agents/chief-virtual-workspace";
-import { buildTaskAgentInitialMessage } from "$features/notes/utils/task-agent-message-builder";
-import { store as appStore } from "$store/renderer/store";
+} from '$shared/config/provider-config';
+import { cleanErrorMessage } from '$shared/errors/messages';
+import { SPECIALISTS } from '$lib/constants/specialists';
+import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
+import { createChiefVirtualWorkspace } from '$store/renderer/slices/workspace-agents/chief-virtual-workspace';
+import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-message-builder';
+import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 import {
   agentSessionLaunchAgentRequested,
   bulkUpsertSessions,
   upsertSession,
-} from "$store/renderer/slices/agent-session/agent-session-slice";
-import { openAgentTabRequested } from "$store/renderer/slices/app-layout/app-layout-slice";
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import {
   openTab,
   openTabInAdjacentOrSplit,
-} from "$store/renderer/slices/panel-layout/panel-layout-slice";
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   createAgentFromConfigRequested,
   createAgentRequested,
@@ -73,10 +74,10 @@ import {
   runAgentForNoteRequested,
   setActiveAgentId,
   type AgentCreationRequestOptions,
-} from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { createLogger } from '$lib/utils/client-logger';
 
-const logger = createLogger("AgentCreationService");
+const logger = createLogger('AgentCreationService');
 
 /**
  * Dynamically load the agent factory + selectors used by the handlers. Imported
@@ -84,16 +85,15 @@ const logger = createLogger("AgentCreationService");
  * middleware-chain construction.
  */
 async function loadCreationDeps() {
-  const [factoryMod, wsSel, waSel, modelSel, provSel, specSel, notesSel] =
-    await Promise.all([
-      import("$features/agent/services/agent-factory"),
-      import("$store/renderer/slices/workspace/workspace-selectors"),
-      import("$store/renderer/slices/workspace-agents/workspace-agents-selectors"),
-      import("$store/renderer/slices/model/model-selectors"),
-      import("$store/renderer/slices/provider-settings/provider-settings-selectors"),
-      import("$store/renderer/slices/specialists/specialists-selectors"),
-      import("$store/renderer/slices/workspace-notes/workspace-notes-selectors"),
-    ]);
+  const [factoryMod, wsSel, waSel, modelSel, provSel, specSel, notesSel] = await Promise.all([
+    import('$features/agent/services/agent-factory'),
+    import('$store/renderer/slices/workspace/workspace-selectors'),
+    import('$store/renderer/slices/workspace-agents/workspace-agents-selectors'),
+    import('$store/renderer/slices/model/model-selectors'),
+    import('$store/renderer/slices/provider-settings/provider-settings-selectors'),
+    import('$store/renderer/slices/specialists/specialists-selectors'),
+    import('$store/renderer/slices/workspace-notes/workspace-notes-selectors'),
+  ]);
   return {
     agentFactory: factoryMod.agentFactory,
     selectWorkspaceById: wsSel.selectWorkspaceById,
@@ -142,10 +142,9 @@ function registerCreatedAgent(
 ): void {
   const existing = existingAgents.find((a) => a.id === session.id);
   const shouldUpsert =
-    !existing ||
-    (!hasUsableAgentSession(existing) && hasUsableAgentSession(session));
+    !existing || (!hasUsableAgentSession(existing) && hasUsableAgentSession(session));
   if (shouldUpsert) {
-    const persistable = { ...session, workspaceId: wsId as AgentSession["workspaceId"] };
+    const persistable = { ...session, workspaceId: wsId as AgentSession['workspaceId'] };
     appStore.dispatch(bulkUpsertSessions([persistable]));
     appStore.dispatch(upsertSession(persistable));
   }
@@ -163,8 +162,9 @@ function getWorkspaceInitialAgentProvider(wsId: string, deps: CreationDeps): str
   return initialAgent ? getAgentProvider(initialAgent) : undefined;
 }
 
-function getCreationError(error: unknown, fallback = "Failed to create agent"): string {
-  if (!error) return fallback;
+function getCreationError(error: unknown, fallback?: string): string {
+  const resolvedFallback = fallback ?? m.agent_creation_createFailed_error();
+  if (!error) return resolvedFallback;
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -179,8 +179,8 @@ async function handleCreateAgentRequested(wsId: string, agentType?: string): Pro
   const globalProvider = deps.selectActiveProviderId.select(appStore.state);
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
-  const agentName = generateSpecialistAgentName("Agent", existingNames);
-  const provider = model.includes(":") ? parseCompoundModelId(model).providerId : globalProvider;
+  const agentName = generateSpecialistAgentName('Agent', existingNames);
+  const provider = model.includes(':') ? parseCompoundModelId(model).providerId : globalProvider;
 
   try {
     const result = await deps.agentFactory.createAgent(workspace, {
@@ -190,17 +190,17 @@ async function handleCreateAgentRequested(wsId: string, agentType?: string): Pro
       workspaceId: WorkspaceId(wsId),
       model,
       provider,
-      agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId("chat"),
-      source: "keyboard-shortcut",
+      agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
+      source: 'keyboard-shortcut',
     });
     if (!result.success || !result.agent) {
-      logger.error("Failed to create agent", { workspaceId: wsId, error: result.error });
+      logger.error('Failed to create agent', { workspaceId: wsId, error: result.error });
       return;
     }
     registerCreatedAgent(wsId, result.agent, agents);
     openCreatedAgentTab(wsId, result.agent.id);
   } catch (error) {
-    logger.error("Failed to create agent", { workspaceId: wsId, error: getCreationError(error) });
+    logger.error('Failed to create agent', { workspaceId: wsId, error: getCreationError(error) });
   }
 }
 
@@ -218,9 +218,9 @@ async function handleCreateAgentWithSpecialist(
   const globalProvider = deps.selectActiveProviderId.select(appStore.state);
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
-  let provider = model.includes(":") ? parseCompoundModelId(model).providerId : globalProvider;
+  let provider = model.includes(':') ? parseCompoundModelId(model).providerId : globalProvider;
   let behaviorPrompt: string | undefined;
-  let specialistBaseName = "Agent";
+  let specialistBaseName = 'Agent';
   if (specialistId) {
     const specialist = deps.selectSpecialists
       .select(appStore.state)
@@ -242,19 +242,19 @@ async function handleCreateAgentWithSpecialist(
       workspaceId: WorkspaceId(wsId),
       model,
       provider,
-      agentType: createAgentTypeId("chat"),
+      agentType: createAgentTypeId('chat'),
       behaviorPrompt,
-      source: "specialist-picker",
+      source: 'specialist-picker',
       metadata: specialistId ? { specialist: specialistId } : undefined,
     });
     if (!result.success || !result.agent) {
-      logger.error("Failed to create specialist agent", { workspaceId: wsId, error: result.error });
+      logger.error('Failed to create specialist agent', { workspaceId: wsId, error: result.error });
       return;
     }
     registerCreatedAgent(wsId, result.agent, agents);
     openCreatedAgentTab(wsId, result.agent.id);
   } catch (error) {
-    logger.error("Failed to create specialist agent", {
+    logger.error('Failed to create specialist agent', {
       workspaceId: wsId,
       error: getCreationError(error),
     });
@@ -277,19 +277,19 @@ async function handleRunAgentForNote(
 
   const note = deps.selectNoteById.select(appStore.state, wsId, noteId);
   if (!note) {
-    logger.error("Cannot run agent: note not found", { workspaceId: wsId, noteId });
+    logger.error('Cannot run agent: note not found', { workspaceId: wsId, noteId });
     return;
   }
 
   const initialMessage = buildTaskAgentInitialMessage(note);
 
-  let implementorModel = deps.selectEffectiveModel.select(appStore.state, "implementor");
+  let implementorModel = deps.selectEffectiveModel.select(appStore.state, 'implementor');
   let implementorBehaviorPrompt = deps.selectEffectiveBehaviorPrompt.select(
     appStore.state,
-    "implementor",
+    'implementor',
   );
   if (!implementorBehaviorPrompt) {
-    const implementorSpec = SPECIALISTS.find((s) => s.id === "implementor");
+    const implementorSpec = SPECIALISTS.find((s) => s.id === 'implementor');
     if (implementorSpec) {
       implementorBehaviorPrompt = implementorSpec.defaultBehaviorPrompt;
       if (!implementorModel) {
@@ -297,7 +297,7 @@ async function handleRunAgentForNote(
         implementorModel =
           implementorSpec.defaultModelTier && activeProvider in PROVIDER_MODEL_TIERS
             ? getDefaultModelForProvider(activeProvider, implementorSpec.defaultModelTier)
-            : implementorSpec.defaultModel ?? "";
+            : (implementorSpec.defaultModel ?? '');
       }
     }
   }
@@ -307,26 +307,30 @@ async function handleRunAgentForNote(
 
   try {
     const result = await deps.agentFactory.createAgent(workspace, {
-      name: noteTitle || "Task Agent",
+      name: noteTitle || m.agent_creation_taskAgent_name(),
       // Derived from the note title, not user-typed for the agent — leave it
       // self-renameable.
       nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
       model: implementorModel || fallbackModel,
       provider,
-      agentType: createAgentTypeId("task-loop"),
+      agentType: createAgentTypeId('task-loop'),
       behaviorPrompt: implementorBehaviorPrompt,
-      source: "task-metadata-bar-run",
-      metadata: { taskNoteId: noteId, source: "task-run", specialist: "implementor" },
+      source: 'task-metadata-bar-run',
+      metadata: { taskNoteId: noteId, source: 'task-run', specialist: 'implementor' },
       initialMessage,
     });
     if (!result.success || !result.agentId) {
-      logger.error("Failed to run agent for note", { workspaceId: wsId, noteId, error: result.error });
+      logger.error('Failed to run agent for note', {
+        workspaceId: wsId,
+        noteId,
+        error: result.error,
+      });
       return;
     }
     openCreatedAgentTab(wsId, result.agentId);
   } catch (error) {
-    logger.error("Failed to run agent for note", {
+    logger.error('Failed to run agent for note', {
       workspaceId: wsId,
       noteId,
       error: getCreationError(error),
@@ -350,8 +354,8 @@ function openCreatedAgentForConfig(
       openTabInAdjacentOrSplit(
         wsId,
         {
-          type: "agent",
-          title: session.name || "Agent",
+          type: 'agent',
+          title: session.name || 'Agent',
           agentId: session.id,
           workspaceId: wsId,
           closable: true,
@@ -366,8 +370,8 @@ function openCreatedAgentForConfig(
       openTab(
         wsId,
         {
-          type: "agent",
-          title: session.name || "Agent",
+          type: 'agent',
+          title: session.name || 'Agent',
           agentId: session.id,
           workspaceId: wsId,
           closable: true,
@@ -394,8 +398,8 @@ async function handleCreateAgentFromConfig(
   const deps = await loadCreationDeps();
   const workspace = validateWorkspace(wsId, deps);
   if (!workspace) {
-    const errorMessage = "Workspace is not available for agent creation";
-    logger.error("Failed to create agent from Redux request", {
+    const errorMessage = m.agent_creation_workspaceUnavailable_error();
+    logger.error('Failed to create agent from Redux request', {
       workspaceId: wsId,
       source: config.source,
       error: errorMessage,
@@ -412,7 +416,7 @@ async function handleCreateAgentFromConfig(
     });
     if (!result.success || !result.agent) {
       const errorMessage = getCreationError(result.error);
-      logger.error("Failed to create agent from Redux request", {
+      logger.error('Failed to create agent from Redux request', {
         workspaceId: wsId,
         source: config.source,
         error: errorMessage,
@@ -428,7 +432,7 @@ async function handleCreateAgentFromConfig(
     appStore.dispatch(action.success(session));
   } catch (error) {
     const errorMessage = getCreationError(error);
-    logger.error("Failed to create agent from Redux request", {
+    logger.error('Failed to create agent from Redux request', {
       workspaceId: wsId,
       source: config.source,
       error: errorMessage,
@@ -456,7 +460,7 @@ async function handleLaunchAgent(
     const activeProvider = deps.selectActiveProviderId.select(appStore.state);
     const provider =
       config.provider ??
-      (model.includes(":") ? parseCompoundModelId(model).providerId : activeProvider);
+      (model.includes(':') ? parseCompoundModelId(model).providerId : activeProvider);
 
     const createAction = createAgentFromConfigRequested(
       wsId,
@@ -472,8 +476,10 @@ async function handleLaunchAgent(
     const session = await createAction.promise;
     appStore.dispatch(action.success(session));
   } catch (error) {
-    const errorMessage = cleanErrorMessage(getCreationError(error, "Failed to launch agent"));
-    logger.error("Failed to launch agent", {
+    const errorMessage = cleanErrorMessage(
+      getCreationError(error, m.agent_creation_launchFailed_error()),
+    );
+    logger.error('Failed to launch agent', {
       workspaceId: wsId,
       source: (config as { source?: string }).source,
       error: errorMessage,
@@ -491,31 +497,31 @@ async function handleLaunchAgent(
 export function createAgentCreationMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
-    if (action && typeof action.type === "string") {
+    if (action && typeof action.type === 'string') {
       const payload = Array.isArray(action.payload) ? action.payload : [];
       switch (action.type) {
         case createAgentRequested.type:
-          if (typeof payload[0] === "string") {
+          if (typeof payload[0] === 'string') {
             void handleCreateAgentRequested(
               payload[0],
-              typeof payload[1] === "string" ? payload[1] : undefined,
+              typeof payload[1] === 'string' ? payload[1] : undefined,
             );
           }
           break;
         case createAgentWithSpecialistRequested.type:
-          if (typeof payload[0] === "string") {
+          if (typeof payload[0] === 'string') {
             void handleCreateAgentWithSpecialist(
               payload[0],
-              typeof payload[1] === "string" ? payload[1] : null,
+              typeof payload[1] === 'string' ? payload[1] : null,
             );
           }
           break;
         case runAgentForNoteRequested.type:
-          if (typeof payload[0] === "string" && typeof payload[1] === "string") {
+          if (typeof payload[0] === 'string' && typeof payload[1] === 'string') {
             void handleRunAgentForNote(
               payload[0],
               payload[1],
-              typeof payload[2] === "string" ? payload[2] : undefined,
+              typeof payload[2] === 'string' ? payload[2] : undefined,
             );
           }
           break;
@@ -525,9 +531,7 @@ export function createAgentCreationMiddleware(): StoreMiddleware {
           );
           break;
         case agentSessionLaunchAgentRequested.type:
-          void handleLaunchAgent(
-            action as ReturnType<typeof agentSessionLaunchAgentRequested>,
-          );
+          void handleLaunchAgent(action as ReturnType<typeof agentSessionLaunchAgentRequested>);
           break;
       }
     }

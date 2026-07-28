@@ -47,18 +47,18 @@
  * sibling `agent-stream-service.ts`. The toast library is imported lazily
  * inside handlers so the static graph stays light.
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import type { AgentSession } from "$shared/types";
-import { AgentStatus } from "$shared/types";
-import { AgentActivationState } from "$shared/types/agent-session";
-import { appClient } from "$lib/client";
-import { store as appStore } from "$store/renderer/store";
+import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { AgentSession } from '$shared/types';
+import { AgentStatus } from '$shared/types';
+import { AgentActivationState } from '$shared/types/agent-session';
+import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
   removeSession,
   upsertSession,
-} from "$store/renderer/slices/agent-session/agent-session-slice";
-import { pruneRecentlyClosed } from "$store/renderer/slices/panel-layout/panel-layout-slice";
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { pruneRecentlyClosed } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   activateAgentRequested,
   commitPendingAgentDeletionRequested,
@@ -70,23 +70,24 @@ import {
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
   undoAgentDeletionRequested,
-} from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 import {
   getPendingAgentDeletion,
   listPendingAgentDeletions,
   removePendingAgentDeletion,
   setPendingAgentDeletion,
-} from "./utils/pending-agent-deletions";
+} from './utils/pending-agent-deletions';
 
-const logger = createLogger("AgentMutationService");
+const logger = createLogger('AgentMutationService');
 
 /** Undo window before a soft-hidden agent deletion is committed to the daemon. */
 const UNDO_DURATION_MS = 15000;
 
 /** Lazily pull the toast lib so this middleware-reachable module stays light. */
 async function getToast() {
-  const { toast } = await import("svelte-sonner");
+  const { toast } = await import('svelte-sonner');
   return toast;
 }
 
@@ -151,7 +152,7 @@ async function handleRestore(
     if (fetched) {
       const wsScoped: AgentSession = {
         ...preserveExistingMessages(fetched),
-        workspaceId: wsId as AgentSession["workspaceId"],
+        workspaceId: wsId as AgentSession['workspaceId'],
       };
       persistSession(wsScoped);
       appStore.dispatch(action.success(wsScoped));
@@ -159,14 +160,12 @@ async function handleRestore(
     }
     appStore.dispatch(action.success(existing ?? null));
   } catch (error) {
-    logger.error("Failed to restore agent session", error);
-    appStore.dispatch(action.failure(toError(error, "Failed to restore agent session")));
+    logger.error('Failed to restore agent session', error);
+    appStore.dispatch(action.failure(toError(error, m.agent_mutation_restoreFailed_error())));
   }
 }
 
-async function handleActivate(
-  action: ReturnType<typeof activateAgentRequested>,
-): Promise<void> {
+async function handleActivate(action: ReturnType<typeof activateAgentRequested>): Promise<void> {
   const [wsId, agentId] = action.payload;
   const existing = readSession(agentId);
   try {
@@ -178,7 +177,7 @@ async function handleActivate(
     if (existing) {
       persistSession({
         ...existing,
-        workspaceId: wsId as AgentSession["workspaceId"],
+        workspaceId: wsId as AgentSession['workspaceId'],
         activationState: AgentActivationState.ACTIVATING,
         activationAttempts,
       });
@@ -191,7 +190,7 @@ async function handleActivate(
     }
     const activated: AgentSession = {
       ...source,
-      workspaceId: wsId as AgentSession["workspaceId"],
+      workspaceId: wsId as AgentSession['workspaceId'],
       status: source.backendSessionId ? AgentStatus.Active : source.status,
       activationState: AgentActivationState.ACTIVE,
       activationAttempts,
@@ -199,23 +198,21 @@ async function handleActivate(
     persistSession(activated);
     appStore.dispatch(action.success(activated));
   } catch (error) {
-    logger.error("Failed to activate agent", error);
-    const message = errorMessage(error, "Failed to activate agent");
+    logger.error('Failed to activate agent', error);
+    const message = errorMessage(error, m.agent_mutation_activateFailed_error());
     if (existing) {
       persistSession({
         ...existing,
-        workspaceId: wsId as AgentSession["workspaceId"],
+        workspaceId: wsId as AgentSession['workspaceId'],
         activationState: AgentActivationState.ERROR,
         lastActivationError: message,
       });
     }
-    appStore.dispatch(action.failure(toError(error, "Failed to activate agent")));
+    appStore.dispatch(action.failure(toError(error, m.agent_mutation_activateFailed_error())));
   }
 }
 
-function handleSave(
-  action: ReturnType<typeof saveAgentSessionRequested>,
-): void {
+function handleSave(action: ReturnType<typeof saveAgentSessionRequested>): void {
   // The mock seam has no separate persistence layer — the agent-session slice
   // IS the runtime state. Resolve immediately so callers awaiting
   // `saveAction.promise` (agent-stream-lifecycle pre-send) can proceed.
@@ -229,20 +226,20 @@ function handleSave(
  * only settles the promise: success when the daemon acked, failure when it
  * did not — so AgentCard's revert-on-failure path fires.
  */
-async function handleRename(
-  action: ReturnType<typeof renameAgentSessionRequested>,
-): Promise<void> {
+async function handleRename(action: ReturnType<typeof renameAgentSessionRequested>): Promise<void> {
   const [wsId, agentId, name] = action.payload;
   try {
     const result = await appClient.agents.rename(agentId, name, wsId);
     if (!result.success) {
-      appStore.dispatch(action.failure(new Error(result.error || "Failed to rename agent")));
+      appStore.dispatch(
+        action.failure(new Error(result.error || m.agent_mutation_renameFailed_error())),
+      );
       return;
     }
     appStore.dispatch(action.success(undefined as never));
   } catch (error) {
-    logger.error("Failed to rename agent session", error);
-    appStore.dispatch(action.failure(toError(error, "Failed to rename agent session")));
+    logger.error('Failed to rename agent session', error);
+    appStore.dispatch(action.failure(toError(error, m.agent_mutation_renameSessionFailed_error())));
   }
 }
 
@@ -270,7 +267,7 @@ async function showDeletionError(message: string): Promise<void> {
     const toast = await getToast();
     toast.error(message);
   } catch (error) {
-    logger.error("Failed to surface agent-deletion error", error);
+    logger.error('Failed to surface agent-deletion error', error);
   }
 }
 
@@ -293,7 +290,7 @@ async function commitAgentDeletion(agentId: string): Promise<void> {
     const result = await appClient.agents.delete(pending.agentId, pending.wsId);
     if (!result.success) {
       restoreHiddenSession(pending.snapshot);
-      await showDeletionError(result.error || "Failed to delete agent");
+      await showDeletionError(result.error || m.agent_mutation_deleteFailed_error());
       return;
     }
     // Persistently prune any recently-closed tab entries for this agent on
@@ -301,9 +298,9 @@ async function commitAgentDeletion(agentId: string): Promise<void> {
     // covers any later closes that landed in the undo window.
     appStore.dispatch(pruneRecentlyClosed(pending.wsId, { agentId: pending.agentId }));
   } catch (error) {
-    logger.error("Failed to commit agent deletion", error);
+    logger.error('Failed to commit agent deletion', error);
     restoreHiddenSession(pending.snapshot);
-    await showDeletionError(errorMessage(error, "Failed to delete agent"));
+    await showDeletionError(errorMessage(error, m.agent_mutation_deleteFailed_error()));
   }
 }
 
@@ -311,15 +308,20 @@ async function commitAgentDeletion(agentId: string): Promise<void> {
 async function showUndoToast(wsId: string, agentId: string, agentName?: string): Promise<void> {
   try {
     const toast = await getToast();
-    toast.warning(`Deleted ${agentName || "agent"}`, {
-      duration: UNDO_DURATION_MS,
-      action: {
-        label: "Undo",
-        onClick: () => appStore.dispatch(undoAgentDeletionRequested(wsId, agentId)),
+    toast.warning(
+      agentName
+        ? m.agent_mutation_deletedAgent_message({ name: agentName })
+        : m.agent_mutation_deletedAgentGeneric_message(),
+      {
+        duration: UNDO_DURATION_MS,
+        action: {
+          label: m.agent_mutation_undo_label(),
+          onClick: () => appStore.dispatch(undoAgentDeletionRequested(wsId, agentId)),
+        },
       },
-    });
+    );
   } catch (error) {
-    logger.error("Failed to show agent-deletion undo toast", error);
+    logger.error('Failed to show agent-deletion undo toast', error);
   }
 }
 
@@ -330,9 +332,7 @@ async function showUndoToast(wsId: string, agentId: string, agentName?: string):
  * proceed. A true daemon undo is impossible post-delete, so the real
  * `agent.delete` is deferred until the undo window elapses (or is committed).
  */
-function handleDeleteWithUndo(
-  action: ReturnType<typeof deleteAgentWithUndoRequested>,
-): void {
+function handleDeleteWithUndo(action: ReturnType<typeof deleteAgentWithUndoRequested>): void {
   const [wsId, agentId, agentName] = action.payload;
   try {
     const snapshot = readSession(agentId);
@@ -348,8 +348,8 @@ function handleDeleteWithUndo(
     void showUndoToast(wsId, agentId, agentName);
     appStore.dispatch(action.success(snapshot));
   } catch (error) {
-    logger.error("Failed to soft-hide agent for deletion", error);
-    appStore.dispatch(action.failure(toError(error, "Failed to delete agent")));
+    logger.error('Failed to soft-hide agent for deletion', error);
+    appStore.dispatch(action.failure(toError(error, m.agent_mutation_deleteFailed_error())));
   }
 }
 
@@ -367,15 +367,17 @@ async function handleDeleteSession(
     const result = await appClient.agents.delete(agentId, wsId);
     if (!result.success) {
       if (snapshot) restoreHiddenSession(snapshot);
-      await showDeletionError(result.error || "Failed to delete agent");
-      appStore.dispatch(action.failure(new Error(result.error || "Failed to delete agent")));
+      await showDeletionError(result.error || m.agent_mutation_deleteFailed_error());
+      appStore.dispatch(
+        action.failure(new Error(result.error || m.agent_mutation_deleteFailed_error())),
+      );
       return;
     }
     appStore.dispatch(action.success(undefined as never));
   } catch (error) {
-    logger.error("Failed to delete agent session", error);
+    logger.error('Failed to delete agent session', error);
     if (snapshot) restoreHiddenSession(snapshot);
-    appStore.dispatch(action.failure(toError(error, "Failed to delete agent session")));
+    appStore.dispatch(action.failure(toError(error, m.agent_mutation_deleteSessionFailed_error())));
   }
 }
 
@@ -384,9 +386,7 @@ async function handleDeleteSession(
  * session — no daemon call, since the delete was never sent. Resolves `true`
  * when an undo actually happened, `false` when nothing was pending.
  */
-function handleUndoDeletion(
-  action: ReturnType<typeof undoAgentDeletionRequested>,
-): void {
+function handleUndoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): void {
   const [, agentId] = action.payload;
   try {
     const pending = getPendingAgentDeletion(agentId);
@@ -399,8 +399,8 @@ function handleUndoDeletion(
     restoreHiddenSession(pending.snapshot);
     appStore.dispatch(action.success(true));
   } catch (error) {
-    logger.error("Failed to undo agent deletion", error);
-    appStore.dispatch(action.failure(toError(error, "Failed to undo agent deletion")));
+    logger.error('Failed to undo agent deletion', error);
+    appStore.dispatch(action.failure(toError(error, m.agent_mutation_undoDeleteFailed_error())));
   }
 }
 
@@ -417,8 +417,10 @@ async function handleFlushPendingDeletions(
     await Promise.all(pending.map((entry) => commitAgentDeletion(entry.agentId)));
     appStore.dispatch(action.success(undefined as never));
   } catch (error) {
-    logger.error("Failed to flush pending agent deletions", error);
-    appStore.dispatch(action.failure(toError(error, "Failed to flush pending agent deletions")));
+    logger.error('Failed to flush pending agent deletions', error);
+    appStore.dispatch(
+      action.failure(toError(error, m.agent_mutation_flushDeletionsFailed_error())),
+    );
   }
 }
 
@@ -431,7 +433,7 @@ async function handleFlushPendingDeletions(
 export function createAgentMutationMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
-    if (!action || typeof action !== "object") return result;
+    if (!action || typeof action !== 'object') return result;
     const type = (action as { type?: unknown }).type;
     switch (type) {
       case restoreAgentSessionRequested.type:

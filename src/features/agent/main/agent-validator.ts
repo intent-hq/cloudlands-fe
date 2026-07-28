@@ -8,6 +8,7 @@
 import { Logger } from '$shared/logger';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { MODEL_IDS } from '$shared/constants/agent-services';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = new Logger('AgentValidator');
 
@@ -58,11 +59,11 @@ export class AgentValidator {
 
     // Required fields
     if (!config.name || typeof config.name !== 'string' || config.name.trim().length === 0) {
-      errors.push('Agent name is required');
+      errors.push(m.agent_validator_nameRequired_error());
     } else if (config.name.length > AgentValidator.MAX_NAME_LENGTH) {
-      errors.push(`Agent name must be less than ${AgentValidator.MAX_NAME_LENGTH} characters`);
+      errors.push(m.agent_validator_nameTooLong_error({ max: AgentValidator.MAX_NAME_LENGTH }));
     } else if (!this.isValidName(config.name)) {
-      errors.push('Agent name contains invalid characters');
+      errors.push(m.agent_validator_nameInvalid_error());
     }
 
     // Workspace ID is not required in config - it's passed separately
@@ -70,17 +71,18 @@ export class AgentValidator {
 
     // Optional fields
     if (config.model && !AgentValidator.VALID_MODELS.includes(config.model)) {
-      warnings.push(`Unknown model: ${config.model}. Using default.`);
+      warnings.push(m.agent_validator_unknownModelDefault_warning({ model: config.model }));
     }
 
     if (config.systemPrompt && config.systemPrompt.length > AgentValidator.MAX_PROMPT_LENGTH) {
       const excess = config.systemPrompt.length - AgentValidator.MAX_PROMPT_LENGTH;
       const percentOver = Math.round((excess / AgentValidator.MAX_PROMPT_LENGTH) * 100);
       errors.push(
-        `System prompt exceeds maximum length of ${AgentValidator.MAX_PROMPT_LENGTH} characters ` +
-          `(current: ${config.systemPrompt.length}, ${percentOver}% over limit). ` +
-          'This may be caused by large user rules files (.intent/rules/, CLAUDE.md) or many context references. ' +
-          'Try reducing the size of custom rules or removing some context references.',
+        m.agent_validator_systemPromptTooLong_error({
+          max: AgentValidator.MAX_PROMPT_LENGTH,
+          current: config.systemPrompt.length,
+          percent: percentOver,
+        }),
       );
       logger.warn('System prompt validation failed - too long', {
         currentLength: config.systemPrompt.length,
@@ -91,7 +93,9 @@ export class AgentValidator {
     }
 
     if (config.initialMessage && config.initialMessage.length > AgentValidator.MAX_MESSAGE_LENGTH) {
-      errors.push(`Initial message exceeds maximum length of ${AgentValidator.MAX_MESSAGE_LENGTH}`);
+      errors.push(
+        m.agent_validator_initialMessageTooLong_error({ max: AgentValidator.MAX_MESSAGE_LENGTH }),
+      );
     }
 
     // Validate context references
@@ -106,7 +110,7 @@ export class AgentValidator {
 
     // Validate metadata
     if (config.metadata && typeof config.metadata !== 'object') {
-      errors.push('Metadata must be an object');
+      errors.push(m.agent_validator_metadataInvalid_error());
     }
 
     return {
@@ -132,16 +136,14 @@ export class AgentValidator {
     const errors: string[] = [];
 
     if (!ref || typeof ref !== 'object') {
-      errors.push('Context reference must be an object');
+      errors.push(m.agent_validator_contextRefInvalid_error());
       return { valid: false, errors };
     }
 
     // Valid context types: file, selection, task, note, spec, code_chunk
     const validTypes = ['file', 'selection', 'task', 'note', 'spec', 'code_chunk'];
     if (!ref.type || !validTypes.includes(ref.type)) {
-      errors.push(
-        `Context reference must have a valid type. Valid types: ${validTypes.join(', ')}`,
-      );
+      errors.push(m.agent_validator_contextRefTypeInvalid_error({ types: validTypes.join(', ') }));
     }
 
     // Note: We allow context references without path/content because:
@@ -177,15 +179,15 @@ export class AgentValidator {
 
     if (!message || typeof message !== 'string') {
       if (!options.allowEmpty) {
-        errors.push('Message is required');
+        errors.push(m.agent_validator_messageRequired_error());
       }
     } else {
       if (message.length > maxLength) {
-        errors.push(`Message exceeds maximum length of ${maxLength}`);
+        errors.push(m.agent_validator_messageTooLong_error({ max: maxLength }));
       }
 
       if (message.trim().length === 0 && !options.allowEmpty) {
-        errors.push('Message cannot be empty');
+        errors.push(m.agent_validator_messageEmpty_error());
       }
     }
 
@@ -231,9 +233,9 @@ export class AgentValidator {
     const errors: string[] = [];
 
     if (!id || typeof id !== 'string') {
-      errors.push('Agent ID is required');
+      errors.push(m.agent_validator_agentIdRequired_error());
     } else if (!unifiedIdService.isValidAgentId(id)) {
-      errors.push('Invalid agent ID format');
+      errors.push(m.agent_validator_agentIdInvalid_error());
     }
 
     return {
@@ -249,9 +251,9 @@ export class AgentValidator {
     const errors: string[] = [];
 
     if (!id || typeof id !== 'string') {
-      errors.push('Session ID is required');
+      errors.push(m.agent_validator_sessionIdRequired_error());
     } else if (!id.startsWith('session-')) {
-      errors.push('Invalid session ID format');
+      errors.push(m.agent_validator_sessionIdInvalid_error());
     }
 
     return {
@@ -267,9 +269,9 @@ export class AgentValidator {
     const errors: string[] = [];
 
     if (!id || typeof id !== 'string') {
-      errors.push('Workspace ID is required');
+      errors.push(m.agent_validator_workspaceIdRequired_error());
     } else if (id.length < 10 || id.length > 100) {
-      errors.push('Invalid workspace ID length');
+      errors.push(m.agent_validator_workspaceIdInvalidLength_error());
     }
 
     return {
@@ -286,9 +288,9 @@ export class AgentValidator {
     const warnings: string[] = [];
 
     if (!model || typeof model !== 'string') {
-      errors.push('Model is required');
+      errors.push(m.agent_validator_modelRequired_error());
     } else if (!(AgentValidator.VALID_MODELS as readonly string[]).includes(model)) {
-      warnings.push(`Unknown model: ${model}`);
+      warnings.push(m.agent_validator_unknownModel_warning({ model }));
     }
 
     return {

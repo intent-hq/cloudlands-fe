@@ -19,6 +19,7 @@
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { getProviderConfig } from '$shared/config/provider-config';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('ProviderModelsClient');
 
@@ -70,7 +71,7 @@ const PROVIDER_MODEL_CHANNELS: Record<string, string> = {
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string' && error) return error;
-  return 'Unknown error';
+  return m.providers_modelsClient_unknown_error();
 }
 
 function toProviderError(providerId: string, message: string): Error {
@@ -115,7 +116,10 @@ export async function getProviderModels(
 
   const channel = PROVIDER_MODEL_CHANNELS[providerId];
   if (!channel) {
-    throw toProviderError(providerId, `Unsupported model provider: ${providerId}`);
+    throw toProviderError(
+      providerId,
+      m.providers_modelsClient_unsupportedProvider_error({ id: providerId }),
+    );
   }
 
   try {
@@ -131,7 +135,7 @@ export async function getProviderModels(
     if (!result?.success) {
       throw toProviderError(
         providerId,
-        result?.error || result?.warning || 'No response from model service',
+        result?.error || result?.warning || m.providers_modelsClient_noResponse_error(),
       );
     }
 

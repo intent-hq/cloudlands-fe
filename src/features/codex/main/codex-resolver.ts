@@ -7,10 +7,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import {
-  findBinary,
-  getCommonNpmPaths,
-} from '../../../shared/main/find-binary';
+import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
 import { execFileAsync } from '../../../shared/main/async-utils';
 import {
   ensureManagedCodexAcp,
@@ -192,7 +189,8 @@ export async function probeCodexAppServerVersion(
     const version = parseCodexCliVersion(`${result.stdout || ''}\n${result.stderr || ''}`);
     const probeResult: CodexAppServerVersionProbeResult = version
       ? { ok: true, version }
-      : { ok: false, reason: 'Unable to parse codex CLI version' };
+      : // i18n-ignore (internal version-probe diagnostic, logged not rendered)
+        { ok: false, reason: 'Unable to parse codex CLI version' };
     if (probeResult.ok) cachedCodexAppServerVersionProbe = probeResult;
     return probeResult;
   } catch (error) {

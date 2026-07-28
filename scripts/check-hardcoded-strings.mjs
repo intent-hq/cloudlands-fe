@@ -81,6 +81,52 @@ const ENFORCED_DIRS = [
   'src/features/debug',
   'src/features/debug-export',
   'src/lib/services',
+  // agent feature: renderer services + browser/services/utils and the two
+  // user-facing main-process files. main/instructions/, main/instruction-service,
+  // specialists/rules-loader (agent prompt content), testing/ (harness), and
+  // agent-launch-core (prompt building) are intentionally not enforced.
+  'src/features/agent/browser',
+  'src/features/agent/services',
+  'src/features/agent/utils',
+  'src/features/agent/errors',
+  'src/features/agent/config',
+  'src/features/agent/types',
+  'src/features/agent/active-streams-redux-bridge.ts',
+  'src/features/agent/agent-context-registry.ts',
+  'src/features/agent/agent-context.ipc.ts',
+  'src/features/agent/agent-context.ts',
+  'src/features/agent/agent-creation-service.ts',
+  'src/features/agent/agent-failure-registry.ts',
+  'src/features/agent/agent-failure-toast-service.ts',
+  'src/features/agent/agent-mutation-service.ts',
+  'src/features/agent/agent-read-service.ts',
+  'src/features/agent/agent-stream-lifecycle.ts',
+  'src/features/agent/agent-stream-service.ts',
+  'src/features/agent/agent-subscription-read-service.ts',
+  'src/features/agent/agent-types.ts',
+  'src/features/agent/agent.client.ts',
+  'src/features/agent/chat-read-service.ts',
+  'src/features/agent/chat-send-service.ts',
+  'src/features/agent/edit-regenerate-service.ts',
+  'src/features/agent/interrupted-agents-service.ts',
+  'src/features/agent/main/agent-missing.ipc.ts',
+  'src/features/agent/main/agent-validator.ts',
+  'src/features/agent/main/stream-manager.ts',
+  // provider integrations. acp-official main/server, parsers, and plans emit
+  // agent-facing wire content; cortex/cortex-acp is a standalone stdio adapter
+  // subprocess — both intentionally not enforced.
+  'src/features/acp-official/permissions',
+  'src/features/acp-official/types',
+  'src/features/acp-official/utils',
+  'src/features/auggie',
+  'src/features/claude-code',
+  'src/features/codex',
+  'src/features/cortex/main',
+  'src/features/droid',
+  'src/features/grok',
+  'src/features/opencode',
+  'src/features/pi',
+  'src/features/providers',
 ];
 
 const ROOT = process.cwd();

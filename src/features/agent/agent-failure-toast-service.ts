@@ -35,6 +35,7 @@ import {
   type AgentFailureGroup,
 } from './agent-failure-registry';
 import { createLogger } from '$lib/utils/client-logger';
+import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('AgentFailureToastService');
 
@@ -124,15 +125,15 @@ function buildToastProps(group: AgentFailureGroup, state: GroupToastState) {
   const title =
     count === 1
       ? firstAgentName
-        ? `${firstAgentName} failed`
-        : '1 agent failed'
-      : `${count} agents failed`;
+        ? m.agent_failureToast_agentFailed_title({ name: firstAgentName })
+        : m.agent_failureToast_agentsFailed_one()
+      : m.agent_failureToast_agentsFailed_many({ count });
   const retryLabel =
     count === 1
       ? firstAgentName
-        ? `Retry ${firstAgentName}`
-        : 'Retry'
-      : `Retry All ${count} Agents`;
+        ? m.agent_failureToast_retryAgent_label({ name: firstAgentName })
+        : m.agent_failureToast_retry_label()
+      : m.agent_failureToast_retryAll_label({ count });
 
   // Lines are keyed by agentId — labels can collide (same-named agents in one
   // workspace) and duplicate keys crash Svelte 5 keyed each blocks.
@@ -143,13 +144,18 @@ function buildToastProps(group: AgentFailureGroup, state: GroupToastState) {
     const workspaceName = resolveWorkspaceName(entry.workspaceId);
     detailLines.push({
       key: entry.agentId,
-      label: workspaceName ? `${agentName} — ${workspaceName}` : agentName,
+      label: workspaceName
+        ? m.agent_failureToast_agentWorkspace_label({ agent: agentName, workspace: workspaceName })
+        : agentName,
     });
   }
   // Unlisted = beyond the cap PLUS skipped-unresolvable entries above.
   const unlistedCount = count - detailLines.length;
   if (detailLines.length > 0 && unlistedCount > 0) {
-    detailLines.push({ key: '__more__', label: `+${unlistedCount} more` });
+    detailLines.push({
+      key: '__more__',
+      label: m.agent_failureToast_moreCount_label({ count: unlistedCount }),
+    });
   }
 
   return {
@@ -256,7 +262,9 @@ export async function retryGroup(groupKey: string): Promise<void> {
   const failedCount = results.filter((result) => !result.ok).length;
   if (failedCount > 0) {
     state.retryNote =
-      failedCount === 1 ? 'Retry failed for 1 agent' : `Retry failed for ${failedCount} agents`;
+      failedCount === 1
+        ? m.agent_failureToast_retryFailed_one()
+        : m.agent_failureToast_retryFailed_many({ count: failedCount });
   }
 
   // Removing entries notifies the subscription, which re-renders (or
