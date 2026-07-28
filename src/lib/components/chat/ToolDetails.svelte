@@ -755,7 +755,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 <span class="text-sm text-subtle p-2">No notes found</span>
               {/if}
             </div>
-          {:else if parsedResult.type === 'figma'}
+          {:else if parsedResult.type === 'figma' && (parsedResult.figmaScreenshot || parsedResult.figmaCode || parsedResult.figmaAssets?.length || parsedResult.content)}
             <!-- Figma tool results - screenshot + code -->
             <div class="flex flex-col gap-2">
               {#if parsedResult.figmaScreenshot}
@@ -804,7 +804,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 </div>
               {/if}
             </div>
-          {:else if parsedResult.type === 'browser'}
+          {:else if parsedResult.type === 'browser' && (parsedResult.screenshotBase64 || parsedResult.screenshotUrl || parsedResult.browserTabs?.length || parsedResult.evaluateResult !== undefined || evaluateExpressions || parsedResult.accessibilityTree || parsedResult.error || parsedResult.content)}
             <!-- Browser tool results -->
             <div class="flex flex-col gap-2">
               {#if parsedResult.screenshotBase64 || parsedResult.screenshotUrl}

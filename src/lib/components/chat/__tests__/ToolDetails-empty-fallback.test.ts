@@ -98,6 +98,38 @@ describe('ToolDetails empty rich-result fallback', () => {
     expect(container.textContent).toContain('Completed');
   });
 
+  it('falls back to input details + raw result for a bare browser parsedResult', () => {
+    // parseBrowserResult returns { type: 'browser' } with no renderable fields
+    // when the result is falsy or its text is unextractable (e.g. object payload)
+    const { container } = render(ToolDetails, {
+      props: {
+        input: { code: 'await ws.browser.exec([{ action: "navigate" }])', summary: 'Navigate' },
+        result: { ok: true, detail: 'persisted object payload' },
+        parsedResult: { type: 'browser' as const },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).toContain('Navigate');
+    expect(container.textContent).toContain('persisted object payload');
+  });
+
+  it('falls back to input details + raw result for a bare figma parsedResult', () => {
+    // parseFigmaResult returns { type: 'figma' } when the result carries no
+    // images and no extractable text
+    const { container } = render(ToolDetails, {
+      props: {
+        input: { nodeId: '1:23' },
+        result: { nodes: 3 },
+        parsedResult: { type: 'figma' as const },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).toContain('1:23');
+    expect(container.textContent).toContain('"nodes": 3');
+  });
+
   it('still renders confirmation content directly when present', () => {
     const { container } = render(ToolDetails, {
       props: {
