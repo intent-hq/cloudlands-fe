@@ -20,6 +20,17 @@ import { disposeDaemonHealthService } from '$store/renderer/middlewares/daemon-h
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
+const route = vi.hoisted(() => ({ pathname: '/' }));
+
+vi.mock('$app/stores', () => ({
+  page: {
+    subscribe: (run: (value: { url: URL }) => void) => {
+      run({ url: new URL(`http://localhost${route.pathname}`) });
+      return () => {};
+    },
+  },
+}));
+
 import DaemonStoppedOverlay, { DAEMON_STOPPED_GRACE_MS } from '../DaemonStoppedOverlay.svelte';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -86,6 +97,7 @@ async function showOverlayNeverConnected(
 describe('DaemonStoppedOverlay', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    route.pathname = '/';
     bootTransport = sidecarTransport;
     invokeMock = vi.fn(async (channel: string, ...args: unknown[]) => {
       if (channel === BACKEND.SPAWN_SIDECAR) {
@@ -118,6 +130,17 @@ describe('DaemonStoppedOverlay', () => {
     await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS * 2);
     expect(overlay()).toBeNull();
   });
+
+  it.each(['/sandbox/directory-picker', '/test/component'])(
+    'stays hidden while the daemon is disconnected on %s',
+    async (pathname) => {
+      route.pathname = pathname;
+      render(DaemonStoppedOverlay);
+      dispatchAndFlush(connectionStatusChanged('disconnected'));
+      await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS * 2);
+      expect(overlay()).toBeNull();
+    },
+  );
 
   it('does not flash when the connection recovers within the grace period', async () => {
     render(DaemonStoppedOverlay);
