@@ -204,9 +204,13 @@ async function dispatchToLifecycle(
   // would deliver it twice). Failure-branch recording pairs the banner with
   // exactly the message that failed to queue for every queue-path
   // `chatSendFailed`. Residual gap (pre-existing record-lifetime issue,
-  // #973 family): a message that enqueues successfully but whose DRAINED
-  // turn later fails is not covered — the in-flight turn's successful
-  // completion clears the record before the drain, so "Try again" no-ops.
+  // #973 family): since #984 the in-flight turn's `complete` no longer
+  // clears the record (the success-clear rides `agent:idle`, which the
+  // daemon withholds while a ready-to-send queue drains), so in-flight A's
+  // record survives into queued B's drained turn. If B's turn then fails,
+  // "Try again" resends already-succeeded A — a duplicate delivery — rather
+  // than the old safe no-op. Deliberately pinned in the updated #969 test;
+  // fixing it requires turn-scoped records (#973 family), out of scope.
   //
   // NOTE: neither a one-shot model override nor noteIds can ride the queued
   // delivery — `agent.queueMessage` has no model/noteIds params (PROTOCOL
