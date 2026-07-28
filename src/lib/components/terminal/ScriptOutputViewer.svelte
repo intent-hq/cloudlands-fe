@@ -32,6 +32,7 @@
   selectScriptOutput,
 } from '$store/renderer/slices/scripts/scripts-selectors';
   import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
+  import { scriptOutputTailText } from '$lib/utils/script-output-text';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -62,10 +63,10 @@
   // Reactive state from Redux store
   const script$ = selectScriptById(scriptId);
   const runtime$ = selectScriptRuntime(scriptId);
-  const outputLines$ = selectScriptOutput(scriptId);
+  const output$ = selectScriptOutput(scriptId);
 
-  // Track how many lines we've already written to xterm
-  let writtenLineCount = $state(0);
+  // Stream position already written to xterm: buffer.dropped + chunk index.
+  let writtenChunkCount = $state(0);
 
   const isFailing = $derived(
     $runtime$.status === 'exited' &&
@@ -156,12 +157,12 @@
 
   function loadBufferedOutput(): void {
     if (!xterm) return;
-    const lines = selectScriptOutput.select(appStore.state, scriptId);
-    if (lines.length > 0) {
-      const text = lines.map((l) => l.text).join('\n');
-      xterm.write(text);
-      writtenLineCount = lines.length;
+    const buffer = selectScriptOutput.select(appStore.state, scriptId);
+    if (buffer.chunks.length > 0) {
+      // Replay the raw stream verbatim — plain concatenation, no separators.
+      xterm.write(buffer.chunks.map((c) => c.text).join(''));
     }
+    writtenChunkCount = buffer.dropped + buffer.chunks.length;
   }
 
   function disposeXterm(): void {
@@ -180,24 +181,21 @@
     xterm?.dispose();
     xterm = null;
     fitAddon = null;
-    writtenLineCount = 0;
+    writtenChunkCount = 0;
   }
 
   // ---- Real-time streaming via $effect ----
 
   $effect(() => {
-    const lines = $outputLines$; // tracked — triggers effect on new output
-    const written = untrack(() => writtenLineCount); // NOT tracked — avoids cycle
-    if (!xterm || lines.length <= written) return;
+    const buffer = $output$; // tracked — triggers effect on new output
+    const written = untrack(() => writtenChunkCount); // NOT tracked — avoids cycle
+    const total = buffer.dropped + buffer.chunks.length;
+    if (!xterm || total <= written) return;
 
-    const newLines = lines.slice(written);
-    const text = newLines.map((l) => l.text).join('\n');
-    if (written > 0) {
-      xterm.write('\n' + text);
-    } else {
-      xterm.write(text);
-    }
-    writtenLineCount = lines.length;
+    // Write only chunks not yet rendered, verbatim — no injected newlines.
+    const startIndex = Math.max(written - buffer.dropped, 0);
+    xterm.write(buffer.chunks.slice(startIndex).map((c) => c.text).join(''));
+    writtenChunkCount = total;
   });
 
   // ---- Start ----
@@ -223,11 +221,8 @@
       return;
     }
 
-    const lines = selectScriptOutput.select(appStore.state, scriptId);
-    const lastLines = lines
-      .slice(-100)
-      .map((l) => l.text)
-      .join('\n');
+    const buffer = selectScriptOutput.select(appStore.state, scriptId);
+    const lastLines = scriptOutputTailText(buffer, 100);
     const exitCode = $runtime$.exitCode;
     const failedText =
       exitCode !== null && exitCode !== 0 ? ` failed with exit code ${exitCode}` : '';
@@ -256,7 +251,7 @@
 
   // Reset xterm when transitioning back to empty state
   $effect(() => {
-    const isEmptyState = $runtime$.status === 'idle' && $outputLines$.length === 0;
+    const isEmptyState = $runtime$.status === 'idle' && $output$.chunks.length === 0;
     if (isEmptyState && xterm) {
       disposeXterm();
     }
@@ -264,7 +259,7 @@
 
   // Initialize xterm when the container is visible (not during empty state)
   $effect(() => {
-    const isEmptyState = $runtime$.status === 'idle' && $outputLines$.length === 0;
+    const isEmptyState = $runtime$.status === 'idle' && $output$.chunks.length === 0;
     if (!isEmptyState && xtermContainer && !xterm) {
       // Container just became visible, initialize xterm
       // Use requestAnimationFrame to ensure DOM has updated
@@ -305,7 +300,7 @@
     </div>
   {/if}
 
-  {#if $runtime$.status === 'idle' && $outputLines$.length === 0}
+  {#if $runtime$.status === 'idle' && $output$.chunks.length === 0}
     <!-- Empty state: script hasn't been run yet -->
     <div class="flex-1 flex items-center justify-center px-4 py-8">
       <div class="flex items-center gap-3 text-sm">
@@ -327,7 +322,7 @@
   {/if}
 
   <!-- xterm output (hidden when empty state is showing) -->
-  <div class="flex-1 relative overflow-hidden" class:hidden={$runtime$.status === 'idle' && $outputLines$.length === 0}>
+  <div class="flex-1 relative overflow-hidden" class:hidden={$runtime$.status === 'idle' && $output$.chunks.length === 0}>
     <div class="xterm-output" bind:this={xtermContainer}></div>
   </div>
 </div>

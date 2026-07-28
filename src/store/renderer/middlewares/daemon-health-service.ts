@@ -26,11 +26,18 @@ import {
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
   fetchSidecarRunLogFailed,
+  pollUnslothStatus,
+  unslothStatusSuccess,
+  unslothStatusFailure,
+  stopUnslothRequested,
+  stopUnslothSucceeded,
+  stopUnslothFailed,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type {
   BackendTransportInfo,
   SidecarRunLog,
   SystemStatusWirePayload,
+  UnslothStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -42,6 +49,14 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let statusListener: ((payload: { status: string }) => void) | null = null;
 let booted = false;
 let pollInFlight = false;
+let unslothPollInFlight = false;
+// Coalesced follow-up latch: a pollUnslothStatus dispatch that lands while a
+// poll is in flight (e.g. the post-stop re-poll racing the dropdown's 1s
+// tick) runs once more after the current poll settles instead of being
+// dropped — the in-flight poll's result may predate the state change that
+// prompted the dispatch.
+let unslothPollQueued = false;
+let unslothStopInFlight = false;
 // One-shot latch: the version-mismatch toast fires at most once per boot.
 let versionMismatchNotified = false;
 // Bumped on dispose so a poll that resolves after a dispose(+reboot) cycle
@@ -79,6 +94,68 @@ async function pollStatus(): Promise<void> {
   } finally {
     if (generation === pollGeneration) {
       pollInFlight = false;
+    }
+  }
+}
+
+/**
+ * Poll unsloth.status (protocol 2.5, PROTOCOL §5.37) and dispatch
+ * success/failure. Triggered only by pollUnslothStatus dispatches from the
+ * open status dropdown — no background interval. Failures (older daemon
+ * without the method, transport error) clear the stored status instead of
+ * surfacing an error. A dispatch that lands while a poll is in flight is
+ * coalesced into ONE follow-up poll after the current one settles (not
+ * dropped): the in-flight poll's result may predate the state change — e.g.
+ * a just-completed unsloth.stop — that prompted the dispatch.
+ */
+async function pollUnsloth(): Promise<void> {
+  if (unslothPollInFlight) {
+    unslothPollQueued = true;
+    return;
+  }
+  unslothPollInFlight = true;
+  const generation = pollGeneration;
+  try {
+    const result = await backendRequest<UnslothStatusWirePayload>('unsloth.status');
+    if (generation !== pollGeneration) return;
+    appStore.dispatch(unslothStatusSuccess(result));
+  } catch (_error) {
+    if (generation !== pollGeneration) return;
+    appStore.dispatch(unslothStatusFailure());
+  } finally {
+    if (generation === pollGeneration) {
+      unslothPollInFlight = false;
+      if (unslothPollQueued) {
+        unslothPollQueued = false;
+        void pollUnsloth();
+      }
+    }
+  }
+}
+
+/**
+ * Invoke unsloth.stop (PROTOCOL §5.37; `{ stopped: boolean }` — false is a
+ * no-op when no server was running, not an error), then re-poll
+ * unsloth.status so the dropdown reflects the post-stop state immediately.
+ * Guarded against overlapping in-flight stops, mirroring the polls (the
+ * confirm button is also disabled while stopping, so this is belt-and-braces
+ * for any future dispatcher).
+ */
+async function stopUnsloth(): Promise<void> {
+  if (unslothStopInFlight) return;
+  unslothStopInFlight = true;
+  const generation = pollGeneration;
+  try {
+    const result = await backendRequest<{ stopped: boolean }>('unsloth.stop');
+    if (generation !== pollGeneration) return;
+    appStore.dispatch(stopUnslothSucceeded(result.stopped));
+    appStore.dispatch(pollUnslothStatus());
+  } catch (error) {
+    if (generation !== pollGeneration) return;
+    appStore.dispatch(stopUnslothFailed(error instanceof Error ? error.message : String(error)));
+  } finally {
+    if (generation === pollGeneration) {
+      unslothStopInFlight = false;
     }
   }
 }
@@ -267,6 +344,14 @@ export function createDaemonHealthMiddleware(): StoreMiddleware {
     if (action.type === fetchSidecarRunLogRequested.type) {
       void fetchSidecarRunLog();
     }
+    // Status dropdown polling unsloth.status while open (no background interval).
+    if (action.type === pollUnslothStatus.type) {
+      void pollUnsloth();
+    }
+    // User confirmed stopping the managed unsloth server.
+    if (action.type === stopUnslothRequested.type) {
+      void stopUnsloth();
+    }
     return result;
   };
 }
@@ -287,4 +372,7 @@ export function disposeDaemonHealthService(): void {
   // results or clear the flag for a rebooted service.
   pollGeneration++;
   pollInFlight = false;
+  unslothPollInFlight = false;
+  unslothPollQueued = false;
+  unslothStopInFlight = false;
 }

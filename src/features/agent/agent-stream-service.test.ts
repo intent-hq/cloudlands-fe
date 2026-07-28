@@ -11,11 +11,17 @@ import {
   selectAgentIsResponding,
   selectAgentMessages,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
-import { chatSendStarted } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  chatLastAttemptedMessageSet,
+  chatSendStarted,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
+import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
+import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
+import type { AgentIdleEvent } from "$features/events/types";
 
 const WS = "ws-stream-1";
 const AGENT = "agent-stream-1";
@@ -153,6 +159,117 @@ describe("agentStreamService (real store)", () => {
     appStore.dispatch(agentStreamUpdateReceived(makePayload({ eventType: "error" })));
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("#941: a failed turn (error finalize) preserves lastAttemptedMessage for the retry banner", () => {
+    simulateSendInFlight();
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "edited text" }));
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "chunk", contentBlocks: textBlocks("partial") }),
+      ),
+    );
+
+    appStore.dispatch(
+      agentStreamUpdateReceived(makePayload({ eventType: "error", error: "stream failed" })),
+    );
+
+    const chatState = selectChatAgentState.select(appStore.state, AGENT);
+    expect(chatState?.error).toBe("stream failed");
+    expect(chatState?.lastAttemptedMessage).toEqual({ text: "edited text" });
+  });
+
+  it("#941: a successful turn clears lastAttemptedMessage on the follow-up agent:idle (#984)", () => {
+    simulateSendInFlight();
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "edited text" }));
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "chunk", contentBlocks: textBlocks("partial") }),
+      ),
+    );
+
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "complete", contentBlocks: textBlocks("done") }),
+      ),
+    );
+
+    // `complete` maps the disposition-neutral `agent:stream:end` — the record
+    // survives it (#984); the success-clear rides the follow-up `agent:idle`.
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "edited text",
+    });
+
+    const idleEvent: AgentIdleEvent = {
+      id: "evt-idle-stream-1",
+      type: "agent:idle",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      workspaceId: WS,
+      actor: { type: "agent", id: AGENT },
+      data: {
+        agentId: AGENT,
+        agentName: "Agent Stream",
+        reason: "stream_complete",
+        finishReason: "end_turn",
+        status: "idle",
+        activationState: null,
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: null,
+      },
+    };
+    appStore.dispatch(eventReceived(WS, idleEvent));
+    expect(
+      selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage,
+    ).toBeNull();
+  });
+
+  it("#964: a model-unavailable complete survives the streamCompleted finalize (banner state preserved)", () => {
+    simulateSendInFlight();
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "edited text" }));
+
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({
+          eventType: "complete",
+          contentBlocks: [],
+          completeMessage: {
+            role: "assistant",
+            metadata: {
+              modelUnavailable: true,
+              failedModel: "slow-model",
+              nextAvailableModel: "fast-model",
+            },
+          },
+        }),
+      ),
+    );
+
+    // The reducer derived modelUnavailable from the complete event, and the
+    // middleware's streamCompleted finalize (which previously hardcoded
+    // modelUnavailable: null) must pass it through from post-reducer state.
+    const chatState = selectChatAgentState.select(appStore.state, AGENT);
+    expect(chatState?.modelUnavailable).toEqual({
+      failedModel: "slow-model",
+      nextAvailableModel: "fast-model",
+    });
+    // The retry payload survives too, so "Retry with <model>" has a message
+    // to resend.
+    expect(chatState?.lastAttemptedMessage).toEqual({ text: "edited text" });
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("#964: a normal successful complete leaves modelUnavailable null", () => {
+    simulateSendInFlight();
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "complete", contentBlocks: textBlocks("done") }),
+      ),
+    );
+
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.modelUnavailable).toBeNull();
   });
 
   it("clears session-level streaming flags on timeout (selectAgentIsResponding === false)", () => {

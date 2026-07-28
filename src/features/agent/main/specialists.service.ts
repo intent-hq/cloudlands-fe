@@ -300,7 +300,9 @@ export function getEffectiveSpecialist(
       fileSpecialist.frontmatter.modelTier ||
       (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined);
 
-    if (hasExplicitTier || !hasExplicitModel) {
+    // Model-first precedence: an explicit model wins; tier-based provider-aware
+    // resolution only applies when the file does not declare a model.
+    if (!hasExplicitModel) {
       if (tier) {
         if (codingAgent in PROVIDER_MODEL_TIERS) {
           resolvedModel = getDefaultModelForProvider(codingAgent, tier);
@@ -381,7 +383,9 @@ export function getAllEffectiveSpecialists(
         file.frontmatter.modelTier ||
         (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined);
 
-      if (hasExplicitTier || !hasExplicitModel) {
+      // Model-first precedence: an explicit model wins; tier-based provider-aware
+      // resolution only applies when the file does not declare a model.
+      if (!hasExplicitModel) {
         if (tier) {
           if (codingAgent in PROVIDER_MODEL_TIERS) {
             resolvedModel = getDefaultModelForProvider(codingAgent, tier);

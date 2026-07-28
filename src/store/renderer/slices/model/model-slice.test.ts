@@ -7,15 +7,12 @@ import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
 import { getDefaultProviderId } from '$shared/config/provider-config';
 import {
-  clearAllWorkspaceModels,
   clearModelFallbackInfo,
   clearLoadingStateForProvider,
-  clearWorkspaceModel,
   hydrateModelFallbackInfo,
   hydrateModelPickerCollapsedGroups,
   initialState,
   loadProviderModelsFromStorage,
-  loadWorkspaceModelsFromStorage,
   modelReducer,
   setModelFallbackInfo,
   setModelPickerGroupCollapsed,
@@ -23,7 +20,6 @@ import {
   setLoadingStateForProvider,
   setRetryAttempt,
   setSelectedModel,
-  setWorkspaceModel,
 } from './model-slice';
 import { selectAllProviderWarnings } from './model-selectors';
 import type { ModelState } from './model-types';
@@ -204,21 +200,6 @@ describe('modelReducer', () => {
       [defaultProviderId]: 'gpt5.4',
       codex: 'codex:gpt-5.3-codex/high',
     });
-  });
-
-  it('preserves workspace model behaviors', () => {
-    const withWorkspaceModel = modelReducer(
-      initialState,
-      setWorkspaceModel({ workspaceId: 'ws-1', model: 'gpt5.4' }),
-    );
-    const loaded = modelReducer(
-      withWorkspaceModel,
-      loadWorkspaceModelsFromStorage({ 'ws-1': 'gpt5.4', 'ws-2': 'haiku4.5' }),
-    );
-    const clearedOne = modelReducer(loaded, clearWorkspaceModel('ws-1'));
-    const clearedAll = modelReducer(clearedOne, clearAllWorkspaceModels());
-
-    expect(clearedAll.workspaceModels).toEqual({});
   });
 
   it('hydrates and toggles model picker collapsed groups', () => {

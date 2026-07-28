@@ -52,6 +52,7 @@ const mocks = vi.hoisted(() => {
   const mcpManagementMiddleware = createPassthroughMiddleware();
   const workspaceOperationsMiddleware = createPassthroughMiddleware();
   const directoryPickerReadMiddleware = createPassthroughMiddleware();
+  const legacyImportMiddleware = createPassthroughMiddleware();
   const statsReadMiddleware = createPassthroughMiddleware();
   const lifecycleReadMiddleware = createPassthroughMiddleware();
   const lifecycleIpcReadMiddleware = createPassthroughMiddleware();
@@ -63,6 +64,7 @@ const mocks = vi.hoisted(() => {
   const terminalPersistenceMiddleware = createPassthroughMiddleware();
   const externalEditorsPersistenceMiddleware = createPassthroughMiddleware();
   const zoomSyncMiddleware = createPassthroughMiddleware();
+  const menuIpcMiddleware = createPassthroughMiddleware();
   const notificationIpcMiddleware = createPassthroughMiddleware();
   const webNotificationMiddleware = createPassthroughMiddleware();
   const workspaceSettingsPersistenceMiddleware = createPassthroughMiddleware();
@@ -122,6 +124,7 @@ const mocks = vi.hoisted(() => {
     createMcpManagementMiddleware: vi.fn(() => mcpManagementMiddleware),
     createWorkspaceOperationsMiddleware: vi.fn(() => workspaceOperationsMiddleware),
     createDirectoryPickerReadMiddleware: vi.fn(() => directoryPickerReadMiddleware),
+    createLegacyImportMiddleware: vi.fn(() => legacyImportMiddleware),
     createStatsReadMiddleware: vi.fn(() => statsReadMiddleware),
     createLifecycleReadMiddleware: vi.fn(() => lifecycleReadMiddleware),
     createLifecycleIpcReadMiddleware: vi.fn(() => lifecycleIpcReadMiddleware),
@@ -133,6 +136,7 @@ const mocks = vi.hoisted(() => {
     createTerminalPersistenceMiddleware: vi.fn(() => terminalPersistenceMiddleware),
     createExternalEditorsPersistenceMiddleware: vi.fn(() => externalEditorsPersistenceMiddleware),
     createZoomSyncMiddleware: vi.fn(() => zoomSyncMiddleware),
+    createMenuIpcMiddleware: vi.fn(() => menuIpcMiddleware),
     createNotificationIpcMiddleware: vi.fn(() => notificationIpcMiddleware),
     createWebNotificationMiddleware: vi.fn(() => webNotificationMiddleware),
     createWorkspaceSettingsPersistenceMiddleware: vi.fn(
@@ -194,6 +198,7 @@ const mocks = vi.hoisted(() => {
     mcpManagementMiddleware,
     workspaceOperationsMiddleware,
     directoryPickerReadMiddleware,
+    legacyImportMiddleware,
     statsReadMiddleware,
     lifecycleReadMiddleware,
     lifecycleIpcReadMiddleware,
@@ -205,6 +210,7 @@ const mocks = vi.hoisted(() => {
     terminalPersistenceMiddleware,
     externalEditorsPersistenceMiddleware,
     zoomSyncMiddleware,
+    menuIpcMiddleware,
     notificationIpcMiddleware,
     webNotificationMiddleware,
     workspaceSettingsPersistenceMiddleware,
@@ -329,6 +335,9 @@ vi.mock("$features/workspace/workspace-operations-service", () => ({
 vi.mock("$features/onboarding/directory-picker-read-service", () => ({
   createDirectoryPickerReadMiddleware: mocks.createDirectoryPickerReadMiddleware,
 }));
+vi.mock("$features/settings/legacy-import-service", () => ({
+  createLegacyImportMiddleware: mocks.createLegacyImportMiddleware,
+}));
 vi.mock("$features/stats/stats-read-service", () => ({
   createStatsReadMiddleware: mocks.createStatsReadMiddleware,
 }));
@@ -361,6 +370,9 @@ vi.mock("./middlewares/external-editors-persistence-service", () => ({
 }));
 vi.mock("./middlewares/zoom-sync-service", () => ({
   createZoomSyncMiddleware: mocks.createZoomSyncMiddleware,
+}));
+vi.mock("./middlewares/menu-ipc-service", () => ({
+  createMenuIpcMiddleware: mocks.createMenuIpcMiddleware,
 }));
 vi.mock("./middlewares/notification-ipc-service", () => ({
   createNotificationIpcMiddleware: mocks.createNotificationIpcMiddleware,
@@ -493,6 +505,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
@@ -504,6 +517,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
@@ -568,6 +582,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
@@ -579,6 +594,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
@@ -643,6 +659,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
@@ -654,6 +671,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
@@ -719,6 +737,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
@@ -730,6 +749,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
@@ -812,6 +832,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.lifecycleReadMiddleware,
       mocks.lifecycleIpcReadMiddleware,
       mocks.directoryPickerReadMiddleware,
+      mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
@@ -823,6 +844,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.menuIpcMiddleware,
       mocks.notificationIpcMiddleware,
       mocks.webNotificationMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,

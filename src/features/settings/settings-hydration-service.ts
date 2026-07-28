@@ -37,10 +37,7 @@ import {
   setServers as setMcpServers,
 } from "$store/renderer/slices/mcp-settings/mcp-settings-slice";
 import type { McpServerConfig } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
-import {
-  loadProviderModelsFromStorage,
-  loadWorkspaceModelsFromStorage,
-} from "$store/renderer/slices/model/model-slice";
+import { loadProviderModelsFromStorage } from "$store/renderer/slices/model/model-slice";
 
 const logger = createLogger("SettingsHydrationService");
 
@@ -84,14 +81,6 @@ function applyOne(change: AppliedSettingChange): void {
       if (value && typeof value === "object") {
         appStore.dispatch(
           loadProviderModelsFromStorage(value as Record<string, string>),
-        );
-      }
-      return;
-    }
-    case "model.workspaceOverrides": {
-      if (value && typeof value === "object") {
-        appStore.dispatch(
-          loadWorkspaceModelsFromStorage(value as Record<string, string>),
         );
       }
       return;

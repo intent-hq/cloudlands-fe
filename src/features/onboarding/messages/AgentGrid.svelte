@@ -17,6 +17,7 @@
   import type { ProviderBrandColors } from './ProviderCard.svelte';
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
+  import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -40,6 +41,7 @@
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
 
   import { fly } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -80,6 +82,7 @@
     opencode: { color1: '#000', color2: '#1E1E1E' },
     droid: { color1: '#F0822F', color2: '#E55A2B' },
     grok: { color1: '#000000', color2: '#252525' },
+    unsloth: { color1: '#0FA47F', color2: '#106B55' },
     cortex: { color1: '#FFA2A3', color2: '#FFA2A3' },
   };
 
@@ -142,6 +145,12 @@
       loginCommand: 'grok login',
       docsUrl: 'https://docs.x.ai/build/overview',
     },
+    unsloth: {
+      // Unsloth runs local GGUF models through the opencode runtime — the
+      // daemon manages the local server; only the opencode CLI is needed.
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash',
+      docsUrl: 'https://docs.unsloth.ai',
+    },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
       loginCommand: 'cortex login',
@@ -152,14 +161,18 @@
   /** Randomized provider order computed once per component mount */
   const randomizedProviderOrder = shuffleArray(Object.values(ACP_PROVIDERS));
 
-  /** Visible providers (not hidden by env var / feature code gates) */
+  /** Visible providers (not hidden by env var / feature code gates),
+   *  tier-ordered (confirmed-logged-in → installed-not-logged-in-or-unknown →
+   *  not-installed) from the last-known statuses, preserving the mount-time
+   *  shuffle within each tier. Tier 1 requires `authenticated === true` — a
+   *  stricter bar than `isProviderReady`, which counts unknown auth as ready. */
   const visibleProviders = $derived.by(() => {
     const state = appStore.state;
     // Reactive reads from Redux selectors
     const statusMap = $providerStatusMap$;
     const loadingMap = $providerLoadingMap$;
     const hasCheckedOnce = $hasCheckedOnce$;
-    return randomizedProviderOrder
+    return orderOnboardingProviders(randomizedProviderOrder, statusMap)
       .filter((p) =>
         // Feature-code gate + env-var gate (via availability status, default-deny)
         isOnboardingProviderVisible({
@@ -289,6 +302,7 @@
     <div
       class="overflow-hidden transition-all flex flex-col flex-1 min-w-66"
       in:fly={{ y: 20, duration: 300, delay: i * 60 }}
+      animate:flip={{ duration: 300 }}
     >
       <ProviderCard
         {provider}

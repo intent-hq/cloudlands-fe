@@ -5,7 +5,7 @@
 import { store } from "../../store";
 import { createDefaultRuntimeState } from '$features/scripts/types';
 import type { ScriptWithState } from './scripts-types';
-import { emptyWorkspaceState } from './scripts-slice';
+import { emptyOutputBuffer, emptyWorkspaceState } from './scripts-slice';
 import type { StoreState } from '$store/renderer/types';
 
 function getActiveWs(state: StoreState) {
@@ -49,10 +49,10 @@ export const selectScriptRuntime = store.createSelector((state, scriptId: string
   return ws.scripts[scriptId]?.runtime ?? createDefaultRuntimeState();
 });
 
-/** Get output lines for a specific script (active workspace). */
+/** Get the raw-chunk output buffer for a specific script (active workspace). */
 export const selectScriptOutput = store.createSelector((state, scriptId: string) => {
   const ws = getActiveWs(state);
-  return ws.outputBuffers[scriptId] ?? [];
+  return ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
 });
 
 /** Scripts data for a specific workspace (parameterized). */

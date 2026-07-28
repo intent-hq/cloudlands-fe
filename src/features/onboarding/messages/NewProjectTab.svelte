@@ -11,6 +11,7 @@
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
+  import { pickDirectory } from '$lib/directory-picker-service';
 
   const logger = createLogger('NewProjectTab');
 
@@ -24,7 +25,8 @@
 
   // Submit/continue is handled by the unified button at the bottom of the
   // onboarding flow (see `+page.svelte`). This tab only collects data.
-  let { parentPath, projectName, nameError, onParentPathChange, onProjectNameChange }: Props = $props();
+  let { parentPath, projectName, nameError, onParentPathChange, onProjectNameChange }: Props =
+    $props();
 
   // Auto-focus the project name input when this tab becomes active. The
   // parent uses {#key activeTab}, so this component re-mounts on every tab
@@ -37,11 +39,15 @@
     projectNameInputRef?.select();
   });
 
-
   let pickerOpen = $state(false);
 
   function handleSelectParentFolder() {
-    pickerOpen = true;
+    void pickDirectory({
+      title: m.onboarding_newProjectTab_selectParentFolder_title(),
+      defaultPath: parentPath,
+      openModal: () => (pickerOpen = true),
+      onSelect: handlePickerSelect,
+    });
   }
 
   function handlePickerSelect(pickedPath: string) {

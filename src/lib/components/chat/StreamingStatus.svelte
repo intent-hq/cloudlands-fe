@@ -3,11 +3,7 @@
 
   Streaming status indicator:
   - Normal: Spinner with "Thinking"
-  - Stalled: Warning with status page link and Stop button (driven by chat sagas)
   - Error/Timeout: clear failed state with Try Again button
-
-  Stall detection is handled entirely by chat sagas (which have context about
-  running tools, stream start time, etc.) and surfaced via the `isStalled` prop.
 -->
 <script lang="ts">
   import { fade } from 'svelte/transition';
@@ -21,7 +17,7 @@
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import { Spinner } from '$lib/components/ui/indicators';
-  import { formatDuration } from './streaming-status-utils';
+  import { deriveErrorDisplay, formatDuration } from './streaming-status-utils';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -37,8 +33,11 @@
     streamingContentLength?: number;
     /** Error message if connection failed */
     error?: string | null;
-    /** Whether the stream appears stalled (no chunks received recently) */
-    isStalled?: boolean;
+    /**
+     * Daemon-derived corrupted-session flag (monorepo#940) — when true, the
+     * error surface shows recreate-aware copy instead of the raw error.
+     */
+    sessionCorrupted?: boolean;
     /** Model unavailable info - when set, shows retry with suggested model */
     modelUnavailable?: {
       failedModel: string;
@@ -56,8 +55,6 @@
     onRetryWithModel?: (model: string) => void;
     /** Callback to stop streaming */
     onStop?: () => void;
-    /** Display name of the model provider (e.g. "Claude Code") for contextual messages */
-    providerName?: string | null;
     /** Seed for spinner colors (typically agent ID) */
     seed?: string;
     /** Additional class names */
@@ -73,13 +70,11 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingContentLength = 0,
     error = null,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    isStalled = false,
+    sessionCorrupted = false,
     modelUnavailable = null,
     statusEvents = [],
     streamingStartTime = null,
     hasPendingPermission = false,
-    providerName = null,
     onRetry,
     onRetryWithModel,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -205,28 +200,13 @@
     return completed.reverse();
   });
 
-  // Provider status page URLs — used in stalled messages
-  const PROVIDER_STATUS_URLS: Record<string, string> = {
-    // i18n-ignore (brand names used as lookup keys)
-    'Augment Auggie': 'https://status.augmentcode.com/',
-    // i18n-ignore (brand names used as lookup keys)
-    'Anthropic Claude Code': 'https://status.anthropic.com/',
-    // i18n-ignore (brand names used as lookup keys)
-    'OpenAI Codex': 'https://status.openai.com/',
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let providerStatusUrl = $derived(
-    providerName ? (PROVIDER_STATUS_URLS[providerName] ?? null) : null,
-  );
 
   // Determine current status
-  type Status = 'normal' | 'stalled' | 'error' | 'model-unavailable';
+  type Status = 'normal' | 'error' | 'model-unavailable';
 
   let status: Status = $derived.by(() => {
     if (modelUnavailable) return 'model-unavailable';
     if (error) return 'error';
-    // if (isStalled) return 'stalled'; // All stall detection is handled by chat sagas
     return 'normal';
   });
 
@@ -236,29 +216,17 @@
     error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
 
-  // Whether we've received any streaming data — used to distinguish
-  // "no data" (network/provider unknown) from "mid-stream silence" (agent working)
-
-  // Status message - differentiated by whether we've received data:
-  // - No data: neutral messages (could be network, provider, or agent)
-  // - Has data: agent-specific messages (connection was working, agent is slow)
+  // Status message: the raw error when one is set, otherwise "Thinking"
   let statusMessage = $derived.by(() => {
     if (error) {
       return error;
     }
-
-    // if (status === 'stalled') {
-    //   if (hasReceivedData) {
-    //     return providerName
-    //       ? `Your model provider, ${providerName}, is taking longer than usual to respond.`
-    //       : 'Agent is taking longer than usual to respond.';
-    //   } else {
-    //     return 'No response received. Check your network connection or try again.';
-    //   }
-    // }
-
     return m.chat_streamingStatus_thinking_label();
   });
+
+  // Error surface copy: recreate-aware when the daemon flagged the session
+  // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
+  let errorDisplay = $derived(deriveErrorDisplay(error, sessionCorrupted));
 </script>
 
 {#if visible}
@@ -285,11 +253,14 @@
               class="px-1 py-0.5 bg-muted rounded text-ui">{modelUnavailable.failedModel}</code
             > {m.chat_streamingStatus_modelUnavailable_after()}
           </span>
-        {:else if status === 'error' && error}
+        {:else if status === 'error' && errorDisplay}
           <Fa icon={faExclamationTriangle} class="text-destructive-foreground/70 shrink-0" />
           <div class="flex flex-col gap-0.5">
-            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title">{m.chat_streamingStatus_responseFailed_label()}</span>
-            <span class="text-destructive-foreground text-sm" data-testid="error-message">{statusMessage}</span>
+            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title">{errorDisplay.title}</span>
+            <span class="text-destructive-foreground text-sm" data-testid="error-message">{errorDisplay.message}</span>
+            {#if errorDisplay.detail}
+              <span class="text-destructive-foreground/60 text-xs" data-testid="error-detail">{errorDisplay.detail}</span>
+            {/if}
           </div>
         {:else}
           <!-- Normal - show spinner -->

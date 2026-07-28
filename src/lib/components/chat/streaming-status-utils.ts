@@ -1,3 +1,5 @@
+import { m } from '$shared/paraglide/messages.js';
+
 /**
  * Format duration with human-readable units:
  * - Under 10s: 'Xs' or 'X.Xs' (skip .0)
@@ -95,3 +97,48 @@ export function shouldAppendStreamingEvent(
   return true;
 }
 
+/** Copy for the corrupted-session error surface (monorepo#940). */
+export const SESSION_CORRUPTED = {
+  get title() {
+    return m.chat_streamingStatus_sessionCorrupted_title();
+  },
+  get message() {
+    return m.chat_streamingStatus_sessionCorrupted_message();
+  },
+};
+
+export interface ErrorDisplay {
+  corrupted: boolean;
+  title: string;
+  message: string;
+  /** Raw error text demoted to secondary detail when corrupted copy replaces it. */
+  detail: string | null;
+}
+
+/**
+ * Derive the error surface copy from the raw error text and the daemon's
+ * derived sessionCorrupted flag (monorepo#940). When the flag is absent/false
+ * the result matches the pre-existing rendering exactly (title "Response
+ * failed", the raw error as the message); when corrupted, distinct
+ * recreate-aware copy is shown and the raw error becomes secondary detail.
+ */
+export function deriveErrorDisplay(
+  error: string | null | undefined,
+  sessionCorrupted?: boolean,
+): ErrorDisplay | null {
+  if (!error) return null;
+  if (sessionCorrupted === true) {
+    return {
+      corrupted: true,
+      title: SESSION_CORRUPTED.title,
+      message: SESSION_CORRUPTED.message,
+      detail: error,
+    };
+  }
+  return {
+    corrupted: false,
+    title: m.chat_streamingStatus_responseFailed_label(),
+    message: error,
+    detail: null,
+  };
+}

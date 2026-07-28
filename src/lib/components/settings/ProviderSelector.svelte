@@ -125,6 +125,7 @@
     opencode: { docsUrl: 'https://opencode.ai/docs#install', requiresAuth: false },
     droid: { docsUrl: 'https://docs.factory.ai/cli/getting-started/overview', requiresAuth: false },
     grok: { docsUrl: 'https://docs.x.ai/build/overview', requiresAuth: false },
+    unsloth: { docsUrl: 'https://docs.unsloth.ai', requiresAuth: false },
     cortex: {
       docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex',
       requiresAuth: false,
@@ -141,6 +142,7 @@
     opencode: 'opencode',
     droid: 'droid',
     grok: 'grok',
+    unsloth: 'unsloth',
     cortex: 'cortex',
     pi: 'pi',
   };
@@ -573,6 +575,8 @@
 
     {@render skeleton('grok')}
 
+    {@render skeleton('unsloth')}
+
     {#if providerAvailability && !providerAvailability.hiddenProviders?.includes('cortex')}
       {@render skeleton('cortex')}
     {/if}
@@ -765,7 +769,7 @@
                 <ProviderPathConfig
                   providerId={provider.id}
                   providerName={provider.name}
-                  cliCommand={provider.command}
+                  cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
                   configuredPath={providerPaths[provider.id]}
                   resolvedPath={resolvedPaths[provider.id]}
                   isInstalled={provider.available}
@@ -966,6 +970,9 @@
       </svg>
     {:else if providerId === 'grok'}
       <GrokLogo class="size-5" size={20} />
+    {:else if providerId === 'unsloth'}
+      <!-- Unsloth's brand mark is the sloth emoji (per their brand guidelines) -->
+      <span class="size-5 inline-flex items-center justify-center leading-none text-lg">🦥</span>
     {:else if providerId === 'cortex'}
       <svg
         class="size-5"

@@ -1,8 +1,24 @@
 import {
+  beforeAll,
   describe,
   it,
   expect,
+  vi,
 } from "vitest";
+
+// FAKE seam: `$lib/client` is stubbed so importing `dispatchSpecialistList`
+// (which imports the AppClient singleton) never constructs the live client.
+vi.mock("$lib/client", () => ({
+  appClient: {
+    specialists: {
+      create: vi.fn(),
+      edit: vi.fn(),
+      delete: vi.fn(),
+      list: vi.fn(() => Promise.resolve([])),
+    },
+  },
+}));
+
 import {
   filterSpecialistsByGitHubAuth,
   filterPickableSpecialists,
@@ -17,12 +33,17 @@ import {
   selectSpecialistsFolderPath,
   selectHasOverrides,
   selectEffectiveCodingAgent,
+  selectEffectiveModel,
   selectSpecialistSourceLabel,
 } from "./specialists-selectors";
 import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
 import { initialState } from "./specialists-slice";
 import type { StoreState } from "../../types";
 import { SPECIALISTS } from "$lib/constants/specialists";
+import { PROVIDER_MODEL_TIERS } from "$shared/config/provider-config";
+import { store as appStore } from "$store/renderer/store";
+import { dispatchSpecialistList } from "../../../../features/specialists/specialists-mutation-service";
+import type { SpecialistDef } from "$lib/client/app-client";
 
 /**
  * Create a minimal mock StoreState with specialists slice populated.
@@ -351,6 +372,58 @@ describe("specialists selectors", () => {
       expect(() => selectEffectiveCodingAgent.select(state, "nonexistent-specialist")).not.toThrow();
       const result = selectEffectiveCodingAgent.select(state, "nonexistent-specialist");
       expect(result).toBe("auggie");
+    });
+  });
+
+  describe("selectEffectiveModel precedence (model before tier)", () => {
+    // These tests ingest PROTOCOL §5.11-shaped `specialist.list` defs through
+    // the REAL configured store via `dispatchSpecialistList`, mirroring the
+    // daemon's model-first precedence (`resolve_model`).
+    beforeAll(() => appStore.init());
+
+    it("returns the explicit model when a user-tier def carries both model and an inherited modelTier", () => {
+      // The daemon inherits `modelTier` from the bundled parent when the user
+      // file omits it, so the wire def carries BOTH the explicit compound
+      // model AND modelTier: "smart". The explicit model must win.
+      const userDef: SpecialistDef = {
+        id: "implementor",
+        name: "Implementor",
+        description: "Executes implementation tasks, writes code",
+        model: "claude-code:opus-custom",
+        modelTier: "smart",
+        behaviorPrompt: "You implement.",
+        source: "user",
+        path: "/Users/test/.intent/specialists/implementor.md",
+      };
+      dispatchSpecialistList([userDef]);
+
+      expect(selectEffectiveModel.select(appStore.state, "implementor")).toBe(
+        "claude-code:opus-custom",
+      );
+    });
+
+    it("still resolves tier-only specialists via PROVIDER_MODEL_TIERS", () => {
+      const tierOnlyDef: SpecialistDef = {
+        id: "tier-only-custom",
+        name: "Tier Only",
+        description: "custom tier-only specialist",
+        modelTier: "smart",
+        behaviorPrompt: "prompt",
+        source: "user",
+        path: "/Users/test/.intent/specialists/tier-only-custom.md",
+      };
+      dispatchSpecialistList([tierOnlyDef]);
+
+      // Active provider is the default (auggie), so the tier resolves to a
+      // bare model ID without a provider prefix.
+      expect(selectEffectiveModel.select(appStore.state, "tier-only-custom")).toBe(
+        PROVIDER_MODEL_TIERS["auggie"].smart,
+      );
+      // Bundled specialists carrying only a tier (e.g. verifier: smart) also
+      // resolve via the tier mapping.
+      expect(selectEffectiveModel.select(appStore.state, "verifier")).toBe(
+        PROVIDER_MODEL_TIERS["auggie"].smart,
+      );
     });
   });
 });

@@ -609,7 +609,7 @@ function parseWorkspaceApiResult(
   const code = input.code as string;
   // Match ws.<namespace>.method() to determine the operation type
   const wsMatch = code.match(
-    /ws\.(note|comment|task|agent|git|workspace|event|script|browser|terminal|file|pr|primitive|crossWorkspace)\.(\w+)/,
+    /ws\.(app|note|comment|task|agent|git|workspace|event|script|browser|terminal|file|pr|primitive|crossWorkspace)\.(\w+)/,
   );
   if (!wsMatch) {
     // No recognizable ws.* call — show as confirmation with content
@@ -619,6 +619,10 @@ function parseWorkspaceApiResult(
   const [, namespace, method] = wsMatch;
 
   switch (namespace) {
+    case 'app':
+      // ws.app.question.ask (and future app-surface calls) → confirmation with result text
+      return { type: 'confirmation' as const, content: resultText || undefined };
+
     case 'note':
       if (method === 'read' || method === 'readAsset') {
         return parseNoteReadResult(input, resultText);

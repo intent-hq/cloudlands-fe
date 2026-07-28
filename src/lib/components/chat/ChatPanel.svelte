@@ -94,7 +94,6 @@
 } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
   selectChatError,
-  selectChatIsStalled,
   selectChatLastChunkTime,
   selectChatModelUnavailable,
   selectChatReceivedFirstChunk,
@@ -136,7 +135,7 @@
   import QuestionWizard, {
   type QuestionAnswer,
 } from './questions/QuestionWizard.svelte';
-  import { derivePendingQuestions } from './questions/pending-questions';
+  import { deriveWizardPendingQuestions } from './questions/wizard-gate';
   import { flattenAnswersToMessage } from './questions/answer-message';
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
@@ -194,6 +193,8 @@
   import { getAgentProvider } from '$shared/types/agent-session';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
+  import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import { getModelChangeNotice } from './model-change-notice';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
   shouldShowEndOfListStreamingStatus,
@@ -319,7 +320,6 @@
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
-  const chatIsStalled$ = selectChatIsStalled(agentIdStore);
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
   const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
@@ -343,6 +343,14 @@
     }
     return null;
   });
+
+  // monorepo#940: the daemon flags the parked error session as corrupted —
+  // Retry will recreate the provider session instead of resuming, so the error
+  // surface shows recreate-aware copy. Absent flag (older daemons / ordinary
+  // errors) renders exactly as before.
+  const effectiveSessionCorrupted = $derived(
+    $agentSession$?.status === AgentStatus.Error && $agentSession$?.sessionCorrupted === true,
+  );
 
   // Track if there's a pending permission request for this agent
   // When a permission is pending, we hide the "Thinking" indicator since the permission UI shows instead
@@ -467,10 +475,23 @@
   // user message (and not streaming) replace the composer with the sequential
   // wizard. Derivation is purely transcript-based (wire contract), so
   // restored sessions re-surface unanswered questions automatically.
+  // The gate (own active turn, NOT the broad running gate — an agent paused
+  // on delegated agents has ended its turn and its questions must surface)
+  // lives in deriveWizardPendingQuestions so the regression suite exercises
+  // the real production gate.
   const pendingQuestions = $derived.by(() => {
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
-    return derivePendingQuestions($agentMessages$, $agentIsRunning$, showingPendingUserMessage);
+    // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
+    // that do not change the transcript; the shared helper re-reads the same
+    // value from store state.
+    void $agentIsResponding$;
+    return deriveWizardPendingQuestions(
+      appStore.state,
+      agentId,
+      $agentMessages$,
+      showingPendingUserMessage,
+    );
   });
 
   // Ignore = collapse, not dismiss — transient component state, never
@@ -1292,7 +1313,8 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Provider/model lock — prevents changing provider or model after any message
+  // Once the conversation has started, provider/model switches require a
+  // confirmation dialog (mid-conversation switch warning) instead of a lock.
   let canChangeProvider = $derived(
     resolveCanChangeAgentProvider({
       session: $agentSession$ ?? null,
@@ -1418,6 +1440,8 @@
   interface ConversationTurn {
     userMessage: AgentMessage | null;
     assistantMessages: AgentMessage[];
+    /** Daemon-persisted model-change notice rows (after the user row, before assistant output) */
+    noticeMessages: AgentMessage[];
   }
 
   function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
@@ -1430,13 +1454,21 @@
         if (currentTurn) {
           turns.push(currentTurn);
         }
-        currentTurn = { userMessage: message, assistantMessages: [] };
+        currentTurn = { userMessage: message, assistantMessages: [], noticeMessages: [] };
       } else if (message.role === 'assistant') {
         if (currentTurn) {
           currentTurn.assistantMessages.push(message);
         } else {
           // Orphan assistant message (no preceding user message)
-          turns.push({ userMessage: null, assistantMessages: [message] });
+          turns.push({ userMessage: null, assistantMessages: [message], noticeMessages: [] });
+        }
+      } else if (getModelChangeNotice(message)) {
+        // Model-change transcript notice (non-user/non-assistant role) —
+        // rendered inline within its turn as a centered divider
+        if (currentTurn) {
+          currentTurn.noticeMessages.push(message);
+        } else {
+          turns.push({ userMessage: null, assistantMessages: [], noticeMessages: [message] });
         }
       }
     }
@@ -3128,7 +3160,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
-                        isStalled={$chatIsStalled$}
+                        sessionCorrupted={effectiveSessionCorrupted}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
@@ -3152,7 +3184,7 @@
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
-                      isStalled={$chatIsStalled$}
+                      sessionCorrupted={effectiveSessionCorrupted}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
@@ -3232,7 +3264,7 @@
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
-                        isStalled={$chatIsStalled$}
+                        sessionCorrupted={effectiveSessionCorrupted}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
@@ -3256,7 +3288,7 @@
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
-                      isStalled={$chatIsStalled$}
+                      sessionCorrupted={effectiveSessionCorrupted}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
@@ -3285,7 +3317,7 @@
                 receivedFirstChunk={$chatReceivedFirstChunk$}
                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
                 error={effectiveError}
-                isStalled={$chatIsStalled$}
+                sessionCorrupted={effectiveSessionCorrupted}
                 modelUnavailable={$chatModelUnavailable$}
                 {hasPendingPermission}
                 onRetry={handleRetry}
@@ -3468,6 +3500,19 @@
                         </div>
                       {/if}
 
+                      <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
+                      {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
+                        {@const notice = getModelChangeNotice(noticeMessage)}
+                        {#if notice}
+                          <div data-message-id={noticeMessage.id} class="px-2">
+                            <ModelChangeNotice
+                              {notice}
+                              fallbackText={extractAllContent(noticeMessage) || undefined}
+                            />
+                          </div>
+                        {/if}
+                      {/each}
+
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
                       {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ }, )}
                         <div class="mb-8">
@@ -3478,7 +3523,7 @@
                             receivedFirstChunk={$chatReceivedFirstChunk$}
                             streamingContentLength={$chatStreamingContent$?.length ?? 0}
                             error={effectiveError}
-                            isStalled={$chatIsStalled$}
+                            sessionCorrupted={effectiveSessionCorrupted}
                             modelUnavailable={$chatModelUnavailable$}
                             {hasPendingPermission}
                             onRetry={handleRetry}
@@ -3535,7 +3580,7 @@
                               receivedFirstChunk={$chatReceivedFirstChunk$}
                               streamingContentLength={$chatStreamingContent$?.length ?? 0}
                               error={effectiveError}
-                              isStalled={$chatIsStalled$}
+                              sessionCorrupted={effectiveSessionCorrupted}
                               modelUnavailable={$chatModelUnavailable$}
                               {hasPendingPermission}
                               onRetry={handleRetry}
@@ -3582,7 +3627,7 @@
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
                   error={effectiveError}
-                  isStalled={$chatIsStalled$}
+                  sessionCorrupted={effectiveSessionCorrupted}
                   modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}
                   onRetry={handleRetry}
@@ -3747,7 +3792,7 @@
         selectedModel={hydratedInputModel}
         compactMode={isCompactMode}
         editorClassName={isChiefWorkspace ? 'px-1.5!' : 'px-2!'}
-        isProviderChangeLocked={!canChangeProvider}
+        requiresModelSwitchConfirmation={!canChangeProvider}
         providerId={inputProviderId}
       />
     {/if}

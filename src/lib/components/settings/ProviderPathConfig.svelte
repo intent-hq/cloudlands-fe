@@ -6,10 +6,7 @@
    * a provider's CLI executable path. Designed for the Integrations > Providers section.
    */
   import { appClient } from '$lib/client';
-  import {
-  faFolder,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faFolder, faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
@@ -23,7 +20,14 @@
     providerId: string;
     /** Provider display name */
     providerName: string;
-    /** CLI command name (e.g., 'auggie', 'claude-agent-acp') */
+    /**
+     * CLI command name (e.g., 'auggie', 'claude-agent-acp') shown in the
+     * placeholder text. Callers whose configured path resolves a different
+     * binary than the provider's ACP runtime (e.g. unsloth, which configures
+     * the `unsloth` CLI even though its ACP runtime is `opencode`) should
+     * pass that binary's name here so the placeholder stays coherent with
+     * `providerName` in the header.
+     */
     cliCommand: string;
     /** Current configured path (empty if auto-detected) */
     configuredPath?: string;

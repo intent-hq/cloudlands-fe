@@ -31,7 +31,6 @@ import {
   chatStopCompleted,
   chatReset,
   chatStreamingReconciled,
-  chatStuckStateCleared,
   chatInitialized,
   streamCompleted,
   streamTimedOut,
@@ -257,6 +256,7 @@ type CanonicalAgentSessionUpdates = {
   isProcessing?: boolean;
   isResponding?: boolean;
   stopReason?: string | null;
+  sessionCorrupted?: boolean;
   lastAgentResponse?: string;
   processQueueHint?: AgentSession['processQueueHint'];
 };
@@ -290,6 +290,14 @@ function canonicalSessionUpdates(
   // agent:status-changed arrives without a stopReason field.
   if (Object.prototype.hasOwnProperty.call(fields, 'stopReason')) {
     updates.stopReason = fields.stopReason;
+  }
+  // sessionCorrupted is omitted-when-false on the wire (monorepo#940): apply
+  // it when present, and clear any stale flag on a status transition that
+  // arrives without it (e.g. after agent.retry recreates the provider session).
+  if (fields.sessionCorrupted === true) {
+    updates.sessionCorrupted = true;
+  } else if (fields.status !== null && fields.status !== undefined) {
+    updates.sessionCorrupted = false;
   }
   if (typeof fields.lastResponseSummary === 'string' && fields.lastResponseSummary.trim()) {
     updates.lastAgentResponse = fields.lastResponseSummary;
@@ -486,6 +494,7 @@ type SessionComparisonSnapshot = Pick<
   | 'activationState'
   | 'isActive'
   | 'stopReason'
+  | 'sessionCorrupted'
 > & {
   messageCount: number;
   lastMessageId: AgentMessage['id'] | undefined;
@@ -515,6 +524,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     activationState: session.activationState,
     isActive: session.isActive,
     stopReason: session.stopReason,
+    sessionCorrupted: session.sessionCorrupted,
     messageCount: messages.length,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
     // The daemon can append trailing blocks to an already-stored message
@@ -1043,13 +1053,6 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     }),
   )
   .with(streamTimedOut, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, {
-      isStreaming: false,
-      isProcessing: false,
-      isResponding: false,
-    }),
-  )
-  .with(chatStuckStateCleared, (state, { payload: [agentId] }) =>
     updateSessionFields(state, agentId, {
       isStreaming: false,
       isProcessing: false,

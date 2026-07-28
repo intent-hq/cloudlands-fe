@@ -76,6 +76,62 @@ function userMessage(metadata?: Record<string, unknown>): AgentMessage {
   };
 }
 
+function userTextMessage(text: string): AgentMessage {
+  return {
+    id: 'msg-1',
+    role: 'user',
+    contentBlocks: [{ type: 'text', text }],
+    timestamp: new Date('2026-01-01T12:00:00Z'),
+  };
+}
+
+describe('ChatMessage user message text rendering', () => {
+  it('renders multi-line text with no leading whitespace before the first character', () => {
+    const { container } = render(ChatMessage, {
+      props: { message: userTextMessage('Q: q1\nA: a1') },
+    });
+
+    // The element(s) applying whitespace-pre-wrap must contain exactly the
+    // message text — no template whitespace text nodes rendered under pre-wrap.
+    const preWrapEls = Array.from(container.querySelectorAll('.whitespace-pre-wrap')).filter(
+      (el) => el.textContent?.includes('Q: q1'),
+    );
+    expect(preWrapEls.length).toBeGreaterThan(0);
+    for (const el of preWrapEls) {
+      expect(el.textContent).toBe('Q: q1\nA: a1');
+    }
+  });
+
+  it('preserves internal newlines of the message text', () => {
+    const { container } = render(ChatMessage, {
+      props: { message: userTextMessage('line one\nline two') },
+    });
+
+    const span = Array.from(container.querySelectorAll('span')).find(
+      (el) => el.textContent === 'line one\nline two',
+    );
+    expect(span).toBeTruthy();
+    expect(span!.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('still renders inline mention chips alongside text segments', () => {
+    const { container } = render(ChatMessage, {
+      props: { message: userTextMessage('see @note/spec now') },
+    });
+
+    // Mention chip renders as a button
+    const chip = Array.from(container.querySelectorAll('button')).find((el) =>
+      el.textContent?.includes('spec'),
+    );
+    expect(chip).toBeTruthy();
+
+    // Surrounding text segments keep their message-internal whitespace
+    const spans = Array.from(container.querySelectorAll('span.whitespace-pre-wrap'));
+    expect(spans.some((el) => el.textContent === 'see ')).toBe(true);
+    expect(spans.some((el) => el.textContent === ' now')).toBe(true);
+  });
+});
+
 describe('ChatMessage agent-to-agent sender attribution', () => {
   beforeEach(() => {
     dispatchMock.mockClear();

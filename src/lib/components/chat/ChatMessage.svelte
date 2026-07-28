@@ -16,6 +16,8 @@
   import { extractAllContent } from '$shared/types';
   import RulesInspector from './RulesInspector.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
+  import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import { getModelChangeNotice } from './model-change-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { slide } from 'svelte/transition';
   import type { ContextItem } from './input/context-api';
@@ -202,6 +204,9 @@
         : (String(message.role).toLowerCase() as 'user' | 'assistant' | 'system')
       : 'assistant',
   );
+
+  // Daemon-persisted model-change transcript row (metadata type "model_changed")
+  let modelChangeNotice = $derived(getModelChangeNotice(message));
 
   let shouldShowStoppedIndicator = $derived.by(() => {
     return resolveShouldShowStoppedIndicator({
@@ -917,6 +922,9 @@
 {#if !message}
   <!-- Guard against null message prop -->
   <div class="text-subtle text-sm p-2">{m.chat_chatMessage_loading_label()}</div>
+{:else if modelChangeNotice}
+  <!-- Daemon-persisted model-change notice row - centered inline divider -->
+  <ModelChangeNotice notice={modelChangeNotice} fallbackText={extractAllContent(message) || undefined} />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
@@ -980,7 +988,7 @@
 
           <!-- Message content - line-clamp-6 -->
           <div
-            class="leading-normal text-subtle whitespace-pre-wrap select-text line-clamp-6 {onEditSubmit &&
+            class="leading-normal text-subtle select-text line-clamp-6 {onEditSubmit &&
             !agentAttribution
               ? 'cursor-pointer'
               : 'cursor-text'}"
@@ -1019,7 +1027,7 @@
             <!-- Render text with inline @mentions as chips -->
             {#each parsedMessage.segments as segment, i (i)}
               {#if segment.type === 'text'}
-                <span>{segment.content}</span>
+                <span class="whitespace-pre-wrap">{segment.content}</span>
               {:else if segment.type === 'mention'}
                 {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
                   segment.mentionType,

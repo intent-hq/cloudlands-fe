@@ -33,21 +33,32 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
+  import Portal from '$lib/components/ui/Portal.svelte';
   import {
     selectDaemonHealth,
     selectDaemonHealthStats,
     selectDaemonHealthLastUpdated,
+    selectUnslothStatus,
+    selectUnslothStopping,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
-  import { pollSystemStatus } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import {
+    pollSystemStatus,
+    pollUnslothStatus,
+    stopUnslothRequested,
+  } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { store as appStore } from '$store/renderer/store';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
   const stats$ = selectDaemonHealthStats();
   const lastUpdated$ = selectDaemonHealthLastUpdated();
+  const unslothStatus$ = selectUnslothStatus();
+  const unslothStopping$ = selectUnslothStopping();
 
   let dropdownOpen = $state(false);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
+  let stopUnslothDialogOpen = $state(false);
 
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
@@ -105,6 +116,7 @@
   $effect(() => {
     if (dropdownOpen) {
       appStore.dispatch(pollSystemStatus());
+      appStore.dispatch(pollUnslothStatus());
     }
   });
 
@@ -120,6 +132,7 @@
       const interval = setInterval(() => {
         if ($health$ !== 'down') {
           appStore.dispatch(pollSystemStatus());
+          appStore.dispatch(pollUnslothStatus());
         }
         liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
       }, 1000);
@@ -132,6 +145,27 @@
       liveUptimeSeconds = undefined;
     }
   });
+
+  // Short model label for the unsloth row: the repo name without the org
+  // prefix (e.g. "unsloth/Qwen3-4B-GGUF" → "Qwen3-4B-GGUF").
+  const unslothModelLabel = $derived(
+    $unslothStatus$?.repoId ? ($unslothStatus$.repoId.split('/').pop() ?? $unslothStatus$.repoId) : '',
+  );
+
+  const stopUnslothDescription = $derived.by(() => {
+    const count = $unslothStatus$?.attachedAgentCount ?? 0;
+    const model = $unslothStatus$?.repoId ?? m.layout_daemonStatus_unslothFallbackModel_label();
+    if (count > 0) {
+      return count === 1
+        ? m.layout_daemonStatus_stopUnslothAttached_one({ count, model })
+        : m.layout_daemonStatus_stopUnslothAttached_many({ count, model });
+    }
+    return m.layout_daemonStatus_stopUnslothIdle_description({ model });
+  });
+
+  function confirmStopUnsloth() {
+    appStore.dispatch(stopUnslothRequested());
+  }
 </script>
 
 <DropdownMenu align="end" side="bottom" bind:open={dropdownOpen} contentClass="px-0" portal={true}>
@@ -280,8 +314,115 @@
               {m.layout_daemonStatus_noStats_label()}
             </div>
           {/if}
+
+          <!-- Managed Unsloth server (only when one is running) -->
+          {#if $unslothStatus$?.running}
+            <div class="h-px bg-border my-1"></div>
+
+            <Header class="pt-1 pb-0.5" size={6}>{m.layout_daemonStatus_unslothServer_header()}</Header>
+
+            <!-- Model (HF repo id, shortened) -->
+            {#if $unslothStatus$.repoId}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">{m.layout_daemonStatus_model_label()}</span>
+                <Tooltip side="left">
+                  {#snippet content()}
+                    <span>{$unslothStatus$.repoId}</span>
+                  {/snippet}
+                  <span class="font-mono text-xs truncate max-w-32">{unslothModelLabel}</span>
+                </Tooltip>
+              </div>
+            {/if}
+
+            <!-- Phase -->
+            {#if $unslothStatus$.phase}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">{m.layout_daemonStatus_phase_label()}</span>
+                <span
+                  class={cn(
+                    'font-mono text-xs',
+                    $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-yellow-500',
+                  )}
+                >
+                  {$unslothStatus$.phase}
+                </span>
+              </div>
+            {/if}
+
+            <!-- Port -->
+            {#if $unslothStatus$.port !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">{m.layout_daemonStatus_port_label()}</span>
+                <span class="font-mono text-xs">{$unslothStatus$.port}</span>
+              </div>
+            {/if}
+
+            <!-- Uptime -->
+            {#if $unslothStatus$.uptimeSecs !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
+                <span class="font-mono text-xs" aria-live="off">{formatUptime($unslothStatus$.uptimeSecs)}</span>
+              </div>
+            {/if}
+
+            <!-- CPU (process tree) -->
+            {#if $unslothStatus$.cpuPercent !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
+                <span class="font-mono text-xs" aria-live="off">{formatCpu($unslothStatus$.cpuPercent)}</span>
+              </div>
+            {/if}
+
+            <!-- Memory (process tree) -->
+            {#if $unslothStatus$.memoryBytes !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
+                <span class="font-mono text-xs" aria-live="off">{formatMemory($unslothStatus$.memoryBytes)}</span>
+              </div>
+            {/if}
+
+            <!-- Attached agents (omitted when the agent manager is not attached) -->
+            {#if $unslothStatus$.attachedAgentCount !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">{m.layout_daemonStatus_attachedAgents_label()}</span>
+                <span class="font-mono text-xs">{$unslothStatus$.attachedAgentCount}</span>
+              </div>
+            {/if}
+
+            <!-- Stop action -->
+            <button
+              class="w-full text-left text-xs text-red-500 hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+              disabled={$unslothStopping$}
+              onclick={() => {
+                dropdownOpen = false;
+                stopUnslothDialogOpen = true;
+              }}
+            >
+              {$unslothStopping$
+                ? m.layout_daemonStatus_stopUnsloth_stopping_label()
+                : m.layout_daemonStatus_stopUnsloth_action_label()}
+            </button>
+          {/if}
         </div>
       {/if}
     </div>
   {/snippet}
 </DropdownMenu>
+
+<!--
+  Portaled to the document body (same pattern as EditRegenerateConfirmDialog)
+  so the fixed-position overlay escapes the title-bar region's containing
+  block — rendered inline it gets clipped inside the title bar.
+-->
+{#if stopUnslothDialogOpen}
+  <Portal target="body" zIndex={100}>
+    <BulkActionConfirmDialog
+      bind:open={stopUnslothDialogOpen}
+      title={m.layout_daemonStatus_stopUnsloth_title()}
+      description={stopUnslothDescription}
+      confirmText={m.layout_daemonStatus_stopUnsloth_confirm_label()}
+      variant="destructive"
+      onConfirm={confirmStopUnsloth}
+    />
+  </Portal>
+{/if}

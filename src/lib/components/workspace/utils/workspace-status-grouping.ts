@@ -1,16 +1,12 @@
-import type { Workspace } from '$shared/types';
+import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
 
 /**
- * Display status for a workspace, derived from PR/task state.
- * Canonical type used by WorkspaceStatusIcon and sidebar grouping.
+ * Display status for a workspace (BE-owned or derived from PR/task state).
+ * Re-exported from the canonical wire definition in `$shared/types`
+ * (`WORKSPACE_DISPLAY_STATUS_VALUES`) so component consumers keep importing
+ * from here.
  */
-export type WorkspaceDisplayStatus =
-  | 'not_started'
-  | 'in_progress'
-  | 'complete'
-  | 'pr_ready'
-  | 'pr_open'
-  | 'pr_merged';
+export type { WorkspaceDisplayStatus } from '$shared/types';
 
 /**
  * Grouping status for sidebar status view — extends WorkspaceDisplayStatus with 'idle'.

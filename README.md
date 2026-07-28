@@ -37,15 +37,22 @@ SvelteKit renderer  <->  AppClient (JSON-RPC boundary)  <->  intentd daemon
 of the monorepo:
 
 ```bash
-# Clone the monorepo with submodules
-git clone --recurse-submodules https://github.com/intent-hq/monorepo.git
+git clone https://github.com/intent-hq/monorepo.git
+cd monorepo
 
-# …or, in an existing monorepo checkout, initialize just this submodule
-git submodule update --init packages/cloudlands-fe
+# Initialize this submodule (some sibling submodules are still private,
+# so initialize selectively rather than cloning with --recurse-submodules)
+git submodule update --init --recursive packages/cloudlands-fe
 
 cd packages/cloudlands-fe
 pnpm install
+pnpm run dev
 ```
+
+Without a staged `intentd` sidecar, `pnpm run dev` falls back to the mock
+AppClient. For the full stack, run `make dev` from the monorepo root, which
+builds `intentd` and launches the app with it as a sidecar (see
+[intentd sidecar pin](#intentd-sidecar-pin)).
 
 ### Standalone
 
@@ -56,6 +63,7 @@ mock AppClient when no daemon is present):
 git clone https://github.com/intent-hq/cloudlands-fe.git
 cd cloudlands-fe
 pnpm install
+pnpm run dev
 ```
 
 ## Commands
@@ -66,7 +74,7 @@ Use `pnpm` (not `npm`). The following scripts are defined in `package.json`:
 pnpm install            # Install dependencies
 pnpm run dev            # Start the app in development (Vite + Electron)
 pnpm run build          # Production build (renderer, main, preload)
-pnpm run check          # svelte-check + TypeScript checks
+pnpm run check          # svelte-check (Svelte + TypeScript diagnostics)
 pnpm run lint           # ESLint
 pnpm run format         # Prettier (write)
 pnpm run test:unit      # Vitest unit suite
@@ -85,9 +93,9 @@ matching a `vX.Y.Z` / `vX.Y.Z-beta.N` tag on
 - **Fetching the pinned sidecar**: `node scripts/fetch-sidecar.cjs` downloads the
   cargo-dist release asset for the current platform/arch, verifies its sha256
   against the release's `.sha256` asset, and stages the binary at
-  `resources/sidecar/intentd[.exe]`. While the intentd repo is private, set
-  `INTENTD_READ_PAT` (or `GH_TOKEN`/`GITHUB_TOKEN`) to a token with read access.
-  The script is idempotent; use `--force` to re-fetch.
+  `resources/sidecar/intentd[.exe]`. A GitHub token with read access
+  (`INTENTD_READ_PAT`, or `GH_TOKEN`/`GITHUB_TOKEN`) is only needed while the
+  intentd repo is private. The script is idempotent; use `--force` to re-fetch.
 - **Local dev builds**: `scripts/copy-sidecar.cjs` still stages a locally built
   binary from `packages/intentd/target/release` (`make build-sidecar` /
   `make dev` in the monorepo).
@@ -134,6 +142,13 @@ Key references under [`docs/`](./docs):
   safety conventions.
 - [EVENT_SYSTEM.md](./docs/EVENT_SYSTEM.md) — the unified event system.
 
+## Reporting issues
+
+Bug reports and feature requests for all Intent components — including this
+frontend — are tracked centrally on the
+[intent-hq/monorepo issue tracker](https://github.com/intent-hq/monorepo/issues),
+not on this repository.
+
 ## Network & privacy
 
 The desktop app is local-first and ships **no telemetry or analytics** —
@@ -166,3 +181,8 @@ Sentry), and the sitter self-update — are documented in the
 This repository is the frontend **ported from the prior Electron app** and
 wired to the `intentd` daemon through the AppClient JSON-RPC boundary. It
 **replaces the earlier Tauri v2 prototype** that previously occupied this repo.
+
+## License
+
+Licensed under the [Apache License 2.0](./LICENSE). See [NOTICE](./NOTICE) for
+attribution and lineage details.

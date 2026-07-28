@@ -23,8 +23,10 @@
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import TaskStatusIndicator from '$lib/components/workspace/TaskStatusIndicator.svelte';
+  import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import TaskAgentStatus from '$lib/components/tiptap/TaskAgentStatus.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
     type MenuAction,
@@ -268,6 +270,19 @@
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
+
+  // Agent-authored status screenshot (intent-hq/monorepo#997). Content-addressed
+  // asset id served via the workspace-asset:// protocol; a failed load hides the
+  // image until the asset id changes (the URL comparison resets naturally).
+  const statusImageUrl = $derived(
+    $workspace?.statusImageAssetId
+      ? `workspace-asset://${$workspace.id}/${$workspace.statusImageAssetId}`
+      : '',
+  );
+  let failedStatusImageUrl = $state('');
+  const showStatusImage = $derived(!!statusImageUrl && statusImageUrl !== failedStatusImageUrl);
+  let statusImageLightboxOpen = $state(false);
+  let statusImageButtonRef: HTMLButtonElement | null = $state(null);
 
   // Copy workspace repo path to clipboard
   let copiedRepoPath = $state(false);
@@ -839,7 +854,7 @@
       <div class="text-sm font-semibold text-foreground truncate">
         {$workspace?.title || m.workspace_links_untitled_label()}
       </div>
-      <div class="text-sm text-subtle truncate mt-0.5 flex items-center gap-1">
+      <div class="text-sm text-subtle truncate mt-0.5 flex items-baseline gap-1">
         <Tooltip
           side="bottom"
           align="start"
@@ -848,6 +863,7 @@
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick={true}
+          class="min-w-0"
         >
           {#snippet content()}
             <span>
@@ -879,7 +895,7 @@
           {/snippet}
           <button
             type="button"
-            class="cursor-pointer bg-transparent border-none p-0 text-inherit font-inherit hover:underline"
+            class="min-w-0 truncate cursor-pointer bg-transparent border-none p-0 text-inherit font-inherit hover:underline"
             onclick={copyRepoPath}
           >
             {#if $workspace?.repositoryOwner && $workspace?.repositoryName}
@@ -889,6 +905,7 @@
             {/if}
           </button>
         </Tooltip>
+        <CheckoutModePill checkoutMode={$workspace?.checkoutMode} />
         {#if $workspace?.branch}
           <span class="mx-1">·</span>
           <span>{$workspace.branch}</span>
@@ -1007,7 +1024,7 @@
         </div>
       </div>
       <!-- repo -->
-      <div class="w-full flex items-center -mt-1.5 gap-1">
+      <div class="w-full flex items-baseline -mt-1.5 gap-1">
         <Tooltip
           side="bottom"
           align="start"
@@ -1016,6 +1033,7 @@
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick={true}
+          class="min-w-0"
         >
           {#snippet content()}
             <span>
@@ -1057,6 +1075,7 @@
             {/if}
           </button>
         </Tooltip>
+        <CheckoutModePill checkoutMode={$workspace?.checkoutMode} />
       </div>
     </div>
 
@@ -1202,6 +1221,36 @@
             </button>
           {/if}
         </div>
+      {/if}
+
+      <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
+      {#if showStatusImage}
+        <div class="px-0.5 py-1">
+          <button
+            bind:this={statusImageButtonRef}
+            type="button"
+            class="block w-full cursor-zoom-in bg-transparent border-none p-0
+                 focus-visible:outline focus-visible:outline-1
+                 focus-visible:outline-primary/50 focus-visible:outline-offset-1"
+            onclick={() => (statusImageLightboxOpen = true)}
+            title={m.workspace_progressCard_statusImage_title()}
+            aria-label={m.workspace_progressCard_statusImage_ariaLabel()}
+          >
+            <img
+              src={statusImageUrl}
+              alt={m.workspace_progressCard_statusImage_alt()}
+              class="w-full max-h-48 object-contain rounded-md border border-border"
+              onerror={(e) =>
+                (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
+            />
+          </button>
+        </div>
+        <ImageLightbox
+          bind:open={statusImageLightboxOpen}
+          imageUrl={statusImageUrl}
+          imageName="Workspace status screenshot"
+          openerElement={statusImageButtonRef}
+        />
       {/if}
 
       <!-- Ready Tasks Section (excludes spec from display) -->

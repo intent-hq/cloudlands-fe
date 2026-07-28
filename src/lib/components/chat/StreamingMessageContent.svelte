@@ -366,7 +366,9 @@
     const ids = new Set<string>();
     blocks.forEach((block) => {
       if (block.type === 'content_group') {
-        (block as ContentBlockGroup).children.forEach((child) => addBulkProposalWorkspaceIds(child, ids));
+        (block as ContentBlockGroup).children.forEach((child) =>
+          addBulkProposalWorkspaceIds(child, ids),
+        );
       } else {
         addBulkProposalWorkspaceIds(block as ContentBlock, ids);
       }
@@ -556,267 +558,258 @@
   });
 </script>
 
-<!-- Use animated component when streaming with animations enabled -->
-<!-- Temporarily disabled streaming animation due to issues -->
-<!-- {#if isStreaming && useAnimations}
-  <StreamingAnimatedContent {content} {isStreaming} {hideToolCalls} {workspaceId} />
-{:else} -->
-{#if true}
-  {#snippet renderParsedContentBlock(parsedBlock: ParsedContent, blockIndex: number)}
-    {#if parsedBlock.type === 'augment_code_snippet'}
-      <AugmentCodeSnippet
-        code={parsedBlock.content}
-        language={parsedBlock.metadata?.language}
-        path={parsedBlock.metadata?.path}
-        mode={parsedBlock.metadata?.mode}
-        onOpenFile={handleOpenFile}
-      />
-    {:else if parsedBlock.type === 'digest'}
-      <DigestCard digest={parsedBlock.content || ''} />
-    {:else if parsedBlock.type === 'diff'}
-      <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
-    {:else if parsedBlock.type === 'commit_message'}
-      <div class="commit-message-block p-3 my-2 rounded-md bg-background border border-border">
-        <div class="text-xs font-medium text-subtle mb-1.5">{m.chat_messageContent_generatedCommitMessage_label()}</div>
-        <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
-          {parsedBlock.content}
-        </div>
+{#snippet renderParsedContentBlock(parsedBlock: ParsedContent, blockIndex: number)}
+  {#if parsedBlock.type === 'augment_code_snippet'}
+    <AugmentCodeSnippet
+      code={parsedBlock.content}
+      language={parsedBlock.metadata?.language}
+      path={parsedBlock.metadata?.path}
+      mode={parsedBlock.metadata?.mode}
+      onOpenFile={handleOpenFile}
+    />
+  {:else if parsedBlock.type === 'digest'}
+    <DigestCard digest={parsedBlock.content || ''} />
+  {:else if parsedBlock.type === 'diff'}
+    <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
+  {:else if parsedBlock.type === 'commit_message'}
+    <div class="commit-message-block p-3 my-2 rounded-md bg-background border border-border">
+      <div class="text-xs font-medium text-subtle mb-1.5">{m.chat_messageContent_generatedCommitMessage_label()}</div>
+      <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
+        {parsedBlock.content}
       </div>
-    {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
-      <div class="diagram-block my-2">
-        <DiagramRenderer
-          diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
-          editable={false}
-          onBindingClick={handleDiagramBindingClick}
-        />
-      </div>
-    {:else if parsedBlock.type === 'mermaid'}
-      <div class="mermaid-block my-8">
-        <MermaidRenderer code={parsedBlock.content || ''} />
-      </div>
-    {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
-      {@const patchData = parsedBlock.metadata.patchData}
-      <PatchBlockContent
-        patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
-        label={patchData.description || patchData.filePath}
+    </div>
+  {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
+    <div class="diagram-block my-2">
+      <DiagramRenderer
+        diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
+        editable={false}
+        onBindingClick={handleDiagramBindingClick}
       />
-    {:else if parsedBlock.type === 'detected_scripts' && parsedBlock.metadata?.detectedScriptsData}
-      <DetectedScriptsCard scripts={parsedBlock.metadata.detectedScriptsData} />
-    {:else if parsedBlock.type === 'workspace_card' && parsedBlock.metadata?.workspaceCardData}
-      <ChatWorkspaceCard workspaceIds={parsedBlock.metadata.workspaceCardData.workspaceIds} />
-    {:else if parsedBlock.type === 'nav_link' && parsedBlock.metadata?.navLinkData}
-      <NavLink
-        target={parsedBlock.metadata.navLinkData.target}
-        label={parsedBlock.metadata.navLinkData.label}
-      />
-    {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
-      {@const refData = parsedBlock.metadata.referenceData}
-      {@const refFileName = refData.filePath?.split('/').pop() ||
-        refData.semanticId ||
-        m.chat_messageContent_reference_fallback()}
-      <div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
-        <div class="flex items-center gap-2 px-3 py-1.5">
-          <Fa icon={faCode} size="xs" class="flex-none text-ghost" />
-          <span class="text-sm font-medium truncate">{refFileName}</span>
-          {#if refData.filePath && refData.filePath !== refFileName}
-            <span class="text-sm text-subtle truncate flex-1 min-w-0">
-              {refData.filePath}
-            </span>
-          {/if}
-        </div>
-        {#if refData.snapshot?.code}
-          <div class="border-t border-border">
-            <CodeBlock
-              code={refData.snapshot.code}
-              language={refData.snapshot.languageId || 'plaintext'}
-              showLineNumbers={true}
-              noBorder={true}
-              noMargin={true}
-            />
-          </div>
+    </div>
+  {:else if parsedBlock.type === 'mermaid'}
+    <div class="mermaid-block my-8">
+      <MermaidRenderer code={parsedBlock.content || ''} />
+    </div>
+  {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
+    {@const patchData = parsedBlock.metadata.patchData}
+    <PatchBlockContent
+      patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
+      label={patchData.description || patchData.filePath}
+    />
+  {:else if parsedBlock.type === 'detected_scripts' && parsedBlock.metadata?.detectedScriptsData}
+    <DetectedScriptsCard scripts={parsedBlock.metadata.detectedScriptsData} />
+  {:else if parsedBlock.type === 'workspace_card' && parsedBlock.metadata?.workspaceCardData}
+    <ChatWorkspaceCard workspaceIds={parsedBlock.metadata.workspaceCardData.workspaceIds} />
+  {:else if parsedBlock.type === 'nav_link' && parsedBlock.metadata?.navLinkData}
+    <NavLink
+      target={parsedBlock.metadata.navLinkData.target}
+      label={parsedBlock.metadata.navLinkData.label}
+    />
+  {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
+    {@const refData = parsedBlock.metadata.referenceData}
+    {@const refFileName = refData.filePath?.split('/').pop() ||
+      refData.semanticId ||
+      m.chat_messageContent_reference_fallback()}
+    <div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
+      <div class="flex items-center gap-2 px-3 py-1.5">
+        <Fa icon={faCode} size="xs" class="flex-none text-ghost" />
+        <span class="text-sm font-medium truncate">{refFileName}</span>
+        {#if refData.filePath && refData.filePath !== refFileName}
+          <span class="text-sm text-subtle truncate flex-1 min-w-0">
+            {refData.filePath}
+          </span>
         {/if}
       </div>
-    {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
-      {@const cliData = parsedBlock.metadata.cliData}
-      <div class="my-1.5 flex items-center gap-2">
-        <Fa icon={faTerminal} size="sm" class="text-ghost flex-none" />
-        <code class="font-mono text-sm text-subtle flex-1 min-w-0 truncate">
-          {cliData.command}
-        </code>
-      </div>
-    {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
-      {@const actionData = parsedBlock.metadata.agentActionData}
-      <div class="my-1.5 flex items-center gap-2">
-        <Fa icon={faRobot} size="sm" class="text-ghost flex-none" />
-        <span class="text-sm text-subtle flex-1 min-w-0 truncate">
-          {actionData.goal}
-        </span>
-      </div>
-    {:else if parsedBlock.type === 'code'}
-      <CodeBlock
-        code={parsedBlock.content || ''}
-        language={parsedBlock.metadata?.language || 'plaintext'}
-      />
-    {:else if parsedBlock.type === 'text'}
-      <MarkdownViewer
-        content={parsedBlock.content || ''}
-        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
-        taskBlockRenderMode="content"
-        onFileClick={(path) => handleOpenFile({ path })}
-      />
-    {:else}
-      <MarkdownViewer
-        content={parsedBlock.content || ''}
-        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
-        taskBlockRenderMode="content"
-        onFileClick={(path) => handleOpenFile({ path })}
-      />
-    {/if}
-  {/snippet}
+      {#if refData.snapshot?.code}
+        <div class="border-t border-border">
+          <CodeBlock
+            code={refData.snapshot.code}
+            language={refData.snapshot.languageId || 'plaintext'}
+            showLineNumbers={true}
+            noBorder={true}
+            noMargin={true}
+          />
+        </div>
+      {/if}
+    </div>
+  {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
+    {@const cliData = parsedBlock.metadata.cliData}
+    <div class="my-1.5 flex items-center gap-2">
+      <Fa icon={faTerminal} size="sm" class="text-ghost flex-none" />
+      <code class="font-mono text-sm text-subtle flex-1 min-w-0 truncate">
+        {cliData.command}
+      </code>
+    </div>
+  {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
+    {@const actionData = parsedBlock.metadata.agentActionData}
+    <div class="my-1.5 flex items-center gap-2">
+      <Fa icon={faRobot} size="sm" class="text-ghost flex-none" />
+      <span class="text-sm text-subtle flex-1 min-w-0 truncate">
+        {actionData.goal}
+      </span>
+    </div>
+  {:else if parsedBlock.type === 'code'}
+    <CodeBlock
+      code={parsedBlock.content || ''}
+      language={parsedBlock.metadata?.language || 'plaintext'}
+    />
+  {:else if parsedBlock.type === 'text'}
+    <MarkdownViewer
+      content={parsedBlock.content || ''}
+      isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+      taskBlockRenderMode="content"
+      onFileClick={(path) => handleOpenFile({ path })}
+    />
+  {:else}
+    <MarkdownViewer
+      content={parsedBlock.content || ''}
+      isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+      taskBlockRenderMode="content"
+      onFileClick={(path) => handleOpenFile({ path })}
+    />
+  {/if}
+{/snippet}
 
-  {#snippet renderCard(card: ResolvedCard)}
-    {@const Card = card.component}
-    <Card {...card.props} />
-  {/snippet}
+{#snippet renderCard(card: ResolvedCard)}
+  {@const Card = card.component}
+  <Card {...card.props} />
+{/snippet}
 
-  {#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
-    {#if isNavLinkBlock(block)}
-      <div class="w-full">
-        <NavLink target={block.target} label={block.label} />
-      </div>
-    {:else if resolveCard(block, cardHandlers)}
-      <!-- §7.1 standalone resource block with a registered card (MIME-keyed
+{#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
+  {#if isNavLinkBlock(block)}
+    <div class="w-full">
+      <NavLink target={block.target} label={block.label} />
+    </div>
+  {:else if resolveCard(block, cardHandlers)}
+    <!-- §7.1 standalone resource block with a registered card (MIME-keyed
            card registry): ProposalCard under the proposal MIME today. -->
-      {@const card = resolveCard(block, cardHandlers)}
-      {#if card}
-        <div class="w-full">
-          {@render renderCard(card)}
-        </div>
-      {/if}
-    {:else if getProposalFromBlock(block)}
-      {@const proposal = getProposalFromBlock(block)}
-      {#if proposal}
-        <div class="w-full">
-          <ProposalCard {proposal} onApply={handleProposalApply} onUndo={handleProposalUndo} />
-        </div>
-      {/if}
-    {:else if block.type === 'text' && (block.text || (block as any).content)}
-      {@const textContent = block.text || (block as any).content || ''}
-      {@const parsedResult = parsedTextBlocks.get(parsedKey) || {
-        blocks: [],
-        setupScript: null,
-      }}
+    {@const card = resolveCard(block, cardHandlers)}
+    {#if card}
       <div class="w-full">
-        <!-- Show setup script card if present (unless hidden) -->
-        {#if parsedResult.setupScript && !hideSetupScripts}
-          <SetupScriptCard
-            name={parsedResult.setupScript.name}
-            description={parsedResult.setupScript.description}
-            content={parsedResult.setupScript.content}
-            onUseScript={onSetupScriptGenerated}
+        {@render renderCard(card)}
+      </div>
+    {/if}
+  {:else if getProposalFromBlock(block)}
+    {@const proposal = getProposalFromBlock(block)}
+    {#if proposal}
+      <div class="w-full">
+        <ProposalCard {proposal} onApply={handleProposalApply} onUndo={handleProposalUndo} />
+      </div>
+    {/if}
+  {:else if block.type === 'text' && (block.text || (block as any).content)}
+    {@const textContent = block.text || (block as any).content || ''}
+    {@const parsedResult = parsedTextBlocks.get(parsedKey) || {
+      blocks: [],
+      setupScript: null,
+    }}
+    <div class="w-full">
+      <!-- Show setup script card if present (unless hidden) -->
+      {#if parsedResult.setupScript && !hideSetupScripts}
+        <SetupScriptCard
+          name={parsedResult.setupScript.name}
+          description={parsedResult.setupScript.description}
+          content={parsedResult.setupScript.content}
+          onUseScript={onSetupScriptGenerated}
+        />
+      {/if}
+      {#if parsedResult.blocks.length > 0}
+        {#each parsedResult.blocks as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
+          {@render renderParsedContentBlock(renderBlock as ParsedContent, blockIndex)}
+        {/each}
+      {:else}
+        <!-- Only render fallback if text has content after stripping suggested prompts -->
+        <!-- (suggested prompts are rendered separately; empty blocks should be hidden) -->
+        {@const cleanedText = parseSuggestedPrompts(textContent).cleanedContent}
+        {#if cleanedText.trim()}
+          <MarkdownViewer
+            content={cleanedText}
+            isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+            taskBlockRenderMode="content"
+            onFileClick={(path) => handleOpenFile({ path })}
           />
         {/if}
-        {#if parsedResult.blocks.length > 0}
-          {#each parsedResult.blocks as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
-            {@render renderParsedContentBlock(renderBlock as ParsedContent, blockIndex)}
-          {/each}
-        {:else}
-          <!-- Only render fallback if text has content after stripping suggested prompts -->
-          <!-- (suggested prompts are rendered separately; empty blocks should be hidden) -->
-          {@const cleanedText = parseSuggestedPrompts(textContent).cleanedContent}
-          {#if cleanedText.trim()}
-            <MarkdownViewer
-              content={cleanedText}
-              isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
-              taskBlockRenderMode="content"
-              onFileClick={(path) => handleOpenFile({ path })}
-            />
-          {/if}
-        {/if}
-      </div>
-    {:else if block.type === 'tool_use'}
-      {@const toolBlock = block as ToolUseBlock}
-      {@const toolResultBlock = findToolResult(toolResultsMap, toolBlock)}
-      {@const resultContent = getToolResultPayload(toolResultBlock)}
-      <div class="relative w-full min-w-0">
-        <ToolCall
-          toolUse={toolBlock}
-          toolState={toolStates.get(toolBlock.id) || 'running'}
-          result={resultContent}
-          {workspaceId}
-        />
-      </div>
-    {:else if block.type === 'tool_result'}
-      <!-- Tool results are handled by associating them with their tool_use blocks -->
-      <!-- We don't render them separately as they're shown within the ToolCall component -->
-    {:else if block.type === 'thinking'}
-      <ThinkingBlock
-        content={block.content || m.chat_shared_processing_fallback()}
-        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
-      />
-    {/if}
-  {/snippet}
-
-  <div
-    class="flex flex-col gap-1.5 relative"
-    class:streaming={isStreaming}
-    style="contain: layout style paint;"
-    data-tool-executing={[...toolStates.values()].some((s) => s === 'running')}
-  >
-    {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
-      {#if block.type === 'content_group'}
-        {@const group = block as ContentBlockGroup}
-        <div
-          class="content-block content-block--group my-1.25"
-          use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
-        >
-          <ResponseGroup
-            name={group.name}
-            isStreaming={group.isStreaming}
-            isLast={blockIndex === groupedBlocks.length - 1}
-            blocks={group.children}
-          >
-            {#snippet children()}
-              {#each group.children as childBlock, childIndex (`${blockIndex}-group-${childIndex}`)}
-                {#if childBlock.type !== 'tool_result'}
-                  <div class="content-block content-block--{childBlock.type} my-1.25">
-                    {@render renderContentBlock(
-                      childBlock,
-                      `${blockIndex}-${childIndex}`,
-                      blockIndex,
-                    )}
-                  </div>
-                {/if}
-              {/each}
-            {/snippet}
-          </ResponseGroup>
-        </div>
-      {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking'].includes(block.type)}
-        <div
-          class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
-            ? 'nav-link'
-            : resolveCard(block, cardHandlers)
-              ? 'card'
-              : getProposalFromBlock(block as ContentBlock)
-                ? 'proposal'
-                : block.type} my-1.25"
-          use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
-        >
-          {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
-        </div>
       {/if}
-    {/each}
+    </div>
+  {:else if block.type === 'tool_use'}
+    {@const toolBlock = block as ToolUseBlock}
+    {@const toolResultBlock = findToolResult(toolResultsMap, toolBlock)}
+    {@const resultContent = getToolResultPayload(toolResultBlock)}
+    <div class="relative w-full min-w-0">
+      <ToolCall
+        toolUse={toolBlock}
+        toolState={toolStates.get(toolBlock.id) || 'running'}
+        result={resultContent}
+        {workspaceId}
+      />
+    </div>
+  {:else if block.type === 'tool_result'}
+    <!-- Tool results are handled by associating them with their tool_use blocks -->
+    <!-- We don't render them separately as they're shown within the ToolCall component -->
+  {:else if block.type === 'thinking'}
+    <ThinkingBlock
+      content={block.content || m.chat_shared_processing_fallback()}
+      isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+    />
+  {/if}
+{/snippet}
 
-    <!-- Show streaming cursor if streaming but no content yet -->
-    {#if isStreaming && groupedBlocks.length === 0}
-      <div class="w-full">
-        <MarkdownViewer content="" isStreaming={true} taskBlockRenderMode="content" />
+<div
+  class="flex flex-col gap-1.5 relative"
+  class:streaming={isStreaming}
+  style="contain: layout style paint;"
+  data-tool-executing={[...toolStates.values()].some((s) => s === 'running')}
+>
+  {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
+    {#if block.type === 'content_group'}
+      {@const group = block as ContentBlockGroup}
+      <div
+        class="content-block content-block--group my-1.25"
+        use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
+      >
+        <ResponseGroup
+          name={group.name}
+          isStreaming={group.isStreaming}
+          isLast={blockIndex === groupedBlocks.length - 1}
+          blocks={group.children}
+        >
+          {#snippet children()}
+            {#each group.children as childBlock, childIndex (`${blockIndex}-group-${childIndex}`)}
+              {#if childBlock.type !== 'tool_result'}
+                <div class="content-block content-block--{childBlock.type} my-1.25">
+                  {@render renderContentBlock(
+                    childBlock,
+                    `${blockIndex}-${childIndex}`,
+                    blockIndex,
+                  )}
+                </div>
+              {/if}
+            {/each}
+          {/snippet}
+        </ResponseGroup>
+      </div>
+    {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking'].includes(block.type)}
+      <div
+        class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
+          ? 'nav-link'
+          : resolveCard(block, cardHandlers)
+            ? 'card'
+            : getProposalFromBlock(block as ContentBlock)
+              ? 'proposal'
+              : block.type} my-1.25"
+        use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
+      >
+        {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
       </div>
     {/if}
-  </div>
-{/if}
+  {/each}
 
-<!-- End of temporary disable of streaming animation -->
+  <!-- Show streaming cursor if streaming but no content yet -->
+  {#if isStreaming && groupedBlocks.length === 0}
+    <div class="w-full">
+      <MarkdownViewer content="" isStreaming={true} taskBlockRenderMode="content" />
+    </div>
+  {/if}
+</div>
 
 <style>
   /* Adjacent tool_use blocks should have reduced spacing */

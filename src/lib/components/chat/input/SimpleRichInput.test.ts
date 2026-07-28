@@ -30,6 +30,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faStop: { iconName: 'stop' },
   faCheck: { iconName: 'check' },
   faChevronRight: { iconName: 'chevron-right' },
+  faExclamationTriangle: { iconName: 'exclamation-triangle' },
 }));
 
 vi.mock('svelte-sonner', () => ({
@@ -242,12 +243,12 @@ describe('SimpleRichInput provider switch sync', () => {
         workspace,
         agentId: 'agent-1',
         providerId: 'codex',
-        isProviderChangeLocked: true,
+        requiresModelSwitchConfirmation: true,
         onmodelChange,
       },
     });
 
-    expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
+    expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
     expect(screen.getByTestId('model-picker-model').textContent).toBe('');
     expect(onmodelChange).not.toHaveBeenCalled();
     expect(setModelMock).not.toHaveBeenCalled();
@@ -258,13 +259,13 @@ describe('SimpleRichInput provider switch sync', () => {
       workspace,
       agentId: 'agent-1',
       providerId: 'codex',
-      isProviderChangeLocked: true,
+      requiresModelSwitchConfirmation: true,
       selectedModel: 'codex:gpt-5-codex',
       onmodelChange,
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
@@ -272,7 +273,7 @@ describe('SimpleRichInput provider switch sync', () => {
     expect(setModelMock).not.toHaveBeenCalled();
   });
 
-  it('hydrates the persisted provider from session state instead of showing the default provider on reopen', async () => {
+  it('hydrates the persisted model without passing the session provider as a filter', async () => {
     removeMockSession('ws-1', 'agent-1');
     addMockSession('ws-1',
       createSession({
@@ -296,18 +297,19 @@ describe('SimpleRichInput provider switch sync', () => {
         workspace,
         agentId: 'agent-1',
         selectedModel: 'codex:gpt-5-codex',
-        isProviderChangeLocked: true,
+        requiresModelSwitchConfirmation: true,
       },
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+      expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
     expect(setModelMock).not.toHaveBeenCalled();
   });
 
-  it('locks provider and model together with shared hover copy and no extra model lock icon', async () => {
+  it('keeps the model picker unlocked mid-conversation (confirmation replaces the lock)', async () => {
     removeMockSession('ws-1', 'agent-1');
     addMockSession('ws-1',
       createSession({
@@ -332,19 +334,197 @@ describe('SimpleRichInput provider switch sync', () => {
         agentId: 'agent-1',
         selectedModel: 'gpt5.4',
         providerId: 'auggie',
-        isProviderChangeLocked: true,
+        requiresModelSwitchConfirmation: true,
       },
     });
 
     const modelPicker = screen.getByTestId('model-picker');
-    expect(modelPicker.getAttribute('data-locked')).toBe('true');
-    expect(modelPicker.getAttribute('data-show-lock-icon')).toBe('false');
-    expect(modelPicker.getAttribute('title')).toBe('Start a new agent to change provider or model.');
+    expect(modelPicker.getAttribute('data-locked')).toBe('false');
+  });
 
-    await waitFor(() => {
-      expect(screen.getAllByTitle('Start a new agent to change provider or model.')).toHaveLength(1);
+  it('shows the confirm dialog before a mid-conversation switch and applies on confirm', async () => {
+    const onmodelChange = vi.fn();
+    const workspace = {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any;
+
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        workspace,
+        agentId: 'agent-1',
+        selectedModel: 'gpt5.4',
+        requiresModelSwitchConfirmation: true,
+        onmodelChange,
+      },
     });
 
+    const triggerInput = screen.getByTestId('model-picker-trigger-input');
+    const triggerButton = screen.getByTestId('model-picker-trigger');
+
+    // Cross-provider switch → dialog opens with the stronger provider warning
+    fireEvent.input(triggerInput, { target: { value: 'codex:gpt-5-codex' } });
+    await fireEvent.click(triggerButton);
+
+    const dialog = await waitFor(() => {
+      const el = document.body.querySelector('[role="dialog"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(dialog.textContent).toContain('Switch provider mid-conversation?');
+    expect(setModelMock).not.toHaveBeenCalled();
+    expect(onmodelChange).not.toHaveBeenCalled();
+
+    // Confirm → the cross-provider switch flow runs
+    const confirmButton = Array.from(dialog.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Switch provider'),
+    );
+    expect(confirmButton).toBeTruthy();
+    await fireEvent.click(confirmButton!);
+
+    await waitFor(() => {
+      expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1');
+    });
+    expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
+  });
+
+  it('cancel in the confirm dialog leaves session state untouched', async () => {
+    const onmodelChange = vi.fn();
+    const workspace = {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any;
+
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        workspace,
+        agentId: 'agent-1',
+        selectedModel: 'gpt5.4',
+        requiresModelSwitchConfirmation: true,
+        onmodelChange,
+      },
+    });
+
+    const triggerInput = screen.getByTestId('model-picker-trigger-input');
+    const triggerButton = screen.getByTestId('model-picker-trigger');
+
+    fireEvent.input(triggerInput, { target: { value: 'codex:gpt-5-codex' } });
+    await fireEvent.click(triggerButton);
+
+    const dialog = await waitFor(() => {
+      const el = document.body.querySelector('[role="dialog"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+
+    const cancelButton = Array.from(dialog.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Cancel',
+    );
+    expect(cancelButton).toBeTruthy();
+    await fireEvent.click(cancelButton!);
+
+    await waitFor(() => {
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    });
+    expect(setModelMock).not.toHaveBeenCalled();
+    expect(onmodelChange).not.toHaveBeenCalled();
+    expect(mockReduxDispatch).not.toHaveBeenCalled();
+    // Revert-before-send leaves no trace: the picker still shows the
+    // original model, exactly as if the switch was never attempted.
+    expect(screen.getByTestId('model-picker-model').textContent).toBe('gpt5.4');
+  });
+
+  it('same-provider switch shows the model-only dialog and applies without the provider flow', async () => {
+    const onmodelChange = vi.fn();
+    const workspace = {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any;
+
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        workspace,
+        agentId: 'agent-1',
+        selectedModel: 'gpt5.4',
+        providerId: 'auggie',
+        requiresModelSwitchConfirmation: true,
+        onmodelChange,
+      },
+    });
+
+    const triggerInput = screen.getByTestId('model-picker-trigger-input');
+    const triggerButton = screen.getByTestId('model-picker-trigger');
+
+    // Same-provider switch (auggie → auggie) → the milder model-only dialog
+    fireEvent.input(triggerInput, { target: { value: 'auggie:sonnet4.5' } });
+    await fireEvent.click(triggerButton);
+
+    const dialog = await waitFor(() => {
+      const el = document.body.querySelector('[role="dialog"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(dialog.textContent).toContain('Switch model mid-conversation?');
+    expect(dialog.textContent).not.toContain('Switch provider mid-conversation?');
+
+    const confirmButton = Array.from(dialog.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Switch model',
+    );
+    expect(confirmButton).toBeTruthy();
+    await fireEvent.click(confirmButton!);
+
+    await waitFor(() => {
+      expect(onmodelChange).toHaveBeenCalledWith('auggie:sonnet4.5');
+    });
+    // Same provider — no cross-provider switch flow, no setModel wire call here
+    // (the real ModelPicker dispatches the model update itself).
+    expect(setModelMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('model-picker-model').textContent).toBe('auggie:sonnet4.5');
+  });
+
+  it('does not show the dialog before the conversation has started', async () => {
+    const onmodelChange = vi.fn();
+    const workspace = {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any;
+
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        workspace,
+        agentId: 'agent-1',
+        selectedModel: 'gpt5.4',
+        requiresModelSwitchConfirmation: false,
+        onmodelChange,
+      },
+    });
+
+    const triggerInput = screen.getByTestId('model-picker-trigger-input');
+    const triggerButton = screen.getByTestId('model-picker-trigger');
+
+    fireEvent.input(triggerInput, { target: { value: 'augment:sonnet4.5' } });
+    await fireEvent.click(triggerButton);
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    await waitFor(() => {
+      expect(onmodelChange).toHaveBeenCalledWith('augment:sonnet4.5');
+    });
   });
 
   it('calls agentClient.setModel exactly once during a cross-provider model switch', async () => {

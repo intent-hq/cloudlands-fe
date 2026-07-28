@@ -74,7 +74,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/chat/ChatPanel.svelte',
   'src/lib/components/chat/MessageActions.svelte',
   'src/lib/components/chat/MessageContent.svelte',
-  'src/lib/components/chat/StreamingAnimatedContent.svelte',
   'src/lib/components/chat/StreamingMessageContent.svelte',
   'src/lib/components/chat/input/ContextPickerButton.svelte',
   'src/lib/components/chat/input/EnhancedMentionList.svelte',

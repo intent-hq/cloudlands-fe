@@ -26,7 +26,7 @@
   selectIsAgentMonospace,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
-  import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
+  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
   import {
   selectSpecialistName,
   selectSpecialists,
@@ -63,7 +63,7 @@
 
   // Cache $workspace to prevent destruction during store reloads
   const workspace = selectWorkspaceById(workspaceIdStore);
-  const defaultModel = selectWorkspaceDefaultModel(workspaceIdStore);
+  const defaultModel = selectSelectedModel();
 
   // Reactive store subscription for specialist names
   const specialists$ = selectSpecialists();

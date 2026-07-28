@@ -301,11 +301,10 @@ export async function sendMessage(
                   // Redux — no per-agent stream listener is registered here.
                   //
                   // NOTE: The frontend no longer imposes a wall-clock timeout on the
-                  // stream. The daemon (intentd) owns turn lifetime and will emit a
-                  // terminal event (complete with finishReason, or error) when the
-                  // turn ends. Informational stall detection (chat-state stall saga)
-                  // remains and continues to surface UI warnings without terminating
-                  // the stream.
+                  // stream, and no client-side stall detection remains (the former
+                  // chat-state stall saga was removed). The daemon (intentd) owns
+                  // turn lifetime and will emit a terminal event (complete with
+                  // finishReason, or error) when the turn ends.
 
                   // Send message to backend
                   logger.info(

@@ -15,6 +15,7 @@
     focusedSuggestionIndex = $bindable(-1),
     repoConfigScript = null,
     isRepoConfigLoading = false,
+    onboardingGithubRepoInfo = null,
     onProjectChange,
   }: {
     onboardingInputValue?: string;
@@ -26,6 +27,7 @@
     focusedSuggestionIndex?: number;
     repoConfigScript?: string | null;
     isRepoConfigLoading?: boolean;
+    onboardingGithubRepoInfo?: { owner: string; repo: string } | null;
     onProjectChange?: (selection: unknown) => void;
     [key: string]: unknown;
   } = $props();
@@ -46,4 +48,9 @@
 <div data-testid="repo-config-script">{repoConfigScript ?? ''}</div>
 <div data-testid="is-custom-setup-script">{String(isCustomSetupScript)}</div>
 <div data-testid="is-repo-config-loading">{String(isRepoConfigLoading)}</div>
+<div data-testid="github-repo-info">
+  {onboardingGithubRepoInfo
+    ? `${onboardingGithubRepoInfo.owner}/${onboardingGithubRepoInfo.repo}`
+    : ''}
+</div>
 <div hidden>{onboardingInputValue}{onboardingSkipWorktree}{showSetupScript}{focusedSuggestionIndex}</div>

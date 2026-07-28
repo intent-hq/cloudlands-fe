@@ -220,17 +220,6 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'read-only' },
   },
   {
-    path: 'model.workspaceOverrides',
-    label: 'Workspace model overrides',
-    description: 'Per-workspace model selections persisted by workspace ID.',
-    category: 'agents',
-    type: 'object',
-    source: 'local-storage',
-    storageKey: 'workspaces-workspace-models',
-    defaultValue: {},
-    apply: { kind: 'read-only' },
-  },
-  {
     path: 'model.pickerCollapsedGroups',
     label: 'Collapsed model picker groups',
     description: 'Model picker groups the user has collapsed.',

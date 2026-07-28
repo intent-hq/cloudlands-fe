@@ -4,6 +4,55 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.7.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.6.0...v2.7.0) (2026-07-27)
+
+
+### 🚀 Features
+
+* add RepoConfig parity types with cowCloneExclude (intentd[#614](https://github.com/intent-hq/cloudlands-fe/issues/614)) ([#463](https://github.com/intent-hq/cloudlands-fe/issues/463)) ([7792469](https://github.com/intent-hq/cloudlands-fe/commit/7792469e0f1812573cabefe2232112e9b7b8167e))
+* add unsloth provider surface ([#455](https://github.com/intent-hq/cloudlands-fe/issues/455)) ([fae8235](https://github.com/intent-hq/cloudlands-fe/commit/fae8235726672e88db93a54994fa30529d3d97bd))
+* allow mid-conversation model/provider switching with confirmation and transcript notice ([#462](https://github.com/intent-hq/cloudlands-fe/issues/462)) ([8bd64c0](https://github.com/intent-hq/cloudlands-fe/commit/8bd64c06c5b4aa1c5d50e0c34a1063f7fed7484e))
+* consume BE-owned workspace displayStatus ([#458](https://github.com/intent-hq/cloudlands-fe/issues/458)) ([ecc3a21](https://github.com/intent-hq/cloudlands-fe/commit/ecc3a210d965fe01afef9cc4d9a59483308a51d3))
+* dedicated settings rows for CoW isolation and git credentials ([#466](https://github.com/intent-hq/cloudlands-fe/issues/466)) ([2e545f0](https://github.com/intent-hq/cloudlands-fe/commit/2e545f03329df870cf4caa3811983ccc94b00a34))
+* settings toggle for git credentials in terminals and agents ([#454](https://github.com/intent-hq/cloudlands-fe/issues/454)) ([720b15b](https://github.com/intent-hq/cloudlands-fe/commit/720b15b73226e7ae03895cc24ba493c36d1ec7e8))
+* show checkout-mode pill in the workspace overview panel ([#456](https://github.com/intent-hq/cloudlands-fe/issues/456)) ([b3ba9f4](https://github.com/intent-hq/cloudlands-fe/commit/b3ba9f41636bbd0840bd137b521b8093635741f7))
+* show checkout-mode pill next to the org/repo subtitle ([#452](https://github.com/intent-hq/cloudlands-fe/issues/452)) ([3d715f6](https://github.com/intent-hq/cloudlands-fe/commit/3d715f6e286e838aaff4303014dbbc651ff89ccb))
+* show managed unsloth server status in the intentd status indicator with a confirmed stop action ([#472](https://github.com/intent-hq/cloudlands-fe/issues/472)) ([23706d7](https://github.com/intent-hq/cloudlands-fe/commit/23706d70a857beced795e9bca31fc887d59a7e53))
+
+
+### 🐛 Bug Fixes
+
+* align checkout-mode pill to repo text baseline ([#469](https://github.com/intent-hq/cloudlands-fe/issues/469)) ([6c3bdf3](https://github.com/intent-hq/cloudlands-fe/commit/6c3bdf30b44788a9145507addc454057a71e13c3))
+* clear chat error and start loading state on edit-and-regenerate ([#470](https://github.com/intent-hq/cloudlands-fe/issues/470)) ([7e12a59](https://github.com/intent-hq/cloudlands-fe/commit/7e12a5958f7fbc298bc9c4e44328a1d74dc3c15c))
+* don't report all-done with staged or unpushed work after PR merge (monorepo[#912](https://github.com/intent-hq/cloudlands-fe/issues/912)) ([#461](https://github.com/intent-hq/cloudlands-fe/issues/461)) ([116c0b9](https://github.com/intent-hq/cloudlands-fe/commit/116c0b98713bdebf8578a35c09ab26c00f18bed5))
+* **providers:** require unsloth CLI alongside opencode for unsloth availability ([#465](https://github.com/intent-hq/cloudlands-fe/issues/465)) ([04311b7](https://github.com/intent-hq/cloudlands-fe/commit/04311b7df25b77e579dfa9fb9972cb7079dc646a))
+* return explicit specialist model before tier resolution in selectEffectiveModel ([#471](https://github.com/intent-hq/cloudlands-fe/issues/471)) ([6187f5d](https://github.com/intent-hq/cloudlands-fe/commit/6187f5dfa1eeb4a5a2bc33474e4a86bc58974150))
+* stream raw script output chunks to xterm instead of line-splitting ([#467](https://github.com/intent-hq/cloudlands-fe/issues/467)) ([4f2254c](https://github.com/intent-hq/cloudlands-fe/commit/4f2254c078bed727ea5bb3cc4fe23ff4fb0d6447))
+* treat open tasks as new work after PR merge in workflow stage ([#457](https://github.com/intent-hq/cloudlands-fe/issues/457)) ([4d36e92](https://github.com/intent-hq/cloudlands-fe/commit/4d36e92e0eaf233709736cad9b044e3e0b90a806))
+
+## [2.6.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.5.0...v2.6.0) (2026-07-27)
+
+
+### 🚀 Features
+
+* add git/node requirements gate before provider setup in onboarding ([#440](https://github.com/intent-hq/cloudlands-fe/issues/440)) ([4fe4a7d](https://github.com/intent-hq/cloudlands-fe/commit/4fe4a7dfa4203b88a4033f0a78081602f2d9fcca))
+* add Providers card to usage stats overlay ([#445](https://github.com/intent-hq/cloudlands-fe/issues/445)) ([8ab2e59](https://github.com/intent-hq/cloudlands-fe/commit/8ab2e598065d3dd12998cd80191fdbf7bfaeec7e))
+* reveal agent sandbox in Finder from the agent card; fix broken Reveal in Finder detection ([#444](https://github.com/intent-hq/cloudlands-fe/issues/444)) ([1f05784](https://github.com/intent-hq/cloudlands-fe/commit/1f05784b4fae8450d9396086688cff3e2b4abf2b))
+* show dimmed org/repo suffix in workspace repo picker and match branch brightness ([48d9683](https://github.com/intent-hq/cloudlands-fe/commit/48d9683a28e6c6edcb7d79cd3fdcea7774fa4d8d))
+* tier onboarding provider cards by readiness ([#448](https://github.com/intent-hq/cloudlands-fe/issues/448)) ([b3e1475](https://github.com/intent-hq/cloudlands-fe/commit/b3e14750c9a6d03ca41856e36ccf56c2e67d4560))
+
+
+### 🐛 Bug Fixes
+
+* clear detected org/repo synchronously and drop stale remote-URL probe responses ([be2703a](https://github.com/intent-hq/cloudlands-fe/commit/be2703a9bee7aff6d696360bc4c6997c74977c41))
+* gate "Other…" / "Choose app" open affordances on daemon locality (intent-hq/monorepo[#883](https://github.com/intent-hq/cloudlands-fe/issues/883)) ([2054762](https://github.com/intent-hq/cloudlands-fe/commit/20547623ebfd453dc55b86ee0d9a1e4abd878c60))
+* give stats export hint a chip-style pill background for readability ([#436](https://github.com/intent-hq/cloudlands-fe/issues/436)) ([e47244f](https://github.com/intent-hq/cloudlands-fe/commit/e47244f6319aa4ce33a8a5c5c0dd30a18e6c73c8))
+* keep detected org/repo suffix on branch-only onboarding selection changes ([#450](https://github.com/intent-hq/cloudlands-fe/issues/450)) ([f7c3bfc](https://github.com/intent-hq/cloudlands-fe/commit/f7c3bfce6dcb6a9b3c5da12b42429966543be721))
+* pair tool results by toolCallId and show tool-call error output ([#442](https://github.com/intent-hq/cloudlands-fe/issues/442)) ([dbb7a7b](https://github.com/intent-hq/cloudlands-fe/commit/dbb7a7bc418977d233eeec900e3ee00366578ca0))
+* remove green attention border from QuestionWizard well ([#438](https://github.com/intent-hq/cloudlands-fe/issues/438)) ([ba019a9](https://github.com/intent-hq/cloudlands-fe/commit/ba019a9a2923f26fd4dbfb7cd983a13ef5decbd0))
+* render plain "Copy path" button when no open-capable actions remain (intent-hq/monorepo[#890](https://github.com/intent-hq/cloudlands-fe/issues/890)) ([296495b](https://github.com/intent-hq/cloudlands-fe/commit/296495b745a3bd8ccd66410920b6beb29120278a))
+* show org/repo in sidebar Work on hover card ([#441](https://github.com/intent-hq/cloudlands-fe/issues/441)) ([0dc0e15](https://github.com/intent-hq/cloudlands-fe/commit/0dc0e15d338c02abacadd2146616546c3c0d2c92))
+
 ## [2.5.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.4.0...v2.5.0) (2026-07-27)
 
 

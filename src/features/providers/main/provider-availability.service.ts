@@ -162,6 +162,24 @@ async function checkGrokAvailability(): Promise<ProviderStatus> {
 }
 
 /**
+ * Check if unsloth is available. Unsloth rides the opencode binary as its
+ * ACP runtime (the daemon injects the managed local server's config via
+ * OPENCODE_CONFIG_CONTENT), but the daemon-managed server lifecycle also
+ * shells out to the `unsloth` CLI directly (`unsloth run`, `unsloth start
+ * opencode`) — so availability requires BOTH binaries to resolve on the
+ * daemon host. Like grok, there is no FE-side resolver module — the
+ * aggregate path uses the daemon's provider discovery and this fallback
+ * covers the RPC-degraded / single-recheck path.
+ */
+async function checkUnslothAvailability(): Promise<ProviderStatus> {
+  const [opencodePath, unslothPath] = await Promise.all([
+    findBinary('opencode', { cache: false }),
+    findBinary('unsloth', { cache: false }),
+  ]);
+  return { available: opencodePath !== null && unslothPath !== null };
+}
+
+/**
  * Check if the mock ACP agent is available for test runs.
  */
 async function checkMockAvailability(): Promise<ProviderStatus> {
@@ -298,6 +316,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     piResult,
     droidResult,
     grokResult,
+    unslothResult,
     authVerdicts,
   ] = await Promise.all([
     makeProviderStatus('auggie', checkAuggieAvailability),
@@ -315,6 +334,9 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     // Grok availability comes from the daemon's provider discovery; the
     // host.findBinary fallback covers the RPC-degraded path.
     makeProviderStatus('grok', checkGrokAvailability),
+    // Unsloth rides the opencode binary (discovery reports it installed from
+    // opencode presence); same fallback pattern as grok.
+    makeProviderStatus('unsloth', checkUnslothAvailability),
     // Auth verdicts from the daemon's `host.providerAuthStatus` sweep
     // (intent-hq/intentd#339): the daemon owns the CLI/ACP probes, marker
     // parsing, and caching. Independent of discovery, so it rides in the
@@ -345,6 +367,9 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
   if (piResult.available) piResult.authenticated = authVerdicts['pi'];
   if (droidResult.available) droidResult.authenticated = authVerdicts['droid'];
   if (grokResult.available) grokResult.authenticated = authVerdicts['grok'];
+  // Unsloth is local-only: the daemon's managed server generates its own API
+  // key, there is no login surface, so available ⇒ authenticated.
+  if (unslothResult.available) unslothResult.authenticated = true;
 
   const result: ProviderAvailabilityResult = {
     hasAnyProvider:
@@ -356,7 +381,8 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       opencodeResult.available ||
       piResult.available ||
       droidResult.available ||
-      grokResult.available,
+      grokResult.available ||
+      unslothResult.available,
     providers: {
       auggie: auggieResult,
       claudeCode: claudeCodeResult,
@@ -367,6 +393,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       pi: piResult,
       droid: droidResult,
       grok: grokResult,
+      unsloth: unslothResult,
     },
     hiddenProviders,
     npx: npxStatus,
@@ -383,6 +410,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     pi: piResult.available,
     droid: droidResult.available,
     grok: grokResult.available,
+    unsloth: unslothResult.available,
     auggieAuth: auggieResult.authenticated,
     claudeCodeAuth: claudeCodeResult.authenticated,
     codexAuth: codexResult.authenticated,
@@ -523,6 +551,14 @@ export function setupProviderAvailabilityIPC(): void {
             status = await checkGrokAvailability();
             if (status.available) {
               authenticated = await checkAuth();
+            }
+            break;
+          case 'unsloth':
+            // Local-only provider — no login surface, so available ⇒
+            // authenticated (the managed server injects its own API key).
+            status = await checkUnslothAvailability();
+            if (status.available) {
+              authenticated = true;
             }
             break;
           case 'mock':

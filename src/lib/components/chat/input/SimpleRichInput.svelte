@@ -34,6 +34,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import Button from '../../ui/button/button.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
+  import ModelSwitchConfirmDialog from '../ModelSwitchConfirmDialog.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import AttachmentPreview from '../AttachmentPreview.svelte';
   import ContextChip from '../ContextChip.svelte';
@@ -80,7 +81,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     selectedModel?: string | null;
     isModelLocked?: boolean;
     providerId?: string;
-    isProviderChangeLocked?: boolean;
+    /**
+     * When true (conversation has started), a mid-conversation model/provider
+     * switch must be confirmed via a warning dialog before it is applied.
+     */
+    requiresModelSwitchConfirmation?: boolean;
     agentId?: string;
     autoFocus?: boolean;
     /** Edit mode - shows cancel button and changes submit label */
@@ -129,7 +134,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     selectedModel: propSelectedModel,
     isModelLocked = false,
     providerId: propProviderId,
-    isProviderChangeLocked = false,
+    requiresModelSwitchConfirmation = false,
     agentId,
     autoFocus = false,
     editMode = false,
@@ -453,20 +458,79 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   const selectedProviderId = $derived.by(() => {
     return localProviderId || hydratedPropProviderId;
   });
-  const providerChangeLocked = $derived(isProviderChangeLocked);
-  const effectiveModelLocked = $derived(isModelLocked || providerChangeLocked);
-  const providerAndModelLockedTitle = m.chat_richInput_providerLocked_title();
-  const modelLockedTitle = $derived.by(() => {
-    if (!providerChangeLocked) {
-      return undefined;
-    }
 
-    return providerAndModelLockedTitle;
-  });
   let isChangingProvider = $state(false);
 
+  // Mid-conversation switch confirmation dialog state. The pending resolver
+  // settles the promise returned to ModelPicker's confirmModelChange gate.
+  let modelSwitchDialog = $state<{
+    isProviderChange: boolean;
+    fromModelLabel: string;
+    toModelLabel: string;
+    fromProviderName: string;
+    toProviderName: string;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
+
+  function describeModelForDialog(model: string | null | undefined): {
+    modelLabel: string;
+    providerName: string;
+    providerId: string;
+  } {
+    if (!model) {
+      const provider = selectedProviderId || getDefaultProviderId();
+      const config = getProviderConfig(provider);
+      return {
+        modelLabel: m.chat_richInput_defaultModel_label(),
+        providerName: config.displayName,
+        providerId: config.id,
+      };
+    }
+    // Bare (non-compound) ids belong to the agent's current provider, not the
+    // default provider parseCompoundModelId falls back to.
+    const rawProvider = model.includes(':')
+      ? parseCompoundModelId(model).providerId
+      : selectedProviderId || getDefaultProviderId();
+    const config = getProviderConfig(rawProvider);
+    return {
+      modelLabel: parseCompoundModelId(model).modelId,
+      providerName: config.displayName,
+      providerId: config.id,
+    };
+  }
+
+  function confirmModelSwitch(
+    from: string | null | undefined,
+    to: string | null,
+  ): boolean | Promise<boolean> {
+    if (!requiresModelSwitchConfirmation) return true;
+
+    // Settle any previously pending dialog so its awaiter never hangs.
+    modelSwitchDialog?.resolve(false);
+    const fromInfo = describeModelForDialog(from);
+    const toInfo = describeModelForDialog(to);
+    return new Promise<boolean>((resolve) => {
+      modelSwitchDialog = {
+        // Compare normalized provider ids, not display names — unknown ids
+        // fall back to the default config's display name and would misclassify
+        // a cross-provider switch as model-only.
+        isProviderChange: fromInfo.providerId !== toInfo.providerId,
+        fromModelLabel: fromInfo.modelLabel,
+        toModelLabel: toInfo.modelLabel,
+        fromProviderName: fromInfo.providerName,
+        toProviderName: toInfo.providerName,
+        resolve,
+      };
+    });
+  }
+
+  function settleModelSwitchDialog(confirmed: boolean) {
+    modelSwitchDialog?.resolve(confirmed);
+    modelSwitchDialog = null;
+  }
+
   async function handleProviderChangeFromModel(newProvider: string, newModel: string) {
-    if (!agentId || !workspace?.id || providerChangeLocked) return;
+    if (!agentId || !workspace?.id) return;
     if (isChangingProvider) return; // prevent re-entry during in-flight switch
 
     const previousSession = agentId && workspace?.id
@@ -1080,12 +1144,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
-        providerId={providerChangeLocked ? selectedProviderId : undefined}
         variant="ghost-light"
         size="xs"
-        isLocked={effectiveModelLocked}
-        lockedTitle={modelLockedTitle}
-        showLockIconWhenLocked={!providerChangeLocked}
+        isLocked={isModelLocked}
+        confirmModelChange={confirmModelSwitch}
         deferUpdate={isStreaming}
         workspaceId={workspace?.id}
         {agentId}
@@ -1270,6 +1332,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     </div>
   </div>
 </div>
+
+<!-- Mid-conversation model/provider switch confirmation -->
+<ModelSwitchConfirmDialog
+  open={modelSwitchDialog !== null}
+  isProviderChange={modelSwitchDialog?.isProviderChange ?? false}
+  fromModelLabel={modelSwitchDialog?.fromModelLabel ?? ''}
+  toModelLabel={modelSwitchDialog?.toModelLabel ?? ''}
+  fromProviderName={modelSwitchDialog?.fromProviderName ?? ''}
+  toProviderName={modelSwitchDialog?.toProviderName ?? ''}
+  onConfirm={() => settleModelSwitchDialog(true)}
+  onCancel={() => settleModelSwitchDialog(false)}
+/>
 
 <style>
   .rich-input-container {

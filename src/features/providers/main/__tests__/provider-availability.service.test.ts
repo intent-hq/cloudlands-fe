@@ -53,7 +53,17 @@ vi.mock('../../../feature-codes/main/feature-codes.service', () => ({
 
 /** host.providerDiscovery body with every provider uninstalled. */
 const EMPTY_DISCOVERY = {
-  providers: ['auggie', 'claude-code', 'codex', 'cortex', 'opencode', 'pi', 'droid', 'grok'].map(
+  providers: [
+    'auggie',
+    'claude-code',
+    'codex',
+    'cortex',
+    'opencode',
+    'pi',
+    'droid',
+    'grok',
+    'unsloth',
+  ].map(
     (id) => ({
       id,
       displayName: id,
@@ -248,6 +258,28 @@ describe('provider availability service', () => {
     expect(result.providers.grok.authenticated).toBeUndefined();
   });
 
+  it('reports unsloth availability from discovery with available ⇒ authenticated', async () => {
+    // Unsloth rides the opencode binary; it is local-only (no login surface),
+    // so an available provider is always authenticated.
+    routeBackend({
+      'host.providerDiscovery': {
+        ...EMPTY_DISCOVERY,
+        providers: EMPTY_DISCOVERY.providers.map((p) =>
+          p.id === 'unsloth'
+            ? { ...p, installed: true, resolvedPath: '/home/user/.opencode/bin/opencode' }
+            : p,
+        ),
+      },
+      'host.providerAuthStatus': authSweep(),
+    });
+
+    const { getProviderAvailability } = await import('../provider-availability.service');
+    const result = await getProviderAvailability();
+
+    expect(result.providers.unsloth.available).toBe(true);
+    expect(result.providers.unsloth.authenticated).toBe(true);
+  });
+
   it('sweeps auth verdicts from host.providerAuthStatus on the aggregate path', async () => {
     routeBackend({
       'host.providerDiscovery': {
@@ -359,6 +391,77 @@ describe('provider availability service', () => {
       providerId: 'droid',
       data: { available: true, authenticated: false },
     });
+  });
+
+  it('single recheck resolves unsloth off both opencode and unsloth binaries without an auth probe', async () => {
+    routeBackend({});
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'opencode' || name === 'unsloth' ? `/usr/local/bin/${name}` : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, 'unsloth');
+
+    // Local-only provider: available ⇒ authenticated, no providerAuthStatus call.
+    expect(mocks.backendRequest).not.toHaveBeenCalledWith(
+      'host.providerAuthStatus',
+      expect.anything(),
+    );
+    expect(result).toEqual({
+      success: true,
+      providerId: 'unsloth',
+      data: { available: true, authenticated: true },
+    });
+  });
+
+  it('single recheck reports unsloth unavailable when opencode is missing', async () => {
+    routeBackend({});
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'unsloth' ? '/usr/local/bin/unsloth' : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, 'unsloth');
+
+    expect(result).toEqual({ success: true, providerId: 'unsloth', data: { available: false } });
+  });
+
+  it('single recheck reports unsloth unavailable when the unsloth CLI is missing', async () => {
+    routeBackend({});
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'opencode' ? '/usr/local/bin/opencode' : null,
+    );
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, 'unsloth');
+
+    expect(result).toEqual({ success: true, providerId: 'unsloth', data: { available: false } });
+  });
+
+  it('single recheck reports unsloth unavailable when neither binary is present', async () => {
+    routeBackend({});
+    mocks.findBinary.mockResolvedValue(null);
+
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE);
+    if (!handler) throw new Error('provider check handler was not registered');
+
+    const result = await handler({}, 'unsloth');
+
+    expect(result).toEqual({ success: true, providerId: 'unsloth', data: { available: false } });
   });
 
   it('single recheck skips the auth verdict for unavailable providers', async () => {

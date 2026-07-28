@@ -74,7 +74,6 @@
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
-  import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import {
   parseAllReviewComments,
@@ -1261,11 +1260,6 @@
         workspaceId: newWorkspace.id,
         title: newWorkspace.title,
       });
-
-      // Save the selected model as the workspace's default model
-      if (selectedModel) {
-        appStore.dispatch(setWorkspaceModel({ workspaceId: newWorkspace.id, model: selectedModel }));
-      }
 
       // Initial-agent lifecycle (creation + initial-message delivery) is
       // owned by the daemon on workspace.create; no pending-agent stash here.

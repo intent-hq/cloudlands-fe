@@ -235,6 +235,7 @@ import { setupCodexIPC } from '../features/codex/main/codex.ipc';
 import { setupCortexIPC } from '../features/cortex/main/cortex.ipc';
 import { setupDroidIPC } from '../features/droid/main/droid.ipc';
 import { setupGrokIPC } from '../features/grok/main/grok.ipc';
+import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
@@ -1285,6 +1286,7 @@ app.whenReady().then(async () => {
   setupPiIPC(); // Needed for pi:get-models
   setupDroidIPC(); // Needed for droid:get-models
   setupGrokIPC(); // Needed for grok:get-models
+  setupUnslothIPC(); // Needed for unsloth:get-models
   setupFeatureCodesIPC(); // Feature codes for gating features like Cortex
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupEventsIPC(); // Needed for events:query

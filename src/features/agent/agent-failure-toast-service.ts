@@ -69,6 +69,12 @@ export function agentFailureToastId(groupKey: string): string {
   return `agent-failure:${groupKey}`;
 }
 
+/**
+ * Wrapper class for the Sonner toast element — the component is content-only,
+ * so the single wrapper border carries the destructive tint.
+ */
+const WRAPPER_CLASS = '!border-destructive/50';
+
 /** Lazily pull the toast lib so this middleware-reachable module stays light.
  *  The import promise is cached — concurrent registry notifications must not
  *  race two first-time dynamic imports of the same module. */
@@ -206,6 +212,7 @@ async function renderGroups(groups: AgentFailureGroup[]): Promise<void> {
       id: agentFailureToastId(group.groupKey),
       componentProps: buildToastProps(group, state),
       duration: Number.POSITIVE_INFINITY,
+      class: WRAPPER_CLASS,
     });
     state.visible = true;
   }
@@ -226,6 +233,7 @@ async function renderSingleGroup(group: AgentFailureGroup, state: GroupToastStat
     id: agentFailureToastId(group.groupKey),
     componentProps: buildToastProps(group, state),
     duration: Number.POSITIVE_INFINITY,
+    class: WRAPPER_CLASS,
   });
 }
 

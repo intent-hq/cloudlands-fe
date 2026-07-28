@@ -50,6 +50,7 @@ import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-st
 import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
 import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
 import { createDirectoryPickerReadMiddleware } from "$features/onboarding/directory-picker-read-service";
+import { createLegacyImportMiddleware } from "$features/settings/legacy-import-service";
 import { createStatsReadMiddleware } from "$features/stats/stats-read-service";
 import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
 import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
@@ -63,6 +64,7 @@ import { createFileContentPruneService } from "./middlewares/file-content-prune-
 import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-persistence-service";
 import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
 import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
+import { createMenuIpcMiddleware } from "./middlewares/menu-ipc-service";
 import { createNotificationIpcMiddleware } from "./middlewares/notification-ipc-service";
 import { createWebNotificationMiddleware } from "$features/notifications/web-notification-service";
 import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
@@ -176,9 +178,9 @@ function buildMiddleware(): StoreMiddleware[] {
     createSettingsHydrationMiddleware(),
     // Give the (post-saga) `selectModel` trigger a real handler (map to
     // `setSelectedModel` for the active provider) and persist model picks to
-    // the daemon settings catalog (`model.providerDefaults` /
-    // `model.workspaceOverrides`, PROTOCOL §5.12) so the selection survives a
-    // reload — the hydration middleware above reads the same paths on boot.
+    // the daemon settings catalog (`model.providerDefaults`, PROTOCOL §5.12)
+    // so the selection survives a reload — the hydration middleware above
+    // reads the same path on boot.
     createModelSelectionPersistenceMiddleware(),
     // Persist background-agent settings (default model + per-type overrides)
     // to the daemon settings catalog (`backgroundAgents.defaultModel` /
@@ -318,6 +320,9 @@ function buildMiddleware(): StoreMiddleware[] {
     // to the `directoryPicker` slice — keeping `backendRequest` out of the Svelte
     // component (per the `intent/no-component-async-data-fetch` rule).
     createDirectoryPickerReadMiddleware(),
+    // Route Settings legacy-import requests through the client service and
+    // reflect the asynchronous result in the legacyImport slice.
+    createLegacyImportMiddleware(),
     // Give the usage-stats overlay a real read handler so
     // `loadUsageStatsRequested` fetches via `stats.getUsage` and dispatches the
     // result back to the `stats` slice — keeping the wire call out of the
@@ -371,6 +376,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // ipc-saga.ts) so zoom-level changes from the main process (Cmd/Ctrl+Plus/
     // Minus or View menu) dispatch setZoomFactor and reach the Redux store again.
     createZoomSyncMiddleware(),
+    // Restore the menu bar IPC listeners (deleted app-layout/sagas/
+    // app-layout-saga.ts) so `navigate` and the `menu:*` channels the main
+    // process sends on menu clicks (Settings..., New Workspace, Open Recent,
+    // New Agent/Note/Terminal/Browser, Close Tab, Reopen Closed Tab, Select
+    // Previous/Next Tab, browser zoom) take effect in the renderer again.
+    createMenuIpcMiddleware(),
     // Restore the notification IPC listeners (deleted ui-notifications/sagas/
     // ui-notifications-saga.ts) so `notification:show` plays the notification
     // sound per the sound settings and `notification:navigate` (notification

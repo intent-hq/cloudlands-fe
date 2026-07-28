@@ -23,6 +23,7 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
+  import { pickDirectory } from '$lib/directory-picker-service';
 
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -299,7 +300,12 @@
   let pickerOpen = $state(false);
 
   function handleSelectCloneFolder() {
-    pickerOpen = true;
+    void pickDirectory({
+      title: m.onboarding_githubRepoTab_selectCloneDest_title(),
+      defaultPath: clonePath || defaultCloneBase,
+      openModal: () => (pickerOpen = true),
+      onSelect: handlePickerSelect,
+    });
   }
 
   function handlePickerSelect(pickedPath: string) {
@@ -507,7 +513,7 @@
 <!--
       Store location picker — horizontally stacked with the URL input.
       Compact one-line layout so it fits in the row without dominating
-      the space. Clicking opens a native folder dialog via Electron.
+      the space. Clicking opens the picker appropriate for the daemon locality.
     -->
 <button
   type="button"

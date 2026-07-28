@@ -13,7 +13,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { parseAgentTypeId } from '$shared/types/agent.types';
-  import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
+  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 
 
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -88,7 +88,7 @@
         // self-renameable.
         nameExplicitlySet: false,
         workspaceId: WorkspaceId(workspaceId),
-        model: selectWorkspaceDefaultModel.select(state, workspaceId),
+        model: selectSelectedModel.select(state),
         agentType: parseAgentTypeId(primitive.agentId || '') || 'chat',
         source: 'agent-action-block',
         initialMessage: primitive.goal,

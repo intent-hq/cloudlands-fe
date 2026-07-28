@@ -31,6 +31,8 @@ describe('exportFileName', () => {
   it('produces intent-<card>-<key>.png for every card', () => {
     expect(exportFileName('passport', '2026-07')).toBe('intent-passport-2026-07.png');
     expect(exportFileName('models', '2026')).toBe('intent-models-2026.png');
+    expect(exportFileName('providers', '2026-07')).toBe('intent-providers-2026-07.png');
+    expect(exportFileName('providers', '24h')).toBe('intent-providers-24h.png');
     expect(exportFileName('by-hour', '24h')).toBe('intent-by-hour-24h.png');
     expect(exportFileName('by-month', '2026-07')).toBe('intent-by-month-2026-07.png');
   });

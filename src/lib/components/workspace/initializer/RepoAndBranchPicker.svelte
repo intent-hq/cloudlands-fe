@@ -77,6 +77,10 @@
     field?: 'both' | 'repo' | 'branch';
     /** Shows a quiet branch metadata loading affordance */
     isLoading?: boolean;
+    /** Detected GitHub owner for the selected local repo (shown as dimmed suffix) */
+    detectedGitHubOwner?: string | null;
+    /** Detected GitHub repo for the selected local repo (shown as dimmed suffix) */
+    detectedGitHubRepo?: string | null;
   }
 
   let {
@@ -99,6 +103,8 @@
     presentation = 'default',
     field = 'both',
     isLoading = false,
+    detectedGitHubOwner = null,
+    detectedGitHubRepo = null,
   }: Props = $props();
 
   const isMetadataPresentation = $derived(presentation === 'metadata');
@@ -171,6 +177,9 @@
   );
   const metadataChevronClass = 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70';
   const metadataValueClass = 'text-foreground font-normal';
+  // Match the branch trigger's explicit color (BranchSelector sets text-muted-foreground)
+  // so the repo name renders with the same brightness as the branch name.
+  const defaultValueClass = 'text-muted-foreground';
   const metadataDefaultBranch = 'main';
   const isMetadataBranchLoading = $derived(
     isMetadataPresentation && field === 'branch' && isLoading,
@@ -221,6 +230,12 @@
         : repoPath,
   );
   const repoOnlyDisplayValue = $derived(isMetadataPresentation ? metadataRepoName : undefined);
+  // Dimmed "(owner/repo)" suffix for the default-presentation local-repo flow
+  const localRepoGithubSuffix = $derived(
+    detectedGitHubOwner && detectedGitHubRepo
+      ? `${detectedGitHubOwner}/${detectedGitHubRepo}`
+      : undefined,
+  );
   const branchRepoPath = $derived(
     repoPath || (repoType === 'remote' && remoteSetup ? remoteSetup.workspacePath : ''),
   );
@@ -261,7 +276,7 @@
       onchange={handleRepoChange}
       triggerClass={repoTriggerClass}
       displayValue={repoOnlyDisplayValue}
-      triggerValueClass={isMetadataPresentation ? metadataValueClass : undefined}
+      triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
       triggerContentClass={isMetadataPresentation ? 'gap-1.5' : 'gap-0.75'}
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
@@ -309,7 +324,7 @@
       value=""
       onchange={handleRepoChange}
       triggerClass={repoTriggerClass}
-      triggerValueClass={isMetadataPresentation ? metadataValueClass : undefined}
+      triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
       triggerContentClass={isMetadataPresentation ? 'gap-1.5' : 'gap-0.75'}
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
@@ -329,7 +344,7 @@
       onchange={handleRepoChange}
       triggerClass={repoTriggerClass}
       displayValue={isMetadataPresentation ? metadataRepoLabel : undefined}
-      triggerValueClass={isMetadataPresentation ? metadataValueClass : undefined}
+      triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
       triggerContentClass={isMetadataPresentation ? 'gap-1.5' : 'gap-0.75'}
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
@@ -359,7 +374,7 @@
       value={repoPath}
       onchange={handleRepoChange}
       triggerClass={repoTriggerClass}
-      triggerValueClass={isMetadataPresentation ? metadataValueClass : undefined}
+      triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
       triggerContentClass="gap-0.75"
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
@@ -420,7 +435,7 @@
       value={remoteSetup.name}
       onchange={handleRepoChange}
       triggerClass={repoTriggerClass}
-      triggerValueClass={isMetadataPresentation ? metadataValueClass : undefined}
+      triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
       triggerContentClass="gap-0.75"
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}
@@ -483,7 +498,8 @@
       value={repoPath}
       onchange={handleRepoChange}
       triggerClass={repoTriggerClass}
-      triggerValueClass={isMetadataPresentation ? metadataValueClass : undefined}
+      triggerSuffix={localRepoGithubSuffix}
+      triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
       triggerContentClass="gap-0.75"
       showTriggerChevron={isMetadataPresentation}
       triggerChevronClass={metadataChevronClass}

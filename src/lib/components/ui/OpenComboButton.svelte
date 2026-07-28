@@ -24,6 +24,7 @@
   selectInstalledEditorsFiltered,
   selectOpenAction,
 } from '$store/renderer/slices/external-editors/external-editors-selectors';
+  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -110,6 +111,7 @@
 
   const openAction = selectOpenAction();
   const installedEditors$ = selectInstalledEditorsFiltered();
+  const isDaemonLocal$ = selectIsDaemonLocal();
 
   let dropdownOpen = $state(false);
 
@@ -181,10 +183,38 @@
       return specialActions;
     }
 
+    // "Other…" shows a LOCAL app picker and spawns a local app against the
+    // daemon-host path, so it is meaningless on a remote daemon. Same locality
+    // gate as selectInstalledEditorsFiltered (monorepo#883); omitting it also
+    // makes the `actions[0]` primary-action fallback land on "Copy path".
+    if (!$isDaemonLocal$) {
+      return specialActions;
+    }
+
     return [...editorActions, otherAction, ...specialActions];
   });
 
-  const currentAction = $derived(actions.find((a) => a.id === $openAction) || actions[0]);
+  // "Open-capable" means anything beyond the always-present copy specials
+  // (editor/terminal/finder/"Other…"). When none remain — remote daemon or web
+  // build — the "Open in …" combo presentation is dropped (monorepo#890).
+  const hasOpenCapableAction = $derived(
+    actions.some((a) => a.id !== 'copy' && a.id !== 'copy-branch'),
+  );
+
+  const currentAction = $derived.by(() => {
+    if (!hasOpenCapableAction) {
+      // Primary is always "Copy path" here, even if a now-gated editor (or
+      // "Copy branch name") is the remembered open action.
+      return actions.find((a) => a.id === 'copy') || actions[0];
+    }
+    return actions.find((a) => a.id === $openAction) || actions[0];
+  });
+
+  const primaryTitle = $derived(
+    hasOpenCapableAction
+      ? m.ui_openCombo_openIn_tooltip({ name: currentAction.label })
+      : currentAction.label,
+  );
 
   /**
    * Get the path to open for editors (VSCode, Cursor, JetBrains, Xcode).
@@ -296,11 +326,12 @@
   <DropdownMenu bind:open={dropdownOpen} align="end" portal={usePortal} {side}>
     {#snippet trigger({ toggle }: { toggle: () => void })}
       {#if children}
+        <!-- With a single action there is no dropdown to show; run it directly. -->
         <button
           type="button"
-          onclick={toggle}
+          onclick={actions.length > 1 ? toggle : handlePrimaryClick}
           class="cursor-pointer"
-          title={m.ui_openCombo_openIn_tooltip({ name: currentAction.label })}
+          title={primaryTitle}
         >
           {@render children()}
         </button>
@@ -324,7 +355,7 @@
             type="button"
             class="flex items-center gap-1.5 px-2 py-1 text-xs {bgClass} transition-colors cursor-pointer"
             onclick={handlePrimaryClick}
-            title={m.ui_openCombo_openIn_tooltip({ name: currentAction.label })}
+            title={primaryTitle}
           >
             {#if currentAction.iconBase64}
               <img
@@ -344,15 +375,19 @@
             {:else}
               <Fa icon={faCode} class="w-3.5 h-3.5 opacity-60" />
             {/if}
-            <span class="text-subtle">{m.ui_openCombo_open_label()}</span>
+            <span class="text-subtle"
+              >{hasOpenCapableAction ? m.ui_openCombo_open_label() : currentAction.label}</span
+            >
           </button>
-          <button
-            type="button"
-            class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
-            onclick={toggle}
-          >
-            <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
-          </button>
+          {#if actions.length > 1}
+            <button
+              type="button"
+              class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
+              onclick={toggle}
+            >
+              <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
+            </button>
+          {/if}
         </div>
       {/if}
     {/snippet}

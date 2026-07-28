@@ -176,6 +176,7 @@ async function renderProgressCard(overrides: Partial<Workspace> = {}) {
     ...mocks.workspaceEntity,
     status: WorkspaceStatusEnum.Active,
     statusMessage: undefined,
+    statusImageAssetId: undefined,
     ...overrides,
   } as Workspace;
   const WorkspaceProgressCard = (await import('../WorkspaceProgressCard.svelte')).default;
@@ -329,5 +330,81 @@ describe('WorkspaceProgressCard status message', () => {
 
     expect(screen.queryByText(/Things are progressing nicely/)).toBeNull();
     expect(screen.queryByText(/We're 50% through the work/)).toBeNull();
+  });
+});
+
+describe('WorkspaceProgressCard status screenshot (intent-hq/monorepo#997)', () => {
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    mocks.update.mockReset();
+    mocks.notes.length = 0;
+    mocks.update.mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
+  });
+
+  it('renders the status screenshot beneath the status message via the workspace-asset URL', async () => {
+    await renderProgressCard({
+      statusMessage: 'Implementing dark mode.',
+      statusImageAssetId: 'asset-abc123',
+    });
+
+    const image = screen.getByAltText('Workspace status screenshot') as HTMLImageElement;
+    expect(image.getAttribute('src')).toBe('workspace-asset://ws-1/asset-abc123');
+    // Bounded dimensions + rounded border per the acceptance criteria.
+    expect(image.className).toContain('max-h-48');
+    expect(image.className).toContain('rounded-md');
+    expect(image.className.split(/\s+/)).toContain('border');
+
+    const statusButton = screen.getByRole('button', { name: 'Edit workspace status' });
+    expect(
+      statusButton.compareDocumentPosition(image) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders the screenshot even when the workspace has no status message', async () => {
+    await renderProgressCard({ statusMessage: undefined, statusImageAssetId: 'asset-abc123' });
+
+    expect(screen.getByAltText('Workspace status screenshot')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Edit workspace status' })).toBeNull();
+  });
+
+  it('does not render an image for text-only workspaces (absence / cleared reference)', async () => {
+    await renderProgressCard({ statusMessage: 'Text-only workspace status.' });
+
+    expect(screen.queryByAltText('Workspace status screenshot')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'View workspace status screenshot' })).toBeNull();
+    // The text status row is unchanged.
+    const statusButton = screen.getByRole('button', { name: 'Edit workspace status' });
+    expect(statusButton.textContent).toContain('Text-only workspace status.');
+  });
+
+  it('hides the image when the asset fails to load', async () => {
+    await renderProgressCard({
+      statusMessage: 'Screenshot attached.',
+      statusImageAssetId: 'asset-missing',
+    });
+
+    const image = screen.getByAltText('Workspace status screenshot');
+    await fireEvent.error(image);
+
+    await waitFor(() =>
+      expect(screen.queryByAltText('Workspace status screenshot')).toBeNull(),
+    );
+    // The text status row survives the failed image load.
+    expect(screen.getByRole('button', { name: 'Edit workspace status' })).toBeTruthy();
+  });
+
+  it('opens the full-size lightbox when the screenshot is clicked', async () => {
+    await renderProgressCard({
+      statusMessage: 'Screenshot attached.',
+      statusImageAssetId: 'asset-abc123',
+    });
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'View workspace status screenshot' }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
+    });
   });
 });

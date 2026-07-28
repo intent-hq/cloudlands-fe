@@ -8,6 +8,11 @@
  * template), never applying stale results after a repo switch. GitHub
  * selections also re-probe (debounced) when the branch changes (monorepo#835),
  * discarding results for superseded refs.
+ *
+ * Also covers the onboarding-side `git-tracking:get-remote-url` probe race
+ * (reviewer finding on cloudlands-fe#443): switching repos clears the
+ * detected GitHub owner/repo immediately, and late responses for a previous
+ * path never apply.
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,6 +32,7 @@ const mocks = vi.hoisted(() => {
     fetchGitHubRepoConfig:
       vi.fn<(owner: string, repo: string, ref?: string) => Promise<string | null>>(),
     lastUsedSelect: vi.fn(),
+    getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
   };
 });
 
@@ -67,7 +73,12 @@ vi.mock('$features/setup-scripts/repo-config', async (importOriginal) => ({
 }));
 
 vi.mock('$shared/generated/ipc-client', () => ({
-  invoke: vi.fn(async () => ({ success: false })),
+  invoke: vi.fn(async (channel: string, args?: { repoPath?: string }) => {
+    if (channel === 'git-tracking:get-remote-url') {
+      return mocks.getRemoteUrl(args?.repoPath ?? '');
+    }
+    return { success: false };
+  }),
 }));
 
 vi.mock('$lib/client', () => ({
@@ -206,6 +217,7 @@ describe('onboarding repo-config setup script detection', () => {
     mocks.lastUsedSelect.mockReturnValue(undefined);
     mocks.fetchRepoConfig.mockResolvedValue(null);
     mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
+    mocks.getRemoteUrl.mockResolvedValue({ success: false });
   });
 
   afterEach(() => {
@@ -503,5 +515,109 @@ describe('onboarding repo-config setup script detection', () => {
     });
     expect(textOf(result, 'setup-script')).toBe('echo b-config');
     expect(textOf(result, 'repo-config-script')).toBe('echo b-config');
+  });
+});
+
+describe('onboarding remote-URL probe race (cloudlands-fe#443)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    mocks.lastUsedSelect.mockReturnValue(undefined);
+    mocks.fetchRepoConfig.mockResolvedValue(null);
+    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
+    mocks.getRemoteUrl.mockResolvedValue({ success: false });
+  });
+
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+  });
+
+  const remoteUrlResponse = (owner: string, repo: string) => ({
+    success: true,
+    data: { owner, repo },
+  });
+
+  /** Flush pending microtasks and a macrotask so late promise chains settle. */
+  async function flush() {
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it('shows the detected owner/repo for a local repo with a GitHub remote (happy path)', async () => {
+    mocks.getRemoteUrl.mockResolvedValue(remoteUrlResponse('owner-a', 'repo-a'));
+
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+
+    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repo/a'));
+    await waitFor(() => expect(textOf(result, 'github-repo-info')).toContain('owner-a/repo-a'));
+  });
+
+  it('clears the detected owner/repo as soon as the repo switches (no stale suffix)', async () => {
+    const probeB = deferred<unknown>();
+    mocks.getRemoteUrl.mockImplementation(async (repoPath: string) =>
+      repoPath === '/repo/a' ? remoteUrlResponse('owner-a', 'repo-a') : probeB.promise,
+    );
+
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => expect(textOf(result, 'github-repo-info')).toContain('owner-a/repo-a'));
+
+    // Switch repos while B's probe is still in flight: the previous repo's
+    // owner/repo must disappear immediately, not linger until B resolves.
+    selectLocalRepo('/repo/b');
+    await waitFor(() => expect(textOf(result, 'github-repo-info')?.trim()).toBe(''));
+  });
+
+  it('ignores an out-of-order probe response for a superseded repo path', async () => {
+    const probeA = deferred<unknown>();
+    const probeB = deferred<unknown>();
+    mocks.getRemoteUrl.mockImplementation((repoPath: string) =>
+      repoPath === '/repo/a' ? probeA.promise : probeB.promise,
+    );
+
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repo/a'));
+
+    // Switch repos while A's probe is in flight, then resolve A late.
+    selectLocalRepo('/repo/b');
+    await waitFor(() => expect(mocks.getRemoteUrl).toHaveBeenCalledWith('/repo/b'));
+    probeA.resolve(remoteUrlResponse('owner-a', 'repo-a'));
+    await flush();
+
+    // A's late result must be dropped, not shown for repo B.
+    expect(textOf(result, 'github-repo-info')?.trim()).toBe('');
+
+    // B's own probe still applies normally.
+    probeB.resolve(remoteUrlResponse('owner-b', 'repo-b'));
+    await waitFor(() => expect(textOf(result, 'github-repo-info')).toContain('owner-b/repo-b'));
+  });
+
+  it('keeps the detected owner/repo and does not re-probe on a branch-only selection change (#447 follow-up)', async () => {
+    // First probe resolves; any accidental re-probe would hang forever, so a
+    // buggy clear+re-probe leaves the suffix blank instead of flickering back.
+    mocks.getRemoteUrl
+      .mockImplementationOnce(async () => remoteUrlResponse('owner-a', 'repo-a'))
+      .mockImplementation(() => new Promise(() => {}));
+
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => expect(textOf(result, 'github-repo-info')).toContain('owner-a/repo-a'));
+    expect(mocks.getRemoteUrl).toHaveBeenCalledTimes(1);
+
+    // Branch-only change: same repo path and type, different branch.
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: { onProjectChange: (selection: unknown) => void };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.onProjectChange({ type: 'local', repoPath: '/repo/a', branch: 'other', isValid: true });
+    await flush();
+
+    // The suffix must persist (no blank/flicker) and the probe must not re-run.
+    expect(textOf(result, 'github-repo-info')).toContain('owner-a/repo-a');
+    expect(mocks.getRemoteUrl).toHaveBeenCalledTimes(1);
   });
 });

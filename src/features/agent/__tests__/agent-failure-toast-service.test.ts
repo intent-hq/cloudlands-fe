@@ -63,7 +63,9 @@ async function flush(): Promise<void> {
 }
 
 /** Latest `toast.custom` call for a given stable toast id. */
-function lastCustomCallFor(id: string): { componentProps: Record<string, any> } | undefined {
+function lastCustomCallFor(
+  id: string,
+): { componentProps: Record<string, any>; class?: string } | undefined {
   const calls = toastCustomMock.mock.calls.filter(([, data]) => data?.id === id);
   const last = calls[calls.length - 1];
   return last?.[1];
@@ -118,6 +120,8 @@ describe('agent-failure-toast-service', () => {
     expect(call!.componentProps.detailLines).toEqual([
       { key: 'agent-1', label: 'Implementor — Fix login' },
     ]);
+    // Content-only component — the destructive tint rides the wrapper class.
+    expect(call!.class).toBe('!border-destructive/50');
   });
 
   it('updates the same toast in place when another agent joins the group', async () => {

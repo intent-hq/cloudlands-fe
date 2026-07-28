@@ -239,6 +239,11 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'grok:get-models',
   },
 
+  // Unsloth Integration (local GGUF models via the daemon's managed server)
+  UNSLOTH: {
+    GET_MODELS: 'unsloth:get-models',
+  },
+
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
@@ -411,6 +416,7 @@ export const IPC_CHANNELS = {
   // Dialog
   DIALOG: {
     MESSAGE: 'dialog:message',
+    OPEN: 'dialog:open',
   },
 
   // Shell

@@ -19,8 +19,6 @@ import {
   chatStreamingReconciled,
   streamCompleted,
   streamTimedOut,
-  chatStallDetected,
-  chatStuckStateCleared,
   chatModelUnavailableCleared,
   chatRebindStarted,
   chatRebindEnded,
@@ -28,16 +26,27 @@ import {
   streamStatusReceived,
   transcriptHydrationStarted,
   transcriptHydrationSettled,
+  chatLastAttemptedMessageSet,
+  chatQueuedRetryRecordSet,
 } from './chat-state-slice';
+import {
+  removeQueuedMessageFromAgentQueue,
+  replaceAgentQueue,
+} from '../agent-queue/agent-queue-slice';
+import type { QueuedMessage } from '$shared/types';
 import {
   selectChatAgentState,
   selectChatError,
-  selectChatIsStalled,
   selectChatLastMessageTime,
   selectTranscriptHydration,
 } from './chat-state-selectors';
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import { eventReceived } from '../workspace-events/workspace-events-slice';
+import type {
+  AgentIdleEvent,
+  AgentStatusChangedEvent,
+} from '$features/events/types';
 
 const AGENT = 'agent-1';
 
@@ -104,7 +113,6 @@ describe('chatStateReducer', () => {
     const agent = state.byAgentId[AGENT];
     expect(agent.error).toBeNull();
     expect(agent.receivedFirstChunk).toBe(false);
-    expect(agent.isStalled).toBe(false);
     expect(agent.lastMessageTime).toBe(action.payload.timestamp);
     expect(selectChatLastMessageTime.select(asStoreState(state), AGENT)).toBe(action.payload.timestamp);
   });
@@ -126,6 +134,18 @@ describe('chatStateReducer', () => {
     const agent = state.byAgentId[AGENT];
     expect(agent.error).toBe('network error');
     expect(agent.modelUnavailable).toBeNull();
+  });
+
+  it('chatSendFailed preserves lastAttemptedMessage so the banner retries the failed message (#969)', () => {
+    // The send paths record the attempt (chatLastAttemptedMessageSet) BEFORE
+    // the wire call; a failure must not wipe it — "Try again" pairs the error
+    // banner with exactly the recorded payload.
+    const attempted = { text: 'queued and failed', options: { model: 'fast-model' } };
+    const s1 = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    const s2 = chatStateReducer(s1, chatSendFailed(AGENT, 'queueMessage rejected'));
+    const agent = s2.byAgentId[AGENT];
+    expect(agent.error).toBe('queueMessage rejected');
+    expect(agent.lastAttemptedMessage).toEqual(attempted);
   });
 
   it('chatInterrupted clears streaming start time', () => {
@@ -170,6 +190,285 @@ describe('chatStateReducer', () => {
     expect(agent.receivedFirstChunk).toBe(false);
   });
 
+  it('chatLastAttemptedMessageSet records the retry payload (#941)', () => {
+    const attempted = {
+      text: 'send this',
+      options: {
+        noteIds: ['note-1'],
+        // #965: image attachments ride the recorded payload so Try again resends them.
+        imageBlocks: [{ type: 'image' as const, data: 'aGVsbG8=', mimeType: 'image/png' }],
+      },
+    };
+    const s1 = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    expect(s1.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+    const s2 = chatStateReducer(s1, chatLastAttemptedMessageSet(AGENT, null));
+    expect(s2.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+  });
+
+  it('chatSendStarted preserves a previously recorded lastAttemptedMessage', () => {
+    const attempted = { text: 'edited text' };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, chatSendStarted(AGENT));
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+  });
+
+  describe('turn-scoped queued retry records (#999)', () => {
+    const queuedEntry = (id: string, position = 0): QueuedMessage => ({
+      id,
+      content: `content of ${id}`,
+      queuedAt: '2026-01-01T00:00:00.000Z',
+      position,
+    });
+
+    it('chatQueuedRetryRecordSet parks the record without touching lastAttemptedMessage', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'A' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'A' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' } },
+      });
+    });
+
+    it('replaceAgentQueue promotes a drained record into lastAttemptedMessage', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'A' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      // Drain snapshot: qm-1 no longer present (daemon dequeued it to run).
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('replaceAgentQueue leaves still-queued records parked', () => {
+      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
+      // qm-1 drains, qm-2 is still queued.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-2')]));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-2': { seq: 2, record: { text: 'C' } },
+      });
+    });
+
+    it('replaceAgentQueue promotes the LAST-enqueued record when several ids vanish in one non-empty snapshot', () => {
+      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-3', { text: 'D' }));
+      // Missed intermediate snapshots: qm-1 and qm-2 both gone, qm-3 remains.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-3')]));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'C' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-3': { seq: 3, record: { text: 'D' } },
+      });
+    });
+
+    it('promotion picks the highest seq even with integer-like ids (Record key order trap)', () => {
+      // JS Records iterate integer-like keys FIRST regardless of insertion
+      // order — '2' enqueued before '1' would be mis-ordered by key
+      // iteration. The per-record seq must decide the promotion instead.
+      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, '2', { text: 'first' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, '1', { text: 'second' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-rest', { text: 'third' }));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-rest')]));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'second' });
+    });
+
+    it('an empty snapshot removing MULTIPLE records drops them without promotion (clear-queue signature)', () => {
+      // agent.forceMessage / agent.editAndRegenerate clear the whole queue
+      // (PROTOCOL §5.5) and publish an empty snapshot — the cleared entries
+      // never run, and the event may arrive AFTER the flow recorded its own
+      // lastAttemptedMessage, so promotion must not clobber it. A genuine
+      // drain removes exactly one entry per cycle.
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'fresh' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'fresh' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('replaceAgentQueue with no parked records is a no-op (state identity preserved)', () => {
+      const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+      const s2 = chatStateReducer(s1, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));
+      expect(s2).toBe(s1);
+    });
+
+    it('replaceAgentQueue never materializes a chat-state entry for an unopened chat', () => {
+      const s = chatStateReducer(initialState, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT]).toBeUndefined();
+    });
+
+    it('removeQueuedMessageFromAgentQueue drops the record WITHOUT promotion (user delete)', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'A' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, removeQueuedMessageFromAgentQueue(AGENT, 'qm-1'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'A' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+      // The follow-up snapshot without qm-1 must not resurrect/promote it.
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'A' });
+    });
+
+    it('agent:idle success-clear does not disturb parked records', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'A' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      const idleEvent: AgentIdleEvent = {
+        id: 'evt-idle-1',
+        type: 'agent:idle',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        workspaceId: 'ws-1',
+        actor: { type: 'agent', id: AGENT },
+        data: {
+          agentId: AGENT,
+          agentName: 'Test Agent',
+          reason: 'stream_complete',
+          finishReason: 'end_turn',
+          status: 'idle',
+          activationState: null,
+          isActive: false,
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: null,
+        },
+      };
+      s = chatStateReducer(s, eventReceived('ws-1', idleEvent));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' } },
+      });
+    });
+  });
+
+  it('agentStreamUpdateReceived(complete, no failure) preserves lastAttemptedMessage until the disposition is known (#984)', () => {
+    // The terminal `complete` maps the daemon's `agent:stream:end`, which is
+    // disposition-NEUTRAL (PROTOCOL §7: complete/error payloads are identical
+    // by design) — a failed turn ends its stream the same way. Success is only
+    // confirmed by the follow-up `agent:idle`, which performs the clear (#941
+    // semantics ride the idle finalize, see the #973 describe below).
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'sent' }));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+    }));
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'sent' });
+  });
+
+  it('mid-turn provider failure: complete(stream:end) then chatSendFailed(agent:failed) keeps the retry payload (#984)', () => {
+    // Daemon emission order on a live mid-turn provider failure
+    // (agent_session.rs run_prompt_turn): ONE disposition-neutral
+    // `agent:stream:end` — mapped by the events bridge to eventType
+    // 'complete' with no error marker — THEN `agent:failed`, mapped to
+    // chatSendFailed. The complete must not wipe the record, or the failure
+    // banner's "Try again" resolves as a no-op.
+    const attempted = { text: 'failed mid-turn', options: { model: 'slow-model' } };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+    }));
+    s = chatStateReducer(s, chatSendFailed(AGENT, 'session/prompt failed: provider error'));
+    const agent = s.byAgentId[AGENT];
+    expect(agent.error).toBe('session/prompt failed: provider error');
+    expect(agent.lastAttemptedMessage).toEqual(attempted);
+  });
+
+  it('agentStreamUpdateReceived(complete, stopReason interrupted) clears lastAttemptedMessage', () => {
+    // A user stop's terminal stream:end carries stopReason "interrupted" and
+    // no agent:idle or agent:failed follows (PROTOCOL §7.2) — clear here so
+    // the abandoned payload does not stay resident (#965).
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'stopped' }));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+      stopReason: 'interrupted',
+    }));
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+  });
+
+  it('agentStreamUpdateReceived(complete, model-unavailable) preserves lastAttemptedMessage for retry-with-model (#964)', () => {
+    const attempted = { text: 'sent', options: { noteIds: ['note-1'] } };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+      completeMessage: {
+        role: 'assistant',
+        metadata: {
+          modelUnavailable: true,
+          failedModel: 'slow-model',
+          nextAvailableModel: 'fast-model',
+        },
+      },
+    }));
+    const agent = s.byAgentId[AGENT];
+    expect(agent.lastAttemptedMessage).toEqual(attempted);
+    expect(agent.modelUnavailable).toEqual({
+      failedModel: 'slow-model',
+      nextAvailableModel: 'fast-model',
+    });
+  });
+
+  it('streamCompleted passes through modelUnavailable instead of clearing it (#964)', () => {
+    const info = { failedModel: 'slow-model', nextAvailableModel: 'fast-model' };
+    const attempted = { text: 'sent' };
+    let s = stateWithModelUnavailable();
+    s = chatStateReducer(
+      s,
+      streamCompleted(AGENT, { lastAttemptedMessage: attempted, modelUnavailable: info }),
+    );
+    const agent = s.byAgentId[AGENT];
+    expect(agent.modelUnavailable).toEqual(info);
+    expect(agent.lastAttemptedMessage).toEqual(attempted);
+  });
+
+  it('agentStreamUpdateReceived(complete with timeout finishReason) preserves lastAttemptedMessage for retry (#941)', () => {
+    const attempted = { text: 'edited text' };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'complete',
+      finishReason: 'timeout',
+    }));
+    expect(s.byAgentId[AGENT].error).toContain('timed out');
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+  });
+
+  it('agentStreamUpdateReceived(timeout) preserves lastAttemptedMessage for retry (#941)', () => {
+    const attempted = { text: 'edited text' };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'timeout',
+    }));
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+  });
+
+  it('agentStreamUpdateReceived(error) preserves lastAttemptedMessage for retry (#941)', () => {
+    const attempted = { text: 'edited text' };
+    let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+    s = chatStateReducer(s, agentStreamUpdateReceived({
+      agentId: AGENT,
+      handlerSessionId: AGENT,
+      source: 'sendMessage',
+      eventType: 'error',
+      error: 'stream failed',
+    }));
+    expect(s.byAgentId[AGENT].error).toBe('stream failed');
+    expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+  });
+
   it('agentStreamUpdateReceived(started) sets streaming metadata state', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
     const action = agentStreamUpdateReceived({
@@ -181,7 +480,6 @@ describe('chatStateReducer', () => {
     const s2 = chatStateReducer(s1, action);
     const agent = s2.byAgentId[AGENT];
     expect(agent.error).toBeNull();
-    expect(agent.isStalled).toBe(false);
     expect(agent.lastChunkTime).toBe(action.payload[0].timestamp);
   });
 
@@ -278,7 +576,6 @@ describe('chatStateReducer', () => {
     const s2 = chatStateReducer(s1, action);
     const agent = s2.byAgentId[AGENT];
     expect(agent.receivedFirstChunk).toBe(true);
-    expect(agent.isStalled).toBe(false);
     expect(agent.lastChunkReceivedAt).toBe(action.payload[0].timestamp);
     expect(agent.statusEvents).toHaveLength(1);
     expect(agent.statusEvents[0]).toMatchObject({ phase: 'streaming' });
@@ -386,20 +683,6 @@ describe('chatStateReducer', () => {
     const agent = s2.byAgentId[AGENT];
     expect(agent.streamingStartTime).toBeNull();
     expect(agent.error).toContain('timed out');
-  });
-
-  it('chatStallDetected sets isStalled', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, chatStallDetected(AGENT));
-    expect(s2.byAgentId[AGENT].isStalled).toBe(true);
-  });
-
-  it('chatStuckStateCleared resets stuck state', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, chatStallDetected(AGENT));
-    const s3 = chatStateReducer(s2, chatStuckStateCleared(AGENT));
-    const agent = s3.byAgentId[AGENT];
-    expect(agent.isStalled).toBe(false);
   });
 
   it('chatModelUnavailableCleared clears info', () => {
@@ -530,6 +813,132 @@ describe('chatStateReducer', () => {
     });
   });
 
+  describe('idle-reconcile finalize clears lastAttemptedMessage (#973)', () => {
+    // PROTOCOL.md-shaped agent:idle event fixture (canonical status fields
+    // are required on lifecycle payloads; explicit null when not known).
+    function agentIdleEvent(agentId: string) {
+      const event: AgentIdleEvent = {
+        id: 'evt-idle-1',
+        type: 'agent:idle',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        workspaceId: 'ws-1',
+        actor: { type: 'agent', id: agentId },
+        data: {
+          agentId,
+          agentName: 'Test Agent',
+          reason: 'stream_complete',
+          finishReason: 'end_turn',
+          status: 'idle',
+          activationState: null,
+          isActive: false,
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: null,
+        },
+      };
+      return eventReceived('ws-1', event);
+    }
+
+    it('successful live turn: complete preserves, the follow-up agent:idle clears (#941/#984)', () => {
+      // The live success flow — the disposition-neutral terminal `complete`
+      // defers the clear to `agent:idle`, which always follows a successful
+      // turn on the same firehose (ready-to-send suppression aside, in which
+      // case the drained final turn's idle clears).
+      let s = chatStateReducer(initialState, chatSendStarted(AGENT));
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'sent ok' }));
+      s = chatStateReducer(s, agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+      }));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'sent ok' });
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+    });
+
+    it('agent:idle reconcile after a missed terminal complete clears the record', () => {
+      // Turn started, record set, terminal `complete` never observed (window
+      // reload mid-turn / dropped subscription) — the agent:idle reconcile is
+      // the finalize and must not leave the MB-scale payload resident.
+      let s = chatStateReducer(initialState, chatSendStarted(AGENT));
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'sent mid-reload' }));
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+    });
+
+    it('agent:idle preserves the record while a failure banner is visible (error set)', () => {
+      const attempted = { text: 'failed send' };
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+      s = chatStateReducer(s, chatSendFailed(AGENT, 'network error'));
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      expect(s.byAgentId[AGENT].error).toBe('network error');
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+    });
+
+    it('agent:idle preserves the record while a retry-with-model banner is pending (#964)', () => {
+      const attempted = { text: 'model-unavailable send' };
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+      s = chatStateReducer(s, agentStreamUpdateReceived({
+        agentId: AGENT,
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+        completeMessage: {
+          role: 'assistant',
+          metadata: {
+            modelUnavailable: true,
+            failedModel: 'slow-model',
+            nextAvailableModel: 'fast-model',
+          },
+        },
+      }));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+      s = chatStateReducer(s, agentIdleEvent(AGENT));
+      expect(s.byAgentId[AGENT].modelUnavailable).not.toBeNull();
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
+    });
+
+    it('agent:idle for an agent with no chat-state entry does not materialize one', () => {
+      const state = chatStateReducer(initialState, chatSendStarted(AGENT));
+      const next = chatStateReducer(state, agentIdleEvent('agent-never-opened'));
+      expect(next).toBe(state);
+      expect(next.byAgentId['agent-never-opened']).toBeUndefined();
+    });
+
+    it('agent:idle with no record is a state-identity no-op', () => {
+      const state = chatStateReducer(initialState, chatSendStarted(AGENT));
+      const next = chatStateReducer(state, agentIdleEvent(AGENT));
+      expect(next).toBe(state);
+    });
+
+    it('non-idle eventReceived does not touch the record', () => {
+      const attempted = { text: 'pending' };
+      const state = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempted));
+      const statusChangedEvent: AgentStatusChangedEvent = {
+        id: 'evt-2',
+        type: 'agent:status-changed',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        workspaceId: 'ws-1',
+        actor: { type: 'agent', id: AGENT },
+        data: {
+          agentId: AGENT,
+          previousStatus: 'idle',
+          status: 'responding',
+          activationState: null,
+          isActive: true,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+          stopReason: null,
+        },
+      };
+      const next = chatStateReducer(state, eventReceived('ws-1', statusChangedEvent));
+      expect(next).toBe(state);
+    });
+  });
+
 });
 
 describe('chatState selectors', () => {
@@ -541,10 +950,6 @@ describe('chatState selectors', () => {
   it('selectChatError returns error message', () => {
     const state = chatStateReducer(initialState, chatInitFailed(AGENT, 'bad'));
     expect(selectChatError.select(asStoreState(state), AGENT)).toBe('bad');
-  });
-
-  it('selectChatIsStalled returns false by default', () => {
-    expect(selectChatIsStalled.select(asStoreState(initialState), AGENT)).toBe(false);
   });
 
   it('selectChatAgentState returns empty state for unknown', () => {

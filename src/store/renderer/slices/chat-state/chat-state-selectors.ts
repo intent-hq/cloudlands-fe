@@ -39,12 +39,6 @@ export const selectChatError = store.createSelector(
     getAgentChatState(state, agentId).error,
 );
 
-/** Select stalled flag */
-export const selectChatIsStalled = store.createSelector(
-  (state, agentId: string): boolean =>
-    getAgentChatState(state, agentId).isStalled,
-);
-
 /** Select streaming start time */
 export const selectChatStreamingStartTime = store.createSelector(
   (state, agentId: string): number | null =>
@@ -79,16 +73,6 @@ export const selectChatStatusEvents = store.createSelector(
 export const selectChatReceivedFirstChunk = store.createSelector(
   (state, agentId: string): boolean =>
     getAgentChatState(state, agentId).receivedFirstChunk,
-);
-
-/**
- * Select the idle-reconcile suppression marker. True while a queued message
- * has just started a new turn, signalling handleAgentIdle to skip clearing the
- * fresh turn's streaming flags for the prior turn's stale `agent:idle` event.
- */
-export const selectChatIdleReconcileSuppressed = store.createSelector(
-  (state, agentId: string): boolean =>
-    getAgentChatState(state, agentId).idleReconcileSuppressed === true,
 );
 
 /** Select rebinding flag */

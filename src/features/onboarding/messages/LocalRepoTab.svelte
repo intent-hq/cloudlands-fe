@@ -18,6 +18,7 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import { cn } from '$lib/utils';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
+  import { pickDirectory } from '$lib/directory-picker-service';
 
   const logger = createLogger('LocalRepoTab');
 
@@ -145,7 +146,12 @@
   let pickerOpen = $state(false);
 
   function handleSelectFolder() {
-    pickerOpen = true;
+    void pickDirectory({
+      title: m.onboarding_localRepoTab_selectRepoFolder_title(),
+      defaultPath: selectedPath,
+      openModal: () => (pickerOpen = true),
+      onSelect: handlePickerSelect,
+    });
   }
 
   async function handlePickerSelect(pickedPath: string) {
@@ -296,7 +302,10 @@
             </div>
             <div class="min-w-0 shrink truncate">
               <span
-                class={cn('text-sm font-medium', isCommitted ? 'text-background' : 'text-foreground')}
+                class={cn(
+                  'text-sm font-medium',
+                  isCommitted ? 'text-background' : 'text-foreground',
+                )}
               >
                 {#if repo.owner}
                   <span class={cn('mr-1', isCommitted ? 'text-background/60' : 'text-subtle')}

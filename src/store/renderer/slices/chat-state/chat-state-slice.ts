@@ -6,6 +6,7 @@ import type {
   StatusEvent,
   LastAttemptedMessage,
   ModelUnavailableInfo,
+  QueuedRetryRecord,
   SendMessagePayload,
   InitializeChatOptions,
   StreamStatusContext,
@@ -16,6 +17,12 @@ import {
   type AgentStreamUpdatePayload,
 } from '../workspace-agents/workspace-agents-stream-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import { eventReceived } from '../workspace-events/workspace-events-slice';
+import {
+  removeQueuedMessageFromAgentQueue,
+  replaceAgentQueue,
+} from '../agent-queue/agent-queue-slice';
+import type { QueuedMessage } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
@@ -28,16 +35,15 @@ export const emptyChatAgentState: ChatAgentState = {
   error: null,
   lastChunkTime: null,
   receivedFirstChunk: false,
-  isStalled: false,
   streamingStartTime: null,
   lastAttemptedMessage: null,
+  queuedRetryRecords: {},
   modelUnavailable: null,
   statusEvents: [],
   trackedWorkspaceId: null,
   isRebinding: false,
   lastMessageTime: 0,
   lastChunkReceivedAt: 0,
-  idleReconcileSuppressed: false,
 };
 
 export const initialState: ChatStateSlice = {
@@ -91,6 +97,121 @@ function getModelUnavailableInfo(value: unknown): ModelUnavailableInfo | null {
   };
 }
 
+/**
+ * Preserve-on-failure predicate for the `agent:idle` reconcile finalize path
+ * (#973), mirroring the clear-on-success semantics of the observed terminal
+ * `complete` event (see reduceAgentStreamUpdate: cleared unless failureMessage
+ * || modelUnavailable). A reconcile cannot observe how the missed turn ended, so
+ * it reads the persisted flags instead: `error` set means the failure banner
+ * is visible and its "Try again" still needs the record (#941); `modelUnavailable`
+ * set means a "Retry with <model>" banner is pending (#964). Those two banners
+ * are the record's only consumers — with neither flag set no UI can reach it,
+ * so clearing is safe even if the missed turn actually failed (that failure
+ * was missed too, so no banner is showing).
+ */
+function shouldPreserveLastAttemptedMessage(agent: ChatAgentState): boolean {
+  return agent.error !== null || agent.modelUnavailable !== null;
+}
+
+/**
+ * Finalize via `agent:idle` reconcile (#973): when the terminal stream
+ * `complete` event was missed (window reload mid-turn, dropped subscription),
+ * the successful turn is reconciled through `agent:idle` instead — previously
+ * the only path that never cleared `lastAttemptedMessage`, leaving a
+ * potentially MB-scale base64 payload (imageBlocks, #965) resident for the
+ * app session.
+ */
+function reduceAgentIdleReconcile(state: ChatStateSlice, agentId: string): ChatStateSlice {
+  const agent = state.byAgentId[agentId];
+  // agent:idle fires for every agent in subscribed workspaces; never
+  // materialize a chat-state entry for a chat that was never opened.
+  // NOTE: no queued-turn suppression is needed here — the daemon withholds
+  // `agent:idle` while ready-to-send messages remain queued (#969), so an
+  // observed idle always belongs to the finished turn.
+  if (!agent) return state;
+  if (agent.lastAttemptedMessage === null || shouldPreserveLastAttemptedMessage(agent)) {
+    return state;
+  }
+  return updateAgent(state, agentId, { lastAttemptedMessage: null });
+}
+
+/**
+ * Turn-scoped retry-record promotion (#999): when an `agent:queue:updated`
+ * snapshot no longer contains a recorded id, the daemon has dequeued that
+ * entry to run it (agent_manager.rs `try_drain_queue` publishes the shrunk
+ * snapshot right after `dequeue_message`) — so its payload becomes the ACTIVE
+ * turn's retry record. Promoting into `lastAttemptedMessage` means a failure
+ * in the drained turn pairs "Try again" with the drained message instead of
+ * the previous in-flight turn's already-succeeded payload (the #984 residual:
+ * `agent:idle` is withheld while ready-to-send entries remain, so the stale
+ * record was never success-cleared between turns). When several recorded ids
+ * vanish in one snapshot (missed events), the LAST-enqueued of them is the
+ * most recent turn — the per-record `seq` (a monotonic enqueue counter, see
+ * QueuedRetryRecord) decides, because `Record` key iteration order is not
+ * insertion order for integer-like keys.
+ *
+ * Queue-CLEAR flows (`agent.forceMessage` and `agent.editAndRegenerate`,
+ * PROTOCOL §5.5 — both call `clear_queue` and publish an empty snapshot;
+ * interrupt-priority ⌘Enter sends preserve the queue) also land here. The
+ * cleared entries never run, so promotion must be SKIPPED for them: both
+ * flows record their own `lastAttemptedMessage`, but Electron does not
+ * guarantee ordering between the event channel and the RPC response, so a
+ * late-arriving empty snapshot could otherwise clobber the fresh record
+ * with a discarded entry's payload. The clear-queue signature — an EMPTY
+ * incoming snapshot with more than one recorded id vanishing at once — is
+ * distinguishable from a genuine drain, which removes exactly one entry per
+ * cycle; on that signature the records are dropped without promotion.
+ */
+function reduceQueueSnapshotDiff(
+  state: ChatStateSlice,
+  agentId: string,
+  queue: QueuedMessage[],
+): ChatStateSlice {
+  const agent = state.byAgentId[agentId];
+  if (!agent) return state;
+  if (Object.keys(agent.queuedRetryRecords).length === 0) return state;
+  const presentIds = new Set(queue.map((message) => message.id));
+  let promoted: QueuedRetryRecord | null = null;
+  let drainedCount = 0;
+  const remaining: Record<string, QueuedRetryRecord> = {};
+  for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
+    if (presentIds.has(id)) {
+      remaining[id] = parked;
+    } else {
+      drainedCount += 1;
+      if (promoted === null || parked.seq > promoted.seq) {
+        promoted = parked;
+      }
+    }
+  }
+  if (promoted === null) return state;
+  if (queue.length === 0 && drainedCount > 1) {
+    return updateAgent(state, agentId, { queuedRetryRecords: remaining });
+  }
+  return updateAgent(state, agentId, {
+    lastAttemptedMessage: promoted.record,
+    queuedRetryRecords: remaining,
+  });
+}
+
+/**
+ * User-initiated queued-message removal (#999): the entry will never drain,
+ * so its retry record is dropped WITHOUT promotion. The "Send now" replay
+ * (send path with `queuedMessageId`) also flows through here first — its
+ * direct lifecycle send then records its own `lastAttemptedMessage`.
+ */
+function reduceQueuedRecordRemoved(
+  state: ChatStateSlice,
+  agentId: string,
+  messageId: string,
+): ChatStateSlice {
+  const agent = state.byAgentId[agentId];
+  if (!agent || !(messageId in agent.queuedRetryRecords)) return state;
+  const remaining = { ...agent.queuedRetryRecords };
+  delete remaining[messageId];
+  return updateAgent(state, agentId, { queuedRetryRecords: remaining });
+}
+
 function getStreamFailureMessage(payload: AgentStreamUpdatePayload): string | null {
   if (payload.error) return payload.error;
   if (payload.eventType === 'timeout' || payload.finishReason === 'timeout') {
@@ -108,7 +229,6 @@ function reduceChunkReceived(
   if (!isTextChunk) {
     return updateAgent(state, agentId, {
       lastChunkTime: timestamp,
-      isStalled: false,
       lastChunkReceivedAt: timestamp,
     });
   }
@@ -116,7 +236,6 @@ function reduceChunkReceived(
   const agent = getAgent(state, agentId);
   return updateAgent(state, agentId, {
     lastChunkTime: timestamp,
-    isStalled: false,
     receivedFirstChunk: true,
     lastChunkReceivedAt: timestamp,
     statusEvents: !agent.receivedFirstChunk
@@ -144,7 +263,6 @@ function reduceAgentStreamUpdate(
       modelUnavailable: null,
       lastChunkTime: timestamp,
       receivedFirstChunk: false,
-      isStalled: false,
       statusEvents: [],
     });
   }
@@ -156,14 +274,34 @@ function reduceAgentStreamUpdate(
   }
   if (payload.eventType === 'complete' || payload.eventType === 'timeout') {
     const failureMessage = getStreamFailureMessage(payload);
+    const modelUnavailable = getModelUnavailableInfo(payload.completeMessage);
     return updateAgent(state, payload.agentId, {
       streamingStartTime: null,
       lastChunkTime: null,
       receivedFirstChunk: false,
-      isStalled: false,
       statusEvents: [],
-      lastAttemptedMessage: null,
-      modelUnavailable: getModelUnavailableInfo(payload.completeMessage),
+      // This terminal maps the daemon's `agent:stream:end`, which is
+      // disposition-NEUTRAL (PROTOCOL §7: the complete/error payloads are
+      // identical by design) — a failed turn ends its stream the same way and
+      // only the follow-up lifecycle event carries the disposition
+      // (`agent:idle` on success, `agent:failed` on error). Clearing the
+      // retry payload here therefore raced ahead of the failure banner and
+      // left "Try again" a no-op (#984). Preserve the record and defer the
+      // success-clear to the `agent:idle` finalize (reduceAgentIdleReconcile,
+      // whose error/modelUnavailable guards keep the #941/#964 preserve-on-
+      // failure semantics). The one disposition this event DOES carry is the
+      // user interrupt (`stopReason: "interrupted"`, §7.2) — clear the
+      // abandoned payload inline here (#965), because the synthetic
+      // post-interrupt `agent:idle` (agent_manager.rs interrupt_inner,
+      // STAB-28) is SUPPRESSED when a ready-to-send queue exists or the
+      // interrupt carries a message, so the idle finalize can't be relied on.
+      // When the synthetic idle does arrive, its reconcile is a harmless
+      // no-op on the already-cleared record.
+      lastAttemptedMessage:
+        !failureMessage && !modelUnavailable && payload.stopReason === 'interrupted'
+          ? null
+          : getAgent(state, payload.agentId).lastAttemptedMessage,
+      modelUnavailable,
       error: failureMessage,
     });
   }
@@ -209,14 +347,25 @@ export const chatSendStarted = createAction(
 );
 
 /**
- * Set the idle-reconcile suppression marker. Dispatched true by
- * handleQueueProcessing right after chatSendStarted (a queued turn began, so
- * the prior turn's incoming `agent:idle` must not clear the fresh flags) and
- * false by handleAgentIdle once it has consumed the marker.
+ * Record the exact message content a send attempt carried so the error
+ * banner's "Try again" can resend it verbatim (#941). Dispatched by the
+ * send paths (chat-send-service, edit-regenerate-service) alongside
+ * `chatSendStarted`.
  */
-export const chatIdleReconcileSuppressionSet = createAction<[agentId: string, suppressed: boolean]>(
-  'chatState/idleReconcileSuppressionSet',
-);
+export const chatLastAttemptedMessageSet = createAction<
+  [agentId: string, lastAttemptedMessage: LastAttemptedMessage | null]
+>('chatState/lastAttemptedMessageSet');
+
+/**
+ * Record a retry payload for a successfully daemon-queued send, keyed by the
+ * returned QueuedMessage id (#999). The record stays parked until the queue
+ * snapshot shows the entry drained (promotion into `lastAttemptedMessage`,
+ * see reduceQueueSnapshotDiff) or removed (dropped). Dispatched by
+ * chat-send-service's queue-on-send success branch.
+ */
+export const chatQueuedRetryRecordSet = createAction<
+  [agentId: string, messageId: string, record: LastAttemptedMessage]
+>('chatState/queuedRetryRecordSet');
 
 /** Send failed (activation or network error) */
 export const chatSendFailed =
@@ -278,12 +427,6 @@ export const chatStatusEventsHydrated = createAction<
 
 /** Stream timed out */
 export const streamTimedOut = createAction<[agentId: string]>('chatState/streamTimedOut');
-
-/** Stall detected by stall detection saga */
-export const chatStallDetected = createAction<[agentId: string]>('chatState/stallDetected');
-
-/** State reconciliation: clear stuck processing state */
-export const chatStuckStateCleared = createAction<[agentId: string]>('chatState/stuckStateCleared');
 
 /** Clear error */
 export const chatErrorCleared = createAction<[agentId: string]>('chatState/errorCleared');
@@ -358,26 +501,42 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       lastMessageTime: timestamp,
       lastChunkTime: null,
       receivedFirstChunk: false,
-      isStalled: false,
       statusEvents: [],
-      idleReconcileSuppressed: false,
     }),
   )
-  .with(chatIdleReconcileSuppressionSet, (state, { payload: [agentId, suppressed] }) =>
-    updateAgent(state, agentId, { idleReconcileSuppressed: suppressed }),
+  .with(chatLastAttemptedMessageSet, (state, { payload: [agentId, lastAttemptedMessage] }) =>
+    updateAgent(state, agentId, { lastAttemptedMessage }),
+  )
+  .with(chatQueuedRetryRecordSet, (state, { payload: [agentId, messageId, record] }) => {
+    const agent = getAgent(state, agentId);
+    // Monotonic enqueue sequence: promotion order cannot rely on Record key
+    // order (integer-like keys iterate first, breaking insertion order).
+    const seq =
+      Object.values(agent.queuedRetryRecords).reduce(
+        (max, parked) => Math.max(max, parked.seq),
+        0,
+      ) + 1;
+    return updateAgent(state, agentId, {
+      agentId,
+      queuedRetryRecords: { ...agent.queuedRetryRecords, [messageId]: { seq, record } },
+    });
+  })
+  .with(replaceAgentQueue, (state, { payload: [agentId, messages] }) =>
+    reduceQueueSnapshotDiff(state, agentId, messages),
+  )
+  .with(removeQueuedMessageFromAgentQueue, (state, { payload: [agentId, messageId] }) =>
+    reduceQueuedRecordRemoved(state, agentId, messageId),
   )
   .with(chatSendFailed, (state, { payload: [agentId, error] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
       modelUnavailable: null,
-      idleReconcileSuppressed: false,
     }),
   )
   .with(chatInterrupted, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
-      idleReconcileSuppressed: false,
     }),
   )
   .with(chatModelUnavailableCleared, (state, { payload: [agentId] }) =>
@@ -393,7 +552,6 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, {
       isInterrupting: false,
       streamingStartTime: null,
-      idleReconcileSuppressed: false,
     }),
   )
   .with(chatReset, (state, { payload: [agentId] }) =>
@@ -417,11 +575,9 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       streamingStartTime: null,
       lastChunkTime: null,
       receivedFirstChunk: false,
-      isStalled: false,
       statusEvents: [],
       lastAttemptedMessage: data.lastAttemptedMessage,
       modelUnavailable: data.modelUnavailable,
-      idleReconcileSuppressed: false,
     }),
   )
   .with(streamStatusReceived, (state, { payload: [agentId, statusEvent, resetFirstChunk] }) => {
@@ -441,19 +597,6 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, {
       streamingStartTime: null,
       error: m.chat_state_timeout_error(),
-      idleReconcileSuppressed: false,
-    }),
-  )
-  .with(chatStallDetected, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, { isStalled: true }),
-  )
-  .with(chatStuckStateCleared, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, {
-      isStalled: false,
-      streamingStartTime: null,
-      lastChunkTime: null,
-      receivedFirstChunk: false,
-      idleReconcileSuppressed: false,
     }),
   )
   .with(chatRebindStarted, (state, { payload: [agentId] }) =>
@@ -471,6 +614,15 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(transcriptHydrationSettled, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, { agentId, transcriptHydration: 'settled' }),
   )
+  .with(eventReceived, (state, { payload: [, event] }) => {
+    if (event.type !== 'agent:idle') return state;
+    const data: unknown = event.data;
+    if (!isRecord(data)) return state;
+    // PROTOCOL.md: agent:idle always carries data.agentId.
+    const agentId = data.agentId;
+    if (typeof agentId !== 'string' || agentId.length === 0) return state;
+    return reduceAgentIdleReconcile(state, agentId);
+  })
   .with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
     if (agentIds.length === 0) return state;
     let changed = false;

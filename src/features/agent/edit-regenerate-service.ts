@@ -38,6 +38,10 @@ import {
   agentSessionEditAndRegenerateRequested,
   replaceMessages,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  chatLastAttemptedMessageSet,
+  chatSendStarted,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -99,6 +103,15 @@ async function handleEditAndRegenerate(
       return;
     }
     truncateLocalTranscript(agentId, messageId);
+    // Reset chat-state like a normal send (clears any stale error banner and
+    // starts the thinking indicator immediately). Dispatched only AFTER the
+    // wire call succeeds — on failure the transcript and any prior error stay
+    // untouched (a toast is already surfaced above).
+    appStore.dispatch(chatSendStarted(agentId, wsId));
+    // Record the EDITED content as the retry payload (#941): if the
+    // regenerated turn itself fails, the error banner's "Try again" must
+    // resend the edited text, not a stale pre-edit lastAttemptedMessage.
+    appStore.dispatch(chatLastAttemptedMessageSet(agentId, { text: newText }));
     appStore.dispatch(action.success(undefined as never));
   } catch (error) {
     logger.error('Failed to edit and regenerate', error);

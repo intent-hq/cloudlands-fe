@@ -58,7 +58,6 @@
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
-  import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
@@ -148,14 +147,33 @@
   let detectedGitHubOwner = $state<string | null>(null);
   let detectedGitHubRepo = $state<string | null>(null);
 
+  // Generation counter guarding the remote-URL probe against out-of-order
+  // async responses after rapid repo switches
+  let remoteUrlProbeGeneration = 0;
+
+  // Key of the last-probed selection. The effect re-runs on every
+  // projectSelection reassignment (including branch-only changes); when the
+  // repo path/type are unchanged, keep the detected owner/repo and skip the
+  // clear + re-probe so the suffix doesn't flicker (reviewer note on #447)
+  let lastRemoteUrlProbeKey: string | null = null;
+
   // Fetch remote URL when a local repo is selected
   $effect(() => {
     const path = projectSelection?.repoPath;
     const type = projectSelection?.type;
+    const probeKey = `${type ?? ''}\u0000${path ?? ''}`;
+    if (probeKey === lastRemoteUrlProbeKey) {
+      return;
+    }
+    lastRemoteUrlProbeKey = probeKey;
+    const generation = ++remoteUrlProbeGeneration;
+
+    // Clear synchronously so a repo switch never briefly shows the previous
+    // repo's detected owner/repo
+    detectedGitHubOwner = null;
+    detectedGitHubRepo = null;
 
     if (type !== 'local' || !path || (!path.startsWith('/') && !path.startsWith('~'))) {
-      detectedGitHubOwner = null;
-      detectedGitHubRepo = null;
       return;
     }
 
@@ -167,16 +185,16 @@
                 repoPath: path,
               })
             : undefined;
+        // Drop stale responses: the repo changed while this probe was in flight
+        if (generation !== remoteUrlProbeGeneration) {
+          return;
+        }
         if (response?.success && response.data?.owner && response.data?.repo) {
           detectedGitHubOwner = response.data.owner;
           detectedGitHubRepo = response.data.repo;
-        } else {
-          detectedGitHubOwner = null;
-          detectedGitHubRepo = null;
         }
       } catch {
-        detectedGitHubOwner = null;
-        detectedGitHubRepo = null;
+        // Ignore probe failures — the detected owner/repo is already cleared
       }
     })();
   });
@@ -862,8 +880,6 @@
         /* ignore */
       }
 
-      if (effectiveModel)
-        appStore.dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
       appStore.dispatch(setWorkspaceEntity(workspace));
 
       // Save the setup script to the store for future reuse.

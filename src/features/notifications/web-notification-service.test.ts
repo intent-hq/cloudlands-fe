@@ -332,6 +332,29 @@ describe('web-notification-service', () => {
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls('ws-1', { workspaceGet: false }));
     });
 
+    it('skips when the agent is waiting on other agents (event fast path, no agent.list read)', async () => {
+      await handleWebAgentIdle(makeIdleEvent({ isWaitingForOtherAgents: true }));
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+      );
+    });
+
+    it('does not skip when isWaitingForOtherAgents is false (existing behavior)', async () => {
+      await handleWebAgentIdle(makeIdleEvent({ isWaitingForOtherAgents: false }));
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('does not skip when isWaitingForOtherAgents is absent (older daemons)', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
     it('skips when other agents are still active in the workspace', async () => {
       stubBackendWire({
         agentListResult: {

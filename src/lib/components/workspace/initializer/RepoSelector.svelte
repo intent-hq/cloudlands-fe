@@ -18,7 +18,6 @@
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
 
-
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     setWorkspaceInitializerDefaultParentPath,
@@ -45,9 +44,14 @@
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
+  import { pickDirectory } from '$lib/directory-picker-service';
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { isolationNoun, resolveEffectiveIsolationMode, type IsolationMode } from './isolation-mode';
+  import {
+    isolationNoun,
+    resolveEffectiveIsolationMode,
+    type IsolationMode,
+  } from './isolation-mode';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
@@ -94,6 +98,8 @@
     onchange?: (event: CustomEvent<RepoChangeDetail>) => void;
     triggerClass?: string;
     displayValue?: string;
+    /** Dimmed suffix rendered after the repo name, e.g. "owner/repo" */
+    triggerSuffix?: string;
     triggerValueClass?: string;
     triggerContentClass?: string;
     emptyLabel?: string;
@@ -109,6 +115,7 @@
     onchange,
     triggerClass,
     displayValue,
+    triggerSuffix,
     triggerValueClass = 'text-subtle',
     triggerContentClass = 'gap-0.75',
     emptyLabel = m.workspace_repoSelector_selectRepository_label(),
@@ -191,16 +198,15 @@
   let activeTab = $state<TabId>('local');
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // FOLDER-PICKER MODAL STATE
+  // FOLDER-PICKER STATE
   // ═══════════════════════════════════════════════════════════════════════════
-  // BE-driven folder browsing via `host.listDirectory` (DirectoryPickerModal),
-  // replacing the retired native-dialog round-trip. One modal is
-  // open at a time; `folderPickerPurpose` routes the picked path back to the
-  // right destination (folder pick / new-repo parent / github-clone parent).
+  // One picker is open at a time. Local Electron uses the native dialog; remote
+  // and web flows use DirectoryPickerModal. `folderPickerPurpose` routes the
+  // picked path back to the right destination.
   type FolderPickerPurpose = 'select-repo' | 'new-repo-parent' | 'github-clone-parent';
   let folderPickerOpen = $state(false);
   let folderPickerPurpose = $state<FolderPickerPurpose>('select-repo');
-  let folderPickerTitle = $state(m.workspace_repoSelector_selectFolder_title());
+  let folderPickerTitle = $state<string>(m.workspace_repoSelector_selectFolder_title());
   let folderPickerInitialPath = $state<string | undefined>(undefined);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -351,7 +357,8 @@
       return (
         repo.name.toLowerCase().includes(search) ||
         repo.path.toLowerCase().includes(search) ||
-        (repo.owner && repo.owner.toLowerCase().includes(search))
+        (repo.owner && repo.owner.toLowerCase().includes(search)) ||
+        (repo.owner && `${repo.owner}/${repo.name}`.toLowerCase().includes(search))
       );
     });
   });
@@ -395,7 +402,10 @@
         const githubInfo = parseGitHubUrl(inputValue);
         if (githubInfo) {
           githubUrlInput = `${githubInfo.owner}/${githubInfo.repo}`;
-          handleInputChange(`https://github.com/${githubInfo.owner}/${githubInfo.repo}`);
+          handleInputChange(
+            `https://github.com/${githubInfo.owner}/${githubInfo.repo}`,
+            githubUrlInput,
+          );
         }
       }
     } else {
@@ -735,9 +745,10 @@
 
     githubUrlInput = cleaned;
 
-    // Trigger detection with the full URL for the existing logic
+    // Trigger detection with the full URL for the existing logic; pass the
+    // raw typed text as the search term so the Recent list filters by it
     if (cleaned) {
-      handleInputChange(`https://github.com/${cleaned}`);
+      handleInputChange(`https://github.com/${cleaned}`, cleaned);
     } else {
       handleInputChange('');
     }
@@ -753,7 +764,7 @@
 
       // Trigger detection
       if (normalized) {
-        handleInputChange(`https://github.com/${normalized}`);
+        handleInputChange(`https://github.com/${normalized}`, normalized);
       }
     }
   }
@@ -779,10 +790,13 @@
     }
   }
 
-  // Handle input change - search first, then debounced detection
-  function handleInputChange(value: string) {
+  // Handle input change - search first, then debounced detection.
+  // `search` is the plain text used to filter the Recent list; callers that
+  // pass a URL-prefixed `value` (GitHub tab) supply the unprefixed text so
+  // the name/owner match clauses are reachable (intent-hq/monorepo#859).
+  function handleInputChange(value: string, search: string = value) {
     inputValue = value;
-    searchTerm = value; // Update search term for filtering
+    searchTerm = search; // Update search term for filtering
 
     // Clear any pending detection
     if (detectionDebounceTimer) {
@@ -918,15 +932,32 @@
     isOpen = false;
   }
 
-  // Open the BE-driven folder picker to choose a repository folder.
-  function handleSelectFolder() {
-    folderPickerPurpose = 'select-repo';
-    folderPickerTitle = m.workspace_repoSelector_selectRepoFolder_title();
-    folderPickerInitialPath = typeof selectedValue === 'string' ? selectedValue : undefined;
-    folderPickerOpen = true;
+  function openFolderPicker(
+    purpose: FolderPickerPurpose,
+    title: string,
+    initialPath: string | undefined,
+  ): void {
+    folderPickerPurpose = purpose;
+    folderPickerTitle = title;
+    folderPickerInitialPath = initialPath;
+    void pickDirectory({
+      title,
+      defaultPath: initialPath,
+      openModal: () => (folderPickerOpen = true),
+      onSelect: handleFolderPickerSelect,
+    });
   }
 
-  // Apply a path picked via DirectoryPickerModal for the "select-repo" flow.
+  // Open the appropriate folder picker to choose a repository folder.
+  function handleSelectFolder() {
+    openFolderPicker(
+      'select-repo',
+      m.workspace_repoSelector_selectRepoFolder_title(),
+      typeof selectedValue === 'string' ? selectedValue : undefined,
+    );
+  }
+
+  // Apply a picked path for the "select-repo" flow.
   async function applyPickedRepoFolder(path: string): Promise<void> {
     try {
       // Check directory status first
@@ -976,13 +1007,14 @@
 
   // Toggle the inline create new repo form
 
-  // Open the BE-driven folder picker to choose a parent folder for a new repo.
+  // Open the appropriate folder picker to choose a parent folder for a new repo.
   function handleSelectNewRepoParent() {
     isDialogOpen = true;
-    folderPickerPurpose = 'new-repo-parent';
-    folderPickerTitle = m.workspace_repoSelector_selectNewRepoParent_title();
-    folderPickerInitialPath = newRepoParentPath || undefined;
-    folderPickerOpen = true;
+    openFolderPicker(
+      'new-repo-parent',
+      m.workspace_repoSelector_selectNewRepoParent_title(),
+      newRepoParentPath || undefined,
+    );
   }
 
   // Confirm and create the new repo selection
@@ -1023,16 +1055,17 @@
   // GITHUB CLONE FOLDER HANDLERS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Open the BE-driven folder picker to choose a clone target folder.
+  // Open the appropriate folder picker to choose a clone target folder.
   function handleSelectGitHubCloneParent() {
     isDialogOpen = true;
-    folderPickerPurpose = 'github-clone-parent';
-    folderPickerTitle = m.workspace_repoSelector_selectCloneFolder_title();
-    folderPickerInitialPath = githubCloneParentPath || undefined;
-    folderPickerOpen = true;
+    openFolderPicker(
+      'github-clone-parent',
+      m.workspace_repoSelector_selectCloneFolder_title(),
+      githubCloneParentPath || undefined,
+    );
   }
 
-  // Dispatch a picked path from DirectoryPickerModal to the right destination.
+  // Dispatch a picked path to the right destination.
   async function handleFolderPickerSelect(path: string): Promise<void> {
     folderPickerOpen = false;
     const purpose = folderPickerPurpose;
@@ -1182,6 +1215,9 @@
             <span class={triggerValueClass}>{triggerDisplayValue}</span>
             {#if isNewRepo && !displayValue}
               <span class="text-sm text-subtle ml-1">{m.workspace_repoSelector_new_label()}</span>
+            {/if}
+            {#if triggerSuffix}
+              <span class="text-sm text-subtle ml-1">({triggerSuffix})</span>
             {/if}
           {:else}
             <span class={triggerValueClass}>{emptyLabel}</span>
@@ -1541,9 +1577,8 @@
 {/if}
 
 <!--
-  BE-driven folder picker. One modal serves all three folder-selection flows
-  (repo folder, new-repo parent, github clone parent); the picked path is
-  routed back to the right destination via `folderPickerPurpose`.
+  Remote/web fallback picker. One modal serves all three folder-selection
+  flows; the picked path is routed via `folderPickerPurpose`.
 -->
 <DirectoryPickerModal
   open={folderPickerOpen}

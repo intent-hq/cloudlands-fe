@@ -171,7 +171,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
-import type { ScriptOutputLine } from '$store/renderer/slices/scripts/scripts-types';
+import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
@@ -297,6 +297,7 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
         'workspace:tokenUsage-changed',
         'workspace:context-changed',
         'workspace:activity-changed',
+        'workspace:displayStatus-changed',
         'workspace:updated',
         'workspace:created',
         'workspace:deleted',
@@ -2346,6 +2347,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         'workspace:tokenUsage-changed',
         'workspace:context-changed',
         'workspace:activity-changed',
+        'workspace:displayStatus-changed',
         'workspace:updated',
         'workspace:created',
         'workspace:deleted',
@@ -2754,7 +2756,7 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
 
   function readScriptsState(): {
     scripts: Record<string, { runtime: { status: string; pid?: number; detectedUrl?: string } }>;
-    outputBuffers: Record<string, ScriptOutputLine[]>;
+    outputBuffers: Record<string, ScriptOutputBuffer>;
   } {
     const state = appStore.state as {
       scripts: {
@@ -2765,7 +2767,7 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
               string,
               { runtime: { status: string; pid?: number; detectedUrl?: string } }
             >;
-            outputBuffers: Record<string, ScriptOutputLine[]>;
+            outputBuffers: Record<string, ScriptOutputBuffer>;
           }
         >;
       };
@@ -2793,7 +2795,7 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
 
   afterEach(() => vi.clearAllMocks());
 
-  it('decodes script:output base64 chunk and appends split lines to the output buffer', async () => {
+  it('decodes script:output base64 chunk and appends it verbatim — no line splitting', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -2802,22 +2804,86 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     const chunk = Buffer.from(raw, 'utf-8').toString('base64');
     handler(notification('script:output', { scriptId: SCRIPT_ID, chunk }));
 
-    const buffer = readScriptsState().outputBuffers[SCRIPT_ID] ?? [];
-    expect(buffer.map((line) => line.text)).toEqual(['hello', 'world']);
-    for (const line of buffer) expect(line.stream).toBe('stdout');
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text)).toEqual([raw]);
+    expect(buffer.dropped).toBe(0);
   });
 
-  it('keeps a trailing partial line as its own output line (no newline at end of chunk)', async () => {
+  it('reconstructs a multi-chunk stream (chunk ending mid-line) with no injected newlines', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    const chunk = Buffer.from('first\nsecond', 'utf-8').toString('base64');
-    handler(notification('script:output', { scriptId: SCRIPT_ID, chunk }));
+    const send = (raw: string) =>
+      handler(
+        notification('script:output', {
+          scriptId: SCRIPT_ID,
+          chunk: Buffer.from(raw, 'utf-8').toString('base64'),
+        }),
+      );
+    send('Compi');
+    send('ling...\r\ndo');
+    send('ne\r\n');
 
-    expect(readScriptsState().outputBuffers[SCRIPT_ID].map((line) => line.text)).toEqual([
-      'first',
-      'second',
-    ]);
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text).join('')).toBe('Compiling...\r\ndone\r\n');
+    // Verbatim storage: each wire chunk is one store chunk.
+    expect(buffer.chunks).toHaveLength(3);
+  });
+
+  it('preserves bare-\\r spinner frames verbatim (no synthesized lines)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const raw = '⠋ building\r⠙ building\r⠹ building\r';
+    handler(
+      notification('script:output', {
+        scriptId: SCRIPT_ID,
+        chunk: Buffer.from(raw, 'utf-8').toString('base64'),
+      }),
+    );
+
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text)).toEqual([raw]);
+    expect(buffer.chunks.map((c) => c.text).join('')).not.toContain('\n');
+  });
+
+  it('preserves an ANSI sequence split across two chunks', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const send = (raw: string) =>
+      handler(
+        notification('script:output', {
+          scriptId: SCRIPT_ID,
+          chunk: Buffer.from(raw, 'utf-8').toString('base64'),
+        }),
+      );
+    // '\x1b[32mok\x1b[0m' split mid-CSI-sequence.
+    send('\x1b[3');
+    send('2mok\x1b[0m');
+
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text).join('')).toBe('\x1b[32mok\x1b[0m');
+    expect(buffer.chunks.map((c) => c.text).join('')).not.toContain('\n');
+  });
+
+  it('decodes a multibyte character split across two chunks losslessly (streaming decoder)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // '⠋ build' is 9 UTF-8 bytes ('⠋' = e2 a0 8b); split mid-character so each
+    // chunk alone is invalid UTF-8. A stateless decoder would emit U+FFFD.
+    const bytes = Buffer.from('⠋ build', 'utf-8');
+    const send = (slice: Buffer) =>
+      handler(
+        notification('script:output', { scriptId: SCRIPT_ID, chunk: slice.toString('base64') }),
+      );
+    send(bytes.subarray(0, 2));
+    send(bytes.subarray(2));
+
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID];
+    expect(buffer.chunks.map((c) => c.text).join('')).toBe('⠋ build');
+    expect(buffer.chunks.map((c) => c.text).join('')).not.toContain('\uFFFD');
   });
 
   it('ignores script:output payloads without a scriptId or chunk', async () => {
@@ -4470,6 +4536,34 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     // The wire null must drop the stale timestamp rather than retain it.
     expect(ws.archivedAt).toBeUndefined();
   });
+
+  it('merges a statusImageAssetId delta onto the entity (agent setStatusImage parity)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §5.1: the daemon serializes the applied `workspace.update`
+    // delta with the content-addressed status screenshot asset id.
+    handler(updatedNotification({ statusImageAssetId: 'asset-abc123' }));
+
+    const ws = await readWorkspace();
+    expect(ws.statusImageAssetId).toBe('asset-abc123');
+    // Unrelated fields on the entity stay intact.
+    expect(ws.branch).toBe('main');
+  });
+
+  it('clears statusImageAssetId on an explicit null in the delta', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ statusImageAssetId: 'asset-abc123' }));
+    handler(updatedNotification({ statusImageAssetId: null }));
+
+    const ws = await readWorkspace();
+    // The wire null must drop the stale asset reference rather than retain it.
+    expect(ws.statusImageAssetId).toBeUndefined();
+  });
 });
 
 describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', () => {
@@ -4628,6 +4722,182 @@ describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', 
     expect(ws.activity).toBe('idle');
   });
 });
+
+describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slice)', () => {
+  const WS_DS = 'ws-display-status-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_DS,
+        title: 'Display status ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    displayStatus?: string;
+  }> {
+    const { getItem } =
+      await import('$lib/store-shim/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_DS) ?? {}) as never;
+  }
+
+  function displayStatusChangedNotification(displayStatus: string) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-display-status-${displayStatus}`,
+          workspaceId: WS_DS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:displayStatus-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_DS,
+            displayStatus,
+          },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:displayStatus-changed in the bridge firehose filter', async () => {
+    await primeBridge();
+    expect(backendRequestSpy).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: expect.arrayContaining(['workspace:displayStatus-changed']),
+    });
+  });
+
+  it('merges every wire displayStatus value onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    for (const value of [
+      'not_started',
+      'in_progress',
+      'complete',
+      'pr_ready',
+      'pr_open',
+      'pr_merged',
+    ]) {
+      handler(displayStatusChangedNotification(value));
+      const ws = await readWorkspace();
+      expect(ws.displayStatus).toBe(value);
+    }
+  });
+
+  it('is a no-op when the displayStatus value is not a wire value', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(displayStatusChangedNotification('in_progress'));
+    let ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('in_progress');
+
+    handler(displayStatusChangedNotification('InProgress'));
+    ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('in_progress');
+  });
+
+  it('is a no-op when data or displayStatus is missing', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(displayStatusChangedNotification('pr_open'));
+    let ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('pr_open');
+
+    // displayStatus missing (data present but empty)
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-display-status-empty-data',
+          workspaceId: WS_DS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:displayStatus-changed',
+          actor: { type: 'system' },
+          data: {},
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('pr_open');
+
+    // data key absent entirely (the `!data` early return)
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-display-status-no-data',
+          workspaceId: WS_DS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:displayStatus-changed',
+          actor: { type: 'system' },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('pr_open');
+  });
+
+  it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Envelope points at a different (nonexistent) workspace; the payload's
+    // own workspaceId targets the seeded one — the payload id must win, like
+    // the tokenUsage/context handlers.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-display-status-data-id',
+          workspaceId: 'ws-display-status-other',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:displayStatus-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_DS,
+            displayStatus: 'pr_merged',
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('pr_merged');
+  });
+});
+
 
 describe('daemonEventsBridge (completion-watch refresh routing)', () => {
   beforeEach(() => {
