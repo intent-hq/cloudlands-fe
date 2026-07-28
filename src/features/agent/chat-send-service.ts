@@ -415,6 +415,49 @@ async function dispatchQueueRemoval(agentId: string, messageId: string): Promise
 }
 
 /**
+ * "Send now" on a queued message: ONE atomic wire call
+ * (`agent.sendQueuedMessageNow`, §5.5) — the daemon dequeues the persisted
+ * entry and delivers its content as an interrupt send, replacing the old
+ * non-atomic remove-then-send sequence (monorepo#1032). No optimistic queue
+ * mutation here: the queue shrink flows back via `agent:queue:updated` (whose
+ * drain-promotion reducer also promotes the entry's parked retry record and
+ * clears any stale error banner) and the new turn's stream events arrive
+ * through the existing subscriptions. The RPC is NOT idempotent — `-32602`
+ * (entry already drained/removed) folds into `{ success: false, error }` at
+ * the seam and is surfaced non-destructively: logged + `chatSendFailed`, with
+ * no local queue state to roll back.
+ */
+async function dispatchSendQueuedNow(
+  agentId: string,
+  wsId: string,
+  messageId: string,
+): Promise<void> {
+  try {
+    const result = await appClient.agents.sendQueuedNow({
+      agentId,
+      workspaceId: wsId,
+      messageId,
+    });
+    if (!result.success) {
+      const errMsg = result.error ?? m.agent_chatSend_sendNowRejected_error();
+      logger.warn('agent.sendQueuedMessageNow rejected by daemon', {
+        agentId,
+        wsId,
+        messageId,
+        error: errMsg,
+      });
+      appStore.dispatch(chatSendFailed(agentId, errMsg));
+    }
+  } catch (error) {
+    // The seam folds RPC/daemon errors into MutationResult and should not
+    // throw; an unexpected throw is treated like a transport failure.
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('agent.sendQueuedMessageNow threw', { agentId, wsId, messageId, error });
+    appStore.dispatch(chatSendFailed(agentId, message));
+  }
+}
+
+/**
  * Service the error banner's "Try again": resend the recorded
  * `lastAttemptedMessage` through the normal lifecycle send path (#941). The
  * recorded text already carries the workspace-context prefix from the
@@ -588,40 +631,29 @@ export function createChatSendMiddleware(): StoreMiddleware {
         agentId.length > 0 &&
         inner &&
         typeof inner.wsId === 'string' &&
-        inner.wsId.length > 0 &&
-        typeof inner.text === 'string' &&
-        inner.text.length > 0
+        inner.wsId.length > 0
       ) {
         // Capture strings upfront so TypeScript knows they're definitely strings
         // inside the async closure below.
         const agentIdStr = agentId;
         const wsIdStr = inner.wsId;
-        const textStr = inner.text;
-        const forceSubmit = inner.forceSubmit === true;
         const queuedMessageId = inner.queuedMessageId;
-        const workspaceContextStr = inner.workspaceContextStr;
-        const imageBlocks = inner.imageBlocks;
-        const noteIds = inner.noteIds;
 
-        // STAB-68 fix: when queuedMessageId is present (user clicked "Send now"
-        // on a queued message), remove the queued entry BEFORE dispatching the
-        // lifecycle send, so the daemon queue can't re-deliver the same message
-        // after the interrupt turn. The removal is idempotent (PROTOCOL §5.5),
-        // so failures are logged but do not block the send.
-        void (async () => {
-          if (typeof queuedMessageId === 'string' && queuedMessageId.length > 0) {
-            try {
-              await dispatchQueueRemoval(agentIdStr, queuedMessageId);
-            } catch (error) {
-              logger.warn('Queue removal failed; proceeding with send (removal is idempotent)', {
-                agentId: agentIdStr,
-                queuedMessageId,
-                error,
-              });
-            }
-          }
+        if (typeof queuedMessageId === 'string' && queuedMessageId.length > 0) {
+          // "Send now" on a queued entry (monorepo#1032, supersedes the
+          // STAB-68 remove-then-send sequence): ONE atomic wire call — the
+          // daemon dequeues + interrupt-delivers transactionally, so there is
+          // no window where the entry is removed but never sent (or sent but
+          // re-delivered on drain).
+          void dispatchSendQueuedNow(agentIdStr, wsIdStr, queuedMessageId);
+        } else if (typeof inner.text === 'string' && inner.text.length > 0) {
+          const textStr = inner.text;
+          const forceSubmit = inner.forceSubmit === true;
+          const workspaceContextStr = inner.workspaceContextStr;
+          const imageBlocks = inner.imageBlocks;
+          const noteIds = inner.noteIds;
 
-          await dispatchToLifecycle(
+          void dispatchToLifecycle(
             agentIdStr,
             wsIdStr,
             textStr,
@@ -635,7 +667,7 @@ export function createChatSendMiddleware(): StoreMiddleware {
             },
             forceSubmit,
           );
-        })();
+        }
       }
     } else if ((action as { type?: unknown }).type === removeQueuedMessageRequested.type) {
       const payload = (action as { payload?: unknown }).payload as
