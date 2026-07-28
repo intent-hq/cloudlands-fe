@@ -267,4 +267,15 @@ describe('RepoSelector Recent list search filtering (GitHub tab)', () => {
       expect(screen.getByText('react')).toBeTruthy();
     });
   });
+
+  it('filters the Recent list by owner/repo when a slash-form string is typed', async () => {
+    const input = await openGitHubTab();
+
+    await fireEvent.input(input, { target: { value: 'intent-hq/mono' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('react')).toBeFalsy();
+      expect(screen.getByText('monorepo')).toBeTruthy();
+    });
+  });
 });

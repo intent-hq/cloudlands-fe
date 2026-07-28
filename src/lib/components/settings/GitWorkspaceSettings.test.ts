@@ -289,7 +289,7 @@ describe('GitWorkspaceSettings — resetToDefaults', () => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
         { path: 'workspace.cowIsolation', value: false },
       ]);
+      expect(toggle.checked).toBe(false);
     });
-    expect(toggle.checked).toBe(false);
   });
 });

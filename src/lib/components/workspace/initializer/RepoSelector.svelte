@@ -356,7 +356,8 @@
       return (
         repo.name.toLowerCase().includes(search) ||
         repo.path.toLowerCase().includes(search) ||
-        (repo.owner && repo.owner.toLowerCase().includes(search))
+        (repo.owner && repo.owner.toLowerCase().includes(search)) ||
+        (repo.owner && `${repo.owner}/${repo.name}`.toLowerCase().includes(search))
       );
     });
   });
