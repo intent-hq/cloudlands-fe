@@ -22,7 +22,6 @@ function createChatState(overrides: Partial<ChatPanelServiceState> = {}): ChatPa
     streamingStartTime: null,
     lastAttemptedMessage: null,
     lastChunkTime: null,
-    isStalled: false,
     modelUnavailable: null,
     statusEvents: [],
     receivedFirstChunk: false,
@@ -30,7 +29,6 @@ function createChatState(overrides: Partial<ChatPanelServiceState> = {}): ChatPa
     isRebinding: false,
     lastMessageTime: 0,
     lastChunkReceivedAt: 0,
-    idleReconcileSuppressed: false,
     ...overrides,
   };
 }
@@ -43,7 +41,6 @@ describe('chat panel state sync helpers', () => {
       isInterrupting: true,
       streamingStartTime: 100,
       lastChunkTime: 150,
-      isStalled: true,
       lastAttemptedMessage: { text: 'retry me' },
       modelUnavailable: {
         failedModel: 'claude-old',
@@ -56,7 +53,6 @@ describe('chat panel state sync helpers', () => {
     expect(syncedState.isInterrupting).toBe(true);
     expect(syncedState.streamingStartTime).toBe(100);
     expect(syncedState.lastChunkTime).toBe(150);
-    expect(syncedState.isStalled).toBe(true);
     expect(syncedState.lastAttemptedMessage).toEqual({ text: 'retry me' });
     expect(syncedState.modelUnavailable).toEqual({
       failedModel: 'claude-old',

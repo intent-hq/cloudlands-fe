@@ -50,8 +50,7 @@ export function hasChatServiceStateChanged(
     incomingState.isProcessing !== currentState.isProcessing ||
     incomingState.isInterrupting !== currentState.isInterrupting ||
     incomingState.streamingStartTime !== currentState.streamingStartTime ||
-    incomingState.lastChunkTime !== currentState.lastChunkTime ||
-    incomingState.isStalled !== currentState.isStalled;
+    incomingState.lastChunkTime !== currentState.lastChunkTime;
 
   const sessionChanged = incomingState.session?.id !== currentState.session?.id;
   const errorChanged = incomingState.error !== currentState.error;
@@ -93,10 +92,6 @@ export function syncChatStateFromService(
       preserveTransientState && incomingState.lastChunkTime === null
         ? currentState.lastChunkTime
         : incomingState.lastChunkTime,
-    isStalled:
-      preserveTransientState && incomingState.lastChunkTime === null
-        ? currentState.isStalled
-        : incomingState.isStalled,
     lastAttemptedMessage: preserveNullableField(
       currentState.lastAttemptedMessage,
       incomingState.lastAttemptedMessage,
