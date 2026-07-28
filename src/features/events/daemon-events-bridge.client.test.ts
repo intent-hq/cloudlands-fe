@@ -2268,6 +2268,39 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
   });
 
+  it('a tombstone-suppressed mirror does not undercount the clear signal (optimistic removal racing a forceMessage clear)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Mirror a 2-entry daemon queue with q-mine's retry record parked.
+    handler(
+      notification('agent:queue:updated', {
+        agentId: AGENT,
+        queue: [
+          { id: 'q-mine', content: 'mine', queuedAt: '2026-01-02T00:00:01.000Z', position: 0 },
+          { id: 'q-other', content: 'other', queuedAt: '2026-01-02T00:00:02.000Z', position: 1 },
+        ],
+      }),
+    );
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'q-mine', { text: 'mine' }));
+
+    // The user optimistically removes q-other locally (dispatchQueueRemoval's
+    // reducer half): the tombstone hides it from the VISIBLE mirror
+    // (count==1), but the daemon still holds 2 entries. If another client's
+    // forceMessage clear lands in that window, the empty snapshot is a
+    // daemon 2-entry clear — the clear signal must use the raw last-snapshot
+    // count, not the suppressed visible count, or the clear masquerades as a
+    // single-entry drain and promotes the discarded payload.
+    appStore.dispatch(removeQueuedMessageFromAgentQueue(AGENT, 'q-other'));
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual([
+      'q-mine',
+    ]);
+    handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
+
+    expect(readRetryState()).toEqual({ lastAttemptedMessage: null, queuedRetryRecords: {} });
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
+  });
+
   it('an empty snapshot draining a SINGLE-entry mirrored queue still promotes its parked record (genuine drain preserved)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

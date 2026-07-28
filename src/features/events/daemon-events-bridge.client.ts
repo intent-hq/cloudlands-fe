@@ -1033,9 +1033,13 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
  * dispatches `chatQueuedRetryRecordsCleared` BEFORE `replaceAgentQueue`,
  * synchronously, leaving nothing for the diff to mis-promote. forceMessage has
  * no FE flow site (only other clients call it), so this is the only place the
- * clear can be recognized. A clear that wipes a SINGLE-entry queue remains
- * indistinguishable from a drain by snapshot alone (needs the daemon-side
- * turn-correlation id, #1022).
+ * clear can be recognized. The count read is the RAW last-snapshot length
+ * (`lastSnapshotCount`), NOT the tombstone-suppressed visible mirror: an
+ * optimistic local removal (`dispatchQueueRemoval`) hides an entry the daemon
+ * still holds, so the visible count would present a daemon 2-entry clear as
+ * mirror==1 and let it slip past as a "drain". A clear that wipes a
+ * SINGLE-entry queue remains indistinguishable from a drain by snapshot alone
+ * (needs the daemon-side turn-correlation id, #1022).
  */
 function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1044,10 +1048,14 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const queue = data.queue;
   if (typeof agentId !== 'string' || !Array.isArray(queue)) return;
   if (queue.length === 0) {
+    // Raw appStore.state read of a flat slice field — this module is in the
+    // store middleware's import graph, where module-level selector imports
+    // are barred (store-shim selectors call store.createSelector at module
+    // init, before the store exists; see src/store/renderer/AGENTS.md).
     const state = appStore.state as {
-      agentQueue?: { byAgentId: Record<string, { messages: { ids: string[] } }> };
+      agentQueue?: { byAgentId: Record<string, { lastSnapshotCount?: number }> };
     };
-    const mirroredCount = state.agentQueue?.byAgentId[agentId]?.messages.ids.length ?? 0;
+    const mirroredCount = state.agentQueue?.byAgentId[agentId]?.lastSnapshotCount ?? 0;
     if (mirroredCount > 1) {
       appStore.dispatch(chatQueuedRetryRecordsCleared(agentId));
     }
