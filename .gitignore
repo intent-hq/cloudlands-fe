@@ -107,3 +107,6 @@ e2e-reports/
 
 # Sidecar binary staging directory (copy-sidecar.js output)
 resources/sidecar/
+
+# Generated pseudo-locale catalog (scripts/generate-pseudo-locale.mjs output)
+messages/en-XA.json

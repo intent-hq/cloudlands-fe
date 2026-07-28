@@ -4,14 +4,20 @@ import path from 'path';
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
   const { paraglideVitePlugin } = await import('@inlang/paraglide-js');
+  const { writePseudoCatalog } = await import('./scripts/pseudo-locale-lib.mjs');
+
+  // The pseudo-locale catalog (messages/en-XA.json) is registered in
+  // project.inlang but gitignored — regenerate it before the Paraglide
+  // plugin compiles the project.
+  writePseudoCatalog(__dirname);
 
   return {
     plugins: [
       // Compiles messages/{locale}.json into src/shared/paraglide so tests can
       // import m.* functions without a separate generate:i18n run.
       paraglideVitePlugin({
-        project: path.resolve(import.meta.dirname, 'project.inlang'),
-        outdir: path.resolve(import.meta.dirname, 'src/shared/paraglide'),
+        project: path.resolve(__dirname, 'project.inlang'),
+        outdir: path.resolve(__dirname, 'src/shared/paraglide'),
       }),
       svelte(),
     ],
@@ -109,12 +115,12 @@ export default defineConfig(async () => {
           './src/__mocks__/protocol-adapter',
         ),
         // Test-only stub: avoid resolving ws browser bundle (missing createWebSocketStream)
-        'ws': path.resolve(__dirname, './src/__mocks__/ws'),
+        ws: path.resolve(__dirname, './src/__mocks__/ws'),
         // Test-only stubs: avoid promisify(exec) at module load time (breaks jsdom)
         '$shared/git/git-env': path.resolve(__dirname, './src/__mocks__/git-env'),
         '$shared/main/async-utils': path.resolve(__dirname, './src/__mocks__/async-utils'),
         // Test-only stub: lru_map module doesn't provide proper ESM exports
-        'lru_map': path.resolve(__dirname, './src/__mocks__/lru_map'),
+        lru_map: path.resolve(__dirname, './src/__mocks__/lru_map'),
         // Test-only stub: @pierre/diffs/worker has lru_map ESM import issues
         '@pierre/diffs/worker': path.resolve(__dirname, './src/__mocks__/@pierre/diffs/worker'),
       },
