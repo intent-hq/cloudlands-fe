@@ -137,6 +137,7 @@ import { eventReceived } from '$store/renderer/slices/workspace-events/workspace
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
   streamStatusReceived,
+  chatQueueProcessingReceived,
   chatQueuedRetryRecordsCleared,
   chatSendFailed,
   chatSendStarted,
@@ -954,10 +955,13 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   // displays the failure message and Retry button. Dispatch this even when no
   // stream state exists (e.g., agent spawn failed before streaming started).
   // The failure also lands in the cross-workspace aggregation registry so the
-  // grouped-failure toast layer can surface it.
+  // grouped-failure toast layer can surface it. The daemon's turn-correlation
+  // id (PROTOCOL §6.6) rides along when present so the failure can be
+  // attributed to the exact turn (monorepo#1057).
   if (typeof error === 'string' && error.length > 0) {
+    const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
     recordAgentFailure({ agentId, workspaceId, error });
-    appStore.dispatch(chatSendFailed(agentId, error));
+    appStore.dispatch(chatSendFailed(agentId, error, turnId));
   }
 }
 
@@ -1061,6 +1065,25 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
     }
   }
   appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[]));
+}
+
+/**
+ * `agent:queue:processing` (§6.5) carries `{ agentId, messageId, content,
+ * turnId? }` — the drain-start signal emitted right after `agent:queue:updated`
+ * when the daemon dequeues an entry to run its turn. It covers
+ * `persisted: true` redrives that skip the user-row `agent:message` echo, so
+ * it is the exact promotion signal for turnId-keyed retry records
+ * (monorepo#1057). Entries are forwarded verbatim; `turnId` is omitted by
+ * older daemons.
+ */
+function handleQueueProcessingEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const messageId = data.messageId;
+  if (typeof agentId !== 'string' || typeof messageId !== 'string') return;
+  const turnId = typeof data.turnId === 'string' ? data.turnId : undefined;
+  appStore.dispatch(chatQueueProcessingReceived(agentId, messageId, turnId));
 }
 
 /**
@@ -2251,6 +2274,10 @@ function handleNotification(method: string, params: unknown): void {
   }
   if (type === 'agent:queue:updated') {
     handleQueueUpdatedEvent(event);
+    return;
+  }
+  if (type === 'agent:queue:processing') {
+    handleQueueProcessingEvent(event);
     return;
   }
   if (type === 'agent:permission:request') {

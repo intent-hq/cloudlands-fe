@@ -529,9 +529,24 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
   'chatState/queuedRetryRecordsCleared',
 );
 
-/** Send failed (activation or network error) */
+/**
+ * Send failed (activation or network error). `turnId` is the daemon's
+ * turn-correlation id from the `agent:failed` event (PROTOCOL §6.6) when
+ * present — carried for turnId-keyed retry attribution (monorepo#1057); the
+ * reducer does not consume it yet.
+ */
 export const chatSendFailed =
-  createAction<[agentId: string, error: string]>('chatState/sendFailed');
+  createAction<[agentId: string, error: string, turnId?: string]>('chatState/sendFailed');
+
+/**
+ * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon
+ * dequeued entry `messageId` and is starting its turn — carrying the entry's
+ * turn-correlation id when present. Action stub for turnId-keyed retry-record
+ * promotion (monorepo#1057); no reducer case consumes it yet.
+ */
+export const chatQueueProcessingReceived = createAction<
+  [agentId: string, messageId: string, turnId?: string]
+>('chatState/queueProcessingReceived');
 
 /** Agent was interrupted — clear streaming without error */
 export const chatInterrupted = createAction<[agentId: string]>('chatState/interrupted');
