@@ -1860,7 +1860,7 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
 
     switch (actionType) {
       case 'screenshot':
-        verb = 'Screenshot';
+        verb = m.chat_toolClassifier_screenshot_label();
         subject = primaryAction.tabId || input.tabId ? 'tab' : 'page';
         break;
       case 'evaluate':
@@ -1963,7 +1963,7 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
     verb = 'Click';
     subject = getElement();
   } else if (name.includes('screenshot')) {
-    verb = 'Screenshot';
+    verb = m.chat_toolClassifier_screenshot_label();
     subject = getElement() || m.chat_toolClassifier_page_subject();
   } else if (name.includes('snapshot')) {
     verb = m.chat_toolClassifier_snapshot_label();
@@ -1978,7 +1978,7 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
     verb = m.chat_toolClassifier_hover_label();
     subject = getElement();
   } else if (name.includes('drag')) {
-    verb = 'Drag';
+    verb = m.chat_toolClassifier_drag_label();
     subject = input.startElement ? truncate(input.startElement, 30) : null;
   } else if (name.includes('select') && name.includes('option')) {
     verb = 'Select';

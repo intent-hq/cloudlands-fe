@@ -826,7 +826,7 @@ function parseEditResult(
   // Count replacements
   const replacementCount = Object.keys(input).filter((k) => k.startsWith('old_str_')).length;
   if (replacementCount > 1) {
-    parsed.editSummary = m.chat_toolResultParser_replacements_many({
+    parsed.editSummary = m.chat_toolResultParser_replacements_count({
       count: formatInteger(replacementCount),
     });
   }

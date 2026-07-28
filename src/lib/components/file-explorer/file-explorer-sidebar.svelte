@@ -231,7 +231,7 @@
   <Sidebar.Footer>
     <div class="px-2 py-1 text-xs text-subtle">
       {#if $fileCount$ > 0}
-        {m.fileExplorer_sidebar_fileCount_many({ count: $fileCount$ })}
+        {m.fileExplorer_sidebar_fileCount_label({ count: $fileCount$ })}
       {/if}
     </div>
   </Sidebar.Footer>

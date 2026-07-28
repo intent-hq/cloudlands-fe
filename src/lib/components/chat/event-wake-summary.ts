@@ -161,14 +161,14 @@ export function summarizeEventWake(
       }),
     );
   } else if (completed.length > 1) {
-    parts.push(m.chat_eventWake_childCompleted_many({ count: formatInteger(completed.length) }));
+    parts.push(m.chat_eventWake_childCompleted_count({ count: formatInteger(completed.length) }));
   }
   if (created.length === 1) {
     parts.push(
       m.chat_eventWake_childCreated_named({ name: created[0].agentName ?? created[0].agentId }),
     );
   } else if (created.length > 1) {
-    parts.push(m.chat_eventWake_childCreated_many({ count: formatInteger(created.length) }));
+    parts.push(m.chat_eventWake_childCreated_count({ count: formatInteger(created.length) }));
   }
 
   const types = Array.isArray(metadata?.eventTypes)

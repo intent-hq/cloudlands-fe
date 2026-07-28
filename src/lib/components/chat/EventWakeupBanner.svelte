@@ -108,7 +108,7 @@
       parts.push(
         agentIdleCount === 1
           ? m.chat_eventWakeup_agentFinished_label()
-          : m.chat_eventWakeup_agentsFinished_many({ count: formatInteger(agentIdleCount) }),
+          : m.chat_eventWakeup_agentsFinished_count({ count: formatInteger(agentIdleCount) }),
       );
     }
 
@@ -117,7 +117,7 @@
         parts.push(m.chat_eventWakeup_newAgent_named({ name: createdAgentNames[0] }));
       } else {
         parts.push(
-          m.chat_eventWakeup_newAgents_many({ count: formatInteger(createdAgentNames.length) }),
+          m.chat_eventWakeup_newAgents_count({ count: formatInteger(createdAgentNames.length) }),
         );
       }
     } else if (agentCreatedCount > 0) {
@@ -125,14 +125,16 @@
       parts.push(
         agentCreatedCount === 1
           ? m.chat_eventWakeup_newAgent_label()
-          : m.chat_eventWakeup_newAgents_many({ count: formatInteger(agentCreatedCount) }),
+          : m.chat_eventWakeup_newAgents_count({ count: formatInteger(agentCreatedCount) }),
       );
     }
 
     parts.push(...categorizeEventTypes(types));
 
     if (parts.length === 0)
-      return m.chat_eventWakeup_eventCount_many({ count: formatInteger(types.length) });
+      return types.length === 1
+        ? m.chat_eventWakeup_eventCount_one({ count: formatInteger(types.length) })
+        : m.chat_eventWakeup_eventCount_many({ count: formatInteger(types.length) });
     if (parts.length === 1) return parts[0];
     return m.chat_eventWakeup_summaryJoin_label({ first: parts[0], second: parts[1] });
   });

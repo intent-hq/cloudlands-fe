@@ -7,6 +7,7 @@
    */
 
   import { cn } from '$lib/utils';
+  import { formatNumber } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -49,13 +50,8 @@
   });
 
   // Format number for display
-  function formatNumber(num: number): string {
-    if (num >= 1000000) {
-      return `${(num / 1000000).toFixed(1)}M`;
-    } else if (num >= 1000) {
-      return `${(num / 1000).toFixed(1)}K`;
-    }
-    return num.toString();
+  function formatCompact(num: number): string {
+    return formatNumber(num, { notation: 'compact' });
   }
 </script>
 
@@ -75,14 +71,14 @@
       {#if additions > 0 || showZero}
         <span class="text-green-600 dark:text-green-400 flex items-center gap-0.5">
           <span class="opacity-70">+</span>
-          <span>{formatNumber(additions)}</span>
+          <span>{formatCompact(additions)}</span>
         </span>
       {/if}
 
       {#if deletions > 0 || showZero}
         <span class="text-red-600 dark:text-red-400 flex items-center gap-0.5">
           <span class="opacity-70">-</span>
-          <span>{formatNumber(deletions)}</span>
+          <span>{formatCompact(deletions)}</span>
         </span>
       {/if}
 

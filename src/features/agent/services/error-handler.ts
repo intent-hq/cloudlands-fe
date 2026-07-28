@@ -285,7 +285,7 @@ export class CircuitBreaker extends SimpleEventEmitter {
   async execute<T>(fn: () => Promise<T>): Promise<T> {
     // Check circuit state
     if (this.state === CircuitState.OPEN) {
-      throw new AgentError(`Circuit breaker is open for ${this.name}`, {
+      throw new AgentError(m.agent_errorHandler_circuitOpen_error({ name: this.name }), {
         code: ErrorCode.PROVIDER_UNAVAILABLE,
         category: ErrorCategory.PROVIDER,
         severity: ErrorSeverity.HIGH,
