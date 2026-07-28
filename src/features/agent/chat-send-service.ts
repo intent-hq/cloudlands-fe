@@ -426,6 +426,14 @@ async function dispatchQueueRemoval(agentId: string, messageId: string): Promise
  * (entry already drained/removed) folds into `{ success: false, error }` at
  * the seam and is surfaced non-destructively: logged + `chatSendFailed`, with
  * no local queue state to roll back.
+ *
+ * On failure the ACTIVE retry record is CLEARED (not set) before
+ * `chatSendFailed`: unlike the enqueue-failure branches (#969) there is no
+ * payload here that a lifecycle "Try again" could safely resend — if the
+ * entry is still queued a retry would deliver it twice (once on retry, once
+ * on drain), and if it already drained (`-32602`) it was already delivered.
+ * The recovery path is the queue UI itself: the entry's "Send now" button
+ * remains available while the entry exists.
  */
 async function dispatchSendQueuedNow(
   agentId: string,
@@ -446,6 +454,7 @@ async function dispatchSendQueuedNow(
         messageId,
         error: errMsg,
       });
+      appStore.dispatch(chatLastAttemptedMessageSet(agentId, null));
       appStore.dispatch(chatSendFailed(agentId, errMsg));
     }
   } catch (error) {
@@ -453,6 +462,7 @@ async function dispatchSendQueuedNow(
     // throw; an unexpected throw is treated like a transport failure.
     const message = error instanceof Error ? error.message : String(error);
     logger.error('agent.sendQueuedMessageNow threw', { agentId, wsId, messageId, error });
+    appStore.dispatch(chatLastAttemptedMessageSet(agentId, null));
     appStore.dispatch(chatSendFailed(agentId, message));
   }
 }

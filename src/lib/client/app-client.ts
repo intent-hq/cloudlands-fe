@@ -421,9 +421,13 @@ export interface AgentsClient {
    * Send a queued message immediately (`agent.sendQueuedMessageNow`, §5.5):
    * the daemon atomically dequeues the persisted entry and delivers its
    * content as an interrupt send — there is no client-side remove-then-send
-   * window. Responds `{ success, queued: false, messageId }`. NOT idempotent:
-   * a missing entry (already drained/removed) rejects with `-32602`, folded
-   * into `{ success: false, error }` like the other mutations.
+   * window. Responds `{ success, queued: false, messageId }` on delivery; if
+   * the send slot is unavailable (turn startup race) the daemon restores the
+   * entry at the queue FRONT and responds `{ success: true, queued: true }` —
+   * not delivered now, and the re-add reconciles via `agent:queue:updated`.
+   * NOT idempotent: a missing entry (already drained/removed) rejects with
+   * `-32602`, folded into `{ success: false, error }` like the other
+   * mutations.
    */
   sendQueuedNow(params: {
     agentId: string;

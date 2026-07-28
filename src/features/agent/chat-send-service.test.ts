@@ -673,10 +673,14 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     // NOT idempotent (§5.5): a missing entry folds into
     // {success:false,error} at the seam. The middleware surfaces it via
     // chatSendFailed and does not roll back any local state (there is none).
+    // The ACTIVE retry record is CLEARED, not set: a lifecycle "Try again"
+    // could double-deliver a still-queued entry (retry + drain) or re-deliver
+    // an already-drained one, so the banner must not offer a stale retry.
     const seeded: QueuedMessage[] = [
       { id: "q-fail", content: "fail send now", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
     ];
     appStore.dispatch(replaceAgentQueue(AGENT, seeded));
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "stale prior send" }));
     agentsSendQueuedNow.mockImplementationOnce(() =>
       Promise.resolve({ success: false, error: "not found: queued message" }),
     );
@@ -700,6 +704,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toBe(
       "not found: queued message",
     );
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toBeNull();
     expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual(seeded);
   });
 
@@ -708,6 +713,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       { id: "q-throw", content: "throw send now", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
     ];
     appStore.dispatch(replaceAgentQueue(AGENT, seeded));
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "stale prior send" }));
     agentsSendQueuedNow.mockImplementationOnce(() => Promise.reject(new Error("ipc boom")));
 
     appStore.dispatch(
@@ -723,6 +729,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(agentsSendQueuedNow).toHaveBeenCalledTimes(1);
     expect(lifecycleSendMessage).not.toHaveBeenCalled();
     expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toContain("ipc boom");
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toBeNull();
   });
 
   // -------------------------------------------------------------------------
