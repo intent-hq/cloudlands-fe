@@ -166,6 +166,32 @@ async function dispatchToLifecycle(
     }
   }
 
+  // Record the exact content this attempt carries so the error banner's
+  // "Try again" resends it verbatim if the turn fails (#941). `content`
+  // already includes the workspace-context prefix, so a retry must not
+  // re-prefix it. A model override (retry-with-model, #964) is recorded too,
+  // so a subsequent "Try again" keeps using the suggested model. Image
+  // blocks are recorded as well so a retry resends the attachments (#965).
+  //
+  // #969: recording happens BEFORE the queue-on-send branch — at ENQUEUE
+  // time, not dequeue time — because the FE never dispatches the dequeue:
+  // the daemon drains its own queue and the FE only mirrors
+  // `agent:queue:updated` snapshots, whose QueuedMessage entries carry no
+  // noteIds/model. Enqueue is the only moment the full retry payload is in
+  // hand, and the only point that pairs the banner with the message that
+  // actually failed when the queue call itself rejects or throws.
+  const recordedOptions = {
+    ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
+    ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
+  };
+  appStore.dispatch(
+    chatLastAttemptedMessageSet(agentId, {
+      text: content,
+      ...(Object.keys(recordedOptions).length > 0 ? { options: recordedOptions } : {}),
+    }),
+  );
+
   // Queue-on-send: derive in-flight status SOLELY from BE-returned session
   // state (selectAgentIsResponding reads `isResponding`/`isStreaming`/status
   // off the daemon snapshot). When the daemon reports the agent is busy,
@@ -179,6 +205,12 @@ async function dispatchToLifecycle(
   // the entire point of force-send. The lifecycle send will pass
   // `priority: "interrupt"` to the daemon, which preempts the in-flight turn
   // keep-alive per PROTOCOL.md §5.5.
+  //
+  // NOTE: a one-shot model override cannot ride the queued delivery —
+  // `agent.queueMessage` has no model param (PROTOCOL §5.5), so the daemon
+  // drains the entry with the session model. The override stays recorded on
+  // lastAttemptedMessage (above) so a post-failure "Try again" re-applies
+  // it; the session model is never mutated (one-shot semantics, #483).
   if (!forceSubmit && deps.selectAgentIsResponding.select(appStore.state, agentId)) {
     appStore.dispatch(clearChatDraft(wsId, agentId));
     try {
@@ -228,24 +260,8 @@ async function dispatchToLifecycle(
 
   // Immediate loading-state dispatch so the UI doesn't have to wait for the
   // first lifecycle dispatch to surface the spinner / streaming indicator.
+  // (The retry payload was already recorded above, before the queue branch.)
   appStore.dispatch(chatSendStarted(agentId, wsId));
-  // Record the exact content this attempt carries so the error banner's
-  // "Try again" resends it verbatim if the turn fails (#941). `content`
-  // already includes the workspace-context prefix, so a retry must not
-  // re-prefix it. A model override (retry-with-model, #964) is recorded too,
-  // so a subsequent "Try again" keeps using the suggested model. Image
-  // blocks are recorded as well so a retry resends the attachments (#965).
-  const recordedOptions = {
-    ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
-    ...(options.model !== undefined ? { model: options.model } : {}),
-    ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
-  };
-  appStore.dispatch(
-    chatLastAttemptedMessageSet(agentId, {
-      text: content,
-      ...(Object.keys(recordedOptions).length > 0 ? { options: recordedOptions } : {}),
-    }),
-  );
   appStore.dispatch(clearChatDraft(wsId, agentId));
 
   try {

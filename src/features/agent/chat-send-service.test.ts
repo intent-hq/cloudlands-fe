@@ -1089,6 +1089,155 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     { type: "image" as const, data: "aGVsbG8=", mimeType: "image/png" },
   ];
 
+  // -------------------------------------------------------------------------
+  // #969: queue-on-send must record lastAttemptedMessage at ENQUEUE time —
+  // the FE never dispatches the dequeue (the daemon drains its own queue and
+  // the FE only mirrors `agent:queue:updated` snapshots, whose QueuedMessage
+  // entries carry no noteIds/model), so enqueue is the only moment the full
+  // retry payload is in hand, and the only point that covers an enqueue
+  // failure pairing the banner with the message that actually failed.
+  // -------------------------------------------------------------------------
+
+  it("#969: queue-on-send records lastAttemptedMessage with the enqueued content (context prefix included) and options", async () => {
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+
+    appStore.dispatch(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: "queue me",
+        workspaceContextStr: "CTX",
+        noteIds: ["note-1"],
+        imageBlocks: IMAGE_BLOCKS,
+      }),
+    );
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "CTX\n\nqueue me",
+      options: { noteIds: ["note-1"], imageBlocks: IMAGE_BLOCKS },
+    });
+  });
+
+  it("#969: queue-on-send rejection pairs the banner with the message that failed to queue, not a stale prior attempt", async () => {
+    // Message A was recorded by an earlier direct send that is now in flight;
+    // message B fails to queue. The banner's "Try again" must resend B.
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "message A" }));
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: false, error: "no can do" }),
+    );
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+
+    const chatState = selectChatAgentState.select(appStore.state, AGENT);
+    expect(chatState?.error).toBe("no can do");
+    expect(chatState?.lastAttemptedMessage).toEqual({ text: "message B" });
+  });
+
+  it("#969: a thrown queue call also leaves the failed message recorded for retry", async () => {
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "message A" }));
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    agentsQueue.mockImplementationOnce(() => Promise.reject(new Error("ipc boom")));
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+
+    const chatState = selectChatAgentState.select(appStore.state, AGENT);
+    expect(chatState?.error).toContain("ipc boom");
+    expect(chatState?.lastAttemptedMessage).toEqual({ text: "message B" });
+  });
+
+  it("#969: retry-with-model landing on the queue path records the one-shot override without mutating session model state", async () => {
+    // Race from the #483 review: selectAgentIsResponding flips true between
+    // the "Retry with <model>" click and the send, so the resend takes the
+    // queue path. agent.queueMessage has no model param (PROTOCOL §5.5), so
+    // the override cannot ride the queued delivery — but it must stay
+    // recorded so a post-failure "Try again" re-applies it, and the session
+    // model must never be mutated.
+    appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "edited text" }));
+    seedSession({ isStreaming: true, status: AgentStatus.Active, model: "session-model" });
+
+    const action = agentSessionRetryWithModelRequested(AGENT, WS, "fast-model");
+    appStore.dispatch(action);
+    await action.promise;
+    await flush();
+
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
+    expect(agentsQueue).toHaveBeenCalledWith(AGENT, "edited text");
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "edited text",
+      options: { model: "fast-model" },
+    });
+    // One-shot semantics: the session's model is untouched.
+    const session = (appStore.state as {
+      agentSessions?: { byAgentId: Record<string, AgentSession> };
+    }).agentSessions?.byAgentId[AGENT];
+    expect(session?.model).toBe("session-model");
+  });
+
+  // -------------------------------------------------------------------------
+  // #483 review test gaps: recorded-model forwarding and one-shot no-leak
+  // -------------------------------------------------------------------------
+
+  it("#483: plain Try again forwards the recorded model to lifecycle.sendMessage (end-to-end seam)", async () => {
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "edited text",
+        options: { model: "fast-model" },
+      }),
+    );
+
+    const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [, contentArg, , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { model?: string },
+    ];
+    expect(contentArg).toBe("edited text");
+    expect(optionsArg.model).toBe("fast-model");
+  });
+
+  it("#483: a subsequent normal send does NOT inherit a previously recorded model (one-shot no-leak)", async () => {
+    // A retry-with-model recorded a model override; the next normal send has
+    // no model of its own — the override must not leak into it, and the
+    // fresh record must overwrite the old one without a model.
+    appStore.dispatch(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: "old text",
+        options: { model: "fast-model" },
+      }),
+    );
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "next message" }));
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [, contentArg, , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { model?: string },
+    ];
+    expect(contentArg).toBe("next message");
+    expect(optionsArg.model).toBeUndefined();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "next message",
+    });
+  });
+
   it("#965: the lifecycle send records imageBlocks on lastAttemptedMessage", async () => {
     appStore.dispatch(
       sendMessage(AGENT, {
