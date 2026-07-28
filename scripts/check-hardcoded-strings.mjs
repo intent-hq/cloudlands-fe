@@ -80,6 +80,7 @@ const ENFORCED_DIRS = [
   'src/lib/components/debug',
   'src/features/debug',
   'src/features/debug-export',
+  'src/lib/services',
 ];
 
 const ROOT = process.cwd();

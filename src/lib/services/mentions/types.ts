@@ -1,6 +1,7 @@
 /**
  * Enhanced Mention System Types
  */
+import { m } from '$shared/paraglide/messages.js';
 
 export interface MentionCandidate {
   id: string;
@@ -192,29 +193,42 @@ export interface MentionSystemConfig {
   enableCollaboration?: boolean;
 }
 
-// Special mention items
+// Special mention items — localized copy uses getters so it re-evaluates with
+// the active locale.
 export const SPECIAL_MENTIONS = {
   USE_DEFAULT_CONTEXT: {
     id: 'use-default-context',
     type: 'command' as MentionType,
-    label: 'Use Default Context',
-    description: 'Include default space context',
+    get label() {
+      return m.chat_mentions_useDefaultContext_label();
+    },
+    get description() {
+      return m.chat_mentions_useDefaultContext_description();
+    },
     icon: '🔄',
     uri: 'devspace://command/use-default-context',
   },
   CLEAR_CONTEXT: {
     id: 'clear-context',
     type: 'command' as MentionType,
-    label: 'Clear Context',
-    description: 'Remove all context mentions',
+    get label() {
+      return m.chat_mentions_clearContext_label();
+    },
+    get description() {
+      return m.chat_mentions_clearContext_description();
+    },
     icon: '🗑️',
     uri: 'devspace://command/clear-context',
   },
   USER_GUIDELINES: {
     id: 'user-guidelines',
     type: 'user-guidelines' as MentionType,
-    label: 'User Guidelines',
-    description: 'Include user-defined guidelines',
+    get label() {
+      return m.chat_mentions_userGuidelines_label();
+    },
+    get description() {
+      return m.chat_mentions_userGuidelines_description();
+    },
     icon: '📋',
     uri: 'devspace://user-guidelines/main',
   },
@@ -286,7 +300,7 @@ export function validateMentionData(data: unknown): ValidationResult {
   if (!data || typeof data !== 'object') {
     return {
       valid: false,
-      error: 'Mention data must be an object',
+      error: 'Mention data must be an object', // i18n-ignore (internal validation diagnostic)
     };
   }
 
@@ -296,28 +310,28 @@ export function validateMentionData(data: unknown): ValidationResult {
   if (!obj.id) {
     return {
       valid: false,
-      error: 'Missing required field: id',
+      error: 'Missing required field: id', // i18n-ignore (internal validation diagnostic)
     };
   }
 
   if (!obj.type) {
     return {
       valid: false,
-      error: 'Missing required field: type',
+      error: 'Missing required field: type', // i18n-ignore (internal validation diagnostic)
     };
   }
 
   if (!obj.label) {
     return {
       valid: false,
-      error: 'Missing required field: label',
+      error: 'Missing required field: label', // i18n-ignore (internal validation diagnostic)
     };
   }
 
   if (!obj.uri) {
     return {
       valid: false,
-      error: 'Missing required field: uri',
+      error: 'Missing required field: uri', // i18n-ignore (internal validation diagnostic)
     };
   }
 

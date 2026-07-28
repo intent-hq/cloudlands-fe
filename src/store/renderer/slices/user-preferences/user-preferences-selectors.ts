@@ -1,9 +1,7 @@
-import { store } from "../../store";
-import {
-  SYSTEM_DEFAULT_FONT,
-  type FontOption,
-} from "./user-preferences-slice";
-import { resolvePreferenceToLocale } from "$lib/i18n/locale";
+import { store } from '../../store';
+import { SYSTEM_DEFAULT_FONT, type FontOption } from './user-preferences-slice';
+import { resolvePreferenceToLocale } from '$lib/i18n/locale';
+import { m } from '$shared/paraglide/messages.js';
 
 export const selectAgentFontStyle = store.createSelector((state) => {
   return state.userPreferences.agentFontStyle;
@@ -11,17 +9,17 @@ export const selectAgentFontStyle = store.createSelector((state) => {
 
 export const selectAgentFontStyleLabel = store.createSelector((state) => {
   switch (state.userPreferences.agentFontStyle) {
-    case "sans":
-      return "Sans-serif";
-    case "monospace":
-      return "Monospace";
+    case 'sans':
+      return 'Sans-serif';
+    case 'monospace':
+      return 'Monospace';
     default:
-      return "Sans-serif";
+      return 'Sans-serif';
   }
 });
 
 export const selectIsAgentMonospace = store.createSelector((state) => {
-  return state.userPreferences.agentFontStyle === "monospace";
+  return state.userPreferences.agentFontStyle === 'monospace';
 });
 
 export const selectBetaUpdatesEnabled = store.createSelector((state) => {
@@ -58,17 +56,17 @@ export const selectNoteFontStyle = store.createSelector((state) => {
 
 export const selectNoteFontStyleLabel = store.createSelector((state) => {
   switch (state.userPreferences.noteFontStyle) {
-    case "sans":
-      return "Sans-serif";
-    case "monospace":
-      return "Monospace";
+    case 'sans':
+      return 'Sans-serif';
+    case 'monospace':
+      return 'Monospace';
     default:
-      return "Sans-serif";
+      return 'Sans-serif';
   }
 });
 
 export const selectIsNoteMonospace = store.createSelector((state) => {
-  return state.userPreferences.noteFontStyle === "monospace";
+  return state.userPreferences.noteFontStyle === 'monospace';
 });
 
 export const selectCodeFontFamily = store.createSelector((state) => {
@@ -77,7 +75,7 @@ export const selectCodeFontFamily = store.createSelector((state) => {
 
 export const selectCodeFontFamilyCSS = store.createSelector((state) => {
   const { codeFontFamily } = state.userPreferences;
-  if (codeFontFamily === "system-default") {
+  if (codeFontFamily === 'system-default') {
     return SYSTEM_DEFAULT_FONT;
   }
   return `'${codeFontFamily}', monospace`;
@@ -85,8 +83,8 @@ export const selectCodeFontFamilyCSS = store.createSelector((state) => {
 
 export const selectCodeFontFamilyLabel = store.createSelector((state) => {
   const { codeFontFamily } = state.userPreferences;
-  if (codeFontFamily === "system-default") {
-    return "System Default";
+  if (codeFontFamily === 'system-default') {
+    return m.settings_fonts_systemDefault_label();
   }
   return codeFontFamily;
 });
@@ -94,7 +92,13 @@ export const selectCodeFontFamilyLabel = store.createSelector((state) => {
 export const selectCodeFontOptions = store.createSelector((state) => {
   const { systemFonts } = state.userPreferences;
   const options: FontOption[] = [
-    { value: "system-default", label: "System Default", fontFamily: SYSTEM_DEFAULT_FONT },
+    {
+      value: 'system-default',
+      get label() {
+        return m.settings_fonts_systemDefault_label();
+      },
+      fontFamily: SYSTEM_DEFAULT_FONT,
+    },
   ];
 
   for (const font of systemFonts) {

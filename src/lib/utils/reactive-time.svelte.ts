@@ -1,5 +1,6 @@
 import { formatCompactRelativeTime, formatRelativeTime } from '$lib/i18n/format';
 import { sharedTimeManager } from './shared-time-manager.svelte';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * Calculate relative time string from a timestamp in the active locale
@@ -26,7 +27,7 @@ export function createReactiveRelativeTime(targetDate: Date | string | number) {
   if (isNaN(target.getTime())) {
     return {
       get time() {
-        return 'Invalid date';
+        return m.ui_time_invalidDate_label();
       },
       cleanup: () => {},
     };

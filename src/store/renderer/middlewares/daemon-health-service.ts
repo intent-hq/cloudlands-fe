@@ -14,6 +14,7 @@ import type { StoreMiddleware } from '$lib/store-shim/types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
 import {
   connectionStatusChanged,
   pollSystemStatus,
@@ -126,10 +127,9 @@ function maybeNotifyVersionMismatch(transport?: BackendTransportInfo): void {
       const daemonVersion = transport.daemonVersion
         ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
         : '';
-      toast.warning(
-        `Connected to an external intentd daemon${daemonVersion} whose version differs from the bundled version. Some features may not work as expected.`,
-        { duration: 15_000 },
-      );
+      toast.warning(m.daemonStatus_versionMismatch_warning({ version: daemonVersion }), {
+        duration: 15_000,
+      });
     })
     .catch(() => {
       // Toast not available yet (e.g. during initial load) — un-latch so a
@@ -156,7 +156,9 @@ async function spawnSidecar(): Promise<void> {
       | undefined;
     if (!result?.ok) {
       appStore.dispatch(
-        spawnSidecarFailed(result?.error?.message ?? result?.reason ?? 'Failed to spawn sidecar'),
+        spawnSidecarFailed(
+          result?.error?.message ?? result?.reason ?? m.daemonStatus_spawnSidecarFailed_error(),
+        ),
       );
     }
   } catch (error) {

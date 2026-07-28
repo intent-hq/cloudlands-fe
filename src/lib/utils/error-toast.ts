@@ -16,14 +16,15 @@ import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import { formatDateTime } from '$lib/i18n/format';
 
-const APP_NAME = 'Intent';
+const APP_NAME = 'Intent'; // i18n-ignore (brand name)
 
 /**
  * Copy error details to clipboard for support
+ * (report body is agent/support-facing markdown, kept in English)
  */
 async function copyError(error: AppError): Promise<void> {
   const lines = [
-    '## 🐛 Error Report',
+    '## 🐛 Error Report', // i18n-ignore (support report content)
     '',
     `**Error:** ${error.title}`,
     `**Message:** ${error.message}`,
@@ -44,10 +45,10 @@ async function copyError(error: AppError): Promise<void> {
 
   lines.push('');
   lines.push('---');
-  lines.push('*Paste this into a support message or GitHub issue.*');
+  lines.push('*Paste this into a support message or GitHub issue.*'); // i18n-ignore (support report content)
 
   await navigator.clipboard.writeText(lines.join('\n'));
-  toast.success('Copied! Paste into a support message.');
+  toast.success(m.error_toast_copied_message());
 }
 
 /**
@@ -56,7 +57,7 @@ async function copyError(error: AppError): Promise<void> {
 async function sendToAgent(error: AppError): Promise<void> {
   const workspace = selectCurrentWorkspace.select(appStore.state);
   if (!workspace) {
-    toast.error('No space selected');
+    toast.error(m.error_toast_noSpace_error());
     return;
   }
 
@@ -64,25 +65,32 @@ async function sendToAgent(error: AppError): Promise<void> {
     workspaceId: workspace.id,
   });
 
+  // i18n-ignore (agent prompt content)
   const prompt = `I'm using ${APP_NAME} and encountered a bug. Help me figure out what went wrong.
 
 ${report.agentPrompt}`;
 
   const state = appStore.state;
-  appStore.dispatch(createAgentFromConfigRequested(workspace.id, {
-    name: 'Debug Agent',
-    // Generated placeholder — keep the session self-renameable.
-    nameExplicitlySet: false,
-    workspaceId: WorkspaceId(workspace.id),
-    agentType: createAgentTypeId('debug'),
-    initialMessage: prompt,
-    model: selectWorkspaceDefaultModel.select(state, workspace.id),
-    source: 'error-toast',
-    metadata: {
-      source: 'error-toast',
-      errorId: error.id,
-    },
-  }, { openAgent: true }));
+  appStore.dispatch(
+    createAgentFromConfigRequested(
+      workspace.id,
+      {
+        name: m.error_toast_debugAgent_name(),
+        // Generated placeholder — keep the session self-renameable.
+        nameExplicitlySet: false,
+        workspaceId: WorkspaceId(workspace.id),
+        agentType: createAgentTypeId('debug'),
+        initialMessage: prompt,
+        model: selectWorkspaceDefaultModel.select(state, workspace.id),
+        source: 'error-toast',
+        metadata: {
+          source: 'error-toast',
+          errorId: error.id,
+        },
+      },
+      { openAgent: true },
+    ),
+  );
 
   errorHandler.dismiss(error.id);
 }

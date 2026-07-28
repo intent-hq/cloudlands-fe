@@ -71,7 +71,7 @@ export function formatToolResultBlockForClipboard(block: {
 }): string {
   const isError = block.is_error || block.isError || false;
   const content = block.content || block.output || block.text || '';
-  const prefix = isError ? '❌ Tool Error' : '✅ Tool Result';
+  const prefix = isError ? '❌ Tool Error' : '✅ Tool Result'; // i18n-ignore (clipboard export markup)
   return `${prefix}:\n${safeStringify(content)}`;
 }
 
@@ -156,7 +156,7 @@ export function formatAgentMessagesForClipboard(
         if (result.toolCallId && processedToolIds.has(result.toolCallId)) continue;
         const isError = result.isError || false;
         const content = result.content || '';
-        const prefix = isError ? '❌ Tool Error' : '✅ Tool Result';
+        const prefix = isError ? '❌ Tool Error' : '✅ Tool Result'; // i18n-ignore (clipboard export markup)
         messageParts.push(`${prefix}:\n${safeStringify(content)}`);
       }
     }
@@ -174,9 +174,7 @@ export function formatAgentMessagesForClipboard(
 
     // Format with role prefix
     const role = msg.role === 'user' ? 'User' : 'Assistant';
-    const timestamp = msg.timestamp
-      ? formatDateTime(msg.timestamp)
-      : '';
+    const timestamp = msg.timestamp ? formatDateTime(msg.timestamp) : '';
 
     parts.push(`${role}${timestamp ? ` (${timestamp})` : ''}:\n${messageParts.join('\n\n')}`);
     prevRole = msg.role;

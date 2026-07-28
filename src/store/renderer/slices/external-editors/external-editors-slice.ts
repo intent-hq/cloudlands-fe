@@ -1,10 +1,11 @@
-import type { EditorCategory } from "$shared/editors/editor-registry";
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import type { EditorCategory } from '$shared/editors/editor-registry';
+import { createAction } from '$lib/store-shim/utils/store/create-action';
+import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from '$lib/store-shim/utils/collections/collection-utils';
+import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
 // Types
@@ -17,7 +18,7 @@ import {
 export type OpenAction = string;
 
 /** Special non-editor actions that are always available */
-export const SPECIAL_ACTIONS = ["copy", "copy-branch"] as const;
+export const SPECIAL_ACTIONS = ['copy', 'copy-branch'] as const;
 export type SpecialAction = (typeof SPECIAL_ACTIONS)[number];
 
 /** Detected editor from the main process */
@@ -27,7 +28,7 @@ export interface InstalledEditor {
   shortLabel: string;
   appName: string;
   category: EditorCategory;
-  handlerType: "generic" | "vscode" | "jetbrains" | "xcode" | "finder";
+  handlerType: 'generic' | 'vscode' | 'jetbrains' | 'xcode' | 'finder';
   bundleId?: string;
   shortcut?: string;
   priority: number;
@@ -38,7 +39,7 @@ export interface InstalledEditor {
 
 export type ExternalEditorsState = {
   selectedAction: OpenAction;
-  editors: Collection<InstalledEditor, "id">;
+  editors: Collection<InstalledEditor, 'id'>;
   hiddenEditorIds: string[];
   loading: boolean;
   error: string | null;
@@ -49,18 +50,18 @@ export type ExternalEditorsState = {
 // Constants
 // ============================================================================
 
-export const STORAGE_KEY = "installed-editors-cache";
+export const STORAGE_KEY = 'installed-editors-cache';
 export const CACHE_TTL_MS = 60000; // 1 minute cache
 
-const DEFAULT_ACTION: OpenAction = "vscode";
+const DEFAULT_ACTION: OpenAction = 'vscode';
 
-const VALID_CATEGORIES = new Set<EditorCategory>(["ide", "terminal", "finder"]);
-const VALID_HANDLER_TYPES = new Set<InstalledEditor["handlerType"]>([
-  "generic",
-  "vscode",
-  "jetbrains",
-  "xcode",
-  "finder",
+const VALID_CATEGORIES = new Set<EditorCategory>(['ide', 'terminal', 'finder']);
+const VALID_HANDLER_TYPES = new Set<InstalledEditor['handlerType']>([
+  'generic',
+  'vscode',
+  'jetbrains',
+  'xcode',
+  'finder',
 ]);
 
 // ============================================================================
@@ -69,7 +70,7 @@ const VALID_HANDLER_TYPES = new Set<InstalledEditor["handlerType"]>([
 
 export const initialState: ExternalEditorsState = {
   selectedAction: DEFAULT_ACTION,
-  editors: createCollection<InstalledEditor, "id">("id"),
+  editors: createCollection<InstalledEditor, 'id'>('id'),
   hiddenEditorIds: [],
   loading: false,
   error: null,
@@ -80,41 +81,35 @@ export const initialState: ExternalEditorsState = {
 // Actions
 // ============================================================================
 
-export const setOpenAction = createAction<[action: OpenAction]>(
-  "externalEditors/setOpenAction"
-);
+export const setOpenAction = createAction<[action: OpenAction]>('externalEditors/setOpenAction');
 
 /** Trigger fetch of installed editors (saga handles IPC + caching) */
-export const fetchEditors = createAction<[forceRefresh?: boolean]>(
-  "externalEditors/fetchEditors"
-);
+export const fetchEditors = createAction<[forceRefresh?: boolean]>('externalEditors/fetchEditors');
 
 /** Set editors and lastFetched on successful fetch */
-export const fetchEditorsSuccess = createAction<
-  [editors: InstalledEditor[], lastFetched: number]
->("externalEditors/fetchEditorsSuccess");
+export const fetchEditorsSuccess = createAction<[editors: InstalledEditor[], lastFetched: number]>(
+  'externalEditors/fetchEditorsSuccess',
+);
 
 /** Set error on failed fetch */
 export const fetchEditorsFailure = createAction<[error: string]>(
-  "externalEditors/fetchEditorsFailure"
+  'externalEditors/fetchEditorsFailure',
 );
 
 /** Clear stale error before a new fetch starts */
-export const clearError = createAction("externalEditors/clearError");
+export const clearError = createAction('externalEditors/clearError');
 
 /** Set loading state */
-export const setLoading = createAction<[loading: boolean]>(
-  "externalEditors/setLoading"
-);
+export const setLoading = createAction<[loading: boolean]>('externalEditors/setLoading');
 
 /** Replace hidden editor IDs loaded from persisted settings */
 export const setHiddenEditorIds = createAction<[editorIds: string[]]>(
-  "externalEditors/setHiddenEditorIds"
+  'externalEditors/setHiddenEditorIds',
 );
 
 /** Toggle whether an editor is hidden from Open In menus */
 export const toggleHiddenEditor = createAction<[editorId: string]>(
-  "externalEditors/toggleHiddenEditor"
+  'externalEditors/toggleHiddenEditor',
 );
 
 // ============================================================================
@@ -127,32 +122,32 @@ export function isSpecialAction(value: string): value is SpecialAction {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function coerceString(value: unknown, fallback: string): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
     return String(value);
   }
   return fallback;
 }
 
 function coerceOptionalString(value: unknown): string | undefined {
-  const coerced = coerceString(value, "");
+  const coerced = coerceString(value, '');
   return coerced ? coerced : undefined;
 }
 
 function coerceBoolean(value: unknown): boolean {
-  if (typeof value === "boolean") return value;
-  if (value === "true") return true;
-  if (value === "false") return false;
-  if (typeof value === "number") return value !== 0;
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (typeof value === 'number') return value !== 0;
   return false;
 }
 
 function coercePriority(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 export function normalizeOpenAction(action: unknown): OpenAction {
@@ -165,20 +160,26 @@ export function normalizeExternalEditorsError(error: unknown): string {
     return (
       coerceOptionalString(error.message) ??
       coerceOptionalString(error.error) ??
-      "Failed to detect editors"
+      m.workspace_externalEditors_detectFailed_error()
     );
   }
-  return coerceString(error, "Failed to detect editors") || "Failed to detect editors";
+  return (
+    coerceString(error, m.workspace_externalEditors_detectFailed_error()) ||
+    m.workspace_externalEditors_detectFailed_error()
+  );
 }
 
 export function normalizeInstalledEditor(value: unknown): InstalledEditor | null {
   if (!isRecord(value)) return null;
 
-  const id = coerceString(value.id, "").trim();
+  const id = coerceString(value.id, '').trim();
   if (!id) return null;
 
-  const categoryValue = coerceString(value.category, "ide") as EditorCategory;
-  const handlerTypeValue = coerceString(value.handlerType, "generic") as InstalledEditor["handlerType"];
+  const categoryValue = coerceString(value.category, 'ide') as EditorCategory;
+  const handlerTypeValue = coerceString(
+    value.handlerType,
+    'generic',
+  ) as InstalledEditor['handlerType'];
   const bundleId = coerceOptionalString(value.bundleId);
   const shortcut = coerceOptionalString(value.shortcut);
   const iconBase64 = coerceOptionalString(value.iconBase64);
@@ -188,8 +189,8 @@ export function normalizeInstalledEditor(value: unknown): InstalledEditor | null
     name: coerceString(value.name, id),
     shortLabel: coerceString(value.shortLabel, id),
     appName: coerceString(value.appName, id),
-    category: VALID_CATEGORIES.has(categoryValue) ? categoryValue : "ide",
-    handlerType: VALID_HANDLER_TYPES.has(handlerTypeValue) ? handlerTypeValue : "generic",
+    category: VALID_CATEGORIES.has(categoryValue) ? categoryValue : 'ide',
+    handlerType: VALID_HANDLER_TYPES.has(handlerTypeValue) ? handlerTypeValue : 'generic',
     priority: coercePriority(value.priority),
     installed: coerceBoolean(value.installed),
     ...(bundleId ? { bundleId } : {}),
@@ -208,24 +209,22 @@ export function normalizeInstalledEditors(editors: unknown): InstalledEditor[] {
 
 export function normalizeHiddenEditorIds(editorIds: unknown): string[] {
   if (!Array.isArray(editorIds)) return [];
-  return Array.from(new Set(editorIds.filter((id): id is string => typeof id === "string")));
+  return Array.from(new Set(editorIds.filter((id): id is string => typeof id === 'string')));
 }
 
 // ============================================================================
 // Reducer
 // ============================================================================
 
-export const externalEditorsReducer = createReducer<ExternalEditorsState>(
-  initialState
-)
+export const externalEditorsReducer = createReducer<ExternalEditorsState>(initialState)
   .with(setOpenAction, (state, { payload: [selectedAction] }) => ({
     ...state,
     selectedAction: normalizeOpenAction(selectedAction),
   }))
   .with(fetchEditorsSuccess, (state, { payload: [editors, lastFetched] }) => ({
     ...state,
-    editors: createCollection<InstalledEditor, "id">("id", normalizeInstalledEditors(editors)),
-    lastFetched: typeof lastFetched === "number" && Number.isFinite(lastFetched) ? lastFetched : 0,
+    editors: createCollection<InstalledEditor, 'id'>('id', normalizeInstalledEditors(editors)),
+    lastFetched: typeof lastFetched === 'number' && Number.isFinite(lastFetched) ? lastFetched : 0,
     loading: false,
     error: null,
   }))
@@ -247,7 +246,7 @@ export const externalEditorsReducer = createReducer<ExternalEditorsState>(
     hiddenEditorIds: normalizeHiddenEditorIds(editorIds),
   }))
   .with(toggleHiddenEditor, (state, { payload: [editorId] }) => {
-    const normalizedEditorId = coerceString(editorId, "");
+    const normalizedEditorId = coerceString(editorId, '');
     if (!normalizedEditorId) return state;
 
     const hiddenEditorIds = state.hiddenEditorIds.includes(normalizedEditorId)

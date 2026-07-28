@@ -1,6 +1,7 @@
 import type { Workspace } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
 import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
+import { m } from '$shared/paraglide/messages.js';
 
 /**
  * Represents the current stage of work in a workspace.
@@ -69,15 +70,15 @@ export function getWorkspaceStage(workspace: Workspace): WorkspaceStage {
 export function getStageLabel(stage: WorkspaceStage): string {
   switch (stage) {
     case 'planning':
-      return 'Planning';
+      return m.workspace_stage_planning_label();
     case 'in-progress':
-      return 'In Progress';
+      return m.workspace_stage_inProgress_label();
     case 'pr-open':
-      return 'PR Open';
+      return m.workspace_stage_prOpen_label();
     case 'merged':
-      return 'Merged';
+      return m.workspace_stage_merged_label();
     default:
-      return 'Unknown';
+      return m.workspace_stage_unknown_label();
   }
 }
 
@@ -95,13 +96,13 @@ export function getStageLabel(stage: WorkspaceStage): string {
 export function getStageDescription(stage: WorkspaceStage): string {
   switch (stage) {
     case 'planning':
-      return 'Defining requirements and planning implementation';
+      return m.workspace_stage_planning_description();
     case 'in-progress':
-      return 'Actively making code changes';
+      return m.workspace_stage_inProgress_description();
     case 'pr-open':
-      return 'Pull request is open for review';
+      return m.workspace_stage_prOpen_description();
     case 'merged':
-      return 'Changes have been merged';
+      return m.workspace_stage_merged_description();
     default:
       return '';
   }
@@ -161,8 +162,7 @@ export function getRecentRepos(workspaces: Workspace[], limit?: number): RecentR
     if (!existing || activityTime > existingTime) {
       repoMap.set(key, {
         path: workspace.repositoryPath,
-        name:
-          workspace.repositoryName || workspace.repositoryPath.split('/').pop() || 'Unknown',
+        name: workspace.repositoryName || workspace.repositoryPath.split('/').pop() || 'Unknown',
         updatedAt: activityTimestamp,
         owner: workspace.repositoryOwner,
       });

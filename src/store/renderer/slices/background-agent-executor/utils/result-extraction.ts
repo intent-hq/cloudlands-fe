@@ -111,11 +111,12 @@ export function extractResultFromMessages(
     return {
       result: null,
       error:
+        // i18n-ignore (internal extraction diagnostic)
         `Expected <${resultTag}> tag not found in response. ` +
+        // i18n-ignore (internal extraction diagnostic)
         'Please try again or use a different model.',
     };
   }
 
   return { result: extractedResult, error: null };
 }
-

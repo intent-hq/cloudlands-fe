@@ -1,4 +1,5 @@
 import { Logger } from '$shared/logger';
+import { m } from '$shared/paraglide/messages.js';
 import { shouldSuppressMonacoUnhandledRejection } from './monaco-error-suppression';
 import {
   isSvelteErrorUrl,
@@ -250,10 +251,10 @@ class ErrorHandler {
       memory:
         typeof performance !== 'undefined' && (performance as any).memory
           ? {
-            usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
-            totalJSHeapSize: (performance as any).memory.totalJSHeapSize,
-            jsHeapSizeLimit: (performance as any).memory.jsHeapSizeLimit,
-          }
+              usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
+              totalJSHeapSize: (performance as any).memory.totalJSHeapSize,
+              jsHeapSizeLimit: (performance as any).memory.jsHeapSizeLimit,
+            }
           : undefined,
       // Add timing information
       timing: {
@@ -274,7 +275,7 @@ class ErrorHandler {
     const errorObj: AppError = {
       id: globalThis.crypto.randomUUID(),
       type: 'error',
-      title: 'An error occurred',
+      title: m.error_handler_generic_title(),
       message: errorMessage,
       timestamp: new Date(),
       context: enhancedContext,
@@ -331,7 +332,7 @@ class ErrorHandler {
     const warning: AppError = {
       id: globalThis.crypto.randomUUID(),
       type: 'warning',
-      title: 'Warning',
+      title: m.error_handler_warning_title(),
       message,
       timestamp: new Date(),
       context,
@@ -346,7 +347,7 @@ class ErrorHandler {
     const info: AppError = {
       id: globalThis.crypto.randomUUID(),
       type: 'info',
-      title: 'Information',
+      title: m.error_handler_info_title(),
       message,
       timestamp: new Date(),
       context,
@@ -366,29 +367,29 @@ class ErrorHandler {
       if (svelteInfo) {
         return svelteInfo.title;
       }
-      return 'Svelte Error';
+      return m.error_handler_svelte_title();
     }
 
     if (message.includes('network') || message.includes('fetch')) {
-      return 'Network Error';
+      return m.error_handler_network_title();
     }
     if (message.includes('auth') || message.includes('unauthorized')) {
-      return 'Authentication Error';
+      return m.error_handler_auth_title();
     }
     if (message.includes('permission') || message.includes('denied')) {
-      return 'Permission Denied';
+      return m.error_handler_permission_title();
     }
     if (message.includes('file') || message.includes('directory')) {
-      return 'File System Error';
+      return m.error_handler_fileSystem_title();
     }
     if (message.includes('ssh') || message.includes('connection')) {
-      return 'Connection Error';
+      return m.error_handler_connection_title();
     }
     if (message.includes('api') || message.includes('endpoint')) {
-      return 'API Error';
+      return m.error_handler_api_title();
     }
 
-    return 'Application Error';
+    return m.error_handler_application_title();
   }
 
   private addError(error: AppError) {
@@ -403,11 +404,13 @@ class ErrorHandler {
 
     // Show toast notification using the built-in toast system
     // Import dynamically to avoid circular dependencies
-    import('./error-toast').then(({ showErrorToast }) => {
-      showErrorToast(error);
-    }).catch(() => {
-      // Toast not available yet - might be during initial load
-    });
+    import('./error-toast')
+      .then(({ showErrorToast }) => {
+        showErrorToast(error);
+      })
+      .catch(() => {
+        // Toast not available yet - might be during initial load
+      });
   }
 
   dismiss(errorId: string) {
@@ -501,8 +504,10 @@ export const errorHandler = new ErrorHandler();
 
 // Expose on window for easy testing in dev tools
 if (typeof window !== 'undefined') {
-  (window as any).testError = () => errorHandler.handleError(new Error('Test error: Something went wrong'), { source: 'devtools' });
-  (window as any).testWarning = () => errorHandler.handleWarning('Test warning: Rate limit approaching');
+  (window as any).testError = () =>
+    errorHandler.handleError(new Error('Test error: Something went wrong'), { source: 'devtools' });
+  (window as any).testWarning = () =>
+    errorHandler.handleWarning('Test warning: Rate limit approaching');
   (window as any).testInfo = () => errorHandler.handleInfo('Test info: Operation completed');
 }
 

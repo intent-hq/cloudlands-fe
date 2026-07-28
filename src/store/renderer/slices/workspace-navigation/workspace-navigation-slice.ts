@@ -1,60 +1,61 @@
-import type { ReviewStatus } from "$lib/components/code-review/types";
-import type { WorkspaceEvent } from "$features/events/types";
-import type { TrackedChange } from "$features/file-tracking/types";
-import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
+import type { ReviewStatus } from '$lib/components/code-review/types';
+import type { WorkspaceEvent } from '$features/events/types';
+import type { TrackedChange } from '$features/file-tracking/types';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import { createAction } from '$lib/store-shim/utils/store/create-action';
+import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import { m } from '$shared/paraglide/messages.js';
 
 const STORAGE_VERSION = 2;
-const DEFAULT_NOTE_ID = "spec";
+const DEFAULT_NOTE_ID = 'spec';
 const MAX_NAVIGATION_HISTORY = 50;
 
 type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
-export type WorkspaceNavigationWorkspaceStatus = "loading" | "ready" | "error" | "creating";
-export type WorkspaceNavigationDrawerType = "agent" | "terminal" | "overview" | null;
+export type WorkspaceNavigationWorkspaceStatus = 'loading' | 'ready' | 'error' | 'creating';
+export type WorkspaceNavigationDrawerType = 'agent' | 'terminal' | 'overview' | null;
 export type WorkspaceNavigationHistoryType =
-  | "note"
-  | "file"
-  | "diff"
-  | "accept-changes"
-  | "chat-changes"
-  | "dashboard"
-  | "change-set"
-  | "agent-turn-changes"
-  | "activity-changes"
-  | "local-changes"
-  | "browser"
-  | "activity"
-  | "staged"
-  | "unstaged"
-  | "commit"
-  | "agent-aggregate-changes"
-  | "commit-changeset"
-  | "code-review";
+  | 'note'
+  | 'file'
+  | 'diff'
+  | 'accept-changes'
+  | 'chat-changes'
+  | 'dashboard'
+  | 'change-set'
+  | 'agent-turn-changes'
+  | 'activity-changes'
+  | 'local-changes'
+  | 'browser'
+  | 'activity'
+  | 'staged'
+  | 'unstaged'
+  | 'commit'
+  | 'agent-aggregate-changes'
+  | 'commit-changeset'
+  | 'code-review';
 
 export type WorkspaceNavigationMainPanelType =
-  | "empty"
-  | "notes"
-  | "file"
-  | "file-tracking-diff"
-  | "accept-changes"
-  | "chat-changes"
-  | "dashboard"
-  | "change-set"
-  | "agent-turn-changes"
-  | "activity-changes"
-  | "local-changes"
-  | "browser"
-  | "activity"
-  | "staged"
-  | "unstaged"
-  | "commit"
-  | "agent-aggregate-changes"
-  | "commit-changeset"
-  | "code-review";
+  | 'empty'
+  | 'notes'
+  | 'file'
+  | 'file-tracking-diff'
+  | 'accept-changes'
+  | 'chat-changes'
+  | 'dashboard'
+  | 'change-set'
+  | 'agent-turn-changes'
+  | 'activity-changes'
+  | 'local-changes'
+  | 'browser'
+  | 'activity'
+  | 'staged'
+  | 'unstaged'
+  | 'commit'
+  | 'agent-aggregate-changes'
+  | 'commit-changeset'
+  | 'code-review';
 
 export type WorkspaceNavigationAgentTurn = {
   agentId: string;
@@ -160,11 +161,11 @@ export interface WorkspaceNavigationState {
 export const emptyWorkspaceNavigationState: WorkspaceNavigationWorkspaceState = {
   version: STORAGE_VERSION,
   workspace: {
-    id: "",
-    status: "loading",
+    id: '',
+    status: 'loading',
   },
   mainPanel: {
-    type: "notes",
+    type: 'notes',
     selectedNoteId: DEFAULT_NOTE_ID,
   },
   drawer: {
@@ -185,8 +186,9 @@ export const initialState: WorkspaceNavigationState = {
   byWorkspaceId: {},
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceNavigationState);
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
+  emptyWorkspaceNavigationState,
+);
 
 export function workspaceNavigationStorageKey(wsId: string): string {
   return `workspace:state:${wsId}`;
@@ -194,7 +196,7 @@ export function workspaceNavigationStorageKey(wsId: string): string {
 
 export function createWorkspaceNavigationState(
   wsId: string,
-  overrides?: Partial<WorkspaceNavigationWorkspaceState>
+  overrides?: Partial<WorkspaceNavigationWorkspaceState>,
 ): WorkspaceNavigationWorkspaceState {
   return {
     version: STORAGE_VERSION,
@@ -211,9 +213,12 @@ export function createWorkspaceNavigationState(
       ...overrides?.drawer,
     },
     navigation: {
-      history: overrides?.navigation?.history ?? [...emptyWorkspaceNavigationState.navigation.history],
+      history: overrides?.navigation?.history ?? [
+        ...emptyWorkspaceNavigationState.navigation.history,
+      ],
       currentIndex:
-        overrides?.navigation?.currentIndex ?? emptyWorkspaceNavigationState.navigation.currentIndex,
+        overrides?.navigation?.currentIndex ??
+        emptyWorkspaceNavigationState.navigation.currentIndex,
     },
     ui: {
       ...emptyWorkspaceNavigationState.ui,
@@ -224,7 +229,7 @@ export function createWorkspaceNavigationState(
 
 function ensureWorkspaceNavigationState(
   state: WorkspaceNavigationState,
-  wsId: string
+  wsId: string,
 ): WorkspaceNavigationWorkspaceState {
   const workspaceState = getWorkspaceState(state, wsId);
   return workspaceState.workspace.id === wsId
@@ -235,14 +240,14 @@ function ensureWorkspaceNavigationState(
 function withWorkspaceNavigationState(
   state: WorkspaceNavigationState,
   wsId: string,
-  updater: (workspaceState: WorkspaceNavigationWorkspaceState) => WorkspaceNavigationWorkspaceState
+  updater: (workspaceState: WorkspaceNavigationWorkspaceState) => WorkspaceNavigationWorkspaceState,
 ): WorkspaceNavigationState {
   return setWorkspaceState(state, wsId, updater(ensureWorkspaceNavigationState(state, wsId)));
 }
 
 function mergeWorkspaceNavigationState(
   workspaceState: WorkspaceNavigationWorkspaceState,
-  overrides: Partial<WorkspaceNavigationWorkspaceState>
+  overrides: Partial<WorkspaceNavigationWorkspaceState>,
 ): WorkspaceNavigationWorkspaceState {
   return {
     ...workspaceState,
@@ -256,10 +261,10 @@ function mergeWorkspaceNavigationState(
 
 function createMainPanelState(
   type: WorkspaceNavigationMainPanelType,
-  selection: Partial<WorkspaceNavigationMainPanelState> = {}
+  selection: Partial<WorkspaceNavigationMainPanelState> = {},
 ): WorkspaceNavigationMainPanelState {
   return {
-    ...(type === "notes" ? { selectedNoteId: DEFAULT_NOTE_ID } : {}),
+    ...(type === 'notes' ? { selectedNoteId: DEFAULT_NOTE_ID } : {}),
     type,
     ...selection,
   };
@@ -271,7 +276,7 @@ function truncateLabel(label: string, maxLength = 50): string {
 
 function pushHistoryEntry(
   workspaceState: WorkspaceNavigationWorkspaceState,
-  entry: WorkspaceNavigationHistoryEntry
+  entry: WorkspaceNavigationHistoryEntry,
 ): WorkspaceNavigationWorkspaceState {
   const currentEntry =
     workspaceState.navigation.history[workspaceState.navigation.currentIndex] ?? undefined;
@@ -304,7 +309,7 @@ function pushHistoryEntry(
 
 function updateCurrentHistoryEntry(
   workspaceState: WorkspaceNavigationWorkspaceState,
-  updater: (entry: WorkspaceNavigationHistoryEntry) => WorkspaceNavigationHistoryEntry
+  updater: (entry: WorkspaceNavigationHistoryEntry) => WorkspaceNavigationHistoryEntry,
 ): WorkspaceNavigationWorkspaceState {
   const currentIndex = workspaceState.navigation.currentIndex;
   if (currentIndex < 0 || currentIndex >= workspaceState.navigation.history.length) {
@@ -327,19 +332,23 @@ function updateCurrentHistoryEntry(
 
 export const hydrateWorkspaceNavigation = createAction<
   [wsId: string, workspaceState: WorkspaceNavigationWorkspaceState]
->("workspaceNavigation/hydrateWorkspaceNavigation");
+>('workspaceNavigation/hydrateWorkspaceNavigation');
 
 export const setWorkspaceNavigationWorkspaceStatus = createAction<
   [wsId: string, status: WorkspaceNavigationWorkspaceStatus]
->("workspaceNavigation/setWorkspaceNavigationWorkspaceStatus");
+>('workspaceNavigation/setWorkspaceNavigationWorkspaceStatus');
 
 export const markWorkspaceNavigationInitialized = createAction<[wsId: string]>(
-  "workspaceNavigation/markWorkspaceNavigationInitialized"
+  'workspaceNavigation/markWorkspaceNavigationInitialized',
 );
 
 export const setWorkspaceMainPanel = createAction<
-  [wsId: string, type: WorkspaceNavigationMainPanelType, selection?: Partial<WorkspaceNavigationMainPanelState>]
->("workspaceNavigation/setWorkspaceMainPanel");
+  [
+    wsId: string,
+    type: WorkspaceNavigationMainPanelType,
+    selection?: Partial<WorkspaceNavigationMainPanelState>,
+  ]
+>('workspaceNavigation/setWorkspaceMainPanel');
 
 export const openWorkspaceFile = createAction<
   [
@@ -347,7 +356,7 @@ export const openWorkspaceFile = createAction<
     filePath: string,
     options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
   ]
->("workspaceNavigation/openWorkspaceFile");
+>('workspaceNavigation/openWorkspaceFile');
 
 export const openWorkspaceNote = createAction<
   [
@@ -355,14 +364,14 @@ export const openWorkspaceNote = createAction<
     noteId: string,
     options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
   ]
->("workspaceNavigation/openWorkspaceNote");
+>('workspaceNavigation/openWorkspaceNote');
 
 export const openWorkspaceBrowser = createAction<[wsId: string, url: string]>(
-  "workspaceNavigation/openWorkspaceBrowser"
+  'workspaceNavigation/openWorkspaceBrowser',
 );
 
 export const openWorkspaceAcceptChanges = createAction<[wsId: string]>(
-  "workspaceNavigation/openWorkspaceAcceptChanges"
+  'workspaceNavigation/openWorkspaceAcceptChanges',
 );
 
 export const openWorkspaceDiff = createAction<
@@ -380,18 +389,18 @@ export const openWorkspaceDiff = createAction<
       branchBaseCommitSha?: string;
     },
   ]
->("workspaceNavigation/openWorkspaceDiff");
+>('workspaceNavigation/openWorkspaceDiff');
 
 export const openWorkspaceChangeSet = createAction<[wsId: string]>(
-  "workspaceNavigation/openWorkspaceChangeSet"
+  'workspaceNavigation/openWorkspaceChangeSet',
 );
 
 export const openWorkspaceAgentTurnChanges = createAction<
   [wsId: string, turn: WorkspaceNavigationAgentTurn, aggregate?: boolean]
->("workspaceNavigation/openWorkspaceAgentTurnChanges");
+>('workspaceNavigation/openWorkspaceAgentTurnChanges');
 
 export const openWorkspaceActivityChanges = createAction<[wsId: string, event: WorkspaceEvent]>(
-  "workspaceNavigation/openWorkspaceActivityChanges"
+  'workspaceNavigation/openWorkspaceActivityChanges',
 );
 
 export const openWorkspaceChatChanges = createAction<
@@ -401,10 +410,10 @@ export const openWorkspaceChatChanges = createAction<
     title: string,
     options?: { messageId?: string; isAggregate?: boolean; agentId?: string; turnNumber?: number },
   ]
->("workspaceNavigation/openWorkspaceChatChanges");
+>('workspaceNavigation/openWorkspaceChatChanges');
 
 export const openWorkspaceLocalChanges = createAction<[wsId: string]>(
-  "workspaceNavigation/openWorkspaceLocalChanges"
+  'workspaceNavigation/openWorkspaceLocalChanges',
 );
 
 export const openWorkspaceCommitChangeset = createAction<
@@ -414,7 +423,7 @@ export const openWorkspaceCommitChangeset = createAction<
     commitMessage?: string,
     options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
   ]
->("workspaceNavigation/openWorkspaceCommitChangeset");
+>('workspaceNavigation/openWorkspaceCommitChangeset');
 
 export const openWorkspaceCodeReview = createAction<
   [
@@ -428,7 +437,7 @@ export const openWorkspaceCodeReview = createAction<
       error?: string;
     },
   ]
->("workspaceNavigation/openWorkspaceCodeReview");
+>('workspaceNavigation/openWorkspaceCodeReview');
 
 export const updateWorkspaceCodeReview = createAction<
   [
@@ -442,13 +451,15 @@ export const updateWorkspaceCodeReview = createAction<
       error?: string;
     },
   ]
->("workspaceNavigation/updateWorkspaceCodeReview");
+>('workspaceNavigation/updateWorkspaceCodeReview');
 
 export const openWorkspaceDrawer = createAction<
   [wsId: string, type: Exclude<WorkspaceNavigationDrawerType, null>, itemId?: string | null]
->("workspaceNavigation/openWorkspaceDrawer");
+>('workspaceNavigation/openWorkspaceDrawer');
 
-export const closeWorkspaceDrawer = createAction<[wsId: string]>("workspaceNavigation/closeWorkspaceDrawer");
+export const closeWorkspaceDrawer = createAction<[wsId: string]>(
+  'workspaceNavigation/closeWorkspaceDrawer',
+);
 
 export const workspaceNavigationReducer = createReducer(initialState)
   .with(hydrateWorkspaceNavigation, (state, { payload: [wsId, workspaceState] }) =>
@@ -459,7 +470,7 @@ export const workspaceNavigationReducer = createReducer(initialState)
         id: wsId,
         status: workspaceState.workspace.status,
       },
-    })
+    }),
   )
   .with(setWorkspaceNavigationWorkspaceStatus, (state, { payload: [wsId, status] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
@@ -469,8 +480,8 @@ export const workspaceNavigationReducer = createReducer(initialState)
           id: wsId,
           status,
         },
-      })
-    )
+      }),
+    ),
   )
   .with(markWorkspaceNavigationInitialized, (state, { payload: [wsId] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
@@ -483,36 +494,36 @@ export const workspaceNavigationReducer = createReducer(initialState)
 
       if (nextState.navigation.history.length === 0 && nextState.navigation.currentIndex === -1) {
         switch (nextState.mainPanel.type) {
-          case "notes":
+          case 'notes':
             if (nextState.mainPanel.selectedNoteId) {
               nextState = pushHistoryEntry(nextState, {
-                type: "note",
+                type: 'note',
                 id: nextState.mainPanel.selectedNoteId,
-                label: "Note",
+                label: 'Note',
               });
             }
             break;
-          case "file":
+          case 'file':
             if (nextState.mainPanel.selectedFile) {
               nextState = pushHistoryEntry(nextState, {
-                type: "file",
+                type: 'file',
                 id: nextState.mainPanel.selectedFile,
-                label: nextState.mainPanel.selectedFile.split("/").pop() || "File",
+                label: nextState.mainPanel.selectedFile.split('/').pop() || 'File',
               });
             }
             break;
-          case "dashboard":
+          case 'dashboard':
             nextState = pushHistoryEntry(nextState, {
-              type: "dashboard",
-              id: "dashboard",
-              label: "Dashboard",
+              type: 'dashboard',
+              id: 'dashboard',
+              label: 'Dashboard',
             });
             break;
         }
       }
 
       return nextState;
-    })
+    }),
   )
   .with(setWorkspaceMainPanel, (state, { payload: [wsId, type, selection] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
@@ -521,50 +532,50 @@ export const workspaceNavigationReducer = createReducer(initialState)
       });
 
       switch (type) {
-        case "activity":
+        case 'activity':
           nextState = pushHistoryEntry(nextState, {
-            type: "activity",
-            id: "activity",
-            label: "Activity Log",
+            type: 'activity',
+            id: 'activity',
+            label: m.workspace_nav_activityLog_label(),
           });
           break;
-        case "dashboard":
+        case 'dashboard':
           nextState = pushHistoryEntry(nextState, {
-            type: "dashboard",
-            id: "dashboard",
-            label: "Dashboard",
+            type: 'dashboard',
+            id: 'dashboard',
+            label: m.workspace_nav_dashboard_label(),
           });
           break;
-        case "staged":
+        case 'staged':
           nextState = pushHistoryEntry(nextState, {
-            type: "staged",
-            id: "staged",
-            label: "Staged Changes",
+            type: 'staged',
+            id: 'staged',
+            label: m.workspace_nav_staged_label(),
           });
           break;
-        case "unstaged":
+        case 'unstaged':
           nextState = pushHistoryEntry(nextState, {
-            type: "unstaged",
-            id: "unstaged",
-            label: "Unstaged Changes",
+            type: 'unstaged',
+            id: 'unstaged',
+            label: m.workspace_nav_unstaged_label(),
           });
           break;
-        case "commit":
+        case 'commit':
           if (selection?.selectedCommit?.hash) {
             nextState = pushHistoryEntry(nextState, {
-              type: "commit",
+              type: 'commit',
               id: selection.selectedCommit.hash,
-              label: selection.selectedCommit.message?.slice(0, 50) || "Commit",
+              label: selection.selectedCommit.message?.slice(0, 50) || 'Commit',
               selectedCommit: selection.selectedCommit,
             });
           }
           break;
-        case "agent-aggregate-changes":
+        case 'agent-aggregate-changes':
           if (selection?.selectedAgentTurn) {
             nextState = pushHistoryEntry(nextState, {
-              type: "agent-aggregate-changes",
+              type: 'agent-aggregate-changes',
               id: `${selection.selectedAgentTurn.agentId}:aggregate`,
-              label: "Aggregate Changes",
+              label: m.workspace_nav_aggregate_label(),
               agentTurnData: selection.selectedAgentTurn,
             });
           }
@@ -572,89 +583,92 @@ export const workspaceNavigationReducer = createReducer(initialState)
       }
 
       return nextState;
-    })
+    }),
   )
   .with(openWorkspaceFile, (state, { payload: [wsId, filePath, options] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("file", { selectedFile: filePath }),
+          mainPanel: createMainPanelState('file', { selectedFile: filePath }),
           ui: {
             ...workspaceState.ui,
             jumpToLine: options?.line,
           },
         }),
         {
-          type: "file",
+          type: 'file',
           id: filePath,
-          label: filePath.split("/").pop() || "File",
-        }
-      )
-    )
+          label: filePath.split('/').pop() || 'File',
+        },
+      ),
+    ),
   )
   .with(openWorkspaceNote, (state, { payload: [wsId, noteId] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-      if (workspaceState.mainPanel.type === "notes" && workspaceState.mainPanel.selectedNoteId === noteId) {
+      if (
+        workspaceState.mainPanel.type === 'notes' &&
+        workspaceState.mainPanel.selectedNoteId === noteId
+      ) {
         return workspaceState;
       }
 
       return pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("notes", { selectedNoteId: noteId }),
+          mainPanel: createMainPanelState('notes', { selectedNoteId: noteId }),
         }),
         {
-          type: "note",
+          type: 'note',
           id: noteId,
-          label: "Note",
-        }
+          label: 'Note',
+        },
       );
-    })
+    }),
   )
   .with(openWorkspaceBrowser, (state, { payload: [wsId, url] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("browser", { selectedBrowserUrl: url }),
+          mainPanel: createMainPanelState('browser', { selectedBrowserUrl: url }),
         }),
         {
-          type: "browser",
+          type: 'browser',
           id: url,
-          label: "Browser",
-        }
-      )
-    )
+          label: 'Browser',
+        },
+      ),
+    ),
   )
   .with(openWorkspaceAcceptChanges, (state, { payload: [wsId] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("accept-changes"),
+          mainPanel: createMainPanelState('accept-changes'),
         }),
         {
-          type: "accept-changes",
-          id: "accept-changes",
-          label: "Accept Changes",
-        }
-      )
-    )
+          type: 'accept-changes',
+          id: 'accept-changes',
+          label: m.workspace_nav_acceptChanges_label(),
+        },
+      ),
+    ),
   )
   .with(openWorkspaceDiff, (state, { payload: [wsId, change, options] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
       const filePath = options?.filePath || change.file || change.relativePath;
       const isSameFileAndStage =
-        workspaceState.mainPanel.type === "file-tracking-diff" &&
+        workspaceState.mainPanel.type === 'file-tracking-diff' &&
         workspaceState.mainPanel.selectedFile === filePath &&
         workspaceState.mainPanel.selectedTrackedChange?.stage === change.stage;
 
       if (isSameFileAndStage && !options?.scrollToLine && !options?.forceUpdate) {
         return mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("accept-changes"),
+          mainPanel: createMainPanelState('accept-changes'),
         });
       }
 
       return pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("file-tracking-diff", {
+          mainPanel: createMainPanelState('file-tracking-diff', {
             selectedTrackedChange: change,
             selectedFile: filePath,
             selectedChangeId: options?.changeId || change.id,
@@ -664,81 +678,81 @@ export const workspaceNavigationReducer = createReducer(initialState)
           }),
         }),
         {
-          type: "diff",
+          type: 'diff',
           id: options?.changeId || change.id,
-          label: filePath?.split("/").pop() || "Diff",
+          label: filePath?.split('/').pop() || 'Diff',
           trackedChange: change,
           filePath,
           branchBaseRef: options?.branchBaseRef,
           branchBaseCommitSha: options?.branchBaseCommitSha,
-        }
+        },
       );
-    })
+    }),
   )
   .with(openWorkspaceChangeSet, (state, { payload: [wsId] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("change-set"),
+          mainPanel: createMainPanelState('change-set'),
         }),
         {
-          type: "change-set",
-          id: "commit",
-          label: "Commit Changes",
-        }
-      )
-    )
+          type: 'change-set',
+          id: 'commit',
+          label: m.workspace_nav_commitChanges_label(),
+        },
+      ),
+    ),
   )
   .with(openWorkspaceAgentTurnChanges, (state, { payload: [wsId, turn, aggregate] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-      const historyType = aggregate ? "agent-aggregate-changes" : "agent-turn-changes";
+      const historyType = aggregate ? 'agent-aggregate-changes' : 'agent-turn-changes';
       const historyId = aggregate
         ? `${turn.agentId}:aggregate`
-        : `${turn.agentId}:${typeof turn.turnNumber === "number" ? turn.turnNumber : ""}`;
+        : `${turn.agentId}:${typeof turn.turnNumber === 'number' ? turn.turnNumber : ''}`;
 
       return pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
           mainPanel: createMainPanelState(
-            aggregate ? "agent-aggregate-changes" : "agent-turn-changes",
-            { selectedAgentTurn: turn }
+            aggregate ? 'agent-aggregate-changes' : 'agent-turn-changes',
+            { selectedAgentTurn: turn },
           ),
         }),
         {
           type: historyType,
           id: historyId,
-          label: aggregate ? "Aggregate Changes" : "Agent Turn Changes",
+          label: aggregate ? m.workspace_nav_aggregate_label() : m.workspace_nav_agentTurn_label(),
           agentTurnData: turn,
-        }
+        },
       );
-    })
+    }),
   )
   .with(openWorkspaceActivityChanges, (state, { payload: [wsId, event] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
       const eventId =
-        "id" in event && typeof event.id === "string"
+        'id' in event && typeof event.id === 'string'
           ? event.id
           : `${event.type}:${event.timestamp}`;
 
       return pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("activity-changes", {
+          mainPanel: createMainPanelState('activity-changes', {
             selectedActivityEvent: event,
           }),
         }),
         {
-          type: "activity-changes",
+          type: 'activity-changes',
           id: eventId,
-          label: "Activity Changes",
+          label: m.workspace_nav_activityChanges_label(),
           activityEventData: event,
-        }
+        },
       );
-    })
+    }),
   )
   .with(openWorkspaceChatChanges, (state, { payload: [wsId, changes, title, options] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("chat-changes", {
+          mainPanel: createMainPanelState('chat-changes', {
             chatChanges: changes,
             chatChangesTitle: title,
             chatChangesMessageId: options?.messageId,
@@ -748,8 +762,8 @@ export const workspaceNavigationReducer = createReducer(initialState)
           }),
         }),
         {
-          type: "chat-changes",
-          id: options?.messageId || "aggregate",
+          type: 'chat-changes',
+          id: options?.messageId || 'aggregate',
           label: title,
           chatChanges: changes,
           chatChangesTitle: title,
@@ -757,52 +771,52 @@ export const workspaceNavigationReducer = createReducer(initialState)
           chatChangesAgentId: options?.agentId,
           chatChangesTurnNumber: options?.turnNumber,
           chatChangesIsAggregate: options?.isAggregate,
-        }
-      )
-    )
+        },
+      ),
+    ),
   )
   .with(openWorkspaceLocalChanges, (state, { payload: [wsId] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("local-changes"),
+          mainPanel: createMainPanelState('local-changes'),
         }),
         {
-          type: "local-changes",
-          id: "local",
-          label: "Local Changes",
-        }
-      )
-    )
+          type: 'local-changes',
+          id: 'local',
+          label: m.workspace_nav_localChanges_label(),
+        },
+      ),
+    ),
   )
   .with(openWorkspaceCommitChangeset, (state, { payload: [wsId, commitHash, commitMessage] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
       const label = commitMessage
         ? `Commit: ${truncateLabel(commitMessage, 30)}`
-        : `Commit ${commitHash?.slice(0, 7) || "unknown"}`;
+        : `Commit ${commitHash?.slice(0, 7) || 'unknown'}`;
 
       return pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("commit-changeset", {
+          mainPanel: createMainPanelState('commit-changeset', {
             commitHash,
             commitMessage,
           }),
         }),
         {
-          type: "commit-changeset",
-          id: commitHash || "commit",
+          type: 'commit-changeset',
+          id: commitHash || 'commit',
           label,
           commitHash,
           commitMessage,
-        }
+        },
       );
-    })
+    }),
   )
   .with(openWorkspaceCodeReview, (state, { payload: [wsId, review] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState("code-review", {
+          mainPanel: createMainPanelState('code-review', {
             result: review.result,
             agentId: review.agentId,
             stagedFiles: review.stagedFiles,
@@ -812,22 +826,22 @@ export const workspaceNavigationReducer = createReducer(initialState)
           }),
         }),
         {
-          type: "code-review",
-          id: "review",
-          label: "Code Review",
+          type: 'code-review',
+          id: 'review',
+          label: m.workspace_nav_codeReview_label(),
           result: review.result,
           agentId: review.agentId,
           stagedFiles: review.stagedFiles,
           status: review.status,
           streamingText: review.streamingText,
           error: review.error,
-        }
-      )
-    )
+        },
+      ),
+    ),
   )
   .with(updateWorkspaceCodeReview, (state, { payload: [wsId, update] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-      if (workspaceState.mainPanel.type !== "code-review") {
+      if (workspaceState.mainPanel.type !== 'code-review') {
         return workspaceState;
       }
 
@@ -844,7 +858,7 @@ export const workspaceNavigationReducer = createReducer(initialState)
       });
 
       nextState = updateCurrentHistoryEntry(nextState, (entry) => {
-        if (entry.type !== "code-review") return entry;
+        if (entry.type !== 'code-review') return entry;
         return {
           ...entry,
           result: update.result ?? entry.result,
@@ -857,7 +871,7 @@ export const workspaceNavigationReducer = createReducer(initialState)
       });
 
       return nextState;
-    })
+    }),
   )
   .with(openWorkspaceDrawer, (state, { payload: [wsId, type, itemId] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
@@ -867,8 +881,8 @@ export const workspaceNavigationReducer = createReducer(initialState)
           type,
           itemId: itemId ?? null,
         },
-      })
-    )
+      }),
+    ),
   )
   .with(closeWorkspaceDrawer, (state, { payload: [wsId] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
@@ -878,7 +892,7 @@ export const workspaceNavigationReducer = createReducer(initialState)
           type: null,
           itemId: null,
         },
-      })
-    )
+      }),
+    ),
   )
   .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));

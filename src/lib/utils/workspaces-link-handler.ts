@@ -14,6 +14,21 @@ import { toast } from 'svelte-sonner';
 import { selectCurrentWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 import { noteUrl } from '$shared/constants/intent-links';
 import { store as appStore } from '$store/renderer/store';
+import { m } from '$shared/paraglide/messages.js';
+
+// URL-pattern examples shown in parse errors; passed as message params because
+// literal `{`/`}` inside a Paraglide message would parse as a parameter.
+// i18n-ignore (URL format placeholders)
+const SHORT_FORMAT_EXAMPLE = 'intent://local/note/{note-id}';
+// i18n-ignore (URL format placeholders)
+const LONG_FORMAT_EXAMPLE = 'intent://local/{workspace-id}/note/{note-id}';
+
+function invalidFormatError(): string {
+  return m.ui_linkHandler_invalidFormat_error({
+    shortFormat: SHORT_FORMAT_EXAMPLE,
+    longFormat: LONG_FORMAT_EXAMPLE,
+  });
+}
 
 export interface WorkspacesLinkInfo {
   type: 'note' | 'task' | 'unknown';
@@ -58,8 +73,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
         orgId: orgId || '',
         resourceId: '',
         valid: false,
-        error:
-          'Invalid URL format. Expected: intent://local/note/{note-id} or intent://local/{workspace-id}/note/{note-id}',
+        error: invalidFormatError(),
       };
     }
 
@@ -88,8 +102,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
         orgId,
         resourceId: '',
         valid: false,
-        error:
-          'Invalid URL format. Expected: intent://local/note/{note-id} or intent://local/{workspace-id}/note/{note-id}',
+        error: invalidFormatError(),
       };
     }
 
@@ -100,7 +113,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
         orgId,
         resourceId: '',
         valid: false,
-        error: 'Resource ID cannot be empty',
+        error: m.ui_linkHandler_emptyResourceId_error(),
       };
     }
 
@@ -121,7 +134,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       workspaceId,
       resourceId,
       valid: false,
-      error: `Unknown resource type: ${resourceType}`,
+      error: m.ui_linkHandler_unknownResourceType_error({ type: resourceType }),
     };
   } catch (error) {
     return {
@@ -129,7 +142,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       orgId: '',
       resourceId: '',
       valid: false,
-      error: error instanceof Error ? error.message : 'Failed to parse URL',
+      error: error instanceof Error ? error.message : m.ui_linkHandler_parseFailed_error(),
     };
   }
 }
@@ -146,8 +159,8 @@ export async function handleIntentLink(url: string): Promise<boolean> {
   const info = parseIntentLink(url);
 
   if (!info.valid) {
-    toast.error('Invalid Link', {
-      description: info.error || 'Could not parse intent:// link',
+    toast.error(m.ui_linkHandler_invalidLink_title(), {
+      description: info.error || m.ui_linkHandler_invalidLink_description(),
     });
     return true;
   }
@@ -160,18 +173,18 @@ export async function handleIntentLink(url: string): Promise<boolean> {
         await navigateToNote(info);
         break;
       default:
-        toast.error('Unsupported Link', {
-          description: `Cannot handle ${info.type} links yet`,
+        toast.error(m.ui_linkHandler_unsupportedLink_title(), {
+          description: m.ui_linkHandler_unsupportedLink_description({ type: info.type }),
         });
     }
   } catch (error) {
     if (error instanceof NotFoundError) {
-      toast.error('Not Found', {
+      toast.error(m.ui_linkHandler_notFound_title(), {
         description: error.message,
       });
     } else {
-      toast.error('Navigation Failed', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+      toast.error(m.ui_linkHandler_navigationFailed_title(), {
+        description: error instanceof Error ? error.message : m.ui_linkHandler_unknownError_label(),
       });
     }
   }
@@ -235,7 +248,10 @@ async function navigateToNote(info: WorkspacesLinkInfo): Promise<void> {
     const noteExists = await checkNoteExists(info.workspaceId, info.resourceId);
     if (!noteExists) {
       throw new NotFoundError(
-        `Note "${info.resourceId}" not found in workspace "${info.workspaceId}"`,
+        m.ui_linkHandler_noteNotFound_error({
+          noteId: info.resourceId,
+          workspaceId: info.workspaceId,
+        }),
       );
     }
 
@@ -251,13 +267,15 @@ async function navigateToNote(info: WorkspacesLinkInfo): Promise<void> {
 
   // Short-form link (no workspace ID) - requires current workspace
   if (!currentWorkspace) {
-    throw new NotFoundError('No space is currently open');
+    throw new NotFoundError(m.ui_linkHandler_noSpaceOpen_error());
   }
 
   // Check if note exists in current workspace
   const noteExists = await checkNoteExists(currentWorkspace.id, info.resourceId);
   if (!noteExists) {
-    throw new NotFoundError(`Note "${info.resourceId}" not found in current workspace`);
+    throw new NotFoundError(
+      m.ui_linkHandler_noteNotFoundCurrent_error({ noteId: info.resourceId }),
+    );
   }
 
   // Navigate to the note in current workspace
