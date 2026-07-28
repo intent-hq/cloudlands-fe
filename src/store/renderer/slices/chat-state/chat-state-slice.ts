@@ -16,6 +16,7 @@ import {
   type AgentStreamUpdatePayload,
 } from '../workspace-agents/workspace-agents-stream-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import { eventReceived } from '../workspace-events/workspace-events-slice';
 
 // ============================================================================
 // Initial State
@@ -88,6 +89,46 @@ function getModelUnavailableInfo(value: unknown): ModelUnavailableInfo | null {
     failedModel: typeof metadata.failedModel === 'string' ? metadata.failedModel : '',
     nextAvailableModel: metadata.nextAvailableModel,
   };
+}
+
+/**
+ * Preserve-on-failure predicate shared by the reconcile finalize paths (#973),
+ * mirroring the clear-on-success semantics of the observed terminal `complete`
+ * event (see reduceAgentStreamUpdate: cleared unless failureMessage ||
+ * modelUnavailable). A reconcile cannot observe how the missed turn ended, so
+ * it reads the persisted flags instead: `error` set means the failure banner
+ * is visible and its "Try again" still needs the record (#941); `modelUnavailable`
+ * set means a "Retry with <model>" banner is pending (#964). Those two banners
+ * are the record's only consumers — with neither flag set no UI can reach it,
+ * so clearing is safe even if the missed turn actually failed (that failure
+ * was missed too, so no banner is showing).
+ */
+function shouldPreserveLastAttemptedMessage(agent: ChatAgentState): boolean {
+  return agent.error !== null || agent.modelUnavailable !== null;
+}
+
+/**
+ * Finalize via `agent:idle` reconcile (#973): when the terminal stream
+ * `complete` event was missed (window reload mid-turn, dropped subscription),
+ * the successful turn is reconciled through `agent:idle` instead — previously
+ * the only path that never cleared `lastAttemptedMessage`, leaving a
+ * potentially MB-scale base64 payload (imageBlocks, #965) resident for the
+ * app session.
+ */
+function reduceAgentIdleReconcile(state: ChatStateSlice, agentId: string): ChatStateSlice {
+  const agent = state.byAgentId[agentId];
+  // agent:idle fires for every agent in subscribed workspaces; never
+  // materialize a chat-state entry for a chat that was never opened.
+  if (!agent) return state;
+  if (agent.idleReconcileSuppressed) {
+    // #969 marker: a queued turn just began, so this idle belongs to the
+    // prior turn. Consume the marker and leave the fresh turn's state alone.
+    return updateAgent(state, agentId, { idleReconcileSuppressed: false });
+  }
+  if (agent.lastAttemptedMessage === null || shouldPreserveLastAttemptedMessage(agent)) {
+    return state;
+  }
+  return updateAgent(state, agentId, { lastAttemptedMessage: null });
 }
 
 function getStreamFailureMessage(payload: AgentStreamUpdatePayload): string | null {
@@ -228,7 +269,8 @@ export const chatLastAttemptedMessageSet = createAction<
  * Set the idle-reconcile suppression marker. Dispatched true by
  * handleQueueProcessing right after chatSendStarted (a queued turn began, so
  * the prior turn's incoming `agent:idle` must not clear the fresh flags) and
- * false by handleAgentIdle once it has consumed the marker.
+ * false by the reducer's `agent:idle` reconcile handler once it has consumed
+ * the marker (#973).
  */
 export const chatIdleReconcileSuppressionSet = createAction<
   [agentId: string, suppressed: boolean]
@@ -466,15 +508,22 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(chatStallDetected, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, { isStalled: true }),
   )
-  .with(chatStuckStateCleared, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, {
+  .with(chatStuckStateCleared, (state, { payload: [agentId] }) => {
+    const agent = getAgent(state, agentId);
+    return updateAgent(state, agentId, {
       isStalled: false,
       streamingStartTime: null,
       lastChunkTime: null,
       receivedFirstChunk: false,
       idleReconcileSuppressed: false,
-    }),
-  )
+      // #973: a stuck-state reconcile stands in for the missed terminal
+      // event — clear the retry payload with the same preserve-on-failure
+      // semantics as streamCompleted.
+      lastAttemptedMessage: shouldPreserveLastAttemptedMessage(agent)
+        ? agent.lastAttemptedMessage
+        : null,
+    });
+  })
   .with(chatRebindStarted, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, { isRebinding: true }),
   )
@@ -490,6 +539,14 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(transcriptHydrationSettled, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, { agentId, transcriptHydration: 'settled' }),
   )
+  .with(eventReceived, (state, { payload: [, event] }) => {
+    if (event.type !== 'agent:idle') return state;
+    const data: unknown = event.data;
+    if (!isRecord(data)) return state;
+    const agentId = data.agentId ?? data.sessionId;
+    if (typeof agentId !== 'string' || agentId.length === 0) return state;
+    return reduceAgentIdleReconcile(state, agentId);
+  })
   .with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
     if (agentIds.length === 0) return state;
     let changed = false;
