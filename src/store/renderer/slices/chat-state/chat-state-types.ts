@@ -79,7 +79,8 @@ export interface ChatAgentState {
   /**
    * True when a queued message has just started a new turn and the next
    * `agent:idle` event (belonging to the prior, now-finished turn) must NOT
-   * clear the fresh turn's streaming flags. Consumed once by handleAgentIdle.
+   * clear the fresh turn's streaming flags or retry payload. Consumed once by
+   * the chat-state reducer's `agent:idle` reconcile handler (#973).
    */
   idleReconcileSuppressed: boolean;
   /**
