@@ -37,6 +37,12 @@ export interface QueuedMessageContextItem {
 export interface QueuedMessage {
   /** Unique identifier for this queued message */
   id: string;
+  /**
+   * Turn-correlation id (PROTOCOL §6.6). Fresh enqueues set `turnId = id`; a
+   * terminal-failure requeue mints a new entry `id` but PRESERVES the failed
+   * turn's `turnId`. Omitted by older daemons.
+   */
+  turnId?: string;
   /** Stable app-owned logical ID for the user message created from this queue entry */
   appMessageId?: string;
   /** The message content */

@@ -24,10 +24,18 @@ export interface LastAttemptedMessage {
  * max existing seq + 1) — promotion picks the highest drained seq, because
  * `Record` key iteration order is NOT insertion order for integer-like keys,
  * so key order alone cannot encode FIFO enqueue order.
+ *
+ * `turnId` (monorepo#1057) is the daemon's turn correlation id captured from
+ * the enqueue RPC response (PROTOCOL §5.5/§6.6). A fresh enqueue has
+ * `turnId === entry id` (the record's key), but a terminal-failure requeue
+ * mints a NEW entry id while preserving the failed turn's ORIGINAL `turnId`
+ * — matching on it is what keeps attribution exact across `agent.retry`
+ * redrives. Omitted when the daemon returned none (older daemons).
  */
 export interface QueuedRetryRecord {
   seq: number;
   record: LastAttemptedMessage;
+  turnId?: string;
 }
 
 export interface ModelUnavailableInfo {

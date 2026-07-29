@@ -124,13 +124,15 @@ function parkRetryRecord(
   agent: ChatAgentState,
   messageId: string,
   record: LastAttemptedMessage,
+  turnId?: string,
 ): Record<string, QueuedRetryRecord> {
   const seq =
     Object.values(agent.queuedRetryRecords).reduce(
       (max, parked) => Math.max(max, parked.seq),
       0,
     ) + 1;
-  const next = { ...agent.queuedRetryRecords, [messageId]: { seq, record } };
+  const parked: QueuedRetryRecord = turnId !== undefined ? { seq, record, turnId } : { seq, record };
+  const next = { ...agent.queuedRetryRecords, [messageId]: parked };
   const ids = Object.keys(next);
   if (ids.length > MAX_QUEUED_RETRY_RECORDS) {
     ids.sort((a, b) => next[a].seq - next[b].seq);
@@ -251,6 +253,18 @@ function reduceAgentIdleReconcile(
  * the events bridge covers that case with the raw last-snapshot length the
  * queue slice retains (see handleQueueUpdatedEvent), dispatching
  * `chatQueuedRetryRecordsCleared` before the snapshot lands here.
+ *
+ * turnId-keyed records (monorepo#1057) BYPASS the vanishing-id inference
+ * entirely: their exact promotion signal is `agent:queue:processing` (or the
+ * `agent.sendQueuedMessageNow` RPC response, which carries the turnId instead
+ * of the event, §5.5). A record whose key vanishes from the snapshot but that
+ * carries a turnId stays PARKED — promoting it here would misfire on a
+ * terminal-failure requeue, where the entry re-appears under a NEW id (same
+ * turnId) while the record's key is gone from every snapshot: the old
+ * inference would promote it prematurely and wipe the fresh failure banner.
+ * Present-entry matching is turnId-aware for the same reason: a requeued
+ * entry (new id, same turnId) still counts as "present" for its record, so
+ * the daemon-authoritative content sync keeps working across requeues.
  */
 function reduceQueueSnapshotDiff(
   state: ChatStateSlice,
@@ -261,12 +275,19 @@ function reduceQueueSnapshotDiff(
   if (!agent) return state;
   if (Object.keys(agent.queuedRetryRecords).length === 0) return state;
   const presentById = new Map(queue.map((message) => [message.id, message]));
+  const presentByTurnId = new Map<string, QueuedMessage>();
+  for (const message of queue) {
+    if (message.turnId !== undefined) presentByTurnId.set(message.turnId, message);
+  }
   let promoted: QueuedRetryRecord | null = null;
   let drainedCount = 0;
   let textSynced = false;
   const remaining: Record<string, QueuedRetryRecord> = {};
+  const vanishedTurnKeyed: string[] = [];
   for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
-    const present = presentById.get(id);
+    const present =
+      presentById.get(id) ??
+      (parked.turnId !== undefined ? presentByTurnId.get(parked.turnId) : undefined);
     if (present) {
       // #1011: the snapshot is the daemon-authoritative content of the queued
       // entry — sync the parked text so an edit is reflected even when the
@@ -284,16 +305,31 @@ function reduceQueueSnapshotDiff(
       }
     } else {
       drainedCount += 1;
-      if (promoted === null || parked.seq > promoted.seq) {
+      if (parked.turnId !== undefined) {
+        // monorepo#1057: turnId-keyed records never promote via the
+        // vanishing-id inference — `agent:queue:processing` (or the
+        // sendQueuedMessageNow RPC turnId) is their exact signal. Keep the
+        // record parked, but remember it: the clear-queue signature below
+        // must still drop it (a cleared entry never drains, so no processing
+        // event will ever arrive for it). Known trade-off: the SINGLE-entry
+        // whole-queue discard (the documented gap in both the bridge's #1032
+        // `>1` heuristic and the `drainedCount > 1` signature below) now
+        // LEAKS the record — it stays parked, bounded by
+        // MAX_QUEUED_RETRY_RECORDS — where a no-turnId record would have
+        // mis-promoted the discarded payload. No wrong banner beats a leak.
+        remaining[id] = parked;
+        vanishedTurnKeyed.push(id);
+      } else if (promoted === null || parked.seq > promoted.seq) {
         promoted = parked;
       }
     }
   }
+  if (queue.length === 0 && drainedCount > 1) {
+    for (const id of vanishedTurnKeyed) delete remaining[id];
+    return updateAgent(state, agentId, { queuedRetryRecords: remaining });
+  }
   if (promoted === null) {
     return textSynced ? updateAgent(state, agentId, { queuedRetryRecords: remaining }) : state;
-  }
-  if (queue.length === 0 && drainedCount > 1) {
-    return updateAgent(state, agentId, { queuedRetryRecords: remaining });
   }
   // A genuine drain promotion means the daemon dequeued the entry to RUN it
   // — the promoted record's turn is now the active turn, so a stale failure
@@ -302,6 +338,67 @@ function reduceQueueSnapshotDiff(
   // pure text-sync path deliberately do NOT clear: those entries never run.
   return updateAgent(state, agentId, {
     lastAttemptedMessage: promoted.record,
+    queuedRetryRecords: remaining,
+    error: null,
+    modelUnavailable: null,
+  });
+}
+
+/**
+ * Locate the parked record a drain-start / failure event names (monorepo
+ * #1057): a `turnId` match wins — it survives the `agent.retry` redrive
+ * requeue, which mints a NEW entry id but keeps the failed turn's original
+ * `turnId` — with the entry-id key as the exact fallback for records parked
+ * WITHOUT one (older daemons): a record keyed by a different turnId never
+ * matches by entry id alone, keeping the exact-attribution invariant
+ * self-enforcing. Returns the record's key, or null when nothing matches
+ * (e.g. a redrive of an entry this client never parked — promotion must NOT
+ * fall back to approximating with another record).
+ */
+function findParkedRecordKey(
+  agent: ChatAgentState,
+  messageId: string | undefined,
+  turnId: string | undefined,
+): string | null {
+  if (turnId !== undefined) {
+    for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
+      if (parked.turnId === turnId) return id;
+    }
+  }
+  if (messageId !== undefined) {
+    const parked = agent.queuedRetryRecords[messageId];
+    if (parked !== undefined && parked.turnId === undefined) return messageId;
+  }
+  return null;
+}
+
+/**
+ * Exact drain-start promotion (monorepo#1057): `agent:queue:processing` (or
+ * the `agent.sendQueuedMessageNow` delivered response, which carries the
+ * `turnId` instead of the event, §5.5) says the daemon dequeued THIS entry to
+ * run it — promote its parked record into `lastAttemptedMessage`, exactly
+ * like the snapshot-diff drain promotion (including the stale-banner clear).
+ * A no-op when nothing matches: the entry was never parked by this client,
+ * or a no-turnId record was already promoted by the snapshot diff (the
+ * shrunk `agent:queue:updated` precedes this event on the ordered socket) —
+ * the already-promoted record left `queuedRetryRecords`, so this cannot
+ * double-promote.
+ */
+function reduceQueueProcessing(
+  state: ChatStateSlice,
+  agentId: string,
+  messageId: string,
+  turnId: string | undefined,
+): ChatStateSlice {
+  const agent = state.byAgentId[agentId];
+  if (!agent) return state;
+  const key = findParkedRecordKey(agent, messageId, turnId);
+  if (key === null) return state;
+  const parked = agent.queuedRetryRecords[key];
+  const remaining = { ...agent.queuedRetryRecords };
+  delete remaining[key];
+  return updateAgent(state, agentId, {
+    lastAttemptedMessage: parked.record,
     queuedRetryRecords: remaining,
     error: null,
     modelUnavailable: null,
@@ -475,10 +572,13 @@ export const chatLastAttemptedMessageSet = createAction<
  * returned QueuedMessage id (#999). The record stays parked until the queue
  * snapshot shows the entry drained (promotion into `lastAttemptedMessage`,
  * see reduceQueueSnapshotDiff) or removed (dropped). Dispatched by
- * chat-send-service's queue-on-send success branch.
+ * chat-send-service's queue-on-send success branch. `turnId` (monorepo#1057)
+ * is the enqueue RPC's turn-correlation id when the daemon returned one —
+ * records carrying it promote EXACTLY on `agent:queue:processing` /
+ * `chatSendFailed` turnId matches instead of the snapshot-diff inference.
  */
 export const chatQueuedRetryRecordSet = createAction<
-  [agentId: string, messageId: string, record: LastAttemptedMessage]
+  [agentId: string, messageId: string, record: LastAttemptedMessage, turnId?: string]
 >('chatState/queuedRetryRecordSet');
 
 /**
@@ -493,9 +593,12 @@ export const chatQueuedRetryRecordSet = createAction<
  * the mid-turn overwrite: `lastAttemptedMessage` is cleared only when it still
  * structurally equals the parked payload, so a concurrently recorded attempt
  * is never clobbered. Dispatched by the agent-stream-lifecycle queued branch.
+ * `turnId` (monorepo#1057) — see `chatQueuedRetryRecordSet`; here it comes
+ * from the auto-queued `agent.sendMessage` response's top-level `turnId` (or
+ * the echoed `queuedMessage.turnId`).
  */
 export const chatQueuedRetryRecordParked = createAction<
-  [agentId: string, messageId: string, record: LastAttemptedMessage]
+  [agentId: string, messageId: string, record: LastAttemptedMessage, turnId?: string]
 >('chatState/queuedRetryRecordParked');
 
 /**
@@ -525,14 +628,38 @@ export const chatQueuedRetryRecordUpdated = createAction<
  * bridge's `handleQueueUpdatedEvent` (#1032), which INFERS a clear from the
  * mirrored-count heuristic (empty snapshot wiping >1 last-snapshot entry)
  * for clears with no FE flow site — another client's `agent.editAndRegenerate`.
+ * turnId-keyed records (monorepo#1057) are dropped too: discarded entries
+ * never drain, so no `agent:queue:processing` will ever promote them.
  */
 export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
   'chatState/queuedRetryRecordsCleared',
 );
 
-/** Send failed (activation or network error) */
+/**
+ * Send failed (activation or network error). `turnId` is the daemon's
+ * turn-correlation id from the `agent:failed` event (PROTOCOL §6.6) when
+ * present (monorepo#1057): when a PARKED record carries the same turnId, the
+ * reducer promotes it into `lastAttemptedMessage` alongside setting the error
+ * — exact failure pairing, covering the `agent.retry` redrive where the
+ * failed turn's record may still be parked (its requeued entry has a new id,
+ * so no snapshot diff ever promoted it).
+ */
 export const chatSendFailed =
-  createAction<[agentId: string, error: string]>('chatState/sendFailed');
+  createAction<[agentId: string, error: string, turnId?: string]>('chatState/sendFailed');
+
+/**
+ * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon
+ * dequeued entry `messageId` and is starting its turn — carrying the entry's
+ * turn-correlation id when present. This is the EXACT promotion signal for
+ * turnId-keyed retry records (monorepo#1057): the reducer promotes the parked
+ * record whose `turnId` matches (falling back to the record keyed by
+ * `messageId`), bypassing the snapshot-diff vanishing-id inference — which
+ * misattributes on an `agent.retry` redrive (requeued entry: new id, same
+ * turnId). Dispatched by the events bridge.
+ */
+export const chatQueueProcessingReceived = createAction<
+  [agentId: string, messageId: string, turnId?: string]
+>('chatState/queueProcessingReceived');
 
 /** Agent was interrupted — clear streaming without error */
 export const chatInterrupted = createAction<[agentId: string]>('chatState/interrupted');
@@ -670,26 +797,29 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(chatLastAttemptedMessageSet, (state, { payload: [agentId, lastAttemptedMessage] }) =>
     updateAgent(state, agentId, { lastAttemptedMessage }),
   )
-  .with(chatQueuedRetryRecordSet, (state, { payload: [agentId, messageId, record] }) => {
+  .with(chatQueuedRetryRecordSet, (state, { payload: [agentId, messageId, record, turnId] }) => {
     const agent = getAgent(state, agentId);
     return updateAgent(state, agentId, {
       agentId,
-      queuedRetryRecords: parkRetryRecord(agent, messageId, record),
+      queuedRetryRecords: parkRetryRecord(agent, messageId, record, turnId),
     });
   })
-  .with(chatQueuedRetryRecordParked, (state, { payload: [agentId, messageId, record] }) => {
-    const agent = getAgent(state, agentId);
-    return updateAgent(state, agentId, {
-      agentId,
-      queuedRetryRecords: parkRetryRecord(agent, messageId, record),
-      // Undo the caller's own mid-turn overwrite (#1011) — but only when the
-      // slot still holds this exact payload; a different value means another
-      // attempt recorded itself since and must keep its record.
-      lastAttemptedMessage: deepEqual(agent.lastAttemptedMessage, record)
-        ? null
-        : agent.lastAttemptedMessage,
-    });
-  })
+  .with(
+    chatQueuedRetryRecordParked,
+    (state, { payload: [agentId, messageId, record, turnId] }) => {
+      const agent = getAgent(state, agentId);
+      return updateAgent(state, agentId, {
+        agentId,
+        queuedRetryRecords: parkRetryRecord(agent, messageId, record, turnId),
+        // Undo the caller's own mid-turn overwrite (#1011) — but only when the
+        // slot still holds this exact payload; a different value means another
+        // attempt recorded itself since and must keep its record.
+        lastAttemptedMessage: deepEqual(agent.lastAttemptedMessage, record)
+          ? null
+          : agent.lastAttemptedMessage,
+      });
+    },
+  )
   .with(chatQueuedRetryRecordUpdated, (state, { payload: [agentId, messageId, text] }) => {
     const agent = state.byAgentId[agentId];
     const parked = agent?.queuedRetryRecords[messageId];
@@ -712,13 +842,35 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(removeQueuedMessageFromAgentQueue, (state, { payload: [agentId, messageId] }) =>
     reduceQueuedRecordRemoved(state, agentId, messageId),
   )
-  .with(chatSendFailed, (state, { payload: [agentId, error] }) =>
-    updateAgent(state, agentId, {
+  .with(chatQueueProcessingReceived, (state, { payload: [agentId, messageId, turnId] }) =>
+    reduceQueueProcessing(state, agentId, messageId, turnId),
+  )
+  .with(chatSendFailed, (state, { payload: [agentId, error, turnId] }) => {
+    // monorepo#1057: when the failure names a turn whose record is still
+    // PARKED (e.g. an agent.retry redrive that failed again — its requeued
+    // entry has a new id, so no snapshot diff or processing event promoted
+    // it under this client's key), pair the banner with the exact record.
+    // An already-promoted or unknown turnId leaves the slot untouched —
+    // `lastAttemptedMessage` already holds the right payload (or none).
+    const agent = state.byAgentId[agentId];
+    const key = agent && turnId !== undefined ? findParkedRecordKey(agent, undefined, turnId) : null;
+    if (agent && key !== null) {
+      const remaining = { ...agent.queuedRetryRecords };
+      delete remaining[key];
+      return updateAgent(state, agentId, {
+        streamingStartTime: null,
+        error,
+        modelUnavailable: null,
+        lastAttemptedMessage: agent.queuedRetryRecords[key].record,
+        queuedRetryRecords: remaining,
+      });
+    }
+    return updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
       modelUnavailable: null,
-    }),
-  )
+    });
+  })
   .with(chatInterrupted, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,

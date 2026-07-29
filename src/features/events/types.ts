@@ -257,6 +257,8 @@ export interface AgentMessageEvent extends WorkspaceEventBase {
     model?: string;
     temperature?: number;
     reasoning?: string;
+    /** Turn-correlation id stamped on the user-row echo (PROTOCOL §6.6); omitted when absent. */
+    turnId?: string;
   };
 }
 
@@ -364,6 +366,8 @@ export interface AgentFailedEvent extends WorkspaceEventBase {
     turnNumber?: number;
     model?: string;
     respondingToMessageId?: string;
+    /** Turn-correlation id of the failed turn (PROTOCOL §6.6); omitted by older daemons. */
+    turnId?: string;
   };
 }
 
@@ -722,6 +726,8 @@ export interface AgentQueueProcessingEvent extends WorkspaceEventBase {
     messageId: string;
     /** Optional content of the message being processed (for UI display) */
     content?: string;
+    /** Turn-correlation id of the drained entry (PROTOCOL §6.5/§6.6); omitted by older daemons. */
+    turnId?: string;
     [key: string]: any;
   };
 }
@@ -846,6 +852,11 @@ export interface AgentStreamEndEvent extends WorkspaceEventBase {
   data: {
     agentId: string;
     streamId?: string;
+    /**
+     * Turn-correlation id (PROTOCOL §6.6) — stamped on the terminal
+     * `agent:stream:end` of a correlated turn; omitted when absent.
+     */
+    turnId?: string;
   };
 }
 

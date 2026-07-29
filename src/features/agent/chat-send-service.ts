@@ -48,6 +48,7 @@ import {
   chatErrorCleared,
   chatLastAttemptedMessageSet,
   chatModelUnavailableCleared,
+  chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
   chatSendFailed,
   chatSendStarted,
@@ -257,8 +258,18 @@ async function dispatchToLifecycle(
       if (queuedMessage) {
         // #999: park the retry payload against the queued entry's id BEFORE
         // seeding the queue slice, so a (theoretical) immediate drain
-        // snapshot can already see and promote it.
-        appStore.dispatch(chatQueuedRetryRecordSet(agentId, queuedMessage.id, recordedAttempt));
+        // snapshot can already see and promote it. The turnId (monorepo#1057,
+        // surfaced by the seam from the RPC response / echoed entry) keys the
+        // record for exact agent:queue:processing promotion and agent:failed
+        // pairing; omitted on older daemons → snapshot-diff fallback.
+        appStore.dispatch(
+          chatQueuedRetryRecordSet(
+            agentId,
+            queuedMessage.id,
+            recordedAttempt,
+            result.turnId ?? queuedMessage.turnId,
+          ),
+        );
         const existing = deps.selectAgentQueueMessages.select(appStore.state, agentId);
         const next = existing.some((m) => m.id === queuedMessage.id)
           ? existing
@@ -420,12 +431,19 @@ async function dispatchQueueRemoval(agentId: string, messageId: string): Promise
  * entry and delivers its content as an interrupt send, replacing the old
  * non-atomic remove-then-send sequence (monorepo#1032). No optimistic queue
  * mutation here: the queue shrink flows back via `agent:queue:updated` (whose
- * drain-promotion reducer also promotes the entry's parked retry record and
+ * drain-promotion reducer also promotes a no-turnId parked retry record and
  * clears any stale error banner) and the new turn's stream events arrive
  * through the existing subscriptions. The RPC is NOT idempotent — `-32602`
  * (entry already drained/removed) folds into `{ success: false, error }` at
  * the seam and is surfaced non-destructively: logged + `chatSendFailed`, with
  * no local queue state to roll back.
+ *
+ * turnId-keyed records (monorepo#1057) bypass the snapshot-diff promotion,
+ * and this path emits NO `agent:queue:processing` event (§5.5 — the RPC
+ * response carries the `turnId` instead), so on a delivered send the success
+ * branch dispatches `chatQueueProcessingReceived` itself to promote the
+ * entry's parked record exactly. Only when the response carries a turnId:
+ * older-daemon (no-turnId) records keep the unchanged snapshot-diff path.
  *
  * On failure the ACTIVE retry record is CLEARED (not set) before
  * `chatSendFailed`: unlike the enqueue-failure branches (#969) there is no
@@ -456,6 +474,8 @@ async function dispatchSendQueuedNow(
       });
       appStore.dispatch(chatLastAttemptedMessageSet(agentId, null));
       appStore.dispatch(chatSendFailed(agentId, errMsg));
+    } else if (typeof result.turnId === 'string') {
+      appStore.dispatch(chatQueueProcessingReceived(agentId, messageId, result.turnId));
     }
   } catch (error) {
     // The seam folds RPC/daemon errors into MutationResult and should not
