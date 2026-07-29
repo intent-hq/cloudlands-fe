@@ -463,6 +463,28 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('not found: queued message');
   });
 
+  it('sendQueuedNow folds JSON-RPC "Internal error" + data.detail into the error like runMutation', async () => {
+    // Regression: extracting turnId bypassed runMutation, which must not lose
+    // the shared mutationErrorMessage shaping (generic "Internal error"
+    // messages fold in `data.detail` so toasts stay actionable).
+    backend.onRequest('agent.sendQueuedMessageNow', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'Internal error', {
+          rpcCode: -32603,
+          data: { detail: 'queue store unavailable' },
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.sendQueuedNow({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'qm-9',
+    });
+    expect(result).toEqual({ success: false, error: 'Internal error: queue store unavailable' });
+  });
+
   it('getQueue forwards agent.getQueue and returns the daemon queue array verbatim (incl. messageMetadata)', async () => {
     // PROTOCOL §5.5/§6.6: `{ agentId }` → `{ success, queue: QueuedMessage[] }`.
     // Entries may carry optional opaque `messageMetadata` — passed through

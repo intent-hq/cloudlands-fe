@@ -28,6 +28,7 @@ import { createDeltaSubscription } from "./delta-subscription";
 import {
   isEventOneOf,
   listWorkspaceIds,
+  mutationErrorMessage,
   newIdempotencyKey,
   runMutation,
   subscribeWorkspaceIds,
@@ -311,7 +312,10 @@ export class LiveAgentsClient implements AgentsClient {
         ? { success: true, turnId: result.turnId }
         : { success: true };
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+      // Same error shaping as `runMutation` (which this method bypassed to
+      // extract `turnId`): fold JSON-RPC "Internal error" + `data.detail`
+      // into an actionable message.
+      return { success: false, error: mutationErrorMessage(error) };
     }
   }
   async getQueue(agentId: string): Promise<QueuedMessage[]> {
