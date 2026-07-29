@@ -783,21 +783,24 @@
               <span class="text-sm text-foreground">{provider.name}</span>
               <!-- Path configuration. Unsloth is dual-binary: the daemon
                    applies the providers.paths.unsloth override to the
-                   `opencode` ACP binary it spawns (agent_manager passes it to
-                   find_provider_binary for provider.command) and never
-                   consults it for the `unsloth` CLI, so the primary
-                   cliCommand/resolvedPath pair carries opencode and the
-                   `unsloth` CLI is shown as the labeled secondary row. -->
+                   `unsloth` CLI, while the `opencode` ACP runtime it spawns
+                   follows the opencode provider's own configuration
+                   (providers.paths.opencode). The overridable primary
+                   cliCommand/resolvedPath pair therefore carries the
+                   `unsloth` CLI (discovery's secondary path) and opencode is
+                   shown as the read-only labeled runtime row. -->
               <div class="-my-1">
                 <ProviderPathConfig
                   providerId={provider.id}
                   providerName={provider.name}
-                  cliCommand={provider.command}
+                  cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
                   configuredPath={providerPaths[provider.id]}
-                  resolvedPath={resolvedPaths[provider.id]}
-                  secondaryCliCommand={provider.id === 'unsloth' ? 'unsloth' : undefined}
-                  secondaryResolvedPath={provider.id === 'unsloth'
+                  resolvedPath={provider.id === 'unsloth'
                     ? secondaryResolvedPaths[provider.id]
+                    : resolvedPaths[provider.id]}
+                  runtimeCliCommand={provider.id === 'unsloth' ? provider.command : undefined}
+                  runtimeResolvedPath={provider.id === 'unsloth'
+                    ? resolvedPaths[provider.id]
                     : undefined}
                   isInstalled={provider.available}
                   onPathChange={(path) => handlePathChange(provider.id, path)}
