@@ -1147,6 +1147,67 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(readStatusEvents()).toHaveLength(countBefore + 1);
   });
 
+  it('agent:stream:status: every daemon-emitted phase (PROTOCOL §6.5) renders its own localized catalog string, never the wire message', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const at = 1_700_000_000_000;
+
+    // Exhaustive phase → localized-message pinning for the full §6.5 set.
+    // Each event carries a deliberately-English wire `message` to prove the
+    // daemon text is not what gets rendered for known phases (user sighting:
+    // "Initializing protocol…" / "Resuming session…" leaking in English came
+    // from builds predating the phase-keyed catalog rendering).
+    //
+    // Intentional overlap: prompt/session-load/info-launch are also asserted
+    // by the STAT-1 and edge-case tests above — do not dedupe; this test's
+    // value is the single-pass exhaustive pin (it is also the only direct
+    // coverage of session-create).
+    const phaseExpectations: Array<{ phase: string; localized: string }> = [
+      { phase: 'launch', localized: 'Launching agent\u2026' },
+      { phase: 'init', localized: 'Initializing protocol\u2026' },
+      { phase: 'session-create', localized: 'Creating session\u2026' },
+      { phase: 'session-load', localized: 'Resuming session\u2026' },
+      { phase: 'prompt', localized: 'Sent prompt\u2026' },
+    ];
+
+    phaseExpectations.forEach(({ phase }, i) => {
+      handler(
+        notification('agent:stream:status', {
+          agentId: AGENT,
+          workspaceId: WS,
+          phase,
+          message: `DAEMON WIRE TEXT for ${phase} (must not render)`,
+          level: 'info',
+          timestamp: at + i,
+        }),
+      );
+    });
+
+    let events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual(
+      phaseExpectations.map(({ phase, localized }) => ({ phase, message: localized })),
+    );
+
+    // The streaming state (first chunk) is also a catalog string, appended by
+    // the chunk reducer — completing the full pre-first-token → streaming set.
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Hi',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'streaming',
+      message: 'Streaming response\u2026',
+    });
+  });
+
   it("tool started → completed short window: tool-call entry's duration ends at the completed event's timestamp", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
