@@ -104,7 +104,6 @@ export class TerminalAdapter {
   private ipcCleanup: (() => void) | null = null; // Cleanup function for IPC handlers
   private themeCleanup: (() => void) | null = null; // Cleanup function for theme handler
   private webglContextLostCleanup: (() => void) | null = null; // Cleanup for WebGL context loss listener
-  private pasteListenerContainer: HTMLElement | null = null;
 
   private isDisposed: boolean = false;
   private isXtermOpened: boolean = false; // Track if xterm.open() has been called
@@ -595,14 +594,6 @@ export class TerminalAdapter {
       // Return true to allow all other key events to be handled normally
       return true;
     });
-
-    // Intercept paste events to sanitize ANSI escape sequences
-    // We use a paste event listener rather than keyboard handler because:
-    // 1. Keyboard handlers can't fully prevent browser paste behavior
-    // 2. This also handles right-click paste and other paste methods
-    this.cleanupPasteEventListener();
-    container.addEventListener('paste', this.handlePasteEvent);
-    this.pasteListenerContainer = container;
 
     // Handle user input - write method handles state checks
     this.dataDisposable = this.xterm.onData((data) => {
@@ -1232,42 +1223,6 @@ export class TerminalAdapter {
   }
 
   /**
-   * Handle paste events by sanitizing ANSI escape sequences from clipboard content.
-   * This prevents pasted text with embedded ANSI codes from corrupting terminal styling state.
-   */
-  private handlePasteEvent = (event: ClipboardEvent): void => {
-    if (this.isDisposed || !this.stateMachine.canAcceptInput()) {
-      return;
-    }
-
-    // Prevent xterm's default paste handling to avoid double-paste
-    event.preventDefault();
-    event.stopPropagation();
-
-    const text = event.clipboardData?.getData('text/plain');
-    if (!text) {
-      return;
-    }
-
-    // Strip ANSI escape sequences from pasted content
-    // Matches: ESC [ followed by optional numbers/semicolons and a letter
-    const sanitizedText = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-
-    // Write the sanitized text to the terminal
-    this.write(sanitizedText);
-
-    // Reset SGR attributes to default after paste to ensure any residual styling state is cleared
-    this.xterm.write('\x1b[0m');
-  };
-
-  private cleanupPasteEventListener(): void {
-    if (this.pasteListenerContainer) {
-      this.pasteListenerContainer.removeEventListener('paste', this.handlePasteEvent);
-      this.pasteListenerContainer = null;
-    }
-  }
-
-  /**
    * Resize terminal via `terminal.resize` (PROTOCOL §5.13).
    */
   resize(cols: number, rows: number): void {
@@ -1848,8 +1803,6 @@ export class TerminalAdapter {
    * Detach terminal from container (for reuse)
    */
   detach(): void {
-    this.cleanupPasteEventListener();
-
     // Clean up IPC handlers to prevent stale handlers during detach
     if (this.ipcCleanup) {
       this.ipcCleanup();
@@ -1980,9 +1933,6 @@ export class TerminalAdapter {
       }
       this.themeCleanup = null;
     }
-
-    // Remove paste event listener
-    this.cleanupPasteEventListener();
 
     // Remove any remaining event listeners
     this.eventListeners.forEach((cleanup) => {
