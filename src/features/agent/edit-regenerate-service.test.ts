@@ -186,12 +186,11 @@ describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real s
     expect(readChatState(AGENT)?.lastAttemptedMessage).toEqual({ text: "edited text" });
   });
 
-  it("drops parked queued-retry records on success so a late clear-queue snapshot cannot promote a discarded entry (#999)", async () => {
-    // agent.editAndRegenerate calls clear_queue daemon-side and publishes an
-    // EMPTY queue snapshot. With exactly ONE parked record the empty snapshot
-    // is indistinguishable from a genuine drain (the drainedCount>1 signature
-    // cannot fire), so without the flow-site clear the DISCARDED entry's
-    // payload would be promoted over the fresh edited text.
+  it("drops parked queued-retry records on success — discarded entries never emit a processing event (#999)", async () => {
+    // agent.editAndRegenerate calls clear_queue daemon-side: the discarded
+    // entries never run, so no agent:queue:processing will ever promote
+    // their records. The flow site drops them eagerly to avoid a leak, and
+    // the late-arriving empty snapshot has nothing left to touch.
     const WS = "ws-edit-discard";
     const AGENT = "agent-edit-discard";
     appStore.dispatch(chatReset(AGENT));
@@ -199,7 +198,7 @@ describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real s
       makeMessage("m1", "user", "pre-edit text"),
       makeMessage("m2", "assistant", "reply"),
     ]);
-    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "queued discarded" }));
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "queued discarded" }, "qm-1"));
     editAndRegenerate.mockResolvedValueOnce({ success: true });
 
     const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
@@ -220,8 +219,8 @@ describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real s
     const AGENT = "agent-edit-discard-multi";
     appStore.dispatch(chatReset(AGENT));
     seedSession(AGENT, WS, [makeMessage("m1", "user", "pre-edit text")]);
-    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "queued 1" }));
-    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-2", { text: "queued 2" }));
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "queued 1" }, "qm-1"));
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-2", { text: "queued 2" }, "qm-2"));
     editAndRegenerate.mockResolvedValueOnce({ success: true });
 
     const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
@@ -238,7 +237,7 @@ describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real s
     const AGENT = "agent-edit-discard-fail";
     appStore.dispatch(chatReset(AGENT));
     seedSession(AGENT, WS, [makeMessage("m1", "user", "pre-edit text")]);
-    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "still queued" }));
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, "qm-1", { text: "still queued" }, "qm-1"));
     editAndRegenerate.mockResolvedValueOnce({ success: false, error: "bad message id" });
 
     const action = agentSessionEditAndRegenerateRequested(AGENT, WS, "m1", "edited text");
@@ -246,9 +245,9 @@ describe("editRegenerateService (fake appClient.agents.editAndRegenerate, real s
     await expect(action.promise).rejects.toThrow("bad message id");
 
     // No daemon-side clear happened — the queue (and its parked record)
-    // survives, so a later genuine drain still promotes it.
+    // survives, so a later genuine drain-start still promotes it.
     expect(readChatState(AGENT)?.queuedRetryRecords).toEqual({
-      "qm-1": { seq: 1, record: { text: "still queued" } },
+      "qm-1": { seq: 1, record: { text: "still queued" }, turnId: "qm-1" },
     });
   });
 

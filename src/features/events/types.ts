@@ -726,7 +726,7 @@ export interface AgentQueueProcessingEvent extends WorkspaceEventBase {
     messageId: string;
     /** Optional content of the message being processed (for UI display) */
     content?: string;
-    /** Turn-correlation id of the drained entry (PROTOCOL §6.5/§6.6); omitted by older daemons. */
+    /** Turn-correlation id of the drained entry (PROTOCOL §6.5/§6.6); omitted only for legacy pre-#1022 entries. */
     turnId?: string;
     [key: string]: any;
   };
