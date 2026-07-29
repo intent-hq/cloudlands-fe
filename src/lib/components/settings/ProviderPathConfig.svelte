@@ -33,12 +33,25 @@
     configuredPath?: string;
     /** Auto-detected/resolved path */
     resolvedPath?: string;
+    /**
+     * Dual-binary providers only (unsloth): the secondary CLI's name
+     * (e.g. 'unsloth'). Rendered alongside `secondaryResolvedPath`.
+     */
+    secondaryCliCommand?: string;
+    /**
+     * Dual-binary providers only: the daemon-resolved path of the secondary
+     * CLI, when it resolved.
+     */
+    secondaryResolvedPath?: string;
     /** Whether the provider is currently installed */
     isInstalled?: boolean;
     /** Callback when path changes */
     onPathChange?: (path: string) => void;
   }
 
+  // secondaryCliCommand / secondaryResolvedPath are accepted (typed above)
+  // but not yet destructured — the dual-binary popup rendering lands in a
+  // sibling change.
   let {
     providerId,
     providerName,

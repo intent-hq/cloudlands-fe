@@ -336,31 +336,39 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => {
   }
 });
 
+/** Daemon `host.providerDiscovery` provider entry (PROTOCOL §5.14). */
+interface ProviderDiscoveryEntry {
+  id: string;
+  installed: boolean;
+  resolvedPath?: string | null;
+  secondaryCommand?: string;
+  secondaryResolved?: boolean;
+  secondaryResolvedPath?: string;
+}
+
 /**
- * providers:get-paths — resolved CLI paths for the settings path-config rows
- * (ProviderSelector only consumes auggie / claude-code / codex). Composed from
- * the daemon host surface: `host.checkAuggie` resolves auggie (providers.paths
- * override, then PATH) and `host.findBinary` resolves the other CLIs — for
- * codex that is the real `codex` CLI (mirrors main's getCodexPath), not the
- * codex-acp adapter. Preserves the legacy main handler's CommandResponse
- * envelope.
+ * providers:get-paths — daemon-resolved CLI paths for every provider's
+ * settings path popup, sourced from the daemon's `host.providerDiscovery`
+ * snapshot (PROTOCOL §5.14): `paths[id]` is the primary binary's
+ * `resolvedPath` (null when unresolved) and `secondaryPaths[id]` carries the
+ * dual-binary secondary's `secondaryResolvedPath` (unsloth's `unsloth` CLI).
+ * Mirrors main's getProviderPaths; degrades to empty maps on RPC failure.
  */
 registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
-  const findPath = async (name: string): Promise<string | null> => {
-    const found = await backendRequest<HostCheckResult>("host.findBinary", { name }).catch(
-      () => undefined,
-    );
-    return found?.path ?? null;
-  };
   try {
-    const [auggie, claudeCode, codex] = await Promise.all([
-      checkAuggie()
-        .then((check) => check.path ?? null)
-        .catch(() => null),
-      findPath(PROVIDER_BINARIES["claude-code"]),
-      findPath(PROVIDER_BINARIES.codex),
-    ]);
-    return { success: true, data: { auggie, "claude-code": claudeCode, codex } };
+    const discovery = await backendRequest<{ providers?: ProviderDiscoveryEntry[] }>(
+      "host.providerDiscovery",
+      {},
+    ).catch(() => undefined);
+    const paths: Record<string, string | null> = {};
+    const secondaryPaths: Record<string, string | null> = {};
+    for (const provider of discovery?.providers ?? []) {
+      paths[provider.id] = provider.resolvedPath ?? null;
+      if (provider.secondaryCommand !== undefined) {
+        secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
+      }
+    }
+    return { success: true, data: { paths, secondaryPaths } };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }

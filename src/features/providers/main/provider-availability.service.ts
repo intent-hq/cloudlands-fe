@@ -25,23 +25,14 @@ import { findAuggiePathAsync } from '../../auggie/main/auggie.ipc';
 import {
   CLAUDE_CODE_NPX_MISSING_WARNING,
   clearClaudeCodeCache,
-  getClaudeCodePath,
   isClaudeCodeInstalled,
   isNpxAvailableForClaudeCode,
 } from '../../claude-code/main/claude-code-resolver';
-import { clearCodexCache, getCodexPath, isCodexInstalled } from '../../codex/main/codex-resolver';
-import {
-  clearCortexCache,
-  getCortexPath,
-  isCortexInstalled,
-} from '../../cortex/main/cortex-resolver';
-import {
-  clearOpenCodeCache,
-  getOpenCodePath,
-  isOpenCodeInstalled,
-} from '../../opencode/main/opencode-resolver';
-import { clearPiCache, getPiPath, isPiInstalled } from '../../pi/main/pi-resolver';
-import { clearDroidCache, getDroidPath, isDroidInstalled } from '../../droid/main/droid-resolver';
+import { clearCodexCache, isCodexInstalled } from '../../codex/main/codex-resolver';
+import { clearCortexCache, isCortexInstalled } from '../../cortex/main/cortex-resolver';
+import { clearOpenCodeCache, isOpenCodeInstalled } from '../../opencode/main/opencode-resolver';
+import { clearPiCache, isPiInstalled } from '../../pi/main/pi-resolver';
+import { clearDroidCache, isDroidInstalled } from '../../droid/main/droid-resolver';
 import type {
   NpxStatus,
   ProviderAvailabilityResult,
@@ -217,6 +208,12 @@ interface ProviderDiscoveryResponse {
     resolvedPath?: string | null;
     gatedOff?: string | null;
     hasNpxFallback: boolean;
+    /** Dual-binary providers only (unsloth): the required secondary CLI name. */
+    secondaryCommand?: string;
+    /** Dual-binary providers only: whether the secondary CLI resolved. */
+    secondaryResolved?: boolean;
+    /** Dual-binary providers only: the secondary CLI's resolved path, present when it resolved. */
+    secondaryResolvedPath?: string;
   }>;
   npx: {
     resolvedPath: string | null;
@@ -445,37 +442,34 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
 }
 
 /**
- * Get resolved CLI paths for all providers
+ * Daemon-resolved CLI paths per provider, as returned by GET_PATHS.
+ * `paths` covers every provider the daemon's discovery reported (null when
+ * the binary did not resolve); `secondaryPaths` carries the secondary
+ * binary's resolved path for dual-binary providers (today only unsloth's
+ * `unsloth` CLI) when it resolved.
  */
-export async function getProviderPaths(): Promise<{
-  auggie: string | null;
-  'claude-code': string | null;
-  codex: string | null;
-  cortex: string | null;
-  opencode: string | null;
-  pi: string | null;
-  droid: string | null;
-}> {
-  const [auggiePath, claudeCodePath, codexPath, cortexPath, opencodePath, piPath, droidPath] =
-    await Promise.all([
-      findAuggiePathAsync(),
-      getClaudeCodePath(),
-      getCodexPath(),
-      getCortexPath(),
-      getOpenCodePath(),
-      getPiPath(),
-      getDroidPath(),
-    ]);
+export interface ProviderPathsResult {
+  paths: Record<string, string | null>;
+  secondaryPaths: Record<string, string | null>;
+}
 
-  return {
-    auggie: auggiePath,
-    'claude-code': claudeCodePath,
-    codex: codexPath,
-    cortex: cortexPath,
-    opencode: opencodePath,
-    pi: piPath,
-    droid: droidPath,
-  };
+/**
+ * Get resolved CLI paths for all providers from the daemon's
+ * host.providerDiscovery snapshot (PROTOCOL §5.14) — the daemon spawns
+ * providers, so its resolution is the truth the UI must mirror. No FE-local
+ * binary resolution. Degrades to empty maps when the RPC fails.
+ */
+export async function getProviderPaths(): Promise<ProviderPathsResult> {
+  const discovery = await callProviderDiscovery();
+  const paths: Record<string, string | null> = {};
+  const secondaryPaths: Record<string, string | null> = {};
+  for (const provider of discovery?.providers ?? []) {
+    paths[provider.id] = provider.resolvedPath ?? null;
+    if (provider.secondaryCommand !== undefined) {
+      secondaryPaths[provider.id] = provider.secondaryResolvedPath ?? null;
+    }
+  }
+  return { paths, secondaryPaths };
 }
 
 /**
