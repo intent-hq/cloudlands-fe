@@ -191,7 +191,9 @@ async function flushDiffGroup(key: string) {
     // to exactly the requested files (unstaged includes untracked files)
     // instead of scanning the whole tree; N same-tick requests still collapse
     // into a single daemon read.
-    const paths = Array.from(pending.paths);
+    // Sorted so the wire payload is deterministic regardless of request
+    // arrival order within the tick.
+    const paths = Array.from(pending.paths).sort();
     const result = await backendRequest<unknown>(
       'git.diffs',
       staged ? { workspaceId: wsId, staged: true, paths } : { workspaceId: wsId, paths },

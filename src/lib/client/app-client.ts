@@ -785,7 +785,9 @@ export interface GitDiffsOptions {
   /**
    * Narrow the result to exactly these workspace-relative file paths (literal
    * matching; the daemon prunes the walk). Unioned with `path` when both are
-   * set; an empty array means the full tree.
+   * set. An empty array is treated like an absent `paths` (the client omits
+   * it from the wire call), so narrowing then falls back to `path` when set,
+   * or the full tree otherwise.
    */
   paths?: string[];
   /** When `true`, returns the HEAD→index (staged) diff; ignored if `commitHash` is set. */
