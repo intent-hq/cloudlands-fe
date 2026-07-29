@@ -16,6 +16,9 @@ const WITH_JA_KO = ['en', 'de', 'zh-CN', 'zh-TW', 'ja', 'ko'] as const;
 // Catalog set without a zh-Hant entry — Traditional tags must skip to the
 // fallback rather than mismatch onto the Simplified catalog.
 const SIMPLIFIED_ONLY = ['en', 'de', 'zh-CN'] as const;
+// Catalog set with the European single-catalog locales (de, fr, es) —
+// regional variants must best-match onto the bare language catalog.
+const WITH_EURO = ['en', 'de', 'fr', 'es', 'zh-CN', 'zh-TW', 'ja', 'ko'] as const;
 const BASE = 'en';
 
 describe('matchLocale', () => {
@@ -75,6 +78,30 @@ describe('matchLocale', () => {
     expect(matchLocale(['ko-Kore-KR'], WITH_JA_KO, BASE)).toBe('ko');
   });
 
+  it('maps German regional tags to de (de, de-DE, de-AT, de-CH, de-Latn-DE)', () => {
+    expect(matchLocale(['de'], WITH_EURO, BASE)).toBe('de');
+    expect(matchLocale(['de-DE'], WITH_EURO, BASE)).toBe('de');
+    expect(matchLocale(['de-AT'], WITH_EURO, BASE)).toBe('de');
+    expect(matchLocale(['de-CH'], WITH_EURO, BASE)).toBe('de');
+    expect(matchLocale(['de-Latn-DE'], WITH_EURO, BASE)).toBe('de');
+  });
+
+  it('maps French regional tags to fr (fr, fr-FR, fr-CA, fr-CH, fr-BE)', () => {
+    expect(matchLocale(['fr'], WITH_EURO, BASE)).toBe('fr');
+    expect(matchLocale(['fr-FR'], WITH_EURO, BASE)).toBe('fr');
+    expect(matchLocale(['fr-CA'], WITH_EURO, BASE)).toBe('fr');
+    expect(matchLocale(['fr-CH'], WITH_EURO, BASE)).toBe('fr');
+    expect(matchLocale(['fr-BE'], WITH_EURO, BASE)).toBe('fr');
+  });
+
+  it('maps Spanish regional tags to es (es, es-ES, es-MX, es-AR, es-US)', () => {
+    expect(matchLocale(['es'], WITH_EURO, BASE)).toBe('es');
+    expect(matchLocale(['es-ES'], WITH_EURO, BASE)).toBe('es');
+    expect(matchLocale(['es-MX'], WITH_EURO, BASE)).toBe('es');
+    expect(matchLocale(['es-AR'], WITH_EURO, BASE)).toBe('es');
+    expect(matchLocale(['es-US'], WITH_EURO, BASE)).toBe('es');
+  });
+
   it('walks the requested list in order until a match is found', () => {
     expect(matchLocale(['ja', 'zh-SG', 'de'], CATALOGS, BASE)).toBe('zh-CN');
     expect(matchLocale(['ja', 'ko'], CATALOGS, BASE)).toBe(BASE);
@@ -108,6 +135,9 @@ describe('resolveLocale', () => {
     );
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['ja-JP'], WITH_JA_KO, BASE)).toBe('ja');
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['ko-KR'], WITH_JA_KO, BASE)).toBe('ko');
+    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['fr-CA'], WITH_EURO, BASE)).toBe('fr');
+    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['es-MX'], WITH_EURO, BASE)).toBe('es');
+    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['de-CH'], WITH_EURO, BASE)).toBe('de');
   });
 
   it('falls back to the base locale when nothing matches', () => {
