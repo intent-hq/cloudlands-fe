@@ -5,7 +5,7 @@
  * Edit this file directly - it's the source of truth.
  */
 
-
+import { getMainActiveLocale } from '../../../../main/main-locale';
 
 const INSTRUCTION = `# Intent Agent
 
@@ -115,6 +115,30 @@ function getCurrentDateString(): string {
 }
 
 /**
+ * When the app language is not English, instruct the agent to write the
+ * user-facing `summary` params of tool calls (rendered as chat tool-call
+ * headers) in that language. Returns '' for English so the base prompt is
+ * unchanged in the default locale. The language is named in English (e.g.
+ * "Traditional Chinese") since the prompt itself is English.
+ */
+function getSummaryLanguageInstruction(): string {
+  let locale: string;
+  try {
+    locale = getMainActiveLocale();
+  } catch {
+    return '';
+  }
+  if (!locale || locale === 'en' || locale.startsWith('en-')) return '';
+  let languageName: string;
+  try {
+    languageName = new Intl.DisplayNames(['en'], { type: 'language' }).of(locale) ?? locale;
+  } catch {
+    languageName = locale;
+  }
+  return `\n## User Language\n\nThe user's app language is ${languageName}. Write user-facing \`summary\` fields of tool calls (shown as chat headers) in ${languageName}.\n`;
+}
+
+/**
  * Get the full base instruction, conditionally including CDP debug tools.
  * Injects the current date so the model knows today's date and won't
  * default to its training cutoff when searching the web.
@@ -131,6 +155,8 @@ export function getBaseInstruction(): string {
   );
 
   let result = base;
+
+  result += getSummaryLanguageInstruction();
 
   if (isCdpEnabled) {
     result += CDP_DEBUG_INSTRUCTION;
