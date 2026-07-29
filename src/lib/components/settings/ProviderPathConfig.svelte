@@ -167,7 +167,7 @@
           <p class="flex items-center gap-1 flex-wrap">
             <Fa
               icon={faCheck}
-              class="{overridden ? 'text-muted-foreground/50' : 'text-green-500/70'} shrink-0"
+              class="{overridden ? 'text-ghost' : 'text-green-500/70'} shrink-0"
               size="xs"
             />
             <span>
@@ -178,9 +178,7 @@
               {/if}
             </span>
             {#if overridden}
-              <span class="italic text-muted-foreground/70"
-                >{m.settings_providerPath_overriddenNote()}</span
-              >
+              <span class="italic text-ghost">{m.settings_providerPath_overriddenNote()}</span>
             {/if}
           </p>
           <code
