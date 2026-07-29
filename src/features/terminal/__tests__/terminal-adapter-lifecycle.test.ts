@@ -136,7 +136,8 @@ describe('TerminalAdapter lifecycle cleanup', () => {
 
     (adapter as any).setupXTermEventHandlers();
 
-    expect(addSpy).not.toHaveBeenCalledWith('paste', expect.anything());
+    const pasteRegistrations = addSpy.mock.calls.filter(([type]) => type === 'paste');
+    expect(pasteRegistrations).toHaveLength(0);
 
     adapter.detach();
   });
