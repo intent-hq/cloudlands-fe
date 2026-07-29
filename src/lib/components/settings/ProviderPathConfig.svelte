@@ -34,13 +34,16 @@
     /** Auto-detected/resolved path */
     resolvedPath?: string;
     /**
-     * Dual-binary providers only (unsloth): the secondary CLI's name
-     * (e.g. 'unsloth'). Rendered alongside `secondaryResolvedPath`.
+     * Dual-binary providers only (unsloth): the name of the provider's other
+     * required binary (e.g. 'opencode'). Rendered as a second labeled
+     * auto-detected row alongside `secondaryResolvedPath`. The primary
+     * `cliCommand`/`resolvedPath` pair always describes the binary the
+     * override input targets (`providers.paths[providerId]`).
      */
     secondaryCliCommand?: string;
     /**
-     * Dual-binary providers only: the daemon-resolved path of the secondary
-     * CLI, when it resolved.
+     * Dual-binary providers only: the daemon-resolved path of
+     * `secondaryCliCommand`, when it resolved.
      */
     secondaryResolvedPath?: string;
     /** Whether the provider is currently installed */
@@ -49,15 +52,14 @@
     onPathChange?: (path: string) => void;
   }
 
-  // secondaryCliCommand / secondaryResolvedPath are accepted (typed above)
-  // but not yet destructured — the dual-binary popup rendering lands in a
-  // sibling change.
   let {
     providerId,
     providerName,
     cliCommand,
     configuredPath = '',
     resolvedPath = '',
+    secondaryCliCommand,
+    secondaryResolvedPath,
     isInstalled = false,
     onPathChange,
   }: Props = $props();
@@ -157,15 +159,50 @@
         />
       </div>
 
-      <!-- Status indicator -->
-      {#if resolvedPath && !configuredPath}
-        <p class="text-ui text-subtle flex items-center gap-1 min-w-0">
-          <Fa icon={faCheck} class="text-green-500/70 shrink-0" size="xs" />
-          <span class="shrink-0">{m.settings_providerPath_autoDetectedAt()}</span>
-          <code class="px-1 py-0.5 bg-muted/50 rounded truncate min-w-0" title={resolvedPath}
-            >{resolvedPath}</code
+      <!-- Status indicator: full (wrapped) auto-detected paths; the primary
+           row stays visible when an override is configured, marked as
+           overridden. Dual-binary providers get one labeled row per binary. -->
+      {#snippet autoDetectedRow(command: string | undefined, path: string, overridden: boolean)}
+        <div class="text-ui text-subtle min-w-0">
+          <p class="flex items-center gap-1 flex-wrap">
+            <Fa
+              icon={faCheck}
+              class="{overridden ? 'text-muted-foreground/50' : 'text-green-500/70'} shrink-0"
+              size="xs"
+            />
+            <span>
+              {#if command}
+                {m.settings_providerPath_autoDetectedCommandAt({ command })}
+              {:else}
+                {m.settings_providerPath_autoDetectedAt()}
+              {/if}
+            </span>
+            {#if overridden}
+              <span class="italic text-muted-foreground/70"
+                >{m.settings_providerPath_overriddenNote()}</span
+              >
+            {/if}
+          </p>
+          <code
+            class="mt-0.5 block px-1 py-0.5 bg-muted/50 rounded break-all {overridden
+              ? 'opacity-60'
+              : ''}">{path}</code
           >
-        </p>
+        </div>
+      {/snippet}
+      {#if resolvedPath || (secondaryCliCommand && secondaryResolvedPath)}
+        <div class="space-y-1.5">
+          {#if resolvedPath}
+            {@render autoDetectedRow(
+              secondaryCliCommand ? cliCommand : undefined,
+              resolvedPath,
+              !!configuredPath,
+            )}
+          {/if}
+          {#if secondaryCliCommand && secondaryResolvedPath}
+            {@render autoDetectedRow(secondaryCliCommand, secondaryResolvedPath, false)}
+          {/if}
+        </div>
       {/if}
     </div>
   {/snippet}

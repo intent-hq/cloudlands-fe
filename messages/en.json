@@ -129,6 +129,8 @@
   "settings_providerPath_specifyHint_before": "Specify the path to the",
   "settings_providerPath_specifyHint_after": "executable.",
   "settings_providerPath_autoDetectedAt": "Auto-detected at",
+  "settings_providerPath_autoDetectedCommandAt": "Auto-detected {command} at",
+  "settings_providerPath_overriddenNote": "(overridden by the path above)",
   "settings_rtk_label": "RTK command optimization",
   "settings_rtk_loadError": "Failed to load RTK settings from the daemon.",
   "settings_rtk_saveError": "Failed to save RTK setting.",

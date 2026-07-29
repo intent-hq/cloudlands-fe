@@ -781,17 +781,23 @@
             <div class="flex items-center gap-2 h-7">
               {@render providerIcon(provider.id)}
               <span class="text-sm text-foreground">{provider.name}</span>
-              <!-- Path configuration -->
+              <!-- Path configuration. Unsloth is dual-binary: the override
+                   (providers.paths.unsloth) targets the `unsloth` CLI, so the
+                   primary cliCommand/resolvedPath pair carries the unsloth CLI
+                   (the daemon's secondary binary) and the daemon-primary
+                   `opencode` binary is shown as the labeled secondary row. -->
               <div class="-my-1">
                 <ProviderPathConfig
                   providerId={provider.id}
                   providerName={provider.name}
                   cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
                   configuredPath={providerPaths[provider.id]}
-                  resolvedPath={resolvedPaths[provider.id]}
-                  secondaryCliCommand={provider.id === 'unsloth' ? 'unsloth' : undefined}
-                  secondaryResolvedPath={provider.id === 'unsloth'
+                  resolvedPath={provider.id === 'unsloth'
                     ? secondaryResolvedPaths[provider.id]
+                    : resolvedPaths[provider.id]}
+                  secondaryCliCommand={provider.id === 'unsloth' ? provider.command : undefined}
+                  secondaryResolvedPath={provider.id === 'unsloth'
+                    ? resolvedPaths[provider.id]
                     : undefined}
                   isInstalled={provider.available}
                   onPathChange={(path) => handlePathChange(provider.id, path)}
