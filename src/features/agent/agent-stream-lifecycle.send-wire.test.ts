@@ -224,6 +224,34 @@ describe("send path wire contract (pending agent, first message)", () => {
     expect(chatAgent.lastAttemptedMessage).toBeNull();
   }, 30000);
 
+  it("parks the auto-queued record keyed by the response turnId (monorepo#1057)", async () => {
+    // §5.5 queued arm: `{ success, queued: true, queuedMessage, turnId }` —
+    // the turnId keys the parked record for exact agent:queue:processing
+    // promotion / agent:failed pairing across retry redrives.
+    const queuedMessage: QueuedMessage = {
+      id: "queued-msg-3",
+      content: "auto-queued with turn",
+      queuedAt: "2026-07-17T14:00:00.000Z",
+      position: 0,
+      turnId: "queued-msg-3",
+    };
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === "agent.get") return { agent: daemonPendingAgent };
+      if (method === "agent.sendMessage") {
+        return { success: true, queued: true, queuedMessage, turnId: "queued-msg-3" };
+      }
+      return {};
+    });
+
+    await lifecycleSendMessage(AGENT, "auto-queued with turn", workspace(), {});
+
+    const chatAgent = appStore.state.chatState.byAgentId[AGENT];
+    expect(chatAgent.queuedRetryRecords["queued-msg-3"]).toMatchObject({
+      record: { text: "auto-queued with turn" },
+      turnId: "queued-msg-3",
+    });
+  }, 30000);
+
   it("keeps lastAttemptedMessage when the daemon queues WITHOUT echoing the entry (#1011)", async () => {
     backendRequestMock.mockImplementation(async (method: string) => {
       if (method === "agent.get") return { agent: daemonPendingAgent };

@@ -27,6 +27,7 @@ import {
   transcriptHydrationStarted,
   transcriptHydrationSettled,
   chatLastAttemptedMessageSet,
+  chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
   chatQueuedRetryRecordParked,
   chatQueuedRetryRecordUpdated,
@@ -496,6 +497,210 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
         'qm-1': { seq: 1, record: { text: 'B' } },
       });
+    });
+  });
+
+  describe('turnId-keyed retry records (monorepo#1057)', () => {
+    const queuedEntry = (id: string, turnId?: string, position = 0): QueuedMessage => ({
+      id,
+      content: `content of ${id}`,
+      queuedAt: '2026-01-01T00:00:00.000Z',
+      position,
+      ...(turnId !== undefined ? { turnId } : {}),
+    });
+
+    it('chatQueuedRetryRecordSet stores the turnId on the parked record', () => {
+      const s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'),
+      );
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
+      });
+    });
+
+    it('chatQueuedRetryRecordParked stores the turnId and clears the matching slot (#1011)', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'B' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordParked(AGENT, 'qm-1', { text: 'B' }, 'turn-1'));
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
+      });
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+    });
+
+    it('chatQueueProcessingReceived promotes the exact record by turnId', () => {
+      let s = chatStateReducer(initialState, chatSendFailed(AGENT, 'boom'));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }, 'turn-2'));
+      s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-1', 'turn-1'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-2': { seq: 2, record: { text: 'C' }, turnId: 'turn-2' },
+      });
+      // Drain-start means the promoted turn is now active — clean slate.
+      expect(s.byAgentId[AGENT].error).toBeNull();
+    });
+
+    it('redrive: agent:queue:processing with a NEW entry id but the original turnId promotes the exact record', () => {
+      // agent.retry redrive (§5.5): the terminal-failure requeue minted a new
+      // entry id (qm-requeued) but preserved the failed turn's turnId. The
+      // record parked under the ORIGINAL entry id must still promote.
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-orig', { text: 'failed turn' }, 'turn-1'),
+      );
+      s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-requeued', 'turn-1'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'failed turn' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('regression: a recordless redrive must NOT promote another pending record when turnId is present', () => {
+      // The #999 misattribution this design fixes: agent.retry redrives a
+      // requeued entry this client never parked (or whose record is gone),
+      // while ANOTHER pending record is parked. The processing event names a
+      // turnId matching no record — nothing may promote, especially not the
+      // unrelated parked record.
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-other', { text: 'unrelated pending' }, 'turn-other'),
+      );
+      s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-redriven', 'turn-redriven'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-other': { seq: 1, record: { text: 'unrelated pending' }, turnId: 'turn-other' },
+      });
+    });
+
+    it('chatQueueProcessingReceived falls back to the messageId key when the record has no turnId', () => {
+      // Old-daemon record (parked without turnId) + new daemon emitting the
+      // event: the entry id is still an exact key on a fresh enqueue.
+      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-1', undefined));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('the messageId fallback does NOT promote a record parked under a DIFFERENT turnId', () => {
+      // Exact-attribution invariant: an event whose turnId matches no record
+      // must not promote a same-entry-id record keyed by another turnId —
+      // the fallback is reserved for records parked WITHOUT one.
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'),
+      );
+      s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-1', 'turn-mismatch'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
+      });
+    });
+
+    it('chatQueueProcessingReceived is a no-op when nothing matches (no approximation)', () => {
+      const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+      const s2 = chatStateReducer(s1, chatQueueProcessingReceived(AGENT, 'qm-x', 'turn-x'));
+      expect(s2).toBe(s1);
+      // Never materializes state for an unopened chat either.
+      const s3 = chatStateReducer(initialState, chatQueueProcessingReceived('agent-unopened', 'qm-x'));
+      expect(s3.byAgentId['agent-unopened']).toBeUndefined();
+    });
+
+    it('a snapshot diff does NOT promote a vanished turnId-keyed record (processing owns the promotion)', () => {
+      // The record's entry id left the snapshot — under the old inference it
+      // would promote. With a turnId, the exact agent:queue:processing signal
+      // owns the promotion; the vanished record stays parked (its entry may
+      // have been requeued under a new id after a terminal failure).
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'),
+      );
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
+      });
+      // The follow-up processing event performs the exact promotion.
+      s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-1', 'turn-1'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('a snapshot diff does not double-promote after a queue:processing promotion', () => {
+      // Event order on a real drain: shrunk agent:queue:updated, then
+      // agent:queue:processing. If processing already promoted (record left
+      // the map), a late/duplicate snapshot must find nothing to promote.
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'),
+      );
+      s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-1', 'turn-1'));
+      s = chatStateReducer(s, chatLastAttemptedMessageSet(AGENT, { text: 'newer attempt' }));
+      const s2 = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s2.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'newer attempt' });
+    });
+
+    it('a requeued entry (new id, same turnId) still counts as present: content sync, no promotion', () => {
+      // Terminal-failure requeue: the snapshot shows the entry under a NEW id
+      // with the same turnId. The record is neither promoted nor dropped, and
+      // the daemon-authoritative content sync still applies.
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-orig', { text: 'original' }, 'turn-1'),
+      );
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, [
+        { ...queuedEntry('qm-requeued', 'turn-1'), content: 'original' },
+      ]));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-orig': { seq: 1, record: { text: 'original' }, turnId: 'turn-1' },
+      });
+    });
+
+    it('the clear-queue signature drops vanished turnId-keyed records too (discarded entries never drain)', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'fresh' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-2', { text: 'C' }, 'turn-2'));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'fresh' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('chatSendFailed pairs the failure with the exact parked record via turnId', () => {
+      // agent.retry redrive fails again: agent:failed carries the original
+      // turnId, whose record is still parked (its requeued entry id never
+      // matched a snapshot key). The banner must pair with that record.
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'failed payload' }, 'turn-1'),
+      );
+      s = chatStateReducer(s, chatSendFailed(AGENT, 'still failing', 'turn-1'));
+      expect(s.byAgentId[AGENT].error).toBe('still failing');
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'failed payload' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
+    it('chatSendFailed with an unknown or absent turnId leaves records and the slot untouched', () => {
+      let s = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, { text: 'active' }));
+      s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'));
+      const withUnknown = chatStateReducer(s, chatSendFailed(AGENT, 'boom', 'turn-unknown'));
+      expect(withUnknown.byAgentId[AGENT].error).toBe('boom');
+      expect(withUnknown.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'active' });
+      expect(withUnknown.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
+      });
+      const withoutTurnId = chatStateReducer(s, chatSendFailed(AGENT, 'boom'));
+      expect(withoutTurnId.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'active' });
+      expect(withoutTurnId.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
+      });
+    });
+
+    it('records parked WITHOUT turnId keep the exact #999/#1011 snapshot-diff behavior', () => {
+      // Older-daemon fallback: no turnId anywhere — the vanishing-id
+      // inference still promotes exactly as before.
+      let s = chatStateReducer(initialState, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }));
+      s = chatStateReducer(s, replaceAgentQueue(AGENT, []));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual({ text: 'B' });
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
     });
   });
 

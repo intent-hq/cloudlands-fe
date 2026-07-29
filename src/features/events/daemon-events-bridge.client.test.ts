@@ -2496,6 +2496,184 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
       queuedRetryRecords: {},
     });
   });
+
+  it('forwards queue entries carrying the PROTOCOL §6.6 turnId verbatim into the queue mirror', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A fresh enqueue sets turnId = id; a terminal-failure requeue mints a new
+    // entry id but preserves the failed turn's turnId. Both must survive the
+    // bridge → slice round-trip untouched (the FE never heals BE payloads).
+    handler(
+      notification('agent:queue:updated', {
+        agentId: AGENT,
+        queue: [
+          {
+            id: 'q-fresh',
+            content: 'fresh',
+            queuedAt: '2026-01-02T00:00:01.000Z',
+            position: 0,
+            turnId: 'q-fresh',
+          },
+          {
+            id: 'q-requeue',
+            content: 'requeued',
+            queuedAt: '2026-01-02T00:00:02.000Z',
+            position: 1,
+            turnId: 'turn-original',
+          },
+        ],
+      }),
+    );
+
+    expect(
+      selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => ({
+        id: m.id,
+        turnId: m.turnId,
+      })),
+    ).toEqual([
+      { id: 'q-fresh', turnId: 'q-fresh' },
+      { id: 'q-requeue', turnId: 'turn-original' },
+    ]);
+  });
+
+  it('still accepts queue entries WITHOUT turnId (older daemons)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:queue:updated', {
+        agentId: AGENT,
+        queue: [{ id: 'q-1', content: 'first', queuedAt: '2026-01-02T00:00:01.000Z', position: 0 }],
+      }),
+    );
+
+    const [entry] = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(entry.id).toBe('q-1');
+    expect(entry.turnId).toBeUndefined();
+  });
+});
+
+describe('daemonEventsBridge (queue drain-start — agent:queue:processing → chatQueueProcessingReceived)', () => {
+  beforeAll(() => appStore.init());
+
+  let dispatchCalls: any[];
+
+  beforeEach(async () => {
+    dispatchCalls = [];
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    seedSession();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    // Restore appStore.dispatch getter overridden by wrapDispatch() to avoid leaking into other suites.
+    const original = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(appStore), 'dispatch');
+    if (original) Object.defineProperty(appStore, 'dispatch', original);
+  });
+
+  /** Track dispatches — the action is a stub with no reducer case yet. */
+  function wrapDispatch() {
+    const originalGetter = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(appStore),
+      'dispatch',
+    )!.get!;
+    const realDispatch = originalGetter.call(appStore);
+
+    Object.defineProperty(appStore, 'dispatch', {
+      get() {
+        return (action: any) => {
+          dispatchCalls.push(action);
+          return realDispatch(action);
+        };
+      },
+      configurable: true,
+    });
+  }
+
+  function queueProcessingCalls() {
+    return dispatchCalls.filter((a) => a.type === 'chatState/queueProcessingReceived');
+  }
+
+  it('dispatches chatQueueProcessingReceived with the drained entry turnId (PROTOCOL §6.5)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    wrapDispatch();
+
+    handler(
+      notification('agent:queue:processing', {
+        agentId: AGENT,
+        messageId: 'q-1',
+        content: 'first',
+        turnId: 'turn-abc',
+      }),
+    );
+
+    expect(queueProcessingCalls()).toEqual([
+      expect.objectContaining({
+        type: 'chatState/queueProcessingReceived',
+        payload: [AGENT, 'q-1', 'turn-abc'],
+      }),
+    ]);
+  });
+
+  it('dispatches with turnId undefined when the daemon omits it (older daemons)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    wrapDispatch();
+
+    handler(notification('agent:queue:processing', { agentId: AGENT, messageId: 'q-1' }));
+
+    expect(queueProcessingCalls()).toEqual([
+      expect.objectContaining({ payload: [AGENT, 'q-1', undefined] }),
+    ]);
+  });
+
+  it('ignores agent:queue:processing payloads missing agentId or messageId (FE never invents data)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    wrapDispatch();
+
+    handler(notification('agent:queue:processing', { agentId: AGENT }));
+    handler(notification('agent:queue:processing', { messageId: 'q-1' }));
+
+    expect(queueProcessingCalls()).toHaveLength(0);
+  });
+
+  it('threads the agent:failed turnId through the chatSendFailed dispatch (PROTOCOL §6.6)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    wrapDispatch();
+
+    handler(
+      notification('agent:failed', {
+        agentId: AGENT,
+        error: 'boom',
+        status: 'error',
+        turnId: 'turn-failed-1',
+      }),
+    );
+
+    const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
+    expect(failedCalls).toEqual([
+      expect.objectContaining({ payload: [AGENT, 'boom', 'turn-failed-1'] }),
+    ]);
+  });
+
+  it('chatSendFailed carries turnId undefined when agent:failed omits it (older daemons)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    wrapDispatch();
+
+    handler(notification('agent:failed', { agentId: AGENT, error: 'boom', status: 'error' }));
+
+    const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
+    expect(failedCalls).toEqual([expect.objectContaining({ payload: [AGENT, 'boom', undefined] })]);
+  });
 });
 
 describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delivery)', () => {

@@ -425,12 +425,23 @@ export async function sendMessage(
                         // construction site chat-send-service records with, so
                         // the structural match holds. Park BEFORE seeding the
                         // queue slice so an immediate drain snapshot can
-                        // already promote it.
+                        // already promote it. The turnId (monorepo#1057 — the
+                        // queued arm's top-level result field, falling back to
+                        // the echoed entry's) keys the record for exact
+                        // agent:queue:processing / agent:failed attribution.
+                        const rawTurnId = (response as { turnId?: unknown }).turnId;
+                        const turnId =
+                          typeof rawTurnId === 'string'
+                            ? rawTurnId
+                            : typeof queuedMessage.turnId === 'string'
+                              ? queuedMessage.turnId
+                              : undefined;
                         dispatchRedux(
                           chatQueuedRetryRecordParked(
                             agentId,
                             queuedMessage.id,
                             buildRecordedAttempt(content, options),
+                            turnId,
                           ),
                         );
                         const existing = selectAgentQueueMessages.select(appStore.state, agentId);

@@ -230,6 +230,40 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(await client.queue('agent-1', 'later')).toEqual({ success: true });
   });
 
+  it('queue surfaces the top-level turnId from the §5.5 response (monorepo#1057)', async () => {
+    const queuedMessage = {
+      id: 'qm-1',
+      content: 'later',
+      queuedAt: '2026-06-29T00:00:00.000Z',
+      position: 0,
+      turnId: 'qm-1',
+    };
+    backend.onRequest('agent.queueMessage', () => ({
+      success: true,
+      queuedMessage,
+      turnId: 'qm-1',
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.queue('agent-1', 'later');
+    expect(result).toEqual({ success: true, queuedMessage, turnId: 'qm-1' });
+  });
+
+  it('queue falls back to queuedMessage.turnId when the top-level field is absent', async () => {
+    const queuedMessage = {
+      id: 'qm-2',
+      content: 'later',
+      queuedAt: '2026-06-29T00:00:00.000Z',
+      position: 0,
+      turnId: 'turn-preserved',
+    };
+    backend.onRequest('agent.queueMessage', () => ({ success: true, queuedMessage }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.queue('agent-1', 'later');
+    expect(result.turnId).toBe('turn-preserved');
+  });
+
   it('queue forwards imageBlocks on agent.queueMessage params when supplied (§5.5)', async () => {
     // PROTOCOL §5.5: agent.queueMessage accepts optional imageBlocks; the
     // daemon persists them on the QueuedMessage so queued attachments
@@ -390,6 +424,26 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('sendQueuedNow surfaces the delivered arm\u2019s turnId (monorepo#1057)', async () => {
+    // §5.5: the delivered arm is `{ success: true, queued: false, messageId,
+    // turnId }` — this path emits NO agent:queue:processing event, so the
+    // RPC's turnId is the promotion signal the caller dispatches from.
+    backend.onRequest('agent.sendQueuedMessageNow', () => ({
+      success: true,
+      queued: false,
+      messageId: 'qm-9',
+      turnId: 'turn-preserved',
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.sendQueuedNow({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'qm-9',
+    });
+    expect(result).toEqual({ success: true, turnId: 'turn-preserved' });
+  });
+
   it('sendQueuedNow folds the -32602 missing-entry rejection into {success:false,error} (no throw)', async () => {
     // NOT idempotent (§5.5): an already-drained/removed entry rejects with
     // -32602 — the seam folds it into a MutationResult instead of throwing.
@@ -407,6 +461,54 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain('not found: queued message');
+  });
+
+  it('sendQueuedNow does NOT surface a turnId on the slot-race restore arm (no queuedMessage fallback)', async () => {
+    // §5.5 slot-race arm: `{ success: true, queued: true, queuedMessage }` —
+    // the entry was RESTORED at the queue front, not delivered. Unlike
+    // `queue()`, this method must not fall back to `queuedMessage.turnId`:
+    // a restore surfaced as a delivery would promote the parked record.
+    backend.onRequest('agent.sendQueuedMessageNow', () => ({
+      success: true,
+      queued: true,
+      queuedMessage: {
+        id: 'qm-9',
+        content: 'held',
+        queuedAt: '2026-01-01T00:00:00.000Z',
+        position: 0,
+        turnId: 'turn-restored',
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.sendQueuedNow({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'qm-9',
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it('sendQueuedNow folds JSON-RPC "Internal error" + data.detail into the error like runMutation', async () => {
+    // Regression: extracting turnId bypassed runMutation, which must not lose
+    // the shared mutationErrorMessage shaping (generic "Internal error"
+    // messages fold in `data.detail` so toasts stay actionable).
+    backend.onRequest('agent.sendQueuedMessageNow', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'Internal error', {
+          rpcCode: -32603,
+          data: { detail: 'queue store unavailable' },
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.sendQueuedNow({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'qm-9',
+    });
+    expect(result).toEqual({ success: false, error: 'Internal error: queue store unavailable' });
   });
 
   it('getQueue forwards agent.getQueue and returns the daemon queue array verbatim (incl. messageMetadata)', async () => {
@@ -797,6 +899,21 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
       const result = await client.retry('agent-old-daemon', 'ws-1');
       expect(result).toEqual({ ok: true, redriven: undefined });
+    });
+
+    it('surfaces the redriven head entry\u2019s turnId (monorepo#1057)', async () => {
+      // §5.5: turnId is present only with redriven:true — the requeued
+      // entry's PRESERVED turn-correlation id (same id the original
+      // send/enqueue RPC returned), peeked before the drain pops it.
+      backend.onRequest('agent.retry', () => ({
+        ok: true,
+        redriven: true,
+        turnId: 'turn-original',
+      }));
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-retry-1', 'ws-retry-1');
+      expect(result).toEqual({ ok: true, redriven: true, turnId: 'turn-original' });
     });
 
     it('returns ok:false with error message when backend returns ok:false', async () => {

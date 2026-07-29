@@ -119,6 +119,20 @@ export interface MutationResult {
    * paths never set it.
    */
   queuedMessage?: QueuedMessage;
+  /**
+   * Turn-correlation id (PROTOCOL §5.5/§6.6, monorepo#1022) surfaced when the
+   * daemon returns one by the seam mutations that extract it: `queueMessage`
+   * (top-level result `turnId`, falling back to the echoed
+   * `queuedMessage.turnId`) and `sendQueuedMessageNow` (top-level field of
+   * the delivered arm ONLY — no `queuedMessage` fallback, a slot-race restore
+   * is not a delivery). `agent.retry` surfaces the same id on its own
+   * `{ ok, redriven?, turnId? }` result, and the chat send flow bypasses the
+   * `send()` seam, so `sendMessage` does not set it. Callers key retry
+   * records by it for exact lifecycle-event attribution (monorepo#1057).
+   * Additive and optional: older daemons omit it and other mutation paths
+   * never set it.
+   */
+  turnId?: string;
 }
 
 /**
@@ -403,8 +417,10 @@ export interface AgentsClient {
    * Queue a message behind the agent's in-flight turn (`agent.queueMessage`,
    * §5.5). Optional `imageBlocks` are only forwarded when supplied so queued
    * attachments survive queue-on-send. The daemon returns
-   * `{ success, queuedMessage }`, surfaced as `queuedMessage` on the
-   * MutationResult. Transport / daemon errors fold into
+   * `{ success, queuedMessage, turnId }`, surfaced as `queuedMessage` /
+   * `turnId` on the MutationResult (the entry's turn-correlation id,
+   * monorepo#1057 — falls back to `queuedMessage.turnId` when the top-level
+   * field is absent). Transport / daemon errors fold into
    * `{ success: false, error }` — this method never throws.
    */
   queue(
@@ -439,7 +455,10 @@ export interface AgentsClient {
    * not delivered now, and the re-add reconciles via `agent:queue:updated`.
    * NOT idempotent: a missing entry (already drained/removed) rejects with
    * `-32602`, folded into `{ success: false, error }` like the other
-   * mutations.
+   * mutations. The delivered arm carries `turnId` (the entry's preserved
+   * turn-correlation id, §5.5 — this RPC's response replaces the
+   * `agent:queue:processing` event, which is NOT emitted for this path),
+   * surfaced on the MutationResult (monorepo#1057).
    */
   sendQueuedNow(params: {
     agentId: string;
@@ -504,12 +523,16 @@ export interface AgentsClient {
    * `false` — the queue was empty, error cleared to idle, nothing to redrive
    * (undefined on older daemons that omit the field). Emits
    * `agent:status-changed` events (pending → active → idle/error depending on
-   * the retry outcome).
+   * the retry outcome). `turnId` (monorepo#1022/#1057) is present only with
+   * `redriven: true`: the redriven head entry's turn-correlation id — the
+   * SAME id the original send/enqueue RPC returned (preserved across the
+   * terminal-failure requeue), so the redrive's lifecycle events correlate
+   * with the record the client already keyed.
    */
   retry(
     agentId: string,
     workspaceId: string,
-  ): Promise<{ ok: true; redriven?: boolean } | { ok: false; error: string }>;
+  ): Promise<{ ok: true; redriven?: boolean; turnId?: string } | { ok: false; error: string }>;
   /**
    * Resolve an outstanding interactive permission prompt
    * (`agent.respondPermission`, PROTOCOL §8). The daemon forwards the chosen
