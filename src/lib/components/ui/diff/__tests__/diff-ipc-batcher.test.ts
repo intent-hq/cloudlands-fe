@@ -88,7 +88,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     ]);
 
     const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
-    expect(diffCalls).toEqual([['git.diffs', { workspaceId: 'ws-1' }]]);
+    expect(diffCalls).toEqual([['git.diffs', { workspaceId: 'ws-1', paths: ['a.ts', 'b.ts'] }]]);
     expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
       workspaceId: 'ws-1',
       filePath: 'a.ts',
@@ -115,6 +115,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
       workspaceId: 'ws-2',
       staged: true,
+      paths: ['a.ts'],
     });
     expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
       workspaceId: 'ws-2',

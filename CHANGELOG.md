@@ -4,6 +4,31 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.10.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.9.0...v2.10.0) (2026-07-29)
+
+
+### 🚀 Features
+
+* adopt daemon turnId for chat retry-record correlation (monorepo[#1057](https://github.com/intent-hq/cloudlands-fe/issues/1057)) ([#531](https://github.com/intent-hq/cloudlands-fe/issues/531)) ([1ee63b0](https://github.com/intent-hq/cloudlands-fe/commit/1ee63b03b6304459534d4da71a8587c37bc011cf))
+* **i18n:** add German (de), French (fr), and Spanish (es) locales ([#533](https://github.com/intent-hq/cloudlands-fe/issues/533)) ([c6ad1ea](https://github.com/intent-hq/cloudlands-fe/commit/c6ad1ea105c9d0a9d40674bb1aab902090ca7324))
+* **i18n:** add Japanese (ja) and Korean (ko) locales ([#526](https://github.com/intent-hq/cloudlands-fe/issues/526)) ([a8e28e2](https://github.com/intent-hq/cloudlands-fe/commit/a8e28e26b9f7ad4a3608580b302efa6298be5ffe))
+
+
+### 🐛 Bug Fixes
+
+* **i18n:** localize daemon-provided terminal names ([#530](https://github.com/intent-hq/cloudlands-fe/issues/530)) ([eb9c215](https://github.com/intent-hq/cloudlands-fe/commit/eb9c215f975adafd72a7778ca9974be833cf499a))
+* **i18n:** localize daemon-provided terminal names in metadata reads ([#535](https://github.com/intent-hq/cloudlands-fe/issues/535)) ([1af7ea9](https://github.com/intent-hq/cloudlands-fe/commit/1af7ea96c50f7b6848b27515d8c0767307666fff))
+* **i18n:** translate settings_providerPath_runtime* keys in de/fr/es ([#536](https://github.com/intent-hq/cloudlands-fe/issues/536)) ([8d51d6f](https://github.com/intent-hq/cloudlands-fe/commit/8d51d6f523ea4240e6f0862d6a97763c8fc00ffb))
+* localize runtime-generated chat strings (stream status + tool summaries) ([#525](https://github.com/intent-hq/cloudlands-fe/issues/525)) ([b36c116](https://github.com/intent-hq/cloudlands-fe/commit/b36c116f90e71213dcf370623b6e63815742fabe))
+* prevent text-expansion overflow in sidebar tabs and action menus ([#539](https://github.com/intent-hq/cloudlands-fe/issues/539)) ([fc65cb4](https://github.com/intent-hq/cloudlands-fe/commit/fc65cb4444838f8d88c7a60e30841af6c170ed4f))
+* settings provider path popup shows full daemon-resolved paths, override state, and both unsloth binaries ([#528](https://github.com/intent-hq/cloudlands-fe/issues/528)) ([6bc0d4f](https://github.com/intent-hq/cloudlands-fe/commit/6bc0d4fda8fffb9a1905e980a343188e8831d195))
+* unsloth popup override targets the unsloth CLI ([#534](https://github.com/intent-hq/cloudlands-fe/issues/534)) ([e89c0b0](https://github.com/intent-hq/cloudlands-fe/commit/e89c0b0d581bebb53ec9b040434acb2023ff18f6))
+
+
+### ⚡ Performance
+
+* **diff:** send the batched file set as paths[] on git.diffs ([#538](https://github.com/intent-hq/cloudlands-fe/issues/538)) ([ef5147a](https://github.com/intent-hq/cloudlands-fe/commit/ef5147a9495d5b095b604990da70e42a65df7532))
+
 ## [2.9.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.8.0...v2.9.0) (2026-07-28)
 
 
