@@ -99,6 +99,21 @@ function diffGroupKey(workspaceId: string, staged: boolean): string {
   return `${workspaceId}::${staged ? '1' : '0'}`;
 }
 
+/** True when a request path cannot be worktree-relative — absolute POSIX
+ * (`/...`), home-relative (`~` / `~/...`), Windows drive (`C:\...` / `C:/...`)
+ * or UNC (`\\...`) forms — i.e. a caller failed to normalize before
+ * requesting. Daemon-side `paths[]` narrowing (PROTOCOL §5.6) matches literal
+ * worktree-relative paths, so these can never match server-side. */
+function isSuspiciousDiffPath(filePath: string): boolean {
+  return (
+    filePath.startsWith('/') ||
+    filePath === '~' ||
+    filePath.startsWith('~/') ||
+    /^[A-Za-z]:[\\/]/.test(filePath) ||
+    filePath.startsWith('\\\\')
+  );
+}
+
 /** Map the daemon `git.diffs` bare-array result (`[{ path, hunks }]`) into the
  * batcher's `DiffChunk[]`; hunks pass through verbatim (they already carry the
  * renderer `DiffHunk` shape). */
@@ -206,6 +221,41 @@ async function flushDiffGroup(key: string) {
     for (const path of pending.resolvers.keys()) {
       matches.set(path, findChunkForPath(chunks, path));
     }
+
+    // A mis-normalized (non-worktree-relative) request path can never match a
+    // literal pathspec on the daemon side, so the narrowed read returns
+    // nothing for it. Recover with ONE full-tree read (no `paths`) for the
+    // whole group and re-run the suffix-match fallback against it. Well-formed
+    // relative paths that simply have no diff do NOT trigger this.
+    const suspiciousUnmatched = [...matches.keys()].filter(
+      (path) => matches.get(path) === undefined && isSuspiciousDiffPath(path),
+    );
+    if (suspiciousUnmatched.length > 0) {
+      logger.warn(
+        `git.diffs group had non-worktree-relative request paths unmatched after daemon-side narrowing; retrying once without paths: ${suspiciousUnmatched.join(', ')}`,
+        { workspaceId: wsId, staged, paths: suspiciousUnmatched },
+      );
+      try {
+        const recoveryResult = await backendRequest<unknown>(
+          'git.diffs',
+          staged ? { workspaceId: wsId, staged: true } : { workspaceId: wsId },
+        );
+        const recoveryChunks = toDaemonDiffChunks(recoveryResult);
+        for (const path of suspiciousUnmatched) {
+          matches.set(path, findChunkForPath(recoveryChunks, path));
+        }
+      } catch (recoveryErr) {
+        logger.warn('git.diffs full-tree recovery read failed; resolving undefined', {
+          workspaceId: wsId,
+          staged,
+          paths: suspiciousUnmatched,
+          error: recoveryErr,
+        });
+      }
+    }
+
+    // Enrichment runs once over the union of narrowed + recovered matches
+    // (the Set dedupes), so no chunk is enriched twice.
     const matchedChunks = new Set(
       [...matches.values()].filter((chunk): chunk is DiffChunk => chunk !== undefined),
     );
