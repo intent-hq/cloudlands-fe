@@ -23,9 +23,9 @@
     /**
      * CLI command name (e.g., 'auggie', 'claude-agent-acp') shown in the
      * placeholder text. Always names the binary the override input targets:
-     * the daemon applies `providers.paths[providerId]` when resolving
-     * `provider.command` (for unsloth that is the `opencode` ACP binary, not
-     * the `unsloth` CLI).
+     * the daemon applies `providers.paths[providerId]` when resolving the
+     * provider's own CLI (for unsloth that is the `unsloth` CLI, not the
+     * `opencode` ACP runtime it spawns).
      */
     cliCommand: string;
     /** Current configured path (empty if auto-detected) */
@@ -33,19 +33,20 @@
     /** Auto-detected/resolved path */
     resolvedPath?: string;
     /**
-     * Dual-binary providers only (unsloth): the name of the provider's other
-     * required binary (e.g. 'unsloth'). Rendered as a second labeled
-     * auto-detected row alongside `secondaryResolvedPath`. The primary
-     * `cliCommand`/`resolvedPath` pair always describes the binary the
-     * override input targets (`providers.paths[providerId]`); the secondary
-     * binary is not overridable.
+     * Dual-binary providers only (unsloth): the name of the runtime binary
+     * the provider spawns (e.g. 'opencode'). Rendered as a read-only labeled
+     * runtime row with a note that it follows that provider's own
+     * configuration (`providers.paths[runtimeCliCommand]`) — it is not
+     * overridable here. The primary `cliCommand`/`resolvedPath` pair always
+     * describes the binary the override input targets
+     * (`providers.paths[providerId]`).
      */
-    secondaryCliCommand?: string;
+    runtimeCliCommand?: string;
     /**
      * Dual-binary providers only: the daemon-resolved path of
-     * `secondaryCliCommand`, when it resolved.
+     * `runtimeCliCommand`, when it resolved.
      */
-    secondaryResolvedPath?: string;
+    runtimeResolvedPath?: string;
     /** Whether the provider is currently installed */
     isInstalled?: boolean;
     /** Callback when path changes */
@@ -58,8 +59,8 @@
     cliCommand,
     configuredPath = '',
     resolvedPath = '',
-    secondaryCliCommand,
-    secondaryResolvedPath,
+    runtimeCliCommand,
+    runtimeResolvedPath,
     isInstalled = false,
     onPathChange,
   }: Props = $props();
@@ -161,7 +162,9 @@
 
       <!-- Status indicator: full (wrapped) auto-detected paths; the primary
            row stays visible when an override is configured, marked as
-           overridden. Dual-binary providers get one labeled row per binary. -->
+           overridden. Dual-binary providers additionally get a read-only
+           labeled runtime row that follows the runtime provider's own
+           configuration. -->
       {#snippet autoDetectedRow(command: string | undefined, path: string, overridden: boolean)}
         <div class="text-ui text-subtle min-w-0">
           <p class="flex items-center gap-1 flex-wrap">
@@ -188,17 +191,40 @@
           >
         </div>
       {/snippet}
-      {#if resolvedPath || (secondaryCliCommand && secondaryResolvedPath)}
+      {#if resolvedPath || runtimeCliCommand}
         <div class="space-y-1.5">
           {#if resolvedPath}
             {@render autoDetectedRow(
-              secondaryCliCommand ? cliCommand : undefined,
+              runtimeCliCommand ? cliCommand : undefined,
               resolvedPath,
               !!configuredPath,
             )}
           {/if}
-          {#if secondaryCliCommand && secondaryResolvedPath}
-            {@render autoDetectedRow(secondaryCliCommand, secondaryResolvedPath, false)}
+          {#if runtimeCliCommand}
+            <div class="text-ui text-subtle min-w-0">
+              <p class="flex items-center gap-1 flex-wrap">
+                <Fa
+                  icon={faCheck}
+                  class="{runtimeResolvedPath ? 'text-green-500/70' : 'text-ghost'} shrink-0"
+                  size="xs"
+                />
+                <span>
+                  {#if runtimeResolvedPath}
+                    {m.settings_providerPath_runtimeCommandAt({ command: runtimeCliCommand })}
+                  {:else}
+                    {m.settings_providerPath_runtimeCommand({ command: runtimeCliCommand })}
+                  {/if}
+                </span>
+                <span class="italic text-ghost">
+                  {m.settings_providerPath_runtimeFollowsNote({ provider: runtimeCliCommand })}
+                </span>
+              </p>
+              {#if runtimeResolvedPath}
+                <code class="mt-0.5 block px-1 py-0.5 bg-muted/50 rounded break-all"
+                  >{runtimeResolvedPath}</code
+                >
+              {/if}
+            </div>
           {/if}
         </div>
       {/if}
