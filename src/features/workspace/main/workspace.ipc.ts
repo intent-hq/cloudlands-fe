@@ -30,7 +30,6 @@ import {
   clearRepos,
 } from './repo-registry';
 import { initChangeHistory } from './change-history-persistence';
-import { initWorkspaceSettings } from './workspace-settings.service';
 
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
 import { deleteEventStoreForWorkspace } from '../../../store/main/slices/workspace-events/sagas/persistence-saga';
@@ -125,12 +124,6 @@ function resultToCommandResponse<T>(result: Result<T, string>): CommandResponse<
 export function setupWorkspaceIPC(): void {
   // Initialize the persistent repo registry
   initRepoRegistry().catch((err) => logger.error('Failed to init repo registry', err as Error));
-
-  // Hydrate the daemon-owned git.autoCommit into the workspace-settings cache
-  // (the sync API falls back to the default until this resolves).
-  initWorkspaceSettings().catch((err) =>
-    logger.error('Failed to init workspace settings', err as Error),
-  );
 
   // Initialize the persistent change history cache
   initChangeHistory().catch((err) => logger.error('Failed to init change history', err as Error));
@@ -1136,7 +1129,7 @@ export function setupWorkspaceIPC(): void {
       WorkspaceGetSettingsSchema,
       async (_, validated) => {
         const { getWorkspaceSettings } = await import('./workspace-settings.service');
-        const settings = getWorkspaceSettings(validated.id);
+        const settings = await getWorkspaceSettings(validated.id);
         return resultToCommandResponse({ ok: true, data: settings });
       },
       WORKSPACE_CHANNELS.GET_SETTINGS,
@@ -1150,7 +1143,7 @@ export function setupWorkspaceIPC(): void {
       WorkspaceUpdateSettingsSchema,
       async (_, validated) => {
         const { updateWorkspaceSettings } = await import('./workspace-settings.service');
-        const updated = updateWorkspaceSettings(validated.id, validated.settings);
+        const updated = await updateWorkspaceSettings(validated.id, validated.settings);
         return resultToCommandResponse({ ok: true, data: updated });
       },
       WORKSPACE_CHANNELS.UPDATE_SETTINGS,

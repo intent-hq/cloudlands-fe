@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Wire-contract tests for the workspace-settings rewire (PROTOCOL.md §5.12).
- * The legacy `settings` electron-store `autoCommit` key is retired; the
- * source of truth is the daemon-owned `git.autoCommit` setting, hydrated
- * into an in-memory cache via `settings.get`.
+ * Wire-contract tests for the daemon-backed workspace settings service
+ * (PROTOCOL.md §5.1 `workspace.getAutoCommit` / `workspace.setAutoCommit`).
+ * The former in-memory per-workspace map is retired; reads and writes go
+ * straight to the daemon's persisted per-workspace override.
  */
 
 const requestMock = vi.hoisted(() =>
-  vi.fn(async () => ({ path: 'git.autoCommit', value: true })),
+  vi.fn(async (_method: string, _params?: Record<string, unknown>) => ({
+    autoCommit: { enabled: true, source: 'workspace' },
+  })),
 );
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
@@ -24,72 +26,73 @@ vi.mock('../../../../shared/logger', () => ({
   },
 }));
 
-describe('workspace-settings.service ↔ daemon git.autoCommit', () => {
-  beforeEach(async () => {
+describe('workspace-settings.service ↔ daemon workspace.getAutoCommit/setAutoCommit', () => {
+  beforeEach(() => {
     requestMock.mockClear();
-    requestMock.mockImplementation(async () => ({ path: 'git.autoCommit', value: true }));
+    requestMock.mockImplementation(async () => ({
+      autoCommit: { enabled: true, source: 'workspace' },
+    }));
     vi.resetModules();
-    const mod = await import('../workspace-settings.service');
-    mod.__resetWorkspaceSettingsForTesting();
   });
 
-  it('initWorkspaceSettings hydrates from settings.get git.autoCommit', async () => {
-    const { initWorkspaceSettings } = await import('../workspace-settings.service');
-    await initWorkspaceSettings();
-    expect(requestMock).toHaveBeenCalledWith('settings.get', { path: 'git.autoCommit' });
+  it('getWorkspaceSettings sends workspace.getAutoCommit with the workspaceId', async () => {
+    const { getWorkspaceSettings } = await import('../workspace-settings.service');
+    const settings = await getWorkspaceSettings('ws-1');
+    expect(requestMock).toHaveBeenCalledWith('workspace.getAutoCommit', { workspaceId: 'ws-1' });
+    expect(settings).toEqual({ autoCommitEnabled: true });
   });
 
-  it('isAutoCommitEnabled returns hydrated value (false) after init', async () => {
-    requestMock.mockResolvedValueOnce({ path: 'git.autoCommit', value: false });
-    const { initWorkspaceSettings, isAutoCommitEnabled } = await import(
-      '../workspace-settings.service'
-    );
-    await initWorkspaceSettings();
-    expect(isAutoCommitEnabled('ws-1')).toBe(false);
-  });
-
-  it('defaults to true when the daemon call fails', async () => {
-    requestMock.mockRejectedValueOnce(new Error('boom'));
-    const { initWorkspaceSettings, isAutoCommitEnabled } = await import(
-      '../workspace-settings.service'
-    );
-    await initWorkspaceSettings();
-    expect(isAutoCommitEnabled('ws-2')).toBe(true);
-  });
-
-  it('defaults to true before hydration completes (no race regression)', async () => {
-    // Do NOT await initWorkspaceSettings; the sync API must still work.
+  it('isAutoCommitEnabled surfaces a daemon false (per-workspace override)', async () => {
+    requestMock.mockResolvedValueOnce({ autoCommit: { enabled: false, source: 'workspace' } });
     const { isAutoCommitEnabled } = await import('../workspace-settings.service');
-    expect(isAutoCommitEnabled('ws-3')).toBe(true);
+    await expect(isAutoCommitEnabled('ws-2')).resolves.toBe(false);
   });
 
-  it('renderer sync overrides the daemon default for that workspace', async () => {
-    requestMock.mockResolvedValueOnce({ path: 'git.autoCommit', value: true });
-    const { initWorkspaceSettings, updateWorkspaceSettings, isAutoCommitEnabled } =
-      await import('../workspace-settings.service');
-    await initWorkspaceSettings();
-    updateWorkspaceSettings('ws-4', { autoCommitEnabled: false });
-    expect(isAutoCommitEnabled('ws-4')).toBe(false);
-    // Other workspaces still see the daemon default.
-    expect(isAutoCommitEnabled('ws-5')).toBe(true);
+  it('surfaces the global fallback resolution (source: "global")', async () => {
+    requestMock.mockResolvedValueOnce({ autoCommit: { enabled: false, source: 'global' } });
+    const { getWorkspaceSettings } = await import('../workspace-settings.service');
+    await expect(getWorkspaceSettings('ws-3')).resolves.toEqual({ autoCommitEnabled: false });
   });
 
-  it('assertAgentCommitAllowed blocks when auto-commit is off (integration)', async () => {
-    requestMock.mockResolvedValueOnce({ path: 'git.autoCommit', value: false });
-    const { initWorkspaceSettings, assertAgentCommitAllowed } = await import(
-      '../workspace-settings.service'
-    );
-    await initWorkspaceSettings();
-    const result = assertAgentCommitAllowed('ws-6');
-    expect(result.allowed).toBe(false);
-    const bypass = assertAgentCommitAllowed('ws-6', { userRequested: true });
-    expect(bypass.allowed).toBe(true);
+  it('defaults to enabled when the daemon call fails', async () => {
+    requestMock.mockRejectedValueOnce(new Error('boom'));
+    const { isAutoCommitEnabled } = await import('../workspace-settings.service');
+    await expect(isAutoCommitEnabled('ws-4')).resolves.toBe(true);
   });
 
-  it('never writes back to the daemon (read-only consumer)', async () => {
-    const { initWorkspaceSettings } = await import('../workspace-settings.service');
-    await initWorkspaceSettings();
-    const writes = requestMock.mock.calls.filter(([m]) => m === 'settings.update');
+  it('defaults to enabled on a malformed daemon response', async () => {
+    requestMock.mockResolvedValueOnce({});
+    const { getWorkspaceSettings } = await import('../workspace-settings.service');
+    await expect(getWorkspaceSettings('ws-5')).resolves.toEqual({ autoCommitEnabled: true });
+  });
+
+  it('updateWorkspaceSettings persists via workspace.setAutoCommit and reads back', async () => {
+    requestMock
+      .mockResolvedValueOnce({ autoCommit: { enabled: false, source: 'workspace' } }) // set
+      .mockResolvedValueOnce({ autoCommit: { enabled: false, source: 'workspace' } }); // read-back
+    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
+    const updated = await updateWorkspaceSettings('ws-6', { autoCommitEnabled: false });
+    expect(requestMock).toHaveBeenNthCalledWith(1, 'workspace.setAutoCommit', {
+      workspaceId: 'ws-6',
+      enabled: false,
+    });
+    expect(requestMock).toHaveBeenNthCalledWith(2, 'workspace.getAutoCommit', {
+      workspaceId: 'ws-6',
+    });
+    expect(updated).toEqual({ autoCommitEnabled: false });
+  });
+
+  it('updateWorkspaceSettings with no autoCommitEnabled never writes', async () => {
+    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
+    await updateWorkspaceSettings('ws-7', {});
+    const writes = requestMock.mock.calls.filter(([m]) => m === 'workspace.setAutoCommit');
     expect(writes).toHaveLength(0);
+  });
+
+  it('never writes the global git.autoCommit setting', async () => {
+    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
+    await updateWorkspaceSettings('ws-8', { autoCommitEnabled: true });
+    const globalWrites = requestMock.mock.calls.filter(([m]) => m === 'settings.update');
+    expect(globalWrites).toHaveLength(0);
   });
 });

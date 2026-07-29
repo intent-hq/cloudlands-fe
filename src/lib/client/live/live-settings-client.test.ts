@@ -294,21 +294,44 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     ]);
   });
 
-  it("getWorkspaceSettings reads git.autoCommit and maps to { autoCommitEnabled }", async () => {
+  it("getWorkspaceSettings reads workspace.getAutoCommit and maps to { autoCommitEnabled }", async () => {
+    // Per-workspace persisted override (PROTOCOL §5.1): the daemon resolves
+    // the workspace's own value (`source: "workspace"`) or falls back to the
+    // global `git.autoCommit` (`source: "global"`).
     mockedRequest.mockResolvedValueOnce({
-      path: "git.autoCommit",
-      value: false,
-      definition: {
-        path: "git.autoCommit",
-        label: "Auto-commit",
-        description: "",
-        category: "git",
-        type: "boolean",
-        defaultValue: true,
-      },
+      autoCommit: { enabled: false, source: "workspace" },
     });
     const client = new LiveSettingsClient();
     expect(await client.getWorkspaceSettings("ws-1")).toEqual({ autoCommitEnabled: false });
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.getAutoCommit", {
+      workspaceId: "ws-1",
+    });
+  });
+
+  it("getWorkspaceSettings returns null on a malformed response", async () => {
+    mockedRequest.mockResolvedValueOnce({});
+    const client = new LiveSettingsClient();
+    expect(await client.getWorkspaceSettings("ws-1")).toBeNull();
+  });
+
+  it("setWorkspaceSettings persists via workspace.setAutoCommit (not the global setting)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      autoCommit: { enabled: false, source: "workspace" },
+    });
+    const client = new LiveSettingsClient();
+    const result = await client.setWorkspaceSettings("ws-1", { autoCommitEnabled: false });
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.setAutoCommit", {
+      workspaceId: "ws-1",
+      enabled: false,
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("setWorkspaceSettings without autoCommitEnabled is a no-op on the wire", async () => {
+    const client = new LiveSettingsClient();
+    const result = await client.setWorkspaceSettings("ws-1", {});
+    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: true });
   });
 });
 
