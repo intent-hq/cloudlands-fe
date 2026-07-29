@@ -22,11 +22,10 @@
     providerName: string;
     /**
      * CLI command name (e.g., 'auggie', 'claude-agent-acp') shown in the
-     * placeholder text. Callers whose configured path resolves a different
-     * binary than the provider's ACP runtime (e.g. unsloth, which configures
-     * the `unsloth` CLI even though its ACP runtime is `opencode`) should
-     * pass that binary's name here so the placeholder stays coherent with
-     * `providerName` in the header.
+     * placeholder text. Always names the binary the override input targets:
+     * the daemon applies `providers.paths[providerId]` when resolving
+     * `provider.command` (for unsloth that is the `opencode` ACP binary, not
+     * the `unsloth` CLI).
      */
     cliCommand: string;
     /** Current configured path (empty if auto-detected) */
@@ -35,10 +34,11 @@
     resolvedPath?: string;
     /**
      * Dual-binary providers only (unsloth): the name of the provider's other
-     * required binary (e.g. 'opencode'). Rendered as a second labeled
+     * required binary (e.g. 'unsloth'). Rendered as a second labeled
      * auto-detected row alongside `secondaryResolvedPath`. The primary
      * `cliCommand`/`resolvedPath` pair always describes the binary the
-     * override input targets (`providers.paths[providerId]`).
+     * override input targets (`providers.paths[providerId]`); the secondary
+     * binary is not overridable.
      */
     secondaryCliCommand?: string;
     /**

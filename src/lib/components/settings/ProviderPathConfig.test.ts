@@ -86,44 +86,66 @@ describe('ProviderPathConfig', () => {
   });
 
   it('renders both labeled binaries for dual-binary providers (unsloth)', async () => {
-    const unslothPath = '/Users/clement/.local/bin/unsloth';
     const opencodePath = '/Users/clement/.opencode/bin/opencode';
+    const unslothPath = '/Users/clement/.local/bin/unsloth';
     render(ProviderPathConfig, {
       props: {
         providerId: 'unsloth',
         providerName: 'Unsloth',
-        cliCommand: 'unsloth',
-        resolvedPath: unslothPath,
-        secondaryCliCommand: 'opencode',
-        secondaryResolvedPath: opencodePath,
+        cliCommand: 'opencode',
+        resolvedPath: opencodePath,
+        secondaryCliCommand: 'unsloth',
+        secondaryResolvedPath: unslothPath,
         isInstalled: true,
+      },
+    });
+    await openPopup('Unsloth');
+
+    expect(screen.getByText('Auto-detected opencode at')).toBeTruthy();
+    expect(screen.getByText(opencodePath)).toBeTruthy();
+    expect(screen.getByText('Auto-detected unsloth at')).toBeTruthy();
+    expect(screen.getByText(unslothPath)).toBeTruthy();
+    expect(screen.queryByText('Auto-detected at')).toBeNull();
+  });
+
+  it('marks only the overridable primary row as overridden for dual-binary providers', async () => {
+    const opencodePath = '/Users/clement/.opencode/bin/opencode';
+    const unslothPath = '/Users/clement/.local/bin/unsloth';
+    render(ProviderPathConfig, {
+      props: {
+        providerId: 'unsloth',
+        providerName: 'Unsloth',
+        cliCommand: 'opencode',
+        configuredPath: '/custom/bin/opencode',
+        resolvedPath: opencodePath,
+        secondaryCliCommand: 'unsloth',
+        secondaryResolvedPath: unslothPath,
+        isInstalled: true,
+      },
+    });
+    await openPopup('Unsloth');
+
+    expect(screen.getByText(opencodePath)).toBeTruthy();
+    expect(screen.getByText(unslothPath)).toBeTruthy();
+    expect(screen.getAllByText('(overridden by the path above)')).toHaveLength(1);
+  });
+
+  it('shows only the labeled secondary row when the primary binary did not resolve', async () => {
+    const unslothPath = '/Users/clement/.local/bin/unsloth';
+    render(ProviderPathConfig, {
+      props: {
+        providerId: 'unsloth',
+        providerName: 'Unsloth',
+        cliCommand: 'opencode',
+        secondaryCliCommand: 'unsloth',
+        secondaryResolvedPath: unslothPath,
+        isInstalled: false,
       },
     });
     await openPopup('Unsloth');
 
     expect(screen.getByText('Auto-detected unsloth at')).toBeTruthy();
     expect(screen.getByText(unslothPath)).toBeTruthy();
-    expect(screen.getByText('Auto-detected opencode at')).toBeTruthy();
-    expect(screen.getByText(opencodePath)).toBeTruthy();
-    expect(screen.queryByText('Auto-detected at')).toBeNull();
-  });
-
-  it('shows only the labeled secondary row when the primary binary did not resolve', async () => {
-    const opencodePath = '/Users/clement/.opencode/bin/opencode';
-    render(ProviderPathConfig, {
-      props: {
-        providerId: 'unsloth',
-        providerName: 'Unsloth',
-        cliCommand: 'unsloth',
-        secondaryCliCommand: 'opencode',
-        secondaryResolvedPath: opencodePath,
-        isInstalled: false,
-      },
-    });
-    await openPopup('Unsloth');
-
-    expect(screen.getByText('Auto-detected opencode at')).toBeTruthy();
-    expect(screen.getByText(opencodePath)).toBeTruthy();
-    expect(screen.queryByText('Auto-detected unsloth at')).toBeNull();
+    expect(screen.queryByText('Auto-detected opencode at')).toBeNull();
   });
 });
