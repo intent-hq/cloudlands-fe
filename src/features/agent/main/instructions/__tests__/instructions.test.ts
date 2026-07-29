@@ -180,7 +180,7 @@ describe('Agent Instructions', () => {
       expect(result).toContain('`summary` fields');
     });
 
-    it('omits the section when the locale lookup throws (renderer-context safety)', () => {
+    it('omits the section when the locale lookup throws at call time', () => {
       vi.mocked(getMainActiveLocale).mockImplementation(() => {
         throw new Error('electron unavailable');
       });

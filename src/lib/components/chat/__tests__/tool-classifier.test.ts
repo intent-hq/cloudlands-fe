@@ -940,5 +940,19 @@ describe('tool-classifier', () => {
       expect(result.subject).toBe('app');
       expect(result.isDirectory).toBe(true);
     });
+
+    it('leaves non-backticked "List directory …" prose on verbatim rendering', () => {
+      const result = classifyTool('List directory contents and sizes', {});
+
+      expect(result.verb).toBe('List directory contents and sizes');
+      expect(result.subject).toBeNull();
+    });
+
+    it('leaves titles with trailing prose after the backticked path on verbatim rendering', () => {
+      const result = classifyTool('List directory `src` recursively with hidden files', {});
+
+      expect(result.verb).toBe('List directory `src` recursively with hidden files');
+      expect(result.subject).toBeNull();
+    });
   });
 });

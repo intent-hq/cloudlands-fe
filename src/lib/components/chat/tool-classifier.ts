@@ -172,12 +172,17 @@ function isProseToolName(name: string): boolean {
 /**
  * Detect directory-listing ACP titles (e.g. "List directory `.`",
  * "List directory `src/lib`") and map them to the localized List Contents
- * verb instead of rendering the English title verbatim.
+ * verb instead of rendering the English title verbatim. Only the backticked
+ * single-path shape matches — free prose like "List directory contents and
+ * sizes" stays on the verbatim prose-title rendering.
  */
 function directoryListingDisplay(title: string): ToolDisplay | null {
-  const match = title.trim().match(/^List\s+directory\s+`?(.+?)`?\s*$/i);
+  // \x60 = backtick, escaped so the hardcoded-string scanner does not parse
+  // the regex literal as a template string.
+  const match = title.trim().match(/^List\s+directory\s+\x60([^\x60]+)\x60$/i);
   if (!match) return null;
   const candidate = match[1].trim();
+  if (candidate.length === 0) return null;
   return {
     category: 'file-read',
     icon: CATEGORY_ICONS['file-read'],

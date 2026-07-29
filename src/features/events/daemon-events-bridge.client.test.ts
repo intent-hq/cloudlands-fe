@@ -1056,6 +1056,97 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(readStatusEvents()).toEqual([]);
   });
 
+  it('agent:stream:status edge cases: missing message on known phase localizes, warn-level launch keeps wire text, prototype-key phases do not resolve, empty unknown-phase drops', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const at = 1_700_000_000_000;
+
+    // Known phase with a missing wire message still renders the localized
+    // string (the phase alone is self-sufficient for known phases).
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'init',
+        level: 'info',
+        timestamp: at,
+      }),
+    );
+    let events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'init',
+      message: 'Initializing protocol\u2026',
+    });
+
+    // Warn-level launch (model-switch restart warning, §6.5 / intentd#647)
+    // keeps the daemon-authored wire text instead of the static launch label.
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'launch',
+        message: 'Restarting Unsloth server; attached sessions will lose the loaded model',
+        level: 'warn',
+        timestamp: at + 1,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'launch',
+      message: 'Restarting Unsloth server; attached sessions will lose the loaded model',
+      level: 'warn',
+    });
+
+    // Info-level launch renders the localized static label (wire text ignored).
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'launch',
+        message: 'Still downloading model\u2026',
+        level: 'info',
+        timestamp: at + 2,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'launch',
+      message: 'Launching agent\u2026',
+    });
+
+    const countBefore = readStatusEvents().length;
+
+    // A phase matching an inherited Object.prototype key must not resolve a
+    // catalog entry — the wire message is the fallback.
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'constructor',
+        message: 'Prototype-key wire text',
+        level: 'info',
+        timestamp: at + 3,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'constructor',
+      message: 'Prototype-key wire text',
+    });
+
+    // Unknown phase with no usable message: nothing to render → dropped.
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'some-future-phase',
+        level: 'info',
+        timestamp: at + 4,
+      }),
+    );
+    expect(readStatusEvents()).toHaveLength(countBefore + 1);
+  });
+
   it("tool started → completed short window: tool-call entry's duration ends at the completed event's timestamp", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

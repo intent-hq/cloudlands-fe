@@ -798,10 +798,12 @@ const STREAM_STATUS_PHASE_MESSAGES: Record<string, () => string> = {
  * "Sent prompt…" and friends — before the first `agent:stream:chunk` arrives.
  *
  * The rendered message is a localized catalog string keyed off `phase`; the
- * daemon's English `message` is only used as a fallback for unknown phases.
- * Known limitation: the repeated `launch`-phase Unsloth server-progress
- * updates (§6.5) collapse to the static localized launch message.
- * Level/phase/timestamp round-trip verbatim.
+ * daemon's English `message` is only used as a fallback for unknown phases,
+ * and for non-info `launch` events, which carry daemon-authored dynamic text
+ * (the model-switch restart warning, §6.5 / intentd#647) that a static
+ * localized label would drop. Known limitation: the repeated info-level
+ * `launch`-phase Unsloth server-progress updates (§6.5) collapse to the
+ * static localized launch message. Level/phase/timestamp round-trip verbatim.
  *
  * `resetFirstChunk` is `false`: startup hints are cleared by the chunk /
  * stream:end / failed reducer paths (see file header §3), not by the status
@@ -812,20 +814,22 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
   if (!data) return;
   const agentId = data.agentId;
   const phase = data.phase;
-  const message = data.message;
-  if (
-    typeof agentId !== 'string' ||
-    agentId.length === 0 ||
-    typeof phase !== 'string' ||
-    typeof message !== 'string'
-  ) {
+  if (typeof agentId !== 'string' || agentId.length === 0 || typeof phase !== 'string') {
     return;
   }
+  const message = typeof data.message === 'string' ? data.message : '';
   const levelRaw = data.level;
   const level: 'info' | 'warn' | 'error' =
     levelRaw === 'warn' || levelRaw === 'error' ? levelRaw : 'info';
   const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now();
-  const localizedMessage = STREAM_STATUS_PHASE_MESSAGES[phase]?.() ?? message;
+  // Own-key lookup: a hostile/unknown wire phase like "constructor" must not
+  // resolve inherited Object.prototype members.
+  const phaseMessage = Object.hasOwn(STREAM_STATUS_PHASE_MESSAGES, phase)
+    ? STREAM_STATUS_PHASE_MESSAGES[phase]
+    : undefined;
+  const keepWireMessage = phase === 'launch' && level !== 'info' && message.length > 0;
+  const localizedMessage = !keepWireMessage && phaseMessage ? phaseMessage() : message;
+  if (localizedMessage.length === 0) return;
   appStore.dispatch(
     streamStatusReceived(agentId, { phase, message: localizedMessage, level, timestamp }, false),
   );

@@ -4501,7 +4501,7 @@
   "events_bridge_toolCallFailed_status": "工具呼叫失敗",
   "events_bridge_awaitingToolResponse_status": "等待工具回應",
   "events_bridge_phaseLaunch_status": "正在啟動智慧體…",
-  "events_bridge_phaseInit_status": "正在初始化協定…",
+  "events_bridge_phaseInit_status": "正在初始化協議…",
   "events_bridge_phaseSessionCreate_status": "正在建立會話…",
   "events_bridge_phaseSessionLoad_status": "正在恢復會話…",
   "events_bridge_phasePrompt_status": "已傳送提示詞…",
