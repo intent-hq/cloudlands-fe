@@ -364,6 +364,7 @@
             {$viewMode$ === mode
             ? 'bg-background text-foreground font-medium shadow-sm'
             : 'text-muted-foreground hover:text-foreground'}"
+          title={label}
           onclick={() => appStore.dispatch(setAllSpacesViewMode(mode as AllSpacesViewMode))}
         >
           {label}
