@@ -123,10 +123,9 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     };
   });
 
-  it('removes paste listener and releases detached container references', () => {
+  it('does not register a container-level paste listener (xterm owns paste natively)', () => {
     const container = document.createElement('div');
     const addSpy = vi.spyOn(container, 'addEventListener');
-    const removeSpy = vi.spyOn(container, 'removeEventListener');
     const terminals = fakeTerminalsClient();
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
@@ -136,11 +135,26 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     });
 
     (adapter as any).setupXTermEventHandlers();
-    expect(addSpy).toHaveBeenCalledWith('paste', (adapter as any).handlePasteEvent);
+
+    const pasteRegistrations = addSpy.mock.calls.filter(([type]) => type === 'paste');
+    expect(pasteRegistrations).toHaveLength(0);
 
     adapter.detach();
+  });
 
-    expect(removeSpy).toHaveBeenCalledWith('paste', (adapter as any).handlePasteEvent);
+  it('releases detached container references', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+
+    (adapter as any).setupXTermEventHandlers();
+    adapter.detach();
+
     expect((adapter as any).container).toBeNull();
     expect((adapter as any).themeManager.container).toBeNull();
   });
@@ -160,11 +174,9 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     expect(terminals.kill).toHaveBeenCalledWith('term-1');
   });
 
-  it('moves paste listener and theme container on reattach', async () => {
+  it('moves theme container on reattach', async () => {
     const firstContainer = document.createElement('div');
     const secondContainer = document.createElement('div');
-    const firstRemoveSpy = vi.spyOn(firstContainer, 'removeEventListener');
-    const secondAddSpy = vi.spyOn(secondContainer, 'addEventListener');
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
       terminalId: 'term-1',
@@ -175,8 +187,6 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     (adapter as any).setupXTermEventHandlers();
     await adapter.reattach(secondContainer);
 
-    expect(firstRemoveSpy).toHaveBeenCalledWith('paste', (adapter as any).handlePasteEvent);
-    expect(secondAddSpy).toHaveBeenCalledWith('paste', (adapter as any).handlePasteEvent);
     expect((adapter as any).themeManager.container).toBe(secondContainer);
 
     adapter.detach();
