@@ -492,8 +492,6 @@ export class TerminalAdapter {
       return;
     }
 
-    const container = this.container;
-
     // Dispose old handlers if they exist to prevent duplicates
     if (this.dataDisposable) {
       this.dataDisposable.dispose();
