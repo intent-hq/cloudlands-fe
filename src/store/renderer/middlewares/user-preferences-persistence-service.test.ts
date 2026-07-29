@@ -115,11 +115,12 @@ describe("userPreferencesPersistenceService (real store)", () => {
   it("persists the language preference and applies it to the locale service", () => {
     appStore.dispatch(setLanguagePreference("de"));
     expect(safeLocalStorage.getJSON("language-preference")).toBe("de");
-    // Only the `en` catalog ships, so any preference resolves to `en`.
-    expect(getActiveLocale()).toBe("en");
+    // The `de` catalog ships, so the preference resolves to `de`.
+    expect(getActiveLocale()).toBe("de");
 
     appStore.dispatch(setLanguagePreference("system"));
     expect(safeLocalStorage.getJSON("language-preference")).toBe("system");
+    // jsdom reports `en` system locales, which resolve to the `en` catalog.
     expect(getActiveLocale()).toBe("en");
   });
 
