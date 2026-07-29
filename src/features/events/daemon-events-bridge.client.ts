@@ -2177,11 +2177,15 @@ function handleNotification(method: string, params: unknown): void {
     }
   }
 
-  // monorepo#1106: a daemon-side redrive (coordinator `agent.sendMessage`,
-  // another client's `agent.retry`) starts a new turn the FE never sent, so
-  // none of the FE-initiated clearing paths from #1044 run and the previous
-  // turn's failure banner persists over the live turn ("errored" and
-  // "processing" simultaneously). Clear the stale `chatError` /
+  // monorepo#1106: a redrive that bypasses chat-send-service — coordinator
+  // `agent.sendMessage`, another client's `agent.retry`, or this FE's own
+  // failure-toast Retry (also `agent.retry`, which never routes through
+  // dispatchToLifecycle) — starts a new turn without the #1044
+  // enqueue-success clear, so the previous turn's failure banner persists
+  // over the live turn ("errored" and "processing" simultaneously). Keyed
+  // off the turn-start status edges here (with `agent:stream:start` /
+  // `agent:queue:processing` as the other turn-start clears), NOT the send
+  // path, so every redrive shape is covered. Clear the stale `chatError` /
   // `modelUnavailable` when the agent leaves the error state for a
   // turn-starting one. Two wire shapes cover the redrive family:
   //   - `agent.sendMessage` on an errored agent goes straight error→active;

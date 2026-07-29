@@ -5954,6 +5954,52 @@ describe('daemonEventsBridge (daemon-side redrive clears stale error banner — 
     expect(readChatAgent()?.error).toBeNull();
   });
 
+  it('failure-toast agent.retry repro: agent:failed → error → pending → active → queue:processing clears the banner', async () => {
+    // Second live repro on monorepo#1106: the failure-toast Retry is
+    // FE-initiated but routes through `agent.retry`, NOT
+    // chat-send-service.dispatchToLifecycle, so the #1044 enqueue-success
+    // clear never fires. Confirmed daemon sequence: agent:failed (banner up)
+    // → status-changed {error} → status-changed {pending} → {active,
+    // isActive:true} → agent:queue:processing carrying the failed turn's
+    // ORIGINAL turnId (#1022 stable-across-requeue). The banner must be gone
+    // once the redriven turn is running.
+    const turnId = 'user-msg-792780f7';
+    seedSession({ status: AgentStatus.Active });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:failed', {
+        agentId: AGENT,
+        error: 'session/prompt idle timeout (1800s of silence)',
+        status: 'error',
+        turnId,
+      }),
+    );
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'error', isActive: false }),
+    );
+    expect(readChatAgent()?.error).toBe('session/prompt idle timeout (1800s of silence)');
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'pending', isActive: false }),
+    );
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+    handler(
+      notification('agent:queue:processing', {
+        agentId: AGENT,
+        messageId: 'queued-msg-1',
+        content: 'retried message',
+        turnId,
+      }),
+    );
+
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.modelUnavailable).toBeNull();
+  });
+
   it('clears on error→(isActive:true) even when the payload omits a string status', async () => {
     seedSession({ status: AgentStatus.Error });
     await primeBridge();
