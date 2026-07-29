@@ -37,8 +37,11 @@
      * the provider spawns (e.g. 'opencode'). Rendered as a read-only labeled
      * runtime row with a note that it follows that provider's own
      * configuration (`providers.paths[runtimeCliCommand]`) — it is not
-     * overridable here. The primary `cliCommand`/`resolvedPath` pair always
-     * describes the binary the override input targets
+     * overridable here. The note assumes the runtime binary name matches the
+     * provider id whose configuration it follows (true for opencode); a
+     * future dual-binary provider whose names diverge needs a separate
+     * runtime provider id prop. The primary `cliCommand`/`resolvedPath` pair
+     * always describes the binary the override input targets
      * (`providers.paths[providerId]`).
      */
     runtimeCliCommand?: string;
@@ -203,11 +206,9 @@
           {#if runtimeCliCommand}
             <div class="text-ui text-subtle min-w-0">
               <p class="flex items-center gap-1 flex-wrap">
-                <Fa
-                  icon={faCheck}
-                  class="{runtimeResolvedPath ? 'text-green-500/70' : 'text-ghost'} shrink-0"
-                  size="xs"
-                />
+                {#if runtimeResolvedPath}
+                  <Fa icon={faCheck} class="text-green-500/70 shrink-0" size="xs" />
+                {/if}
                 <span>
                   {#if runtimeResolvedPath}
                     {m.settings_providerPath_runtimeCommandAt({ command: runtimeCliCommand })}
