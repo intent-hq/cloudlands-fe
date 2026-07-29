@@ -22,17 +22,30 @@
     providerName: string;
     /**
      * CLI command name (e.g., 'auggie', 'claude-agent-acp') shown in the
-     * placeholder text. Callers whose configured path resolves a different
-     * binary than the provider's ACP runtime (e.g. unsloth, which configures
-     * the `unsloth` CLI even though its ACP runtime is `opencode`) should
-     * pass that binary's name here so the placeholder stays coherent with
-     * `providerName` in the header.
+     * placeholder text. Always names the binary the override input targets:
+     * the daemon applies `providers.paths[providerId]` when resolving
+     * `provider.command` (for unsloth that is the `opencode` ACP binary, not
+     * the `unsloth` CLI).
      */
     cliCommand: string;
     /** Current configured path (empty if auto-detected) */
     configuredPath?: string;
     /** Auto-detected/resolved path */
     resolvedPath?: string;
+    /**
+     * Dual-binary providers only (unsloth): the name of the provider's other
+     * required binary (e.g. 'unsloth'). Rendered as a second labeled
+     * auto-detected row alongside `secondaryResolvedPath`. The primary
+     * `cliCommand`/`resolvedPath` pair always describes the binary the
+     * override input targets (`providers.paths[providerId]`); the secondary
+     * binary is not overridable.
+     */
+    secondaryCliCommand?: string;
+    /**
+     * Dual-binary providers only: the daemon-resolved path of
+     * `secondaryCliCommand`, when it resolved.
+     */
+    secondaryResolvedPath?: string;
     /** Whether the provider is currently installed */
     isInstalled?: boolean;
     /** Callback when path changes */
@@ -45,6 +58,8 @@
     cliCommand,
     configuredPath = '',
     resolvedPath = '',
+    secondaryCliCommand,
+    secondaryResolvedPath,
     isInstalled = false,
     onPathChange,
   }: Props = $props();
@@ -144,15 +159,48 @@
         />
       </div>
 
-      <!-- Status indicator -->
-      {#if resolvedPath && !configuredPath}
-        <p class="text-ui text-subtle flex items-center gap-1 min-w-0">
-          <Fa icon={faCheck} class="text-green-500/70 shrink-0" size="xs" />
-          <span class="shrink-0">{m.settings_providerPath_autoDetectedAt()}</span>
-          <code class="px-1 py-0.5 bg-muted/50 rounded truncate min-w-0" title={resolvedPath}
-            >{resolvedPath}</code
+      <!-- Status indicator: full (wrapped) auto-detected paths; the primary
+           row stays visible when an override is configured, marked as
+           overridden. Dual-binary providers get one labeled row per binary. -->
+      {#snippet autoDetectedRow(command: string | undefined, path: string, overridden: boolean)}
+        <div class="text-ui text-subtle min-w-0">
+          <p class="flex items-center gap-1 flex-wrap">
+            <Fa
+              icon={faCheck}
+              class="{overridden ? 'text-ghost' : 'text-green-500/70'} shrink-0"
+              size="xs"
+            />
+            <span>
+              {#if command}
+                {m.settings_providerPath_autoDetectedCommandAt({ command })}
+              {:else}
+                {m.settings_providerPath_autoDetectedAt()}
+              {/if}
+            </span>
+            {#if overridden}
+              <span class="italic text-ghost">{m.settings_providerPath_overriddenNote()}</span>
+            {/if}
+          </p>
+          <code
+            class="mt-0.5 block px-1 py-0.5 bg-muted/50 rounded break-all {overridden
+              ? 'opacity-60'
+              : ''}">{path}</code
           >
-        </p>
+        </div>
+      {/snippet}
+      {#if resolvedPath || (secondaryCliCommand && secondaryResolvedPath)}
+        <div class="space-y-1.5">
+          {#if resolvedPath}
+            {@render autoDetectedRow(
+              secondaryCliCommand ? cliCommand : undefined,
+              resolvedPath,
+              !!configuredPath,
+            )}
+          {/if}
+          {#if secondaryCliCommand && secondaryResolvedPath}
+            {@render autoDetectedRow(secondaryCliCommand, secondaryResolvedPath, false)}
+          {/if}
+        </div>
       {/if}
     </div>
   {/snippet}

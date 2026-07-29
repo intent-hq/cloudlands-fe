@@ -129,6 +129,8 @@
   "settings_providerPath_specifyHint_before": "사용할",
   "settings_providerPath_specifyHint_after": "실행 파일의 경로를 지정하세요.",
   "settings_providerPath_autoDetectedAt": "자동 감지된 위치:",
+  "settings_providerPath_autoDetectedCommandAt": "자동 감지된 {command} 위치:",
+  "settings_providerPath_overriddenNote": "(위 경로로 재정의됨)",
   "settings_rtk_label": "RTK 명령 최적화",
   "settings_rtk_loadError": "데몬에서 RTK 설정을 불러오지 못했습니다.",
   "settings_rtk_saveError": "RTK 설정을 저장하지 못했습니다.",

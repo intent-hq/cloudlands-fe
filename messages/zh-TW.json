@@ -129,6 +129,8 @@
   "settings_providerPath_specifyHint_before": "指定",
   "settings_providerPath_specifyHint_after": "執行檔的路徑。",
   "settings_providerPath_autoDetectedAt": "自動偵測於",
+  "settings_providerPath_autoDetectedCommandAt": "自動偵測到 {command} 於",
+  "settings_providerPath_overriddenNote": "（已被上方路徑覆蓋）",
   "settings_rtk_label": "RTK 命令最佳化",
   "settings_rtk_loadError": "從常駐程式載入 RTK 設定失敗。",
   "settings_rtk_saveError": "儲存 RTK 設定失敗。",
