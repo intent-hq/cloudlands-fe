@@ -134,7 +134,7 @@ describe('ProviderSelector disable guard', () => {
         return { success: true, data: availability };
       }
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
-        return { success: true, data: { auggie: null, 'claude-code': null, codex: null } };
+        return { success: true, data: { paths: {}, secondaryPaths: {} } };
       }
       return { success: true, data: {} };
     });

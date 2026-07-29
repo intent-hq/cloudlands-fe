@@ -129,6 +129,8 @@
   "settings_providerPath_specifyHint_before": "お使いの",
   "settings_providerPath_specifyHint_after": "実行ファイルのパスを指定してください。",
   "settings_providerPath_autoDetectedAt": "自動検出されたパス:",
+  "settings_providerPath_autoDetectedCommandAt": "自動検出された {command} のパス:",
+  "settings_providerPath_overriddenNote": "(上記のパスで上書きされています)",
   "settings_rtk_label": "RTK コマンド最適化",
   "settings_rtk_loadError": "デーモンから RTK 設定を読み込めませんでした。",
   "settings_rtk_saveError": "RTK 設定を保存できませんでした。",

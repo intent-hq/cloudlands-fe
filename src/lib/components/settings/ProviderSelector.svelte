@@ -116,8 +116,10 @@
   // Provider path configuration state
   // Configured paths (user-set overrides)
   let providerPaths = $state<Record<string, string>>({});
-  // Resolved paths (auto-detected)
+  // Resolved paths (daemon auto-detected)
   let resolvedPaths = $state<Record<string, string>>({});
+  // Secondary-binary resolved paths for dual-binary providers (unsloth CLI)
+  let secondaryResolvedPaths = $state<Record<string, string>>({});
 
   // Provider metadata for docs URLs and auth requirements
   const PROVIDER_METADATA: Record<string, { docsUrl: string; requiresAuth: boolean }> = {
@@ -294,24 +296,33 @@
         entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
           ? (entry.value as Record<string, unknown>)
           : {};
-      providerPaths = {
-        auggie: typeof configured.auggie === 'string' ? configured.auggie : '',
-        'claude-code':
-          typeof configured['claude-code'] === 'string' ? configured['claude-code'] : '',
-        codex: typeof configured.codex === 'string' ? configured.codex : '',
-      };
+      const configuredPaths: Record<string, string> = {};
+      for (const [providerId, value] of Object.entries(configured)) {
+        if (typeof value === 'string') {
+          configuredPaths[providerId] = value;
+        }
+      }
+      providerPaths = configuredPaths;
 
-      // Load resolved paths for all providers
+      // Load daemon-resolved paths for all providers (host.providerDiscovery)
       const pathsResult = await invoke<{
         success: boolean;
-        data?: { auggie: string | null; 'claude-code': string | null; codex: string | null };
+        data?: {
+          paths: Record<string, string | null>;
+          secondaryPaths: Record<string, string | null>;
+        };
       }>(PROVIDERS_CHANNELS.GET_PATHS);
       if (pathsResult?.success && pathsResult.data) {
-        resolvedPaths = {
-          auggie: pathsResult.data.auggie || '',
-          'claude-code': pathsResult.data['claude-code'] || '',
-          codex: pathsResult.data.codex || '',
-        };
+        const resolved: Record<string, string> = {};
+        for (const [providerId, path] of Object.entries(pathsResult.data.paths)) {
+          if (path) resolved[providerId] = path;
+        }
+        resolvedPaths = resolved;
+        const secondary: Record<string, string> = {};
+        for (const [providerId, path] of Object.entries(pathsResult.data.secondaryPaths ?? {})) {
+          if (path) secondary[providerId] = path;
+        }
+        secondaryResolvedPaths = secondary;
       }
     } catch (err) {
       logger.error('Failed to load provider paths', { error: err });
@@ -770,14 +781,24 @@
             <div class="flex items-center gap-2 h-7">
               {@render providerIcon(provider.id)}
               <span class="text-sm text-foreground">{provider.name}</span>
-              <!-- Path configuration -->
+              <!-- Path configuration. Unsloth is dual-binary: the daemon
+                   applies the providers.paths.unsloth override to the
+                   `opencode` ACP binary it spawns (agent_manager passes it to
+                   find_provider_binary for provider.command) and never
+                   consults it for the `unsloth` CLI, so the primary
+                   cliCommand/resolvedPath pair carries opencode and the
+                   `unsloth` CLI is shown as the labeled secondary row. -->
               <div class="-my-1">
                 <ProviderPathConfig
                   providerId={provider.id}
                   providerName={provider.name}
-                  cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
+                  cliCommand={provider.command}
                   configuredPath={providerPaths[provider.id]}
                   resolvedPath={resolvedPaths[provider.id]}
+                  secondaryCliCommand={provider.id === 'unsloth' ? 'unsloth' : undefined}
+                  secondaryResolvedPath={provider.id === 'unsloth'
+                    ? secondaryResolvedPaths[provider.id]
+                    : undefined}
                   isInstalled={provider.available}
                   onPathChange={(path) => handlePathChange(provider.id, path)}
                 />

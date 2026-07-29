@@ -810,44 +810,133 @@ describe("provider-status-bridge-seeder", () => {
     });
   });
 
-  describe("providers:get-paths → host.checkAuggie + host.findBinary", () => {
-    it("resolves auggie via host.checkAuggie and the other CLIs via host.findBinary", async () => {
+  describe("providers:get-paths → host.providerDiscovery", () => {
+    it("maps every provider's resolvedPath plus the unsloth secondary path", async () => {
+      // PROTOCOL §5.14 host.providerDiscovery-shaped snapshot: all providers,
+      // dual-binary unsloth carries secondaryCommand/secondaryResolved(+Path).
       routeDaemon({
-        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
-        "host.findBinary": (params) => {
-          const { name } = params as { name: string };
-          if (name === "claude") return { available: true, path: "/opt/homebrew/bin/claude" };
-          if (name === "codex") return { available: true, path: "/opt/homebrew/bin/codex" };
-          return { available: false };
+        "host.providerDiscovery": {
+          providers: [
+            {
+              id: "auggie",
+              displayName: "Auggie",
+              command: "auggie",
+              installed: true,
+              resolvedPath: "/usr/local/bin/auggie",
+              hasNpxFallback: false,
+              npxOnly: false,
+            },
+            {
+              id: "claude-code",
+              displayName: "Claude Code",
+              command: "npx",
+              installed: true,
+              resolvedPath: "/usr/local/bin/npx",
+              hasNpxFallback: false,
+              npxOnly: true,
+              npxPackage: "@agentclientprotocol/claude-agent-acp@1.2.3",
+            },
+            {
+              id: "grok",
+              displayName: "Grok",
+              command: "grok",
+              installed: true,
+              resolvedPath: "/home/user/.grok/bin/grok",
+              hasNpxFallback: false,
+              npxOnly: false,
+            },
+            {
+              id: "unsloth",
+              displayName: "Unsloth",
+              command: "opencode",
+              installed: true,
+              resolvedPath: "/home/user/.opencode/bin/opencode",
+              hasNpxFallback: false,
+              npxOnly: false,
+              secondaryCommand: "unsloth",
+              secondaryResolved: true,
+              secondaryResolvedPath: "/usr/local/bin/unsloth",
+            },
+            {
+              id: "codex",
+              displayName: "Codex",
+              command: "codex",
+              installed: false,
+              hasNpxFallback: true,
+              npxOnly: false,
+            },
+          ],
+          npx: { resolvedPath: "/usr/local/bin/npx", version: "10.2.4", versionOk: true },
         },
       });
 
       const response = await mockInvoke<
-        Envelope<{ auggie: string | null; "claude-code": string | null; codex: string | null }>
+        Envelope<{
+          paths: Record<string, string | null>;
+          secondaryPaths: Record<string, string | null>;
+        }>
       >(PROVIDERS_CHANNELS.GET_PATHS);
 
-      expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "claude" });
-      // codex resolves the real CLI (mirrors main's getCodexPath), not codex-acp.
-      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.providerDiscovery", {});
       expect(response).toEqual({
         success: true,
         data: {
-          auggie: "/usr/local/bin/auggie",
-          "claude-code": "/opt/homebrew/bin/claude",
-          codex: "/opt/homebrew/bin/codex",
+          paths: {
+            auggie: "/usr/local/bin/auggie",
+            "claude-code": "/usr/local/bin/npx",
+            grok: "/home/user/.grok/bin/grok",
+            unsloth: "/home/user/.opencode/bin/opencode",
+            codex: null,
+          },
+          secondaryPaths: { unsloth: "/usr/local/bin/unsloth" },
         },
       });
     });
 
-    it("folds per-binary daemon failures to null instead of failing the read", async () => {
+    it("keys an unresolved dual-binary secondary as null (secondaryResolvedPath omitted)", async () => {
+      routeDaemon({
+        "host.providerDiscovery": {
+          providers: [
+            {
+              id: "unsloth",
+              displayName: "Unsloth",
+              command: "opencode",
+              installed: false,
+              resolvedPath: "/home/user/.opencode/bin/opencode",
+              hasNpxFallback: false,
+              npxOnly: false,
+              secondaryCommand: "unsloth",
+              secondaryResolved: false,
+            },
+          ],
+          npx: { resolvedPath: null, version: null, versionOk: false },
+        },
+      });
+
+      const response = await mockInvoke<
+        Envelope<{
+          paths: Record<string, string | null>;
+          secondaryPaths: Record<string, string | null>;
+        }>
+      >(PROVIDERS_CHANNELS.GET_PATHS);
+
+      expect(response).toEqual({
+        success: true,
+        data: {
+          paths: { unsloth: "/home/user/.opencode/bin/opencode" },
+          secondaryPaths: { unsloth: null },
+        },
+      });
+    });
+
+    it("degrades to empty maps instead of failing the read when the RPC fails", async () => {
       mockedRequest.mockRejectedValue(new Error("transport down"));
 
       const response = await mockInvoke(PROVIDERS_CHANNELS.GET_PATHS);
 
       expect(response).toEqual({
         success: true,
-        data: { auggie: null, "claude-code": null, codex: null },
+        data: { paths: {}, secondaryPaths: {} },
       });
     });
   });
