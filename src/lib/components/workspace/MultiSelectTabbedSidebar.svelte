@@ -863,8 +863,9 @@
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-background/50',
               isDragging && 'opacity-50 cursor-grabbing',
-              tab.hideLabel ? 'shrink-0' : 'flex-1 shrink-0',
+              tab.hideLabel ? 'shrink-0' : 'flex-1 min-w-0',
             )}
+            title={tab.hideLabel ? undefined : tab.label}
             onclick={(e) => {
               handleTabClick(tab.id, e);
             }}
@@ -880,7 +881,7 @@
             </div>
             {#if !tab.hideLabel}
               <!-- Responsive labels - hidden at narrow widths via container query -->
-              <span class="tab-label truncate">{tab.label}</span>
+              <span class="tab-label truncate min-w-0">{tab.label}</span>
             {/if}
             <!-- Badges for specific tabs - inline when wide, absolute when narrow -->
             {#if tab.id === 'agents' && (hasRunningAgents || hasUnreadAgents)}
