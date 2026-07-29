@@ -13,6 +13,10 @@
    * - Persisted height and custom names
    */
   import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
+  import {
+    localizeDaemonTerminalName,
+    terminalDisplayName,
+  } from '$lib/utils/terminal-display-name';
   import { untrack } from 'svelte';
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
@@ -470,7 +474,7 @@
       const sanitized = sanitizeCommandForDisplay(lastCommand);
       return sanitized.length > 20 ? sanitized.slice(0, 20) + '…' : sanitized;
     }
-    return term.name || m.terminal_quakeOverlay_terminal_fallback();
+    return localizeDaemonTerminalName(term.name) || m.terminal_quakeOverlay_terminal_fallback();
   }
 
   // ============================================================================
@@ -543,7 +547,7 @@
     const term = $terminals.find((t: TerminalTab) => t.id === $activeTerminalId);
     if (!term) return;
     isEditingHeaderName = true;
-    headerEditValue = term.customName || term.name || m.terminal_quakeOverlay_terminal_fallback();
+    headerEditValue = terminalDisplayName(term);
     requestAnimationFrame(() => {
       const input = document.querySelector('[data-edit-header-terminal]') as HTMLInputElement;
       input?.focus();
@@ -949,9 +953,7 @@
                   ondblclick={startEditingHeaderName}
                   title={m.terminal_quakeOverlay_renameTerminal_tooltip()}
                 >
-                  {$terminals.find((t) => t.id === $activeTerminalId)?.customName ||
-                    $terminals.find((t) => t.id === $activeTerminalId)?.name ||
-                    m.terminal_quakeOverlay_terminal_fallback()}
+                  {terminalDisplayName($terminals.find((t) => t.id === $activeTerminalId) ?? {})}
                 </span>
               {/if}
             </div>

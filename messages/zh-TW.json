@@ -3033,6 +3033,7 @@
   "terminal_quakeOverlay_terminalName_placeholder": "終端名稱",
   "terminal_quakeOverlay_renameTerminal_tooltip": "點選重新命名終端",
   "terminal_quakeOverlay_terminal_fallback": "終端",
+  "terminal_daemonName_setupScript_label": "安裝指令碼",
   "terminal_quakeOverlay_clear_tooltip": "清空終端",
   "terminal_quakeOverlay_clear_ariaLabel": "清空終端",
   "terminal_quakeOverlay_name_placeholder": "名稱",
