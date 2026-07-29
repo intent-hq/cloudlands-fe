@@ -423,12 +423,13 @@ export async function sendMessage(
                         // action also undoes that overwrite when the slot still
                         // holds this payload. buildRecordedAttempt is the same
                         // construction site chat-send-service records with, so
-                        // the structural match holds. Park BEFORE seeding the
-                        // queue slice so an immediate drain snapshot can
-                        // already promote it. The turnId (monorepo#1057 — the
-                        // queued arm's top-level result field, falling back to
-                        // the echoed entry's) keys the record for exact
-                        // agent:queue:processing / agent:failed attribution.
+                        // the structural match holds. The turnId (monorepo#1057
+                        // — the queued arm's top-level result field, falling
+                        // back to the echoed entry's) keys the record for exact
+                        // agent:queue:processing / agent:failed attribution —
+                        // it is the ONLY attribution path (pinned daemon
+                        // ≥0.2.12 always returns it), so nothing is parked
+                        // without one.
                         const rawTurnId = (response as { turnId?: unknown }).turnId;
                         const turnId =
                           typeof rawTurnId === 'string'
@@ -436,14 +437,25 @@ export async function sendMessage(
                             : typeof queuedMessage.turnId === 'string'
                               ? queuedMessage.turnId
                               : undefined;
-                        dispatchRedux(
-                          chatQueuedRetryRecordParked(
-                            agentId,
-                            queuedMessage.id,
-                            buildRecordedAttempt(content, options),
-                            turnId,
-                          ),
-                        );
+                        if (turnId !== undefined) {
+                          dispatchRedux(
+                            chatQueuedRetryRecordParked(
+                              agentId,
+                              queuedMessage.id,
+                              buildRecordedAttempt(content, options),
+                              turnId,
+                            ),
+                          );
+                        } else {
+                          // Unreachable against the pinned daemon; if it ever
+                          // fires, the caller's mid-turn lastAttemptedMessage
+                          // overwrite is left standing (a failure banner could
+                          // pair with the auto-queued payload) — surface it.
+                          logger.warn(
+                            'auto-queued sendMessage response carried no turnId; retry record not parked',
+                            { agentId, queuedMessageId: queuedMessage.id },
+                          );
+                        }
                         const existing = selectAgentQueueMessages.select(appStore.state, agentId);
                         const next = existing.some((m) => m.id === queuedMessage.id)
                           ? existing

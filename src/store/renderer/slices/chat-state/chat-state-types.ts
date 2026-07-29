@@ -20,22 +20,25 @@ export interface LastAttemptedMessage {
 
 /**
  * A parked, turn-scoped retry payload for a daemon-queued send (#999).
- * `seq` is a per-agent monotonic enqueue sequence (derived in the reducer as
- * max existing seq + 1) — promotion picks the highest drained seq, because
- * `Record` key iteration order is NOT insertion order for integer-like keys,
- * so key order alone cannot encode FIFO enqueue order.
+ * `seq` is a per-agent monotonic park sequence (derived in the reducer as
+ * max existing seq + 1) used ONLY for the MAX_QUEUED_RETRY_RECORDS eviction
+ * order — `Record` key iteration order is NOT insertion order for
+ * integer-like keys, so key order alone cannot encode park order.
  *
  * `turnId` (monorepo#1057) is the daemon's turn correlation id captured from
- * the enqueue RPC response (PROTOCOL §5.5/§6.6). A fresh enqueue has
- * `turnId === entry id` (the record's key), but a terminal-failure requeue
- * mints a NEW entry id while preserving the failed turn's ORIGINAL `turnId`
- * — matching on it is what keeps attribution exact across `agent.retry`
- * redrives. Omitted when the daemon returned none (older daemons).
+ * the enqueue RPC response (PROTOCOL §5.5/§6.6) and is the ONLY attribution
+ * key: promotion (`agent:queue:processing` / the `agent.sendQueuedMessageNow`
+ * response) and failure pairing (`agent:failed`) match on it. A fresh enqueue
+ * has `turnId === entry id` (the record's key), but a terminal-failure
+ * requeue mints a NEW entry id while preserving the failed turn's ORIGINAL
+ * `turnId` — matching on it is what keeps attribution exact across
+ * `agent.retry` redrives. Required: the pinned daemon (≥0.2.12) returns it on
+ * every enqueue path, and a record without one could never promote.
  */
 export interface QueuedRetryRecord {
   seq: number;
   record: LastAttemptedMessage;
-  turnId?: string;
+  turnId: string;
 }
 
 export interface ModelUnavailableInfo {
@@ -88,11 +91,11 @@ export interface ChatAgentState {
   /**
    * Turn-scoped retry records for daemon-queued sends (#999), keyed by the
    * QueuedMessage id returned from a successful enqueue. When the daemon
-   * drains an entry (its id leaves the `agent:queue:updated` snapshot), the
-   * record is PROMOTED into `lastAttemptedMessage` so a failure in the
-   * drained turn retries that turn's own payload — not the previous
-   * in-flight turn's. User-removed entries drop their record instead of
-   * promoting.
+   * dequeues an entry to run it (`agent:queue:processing`, matched by
+   * `turnId`), the record is PROMOTED into `lastAttemptedMessage` so a
+   * failure in the drained turn retries that turn's own payload — not the
+   * previous in-flight turn's. User-removed entries drop their record
+   * instead of promoting.
    */
   queuedRetryRecords: Record<string, QueuedRetryRecord>;
   modelUnavailable: ModelUnavailableInfo | null;
@@ -175,10 +178,10 @@ export const MIN_MESSAGE_SEND_INTERVAL = 100;
 
 /**
  * Cap on parked `queuedRetryRecords` per agent (#973-family memory bound).
- * Records normally leave via snapshot diff, user removal, or reset — but a
- * dropped events subscription or per-agent deletion can strand them for the
- * app session, and each can carry MB-scale base64 imageBlocks. Parking
- * beyond the cap evicts the oldest (lowest-seq) records first; 20 comfortably
- * exceeds any realistic queue depth.
+ * Records normally leave via processing-event promotion, user removal, or
+ * reset — but a dropped events subscription or per-agent deletion can strand
+ * them for the app session, and each can carry MB-scale base64 imageBlocks.
+ * Parking beyond the cap evicts the oldest (lowest-seq) records first; 20
+ * comfortably exceeds any realistic queue depth.
  */
 export const MAX_QUEUED_RETRY_RECORDS = 20;

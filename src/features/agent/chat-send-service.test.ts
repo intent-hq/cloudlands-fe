@@ -87,6 +87,7 @@ import {
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import {
   chatLastAttemptedMessageSet,
+  chatQueueProcessingReceived,
   chatReset,
   chatSendFailed,
   sendMessage,
@@ -1171,13 +1172,13 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
   });
 
-  it("#969/#999: a successful enqueue parks B's record; the drain snapshot promotes it and the drained queue's agent:idle clears it", async () => {
+  it("#969/#999: a successful enqueue parks B's record; the drain-start event promotes it and the drained queue's agent:idle clears it", async () => {
     // When in-flight A ends, its `agent:stream:end` (mapped to eventType
     // 'complete') is disposition-neutral and no longer clears the record
     // (#984); with B queued ready-to-send the daemon also withholds
     // `agent:idle` until the drain finishes. With turn-scoped records (#999)
-    // B's payload parks under its QueuedMessage id, the drain snapshot
-    // (`agent:queue:updated` without the id) promotes it into
+    // B's payload parks under its QueuedMessage id, the drain-start event
+    // (`agent:queue:processing`, matched by turnId) promotes it into
     // `lastAttemptedMessage`, and the final turn's `agent:idle` performs the
     // success-clear.
     appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "message A" }));
@@ -1188,6 +1189,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       content: "message B",
       position: 0,
       queuedAt: "2026-01-01T00:00:00.000Z",
+      turnId: "qm-B",
     };
     agentsQueue.mockImplementationOnce(() =>
       Promise.resolve({ success: true, queuedMessage: queuedB }),
@@ -1201,7 +1203,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       text: "message A",
     });
     expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({
-      "qm-B": { seq: 1, record: { text: "message B" } },
+      "qm-B": { seq: 1, record: { text: "message B" }, turnId: "qm-B" },
     });
 
     appStore.dispatch(
@@ -1217,9 +1219,10 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       text: "message A",
     });
 
-    // The daemon dequeues B to run it and publishes the shrunk snapshot —
-    // the parked record is promoted to the active slot (#999).
+    // The daemon dequeues B to run it: the shrunk snapshot arrives, then the
+    // drain-start event promotes the parked record to the active slot (#999).
     appStore.dispatch(replaceAgentQueue(AGENT, []));
+    appStore.dispatch(chatQueueProcessingReceived(AGENT, "qm-B"));
     expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
       text: "message B",
     });
@@ -1262,6 +1265,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       content: "message B",
       position: 0,
       queuedAt: "2026-01-01T00:00:00.000Z",
+      turnId: "qm-B",
     };
     agentsQueue.mockImplementationOnce(() =>
       Promise.resolve({ success: true, queuedMessage: queuedB }),
@@ -1270,7 +1274,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     await flush();
     await flush();
 
-    // A's disposition-neutral terminal, then the drain snapshot for B.
+    // A's disposition-neutral terminal, then the drain start for B.
     appStore.dispatch(
       agentStreamUpdateReceived({
         agentId: AGENT,
@@ -1280,6 +1284,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       }),
     );
     appStore.dispatch(replaceAgentQueue(AGENT, []));
+    appStore.dispatch(chatQueueProcessingReceived(AGENT, "qm-B"));
 
     // B's drained turn fails — the failure banner appears with B recorded.
     appStore.dispatch(
@@ -1318,6 +1323,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       content: "try again",
       position: 0,
       queuedAt: "2026-01-01T00:00:00.000Z",
+      turnId: "qm-retry",
     };
     agentsQueue.mockImplementationOnce(() =>
       Promise.resolve({ success: true, queuedMessage: queuedRetry }),
@@ -1333,6 +1339,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     // The daemon drains the entry — the promotion must not resurface the
     // error, and the retry payload becomes the active record.
     appStore.dispatch(replaceAgentQueue(AGENT, []));
+    appStore.dispatch(chatQueueProcessingReceived(AGENT, "qm-retry"));
     expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toBeNull();
     expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
       text: "try again",
@@ -1362,6 +1369,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       content: "message B",
       position: 0,
       queuedAt: "2026-01-01T00:00:00.000Z",
+      turnId: "qm-B",
     };
     agentsQueue.mockImplementationOnce(() =>
       Promise.resolve({ success: true, queuedMessage: queuedB }),
@@ -1370,7 +1378,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     await flush();
     await flush();
     expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({
-      "qm-B": { seq: 1, record: { text: "message B" } },
+      "qm-B": { seq: 1, record: { text: "message B" }, turnId: "qm-B" },
     });
 
     // User deletes the queued entry — B will never drain, so its record is
@@ -1407,11 +1415,35 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
   });
 
+  it("monorepo#1057: a queue response WITHOUT a turnId parks nothing (turnId is the only attribution path)", async () => {
+    // Unreachable against the pinned daemon (>=0.2.12 returns turnId on
+    // every enqueue), but the guard must hold: a record without a turnId
+    // could never promote, so nothing is parked.
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    const queuedB: QueuedMessage = {
+      id: "qm-B",
+      content: "message B",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queuedB }),
+    );
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({});
+    // The queue slice is still seeded — only the retry record is skipped.
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual([
+      "qm-B",
+    ]);
+  });
+
   it("monorepo#1057: Send now with a turnId response promotes the parked record via the processing dispatch", async () => {
     // agent.sendQueuedMessageNow emits NO agent:queue:processing event (§5.5
     // — the RPC response carries the turnId instead), so the success branch
-    // dispatches chatQueueProcessingReceived itself. A turnId-keyed record
-    // must promote on it (the snapshot diff no longer promotes such records).
+    // dispatches chatQueueProcessingReceived itself to promote the parked
+    // record exactly.
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     const queuedB: QueuedMessage = {
       id: "qm-B",

@@ -10,7 +10,6 @@ import type { AgentQueueEntryState } from "./agent-queue-types";
 const emptyAgentQueueEntry: AgentQueueEntryState = {
   messages: createCollection<QueuedMessage, "id">("id"),
   recentlyRemovedMessageIds: [],
-  lastSnapshotCount: 0,
   isHydrating: false,
   error: null,
 };

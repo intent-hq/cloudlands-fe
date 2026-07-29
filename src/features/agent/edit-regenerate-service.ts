@@ -106,13 +106,10 @@ async function handleEditAndRegenerate(
     truncateLocalTranscript(agentId, messageId);
     // The daemon's editAndRegenerate discards the queue — PROTOCOL §5.5
     // step (2): any in-flight turn is hard-cancelled and the pending queue
-    // is discarded — so the discarded queue entries never run and their
-    // parked retry records are dropped WITHOUT promotion (#999). This
-    // must happen at the flow site:
-    // the reducer's snapshot-diff clear-queue signature cannot distinguish a
-    // single-entry discard from a genuine drain, and the late-arriving empty
-    // snapshot would otherwise promote a discarded payload over the edited
-    // text recorded below.
+    // is discarded — so the discarded queue entries never run, no
+    // `agent:queue:processing` will ever promote their parked retry records,
+    // and they are dropped WITHOUT promotion here at the flow site (#999) to
+    // avoid a bounded leak.
     appStore.dispatch(chatQueuedRetryRecordsCleared(agentId));
     // Reset chat-state like a normal send (clears any stale error banner and
     // starts the thinking indicator immediately). Dispatched only AFTER the
