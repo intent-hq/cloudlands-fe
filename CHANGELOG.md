@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.10.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.10.1...v2.10.2) (2026-07-29)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar pin to 0.2.14 ([#544](https://github.com/intent-hq/cloudlands-fe/issues/544)) ([a7841c3](https://github.com/intent-hq/cloudlands-fe/commit/a7841c304bab5401a056239d56dcf5e77ecaa074))
+* programmatically focus context-picker search input when panel opens ([#545](https://github.com/intent-hq/cloudlands-fe/issues/545)) ([2676acb](https://github.com/intent-hq/cloudlands-fe/commit/2676acb2eeae1ebbd65f94099424ac041c0da6e0))
+* recover mis-normalized paths in diff batcher after paths[] narrowing (intent-hq/monorepo[#1079](https://github.com/intent-hq/cloudlands-fe/issues/1079)) ([#546](https://github.com/intent-hq/cloudlands-fe/issues/546)) ([9cf8e8d](https://github.com/intent-hq/cloudlands-fe/commit/9cf8e8d9e244e2640d7fe2614511e3bed54bbf04))
+
 ## [2.10.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.10.0...v2.10.1) (2026-07-29)
 
 
