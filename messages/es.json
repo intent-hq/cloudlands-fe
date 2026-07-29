@@ -3033,6 +3033,7 @@
   "terminal_quakeOverlay_terminalName_placeholder": "Nombre de la terminal",
   "terminal_quakeOverlay_renameTerminal_tooltip": "Haga clic para cambiar el nombre de la terminal",
   "terminal_quakeOverlay_terminal_fallback": "Terminal",
+  "terminal_daemonName_setupScript_label": "Script de configuración",
   "terminal_quakeOverlay_clear_tooltip": "Limpiar terminal",
   "terminal_quakeOverlay_clear_ariaLabel": "Limpiar terminal",
   "terminal_quakeOverlay_name_placeholder": "Nombre",
