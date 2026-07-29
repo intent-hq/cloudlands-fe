@@ -85,67 +85,92 @@ describe('ProviderPathConfig', () => {
     expect(screen.getByText('(overridden by the path above)')).toBeTruthy();
   });
 
-  it('renders both labeled binaries for dual-binary providers (unsloth)', async () => {
+  it('renders the overridable unsloth CLI row and the read-only opencode runtime row (unsloth)', async () => {
     const opencodePath = '/Users/clement/.opencode/bin/opencode';
     const unslothPath = '/Users/clement/.local/bin/unsloth';
     render(ProviderPathConfig, {
       props: {
         providerId: 'unsloth',
         providerName: 'Unsloth',
-        cliCommand: 'opencode',
-        resolvedPath: opencodePath,
-        secondaryCliCommand: 'unsloth',
-        secondaryResolvedPath: unslothPath,
+        cliCommand: 'unsloth',
+        resolvedPath: unslothPath,
+        runtimeCliCommand: 'opencode',
+        runtimeResolvedPath: opencodePath,
         isInstalled: true,
       },
     });
     await openPopup('Unsloth');
 
-    expect(screen.getByText('Auto-detected opencode at')).toBeTruthy();
-    expect(screen.getByText(opencodePath)).toBeTruthy();
     expect(screen.getByText('Auto-detected unsloth at')).toBeTruthy();
     expect(screen.getByText(unslothPath)).toBeTruthy();
+    expect(screen.getByText('opencode runtime at')).toBeTruthy();
+    expect(screen.getByText(opencodePath)).toBeTruthy();
+    expect(screen.getByText("(follows the opencode provider's configuration)")).toBeTruthy();
     expect(screen.queryByText('Auto-detected at')).toBeNull();
   });
 
-  it('marks only the overridable primary row as overridden for dual-binary providers', async () => {
+  it('marks only the overridable unsloth CLI row as overridden for dual-binary providers', async () => {
     const opencodePath = '/Users/clement/.opencode/bin/opencode';
     const unslothPath = '/Users/clement/.local/bin/unsloth';
     render(ProviderPathConfig, {
       props: {
         providerId: 'unsloth',
         providerName: 'Unsloth',
-        cliCommand: 'opencode',
-        configuredPath: '/custom/bin/opencode',
-        resolvedPath: opencodePath,
-        secondaryCliCommand: 'unsloth',
-        secondaryResolvedPath: unslothPath,
+        cliCommand: 'unsloth',
+        configuredPath: '/custom/bin/unsloth',
+        resolvedPath: unslothPath,
+        runtimeCliCommand: 'opencode',
+        runtimeResolvedPath: opencodePath,
         isInstalled: true,
       },
     });
     await openPopup('Unsloth');
 
-    expect(screen.getByText(opencodePath)).toBeTruthy();
+    const input = screen.getByPlaceholderText(unslothPath) as HTMLInputElement;
+    expect(input.value).toBe('/custom/bin/unsloth');
     expect(screen.getByText(unslothPath)).toBeTruthy();
+    expect(screen.getByText(opencodePath)).toBeTruthy();
     expect(screen.getAllByText('(overridden by the path above)')).toHaveLength(1);
   });
 
-  it('shows only the labeled secondary row when the primary binary did not resolve', async () => {
-    const unslothPath = '/Users/clement/.local/bin/unsloth';
+  it('shows only the runtime row when the unsloth CLI did not resolve', async () => {
+    const opencodePath = '/Users/clement/.opencode/bin/opencode';
     render(ProviderPathConfig, {
       props: {
         providerId: 'unsloth',
         providerName: 'Unsloth',
-        cliCommand: 'opencode',
-        secondaryCliCommand: 'unsloth',
-        secondaryResolvedPath: unslothPath,
+        cliCommand: 'unsloth',
+        runtimeCliCommand: 'opencode',
+        runtimeResolvedPath: opencodePath,
         isInstalled: false,
       },
     });
     await openPopup('Unsloth');
 
+    expect(screen.getByPlaceholderText('Path to unsloth')).toBeTruthy();
+    expect(screen.getByText('opencode runtime at')).toBeTruthy();
+    expect(screen.getByText(opencodePath)).toBeTruthy();
+    expect(screen.getByText("(follows the opencode provider's configuration)")).toBeTruthy();
+    expect(screen.queryByText('Auto-detected unsloth at')).toBeNull();
+  });
+
+  it('shows the runtime row without a path when the runtime binary did not resolve', async () => {
+    const unslothPath = '/Users/clement/.local/bin/unsloth';
+    render(ProviderPathConfig, {
+      props: {
+        providerId: 'unsloth',
+        providerName: 'Unsloth',
+        cliCommand: 'unsloth',
+        resolvedPath: unslothPath,
+        runtimeCliCommand: 'opencode',
+        isInstalled: true,
+      },
+    });
+    await openPopup('Unsloth');
+
     expect(screen.getByText('Auto-detected unsloth at')).toBeTruthy();
-    expect(screen.getByText(unslothPath)).toBeTruthy();
-    expect(screen.queryByText('Auto-detected opencode at')).toBeNull();
+    expect(screen.getByText('opencode runtime')).toBeTruthy();
+    expect(screen.getByText("(follows the opencode provider's configuration)")).toBeTruthy();
+    expect(screen.queryByText('opencode runtime at')).toBeNull();
   });
 });
