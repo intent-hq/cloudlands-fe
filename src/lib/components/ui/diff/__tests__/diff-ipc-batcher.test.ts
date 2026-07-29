@@ -139,6 +139,10 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     await vi.runAllTimersAsync();
 
     await expect(promise).resolves.toBeUndefined();
+    // A well-formed relative path never triggers the full-tree recovery read.
+    expect(
+      mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs'),
+    ).toHaveLength(1);
   });
 
   it('folds a deleted working-tree file to an empty new side', async () => {
@@ -214,6 +218,155 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     await expect(dedupedShowFile('ws-8', 'nope', 'a.ts')).resolves.toEqual({
       success: false,
       error: 'unresolvable ref',
+    });
+  });
+
+  describe('suspicious-path recovery (mis-normalized request paths)', () => {
+    /** Daemon that narrows `git.diffs` when `paths` is present and returns the
+     * full tree when it is absent (the recovery read). */
+    function mockNarrowingDaemon(fullTree: unknown[]) {
+      mockedRequest.mockImplementation(async (method: string, params?: unknown) => {
+        const p = (params ?? {}) as Record<string, unknown>;
+        if (method === 'git.diffs') {
+          if (Array.isArray(p.paths)) {
+            const paths = p.paths as string[];
+            return fullTree.filter((entry) =>
+              paths.includes((entry as { path: string }).path),
+            );
+          }
+          return fullTree;
+        }
+        if (method === 'git.showFile') return { content: `show:${p.filePath}` };
+        if (method === 'file.read') return { content: `read:${p.path}` };
+        throw new Error(`unexpected method: ${method}`);
+      });
+    }
+
+    it('recovers an absolute request path via exactly one full-tree git.diffs read', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockNarrowingDaemon([{ path: 'src/a.ts', hunks: [HUNK] }]);
+
+      const promise = batchedGitDiff('ws-r1', false, '/repo/src/a.ts');
+      await vi.runAllTimersAsync();
+
+      await expect(promise).resolves.toEqual({
+        file: 'src/a.ts',
+        chunks: [HUNK],
+        oldContent: 'show:src/a.ts',
+        newContent: 'read:src/a.ts',
+      });
+      const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
+      expect(diffCalls).toEqual([
+        ['git.diffs', { workspaceId: 'ws-r1', paths: ['/repo/src/a.ts'] }],
+        ['git.diffs', { workspaceId: 'ws-r1' }],
+      ]);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/repo/src/a.ts'),
+        expect.anything(),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('keeps staged: true on the staged recovery read', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockNarrowingDaemon([{ path: 'src/a.ts', hunks: [HUNK] }]);
+
+      const promise = batchedGitDiff('ws-r2', true, '/repo/src/a.ts');
+      await vi.runAllTimersAsync();
+
+      await expect(promise).resolves.toMatchObject({ file: 'src/a.ts', chunks: [HUNK] });
+      const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
+      expect(diffCalls).toEqual([
+        ['git.diffs', { workspaceId: 'ws-r2', staged: true, paths: ['/repo/src/a.ts'] }],
+        ['git.diffs', { workspaceId: 'ws-r2', staged: true }],
+      ]);
+      vi.mocked(console.warn).mockRestore();
+    });
+
+    it('mixed group: matched relative path is unaffected, one recovery call total, warn logged', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockNarrowingDaemon([
+        { path: 'b.ts', hunks: [] },
+        { path: 'src/a.ts', hunks: [HUNK] },
+      ]);
+
+      const aPromise = batchedGitDiff('ws-r3', false, '/repo/src/a.ts');
+      const bPromise = batchedGitDiff('ws-r3', false, 'b.ts');
+      await vi.runAllTimersAsync();
+
+      await expect(bPromise).resolves.toEqual({
+        file: 'b.ts',
+        chunks: [],
+        oldContent: 'show:b.ts',
+        newContent: 'read:b.ts',
+      });
+      await expect(aPromise).resolves.toEqual({
+        file: 'src/a.ts',
+        chunks: [HUNK],
+        oldContent: 'show:src/a.ts',
+        newContent: 'read:src/a.ts',
+      });
+      const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
+      expect(diffCalls).toEqual([
+        ['git.diffs', { workspaceId: 'ws-r3', paths: ['/repo/src/a.ts', 'b.ts'] }],
+        ['git.diffs', { workspaceId: 'ws-r3' }],
+      ]);
+      // The matched chunk is enriched exactly once (no double-enrich from recovery).
+      expect(
+        mockedRequest.mock.calls.filter(
+          ([method, params]) =>
+            method === 'file.read' && (params as { path?: string })?.path === 'b.ts',
+        ),
+      ).toHaveLength(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/repo/src/a.ts'),
+        expect.anything(),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('a failed recovery read resolves the suspicious path undefined without rejecting the group', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockedRequest.mockImplementation(async (method: string, params?: unknown) => {
+        const p = (params ?? {}) as Record<string, unknown>;
+        if (method === 'git.diffs') {
+          if (Array.isArray(p.paths)) return [{ path: 'b.ts', hunks: [HUNK] }];
+          throw new Error('recovery boom');
+        }
+        if (method === 'git.showFile') return { content: '' };
+        if (method === 'file.read') return { content: '' };
+        throw new Error(`unexpected method: ${method}`);
+      });
+
+      const aPromise = batchedGitDiff('ws-r4', false, '/repo/src/a.ts');
+      const bPromise = batchedGitDiff('ws-r4', false, 'b.ts');
+      await vi.runAllTimersAsync();
+
+      await expect(aPromise).resolves.toBeUndefined();
+      await expect(bPromise).resolves.toMatchObject({ file: 'b.ts', chunks: [HUNK] });
+      warnSpy.mockRestore();
+    });
+
+    it('treats home-relative, Windows drive, and UNC paths as suspicious', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockNarrowingDaemon([
+        { path: 'src/a.ts', hunks: [HUNK] },
+        { path: 'src/b.ts', hunks: [] },
+        { path: 'src/c.ts', hunks: [] },
+      ]);
+
+      const aPromise = batchedGitDiff('ws-r5', false, '~/repo/src/a.ts');
+      const bPromise = batchedGitDiff('ws-r5', false, 'C:/repo/src/b.ts');
+      const cPromise = batchedGitDiff('ws-r5', false, '\\\\server\\repo/src/c.ts');
+      await vi.runAllTimersAsync();
+
+      await expect(aPromise).resolves.toMatchObject({ file: 'src/a.ts' });
+      await expect(bPromise).resolves.toMatchObject({ file: 'src/b.ts' });
+      await expect(cPromise).resolves.toMatchObject({ file: 'src/c.ts' });
+      expect(
+        mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs'),
+      ).toHaveLength(2);
+      vi.mocked(console.warn).mockRestore();
     });
   });
 });
