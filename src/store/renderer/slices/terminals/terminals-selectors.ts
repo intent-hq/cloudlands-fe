@@ -76,6 +76,11 @@ export const selectTerminalDisplayName = store.createSelector(
     const term = getItem(ws.terminals, termId);
     // Display resolution is customName || localized daemon name || fallback;
     // the stored wire `name` stays raw — localization is render-time only.
+    // Read languagePreference (even though terminalDisplayName() doesn't take
+    // it directly) so the cached selector's path-tracking sees it as a
+    // dependency: m.*() output changes when the locale changes, and without
+    // this the store-shim's memoization has no state path to invalidate on.
+    void state.userPreferences?.languagePreference;
     return terminalDisplayName(term ?? {});
   }
 );
