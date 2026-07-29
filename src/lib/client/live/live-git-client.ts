@@ -332,11 +332,14 @@ export class LiveGitClient implements GitClient {
   // index→workdir (unstaged) diff; `options.staged` selects HEAD→index;
   // `options.commitHash` returns the per-file hunks for
   // `<commitHash>^..<commitHash>` (the commit's own changes vs its first
-  // parent). Mapped into renderer `DiffChunk[]`. Errors fold to `[]` so the
-  // diff viewer degrades cleanly rather than throwing into the store.
+  // parent); `options.paths` narrows the walk to exactly those files (an
+  // empty array is omitted — full tree). Mapped into renderer `DiffChunk[]`.
+  // Errors fold to `[]` so the diff viewer degrades cleanly rather than
+  // throwing into the store.
   async diffs(workspaceId: string, options?: GitDiffsOptions): Promise<DiffChunk[]> {
     const params: Record<string, unknown> = { workspaceId };
     if (options?.path) params.path = options.path;
+    if (options?.paths?.length) params.paths = options.paths;
     if (options?.staged === true) params.staged = true;
     if (options?.commitHash) params.commitHash = options.commitHash;
     try {

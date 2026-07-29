@@ -186,16 +186,22 @@ async function flushDiffGroup(key: string) {
   const staged = stagedStr === '1';
 
   try {
-    // One hunk read serves the whole group: `git.diffs` without a `path`
-    // filter returns every changed file for the selected staging area
-    // (unstaged includes untracked files), so N same-tick requests collapse
+    // One hunk read serves the whole group: the batch's collected file set is
+    // sent as `paths` (PROTOCOL §5.6) so the daemon pathspec-narrows the walk
+    // to exactly the requested files (unstaged includes untracked files)
+    // instead of scanning the whole tree; N same-tick requests still collapse
     // into a single daemon read.
+    // Sorted so the wire payload is deterministic regardless of request
+    // arrival order within the tick.
+    const paths = Array.from(pending.paths).sort();
     const result = await backendRequest<unknown>(
       'git.diffs',
-      staged ? { workspaceId: wsId, staged: true } : { workspaceId: wsId },
+      staged ? { workspaceId: wsId, staged: true, paths } : { workspaceId: wsId, paths },
     );
     const chunks = toDaemonDiffChunks(result);
 
+    // Client-side matching stays as a safety net on top of the daemon-side
+    // narrowing (e.g. suffix matches for path-prefix mismatches).
     const matches = new Map<string, DiffChunk | undefined>();
     for (const path of pending.resolvers.keys()) {
       matches.set(path, findChunkForPath(chunks, path));
