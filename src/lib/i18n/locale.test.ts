@@ -22,6 +22,11 @@ describe('getLocaleEndonym', () => {
     expect(getLocaleEndonym('de')).toBe('Deutsch');
   });
 
+  it('names the CJK single-catalog locales by their endonyms', () => {
+    expect(getLocaleEndonym('ja')).toBe('日本語');
+    expect(getLocaleEndonym('ko')).toBe('한국어');
+  });
+
   it('capitalizes endonyms that Intl returns lowercase', () => {
     expect(getLocaleEndonym('fr')).toBe('Français');
   });
