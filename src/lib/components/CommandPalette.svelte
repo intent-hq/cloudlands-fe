@@ -367,7 +367,7 @@
           return {
             id: t.terminalId,
             type: 'terminal' as const,
-            label: t.title || 'Terminal',
+            label: t.title || m.terminal_quakeOverlay_terminal_fallback(),
             description,
             icon: faTerminal,
             timestamp: new Date(t.createdAt).getTime(),

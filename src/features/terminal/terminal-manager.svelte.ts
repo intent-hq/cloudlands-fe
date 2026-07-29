@@ -13,7 +13,8 @@ import {
   type TerminalMetadata,
 } from '$store/renderer/slices/terminals/terminals-slice';
 import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
-  import { store as appStore } from '$store/renderer/store';
+import { localizeDaemonTerminalName } from '$lib/utils/terminal-display-name';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = new Logger('TerminalManager');
 
@@ -52,7 +53,10 @@ class RendererTerminalManager {
         terminalId: terminal.id,
         workspaceId: terminal.workspaceId ?? workspaceId,
         createdAt: terminal.createdAt ?? '',
-        title: terminal.customName || terminal.name,
+        // `title` is a display value: user-set customName wins verbatim, then
+        // the daemon spawn-time name localized at read time (the stored wire
+        // `name` stays raw — this read-through view is never persisted back).
+        title: terminal.customName || localizeDaemonTerminalName(terminal.name),
       }));
     } catch (error) {
       logger.error('[RendererTerminalManager] Failed to load terminal metadata:', error);

@@ -460,7 +460,7 @@ export class TerminalProvider implements Provider {
           seen.add(meta.terminalId);
           allTerminals.push({
             id: meta.terminalId,
-            name: meta.title || 'Terminal',
+            name: meta.title || m.terminal_quakeOverlay_terminal_fallback(),
           });
         }
       }
