@@ -277,8 +277,15 @@ export default defineConfig(({ mode }) => {
 
     build: {
       // Generate sourcemaps: 'hidden' in production (not exposed publicly),
-      // true in development for debugging
-      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden',
+      // true in development for debugging. INTENT_DISABLE_SOURCEMAPS skips
+      // them entirely — sourcemap generation multiplies rollup's peak heap,
+      // and CI smoke builds (Build (web)) never consume the maps
+      // (monorepo#1074).
+      sourcemap: process.env.INTENT_DISABLE_SOURCEMAPS
+        ? false
+        : process.env.NODE_ENV === 'development'
+          ? true
+          : 'hidden',
       rollupOptions: {
         external: [
           'electron',
