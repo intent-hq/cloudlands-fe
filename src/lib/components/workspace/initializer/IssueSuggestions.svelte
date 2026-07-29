@@ -220,6 +220,7 @@
   import {
   onMount,
   onDestroy,
+  tick,
   untrack,
 } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -348,6 +349,7 @@
   // Panel state
   let isOpen = $state(initiallyExpanded);
   let searchQuery = $state('');
+  let searchInputEl = $state<HTMLInputElement | null>(null);
   // Last source the user actually selected an item from (persisted preference)
   let lastUsedSource = $state(loadLastUsedSource());
   let activeSource = $state<ContextSource>(
@@ -1343,6 +1345,15 @@
     }
   }
 
+  // Focus the search input whenever the panel opens (including an initially
+  // expanded mount). `isOpen` is the only tracked dependency — the input ref
+  // is read inside the tick() callback — so tab switches or list updates
+  // while the panel is open never re-steal focus.
+  $effect(() => {
+    if (!isOpen) return;
+    void tick().then(() => searchInputEl?.focus({ preventScroll: true }));
+  });
+
   // Track pending callbacks for cleanup
   let pendingCallbackId: number | ReturnType<typeof setTimeout> | undefined;
 
@@ -1513,13 +1524,12 @@
       <!-- Search + filter bar -->
       <div class="flex items-center gap-2 px-3 py-2 border-b border-border/30">
         <Fa icon={faSearch} class="w-3 h-3 text-ghost opacity-50" />
-        <!-- svelte-ignore a11y_autofocus -->
         <input
+          bind:this={searchInputEl}
           type="text"
           bind:value={searchQuery}
           placeholder={getSearchPlaceholder(activeSource)}
           class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 focus:ring-0 focus:outline-none"
-          autofocus
         />
         <!-- Refreshing indicator -->
         {#if isRefreshing}
