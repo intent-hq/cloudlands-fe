@@ -331,7 +331,7 @@
 
     <div class="flex min-h-0 flex-1">
       <aside class="hidden w-44 shrink-0 border-r border-border/30 bg-muted/15 px-2 py-3 sm:block">
-        <h3 class="mb-1 px-2 text-[11px] font-semibold text-muted-foreground">
+        <h3 class="mb-1 px-2 text-xs font-semibold text-muted-foreground">
           {m.onboarding_dirPicker_favorites_label()}
         </h3>
         <nav class="space-y-0.5" aria-label={m.onboarding_dirPicker_favorites_label()}>
@@ -365,7 +365,7 @@
               'rounded p-1.5 transition-colors',
               listing?.parent && !loading
                 ? 'cursor-pointer text-foreground hover:bg-muted/50'
-                : 'cursor-not-allowed text-muted-foreground/40',
+                : 'cursor-not-allowed text-ghost',
             )}
             disabled={!listing?.parent || loading}
             onclick={navigateUp}
@@ -398,7 +398,7 @@
               aria-label={m.onboarding_dirPicker_breadcrumbs_ariaLabel()}
             >
               {#each breadcrumbs as breadcrumb, index (breadcrumb.path)}
-                {#if index > 0}<span class="px-0.5 text-muted-foreground/50">/</span>{/if}
+                {#if index > 0}<span class="px-0.5 text-ghost">/</span>{/if}
                 <button
                   type="button"
                   class="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -440,7 +440,7 @@
 
         {#if pathError}
           <div
-            class="shrink-0 border-b border-border/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive-foreground/90"
+            class="shrink-0 border-b border-border/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive-foreground"
             role="alert"
           >
             {pathError}
@@ -459,7 +459,7 @@
               <span>{m.onboarding_dirPicker_loading_label()}</span>
             </div>
           {:else if error}
-            <div class="px-5 py-10 text-sm text-destructive-foreground/90">
+            <div class="px-5 py-10 text-sm text-destructive-foreground">
               <p class="mb-1 font-medium">{m.onboarding_dirPicker_readError_title()}</p>
               <p class="break-all text-xs text-muted-foreground">{error}</p>
             </div>
@@ -487,7 +487,7 @@
                       'flex h-8 w-full items-center gap-2.5 px-4 text-left transition-colors',
                       entry.isDirectory || mode === 'file'
                         ? 'cursor-default'
-                        : 'cursor-not-allowed text-muted-foreground/55',
+                        : 'cursor-not-allowed text-ghost',
                       isSelected
                         ? 'bg-blue-500/20'
                         : isFocused
@@ -506,7 +506,7 @@
                         ? 'text-amber-500'
                         : entry.isDirectory
                           ? 'text-blue-500/80'
-                          : 'text-muted-foreground/50'}
+                          : 'text-ghost'}
                       size="sm"
                     />
                     <span class="min-w-0 flex-1 truncate text-sm">{entry.name}</span>
@@ -584,7 +584,7 @@
           'rounded-md px-3 py-1.5 text-sm transition-colors',
           canSelect && !loading
             ? 'cursor-pointer bg-foreground text-background hover:bg-foreground/90'
-            : 'cursor-not-allowed bg-muted/30 text-muted-foreground/60',
+            : 'cursor-not-allowed bg-muted/30 text-ghost',
         )}
         disabled={!canSelect || loading}
         onclick={handleSelect}
