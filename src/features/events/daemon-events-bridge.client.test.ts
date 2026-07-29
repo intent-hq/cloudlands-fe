@@ -959,20 +959,22 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(readStatusEvents()).toEqual([]);
   });
 
-  it('maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with the phase/message/level/timestamp verbatim; first chunk still clears it via the chunk reducer', async () => {
+  it('maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with a localized message keyed off phase (wire message ignored for known phases); first chunk still clears it via the chunk reducer', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     const promptAt = 1_700_000_000_000;
     // `agent:stream:status` (PROTOCOL §6.5 / §7 pre-first-token family)
-    // arrives before any chunk with the daemon-authoritative phase/message
-    // (mirrors the reference `emitStatus('prompt', 'Sent prompt…')` shape).
+    // arrives before any chunk with the daemon-authoritative phase plus an
+    // English `message`. The bridge renders the catalog string for the phase;
+    // the wire message here deliberately differs to prove it is not passed
+    // through for known phases.
     handler(
       notification('agent:stream:status', {
         agentId: AGENT,
         workspaceId: WS,
         phase: 'prompt',
-        message: 'Sent prompt\u2026',
+        message: 'RAW WIRE MESSAGE (ignored)',
         level: 'info',
         timestamp: promptAt,
       }),
@@ -988,13 +990,13 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     });
 
     // Subsequent phase (session-load with warn level, e.g. a resume path)
-    // appends — the bridge is a straight pass-through of the wire payload.
+    // appends — level/phase/timestamp round-trip verbatim, message localizes.
     handler(
       notification('agent:stream:status', {
         agentId: AGENT,
         workspaceId: WS,
         phase: 'session-load',
-        message: 'Resuming session\u2026',
+        message: 'RAW WIRE MESSAGE (ignored)',
         level: 'warn',
         timestamp: promptAt + 5,
       }),
@@ -1004,6 +1006,24 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
       { phase: 'prompt', message: 'Sent prompt\u2026', level: 'info' },
       { phase: 'session-load', message: 'Resuming session\u2026', level: 'warn' },
     ]);
+
+    // Unknown phase → the daemon's wire message is the fallback rendering
+    // (e.g. future phases or Unsloth launch-progress variants).
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'some-future-phase',
+        message: 'Daemon-authored fallback text',
+        level: 'info',
+        timestamp: promptAt + 7,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'some-future-phase',
+      message: 'Daemon-authored fallback text',
+    });
 
     // First `agent:stream:chunk` appends the chunk reducer's "Streaming
     // response…" entry after the startup hints — the bridge itself does NOT
@@ -1024,6 +1044,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
       { phase: 'prompt', message: 'Sent prompt\u2026' },
       { phase: 'session-load', message: 'Resuming session\u2026' },
+      { phase: 'some-future-phase', message: 'Daemon-authored fallback text' },
       { phase: 'streaming', message: 'Streaming response\u2026' },
     ]);
 
@@ -1033,6 +1054,158 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     // duplicate the clear.
     handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
     expect(readStatusEvents()).toEqual([]);
+  });
+
+  it('agent:stream:status edge cases: missing message on known phase localizes, warn-level launch keeps wire text, prototype-key phases do not resolve, empty unknown-phase drops', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const at = 1_700_000_000_000;
+
+    // Known phase with a missing wire message still renders the localized
+    // string (the phase alone is self-sufficient for known phases).
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'init',
+        level: 'info',
+        timestamp: at,
+      }),
+    );
+    let events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'init',
+      message: 'Initializing protocol\u2026',
+    });
+
+    // Warn-level launch (model-switch restart warning, §6.5 / intentd#647)
+    // keeps the daemon-authored wire text instead of the static launch label.
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'launch',
+        message: 'Restarting Unsloth server; attached sessions will lose the loaded model',
+        level: 'warn',
+        timestamp: at + 1,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'launch',
+      message: 'Restarting Unsloth server; attached sessions will lose the loaded model',
+      level: 'warn',
+    });
+
+    // Info-level launch renders the localized static label (wire text ignored).
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'launch',
+        message: 'Still downloading model\u2026',
+        level: 'info',
+        timestamp: at + 2,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'launch',
+      message: 'Launching agent\u2026',
+    });
+
+    const countBefore = readStatusEvents().length;
+
+    // A phase matching an inherited Object.prototype key must not resolve a
+    // catalog entry — the wire message is the fallback.
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'constructor',
+        message: 'Prototype-key wire text',
+        level: 'info',
+        timestamp: at + 3,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'constructor',
+      message: 'Prototype-key wire text',
+    });
+
+    // Unknown phase with no usable message: nothing to render → dropped.
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'some-future-phase',
+        level: 'info',
+        timestamp: at + 4,
+      }),
+    );
+    expect(readStatusEvents()).toHaveLength(countBefore + 1);
+  });
+
+  it('agent:stream:status: every daemon-emitted phase (PROTOCOL §6.5) renders its own localized catalog string, never the wire message', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const at = 1_700_000_000_000;
+
+    // Exhaustive phase → localized-message pinning for the full §6.5 set.
+    // Each event carries a deliberately-English wire `message` to prove the
+    // daemon text is not what gets rendered for known phases (user sighting:
+    // "Initializing protocol…" / "Resuming session…" leaking in English came
+    // from builds predating the phase-keyed catalog rendering).
+    //
+    // Intentional overlap: prompt/session-load/info-launch are also asserted
+    // by the STAT-1 and edge-case tests above — do not dedupe; this test's
+    // value is the single-pass exhaustive pin (it is also the only direct
+    // coverage of session-create).
+    const phaseExpectations: Array<{ phase: string; localized: string }> = [
+      { phase: 'launch', localized: 'Launching agent\u2026' },
+      { phase: 'init', localized: 'Initializing protocol\u2026' },
+      { phase: 'session-create', localized: 'Creating session\u2026' },
+      { phase: 'session-load', localized: 'Resuming session\u2026' },
+      { phase: 'prompt', localized: 'Sent prompt\u2026' },
+    ];
+
+    phaseExpectations.forEach(({ phase }, i) => {
+      handler(
+        notification('agent:stream:status', {
+          agentId: AGENT,
+          workspaceId: WS,
+          phase,
+          message: `DAEMON WIRE TEXT for ${phase} (must not render)`,
+          level: 'info',
+          timestamp: at + i,
+        }),
+      );
+    });
+
+    let events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual(
+      phaseExpectations.map(({ phase, localized }) => ({ phase, message: localized })),
+    );
+
+    // The streaming state (first chunk) is also a catalog string, appended by
+    // the chunk reducer — completing the full pre-first-token → streaming set.
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Hi',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events[events.length - 1]).toMatchObject({
+      phase: 'streaming',
+      message: 'Streaming response\u2026',
+    });
   });
 
   it("tool started → completed short window: tool-call entry's duration ends at the completed event's timestamp", async () => {

@@ -170,6 +170,31 @@ function isProseToolName(name: string): boolean {
 }
 
 /**
+ * Detect directory-listing ACP titles (e.g. "List directory `.`",
+ * "List directory `src/lib`") and map them to the localized List Contents
+ * verb instead of rendering the English title verbatim. Only the backticked
+ * single-path shape matches — free prose like "List directory contents and
+ * sizes" stays on the verbatim prose-title rendering.
+ */
+function directoryListingDisplay(title: string): ToolDisplay | null {
+  // \x60 = backtick, escaped so the hardcoded-string scanner does not parse
+  // the regex literal as a template string.
+  const match = title.trim().match(/^List\s+directory\s+\x60([^\x60]+)\x60$/i);
+  if (!match) return null;
+  const candidate = match[1].trim();
+  if (candidate.length === 0) return null;
+  return {
+    category: 'file-read',
+    icon: CATEGORY_ICONS['file-read'],
+    verb: m.chat_toolClassifier_listContents_label(),
+    subject: filename(candidate) || candidate,
+    path: dirname(candidate) || null,
+    filePath: candidate || null,
+    isDirectory: true,
+  };
+}
+
+/**
  * Render a prose title verbatim (truncated), with a category inferred from keywords.
  */
 function proseTitleDisplay(title: string): ToolDisplay {
@@ -995,6 +1020,9 @@ function classifyToolInner(
     input.targetAgentId === undefined &&
     !Array.isArray(input.tasks)
   ) {
+    // Directory-listing titles ("List directory `.`") localize to List Contents
+    const dirListing = directoryListingDisplay(toolName);
+    if (dirListing) return dirListing;
     return proseTitleDisplay(toolName);
   }
 
@@ -2062,6 +2090,9 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
   // Unrecognized tool name with a prose ACP title: show the title verbatim
   const acpTitle = typeof input._acpTitle === 'string' ? input._acpTitle.trim() : '';
   if (acpTitle && isProseToolName(acpTitle)) {
+    // Directory-listing titles ("List directory `.`") localize to List Contents
+    const dirListing = directoryListingDisplay(acpTitle);
+    if (dirListing) return dirListing;
     return proseTitleDisplay(acpTitle);
   }
 

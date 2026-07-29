@@ -10,6 +10,9 @@ import {
 // spec's negotiation cases are asserted against a multi-locale list, not
 // hardcoded locale knowledge.
 const CATALOGS = ['en', 'de', 'zh-CN', 'zh-TW'] as const;
+// Catalog set including the CJK single-catalog locales (ja, ko) — regional
+// variants must best-match onto the bare language catalog.
+const WITH_JA_KO = ['en', 'de', 'zh-CN', 'zh-TW', 'ja', 'ko'] as const;
 // Catalog set without a zh-Hant entry — Traditional tags must skip to the
 // fallback rather than mismatch onto the Simplified catalog.
 const SIMPLIFIED_ONLY = ['en', 'de', 'zh-CN'] as const;
@@ -59,9 +62,23 @@ describe('matchLocale', () => {
     expect(matchLocale(['zh-Hans-CN'], traditionalOnly, BASE)).toBe(BASE);
   });
 
+  it('maps Japanese tags to ja (ja, ja-JP, ja-Jpan-JP)', () => {
+    expect(matchLocale(['ja'], WITH_JA_KO, BASE)).toBe('ja');
+    expect(matchLocale(['ja-JP'], WITH_JA_KO, BASE)).toBe('ja');
+    expect(matchLocale(['ja-Jpan-JP'], WITH_JA_KO, BASE)).toBe('ja');
+  });
+
+  it('maps Korean tags to ko (ko, ko-KR, ko-KP, ko-Kore-KR)', () => {
+    expect(matchLocale(['ko'], WITH_JA_KO, BASE)).toBe('ko');
+    expect(matchLocale(['ko-KR'], WITH_JA_KO, BASE)).toBe('ko');
+    expect(matchLocale(['ko-KP'], WITH_JA_KO, BASE)).toBe('ko');
+    expect(matchLocale(['ko-Kore-KR'], WITH_JA_KO, BASE)).toBe('ko');
+  });
+
   it('walks the requested list in order until a match is found', () => {
     expect(matchLocale(['ja', 'zh-SG', 'de'], CATALOGS, BASE)).toBe('zh-CN');
     expect(matchLocale(['ja', 'ko'], CATALOGS, BASE)).toBe(BASE);
+    expect(matchLocale(['fr', 'ko-KR'], WITH_JA_KO, BASE)).toBe('ko');
   });
 
   it('falls back when nothing matches or input is empty/invalid', () => {
@@ -89,6 +106,8 @@ describe('resolveLocale', () => {
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['zh-TW'], SIMPLIFIED_ONLY, BASE)).toBe(
       BASE,
     );
+    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['ja-JP'], WITH_JA_KO, BASE)).toBe('ja');
+    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['ko-KR'], WITH_JA_KO, BASE)).toBe('ko');
   });
 
   it('falls back to the base locale when nothing matches', () => {
