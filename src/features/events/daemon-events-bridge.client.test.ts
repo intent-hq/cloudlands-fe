@@ -1157,6 +1157,11 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     // daemon text is not what gets rendered for known phases (user sighting:
     // "Initializing protocol…" / "Resuming session…" leaking in English came
     // from builds predating the phase-keyed catalog rendering).
+    //
+    // Intentional overlap: prompt/session-load/info-launch are also asserted
+    // by the STAT-1 and edge-case tests above — do not dedupe; this test's
+    // value is the single-pass exhaustive pin (it is also the only direct
+    // coverage of session-create).
     const phaseExpectations: Array<{ phase: string; localized: string }> = [
       { phase: 'launch', localized: 'Launching agent\u2026' },
       { phase: 'init', localized: 'Initializing protocol\u2026' },
