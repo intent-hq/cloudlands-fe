@@ -782,6 +782,12 @@ export interface CommitDetailsResult {
 export interface GitDiffsOptions {
   /** Filter the result to a single workspace-relative file path. */
   path?: string;
+  /**
+   * Narrow the result to exactly these workspace-relative file paths (literal
+   * matching; the daemon prunes the walk). Unioned with `path` when both are
+   * set; an empty array means the full tree.
+   */
+  paths?: string[];
   /** When `true`, returns the HEAD→index (staged) diff; ignored if `commitHash` is set. */
   staged?: boolean;
   /** When set, returns the per-file hunks for `<commitHash>^..<commitHash>`. */
