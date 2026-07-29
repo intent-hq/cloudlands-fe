@@ -205,6 +205,16 @@ class RendererTerminalManager {
     }
   }
 
+  /** Release renderer resources for a PTY that has already exited. */
+  disposeExitedTerminal(terminalId: string): void {
+    const managed = this.terminals.get(terminalId);
+    if (!managed) return;
+
+    logger.info(`[RendererTerminalManager] Disposing exited terminal: ${terminalId}`);
+    managed.adapter.dispose({ killPty: false });
+    this.terminals.delete(terminalId);
+  }
+
   /**
    * Clear a terminal's content
    */

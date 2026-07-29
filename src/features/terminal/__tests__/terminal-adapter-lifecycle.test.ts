@@ -174,6 +174,22 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     expect(terminals.kill).toHaveBeenCalledWith('term-1');
   });
 
+  it('dispose({ killPty: false }) releases renderer resources without killing an exited PTY', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+
+    adapter.dispose({ killPty: false });
+
+    expect(terminals.kill).not.toHaveBeenCalled();
+    expect((adapter as any).xterm.dispose).toHaveBeenCalled();
+  });
+
   it('moves theme container on reattach', async () => {
     const firstContainer = document.createElement('div');
     const secondContainer = document.createElement('div');
