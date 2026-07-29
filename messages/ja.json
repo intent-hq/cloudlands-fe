@@ -3033,6 +3033,7 @@
   "terminal_quakeOverlay_terminalName_placeholder": "ターミナル名",
   "terminal_quakeOverlay_renameTerminal_tooltip": "クリックしてターミナル名を変更",
   "terminal_quakeOverlay_terminal_fallback": "ターミナル",
+  "terminal_daemonName_setupScript_label": "セットアップスクリプト",
   "terminal_quakeOverlay_clear_tooltip": "ターミナルをクリア",
   "terminal_quakeOverlay_clear_ariaLabel": "ターミナルをクリア",
   "terminal_quakeOverlay_name_placeholder": "名前",

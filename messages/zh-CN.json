@@ -3033,6 +3033,7 @@
   "terminal_quakeOverlay_terminalName_placeholder": "终端名称",
   "terminal_quakeOverlay_renameTerminal_tooltip": "点击重命名终端",
   "terminal_quakeOverlay_terminal_fallback": "终端",
+  "terminal_daemonName_setupScript_label": "安装脚本",
   "terminal_quakeOverlay_clear_tooltip": "清空终端",
   "terminal_quakeOverlay_clear_ariaLabel": "清空终端",
   "terminal_quakeOverlay_name_placeholder": "名称",

@@ -56,6 +56,10 @@
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    localizeDaemonTerminalName,
+    terminalDisplayName,
+  } from '$lib/utils/terminal-display-name';
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(ROOT_WORKSPACE_ID);
@@ -88,7 +92,7 @@
       const sanitized = sanitizeCommandForDisplay(lastCommand);
       return sanitized.length > 20 ? sanitized.slice(0, 20) + '…' : sanitized;
     }
-    return term.name || m.terminal_quakeOverlay_terminal_fallback();
+    return localizeDaemonTerminalName(term.name) || m.terminal_quakeOverlay_terminal_fallback();
   }
 
   // ============================================================================
@@ -135,7 +139,7 @@
     const term = $terminals.find((t: TerminalTab) => t.id === $activeTerminalId);
     if (!term) return;
     isEditingHeaderName = true;
-    headerEditValue = term.customName || term.name || m.terminal_quakeOverlay_terminal_fallback();
+    headerEditValue = terminalDisplayName(term);
     requestAnimationFrame(() => {
       const input = document.querySelector('[data-edit-header-terminal]') as HTMLInputElement;
       input?.focus();
@@ -395,9 +399,9 @@
               ondblclick={startEditingHeaderName}
               title={m.terminal_quakeOverlay_renameTerminal_tooltip()}
             >
-              {$terminals.find((t: TerminalTab) => t.id === $activeTerminalId)?.customName ||
-                $terminals.find((t: TerminalTab) => t.id === $activeTerminalId)?.name ||
-                m.terminal_quakeOverlay_terminal_fallback()}
+              {terminalDisplayName(
+                $terminals.find((t: TerminalTab) => t.id === $activeTerminalId) ?? {},
+              )}
             </span>
           {/if}
         </div>

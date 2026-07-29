@@ -34,6 +34,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   selectUserTerminals as selectTerminalsSelector,
 } from '$store/renderer/slices/terminals/terminals-selectors';
   import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
+  import { terminalDisplayName } from '$lib/utils/terminal-display-name';
 
   const activeWorkspace = selectActiveWorkspace();
 
@@ -1187,7 +1188,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               <ListItem
                 size="sm"
                 class="pr-2! pl-2!"
-                title={term.customName || term.name || m.terminal_quakeOverlay_terminal_fallback()}
+                title={terminalDisplayName(term)}
                 active={selectedScriptId === null && activeTerminalId === term.id}
                 onclick={() => {
                   onSelectScript?.(null);
