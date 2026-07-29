@@ -1383,6 +1383,66 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
   });
 
+  it("monorepo#1057: queue-on-send parks the record keyed by the seam's turnId", async () => {
+    // The seam surfaces the enqueue RPC's turn-correlation id on the
+    // MutationResult; the queue-on-send success branch must store it on the
+    // parked record so agent:queue:processing / agent:failed can attribute
+    // exactly (a retry redrive mints a new entry id, same turnId).
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    const queuedB: QueuedMessage = {
+      id: "qm-B",
+      content: "message B",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+      turnId: "qm-B",
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queuedB, turnId: "qm-B" }),
+    );
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({
+      "qm-B": { seq: 1, record: { text: "message B" }, turnId: "qm-B" },
+    });
+  });
+
+  it("monorepo#1057: Send now with a turnId response promotes the parked record via the processing dispatch", async () => {
+    // agent.sendQueuedMessageNow emits NO agent:queue:processing event (§5.5
+    // — the RPC response carries the turnId instead), so the success branch
+    // dispatches chatQueueProcessingReceived itself. A turnId-keyed record
+    // must promote on it (the snapshot diff no longer promotes such records).
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    const queuedB: QueuedMessage = {
+      id: "qm-B",
+      content: "message B",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+      turnId: "qm-B",
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queuedB, turnId: "qm-B" }),
+    );
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+
+    agentsSendQueuedNow.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, turnId: "qm-B" }),
+    );
+    appStore.dispatch(
+      sendMessage(AGENT, { wsId: WS, text: "message B", queuedMessageId: "qm-B" }),
+    );
+    await flush();
+    await flush();
+
+    expect(agentsSendQueuedNow).toHaveBeenCalledTimes(1);
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "message B",
+    });
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({});
+  });
+
   it("#969: two rapid queue failures — the record pairs with the LAST failed message", async () => {
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     agentsQueue
