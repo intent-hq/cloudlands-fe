@@ -650,7 +650,9 @@
             {:else}
               <Fa icon={faCode} size="12" class="mr-1.5 opacity-50" />
             {/if}
-            <span class="truncate" title={m.ui_workspaceActions_openIn_label({ name: editor.name })}
+            <span
+              class="truncate min-w-0"
+              title={m.ui_workspaceActions_openIn_label({ name: editor.name })}
               >{m.ui_workspaceActions_openIn_label({ name: editor.name })}</span
             >
           </Button>
@@ -664,7 +666,7 @@
           size="sm"
         >
           <Fa icon={faUpRightFromSquare} size="12" class="ml-1.25 mr-2 opacity-50" />
-          <span class="truncate" title={m.ui_workspaceActions_chooseApp_label()}
+          <span class="truncate min-w-0" title={m.ui_workspaceActions_chooseApp_label()}
             >{m.ui_workspaceActions_chooseApp_label()}</span
           >
         </Button>
@@ -684,7 +686,7 @@
         <div class="text-xs font-black font-mono mr-1 w-3 opacity-50">
           {isWindowsPlatform() ? '\\' : '/'}
         </div>
-        <span class="truncate" title={m.ui_workspaceActions_copyAbsolutePath_label()}
+        <span class="truncate min-w-0" title={m.ui_workspaceActions_copyAbsolutePath_label()}
           >{m.ui_workspaceActions_copyAbsolutePath_label()}</span
         >
       </Button>
@@ -698,7 +700,7 @@
         >
           <div class="text-xs font-black font-mono mr-1 w-3 opacity-50">./</div>
           <!-- <Fa icon={faCopy} size="12" class="mr-1.5" />  -->
-          <span class="truncate" title={m.ui_workspaceActions_copyRelativePath_label()}
+          <span class="truncate min-w-0" title={m.ui_workspaceActions_copyRelativePath_label()}
             >{m.ui_workspaceActions_copyRelativePath_label()}</span
           >
         </Button>
@@ -712,7 +714,7 @@
           size="sm"
         >
           <Fa icon={faFile} size="12" class="ml-1 mr-1.5 opacity-50" />
-          <span class="truncate" title={m.ui_workspaceActions_copyFileName_label()}
+          <span class="truncate min-w-0" title={m.ui_workspaceActions_copyFileName_label()}
             >{m.ui_workspaceActions_copyFileName_label()}</span
           >
         </Button>
@@ -742,7 +744,7 @@
         {:else if action.icon}
           <Fa icon={action.icon} size="12" class="mr-1.5 opacity-50" />
         {/if}
-        <span class="truncate" title={action.label}>{action.label}</span>
+        <span class="truncate min-w-0" title={action.label}>{action.label}</span>
       </Button>
     {/each}
   {/if}
@@ -779,7 +781,7 @@
       size="sm"
     >
       <Fa icon={faTrash} size="12" class="mr-1.5 opacity-50" />
-      <span class="truncate" title={m.ui_workspaceActions_deleteSpace_label()}
+      <span class="truncate min-w-0" title={m.ui_workspaceActions_deleteSpace_label()}
         >{m.ui_workspaceActions_deleteSpace_label()}</span
       >
     </Button>
@@ -800,7 +802,7 @@
       {:else}
         <Fa icon={faTrash} size="12" class="mr-1.5 opacity-50" />
       {/if}
-      <span class="truncate" title={m.ui_workspaceActions_deleteFile_label()}
+      <span class="truncate min-w-0" title={m.ui_workspaceActions_deleteFile_label()}
         >{m.ui_workspaceActions_deleteFile_label()}</span
       >
     </Button>
