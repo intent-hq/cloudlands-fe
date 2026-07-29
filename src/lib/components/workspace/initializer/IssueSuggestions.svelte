@@ -1351,7 +1351,7 @@
   // while the panel is open never re-steal focus.
   $effect(() => {
     if (!isOpen) return;
-    void tick().then(() => searchInputEl?.focus());
+    void tick().then(() => searchInputEl?.focus({ preventScroll: true }));
   });
 
   // Track pending callbacks for cleanup

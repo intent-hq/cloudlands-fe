@@ -126,11 +126,12 @@ describe('IssueSuggestions search input focus on panel open', () => {
     const input = getSearchInput();
     expect(document.activeElement).toBe(input);
     input.blur();
-    expect(document.activeElement).not.toBe(input);
+    expect(document.activeElement).toBe(document.body);
 
     await fireEvent.click(screen.getByRole('button', { name: 'GH PRs' }));
     await settle();
 
-    expect(document.activeElement).not.toBe(input);
+    expect(document.activeElement).toBe(document.body);
+    expect(getSearchInput()).not.toBe(document.activeElement);
   });
 });
