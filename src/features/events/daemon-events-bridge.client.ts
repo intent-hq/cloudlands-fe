@@ -138,6 +138,8 @@ import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agen
 import {
   streamStatusReceived,
   chatQueueProcessingReceived,
+  chatErrorCleared,
+  chatModelUnavailableCleared,
   chatSendFailed,
   chatSendStarted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -2172,6 +2174,45 @@ function handleNotification(method: string, params: unknown): void {
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
+    }
+  }
+
+  // monorepo#1106: a daemon-side redrive (coordinator `agent.sendMessage`,
+  // another client's `agent.retry`) starts a new turn the FE never sent, so
+  // none of the FE-initiated clearing paths from #1044 run and the previous
+  // turn's failure banner persists over the live turn ("errored" and
+  // "processing" simultaneously). Clear the stale `chatError` /
+  // `modelUnavailable` on the error→active edge. Gated on the PRIOR session
+  // status (read before the `eventReceived` dispatch below applies the
+  // transition) so a mid-turn status tick — e.g. an isStreaming flag change
+  // while an enqueue-failure banner is up — never wipes a banner set while
+  // the agent was already active (#1044/#999 semantics preserved). Retry
+  // records stay parked: their promotion remains turnId-exact via
+  // `agent:queue:processing` (monorepo#1057). Side effect only — falls
+  // through to the timeline dispatch below.
+  if (type === 'agent:status-changed') {
+    const data = (event as { data?: Record<string, unknown> }).data;
+    const agentId = data?.agentId;
+    const status = data?.status;
+    const startsTurn = data?.isActive === true || status === 'active' || status === 'responding';
+    if (
+      typeof agentId === 'string' &&
+      typeof status === 'string' &&
+      status !== 'error' &&
+      status !== 'failed' &&
+      startsTurn
+    ) {
+      const priorStatus: string | undefined =
+        appStore.state.agentSessions.byAgentId[agentId]?.status;
+      if (priorStatus === 'error' || priorStatus === 'failed') {
+        const chatAgent = appStore.state.chatState?.byAgentId[agentId];
+        if (chatAgent?.error) {
+          appStore.dispatch(chatErrorCleared(agentId));
+        }
+        if (chatAgent?.modelUnavailable) {
+          appStore.dispatch(chatModelUnavailableCleared(agentId));
+        }
+      }
     }
   }
 
