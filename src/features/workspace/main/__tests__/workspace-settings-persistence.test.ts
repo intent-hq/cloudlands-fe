@@ -82,6 +82,29 @@ describe('workspace-settings.service ↔ daemon workspace.getAutoCommit/setAutoC
     expect(updated).toEqual({ autoCommitEnabled: false });
   });
 
+  it('updateWorkspaceSettings propagates a workspace.setAutoCommit rejection', async () => {
+    // e.g. -32602 for the virtual Chief workspace (PROTOCOL §5.1) — the write
+    // must reject rather than being swallowed like the get path.
+    requestMock.mockRejectedValueOnce(new Error('Invalid params'));
+    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
+    await expect(updateWorkspaceSettings('chief', { autoCommitEnabled: false })).rejects.toThrow(
+      'Invalid params',
+    );
+    // No read-back is attempted after a failed set.
+    const reads = requestMock.mock.calls.filter(([m]) => m === 'workspace.getAutoCommit');
+    expect(reads).toHaveLength(0);
+  });
+
+  it('returns the value just written when the read-back after a successful set fails', async () => {
+    requestMock
+      .mockResolvedValueOnce({}) // workspace.setAutoCommit ok
+      .mockRejectedValueOnce(new Error('boom')); // read-back getAutoCommit fails
+    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
+    await expect(updateWorkspaceSettings('ws-9', { autoCommitEnabled: false })).resolves.toEqual({
+      autoCommitEnabled: false,
+    });
+  });
+
   it('updateWorkspaceSettings with no autoCommitEnabled never writes', async () => {
     const { updateWorkspaceSettings } = await import('../workspace-settings.service');
     await updateWorkspaceSettings('ws-7', {});
