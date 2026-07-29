@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.10.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.10.0...v2.10.1) (2026-07-29)
+
+
+### 🐛 Bug Fixes
+
+* **ci:** skip sourcemaps in Build (web) to stop JS-heap OOM flake (monorepo[#1074](https://github.com/intent-hq/cloudlands-fe/issues/1074)) ([#541](https://github.com/intent-hq/cloudlands-fe/issues/541)) ([0550d3d](https://github.com/intent-hq/cloudlands-fe/commit/0550d3d6f07dff474814f03a2c778d27ad4a410b))
+* **terminal:** remove unreachable container-level paste sanitizer ([#540](https://github.com/intent-hq/cloudlands-fe/issues/540)) ([e2515aa](https://github.com/intent-hq/cloudlands-fe/commit/e2515aa374c29253904ae8807501b873c2bfbd83))
+
 ## [2.10.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.9.0...v2.10.0) (2026-07-29)
 
 
