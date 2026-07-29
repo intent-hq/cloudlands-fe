@@ -3031,6 +3031,7 @@
   "terminal_quakeOverlay_terminalName_placeholder": "터미널 이름",
   "terminal_quakeOverlay_renameTerminal_tooltip": "클릭하여 터미널 이름 바꾸기",
   "terminal_quakeOverlay_terminal_fallback": "터미널",
+  "terminal_daemonName_setupScript_label": "설정 스크립트",
   "terminal_quakeOverlay_clear_tooltip": "터미널 지우기",
   "terminal_quakeOverlay_clear_ariaLabel": "터미널 지우기",
   "terminal_quakeOverlay_name_placeholder": "이름",

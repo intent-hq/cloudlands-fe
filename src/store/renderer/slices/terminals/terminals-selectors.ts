@@ -8,6 +8,7 @@ import {
   getItem,
   getItems,
 } from "$lib/store-shim/utils/collections/collection-utils";
+import { terminalDisplayName } from "$lib/utils/terminal-display-name";
 
 function getActiveWs(state: StoreState) {
   const wsId = state.workspace.activeWorkspaceId;
@@ -73,8 +74,9 @@ export const selectTerminalDisplayName = store.createSelector(
   (state, termId: string): string => {
     const ws = getActiveWs(state);
     const term = getItem(ws.terminals, termId);
-    if (!term) return 'Terminal';
-    return term.customName || term.name || 'Terminal';
+    // Display resolution is customName || localized daemon name || fallback;
+    // the stored wire `name` stays raw — localization is render-time only.
+    return terminalDisplayName(term ?? {});
   }
 );
 
