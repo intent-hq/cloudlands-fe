@@ -555,8 +555,10 @@ export const chatSendFailed =
  * turn-correlation id. This is the EXACT promotion signal for retry records
  * (monorepo#1057): the reducer promotes the parked record whose `turnId`
  * matches; a match survives an `agent.retry` redrive (requeued entry: new
- * id, same turnId). `turnId` is optional only because legacy pre-#1022
- * entries can lack one on the wire — the reducer no-ops then. Dispatched by
+ * id, same turnId). `turnId` stays optional purely as wire defensiveness —
+ * the pinned daemon backfills legacy pre-#1022 rows on rehydration
+ * (agent_queue_repo COALESCEs NULL turn_id to the row id), so it should
+ * always be present; the reducer no-ops if it ever is not. Dispatched by
  * the events bridge (and chat-send-service's "Send now" success branch,
  * whose RPC response carries the turnId instead of the event, §5.5).
  */

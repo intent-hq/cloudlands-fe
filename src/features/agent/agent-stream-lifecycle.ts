@@ -446,6 +446,15 @@ export async function sendMessage(
                               turnId,
                             ),
                           );
+                        } else {
+                          // Unreachable against the pinned daemon; if it ever
+                          // fires, the caller's mid-turn lastAttemptedMessage
+                          // overwrite is left standing (a failure banner could
+                          // pair with the auto-queued payload) — surface it.
+                          logger.warn(
+                            'auto-queued sendMessage response carried no turnId; retry record not parked',
+                            { agentId, queuedMessageId: queuedMessage.id },
+                          );
                         }
                         const existing = selectAgentQueueMessages.select(appStore.state, agentId);
                         const next = existing.some((m) => m.id === queuedMessage.id)

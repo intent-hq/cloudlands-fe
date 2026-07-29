@@ -253,6 +253,32 @@ describe("send path wire contract (pending agent, first message)", () => {
     });
   }, 30000);
 
+  it("parks nothing when the queued response carries NO turnId (monorepo#1057 guard)", async () => {
+    // Unreachable against the pinned daemon (>=0.2.12 returns turnId on
+    // every enqueue path); the guard skips the park (a record without a
+    // turnId could never promote) and the queue is still seeded.
+    const queuedMessage: QueuedMessage = {
+      id: "queued-msg-4",
+      content: "no turn id",
+      queuedAt: "2026-07-17T14:00:00.000Z",
+      position: 0,
+    };
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === "agent.get") return { agent: daemonPendingAgent };
+      if (method === "agent.sendMessage") {
+        return { success: true, queued: true, queuedMessage };
+      }
+      return {};
+    });
+
+    await lifecycleSendMessage(AGENT, "no turn id", workspace(), {});
+
+    const chatAgent = appStore.state.chatState.byAgentId[AGENT];
+    expect(chatAgent.queuedRetryRecords).toEqual({});
+    const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(queueMessages.map((m) => m.id)).toContain("queued-msg-4");
+  }, 30000);
+
   it("keeps lastAttemptedMessage when the daemon queues WITHOUT echoing the entry (#1011)", async () => {
     backendRequestMock.mockImplementation(async (method: string) => {
       if (method === "agent.get") return { agent: daemonPendingAgent };

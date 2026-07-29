@@ -1067,15 +1067,18 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
  * turnId? }` — the drain-start signal emitted right after `agent:queue:updated`
  * when the daemon dequeues an entry to run its turn. It covers
  * `persisted: true` redrives that skip the user-row `agent:message` echo, so
- * it is the exact promotion signal for retry records (monorepo#1057).
- * `turnId` is omitted only for legacy pre-#1022 entries; the reducer no-ops
- * then.
+ * it is the exact promotion signal for retry records (monorepo#1057). The
+ * reducer matches on `turnId` alone, but `messageId` stays part of the
+ * malformed-payload gate so a contract regression is rejected rather than
+ * silently no-oping. `turnId` should always be present on the pinned daemon
+ * (legacy pre-#1022 rows are backfilled on rehydration); the reducer no-ops
+ * defensively when it is not.
  */
 function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
-  if (typeof agentId !== 'string') return;
+  if (typeof agentId !== 'string' || typeof data.messageId !== 'string') return;
   const turnId = typeof data.turnId === 'string' ? data.turnId : undefined;
   appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
 }

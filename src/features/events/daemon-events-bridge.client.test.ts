@@ -2497,7 +2497,7 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     ]);
   });
 
-  it('still accepts queue entries WITHOUT turnId (older daemons)', async () => {
+  it('still accepts queue entries WITHOUT turnId (legacy pre-#1022 entries)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -2593,11 +2593,12 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     ]);
   });
 
-  it('ignores agent:queue:processing payloads missing agentId (FE never invents data)', async () => {
+  it('ignores agent:queue:processing payloads missing agentId or messageId (FE never invents data)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     wrapDispatch();
 
+    handler(notification('agent:queue:processing', { agentId: AGENT }));
     handler(notification('agent:queue:processing', { messageId: 'q-1' }));
 
     expect(queueProcessingCalls()).toHaveLength(0);

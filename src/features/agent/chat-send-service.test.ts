@@ -1415,6 +1415,30 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
   });
 
+  it("monorepo#1057: a queue response WITHOUT a turnId parks nothing (turnId is the only attribution path)", async () => {
+    // Unreachable against the pinned daemon (>=0.2.12 returns turnId on
+    // every enqueue), but the guard must hold: a record without a turnId
+    // could never promote, so nothing is parked.
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    const queuedB: QueuedMessage = {
+      id: "qm-B",
+      content: "message B",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queuedB }),
+    );
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "message B" }));
+    await flush();
+    await flush();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.queuedRetryRecords).toEqual({});
+    // The queue slice is still seeded — only the retry record is skipped.
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual([
+      "qm-B",
+    ]);
+  });
+
   it("monorepo#1057: Send now with a turnId response promotes the parked record via the processing dispatch", async () => {
     // agent.sendQueuedMessageNow emits NO agent:queue:processing event (§5.5
     // — the RPC response carries the turnId instead), so the success branch
