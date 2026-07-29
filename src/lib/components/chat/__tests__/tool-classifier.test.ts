@@ -908,4 +908,51 @@ describe('tool-classifier', () => {
       expect(result.subject).toBe('processes');
     });
   });
+
+  describe('directory-listing ACP titles localize to List Contents', () => {
+    it('maps "List directory `.`" tool name to the List Contents verb', () => {
+      const result = classifyTool('List directory `.`', {});
+
+      expect(result.category).toBe('file-read');
+      expect(result.verb).toBe('List Contents');
+      expect(result.subject).toBe('.');
+      expect(result.isDirectory).toBe(true);
+    });
+
+    it('maps "List directory `src/lib`" tool name with path split', () => {
+      const result = classifyTool('List directory `src/lib`', {});
+
+      expect(result.category).toBe('file-read');
+      expect(result.verb).toBe('List Contents');
+      expect(result.subject).toBe('lib');
+      expect(result.path).toBe('src');
+      expect(result.filePath).toBe('src/lib');
+      expect(result.isDirectory).toBe(true);
+    });
+
+    it('maps a "List directory" _acpTitle on an unrecognized tool name', () => {
+      const result = classifyTool('zz_unrecognized_tool', {
+        _acpTitle: 'List directory `packages/app`',
+      });
+
+      expect(result.category).toBe('file-read');
+      expect(result.verb).toBe('List Contents');
+      expect(result.subject).toBe('app');
+      expect(result.isDirectory).toBe(true);
+    });
+
+    it('leaves non-backticked "List directory …" prose on verbatim rendering', () => {
+      const result = classifyTool('List directory contents and sizes', {});
+
+      expect(result.verb).toBe('List directory contents and sizes');
+      expect(result.subject).toBeNull();
+    });
+
+    it('leaves titles with trailing prose after the backticked path on verbatim rendering', () => {
+      const result = classifyTool('List directory `src` recursively with hidden files', {});
+
+      expect(result.verb).toBe('List directory `src` recursively with hidden files');
+      expect(result.subject).toBeNull();
+    });
+  });
 });

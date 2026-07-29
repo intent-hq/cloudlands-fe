@@ -236,14 +236,15 @@ function reduceAgentIdleReconcile(
  * QueuedRetryRecord) decides, because `Record` key iteration order is not
  * insertion order for integer-like keys.
  *
- * Queue-CLEAR flows (`agent.forceMessage` and `agent.editAndRegenerate`,
- * PROTOCOL §5.5 — both call `clear_queue` and publish an empty snapshot;
- * interrupt-priority ⌘Enter sends preserve the queue) also land here. The
- * cleared entries never run, so promotion must be SKIPPED for them: both
- * flows record their own `lastAttemptedMessage`, but Electron does not
- * guarantee ordering between the event channel and the RPC response, so a
- * late-arriving empty snapshot could otherwise clobber the fresh record
- * with a discarded entry's payload. The clear-queue signature — an EMPTY
+ * The queue-CLEAR flow (`agent.editAndRegenerate`, PROTOCOL §5.5 — discards
+ * the pending queue and publishes an empty snapshot; interrupt-priority
+ * ⌘Enter sends and `agent.sendQueuedMessageNow` preserve the queue) also
+ * lands here. The cleared entries never run, so promotion must be SKIPPED
+ * for them: the flow records its own `lastAttemptedMessage`, but Electron
+ * does not guarantee ordering between the event channel and the RPC
+ * response, so a late-arriving empty snapshot could otherwise clobber the
+ * fresh record with a discarded entry's payload. The clear-queue signature
+ * — an EMPTY
  * incoming snapshot with more than one recorded id vanishing at once — is
  * distinguishable from a genuine drain, which removes exactly one entry per
  * cycle; on that signature the records are dropped without promotion.
@@ -616,7 +617,7 @@ export const chatQueuedRetryRecordUpdated = createAction<
  * Dropping the records first makes that snapshot a no-op. (2) The events
  * bridge's `handleQueueUpdatedEvent` (#1032), which INFERS a clear from the
  * mirrored-count heuristic (empty snapshot wiping >1 last-snapshot entry)
- * for clears with no FE flow site — another client's `agent.forceMessage`.
+ * for clears with no FE flow site — another client's `agent.editAndRegenerate`.
  * turnId-keyed records (monorepo#1057) are dropped too: discarded entries
  * never drain, so no `agent:queue:processing` will ever promote them.
  */

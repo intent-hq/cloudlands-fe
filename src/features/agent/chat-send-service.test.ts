@@ -517,7 +517,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     seedSession({ isStreaming: true, status: AgentStatus.Active });
 
     appStore.dispatch(
-      sendMessage(AGENT, { wsId: WS, text: "interrupt now", forceSubmit: true, skipQueueCheck: true }),
+      sendMessage(AGENT, { wsId: WS, text: "interrupt now", forceSubmit: true }),
     );
     await flush();
     await flush();

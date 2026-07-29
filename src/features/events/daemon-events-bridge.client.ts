@@ -776,37 +776,64 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
 }
 
 /**
+ * Localized messages for the daemon's turn-startup phases (PROTOCOL §6.5:
+ * `launch` / `init` / `session-create` / `session-load` / `prompt`). The wire
+ * `message` is English prose authored daemon-side; the FE renders a catalog
+ * string keyed off the machine-readable `phase` instead so the thinking
+ * indicator localizes. Unknown phases fall back to the wire `message`.
+ */
+const STREAM_STATUS_PHASE_MESSAGES: Record<string, () => string> = {
+  launch: () => m.events_bridge_phaseLaunch_status(),
+  init: () => m.events_bridge_phaseInit_status(),
+  'session-create': () => m.events_bridge_phaseSessionCreate_status(),
+  'session-load': () => m.events_bridge_phaseSessionLoad_status(),
+  prompt: () => m.events_bridge_phasePrompt_status(),
+};
+
+/**
  * `agent:stream:status` (PROTOCOL §6.5 / §7 pre-first-token hints) carries the
  * self-sufficient `{ agentId, workspaceId, phase, message, level, timestamp }`
  * payload the daemon emits while a turn is starting (`launch` / `init` /
- * `session-create` / `session-load` / `prompt`). Map it directly to
+ * `session-create` / `session-load` / `prompt`). Map it to
  * `streamStatusReceived` so the chat spinner surfaces the current phase —
  * "Sent prompt…" and friends — before the first `agent:stream:chunk` arrives.
  *
+ * The rendered message is a localized catalog string keyed off `phase`; the
+ * daemon's English `message` is only used as a fallback for unknown phases,
+ * and for non-info `launch` events, which carry daemon-authored dynamic text
+ * (the model-switch restart warning, §6.5 / intentd#647) that a static
+ * localized label would drop. Known limitation: the repeated info-level
+ * `launch`-phase Unsloth server-progress updates (§6.5) collapse to the
+ * static localized launch message. Level/phase/timestamp round-trip verbatim.
+ *
  * `resetFirstChunk` is `false`: startup hints are cleared by the chunk /
  * stream:end / failed reducer paths (see file header §3), not by the status
- * event itself. Level/phase/message/timestamp round-trip verbatim so the shape
- * matches the reference `StatusEventData` the ported StreamingStatus renders.
+ * event itself.
  */
 function handleStreamStatusEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
   const phase = data.phase;
-  const message = data.message;
-  if (
-    typeof agentId !== 'string' ||
-    agentId.length === 0 ||
-    typeof phase !== 'string' ||
-    typeof message !== 'string'
-  ) {
+  if (typeof agentId !== 'string' || agentId.length === 0 || typeof phase !== 'string') {
     return;
   }
+  const message = typeof data.message === 'string' ? data.message : '';
   const levelRaw = data.level;
   const level: 'info' | 'warn' | 'error' =
     levelRaw === 'warn' || levelRaw === 'error' ? levelRaw : 'info';
   const timestamp = typeof data.timestamp === 'number' ? data.timestamp : Date.now();
-  appStore.dispatch(streamStatusReceived(agentId, { phase, message, level, timestamp }, false));
+  // Own-key lookup: a hostile/unknown wire phase like "constructor" must not
+  // resolve inherited Object.prototype members.
+  const phaseMessage = Object.hasOwn(STREAM_STATUS_PHASE_MESSAGES, phase)
+    ? STREAM_STATUS_PHASE_MESSAGES[phase]
+    : undefined;
+  const keepWireMessage = phase === 'launch' && level !== 'info' && message.length > 0;
+  const localizedMessage = !keepWireMessage && phaseMessage ? phaseMessage() : message;
+  if (localizedMessage.length === 0) return;
+  appStore.dispatch(
+    streamStatusReceived(agentId, { phase, message: localizedMessage, level, timestamp }, false),
+  );
 }
 
 /**
@@ -1024,19 +1051,21 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
  * suppresses messages the user just deleted but the BE has not yet self-drained
  * out of the snapshot, preventing flicker.
  *
- * Queue-CLEAR detection (#1032): `agent.forceMessage` / `agent.editAndRegenerate`
- * call `clear_queue` (PROTOCOL §5.5) and publish an EMPTY snapshot — the
- * discarded entries never run, so their parked retry records must be dropped
- * WITHOUT promotion (see reduceQueueSnapshotDiff in chat-state-slice). The
- * reducer's own signature (empty snapshot + >1 vanishing PARKED id) misses a
- * clear where only ONE of the wiped entries had a parked record: that looks
- * like a genuine single-entry drain and would promote the discarded payload.
- * The bridge holds the extra signal the reducer cannot see — the MIRRORED
- * queue length before this snapshot — so when an empty snapshot wipes more
- * than one mirrored entry at once (a drain removes exactly one per cycle) it
- * dispatches `chatQueuedRetryRecordsCleared` BEFORE `replaceAgentQueue`,
- * synchronously, leaving nothing for the diff to mis-promote. forceMessage has
- * no FE flow site (only other clients call it), so this is the only place the
+ * Queue-CLEAR detection (#1032): `agent.editAndRegenerate` — the only
+ * remaining whole-queue discard (PROTOCOL §5.5 step 2; the atomic "Send now",
+ * `agent.sendQueuedMessageNow`, preserves the rest of the queue) — publishes
+ * an EMPTY snapshot. The discarded entries never run, so their parked retry
+ * records must be dropped WITHOUT promotion (see reduceQueueSnapshotDiff in
+ * chat-state-slice). The reducer's own signature (empty snapshot + >1
+ * vanishing PARKED id) misses a clear where only ONE of the wiped entries had
+ * a parked record: that looks like a genuine single-entry drain and would
+ * promote the discarded payload. The bridge holds the extra signal the
+ * reducer cannot see — the MIRRORED queue length before this snapshot — so
+ * when an empty snapshot wipes more than one mirrored entry at once (a drain
+ * removes exactly one per cycle) it dispatches
+ * `chatQueuedRetryRecordsCleared` BEFORE `replaceAgentQueue`, synchronously,
+ * leaving nothing for the diff to mis-promote. An editAndRegenerate issued by
+ * ANOTHER client has no FE flow site here, so this is the only place that
  * clear can be recognized. The count read is the RAW last-snapshot length
  * (`lastSnapshotCount`), NOT the tombstone-suppressed visible mirror: an
  * optimistic local removal (`dispatchQueueRemoval`) hides an entry the daemon
