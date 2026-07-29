@@ -2413,68 +2413,7 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     ]);
   });
 
-  it('an empty snapshot wiping a multi-entry mirrored queue drops a SINGLE parked record without promotion (#1032 remote editAndRegenerate clear)', async () => {
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    // Mirror a 2-entry daemon queue: q-mine was queued by THIS client (its
-    // retry record is parked), q-other by another client (no local record).
-    handler(
-      notification('agent:queue:updated', {
-        agentId: AGENT,
-        queue: [
-          { id: 'q-mine', content: 'mine', queuedAt: '2026-01-02T00:00:01.000Z', position: 0 },
-          { id: 'q-other', content: 'other', queuedAt: '2026-01-02T00:00:02.000Z', position: 1 },
-        ],
-      }),
-    );
-    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'q-mine', { text: 'mine' }));
-
-    // Another client's agent.editAndRegenerate clears the whole queue
-    // (PROTOCOL §5.5) — the daemon publishes an EMPTY snapshot. Exactly ONE parked
-    // record vanishes, which the reducer alone cannot distinguish from a
-    // genuine drain; the bridge's mirrored-count signal must recognize the
-    // clear and drop the record instead of promoting the discarded payload.
-    handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
-
-    expect(readRetryState()).toEqual({ lastAttemptedMessage: null, queuedRetryRecords: {} });
-    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
-  });
-
-  it('a tombstone-suppressed mirror does not undercount the clear signal (optimistic removal racing a remote editAndRegenerate clear)', async () => {
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    // Mirror a 2-entry daemon queue with q-mine's retry record parked.
-    handler(
-      notification('agent:queue:updated', {
-        agentId: AGENT,
-        queue: [
-          { id: 'q-mine', content: 'mine', queuedAt: '2026-01-02T00:00:01.000Z', position: 0 },
-          { id: 'q-other', content: 'other', queuedAt: '2026-01-02T00:00:02.000Z', position: 1 },
-        ],
-      }),
-    );
-    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'q-mine', { text: 'mine' }));
-
-    // The user optimistically removes q-other locally (dispatchQueueRemoval's
-    // reducer half): the tombstone hides it from the VISIBLE mirror
-    // (count==1), but the daemon still holds 2 entries. If another client's
-    // editAndRegenerate clear lands in that window, the empty snapshot is a
-    // daemon 2-entry clear — the clear signal must use the raw last-snapshot
-    // count, not the suppressed visible count, or the clear masquerades as a
-    // single-entry drain and promotes the discarded payload.
-    appStore.dispatch(removeQueuedMessageFromAgentQueue(AGENT, 'q-other'));
-    expect(selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual([
-      'q-mine',
-    ]);
-    handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
-
-    expect(readRetryState()).toEqual({ lastAttemptedMessage: null, queuedRetryRecords: {} });
-    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
-  });
-
-  it('an empty snapshot draining a SINGLE-entry mirrored queue still promotes its parked record (genuine drain preserved)', async () => {
+  it('an empty snapshot leaves parked retry records untouched — agent:queue:processing owns the promotion (monorepo#1057)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -2482,15 +2421,36 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
       notification('agent:queue:updated', {
         agentId: AGENT,
         queue: [
-          { id: 'q-mine', content: 'mine', queuedAt: '2026-01-02T00:00:01.000Z', position: 0 },
+          {
+            id: 'q-mine',
+            content: 'mine',
+            queuedAt: '2026-01-02T00:00:01.000Z',
+            position: 0,
+            turnId: 'q-mine',
+          },
         ],
       }),
     );
-    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'q-mine', { text: 'mine' }));
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'q-mine', { text: 'mine' }, 'q-mine'));
 
-    // The daemon dequeues the sole entry to run it — a genuine drain.
+    // The daemon dequeues the sole entry to run it: the shrunk snapshot
+    // arrives first, then agent:queue:processing performs the exact
+    // promotion. The snapshot alone must not promote (a discard publishes
+    // the same empty snapshot).
     handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
+    expect(readRetryState()).toEqual({
+      lastAttemptedMessage: null,
+      queuedRetryRecords: { 'q-mine': { seq: 1, record: { text: 'mine' }, turnId: 'q-mine' } },
+    });
 
+    handler(
+      notification('agent:queue:processing', {
+        agentId: AGENT,
+        messageId: 'q-mine',
+        content: 'mine',
+        turnId: 'q-mine',
+      }),
+    );
     expect(readRetryState()).toEqual({
       lastAttemptedMessage: { text: 'mine' },
       queuedRetryRecords: {},
@@ -2616,12 +2576,12 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     expect(queueProcessingCalls()).toEqual([
       expect.objectContaining({
         type: 'chatState/queueProcessingReceived',
-        payload: [AGENT, 'q-1', 'turn-abc'],
+        payload: [AGENT, 'turn-abc'],
       }),
     ]);
   });
 
-  it('dispatches with turnId undefined when the daemon omits it (older daemons)', async () => {
+  it('dispatches with turnId undefined when the payload omits it (legacy pre-#1022 entry)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     wrapDispatch();
@@ -2629,16 +2589,15 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     handler(notification('agent:queue:processing', { agentId: AGENT, messageId: 'q-1' }));
 
     expect(queueProcessingCalls()).toEqual([
-      expect.objectContaining({ payload: [AGENT, 'q-1', undefined] }),
+      expect.objectContaining({ payload: [AGENT, undefined] }),
     ]);
   });
 
-  it('ignores agent:queue:processing payloads missing agentId or messageId (FE never invents data)', async () => {
+  it('ignores agent:queue:processing payloads missing agentId (FE never invents data)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     wrapDispatch();
 
-    handler(notification('agent:queue:processing', { agentId: AGENT }));
     handler(notification('agent:queue:processing', { messageId: 'q-1' }));
 
     expect(queueProcessingCalls()).toHaveLength(0);

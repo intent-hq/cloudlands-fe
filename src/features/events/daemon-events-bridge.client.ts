@@ -138,7 +138,6 @@ import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agen
 import {
   streamStatusReceived,
   chatQueueProcessingReceived,
-  chatQueuedRetryRecordsCleared,
   chatSendFailed,
   chatSendStarted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -1049,30 +1048,10 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
  * event-design rule — so the renderer mirrors the BE queue directly without a
  * follow-up `agent.getQueue`. The reducer's recently-removed-id tombstone
  * suppresses messages the user just deleted but the BE has not yet self-drained
- * out of the snapshot, preventing flicker.
- *
- * Queue-CLEAR detection (#1032): `agent.editAndRegenerate` — the only
- * remaining whole-queue discard (PROTOCOL §5.5 step 2; the atomic "Send now",
- * `agent.sendQueuedMessageNow`, preserves the rest of the queue) — publishes
- * an EMPTY snapshot. The discarded entries never run, so their parked retry
- * records must be dropped WITHOUT promotion (see reduceQueueSnapshotDiff in
- * chat-state-slice). The reducer's own signature (empty snapshot + >1
- * vanishing PARKED id) misses a clear where only ONE of the wiped entries had
- * a parked record: that looks like a genuine single-entry drain and would
- * promote the discarded payload. The bridge holds the extra signal the
- * reducer cannot see — the MIRRORED queue length before this snapshot — so
- * when an empty snapshot wipes more than one mirrored entry at once (a drain
- * removes exactly one per cycle) it dispatches
- * `chatQueuedRetryRecordsCleared` BEFORE `replaceAgentQueue`, synchronously,
- * leaving nothing for the diff to mis-promote. An editAndRegenerate issued by
- * ANOTHER client has no FE flow site here, so this is the only place that
- * clear can be recognized. The count read is the RAW last-snapshot length
- * (`lastSnapshotCount`), NOT the tombstone-suppressed visible mirror: an
- * optimistic local removal (`dispatchQueueRemoval`) hides an entry the daemon
- * still holds, so the visible count would present a daemon 2-entry clear as
- * mirror==1 and let it slip past as a "drain". A clear that wipes a
- * SINGLE-entry queue remains indistinguishable from a drain by snapshot alone
- * (needs the daemon-side turn-correlation id, #1022).
+ * out of the snapshot, preventing flicker. The chat-state reducer also syncs
+ * still-present entries' daemon-authoritative content into their parked retry
+ * records (#1011); retry-record promotion rides `agent:queue:processing`
+ * instead (monorepo#1057).
  */
 function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1080,19 +1059,6 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   const queue = data.queue;
   if (typeof agentId !== 'string' || !Array.isArray(queue)) return;
-  if (queue.length === 0) {
-    // Raw appStore.state read of a flat slice field — this module is in the
-    // store middleware's import graph, where module-level selector imports
-    // are barred (store-shim selectors call store.createSelector at module
-    // init, before the store exists; see src/store/renderer/AGENTS.md).
-    const state = appStore.state as {
-      agentQueue?: { byAgentId: Record<string, { lastSnapshotCount?: number }> };
-    };
-    const mirroredCount = state.agentQueue?.byAgentId[agentId]?.lastSnapshotCount ?? 0;
-    if (mirroredCount > 1) {
-      appStore.dispatch(chatQueuedRetryRecordsCleared(agentId));
-    }
-  }
   appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[]));
 }
 
@@ -1101,18 +1067,17 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
  * turnId? }` — the drain-start signal emitted right after `agent:queue:updated`
  * when the daemon dequeues an entry to run its turn. It covers
  * `persisted: true` redrives that skip the user-row `agent:message` echo, so
- * it is the exact promotion signal for turnId-keyed retry records
- * (monorepo#1057). The payload fields are forwarded as-is; `turnId` is
- * omitted by older daemons.
+ * it is the exact promotion signal for retry records (monorepo#1057).
+ * `turnId` is omitted only for legacy pre-#1022 entries; the reducer no-ops
+ * then.
  */
 function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
-  const messageId = data.messageId;
-  if (typeof agentId !== 'string' || typeof messageId !== 'string') return;
+  if (typeof agentId !== 'string') return;
   const turnId = typeof data.turnId === 'string' ? data.turnId : undefined;
-  appStore.dispatch(chatQueueProcessingReceived(agentId, messageId, turnId));
+  appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
 }
 
 /**

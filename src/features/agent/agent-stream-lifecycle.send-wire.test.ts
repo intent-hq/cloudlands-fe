@@ -200,6 +200,7 @@ describe("send path wire contract (pending agent, first message)", () => {
       content: "auto-queued send",
       queuedAt: "2026-07-17T14:00:00.000Z",
       position: 0,
+      turnId: "queued-msg-2",
     };
     backendRequestMock.mockImplementation(async (method: string) => {
       if (method === "agent.get") return { agent: daemonPendingAgent };
