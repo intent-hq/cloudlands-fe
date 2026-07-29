@@ -2182,22 +2182,33 @@ function handleNotification(method: string, params: unknown): void {
   // none of the FE-initiated clearing paths from #1044 run and the previous
   // turn's failure banner persists over the live turn ("errored" and
   // "processing" simultaneously). Clear the stale `chatError` /
-  // `modelUnavailable` on the error→active edge. Gated on the PRIOR session
-  // status (read before the `eventReceived` dispatch below applies the
-  // transition) so a mid-turn status tick — e.g. an isStreaming flag change
-  // while an enqueue-failure banner is up — never wipes a banner set while
-  // the agent was already active (#1044/#999 semantics preserved). Retry
-  // records stay parked: their promotion remains turnId-exact via
-  // `agent:queue:processing` (monorepo#1057). Side effect only — falls
-  // through to the timeline dispatch below.
+  // `modelUnavailable` when the agent leaves the error state for a
+  // turn-starting one. Two wire shapes cover the redrive family:
+  //   - `agent.sendMessage` on an errored agent goes straight error→active;
+  //   - `agent.retry` persists Pending BEFORE draining (persist_retry_status),
+  //     so the FE sees error→pending (isActive:false) first — that edge
+  //     consumes the error prior status, so `pending` must clear too or the
+  //     follow-up pending→active tick reads priorStatus 'pending' and never
+  //     fires. An empty-queue retry goes error→idle instead, which correctly
+  //     keeps the banner (nothing was redriven).
+  // Gated on the PRIOR session status (read before the `eventReceived`
+  // dispatch below applies the transition) so a mid-turn status tick — e.g.
+  // an isStreaming flag change while an enqueue-failure banner is up — never
+  // wipes a banner set while the agent was already active (#1044/#999
+  // semantics preserved). Retry records stay parked: their promotion remains
+  // turnId-exact via `agent:queue:processing` (monorepo#1057). Side effect
+  // only — falls through to the timeline dispatch below.
   if (type === 'agent:status-changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId = data?.agentId;
-    const status = data?.status;
-    const startsTurn = data?.isActive === true || status === 'active' || status === 'responding';
+    const status = typeof data?.status === 'string' ? data.status : undefined;
+    const startsTurn =
+      data?.isActive === true ||
+      status === 'active' ||
+      status === 'responding' ||
+      status === 'pending';
     if (
       typeof agentId === 'string' &&
-      typeof status === 'string' &&
       status !== 'error' &&
       status !== 'failed' &&
       startsTurn

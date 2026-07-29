@@ -5931,6 +5931,41 @@ describe('daemonEventsBridge (daemon-side redrive clears stale error banner — 
     expect(readChatAgent()?.modelUnavailable).toBeNull();
   });
 
+  it('agent.retry wire sequence (error→pending isActive:false, then pending→active) clears the banner', async () => {
+    // agent_retry persists Pending BEFORE draining (persist_retry_status), so
+    // the redrive arrives as error→pending with isActive:false, then
+    // pending→active. The pending edge consumes the error prior status, so it
+    // must clear the banner itself — the later active tick reads
+    // priorStatus 'pending' and cannot.
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'pending', isActive: false }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+  });
+
+  it('clears on error→(isActive:true) even when the payload omits a string status', async () => {
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
+
+    handler(notification('agent:status-changed', { agentId: AGENT, isActive: true }));
+
+    expect(readChatAgent()?.error).toBeNull();
+  });
+
   it('agent:status-changed error→idle (no new turn) keeps the banner', async () => {
     seedSession({ status: AgentStatus.Error });
     await primeBridge();
