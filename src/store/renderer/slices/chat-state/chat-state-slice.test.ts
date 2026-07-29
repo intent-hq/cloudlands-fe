@@ -580,6 +580,21 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({});
     });
 
+    it('the messageId fallback does NOT promote a record parked under a DIFFERENT turnId', () => {
+      // Exact-attribution invariant: an event whose turnId matches no record
+      // must not promote a same-entry-id record keyed by another turnId —
+      // the fallback is reserved for records parked WITHOUT one.
+      let s = chatStateReducer(
+        initialState,
+        chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'),
+      );
+      s = chatStateReducer(s, chatQueueProcessingReceived(AGENT, 'qm-1', 'turn-mismatch'));
+      expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
+      expect(s.byAgentId[AGENT].queuedRetryRecords).toEqual({
+        'qm-1': { seq: 1, record: { text: 'B' }, turnId: 'turn-1' },
+      });
+    });
+
     it('chatQueueProcessingReceived is a no-op when nothing matches (no approximation)', () => {
       const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
       const s2 = chatStateReducer(s1, chatQueueProcessingReceived(AGENT, 'qm-x', 'turn-x'));

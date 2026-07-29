@@ -120,14 +120,17 @@ export interface MutationResult {
    */
   queuedMessage?: QueuedMessage;
   /**
-   * Turn-correlation id (PROTOCOL §5.5/§6.6, monorepo#1022) surfaced by the
-   * `agent.*` mutations that extract it at the seam (`queueMessage`,
-   * `sendQueuedMessageNow`, `retry`) when the daemon returns one — either the
-   * top-level result `turnId` or the echoed `queuedMessage.turnId`. The chat
-   * send flow bypasses the `send()` seam, so `sendMessage` does not set it.
-   * Callers key retry records by it for exact lifecycle-event attribution
-   * (monorepo#1057). Additive and optional: older daemons omit it and other
-   * mutation paths never set it.
+   * Turn-correlation id (PROTOCOL §5.5/§6.6, monorepo#1022) surfaced when the
+   * daemon returns one by the seam mutations that extract it: `queueMessage`
+   * (top-level result `turnId`, falling back to the echoed
+   * `queuedMessage.turnId`) and `sendQueuedMessageNow` (top-level field of
+   * the delivered arm ONLY — no `queuedMessage` fallback, a slot-race restore
+   * is not a delivery). `agent.retry` surfaces the same id on its own
+   * `{ ok, redriven?, turnId? }` result, and the chat send flow bypasses the
+   * `send()` seam, so `sendMessage` does not set it. Callers key retry
+   * records by it for exact lifecycle-event attribution (monorepo#1057).
+   * Additive and optional: older daemons omit it and other mutation paths
+   * never set it.
    */
   turnId?: string;
 }

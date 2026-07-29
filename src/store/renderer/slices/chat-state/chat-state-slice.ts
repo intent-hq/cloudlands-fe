@@ -311,7 +311,12 @@ function reduceQueueSnapshotDiff(
         // sendQueuedMessageNow RPC turnId) is their exact signal. Keep the
         // record parked, but remember it: the clear-queue signature below
         // must still drop it (a cleared entry never drains, so no processing
-        // event will ever arrive for it).
+        // event will ever arrive for it). Known trade-off: the SINGLE-entry
+        // whole-queue discard (the documented gap in both the bridge's #1032
+        // `>1` heuristic and the `drainedCount > 1` signature below) now
+        // LEAKS the record — it stays parked, bounded by
+        // MAX_QUEUED_RETRY_RECORDS — where a no-turnId record would have
+        // mis-promoted the discarded payload. No wrong banner beats a leak.
         remaining[id] = parked;
         vanishedTurnKeyed.push(id);
       } else if (promoted === null || parked.seq > promoted.seq) {
@@ -344,9 +349,11 @@ function reduceQueueSnapshotDiff(
  * #1057): a `turnId` match wins — it survives the `agent.retry` redrive
  * requeue, which mints a NEW entry id but keeps the failed turn's original
  * `turnId` — with the entry-id key as the exact fallback for records parked
- * without one (older daemons). Returns the record's key, or null when
- * nothing matches (e.g. a redrive of an entry this client never parked —
- * promotion must NOT fall back to approximating with another record).
+ * WITHOUT one (older daemons): a record keyed by a different turnId never
+ * matches by entry id alone, keeping the exact-attribution invariant
+ * self-enforcing. Returns the record's key, or null when nothing matches
+ * (e.g. a redrive of an entry this client never parked — promotion must NOT
+ * fall back to approximating with another record).
  */
 function findParkedRecordKey(
   agent: ChatAgentState,
@@ -358,7 +365,10 @@ function findParkedRecordKey(
       if (parked.turnId === turnId) return id;
     }
   }
-  if (messageId !== undefined && messageId in agent.queuedRetryRecords) return messageId;
+  if (messageId !== undefined) {
+    const parked = agent.queuedRetryRecords[messageId];
+    if (parked !== undefined && parked.turnId === undefined) return messageId;
+  }
   return null;
 }
 

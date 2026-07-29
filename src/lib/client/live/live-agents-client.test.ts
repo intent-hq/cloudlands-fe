@@ -463,6 +463,32 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('not found: queued message');
   });
 
+  it('sendQueuedNow does NOT surface a turnId on the slot-race restore arm (no queuedMessage fallback)', async () => {
+    // §5.5 slot-race arm: `{ success: true, queued: true, queuedMessage }` —
+    // the entry was RESTORED at the queue front, not delivered. Unlike
+    // `queue()`, this method must not fall back to `queuedMessage.turnId`:
+    // a restore surfaced as a delivery would promote the parked record.
+    backend.onRequest('agent.sendQueuedMessageNow', () => ({
+      success: true,
+      queued: true,
+      queuedMessage: {
+        id: 'qm-9',
+        content: 'held',
+        queuedAt: '2026-01-01T00:00:00.000Z',
+        position: 0,
+        turnId: 'turn-restored',
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.sendQueuedNow({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'qm-9',
+    });
+    expect(result).toEqual({ success: true });
+  });
+
   it('sendQueuedNow folds JSON-RPC "Internal error" + data.detail into the error like runMutation', async () => {
     // Regression: extracting turnId bypassed runMutation, which must not lose
     // the shared mutationErrorMessage shaping (generic "Internal error"

@@ -431,7 +431,11 @@ export async function sendMessage(
                         // agent:queue:processing / agent:failed attribution.
                         const rawTurnId = (response as { turnId?: unknown }).turnId;
                         const turnId =
-                          typeof rawTurnId === 'string' ? rawTurnId : queuedMessage.turnId;
+                          typeof rawTurnId === 'string'
+                            ? rawTurnId
+                            : typeof queuedMessage.turnId === 'string'
+                              ? queuedMessage.turnId
+                              : undefined;
                         dispatchRedux(
                           chatQueuedRetryRecordParked(
                             agentId,

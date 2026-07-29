@@ -1102,8 +1102,8 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
  * when the daemon dequeues an entry to run its turn. It covers
  * `persisted: true` redrives that skip the user-row `agent:message` echo, so
  * it is the exact promotion signal for turnId-keyed retry records
- * (monorepo#1057). Entries are forwarded verbatim; `turnId` is omitted by
- * older daemons.
+ * (monorepo#1057). The payload fields are forwarded as-is; `turnId` is
+ * omitted by older daemons.
  */
 function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
