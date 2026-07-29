@@ -6,7 +6,11 @@ import {
   describe,
   it,
   expect,
+  vi,
+  beforeEach,
 } from 'vitest';
+import { getBaseInstruction } from '../base-system-prompt';
+import { getMainActiveLocale } from '../../../../../main/main-locale';
 import {
   getInstructionById,
   getAvailableInstructionIds,
@@ -22,6 +26,10 @@ import {
   prDescription,
   workspaceAgent,
 } from '../index';
+
+vi.mock('../../../../../main/main-locale', () => ({
+  getMainActiveLocale: vi.fn(() => 'en'),
+}));
 
 describe('Agent Instructions', () => {
   describe('getInstructionById', () => {
@@ -150,6 +158,34 @@ describe('Agent Instructions', () => {
       expect(workspaceAgent).toContain('ws.workspace.details()');
       expect(workspaceAgent).toContain('ws.workspace.setStatusMessage(message)');
       expect(workspaceAgent).toContain('statusMessage');
+    });
+  });
+
+  describe('getBaseInstruction summary-language section', () => {
+    beforeEach(() => {
+      vi.mocked(getMainActiveLocale).mockReset();
+    });
+
+    it('omits the User Language section when the app language is English', () => {
+      vi.mocked(getMainActiveLocale).mockReturnValue('en');
+      const result = getBaseInstruction();
+      expect(result).not.toContain('## User Language');
+    });
+
+    it('adds a language instruction for the summary fields when the app language is not English', () => {
+      vi.mocked(getMainActiveLocale).mockReturnValue('zh-TW' as never);
+      const result = getBaseInstruction();
+      expect(result).toContain('## User Language');
+      expect(result).toContain('Chinese (Taiwan)');
+      expect(result).toContain('`summary` fields');
+    });
+
+    it('omits the section when the locale lookup throws (renderer-context safety)', () => {
+      vi.mocked(getMainActiveLocale).mockImplementation(() => {
+        throw new Error('electron unavailable');
+      });
+      const result = getBaseInstruction();
+      expect(result).not.toContain('## User Language');
     });
   });
 });
