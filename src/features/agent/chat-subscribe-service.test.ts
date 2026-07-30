@@ -63,6 +63,7 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from "./utils/pending-agent-deletions";
+import { shouldShowStoppedIndicator } from "$lib/components/chat/message-display-utils";
 
 type FakeSubscription = {
   agentId: string;
@@ -278,6 +279,55 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     appStore.dispatch(clearCurrentlyViewedAgent());
     expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
     expect(hasLiveChatSubscription(agentId)).toBe(false);
+  });
+
+  it("renders the interrupted partial row with Stopped metadata after the §7.2 terminal reconcile", () => {
+    // Interrupt-send during streaming (cloudlands-fe#132): the daemon
+    // persists the partial row before agent:stream:end, so the terminal
+    // reconcile's transcript CONTAINS the streamed message tagged with
+    // `metadata.interrupted` / `metadata.stopReason` (§7.2). The store must
+    // keep the partial blocks and the Stopped indicator must render once the
+    // stream is over. On an interrupt-priority send the interrupted row
+    // precedes the new user message.
+    const agentId = "agent-sub-interrupt";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+
+    // Live partial mid-turn.
+    const partial = makeMessage("0190a200-asst", "Partial ");
+    sub.handler(transcript([partial], true));
+    expect(selectAgentSession.select(appStore.state, agentId)?.isStreaming).toBe(true);
+
+    // Terminal reconcile after the interrupt-priority send: the persisted
+    // interrupted row (same id, Stopped metadata) followed by the new user
+    // message; isStreaming falls.
+    const interrupted = makeMessage("0190a200-asst", "Partial ", {
+      metadata: { interrupted: true, stopReason: "interrupted" },
+    });
+    const nextUser = makeMessage("0190a1c0-user2", "Do this instead", {
+      role: "user",
+      timestamp: "2026-01-01T00:00:03.000Z",
+    });
+    sub.handler(transcript([interrupted, nextUser]));
+
+    const messages = selectAgentMessages.select(appStore.state, agentId);
+    expect(messages.map((m) => m.id)).toEqual(["0190a200-asst", "0190a1c0-user2"]);
+    // The partial output survives — not wiped, not replaced by a placeholder.
+    expect(messages[0].contentBlocks?.[0]).toMatchObject({ text: "Partial " });
+    expect(messages[0].metadata).toMatchObject({
+      interrupted: true,
+      stopReason: "interrupted",
+    });
+    const session = selectAgentSession.select(appStore.state, agentId);
+    expect(session?.isStreaming).toBe(false);
+    // The Stopped indicator renders from the persisted metadata now that the
+    // stream is over (and stays hidden while one is still in flight).
+    expect(
+      shouldShowStoppedIndicator({ message: messages[0], isStreaming: false }),
+    ).toBe(true);
+    expect(
+      shouldShowStoppedIndicator({ message: messages[0], isStreaming: true }),
+    ).toBe(false);
   });
 
   it("does not open a subscription while a soft-hidden deletion is pending, and tears down on removeSession", () => {

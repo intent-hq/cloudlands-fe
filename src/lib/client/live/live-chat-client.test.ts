@@ -602,3 +602,367 @@ describe("LiveChatClient.subscribe (standing §7.1 subscription)", () => {
     off();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression scenarios ported from the deleted firehose suites (monorepo#1127)
+// onto the chat.subscribe delta path.
+// ---------------------------------------------------------------------------
+
+describe("LiveChatClient.subscribe (ported delta-path regressions)", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    reset();
+  });
+
+  it("interrupt-send terminal reconcile keeps the partial blocks (§7.2: updated, never removedIds)", async () => {
+    // cloudlands-fe#132 / intentd#336: a user interrupt persists the partial
+    // assistant row BEFORE agent:stream:end, so the terminal reconcile
+    // re-emits the streamed blocks as authoritative `updated` entries — the
+    // partial output is never wiped via removedIds.
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[]; isStreaming: boolean }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+
+    // Streamed-so-far partial: text + a completed tool pair.
+    deltaPush("sub-1", 1, {
+      added: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          block: { type: "text", id: "0190a200-asst:0", text: "Partial " },
+        },
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          block: {
+            type: "tool_use",
+            id: "0190a200-asst:1",
+            name: "Read",
+            input: { path: "src/lib.rs" },
+            toolCallId: "t-int",
+            metadata: { toolKind: "read", status: "completed" },
+          },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+    expect(seen[seen.length - 1].isStreaming).toBe(true);
+
+    // Interrupt: the daemon flushed the partial row (§7.2) and the terminal
+    // reconcile re-emits every persisted block as `updated` with the
+    // authoritative fields. removedIds stays empty — nothing is orphaned.
+    deltaPush("sub-1", 2, {
+      added: [],
+      updated: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          messageSeq: 1,
+          timestamp: "2026-06-27T01:00:03.000Z",
+          streamingComplete: true,
+          block: { type: "text", id: "0190a200-asst:0", text: "Partial " },
+        },
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          messageSeq: 1,
+          timestamp: "2026-06-27T01:00:03.000Z",
+          streamingComplete: true,
+          block: {
+            type: "tool_use",
+            id: "0190a200-asst:1",
+            name: "Read",
+            input: { path: "src/lib.rs" },
+            toolCallId: "t-int",
+            metadata: { toolKind: "read", status: "completed" },
+          },
+        },
+      ],
+      removedIds: [],
+    });
+
+    const last = seen[seen.length - 1];
+    const asst = last.messages[1] as {
+      isStreaming?: boolean;
+      contentBlocks: Array<{ id: string; type: string; text?: string }>;
+    };
+    // The partial output survives the interrupt — blocks intact, in order.
+    expect(asst.contentBlocks.map((b) => b.id)).toEqual(["0190a200-asst:0", "0190a200-asst:1"]);
+    expect(asst.contentBlocks[0].text).toBe("Partial ");
+    expect(asst.isStreaming).toBe(false);
+    expect(last.isStreaming).toBe(false);
+    off();
+  });
+
+  it("mid-turn rehydration: the seq-0 snapshot's synthetic in-flight assistant continues via deltas without a gap", async () => {
+    // Tab switch / app restart mid-turn: the seq-0 snapshot carries the
+    // synthetic in-flight assistant message (partial text preserved) and the
+    // live delta stream keeps growing the SAME message by block id.
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[]; isStreaming: boolean }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+
+    snapshotPush("sub-1", 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        ...SEEDED_SNAPSHOT.messages,
+        {
+          id: "0190a200-asst",
+          agentId: "agent-1",
+          seq: 1,
+          role: "assistant",
+          isStreaming: true,
+          contentBlocks: [{ type: "text", id: "0190a200-asst:0", text: "Partial so f" }],
+          timestamp: "2026-06-27T01:00:00.500Z",
+        },
+      ],
+      totalMessages: 2,
+    });
+    expect(seen[0].isStreaming).toBe(true);
+
+    // The next live delta grows the snapshot's in-flight block — same
+    // messageId, same block id — with no resnapshot in between.
+    deltaPush("sub-1", 1, {
+      added: [],
+      updated: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          block: { type: "text", id: "0190a200-asst:0", text: "Partial so far, and more." },
+        },
+      ],
+      removedIds: [],
+    });
+
+    const last = seen[seen.length - 1];
+    expect(last.messages).toHaveLength(2);
+    const asst = last.messages[1] as { contentBlocks: Array<{ text: string }> };
+    expect(asst.contentBlocks).toHaveLength(1);
+    expect(asst.contentBlocks[0].text).toBe("Partial so far, and more.");
+    // No gap was seen: exactly one chat.subscribe registration.
+    expect(mockedRequest.mock.calls.filter(([m]) => m === "chat.subscribe")).toHaveLength(1);
+    off();
+  });
+
+  it("reconnect replay converges (RESUB-1): fresh snapshot + live deltas apply, dead-id pushes are ignored", async () => {
+    // cloudlands-fe#15: the daemon restarted and dropped its registry. The
+    // client re-registers, the fresh seq-0 snapshot rebuilds, subsequent live
+    // deltas apply — and a replayed push for the dead id never writes.
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[]; totalMessages?: number }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+
+    emitReconnect();
+    await flush();
+
+    // Fresh registration; the restarted daemon replays a stale-looking push
+    // on the DEAD id first — it must be ignored, not resurrect old state.
+    const emitsBefore = seen.length;
+    deltaPush("sub-1", 1, {
+      added: [
+        {
+          agentId: "agent-1",
+          messageId: "ghost-asst",
+          role: "assistant",
+          block: { type: "text", id: "ghost-asst:0", text: "stale replay" },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+    expect(seen.length).toBe(emitsBefore);
+
+    // The new registration's seq-0 snapshot converges the transcript…
+    snapshotPush("sub-2", 0, { ...SEEDED_SNAPSHOT, totalMessages: 2 });
+    // …and live deltas continue on the new id.
+    deltaPush("sub-2", 1, {
+      added: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a300-asst",
+          role: "assistant",
+          block: { type: "text", id: "0190a300-asst:0", text: "post-restart turn" },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+
+    const last = seen[seen.length - 1];
+    const ids = last.messages.map((m) => (m as { id: string }).id);
+    expect(ids).toEqual(["0190a1b2-user", "0190a300-asst"]);
+    expect(ids).not.toContain("ghost-asst");
+    off();
+  });
+
+  it("truncation/shrink: a recovery snapshot with fewer messages rebuilds the transcript (agent.replaceMessages)", async () => {
+    // Edit/regenerate flows swap the transcript via agent.replaceMessages
+    // (#505 baseline-merge lineage). On the delta path the convergence
+    // guarantee is the §7.1 invariant: a fresh snapshot REBUILDS the message
+    // list — dropped rows are gone, not merged back.
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[]; totalMessages?: number }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+    snapshotPush("sub-1", 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        ...SEEDED_SNAPSHOT.messages,
+        {
+          id: "0190a200-asst",
+          agentId: "agent-1",
+          seq: 1,
+          role: "assistant",
+          contentBlocks: [{ type: "text", id: "0190a200-asst:0", text: "Old answer" }],
+          timestamp: "2026-06-27T01:00:01.000Z",
+        },
+      ],
+      totalMessages: 2,
+    });
+    expect(seen[0].messages).toHaveLength(2);
+
+    // The swap invalidates the registration's seq stream: a gap triggers the
+    // self-heal resnapshot whose fresh page is the truncated transcript.
+    deltaPush("sub-1", 5, { added: [], updated: [], removedIds: [] });
+    await flush();
+    snapshotPush("sub-2", 0, SEEDED_SNAPSHOT);
+
+    const last = seen[seen.length - 1];
+    expect(last.messages.map((m) => (m as { id: string }).id)).toEqual(["0190a1b2-user"]);
+    expect(last.totalMessages).toBe(1);
+    off();
+  });
+
+  it("renders daemon-synthesized standalone resource blocks verbatim (proposal + turn-end question, §7.1)", async () => {
+    // The FE lift is gone — the daemon synthesizes the standalone
+    // proposal-resource block (after the tool_result) and drains AtTurnEnd
+    // question blocks into the terminal reconcile as `added`. Both must ride
+    // through the reconciler byte-faithfully.
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[] }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+
+    const proposalResource = {
+      type: "resource",
+      id: "0190a200-asst:2",
+      resource: {
+        uri: "intent-proposal://plan/abc",
+        name: "Plan proposal",
+        mimeType: "application/vnd.intent.proposal+json",
+        text: '{"kind":"plan","preview":{"title":"Plan proposal"},"payload":{}}',
+      },
+    };
+    deltaPush("sub-1", 1, {
+      added: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          block: {
+            type: "tool_result",
+            id: "0190a200-asst:1",
+            tool_use_id: "call-1",
+            output: [],
+            is_error: false,
+          },
+        },
+        // Standalone proposal block, appended by the daemon's tool_delta.
+        { agentId: "agent-1", messageId: "0190a200-asst", role: "assistant", block: proposalResource },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+
+    // Terminal reconcile: the AtTurnEnd question block arrives as `added`
+    // (never seen live — questions are drained at turn finalization).
+    const questionResource = {
+      type: "resource",
+      id: "0190a200-asst:3",
+      resource: {
+        uri: "intent-question://tar-3f9c2a81d0b4",
+        name: "Auth method",
+        mimeType: "application/vnd.intent.question+json",
+        text: '{"attachmentId":"tar-3f9c2a81d0b4","header":"Auth method","question":"Which auth?","options":[{"label":"OAuth"},{"label":"API key"}],"multiSelect":false}',
+      },
+    };
+    deltaPush("sub-1", 2, {
+      added: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          messageSeq: 1,
+          timestamp: "2026-06-27T01:00:05.000Z",
+          streamingComplete: true,
+          block: questionResource,
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+
+    const last = seen[seen.length - 1];
+    const asst = last.messages[1] as { contentBlocks: Array<Record<string, unknown>> };
+    // Faithful rendering pin: the daemon-synthesized blocks are stored
+    // verbatim — no FE healing, renaming, or re-derivation.
+    expect(asst.contentBlocks[1]).toEqual(proposalResource);
+    expect(asst.contentBlocks[2]).toEqual(questionResource);
+    off();
+  });
+
+  it("fan-out isolation: a delta on a foreign agent's subscription never mutates the viewed transcript", async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seenA: Array<{ messages: unknown[] }> = [];
+    const seenB: Array<{ messages: unknown[] }> = [];
+    const offA = client.subscribe("agent-1", (t) => seenA.push(t));
+    await flush();
+    const offB = client.subscribe("agent-2", (t) => seenB.push(t));
+    await flush();
+
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+    snapshotPush("sub-2", 0, { agentId: "agent-2", messages: [], truncated: false, totalMessages: 0 });
+
+    // A turn streams on agent-2's subscription only.
+    deltaPush("sub-2", 1, {
+      added: [
+        {
+          agentId: "agent-2",
+          messageId: "0190b100-asst",
+          role: "assistant",
+          block: { type: "text", id: "0190b100-asst:0", text: "foreign turn" },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+
+    // agent-1's transcript is untouched — no emit past its snapshot, no
+    // foreign message bleed-through.
+    expect(seenA).toHaveLength(1);
+    expect(seenA[0].messages.map((m) => (m as { id: string }).id)).toEqual(["0190a1b2-user"]);
+    // agent-2's transcript got exactly the foreign turn.
+    const lastB = seenB[seenB.length - 1];
+    expect(lastB.messages.map((m) => (m as { id: string }).id)).toEqual(["0190b100-asst"]);
+    offA();
+    offB();
+  });
+});

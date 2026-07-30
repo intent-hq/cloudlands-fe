@@ -29,16 +29,28 @@ vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
   default: (await import('./mocks/MockWorkspaceCard.svelte')).default,
 }));
 
-// Mock active streams tracker with controllable state
+// Mock active streams tracker with controllable state. `subscribe` records
+// listeners and `__notify` fires them — the same change-notification path the
+// real tracker drives from agent:status-changed / agent:idle events — so the
+// live-badge test can assert the card regroups on a tracker notify (the
+// direct-subscription replacement for the deleted redux-bridge bump-version
+// tests, monorepo#1127).
 vi.mock('$features/agent/services/active-streams-tracker', () => {
   const streamingIds = new Map<string, string[]>();
+  const listeners = new Set<() => void>();
   return {
     activeStreamsTracker: {
       fetchActiveStreams: vi.fn(),
       startPolling: vi.fn(),
       getStreamingAgentIdsForWorkspace: vi.fn((wsId: string) => streamingIds.get(wsId) || []),
-      subscribe: vi.fn(() => () => {}),
+      subscribe: vi.fn((listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      }),
       __getStreamingIdsMap: () => streamingIds,
+      __notify: () => {
+        for (const listener of [...listeners]) listener();
+      },
     },
   };
 });
@@ -242,6 +254,54 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
       const headers = getGroupHeaders();
       expect(headers).toContain('Idle');
       expect(headers).not.toContain('PR Merged');
+    });
+  });
+
+  it('regroups live when the activeStreamsTracker notifies a streaming change (direct subscription)', async () => {
+    // The sidebar cards subscribe to the tracker directly (the Redux bridge
+    // was deleted, monorepo#1127): when agent:status-changed / agent:idle
+    // refresh the tracker state and it notifies, the card must regroup
+    // without any Redux dispatch.
+    const { activeStreamsTracker } = await import('$features/agent/services/active-streams-tracker');
+    const notify = (activeStreamsTracker as any).__notify as () => void;
+    const ws = makeWorkspace('ws-tracker-live', 'Tracker-driven badge', {
+      displayStatus: 'pr_merged',
+    });
+
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          appStore.dispatch(resetWorkspaceState());
+          appStore.dispatch(setWorkspaceEntity(ws));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+          appStore.dispatch(setAllSpacesViewMode('status'));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => {
+      expect(getGroupHeaders()).toContain('PR Merged');
+    });
+
+    // A stream starts: the tracker refreshes its state and notifies.
+    streamingIdsMap.set('ws-tracker-live', ['agent-1']);
+    notify();
+
+    await waitFor(() => {
+      const headers = getGroupHeaders();
+      expect(headers).toContain('In Progress');
+      expect(headers).not.toContain('PR Merged');
+    });
+
+    // The stream ends (agent:idle): the next notify regroups back.
+    streamingIdsMap.clear();
+    notify();
+
+    await waitFor(() => {
+      const headers = getGroupHeaders();
+      expect(headers).toContain('PR Merged');
+      expect(headers).not.toContain('In Progress');
     });
   });
 });
