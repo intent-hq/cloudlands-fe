@@ -344,6 +344,23 @@ export class LiveAgentsClient implements AgentsClient {
     // `agent:stream:end` (§7), which converges the FE streaming state.
     return runMutation("agent.stop", { agentId });
   }
+  async dismissQuestions(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+  }): Promise<MutationResult> {
+    // `agent.dismissQuestions` (§5.5) takes `{ agentId, workspaceId,
+    // messageId }` (all required — workspace mismatch surfaces as NotFound)
+    // and returns `{ success: true, dismissedQuestionsMessageId }`. The daemon
+    // persists the marker in session metadata (survives reload), emits
+    // `agent:updated`, and kicks the queue drain so messages held by the
+    // question hold resume. Idempotent on the same messageId.
+    return runMutation("agent.dismissQuestions", {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      messageId: params.messageId,
+    });
+  }
   async rename(
     agentId: string,
     name: string,

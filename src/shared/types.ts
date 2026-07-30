@@ -992,6 +992,11 @@ export interface AgentMetadata {
   sandboxPath?: string; // Absolute daemon-host path of the sandbox directory
   sandboxId?: string; // Sandbox identifier
   sandboxBranch?: string; // Git branch checked out inside the sandbox
+  // Question-hold dismissal marker (PROTOCOL §5.5, `agent.dismissQuestions`):
+  // id of the question-bearing assistant message the user dismissed. Persisted
+  // by the daemon in session metadata so the dismissed question set never
+  // re-surfaces (survives reload).
+  dismissedQuestionsMessageId?: string;
   // Allow additional properties for flexibility with proper typing
   [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
 }
