@@ -204,6 +204,53 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     expect(userRows[0].appMessageId).toBe(appMessageId);
   });
 
+  it("dedups the optimistic user row against a canonical user-msg echo lacking appMessageId (§7.1 delta path)", () => {
+    // P0 regression (post-#559): the daemon's §7.1 user-row delta does not
+    // carry appMessageId, so the reconciled canonical copy arrives with only
+    // its server-minted `user-msg-{uuid}` id. The optimistic row must still
+    // collapse against it (content fallback recognizes the daemon-canonical
+    // user-msg id), or every normal send — including structured-question
+    // Q:/A: answers, which take the same send path — renders twice until a
+    // refresh. The same shape applies to both, so one test covers them.
+    const agentId = "agent-sub-optimistic-no-appid";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([]));
+
+    appStore.dispatch(
+      addMessage(agentId, {
+        id: "0190aaaa-optimistic-user",
+        appMessageId: "app-msg-opt-2",
+        role: "user",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        contentBlocks: [{ type: "text", text: "Q: Deploy now?\nA: Yes" }],
+      }),
+    );
+
+    // The delta-path echo: canonical daemon row id, same content, NO
+    // appMessageId (entity_with_role does not include it).
+    const canonical: AgentMessage = {
+      id: "user-msg-7c1f4e0a-1111-2222-3333-444455556666",
+      role: "user",
+      timestamp: "2026-01-01T00:00:02.100Z",
+      contentBlocks: [
+        {
+          type: "text",
+          id: "user-msg-7c1f4e0a-1111-2222-3333-444455556666:0",
+          text: "Q: Deploy now?\nA: Yes",
+        },
+      ],
+    };
+    sub.handler(transcript([canonical]));
+
+    const messages = selectAgentMessages.select(appStore.state, agentId);
+    const userRows = messages.filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(1);
+    expect(userRows[0].id).toBe("user-msg-7c1f4e0a-1111-2222-3333-444455556666");
+    // The optimistic side's logical id survives the merge.
+    expect(userRows[0].appMessageId).toBe("app-msg-opt-2");
+  });
+
   it("preserves store-only rows the snapshot page does not cover (older paged history)", () => {
     const agentId = "agent-sub-paged";
     // Full-history hydration (chat-read-service) landed an older message the
