@@ -14,7 +14,10 @@
  * `agent:status-changed` event converges other state — no store dispatches
  * here, mirroring ChatPanel.handleRetry semantics); `ok:false` keeps the
  * entry and surfaces a brief failure note on the toast. The button is
- * disabled while retries are in flight.
+ * disabled while retries are in flight. The click also navigates to the
+ * NEWEST entry's workspace with its agent chat drawer open (chief-of-staff
+ * failures open the sidebar Assistant panel instead), regardless of the
+ * retry RPC outcome.
  *
  * Installed as a store middleware (`createAgentFailureToastMiddleware`) that
  * subscribes lazily on the first dispatched action — the same pattern as the
@@ -32,6 +35,7 @@ import {
   listAgentFailureGroups,
   removeAgentFailure,
   subscribeToAgentFailures,
+  type AgentFailureEntry,
   type AgentFailureGroup,
 } from './agent-failure-registry';
 import { createLogger } from '$lib/utils/client-logger';
@@ -238,9 +242,46 @@ async function renderSingleGroup(group: AgentFailureGroup, state: GroupToastStat
 }
 
 /**
+ * Navigate to a failed agent's workspace with its chat drawer open on that
+ * agent. Chief-of-staff failures (the hidden chief virtual workspace) open
+ * the sidebar Assistant panel and select the chat thread instead — mirrors
+ * `handleNotificationNavigate`'s chief branch. Navigation modules are
+ * lazy-imported so this middleware-reachable module stays dependency-light.
+ * Never rejects; errors are logged.
+ */
+async function navigateToFailedAgent(entry: AgentFailureEntry): Promise<void> {
+  try {
+    const { CHIEF_WORKSPACE_ID } = await import('$shared/types/branded-ids');
+    if (entry.workspaceId === CHIEF_WORKSPACE_ID) {
+      const { openPanel, setChiefActiveAgentId } = await import(
+        '$store/renderer/slices/sidebar-nav/sidebar-nav-slice'
+      );
+      appStore.dispatch(setChiefActiveAgentId(entry.agentId));
+      appStore.dispatch(openPanel('chief'));
+      return;
+    }
+    const { navigateToRoute } = await import('$lib/utils/navigation.client');
+    const params = new URLSearchParams({
+      drawerOpen: '1',
+      drawerType: 'agent',
+      selectedAgent: entry.agentId,
+    });
+    await navigateToRoute(`/workspace/${entry.workspaceId}?${params.toString()}`);
+  } catch (error) {
+    logger.warn('Failed to navigate to failed agent on retry', {
+      agentId: entry.agentId,
+      workspaceId: entry.workspaceId,
+      error,
+    });
+  }
+}
+
+/**
  * Retry every failed agent in the group via `agent.retry`. `ok:true` removes
  * the entry from the registry (its status-changed event reconciles the rest);
- * `ok:false` keeps it and surfaces a brief note on the updated toast.
+ * `ok:false` keeps it and surfaces a brief note on the updated toast. The
+ * click also navigates to the NEWEST entry's agent regardless of the retry
+ * RPC outcome (a failed retry still shows its note on the toast).
  */
 export async function retryGroup(groupKey: string): Promise<void> {
   const group = listAgentFailureGroups().find((candidate) => candidate.groupKey === groupKey);
@@ -252,6 +293,8 @@ export async function retryGroup(groupKey: string): Promise<void> {
   rerenderGroup(groupKey);
 
   const entries = [...group.entries];
+  // Entries are oldest-first — navigate to the newest failure's agent.
+  void navigateToFailedAgent(entries[entries.length - 1]);
   const results = await Promise.all(
     entries.map(async (entry) => {
       // Defensive only: LiveAgentsClient.retry already maps transport errors

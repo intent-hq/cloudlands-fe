@@ -6,13 +6,19 @@
  * (LiveAgentsClient → electron-ipc transport) against the ipc-mock-router,
  * asserting the exact `agent.retry` + `{ agentId, workspaceId }` params per
  * PROTOCOL and that `ok:true` removes / `ok:false` keeps registry entries.
+ * The navigation seam (`navigateToRoute`) and the sidebar-nav slice actions
+ * are mocked to assert the Retry click's navigate-to-agent behavior.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { toastCustomMock, toastDismissMock } = vi.hoisted(() => ({
-  toastCustomMock: vi.fn(),
-  toastDismissMock: vi.fn(),
-}));
+const { toastCustomMock, toastDismissMock, navigateToRouteMock, dispatchMock } = vi.hoisted(
+  () => ({
+    toastCustomMock: vi.fn(),
+    toastDismissMock: vi.fn(),
+    navigateToRouteMock: vi.fn(async () => {}),
+    dispatchMock: vi.fn(),
+  }),
+);
 
 vi.mock('svelte-sonner', () => ({
   toast: {
@@ -27,16 +33,32 @@ vi.mock('$lib/components/ui/toast/AgentFailureToast.svelte', () => ({
   default: 'AgentFailureToast',
 }));
 
+vi.mock('$lib/utils/navigation.client', () => ({
+  navigateToRoute: navigateToRouteMock,
+}));
+
+vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
+  openPanel: (panel: string) => ({ type: 'sidebarNav/openPanel', args: [panel] }),
+  setChiefActiveAgentId: (agentId: string) => ({
+    type: 'sidebarNav/setChiefActiveAgentId',
+    args: [agentId],
+  }),
+}));
+
 let mockState: Record<string, unknown> = {};
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import(
     '$store/renderer/utils/test-helpers/store-mock'
   );
-  return createAppStoreMockModule({ state: () => mockState });
+  return createAppStoreMockModule({
+    state: () => mockState,
+    dispatch: (...args: unknown[]) => dispatchMock(...args),
+  });
 });
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   mockInvoke,
   registerMockIpcHandler,
@@ -346,6 +368,98 @@ describe('agent-failure-toast-service', () => {
         'agent-1',
       ]);
       expect(lastCustomCallFor(id)!.componentProps.retryNote).toBe('Retry failed for 1 agent');
+    });
+  });
+
+  describe('Retry navigation', () => {
+    it('navigates to the agent workspace with the chat drawer open on single-entry retry', async () => {
+      registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+        ok: true,
+        result: { ok: true, redriven: true },
+      }));
+
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+      await flush();
+
+      const id = agentFailureToastId(listAgentFailureGroups()[0].groupKey);
+      lastCustomCallFor(id)!.componentProps.onRetry();
+      await flush();
+
+      expect(navigateToRouteMock).toHaveBeenCalledTimes(1);
+      expect(navigateToRouteMock).toHaveBeenCalledWith(
+        '/workspace/ws-1?drawerOpen=1&drawerType=agent&selectedAgent=agent-1',
+      );
+    });
+
+    it('navigates to the NEWEST entry on multi-entry Retry All', async () => {
+      registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+        ok: true,
+        result: { ok: true, redriven: true },
+      }));
+
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom', at: 1000 });
+      recordAgentFailure({ agentId: 'agent-2', workspaceId: 'ws-2', error: 'boom', at: 2000 });
+      await flush();
+
+      const id = agentFailureToastId(listAgentFailureGroups()[0].groupKey);
+      lastCustomCallFor(id)!.componentProps.onRetry();
+      await flush();
+
+      expect(navigateToRouteMock).toHaveBeenCalledTimes(1);
+      expect(navigateToRouteMock).toHaveBeenCalledWith(
+        '/workspace/ws-2?drawerOpen=1&drawerType=agent&selectedAgent=agent-2',
+      );
+    });
+
+    it('navigates even when the retry RPC returns ok:false', async () => {
+      registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+        ok: true,
+        result: { ok: false },
+      }));
+
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+      await flush();
+
+      const id = agentFailureToastId(listAgentFailureGroups()[0].groupKey);
+      lastCustomCallFor(id)!.componentProps.onRetry();
+      await flush();
+
+      expect(navigateToRouteMock).toHaveBeenCalledWith(
+        '/workspace/ws-1?drawerOpen=1&drawerType=agent&selectedAgent=agent-1',
+      );
+      // The entry is kept and the failure note still surfaces.
+      expect(listAgentFailureGroups()[0].entries.map((entry) => entry.agentId)).toEqual([
+        'agent-1',
+      ]);
+      expect(lastCustomCallFor(id)!.componentProps.retryNote).toBe('Retry failed for 1 agent');
+    });
+
+    it('opens the sidebar Assistant panel for chief-workspace failures instead of navigating', async () => {
+      registerMockIpcHandler(BACKEND.REQUEST, async () => ({
+        ok: true,
+        result: { ok: true, redriven: true },
+      }));
+
+      recordAgentFailure({
+        agentId: 'chief-agent-1',
+        workspaceId: CHIEF_WORKSPACE_ID,
+        error: 'boom',
+      });
+      await flush();
+
+      const id = agentFailureToastId(listAgentFailureGroups()[0].groupKey);
+      lastCustomCallFor(id)!.componentProps.onRetry();
+      await flush();
+
+      expect(navigateToRouteMock).not.toHaveBeenCalled();
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'sidebarNav/setChiefActiveAgentId',
+        args: ['chief-agent-1'],
+      });
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'sidebarNav/openPanel',
+        args: ['chief'],
+      });
     });
   });
 });
