@@ -14,7 +14,7 @@ concurrency:
 jobs:
   pr-title:
     name: Validate PR Title
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     if: github.event_name == 'pull_request'
     permissions:
       pull-requests: read
@@ -43,7 +43,7 @@ jobs:
   # don't false-positive.
   conflict-markers:
     name: Conflict Markers
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     if: github.event_name == 'pull_request'
     timeout-minutes: 5
     permissions:
@@ -81,9 +81,14 @@ jobs:
           fi
           echo "No conflict markers in ${#files[@]} changed file(s)."
 
-  typecheck-renderer:
-    name: Type Check (renderer)
-    runs-on: ubuntu-latest
+  # Consolidated typecheck + lint job. Previously four separate ubuntu-latest
+  # jobs (typecheck-renderer, typecheck-main, typecheck-preload,
+  # static-checks); on the single-slot self-hosted Linux runner they would
+  # queue serially, each paying its own checkout + pnpm install. One job on
+  # the 64-core box runs the shared setup once and all checks back-to-back.
+  checks:
+    name: Type Check & Lint
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -99,43 +104,12 @@ jobs:
           version: 10.30.3
           run_install: false
       - name: Setup Node.js
+        # No cache: 'pnpm' — persistent pnpm store on the non-ephemeral
+        # self-hosted runner makes the GH Actions cache redundant (same as
+        # the m1mac jobs below).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Generate i18n messages
-        run: pnpm run generate:i18n
-      - name: Svelte check
-        run: pnpm run check
-      - name: Type check
-        run: pnpm run type-check
-
-  typecheck-main:
-    name: Build & Verify (main process)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate build config
@@ -144,6 +118,18 @@ jobs:
         run: pnpm run generate:ipc-channels
       - name: Generate i18n messages
         run: pnpm run generate:i18n
+      - name: Svelte check
+        run: pnpm run check
+      - name: Type check (renderer)
+        run: pnpm run type-check
+      - name: Type check (preload)
+        run: pnpm exec tsc --noEmit -p tsconfig.preload.json
+      - name: ESLint
+        run: pnpm run lint
+      - name: Accessibility lint
+        run: bash scripts/check-accessibility.sh
+      - name: workspace:* dispatcher gate
+        run: node scripts/check-workspace-event-dispatchers.mjs
       - name: Build main process
         run: pnpm run build:main
       - name: Verify main process has no devDependency imports
@@ -189,68 +175,6 @@ jobs:
           fi
 
           echo "✓ No svelte imports found in main-process module graph."
-
-  typecheck-preload:
-    name: Type Check (preload)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Generate IPC channels
-        run: pnpm run generate:ipc-channels
-      - name: Type check (preload)
-        run: pnpm exec tsc --noEmit -p tsconfig.preload.json
-
-  static-checks:
-    name: Lint & Static Checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: ESLint
-        run: pnpm run lint
-      - name: Accessibility lint
-        run: bash scripts/check-accessibility.sh
-      - name: workspace:* dispatcher gate
-        run: node scripts/check-workspace-event-dispatchers.mjs
 
   build-web:
     name: Build (web)
@@ -329,26 +253,15 @@ jobs:
 
   gate:
     name: Type Check & Test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     permissions: {}
     if: always()
-    needs:
-      [
-        typecheck-renderer,
-        typecheck-main,
-        typecheck-preload,
-        static-checks,
-        build-web,
-        test,
-      ]
+    needs: [checks, build-web, test]
     steps:
       - name: Check results
         run: |
           echo "Architecture gate temporarily disabled; re-enable by restoring the lint:architecture package script and architecture-gate workflow job."
-          if [ "${{ needs.typecheck-renderer.result }}" != "success" ] || \
-             [ "${{ needs.typecheck-main.result }}" != "success" ] || \
-             [ "${{ needs.typecheck-preload.result }}" != "success" ] || \
-             [ "${{ needs.static-checks.result }}" != "success" ] || \
+          if [ "${{ needs.checks.result }}" != "success" ] || \
              [ "${{ needs.build-web.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ]; then
             echo "One or more jobs failed"
