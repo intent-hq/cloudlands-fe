@@ -16,6 +16,7 @@
   faPaperPlane,
   faRotateRight,
   faBell,
+  faCircleQuestion,
 } from '@fortawesome/free-solid-svg-icons';
   import {
   fly,
@@ -33,13 +34,28 @@
   interface Props {
     messages: QueuedMessage[];
     disabled?: boolean;
+    /**
+     * The daemon is parking these deliveries behind pending Agent Q&A
+     * questions (question hold, PROTOCOL §5.5): render a hint that the queue
+     * is deliberately held — not stalled — until the user answers or
+     * dismisses the questions.
+     */
+    heldForQuestions?: boolean;
     onedit?: (messageId: string, content: string, editing?: boolean) => Promise<{ success: boolean; error?: string }>;
     onremove?: (messageId: string) => void;
     onsendnow?: (messageId: string) => void;
     ondone?: () => void;
   }
 
-  let { messages = [], disabled = false, onedit, onremove, onsendnow, ondone }: Props = $props();
+  let {
+    messages = [],
+    disabled = false,
+    heldForQuestions = false,
+    onedit,
+    onremove,
+    onsendnow,
+    ondone,
+  }: Props = $props();
 
   // Track which message is being edited
   let editingId = $state<string | null>(null);
@@ -277,6 +293,26 @@
         <Fa icon={faListOl} class="w-3 h-3" />
         <span>{m.chat_queuedMessages_header_label({ count: formatInteger(messages.length) })}</span>
       </div>
+
+      {#if heldForQuestions}
+        <div
+          class="flex items-center gap-1.5 text-xs text-warning mb-2 px-2.5"
+          data-testid="queued-messages-held-hint"
+          role="status"
+          transition:slide={{ duration: 200 }}
+        >
+          <div aria-hidden="true" class="shrink-0">
+            <Fa icon={faCircleQuestion} class="w-3 h-3" />
+          </div>
+          <span>
+            {messages.length === 1
+              ? m.chat_queuedMessages_heldForQuestionsHint_one()
+              : m.chat_queuedMessages_heldForQuestionsHint_many({
+                  count: formatInteger(messages.length),
+                })}
+          </span>
+        </div>
+      {/if}
 
       <div class="space-y-px">
         {#each messages as message (message.id)}

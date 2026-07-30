@@ -545,4 +545,40 @@ describe('QueuedMessageList', () => {
       );
     });
   });
+
+  describe('held-for-questions hint', () => {
+    const hint = (container: HTMLElement) =>
+      container.querySelector('[data-testid="queued-messages-held-hint"]');
+
+    it('renders the singular hint when one message is held', () => {
+      const { container } = render(QueuedMessageList, {
+        props: { messages: [queued({})], heldForQuestions: true },
+      });
+
+      expect(hint(container)?.textContent).toContain(
+        "1 message waiting — held until you answer or dismiss the agent's questions",
+      );
+    });
+
+    it('renders the plural hint with the queue count', () => {
+      const { container } = render(QueuedMessageList, {
+        props: {
+          messages: [queued({ id: 'q-1' }), queued({ id: 'q-2', content: 'second' })],
+          heldForQuestions: true,
+        },
+      });
+
+      expect(hint(container)?.textContent).toContain(
+        "2 messages waiting — held until you answer or dismiss the agent's questions",
+      );
+    });
+
+    it('omits the hint when the queue is not held', () => {
+      const { container } = render(QueuedMessageList, {
+        props: { messages: [queued({})] },
+      });
+
+      expect(hint(container)).toBeNull();
+    });
+  });
 });

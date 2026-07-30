@@ -201,6 +201,7 @@
   import { getModelChangeNotice } from './model-change-notice';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
+  deriveQueuedMessagesVisibility,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
 } from './chat-panel-visibility';
@@ -511,6 +512,18 @@
       questionWizardCollapsed = false;
     }
   });
+
+  // Queue visibility around the wizard: hidden while the wizard is expanded,
+  // shown with a held-for-questions hint while Ignore-collapsed (the daemon
+  // parks automatic deliveries behind the pending Q&A — question hold,
+  // PROTOCOL §5.5). Derivation shared with the regression suite.
+  const queuedMessagesVisibility = $derived(
+    deriveQueuedMessagesVisibility({
+      queueLength: $queuedMessages$.length,
+      hasPendingQuestions: !!pendingQuestions,
+      questionWizardCollapsed,
+    }),
+  );
 
   // Dismiss = persistent, unlike Ignore: the mutation middleware stamps
   // `dismissedQuestionsMessageId` into session metadata optimistically (the
@@ -3751,11 +3764,14 @@
     {/if}
   </div>
 
-  <!-- Queued Messages -->
-  {#if $queuedMessages$.length > 0}
+  <!-- Queued Messages: hidden while the question wizard is expanded; shown
+       with a held-for-questions hint while it is Ignore-collapsed (question
+       hold, PROTOCOL §5.5). -->
+  {#if queuedMessagesVisibility.showQueue}
     <QueuedMessageList
       bind:this={queuedMessageListRef}
       messages={$queuedMessages$}
+      heldForQuestions={queuedMessagesVisibility.heldForQuestions}
       onedit={handleEditQueuedMessage}
       onremove={handleRemoveQueuedMessage}
       onsendnow={handleSendQueuedMessageNow}
