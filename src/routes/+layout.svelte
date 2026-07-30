@@ -292,6 +292,10 @@
     (window as any).__app_goto = goto;
   }
 
+  // Chrome-less HUD pop-out window: suppress SidebarNav/SidebarPanel and the
+  // rounded main chrome (WindowTitleBar stays for macOS draggability).
+  const isHudRoute = $derived($page.url.pathname === '/hud');
+
   // Track last non-settings path for cmd+, toggle behavior
   let lastNonSettingsPath = $state('/');
 
@@ -1006,6 +1010,17 @@
 
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
+      {#if isHudRoute}
+        <!-- Chrome-less HUD window: no sidebar rail/panel, no rounded main chrome -->
+        <main
+          class="flex flex-1 min-h-0 flex-col overflow-hidden"
+          aria-label={m.layout_appShell_mainContent_ariaLabel()}
+        >
+          <div class="flex-1 min-h-0 overflow-auto">
+            {#key $resolvedLocale$}{@render children?.()}{/key}
+          </div>
+        </main>
+      {:else}
       <div class="flex flex-1 min-h-0">
         <!-- Global Sidebar Nav Rail -->
         <SidebarNav />
@@ -1026,6 +1041,7 @@
           <RootQuakeTerminalOverlay />
         </main>
       </div>
+      {/if}
     </ErrorBoundary>
   </div>
 

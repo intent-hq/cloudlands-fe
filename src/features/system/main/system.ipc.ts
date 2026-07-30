@@ -36,6 +36,7 @@ import {
   WindowSetInWorkspaceSchema,
   WindowSetOpenWorkspaceTabsSchema,
   WindowSetBrowserFocusedSchema,
+  WindowSetFullScreenSchema,
   XcodeOpenSchema,
 } from '../../../main/ipc-schemas';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
@@ -288,6 +289,14 @@ app.on('browser-window-created', (_event, window) => {
     // rebuild, cache trim, notification-service reconciliation) so services
     // for workspaces no longer open anywhere are torn down.
     app.emit('window-workspace-state-changed');
+  });
+  // Keep each window's renderer in sync with its native full-screen state,
+  // including OS-gesture transitions (green traffic-light, Cmd+Ctrl+F).
+  window.on('enter-full-screen', () => {
+    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', true);
+  });
+  window.on('leave-full-screen', () => {
+    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', false);
   });
 });
 
@@ -908,6 +917,36 @@ export function setupSystemIPC() {
         }
       },
       WINDOW_CHANNELS.OPEN_NEW,
+    ),
+  );
+
+  // Set the calling window's native full-screen state (HUD full-screen toggle)
+  ipcMain.handle(
+    WINDOW_CHANNELS.SET_FULL_SCREEN,
+    createSafeValidatedHandler(
+      WindowSetFullScreenSchema,
+      async (event, validated) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (!window) {
+          return { success: false, fullScreen: false };
+        }
+        window.setFullScreen(validated.fullScreen);
+        return { success: true, fullScreen: window.isFullScreen() };
+      },
+      WINDOW_CHANNELS.SET_FULL_SCREEN,
+    ),
+  );
+
+  // Get the calling window's native full-screen state
+  ipcMain.handle(
+    WINDOW_CHANNELS.GET_FULL_SCREEN,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async (event) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        return { success: true, fullScreen: window ? window.isFullScreen() : false };
+      },
+      WINDOW_CHANNELS.GET_FULL_SCREEN,
     ),
   );
 

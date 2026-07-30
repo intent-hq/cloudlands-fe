@@ -15,6 +15,7 @@ export type SidebarNavItem =
   | 'active'
   | 'chief'
   | 'all-workspaces'
+  | 'hud'
   | 'stats'
   | 'settings';
 export type AllSpacesViewMode = 'recent' | 'repo' | 'status';

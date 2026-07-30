@@ -325,6 +325,8 @@ export const IPC_CHANNELS = {
     SET_IN_WORKSPACE: 'window:set-in-workspace',
     SET_OPEN_WORKSPACE_TABS: 'window:set-open-workspace-tabs',
     SET_BROWSER_FOCUSED: 'window:set-browser-focused',
+    SET_FULL_SCREEN: 'window:set-full-screen',
+    GET_FULL_SCREEN: 'window:get-full-screen',
   },
 
   // Terminal

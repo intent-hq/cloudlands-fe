@@ -263,6 +263,8 @@ const ALLOWED_CHANNELS = [
   "window:set-in-workspace",
   "window:set-open-workspace-tabs",
   "window:set-browser-focused",
+  "window:set-full-screen",
+  "window:get-full-screen",
   "terminal:createWithCommand",
   "terminal:professional:create",
   "terminal:professional:list",
