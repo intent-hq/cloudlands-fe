@@ -35,15 +35,12 @@
   import { toPromptToken } from '$lib/services/mentions/format';
   import { noteUrl } from '$shared/constants/intent-links';
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
+  import { Slice, Fragment } from '@tiptap/pm/model';
   import {
-  Slice,
-  Fragment,
-} from '@tiptap/pm/model';
-  import {
-  plainTextToEditorHTML,
-  serializeEditorText,
-  pastedTextToParagraphNodes,
-} from './editor-text-serialization';
+    plainTextToEditorHTML,
+    serializeEditorText,
+    pastedTextToParagraphNodes,
+  } from './editor-text-serialization';
 
   /** Represents an inline image in the editor content */
   export interface InlineImage {

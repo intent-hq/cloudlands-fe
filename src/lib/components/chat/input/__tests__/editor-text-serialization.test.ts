@@ -12,20 +12,11 @@
  *
  * @vitest-environment jsdom
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Editor, type Extensions } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Mention from '@tiptap/extension-mention';
-import {
-  Slice,
-  Fragment,
-} from '@tiptap/pm/model';
+import { Slice, Fragment } from '@tiptap/pm/model';
 import {
   plainTextToEditorHTML,
   serializeEditorText,
