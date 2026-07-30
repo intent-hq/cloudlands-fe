@@ -18,7 +18,10 @@ concurrency:
 
 jobs:
   promote-to-stable:
-    runs-on: ubuntu-latest
+    # Non-ephemeral self-hosted runner: all scratch files live under
+    # RUNNER_TEMP (wiped by the runner between jobs) instead of /tmp, so a
+    # previous run's assets can never leak into this promotion.
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
 
     steps:
@@ -53,9 +56,9 @@ jobs:
           STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml"
           PREV_STABLE=""
           
-          HTTP_CODE=$(curl -sL -w "%{http_code}" -o /tmp/stable-latest-mac.yml "$STABLE_YML_URL")
+          HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/stable-latest-mac.yml" "$STABLE_YML_URL")
           if [ "$HTTP_CODE" = "200" ]; then
-            PREV_STABLE=$(awk '/^version:/{print $2; exit}' /tmp/stable-latest-mac.yml | tr -d '\r')
+            PREV_STABLE=$(awk '/^version:/{print $2; exit}' "$RUNNER_TEMP/stable-latest-mac.yml" | tr -d '\r')
             if [ -z "$PREV_STABLE" ]; then
               echo "::error::Fetched stable latest-mac.yml but could not parse version"
               exit 1
@@ -80,8 +83,9 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           VERSION: ${{ inputs.version }}
         run: |
-          mkdir -p /tmp/release-assets
-          cd /tmp/release-assets
+          rm -rf "$RUNNER_TEMP/release-assets"
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          cd "$RUNNER_TEMP/release-assets"
           gh release download "v${VERSION}" --repo intent-hq/cloudlands-releases
           echo "Downloaded assets:"
           ls -lh
@@ -108,7 +112,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           VERSION: ${{ inputs.version }}
         run: |
-          cd /tmp/release-assets
+          cd "$RUNNER_TEMP/release-assets"
 
           # Require latest-mac.yml
           if [ ! -f "latest-mac.yml" ]; then
@@ -140,7 +144,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           set -o pipefail
-          cd /tmp/release-assets
+          cd "$RUNNER_TEMP/release-assets"
 
           # Build allowlist of assets we just uploaded (don't delete these)
           PROMOTED_ASSETS=()
@@ -228,6 +232,15 @@ jobs:
         with:
           ref: refs/tags/v${{ inputs.version }}
 
+      # The self-hosted Linux runner has no system Node; the summary generator
+      # below needs one. Fail-soft like the rest of the notes pipeline — a
+      # setup failure only skips the summary section.
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        continue-on-error: true
+        with:
+          node-version: '22'
+
       # Recover the intentd pins for the consolidated delta: the promoted
       # version's manifest was downloaded with the release assets; the previous
       # stable's manifest comes from its versioned release. All fail-soft —
@@ -244,18 +257,19 @@ jobs:
           HEAD_PIN=""
           BASE_PIN=""
 
-          if [ -f /tmp/release-assets/release-manifest.json ]; then
-            HEAD_PIN=$(jq -r '.intentdVersion // empty' /tmp/release-assets/release-manifest.json 2>/dev/null || true)
+          if [ -f "$RUNNER_TEMP/release-assets/release-manifest.json" ]; then
+            HEAD_PIN=$(jq -r '.intentdVersion // empty' "$RUNNER_TEMP/release-assets/release-manifest.json" 2>/dev/null || true)
           fi
           if [ -z "$HEAD_PIN" ]; then
             echo "::warning::No intentdVersion in the promoted release's manifest - the consolidated intentd section will be omitted"
           fi
 
           if [ -n "$PREV_STABLE" ]; then
-            mkdir -p /tmp/prev-stable-manifest
+            rm -rf "$RUNNER_TEMP/prev-stable-manifest"
+            mkdir -p "$RUNNER_TEMP/prev-stable-manifest"
             if gh release download "v${PREV_STABLE}" --repo intent-hq/cloudlands-releases \
-                --pattern release-manifest.json --dir /tmp/prev-stable-manifest 2>/dev/null; then
-              BASE_PIN=$(jq -r '.intentdVersion // empty' /tmp/prev-stable-manifest/release-manifest.json 2>/dev/null || true)
+                --pattern release-manifest.json --dir "$RUNNER_TEMP/prev-stable-manifest" 2>/dev/null; then
+              BASE_PIN=$(jq -r '.intentdVersion // empty' "$RUNNER_TEMP/prev-stable-manifest/release-manifest.json" 2>/dev/null || true)
             fi
             if [ -z "$BASE_PIN" ]; then
               echo "::warning::No recoverable intentd pin for previous stable v${PREV_STABLE} - the summary degrades to the pin line"
@@ -291,7 +305,7 @@ jobs:
             exit 0
           fi
 
-          ARGS=(--version "$VERSION" --out /tmp/stable-summary.md)
+          ARGS=(--version "$VERSION" --out "$RUNNER_TEMP/stable-summary.md")
           if [ -n "$PREV_STABLE" ]; then
             ARGS+=(--prev-stable "$PREV_STABLE")
           fi
@@ -304,7 +318,7 @@ jobs:
 
           if ! node scripts/generate-stable-summary.mjs "${ARGS[@]}"; then
             echo "::warning::Stable summary generation failed - continuing without the summary section"
-            rm -f /tmp/stable-summary.md
+            rm -f "$RUNNER_TEMP/stable-summary.md"
           fi
 
       - name: Build aggregated release notes
@@ -319,26 +333,26 @@ jobs:
           gh release list --repo intent-hq/cloudlands-releases --limit 1000 --json tagName \
             --jq '.[] | select(.tagName | test("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")) | .tagName' \
             | sed 's/^v//' \
-            | sort -V -r > /tmp/all-versions.txt
+            | sort -V -r > "$RUNNER_TEMP/all-versions.txt"
 
           # Determine range: (prevStable, version]
           if [ "$IS_FIRST" = "true" ]; then
             # First promotion: only include the target version
-            echo "$VERSION" > /tmp/range-versions.txt
+            echo "$VERSION" > "$RUNNER_TEMP/range-versions.txt"
           elif [ "$PREV_STABLE" = "$VERSION" ]; then
             # Idempotent re-run: same version promoted again, use just this version
             echo "Re-promoting same version $VERSION (idempotent)"
-            echo "$VERSION" > /tmp/range-versions.txt
+            echo "$VERSION" > "$RUNNER_TEMP/range-versions.txt"
           else
             # Steady-state: include all versions > prevStable and <= version
             # First validate prevStable exists in the list
-            if ! grep -qFx "$PREV_STABLE" /tmp/all-versions.txt; then
+            if ! grep -qFx "$PREV_STABLE" "$RUNNER_TEMP/all-versions.txt"; then
               echo "::error::Previous stable version $PREV_STABLE not found in release list"
               exit 1
             fi
 
             # Validate VERSION exists in the list
-            if ! grep -qFx "$VERSION" /tmp/all-versions.txt; then
+            if ! grep -qFx "$VERSION" "$RUNNER_TEMP/all-versions.txt"; then
               echo "::error::Target version $VERSION not found in release list - ensure v$VERSION release exists"
               exit 1
             fi
@@ -358,22 +372,22 @@ jobs:
                 if ($1 == prev) found_prev=1;
                 if (found_target && !found_prev) print $1;
               }
-            ' /tmp/all-versions.txt > /tmp/range-versions.txt
+            ' "$RUNNER_TEMP/all-versions.txt" > "$RUNNER_TEMP/range-versions.txt"
           fi
 
           # Validate we have at least one version in the range
-          if [ ! -s /tmp/range-versions.txt ]; then
+          if [ ! -s "$RUNNER_TEMP/range-versions.txt" ]; then
             echo "::error::No versions found in range (prevStable, version] - check that both versions exist in releases"
             exit 1
           fi
 
           echo "Versions to include in aggregated notes:"
-          cat /tmp/range-versions.txt
+          cat "$RUNNER_TEMP/range-versions.txt"
 
           # Prepend the summary section (if generated), then the per-version bodies
           {
-            if [ -f /tmp/stable-summary.md ]; then
-              cat /tmp/stable-summary.md
+            if [ -f "$RUNNER_TEMP/stable-summary.md" ]; then
+              cat "$RUNNER_TEMP/stable-summary.md"
               echo ""
               echo "---"
               echo ""
@@ -383,17 +397,17 @@ jobs:
               echo ""
               gh release view "v${ver}" --repo intent-hq/cloudlands-releases --json body --jq '.body // ""'
               echo ""
-            done < /tmp/range-versions.txt
-          } > /tmp/aggregated-notes.md
+            done < "$RUNNER_TEMP/range-versions.txt"
+          } > "$RUNNER_TEMP/aggregated-notes.md"
 
           echo "Aggregated notes preview (first 20 lines):"
-          head -n 20 /tmp/aggregated-notes.md
+          head -n 20 "$RUNNER_TEMP/aggregated-notes.md"
 
       - name: Update stable release notes
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
-          gh release edit stable --repo intent-hq/cloudlands-releases --notes-file /tmp/aggregated-notes.md
+          gh release edit stable --repo intent-hq/cloudlands-releases --notes-file "$RUNNER_TEMP/aggregated-notes.md"
           echo "✓ Stable release notes updated"
 
       - name: Post summary

@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   beta-release:
-    runs-on: macos-14
+    runs-on: [self-hosted, macOS, ARM64, m1mac]
     timeout-minutes: 90
 
     steps:
@@ -128,10 +128,12 @@ jobs:
           version: 10.30.3
 
       - name: Setup Node.js
+        # No cache: 'pnpm' — persistent pnpm store on the non-ephemeral
+        # self-hosted runner makes the GH Actions cache redundant (same as
+        # the intent-pr.yml jobs).
         uses: actions/setup-node@v7
         with:
           node-version: '22'
-          cache: 'pnpm'
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -165,6 +167,11 @@ jobs:
           INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
         run: node scripts/fetch-sidecar.cjs
 
+      # The runner is non-ephemeral, so signing must never touch the login
+      # keychain: the certificate goes into a throwaway keychain under
+      # RUNNER_TEMP, the login keychain is kept in the search list (rather
+      # than replacing the list outright), and the always() cleanup step at
+      # the end of the job deletes the keychain and restores the search list.
       - name: Import code signing certificate
         env:
           MACOS_CERTIFICATE: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
@@ -172,6 +179,9 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.CLOUDLANDS_KEYCHAIN_PASSWORD }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          # Idempotency on the non-ephemeral runner: drop any stale keychain
+          # left by a crashed run before creating a fresh one
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -180,7 +190,7 @@ jobs:
           security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERTIFICATE_PWD" \
             -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
 
       # Compile the Paraglide i18n catalog before dist:mac so the npm `prebuild`
       # type-check can resolve $shared/paraglide/messages.js on a clean checkout
@@ -422,3 +432,15 @@ jobs:
             echo "- [Versioned release](https://github.com/intent-hq/cloudlands-releases/releases/tag/v$VERSION)"
             echo "- [Rolling beta channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/beta)"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The self-hosted runner is non-ephemeral: always delete the temporary
+      # signing keychain, restore the default keychain search list, and shred
+      # the decoded certificate so no signing material outlives the job (runs
+      # on failure and cancellation too).
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          security list-keychains -d user -s "$HOME/Library/Keychains/login.keychain-db"
+          rm -f "$RUNNER_TEMP/certificate.p12"
