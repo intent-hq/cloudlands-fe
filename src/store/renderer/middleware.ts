@@ -18,6 +18,7 @@ import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
 import { createAgentSubscriptionReadMiddleware } from "$features/agent/agent-subscription-read-service";
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
+import { createChatSubscribeMiddleware } from "$features/agent/chat-subscribe-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge.client";
@@ -140,6 +141,11 @@ function buildMiddleware(): StoreMiddleware[] {
     // so opening an agent loads its full retained transcript via
     // `agents.getConversation` instead of showing an empty conversation.
     createChatReadMiddleware(),
+    // Keep the open chat's transcript live from the standing `chat.subscribe`
+    // stream (PROTOCOL §7.1): on `initializeChatRequested` a per-agent
+    // subscription reconciles snapshot+deltas into the agent-session slice,
+    // swapping/tearing down on agent switch, chat close, and agent deletion.
+    createChatSubscribeMiddleware(),
     // Give the (post-saga) `sendMessage` action a real consumer so pressing
     // Send in ChatPanel routes through `agent-stream-lifecycle.sendMessage()`
     // again — producing a user message and a live-streaming assistant response

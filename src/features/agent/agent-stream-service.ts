@@ -43,6 +43,7 @@ import {
   findStreamTargetAssistantMessage,
   isStaleFinalizedAssistantStream,
 } from "$store/renderer/slices/agent-session/utils/stream-target-state";
+import { hasLiveChatSubscription } from "./chat-subscribe-service";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("AgentStreamService");
@@ -124,6 +125,16 @@ function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
 
   const isFinalize =
     eventType === "complete" || eventType === "error" || eventType === "timeout";
+
+  // SOLE-WRITER INVARIANT: while the standing chat.subscribe stream is live
+  // for this agent (chat-subscribe-service), it is the sole writer of the
+  // transcript's message state — the firehose payload would double-apply the
+  // same turn under the FE-preassigned placeholder id. Keep only the
+  // chat-state finalize bookkeeping (streamCompleted/streamTimedOut).
+  if (hasLiveChatSubscription(agentId)) {
+    if (isFinalize) clearSessionStreaming(agentId, eventType);
+    return;
+  }
 
   const session = readSession(agentId);
   const existing = findStreamTargetAssistantMessage(

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
   const agentSubscriptionReadMiddleware = createPassthroughMiddleware();
   const filesReadMiddleware = createPassthroughMiddleware();
   const chatReadMiddleware = createPassthroughMiddleware();
+  const chatSubscribeMiddleware = createPassthroughMiddleware();
   const chatSendMiddleware = createPassthroughMiddleware();
   const permissionResponseMiddleware = createPassthroughMiddleware();
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
@@ -92,6 +93,7 @@ const mocks = vi.hoisted(() => {
     createAgentSubscriptionReadMiddleware: vi.fn(() => agentSubscriptionReadMiddleware),
     createFilesReadMiddleware: vi.fn(() => filesReadMiddleware),
     createChatReadMiddleware: vi.fn(() => chatReadMiddleware),
+    createChatSubscribeMiddleware: vi.fn(() => chatSubscribeMiddleware),
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
     createPermissionResponseMiddleware: vi.fn(() => permissionResponseMiddleware),
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
@@ -171,6 +173,7 @@ const mocks = vi.hoisted(() => {
     agentSubscriptionReadMiddleware,
     filesReadMiddleware,
     chatReadMiddleware,
+    chatSubscribeMiddleware,
     chatSendMiddleware,
     permissionResponseMiddleware,
     daemonEventsBridgeMiddleware,
@@ -245,6 +248,9 @@ vi.mock("$features/agent/agent-subscription-read-service", () => ({
 }));
 vi.mock("$features/files/files-read-service", () => ({ createFilesReadMiddleware: mocks.createFilesReadMiddleware }));
 vi.mock("$features/agent/chat-read-service", () => ({ createChatReadMiddleware: mocks.createChatReadMiddleware }));
+vi.mock("$features/agent/chat-subscribe-service", () => ({
+  createChatSubscribeMiddleware: mocks.createChatSubscribeMiddleware,
+}));
 vi.mock("$features/agent/chat-send-service", () => ({ createChatSendMiddleware: mocks.createChatSendMiddleware }));
 vi.mock("$features/permission/permission-response-service", () => ({
   createPermissionResponseMiddleware: mocks.createPermissionResponseMiddleware,
@@ -488,6 +494,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
@@ -568,6 +575,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
@@ -648,6 +656,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
@@ -729,6 +738,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
@@ -827,6 +837,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,

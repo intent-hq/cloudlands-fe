@@ -26,6 +26,11 @@ vi.mock("$lib/client", () => ({
           messages: [] as AgentMessage[],
         }),
       ),
+      // Standing subscription (chat-subscribe-service, same
+      // initializeChatRequested trigger): records the handler so the
+      // live-subscription pairing test can emit; inert otherwise so this
+      // suite exercises the read path alone.
+      subscribe: vi.fn(() => () => {}),
     },
   },
 }));
@@ -49,8 +54,15 @@ import {
   selectAgentIsThinking,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import { selectTranscriptHydration } from "$store/renderer/slices/chat-state/chat-state-selectors";
-import { addMessage } from "$store/renderer/slices/agent-session/agent-session-slice";
+import {
+  addMessage,
+  bulkUpsertSessions,
+} from "$store/renderer/slices/agent-session/agent-session-slice";
 import { loadChatTranscript } from "./chat-read-service";
+import {
+  __resetChatSubscribeServiceForTests,
+  openChatSubscription,
+} from "./chat-subscribe-service";
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -901,6 +913,41 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
       "trunc-user",
     ]);
+  });
+
+  // Pairing with the STANDING subscription (chat-subscribe-service): when the
+  // standing chat.subscribe stream is already live for the agent, the
+  // full-history read must NOT fetch the one-shot subscribeSnapshot nor seed
+  // the firehose accumulator — the standing stream owns the live-turn slot.
+  it("skips the one-shot snapshot merge while the standing subscription is live", async () => {
+    const agentId = "agent-standing-live";
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ id: agentId })]),
+    );
+    openChatSubscription(agentId, WS);
+    const handler = chatApi.subscribe.mock.calls.find(([id]) => id === agentId)?.[1] as (
+      transcript: unknown,
+    ) => void;
+    expect(handler).toBeDefined();
+    // seq-0 emit → the subscription is live (hasEmitted).
+    handler({ messages: [], truncated: false, totalMessages: 0, isStreaming: false });
+
+    try {
+      agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+      agentsApi.getConversation.mockResolvedValueOnce(
+        conversation([makeMessage("standing-m1", "history")]) as never,
+      );
+
+      await loadChatTranscript(agentId);
+
+      expect(chatApi.subscribeSnapshot).not.toHaveBeenCalled();
+      expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+        "standing-m1",
+      ]);
+    } finally {
+      __resetChatSubscribeServiceForTests();
+    }
   });
 });
 
