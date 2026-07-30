@@ -17,6 +17,7 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { onMount } from 'svelte';
   import { getAvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 
   import {
   selectAgentIsResponding,
@@ -125,10 +126,15 @@
     const state = appStore.state;
     const isWaiting = selectAgentIsWaiting.select(state, agent.id);
     const isRunning = isAgentRunning(agent.id);
-    return getAvatarState({
-      isStreaming: isRunning,
-      status: isWaiting ? 'waiting' : agent.status,
-    });
+    return getAvatarState(
+      {
+        isStreaming: isRunning,
+        status: isWaiting ? 'waiting' : agent.status,
+      },
+      {
+        attentionKind: getAgentAttentionRequest(agent)?.kind ?? null,
+      },
+    );
   }
 
   // Dedupe agents by ID to avoid duplicate key errors

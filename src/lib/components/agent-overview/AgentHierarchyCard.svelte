@@ -17,16 +17,20 @@
   import { Spinner } from '$lib/components/ui/indicators';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
   import {
+  selectAgentAttentionRequest,
   selectAgentIsResponding,
   selectAgentIsThinking,
   selectAgentIsWaiting,
   selectAgentIsWaitingForOtherAgents,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import type { AgentAttentionKind } from '$shared/utils/agent-attention';
   import Fa from 'svelte-fa';
   import {
   faHourglass,
   faFile,
   faStickyNote,
+  faCommentDots,
+  faCircleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
   import * as m from '$shared/paraglide/messages.js';
 
@@ -58,21 +62,33 @@
   const agentIsWaiting$ = selectAgentIsWaiting(agent.agentId);
   // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
   const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
+  // svelte-ignore state_referenced_locally -- hierarchy cards are mounted per agent; selector subscriptions are initialized once.
+  const attentionRequest$ = selectAgentAttentionRequest(agent.agentId);
 
   // Map agent status to avatar state
   function getAvatarState(
     status: AgentNode['status'],
     waitingForOtherAgents: boolean,
     responding: boolean,
+    attentionKind: AgentAttentionKind | null,
   ): AvatarState {
-    if (waitingForOtherAgents) return 'waiting';
-    if (responding) return 'running';
     if (status === 'completed') return 'completed';
     if (status === 'failed') return 'failed';
+    if (attentionKind === 'discussion') return 'attention-discussion';
+    if (attentionKind === 'blocker') return 'attention-blocker';
+    if (waitingForOtherAgents) return 'waiting';
+    if (responding) return 'running';
     return 'idle';
   }
 
-  const avatarState = $derived(getAvatarState(agent.status, $agentIsWaitingForOtherAgents$, $agentIsResponding$));
+  const avatarState = $derived(
+    getAvatarState(
+      agent.status,
+      $agentIsWaitingForOtherAgents$,
+      $agentIsResponding$,
+      $attentionRequest$?.kind ?? null,
+    ),
+  );
 </script>
 
 <div class="agent-card-wrapper flex items-center gap-3 shadow">
@@ -116,7 +132,31 @@
 
     <!-- Status footer - shows current activity or last response -->
     <div class="status-footer mt-auto pt-2 w-full text-center">
-      {#if $agentIsWaitingForOtherAgents$}
+      {#if $attentionRequest$}
+        <!-- Pending attention request (discussion/blocker) -->
+        <div
+          class="text-sm flex flex-col items-center gap-0.5 {$attentionRequest$.kind === 'blocker'
+            ? 'text-red-500'
+            : 'text-amber-500'}"
+        >
+          <div class="flex items-center justify-center gap-1">
+            <Fa
+              icon={$attentionRequest$.kind === 'blocker' ? faCircleExclamation : faCommentDots}
+              size="xs"
+            />
+            <span class="truncate">
+              {$attentionRequest$.kind === 'blocker'
+                ? m.chat_agentCard_attentionBlocker_label()
+                : m.chat_agentCard_attentionDiscussion_label()}
+            </span>
+          </div>
+          {#if $attentionRequest$.reason}
+            <div class="text-ui text-subtle line-clamp-2 leading-tight px-1">
+              {$attentionRequest$.reason}
+            </div>
+          {/if}
+        </div>
+      {:else if $agentIsWaitingForOtherAgents$}
         <!-- Waiting for other agents -->
         <div class="text-sm text-primary flex items-center justify-center gap-1">
           <Fa icon={faHourglass} size="xs" class="animate-pulse" />

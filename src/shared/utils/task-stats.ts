@@ -27,7 +27,11 @@ export const IN_PROGRESS_STATUSES: ReadonlySet<TaskStatus> = new Set([
   'review_required',
 ]);
 
-/** Statuses excluded from progress totals entirely (neither done nor in-progress). */
+/**
+ * Statuses excluded from progress totals entirely (neither done nor in-progress).
+ * Note: `discussion_needed` and `blocked` are intentionally NOT in either set —
+ * they count toward the total but never as inProgress.
+ */
 export const EXCLUDED_STATUSES: ReadonlySet<TaskStatus> = new Set(['cancelled']);
 
 // ---------------------------------------------------------------------------

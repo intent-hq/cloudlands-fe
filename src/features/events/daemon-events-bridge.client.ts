@@ -165,6 +165,7 @@ import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
+import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
 import { refreshWorkspaceSubscriptionEntries } from '$features/agent/agent-subscription-read-service';
 import {
   permissionRequestReceived,
@@ -1308,6 +1309,49 @@ function handlePermissionResolvedEvent(event: WorkspaceEvent): void {
 }
 
 /**
+ * `agent:attention-requested` (§6.5) carries the self-sufficient payload
+ * `{ workspaceId, agentId, agentName, kind, reason }` — an agent raised a
+ * discussion request or blocker report via `ws.agent.requestDiscussion` /
+ * `reportBlocker`. Route it to the attention-toast service, which shows a
+ * STICKY kind-flavored toast with a "Switch To" action that navigates to the
+ * reporting workspace and focuses that agent's conversation. Deliberately NOT
+ * gated on the focused workspace: the bridge firehose spans every workspace,
+ * so attention requests surface no matter what is on screen.
+ */
+function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const agentName = data.agentName;
+  const kind = data.kind;
+  const reason = data.reason;
+  if (
+    typeof agentId !== 'string' ||
+    agentId.length === 0 ||
+    typeof agentName !== 'string' ||
+    (kind !== 'discussion' && kind !== 'blocker') ||
+    typeof reason !== 'string' ||
+    reason.length === 0
+  ) {
+    logger.warn('agent:attention-requested with malformed payload', { data });
+    return;
+  }
+  // Prefer the payload's own workspaceId (self-sufficient per the contract),
+  // falling back to the envelope's workspace scope.
+  const targetWorkspaceId =
+    typeof data.workspaceId === 'string' && data.workspaceId.length > 0
+      ? data.workspaceId
+      : workspaceId;
+  void showAgentAttentionToast({
+    workspaceId: targetWorkspaceId,
+    agentId,
+    agentName,
+    kind,
+    reason,
+  });
+}
+
+/**
  * `note:*` (§7 workspace-scoped) carries `{ noteId, path, action, ... }` — the
  * daemon-authoritative "something changed" ping (PROTOCOL §7 note events do
  * NOT embed the full note body). The handler routes to `applyNoteFromEvent`,
@@ -2343,6 +2387,11 @@ function handleNotification(method: string, params: unknown): void {
     // fall through to the storage dispatch below so the activity timeline
     // records the outcome.
   }
+  if (type === 'agent:attention-requested') {
+    handleAttentionRequestedEvent(event, workspaceId);
+    // fall through to the storage dispatch below so the activity timeline
+    // records the attention request alongside the sticky toast.
+  }
   // Script output/state (§6.5) — script:output feeds the live buffer the
   // `ScriptOutputViewer` xterm reads from, script:state mirrors the
   // recomputed `ScriptRuntimeState` into the scripts slice. Both fall
@@ -2373,6 +2422,14 @@ function handleNotification(method: string, params: unknown): void {
     handleAgentRenamedEvent(event);
   }
   if (type === 'agent:updated') {
+    handleAgentUpdatedEvent(event);
+  }
+  // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
+  // daemon persists the attention-request fields on the session and also
+  // emits `agent:updated`, but re-fetch here too so the sidebar/footer
+  // indicator appears even if that companion event is missed. Same
+  // metadata-only refresh as handleAgentUpdatedEvent (transcript preserved).
+  if (type === 'agent:attention-requested') {
     handleAgentUpdatedEvent(event);
   }
   // STAB-22: agent:message events with role="assistant" should trigger a

@@ -167,6 +167,7 @@
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
+  import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import {
   groupContentBlocks,
   parseSuggestedPrompts,
@@ -3686,6 +3687,10 @@
       {#if workspace?.id}
         {#key `${workspace.id}::${agentId}`}
           <div class="w-full pb-6" transition:slide={{ axis: 'y', duration: 200 }}>
+            <!-- Pending attention request (discussion/blocker) for this agent -->
+            {#if agentId}
+              <AttentionRequestBanner {agentId} />
+            {/if}
             <AgentSubscriptions workspaceId={workspace.id} {agentId} />
           </div>
         {/key}

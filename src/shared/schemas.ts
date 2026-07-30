@@ -237,6 +237,7 @@ export const TaskStatusSchema = z.enum([
   'not_started',
   'waiting',
   'discussion_needed',
+  'blocked',
   'in_progress',
   'review_required',
   'complete',
@@ -619,6 +620,11 @@ export const AgentSessionSchema = z.object({
     .optional(),
   // Task delegation
   digest: z.string().optional(), // Short summary for display in task status
+  // Pending attention request (requestDiscussion / reportBlocker); cleared by
+  // the daemon when the agent next receives a message
+  attentionRequestKind: z.enum(['discussion', 'blocker']).optional(),
+  attentionRequestReason: z.string().optional(),
+  attentionRequestTimestamp: z.string().optional(),
 });
 
 /**

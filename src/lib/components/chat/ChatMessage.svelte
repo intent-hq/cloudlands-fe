@@ -17,7 +17,10 @@
   import RulesInspector from './RulesInspector.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
+  import BlockerReportNotice from './BlockerReportNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { slide } from 'svelte/transition';
   import type { ContextItem } from './input/context-api';
@@ -207,6 +210,9 @@
 
   // Daemon-persisted model-change transcript row (metadata type "model_changed")
   let modelChangeNotice = $derived(getModelChangeNotice(message));
+
+  // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
+  let attentionNotice = $derived(getAttentionNotice(message));
 
   let shouldShowStoppedIndicator = $derived.by(() => {
     return resolveShouldShowStoppedIndicator({
@@ -1189,8 +1195,14 @@
         {/if}
       </div>
     {:else if role === 'system'}
-      <!-- System Message - render as interruption notice -->
-      <InterruptionNotice message={extractAllContent(message)} />
+      <!-- System Message - attention-request notice or interruption banner -->
+      {#if attentionNotice?.kind === 'discussion-request'}
+        <DiscussionRequestNotice reason={attentionNotice.reason} />
+      {:else if attentionNotice?.kind === 'blocker-report'}
+        <BlockerReportNotice reason={attentionNotice.reason} />
+      {:else}
+        <InterruptionNotice message={extractAllContent(message)} />
+      {/if}
     {/if}
   </div>
 {/if}

@@ -221,6 +221,73 @@ describe('AgentMessageList - System Messages', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it('renders a discussion-request system message as a discussion notice with the reason', () => {
+    // Wire shape (agent attention requests): system role, text block with
+    // meta.kind = "discussion-request" carrying the reason.
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [
+          { type: 'text', text: 'Need input on the API design', meta: { kind: 'discussion-request' } },
+        ],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    const { container } = render(AgentMessageList, { props: { messages } });
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByText(/Discussion requested/i)).toBeTruthy();
+    expect(screen.getByText('Need input on the API design')).toBeTruthy();
+    expect(container.querySelector('.discussion-request-notice')).toBeTruthy();
+    expect(container.querySelector('.interruption-notice')).toBeNull();
+  });
+
+  it('renders a blocker-report system message as a blocker notice with the reason', () => {
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [
+          { type: 'text', text: 'Docker daemon is down', meta: { kind: 'blocker-report' } },
+        ],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    const { container } = render(AgentMessageList, { props: { messages } });
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByText(/Blocker reported/i)).toBeTruthy();
+    expect(screen.getByText('Docker daemon is down')).toBeTruthy();
+    expect(container.querySelector('.blocker-report-notice')).toBeTruthy();
+    expect(container.querySelector('.interruption-notice')).toBeNull();
+  });
+
+  it('still renders meta.kind="interruption" system messages as interruption notices', () => {
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [
+          {
+            type: 'text',
+            text: 'This conversation was interrupted because intentd restarted.',
+            meta: { kind: 'interruption' },
+          },
+        ],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    const { container } = render(AgentMessageList, { props: { messages } });
+
+    expect(container.querySelector('.interruption-notice')).toBeTruthy();
+    expect(container.querySelector('.discussion-request-notice')).toBeNull();
+    expect(container.querySelector('.blocker-report-notice')).toBeNull();
+  });
+
   it('falls back to the message text when model_changed metadata fields are missing', () => {
     const messages: AgentMessage[] = [
       {
