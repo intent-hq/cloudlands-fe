@@ -70,6 +70,17 @@ vi.mock('$features/agent/agent-read-service', () => ({
   createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
+// Fake the attention-toast service so the bridge's `agent:attention-requested`
+// routing is observable without the svelte-sonner/toast-component seam — the
+// sticky-toast semantics themselves are covered by
+// agent-attention-toast-service.test.ts.
+const { showAgentAttentionToastSpy } = vi.hoisted(() => ({
+  showAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('$features/agent/agent-attention-toast-service', () => ({
+  showAgentAttentionToast: showAgentAttentionToastSpy,
+}));
+
 // Fake the navigate-away helper so the bridge's `workspace:deleted` navigation
 // routing is observable without jsdom location/tab-state choreography. This is
 // the live-mode path for #766: the `events.event` firehose fires in both live
@@ -3467,6 +3478,146 @@ describe('daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
     );
 
     expect(readPermissionRequests()).toHaveLength(0);
+  });
+});
+
+describe('daemonEventsBridge (attention flow — agent:attention-requested → sticky toast)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    showAgentAttentionToastSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('routes agent:attention-requested to showAgentAttentionToast with the self-sufficient payload', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Wire contract: `{ workspaceId, agentId, agentName, kind, reason }` —
+    // the payload is self-sufficient (carries its own workspaceId).
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'discussion',
+        reason: 'Need a decision on the API shape',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith({
+      workspaceId: WS,
+      agentId: AGENT,
+      agentName: 'Implementor',
+      kind: 'discussion',
+      reason: 'Need a decision on the API shape',
+    });
+  });
+
+  it('fires for agents in ANY workspace — the payload workspaceId wins over the envelope', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // The notification() helper stamps the envelope with WS; the payload
+    // targets a DIFFERENT (unfocused) workspace — the toast must route there.
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: 'ws-other-2',
+        agentId: 'agent-other-2',
+        agentName: 'Verifier',
+        kind: 'blocker',
+        reason: 'Blocked: main branch is broken',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith({
+      workspaceId: 'ws-other-2',
+      agentId: 'agent-other-2',
+      agentName: 'Verifier',
+      kind: 'blocker',
+      reason: 'Blocked: main branch is broken',
+    });
+  });
+
+  it('falls back to the envelope workspaceId when the payload omits it', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'blocker',
+        reason: 'CI is red',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: WS, agentId: AGENT, kind: 'blocker' }),
+    );
+  });
+
+  it('ignores malformed payloads (missing agentId / unknown kind / empty reason)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentName: 'Implementor',
+        kind: 'discussion',
+        reason: 'no agentId',
+      }),
+    );
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'shout',
+        reason: 'unknown kind',
+      }),
+    );
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'blocker',
+        reason: '',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).not.toHaveBeenCalled();
+  });
+
+  it('falls through to the activity timeline (eventReceived) alongside the toast', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'discussion',
+        reason: 'Need a decision',
+      }),
+    );
+
+    const state = appStore.state as {
+      workspaceEvents?: { byWorkspaceId?: Record<string, { events?: Array<{ type: string }> }> };
+    };
+    const events = state.workspaceEvents?.byWorkspaceId?.[WS]?.events ?? [];
+    expect(events.some((event) => event.type === 'agent:attention-requested')).toBe(true);
   });
 });
 
