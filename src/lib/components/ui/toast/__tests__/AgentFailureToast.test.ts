@@ -1,37 +1,62 @@
 /**
- * AgentFailureToast component regression test (PR #385 review).
- *
- * Two failed agents can resolve to the IDENTICAL "Name — Workspace" string
- * (same-named agents in one workspace). Keying the detail-lines each block by
- * the line text raised Svelte 5's `each_key_duplicate` and crashed the toast
- * in exactly the multi-failure scenario the feature targets — lines are keyed
- * by agentId instead.
+ * AgentFailureToast component test — single-agent toast with Retry and
+ * Switch To actions (no grouping, no detail lines).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import AgentFailureToast from '../AgentFailureToast.svelte';
 
 describe('AgentFailureToast', () => {
   afterEach(cleanup);
 
-  it('renders duplicate "Name — Workspace" lines without a keyed-each crash', () => {
-    expect(() =>
-      render(AgentFailureToast, {
-        props: {
-          title: '2 agents failed',
-          errorSummary: 'spawn failed: EPERM',
-          detailLines: [
-            { key: 'agent-1', label: 'Implementor — Fix login' },
-            { key: 'agent-2', label: 'Implementor — Fix login' },
-          ],
-          retryLabel: 'Retry All 2 Agents',
-          retrying: false,
-          onRetry: vi.fn(),
-          onClose: vi.fn(),
-        },
-      }),
-    ).not.toThrow();
+  it('renders title, error, context line, and wires Retry / Switch To / close', async () => {
+    const onRetry = vi.fn();
+    const onSwitchTo = vi.fn();
+    const onClose = vi.fn();
+    render(AgentFailureToast, {
+      props: {
+        title: 'Implementor failed',
+        errorSummary: 'spawn failed: EPERM',
+        contextLine: 'Implementor — Fix login',
+        retryLabel: 'Retry Implementor',
+        retrying: false,
+        onRetry,
+        onSwitchTo,
+        onClose,
+      },
+    });
 
-    expect(screen.getAllByText('Implementor — Fix login')).toHaveLength(2);
+    expect(screen.getByText('Implementor failed')).toBeTruthy();
+    expect(screen.getByText('spawn failed: EPERM')).toBeTruthy();
+    expect(screen.getByText('Implementor — Fix login')).toBeTruthy();
+
+    await fireEvent.click(screen.getByText('Retry Implementor'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onSwitchTo).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByText('Switch To'));
+    expect(onSwitchTo).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(screen.getByLabelText('Close'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables Retry while retrying but keeps Switch To enabled', () => {
+    render(AgentFailureToast, {
+      props: {
+        title: 'Implementor failed',
+        errorSummary: 'spawn failed: EPERM',
+        retryLabel: 'Retry Implementor',
+        retrying: true,
+        onRetry: vi.fn(),
+        onSwitchTo: vi.fn(),
+        onClose: vi.fn(),
+      },
+    });
+
+    const retryButton = screen.getByText('Retrying…').closest('button');
+    expect(retryButton?.disabled).toBe(true);
+    const switchButton = screen.getByText('Switch To').closest('button');
+    expect(switchButton?.disabled).toBe(false);
   });
 });
