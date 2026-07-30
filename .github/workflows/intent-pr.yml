@@ -106,7 +106,7 @@ jobs:
       - name: Setup Node.js
         # No cache: 'pnpm' — persistent pnpm store on the non-ephemeral
         # self-hosted runner makes the GH Actions cache redundant (same as
-        # the m1mac jobs below).
+        # the jobs below).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -178,7 +178,9 @@ jobs:
 
   build-web:
     name: Build (web)
-    runs-on: [self-hosted, macOS, ARM64, m1mac]
+    # Moved from m1mac to the self-hosted Linux runner (tinybox, 64 cores /
+    # 125 GB) so the single-slot Mac is free for release/signing work.
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -188,10 +190,9 @@ jobs:
       # jobs; 4096 OOMed, and with sourcemaps the heap flakily grew past
       # even this 8192 cap on the old 2-core / 7 GB ubuntu-latest runner
       # (~7.7 GB at death, monorepo#1074), which forced
-      # INTENT_DISABLE_SOURCEMAPS=1. This job now runs on the self-hosted
-      # m1mac runner (8 cores / 16 GB), so sourcemaps are re-enabled; keep
-      # the 8192 cap — the build's live set exceeds 6 GB even without
-      # sourcemaps.
+      # INTENT_DISABLE_SOURCEMAPS=1. On the 125 GB self-hosted runner
+      # sourcemaps stay enabled; keep the 8192 cap — the build's live set
+      # exceeds 6 GB even without sourcemaps.
       NODE_OPTIONS: '--max-old-space-size=8192'
     steps:
       - name: Checkout
@@ -221,11 +222,12 @@ jobs:
           echo "✓ dist/web/index.html present."
 
   test:
-    # Unsharded on the single-slot self-hosted m1mac runner: 4 shards would
-    # just queue serially on it, so one job on the 8-core M1 avoids 4x
-    # checkout/install overhead.
+    # Unsharded on the single-slot self-hosted Linux runner (tinybox): shards
+    # would just queue serially on it, so one job avoids the extra
+    # checkout/install overhead — vitest parallelism uses the 64 cores
+    # within the single job.
     name: Unit Tests
-    runs-on: [self-hosted, macOS, ARM64, m1mac]
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -241,8 +243,9 @@ jobs:
           version: 10.30.3
           run_install: false
       - name: Setup Node.js
-        # No cache: 'pnpm' — persistent pnpm store on the self-hosted Mac
-        # makes the GH Actions cache redundant (see build-web).
+        # No cache: 'pnpm' — persistent pnpm store on the non-ephemeral
+        # self-hosted runner makes the GH Actions cache redundant (see
+        # build-web).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
