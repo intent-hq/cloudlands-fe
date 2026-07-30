@@ -1,10 +1,11 @@
 /**
- * Agent-failure aggregation registry — transient, renderer-only state.
+ * Agent-failure registry — transient, renderer-only state.
  *
  * Collects `agent:failed` events across ALL workspaces (the daemon-events
- * bridge subscribes `agent:*` with no workspace filter) and groups them by
- * normalized error string so the aggregated-failure toast layer can render one
- * toast per error group ("N agents failed") instead of one per agent.
+ * bridge subscribes `agent:*` with no workspace filter), one entry per failed
+ * agent, so the failure toast layer can render one toast per agent. There is
+ * deliberately NO error-string grouping: a grouped "Retry All" can
+ * accidentally mass-restart agents a coordinator is already recovering.
  *
  * Lifecycle (wired in `daemon-events-bridge.client.ts`):
  *   - `agent:failed`         → `recordAgentFailure` (same agentId replaces its
@@ -19,7 +20,6 @@
  * `subscribeToAgentFailures` seam rather than this module importing toast
  * code.
  */
-import { normalizeAgentError } from './utils/normalize-agent-error';
 
 /** One failed agent, keyed by agentId in the registry. */
 export interface AgentFailureEntry {
@@ -27,31 +27,20 @@ export interface AgentFailureEntry {
   workspaceId: string;
   /** Raw error string from the `agent:failed` event. */
   error: string;
-  /** Normalized grouping key derived from `error`. */
-  groupKey: string;
   /** Epoch ms when the failure was recorded. */
   at: number;
 }
 
-/** All failed agents sharing one normalized error. */
-export interface AgentFailureGroup {
-  groupKey: string;
-  /** Representative raw error message (from the group's newest entry). */
-  error: string;
-  /** Entries ordered oldest-first by `at`. */
-  entries: AgentFailureEntry[];
-}
-
-export type AgentFailureListener = (groups: AgentFailureGroup[]) => void;
+export type AgentFailureListener = (entries: AgentFailureEntry[]) => void;
 
 const failuresByAgent = new Map<string, AgentFailureEntry>();
 const listeners = new Set<AgentFailureListener>();
 
 function notify(): void {
-  const groups = listAgentFailureGroups();
+  const entries = listAgentFailureEntries();
   for (const listener of listeners) {
     try {
-      listener(groups);
+      listener(entries);
     } catch {
       // A throwing subscriber must not break the events bridge or the other
       // subscribers; the registry stays dependency-light (no logger import).
@@ -61,7 +50,7 @@ function notify(): void {
 
 /**
  * Record (or replace) the failure entry for an agent. The same agent failing
- * twice keeps a single entry — the newer error/groupKey/at win.
+ * twice keeps a single entry — the newer error/at win.
  */
 export function recordAgentFailure(input: {
   agentId: string;
@@ -73,7 +62,6 @@ export function recordAgentFailure(input: {
     agentId: input.agentId,
     workspaceId: input.workspaceId,
     error: input.error,
-    groupKey: normalizeAgentError(input.error),
     at: input.at ?? Date.now(),
   };
   failuresByAgent.set(entry.agentId, entry);
@@ -100,28 +88,13 @@ export function getAgentFailureEntry(agentId: string): AgentFailureEntry | undef
   return failuresByAgent.get(agentId);
 }
 
-/**
- * Snapshot of current failure groups. Groups are ordered by their oldest
- * entry's `at`; entries within a group are ordered oldest-first.
- */
-export function listAgentFailureGroups(): AgentFailureGroup[] {
-  const byKey = new Map<string, AgentFailureEntry[]>();
-  for (const entry of failuresByAgent.values()) {
-    const bucket = byKey.get(entry.groupKey);
-    if (bucket) bucket.push(entry);
-    else byKey.set(entry.groupKey, [entry]);
-  }
-  const groups: AgentFailureGroup[] = [];
-  for (const [groupKey, entries] of byKey) {
-    entries.sort((a, b) => a.at - b.at);
-    groups.push({ groupKey, error: entries[entries.length - 1].error, entries });
-  }
-  groups.sort((a, b) => a.entries[0].at - b.entries[0].at);
-  return groups;
+/** Snapshot of current failure entries, ordered oldest-first by `at`. */
+export function listAgentFailureEntries(): AgentFailureEntry[] {
+  return [...failuresByAgent.values()].sort((a, b) => a.at - b.at);
 }
 
 /**
- * Subscribe to registry changes. The listener receives the fresh group
+ * Subscribe to registry changes. The listener receives the fresh entry
  * snapshot after every add/replace/remove. Returns an unsubscribe function.
  */
 export function subscribeToAgentFailures(listener: AgentFailureListener): () => void {

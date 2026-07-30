@@ -5,26 +5,35 @@
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
-    /** Headline, e.g. "3 agents failed" or "Implementor failed". */
+    /** Headline, e.g. "Implementor failed". */
     title: string;
-    /** Truncated representative error message for the group. */
+    /** Truncated error message for the failed agent. */
     errorSummary: string;
-    /** Resolved "Agent — Workspace" lines (may be empty when unresolvable),
-     *  keyed by agentId — labels can collide (same-named agents in one
-     *  workspace), so the each block must not key by the label text. */
-    detailLines: Array<{ key: string; label: string }>;
-    /** "Retry All N Agents" (N>1) or "Retry <name>" (N=1). */
+    /** Resolved "Agent — Workspace" context line (absent when unresolvable). */
+    contextLine?: string;
+    /** "Retry <name>" (or plain "Retry" when the name is unresolvable). */
     retryLabel: string;
-    /** Disables the retry button while retries are in flight. */
+    /** Disables the retry button while the retry is in flight. */
     retrying: boolean;
-    /** Brief note when some retries failed (entry kept in the group). */
+    /** Brief note when the retry failed (entry kept in the registry). */
     retryNote?: string;
     onRetry: () => void;
+    /** Navigate to the agent WITHOUT retrying. */
+    onSwitchTo: () => void;
     onClose: () => void;
   }
 
-  let { title, errorSummary, detailLines, retryLabel, retrying, retryNote, onRetry, onClose }: Props =
-    $props();
+  let {
+    title,
+    errorSummary,
+    contextLine,
+    retryLabel,
+    retrying,
+    retryNote,
+    onRetry,
+    onSwitchTo,
+    onClose,
+  }: Props = $props();
 </script>
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
@@ -40,12 +49,8 @@
     <p class="text-sm font-medium text-foreground">{title}</p>
     <p class="text-sm text-muted-foreground line-clamp-2 mt-0.5">{errorSummary}</p>
 
-    {#if detailLines.length > 0}
-      <ul class="mt-1.5 space-y-0.5">
-        {#each detailLines as line (line.key)}
-          <li class="text-xs text-muted-foreground truncate">{line.label}</li>
-        {/each}
-      </ul>
+    {#if contextLine}
+      <p class="text-xs text-muted-foreground truncate mt-1.5">{contextLine}</p>
     {/if}
 
     {#if retryNote}
@@ -56,6 +61,9 @@
     <div class="flex items-center gap-2 mt-3">
       <Button variant="outline" size="sm" disabled={retrying} onclick={onRetry}>
         {retrying ? m.ui_agentFailureToast_retrying_label() : retryLabel}
+      </Button>
+      <Button variant="ghost" size="sm" onclick={onSwitchTo}>
+        {m.agent_failureToast_switchTo_label()}
       </Button>
     </div>
   </div>
