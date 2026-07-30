@@ -2047,6 +2047,8 @@
   "chat_questionWizard_send_label": "送信",
   "chat_questionWizard_next_label": "次へ",
   "chat_questionWizard_dismiss_label": "閉じる",
+  "chat_questionWizard_dismiss_tooltip": "回答せずに完全に閉じる",
+  "chat_questionWizard_ignore_tooltip": "再度展開するまで非表示にする",
   "chat_bulkProposalItems_bulkChanges_label": "一括変更",
   "chat_bulkProposalItems_selected_label": "{selected} / {total} 件選択中",
   "chat_bulkProposalItems_toggle_ariaLabel": "{title} を切り替え",

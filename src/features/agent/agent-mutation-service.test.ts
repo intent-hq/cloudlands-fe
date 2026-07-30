@@ -37,6 +37,7 @@ import { toast } from "svelte-sonner";
 import {
   agentSessionDismissQuestionsRequested,
   bulkUpsertSessions,
+  removeSession,
   updateSession,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
@@ -760,5 +761,65 @@ describe("agentMutationService — dismiss questions (optimistic marker + rollba
       workspaceId: "ws-dismiss-missing",
       messageId: "msg-q1",
     });
+  });
+
+  it("rollback only reverts the marker key — a concurrent in-flight metadata write survives", async () => {
+    const WS = "ws-dismiss-concurrent";
+    const AGENT = "agent-dismiss-concurrent";
+    seedSession(makeSession(AGENT, WS, { metadata: { model: "sonnet" } }));
+    dismissQuestions.mockImplementationOnce(async () => {
+      // A concurrent write lands while the RPC is in flight (e.g. an
+      // agent:updated refetch that persisted a model switch).
+      const current = readSession(AGENT);
+      appStore.dispatch(
+        updateSession(AGENT, { metadata: { ...current?.metadata, model: "opus" } }),
+      );
+      return { success: false, error: "dismiss boom" };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    // The concurrent model switch is preserved; only the marker is reverted.
+    expect(readSession(AGENT)?.metadata).toEqual({ model: "opus" });
+  });
+
+  it("rollback no-ops when a concurrent write already replaced the marker with a different value", async () => {
+    const WS = "ws-dismiss-replaced";
+    const AGENT = "agent-dismiss-replaced";
+    seedSession(makeSession(AGENT, WS, { metadata: {} }));
+    dismissQuestions.mockImplementationOnce(async () => {
+      const current = readSession(AGENT);
+      appStore.dispatch(
+        updateSession(AGENT, {
+          metadata: { ...current?.metadata, dismissedQuestionsMessageId: "msg-q2" },
+        }),
+      );
+      return { success: false, error: "dismiss boom" };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    // The newer marker (a later dismissal for msg-q2) is not clobbered.
+    expect(readSession(AGENT)?.metadata?.dismissedQuestionsMessageId).toBe("msg-q2");
+  });
+
+  it("rollback no-ops when the session was deleted mid-flight", async () => {
+    const WS = "ws-dismiss-deleted";
+    const AGENT = "agent-dismiss-deleted";
+    seedSession(makeSession(AGENT, WS));
+    dismissQuestions.mockImplementationOnce(async () => {
+      appStore.dispatch(removeSession(AGENT));
+      return { success: false, error: "dismiss boom" };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    expect(readSession(AGENT)).toBeUndefined();
   });
 });

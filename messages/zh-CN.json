@@ -2047,6 +2047,8 @@
   "chat_questionWizard_send_label": "发送",
   "chat_questionWizard_next_label": "下一步",
   "chat_questionWizard_dismiss_label": "关闭",
+  "chat_questionWizard_dismiss_tooltip": "不回答并永久关闭",
+  "chat_questionWizard_ignore_tooltip": "隐藏，直到再次展开",
   "chat_bulkProposalItems_bulkChanges_label": "批量更改",
   "chat_bulkProposalItems_selected_label": "已选择 {selected} / {total}",
   "chat_bulkProposalItems_toggle_ariaLabel": "切换 {title}",

@@ -2047,6 +2047,8 @@
   "chat_questionWizard_send_label": "Senden",
   "chat_questionWizard_next_label": "Weiter",
   "chat_questionWizard_dismiss_label": "Verwerfen",
+  "chat_questionWizard_dismiss_tooltip": "Dauerhaft verwerfen, ohne zu antworten",
+  "chat_questionWizard_ignore_tooltip": "Ausblenden, bis Sie wieder aufklappen",
   "chat_bulkProposalItems_bulkChanges_label": "Massenänderungen",
   "chat_bulkProposalItems_selected_label": "{selected} / {total} ausgewählt",
   "chat_bulkProposalItems_toggle_ariaLabel": "{title} umschalten",

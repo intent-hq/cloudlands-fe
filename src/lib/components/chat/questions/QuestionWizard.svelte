@@ -150,10 +150,10 @@
   {#if collapsed}
     <!-- Ignore-collapsed banner: click to re-expand; Dismiss is a sibling
          button (not nested — invalid HTML) that persists the dismissal. -->
-    <div class="flex w-full items-center rounded-lg hover:bg-primary/5">
+    <div class="flex w-full items-center rounded-lg">
       <button
         type="button"
-        class="flex flex-1 items-center gap-2.5 px-3.5 py-2.25 cursor-pointer rounded-l-lg bg-transparent border-none text-left font-[inherit]"
+        class="flex flex-1 items-center gap-2.5 px-3.5 py-2.25 cursor-pointer rounded-l-lg bg-transparent border-none text-left font-[inherit] hover:bg-primary/5"
         onclick={() => onToggleCollapsed?.(false)}
       >
         <Fa icon={faCircleQuestion} class="text-xs text-primary" />
@@ -169,6 +169,7 @@
         <button
           type="button"
           class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-3 py-2.25 rounded-r-lg hover:text-foreground"
+          title={m.chat_questionWizard_dismiss_tooltip()}
           onclick={onDismiss}
         >
           {m.chat_questionWizard_dismiss_label()}
@@ -209,6 +210,7 @@
         <button
           type="button"
           class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
+          title={m.chat_questionWizard_ignore_tooltip()}
           onclick={() => onToggleCollapsed?.(true)}
         >
           {m.chat_questionWizard_ignore_label()}
@@ -217,6 +219,7 @@
           <button
             type="button"
             class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
+            title={m.chat_questionWizard_dismiss_tooltip()}
             onclick={onDismiss}
           >
             {m.chat_questionWizard_dismiss_label()}

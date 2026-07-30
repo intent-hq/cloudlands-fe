@@ -2047,6 +2047,8 @@
   "chat_questionWizard_send_label": "보내기",
   "chat_questionWizard_next_label": "다음",
   "chat_questionWizard_dismiss_label": "닫기",
+  "chat_questionWizard_dismiss_tooltip": "답변하지 않고 영구적으로 닫기",
+  "chat_questionWizard_ignore_tooltip": "다시 펼칠 때까지 숨기기",
   "chat_bulkProposalItems_bulkChanges_label": "일괄 변경",
   "chat_bulkProposalItems_selected_label": "{selected}/{total} 선택됨",
   "chat_bulkProposalItems_toggle_ariaLabel": "{title} 전환",

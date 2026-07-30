@@ -249,8 +249,11 @@ async function handleRename(action: ReturnType<typeof renameAgentSessionRequeste
  * question-dismissal marker (`dismissedQuestionsMessageId`, PROTOCOL §5.5)
  * into session metadata — the wizard gate reads it, so the wizard hides
  * immediately — then forward `agent.dismissQuestions` to the daemon. On
- * failure the previous metadata is restored (the wizard re-surfaces) and the
- * error is surfaced via toast. On success the daemon persists the marker
+ * failure only the marker key is reverted (the wizard re-surfaces) and the
+ * error is surfaced via toast: the rollback re-reads the CURRENT metadata
+ * rather than restoring the dispatch-time snapshot wholesale, so metadata
+ * updates that landed while the RPC was in flight (e.g. an `agent:updated`
+ * refetch) are not clobbered. On success the daemon persists the marker
  * (survives reload) and emits `agent:updated`, which reconciles other windows.
  */
 async function handleDismissQuestions(
@@ -258,18 +261,27 @@ async function handleDismissQuestions(
 ): Promise<void> {
   const [agentId, wsId, messageId] = action.payload;
   const snapshot = readSession(agentId);
-  const previousMetadata = snapshot?.metadata;
+  const previousDismissedId = snapshot?.metadata?.dismissedQuestionsMessageId;
   if (snapshot) {
     appStore.dispatch(
       updateSession(agentId, {
-        metadata: { ...previousMetadata, dismissedQuestionsMessageId: messageId },
+        metadata: { ...snapshot.metadata, dismissedQuestionsMessageId: messageId },
       }),
     );
   }
   const rollback = () => {
     if (!snapshot) return;
-    if (!readSession(agentId)) return;
-    appStore.dispatch(updateSession(agentId, { metadata: previousMetadata }));
+    const current = readSession(agentId);
+    // Session deleted mid-flight, or a concurrent write already replaced the
+    // marker with a different value — nothing of ours left to revert.
+    if (!current || current.metadata?.dismissedQuestionsMessageId !== messageId) return;
+    const metadata = { ...current.metadata };
+    if (previousDismissedId === undefined) {
+      delete metadata.dismissedQuestionsMessageId;
+    } else {
+      metadata.dismissedQuestionsMessageId = previousDismissedId;
+    }
+    appStore.dispatch(updateSession(agentId, { metadata }));
   };
   try {
     const result = await appClient.agents.dismissQuestions({

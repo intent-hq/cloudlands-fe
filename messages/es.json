@@ -2047,6 +2047,8 @@
   "chat_questionWizard_send_label": "Enviar",
   "chat_questionWizard_next_label": "Siguiente",
   "chat_questionWizard_dismiss_label": "Descartar",
+  "chat_questionWizard_dismiss_tooltip": "Descartar permanentemente sin responder",
+  "chat_questionWizard_ignore_tooltip": "Ocultar hasta que vuelva a expandir",
   "chat_bulkProposalItems_bulkChanges_label": "Cambios en bloque",
   "chat_bulkProposalItems_selected_label": "{selected} / {total} seleccionados",
   "chat_bulkProposalItems_toggle_ariaLabel": "Alternar {title}",
