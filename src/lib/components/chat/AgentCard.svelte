@@ -6,7 +6,7 @@
    * Uses subscription for real-time updates and displays line changes stats.
    * Reads Redux-owned streaming state for real-time response updates.
    */
-  import { tick } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
@@ -82,6 +82,8 @@
     workspace?: Workspace | null;
     /** Whether the agent has finished its delegated work (forces completed avatar state) */
     isCompleted?: boolean;
+    /** Optional actions rendered in the header row, before the relative timestamp */
+    headerActions?: Snippet;
   }
 
   let {
@@ -98,6 +100,7 @@
     hidePreview = false,
     workspace = null,
     isCompleted = false,
+    headerActions,
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
@@ -554,6 +557,9 @@
                 deletions={$lineChanges$.deletions}
                 size="xs"
               />
+            {/if}
+            {#if headerActions}
+              {@render headerActions()}
             {/if}
             {#if updatedAt}
               <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
