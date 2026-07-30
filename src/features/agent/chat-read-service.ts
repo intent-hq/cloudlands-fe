@@ -58,7 +58,6 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { deduplicateAgentMessages } from "$shared/utils/message-dedup";
 import { createLogger } from "$lib/utils/client-logger";
-import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
 import { hasLiveChatSubscription } from "./chat-subscribe-service";
 import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
 
@@ -179,20 +178,19 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // the STANDING subscription (chat-subscribe-service) is already live
       // for this agent, its seq-0 snapshot IS the initial hydration for the
       // live-turn slot — this read only contributes the older full-history
-      // pages, so the one-shot snapshot fetch and the firehose accumulator
-      // seeding are skipped (the standing stream owns the in-flight message
-      // and the firehose transcript writer is suppressed while it is live).
-      // Without a live standing subscription, keep the previous one-shot
-      // snapshot-merge so reopening a mid-turn chat still shows the partial
-      // response immediately.
+      // pages, so the one-shot snapshot fetch is skipped (the standing stream
+      // owns the in-flight message). Without a live standing subscription,
+      // keep the one-shot snapshot-merge so reopening a mid-turn chat still
+      // shows the partial response immediately; subsequent growth arrives via
+      // the standing subscription once it emits (the firehose no longer
+      // assembles transcript state).
       let finalMessages = allMessages;
       if (!hasLiveChatSubscription(agentId)) {
         const snapshot = await appClient.chat.subscribeSnapshot(agentId);
 
         // Re-check before any side effects: the deletion may have become
-        // pending during the snapshot fetch above. This guards both the store
-        // upserts below and seedStreamFromSnapshot (the bridge accumulator
-        // must not be seeded for a deleted agent).
+        // pending during the snapshot fetch above; the store upserts below
+        // must not run for a deleted agent.
         if (isAgentDeletionPending(agentId)) return;
 
         const inFlightMessage = snapshot.messages.find(
@@ -216,12 +214,6 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
             // unshift-per-page accumulation, so the newest in-flight assistant
             // goes at the end).
             finalMessages = [...allMessages, inFlightMessage];
-            // Seed the bridge stream accumulator so subsequent agent:stream:chunk
-            // events build on the hydrated prefix instead of starting empty
-            // (which would fail the regression guard until the candidate outgrows
-            // the partial). The snapshot's in-flight assistant carries the full
-            // content-blocks array built by chat_snapshot's CS-0 D5 merge.
-            seedStreamFromSnapshot(agentId, inFlightMessage, session.workspaceId);
           }
         }
       }

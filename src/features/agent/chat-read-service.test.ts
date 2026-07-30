@@ -35,15 +35,6 @@ vi.mock("$lib/client", () => ({
   },
 }));
 
-// Mock the seedStreamFromSnapshot function to verify it's called correctly
-vi.mock("$features/events/daemon-events-bridge.client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("$features/events/daemon-events-bridge.client")>();
-  return {
-    ...actual,
-    seedStreamFromSnapshot: vi.fn(),
-  };
-});
-
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
@@ -68,7 +59,6 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from "./utils/pending-agent-deletions";
-import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
 import { shouldShowStoppedIndicator } from "$lib/components/chat/message-display-utils";
 
 const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -487,8 +477,8 @@ describe("chatReadService (fake seam, real store)", () => {
   // next tool call. Root cause: agent.getConversation returns persisted-only, dropping
   // the live-turn partial assistant that chat.subscribe seq-0 snapshot merges. Fix:
   // fetch chat.subscribeSnapshot after getConversation paging and merge the in-flight
-  // assistant message (dedup by ID, persisted wins). Also seed the bridge stream
-  // accumulator so subsequent chunks pass the regression guard.
+  // assistant message (dedup by ID, persisted wins). Subsequent growth arrives via
+  // the standing chat.subscribe stream.
   it("merges chat.subscribe snapshot in-flight message into hydrated transcript", async () => {
     const agentId = "agent-rejoin-stream";
     agentsApi.get.mockResolvedValueOnce(
@@ -533,13 +523,6 @@ describe("chatReadService (fake seam, real store)", () => {
     const merged = rendered[1] as AgentMessage & { isStreaming?: boolean };
     expect(merged.isStreaming).toBe(true);
     expect(merged.contentBlocks?.map((b) => b.type)).toEqual(["text"]);
-
-    // Verify seedStreamFromSnapshot was called to prime the accumulator.
-    expect(seedStreamFromSnapshot).toHaveBeenCalledWith(
-      agentId,
-      inFlightAssistant,
-      WS,
-    );
   });
 
   it("snapshot merge skips in-flight message already in persisted set (dedup by ID)", async () => {
@@ -577,9 +560,6 @@ describe("chatReadService (fake seam, real store)", () => {
     const stored = rendered[0] as AgentMessage & { isStreaming?: boolean };
     expect(stored.isStreaming).toBeUndefined(); // finalized
     expect(stored.contentBlocks?.[0]).toMatchObject({ type: "text", text: "Done" });
-
-    // seedStreamFromSnapshot should NOT be called when deduped.
-    expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
   });
 
   it("snapshot merge no-op when snapshot has no in-flight assistant message", async () => {
@@ -604,9 +584,6 @@ describe("chatReadService (fake seam, real store)", () => {
 
     const rendered = selectAgentMessages.select(appStore.state, agentId);
     expect(rendered.map((m) => m.id)).toEqual(["0190b3e4-user"]);
-
-    // seedStreamFromSnapshot should not be called when no in-flight message.
-    expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
   });
 
   // Regression (intentd#336): after a user interrupts mid-stream, the daemon
@@ -917,8 +894,8 @@ describe("chatReadService (fake seam, real store)", () => {
 
   // Pairing with the STANDING subscription (chat-subscribe-service): when the
   // standing chat.subscribe stream is already live for the agent, the
-  // full-history read must NOT fetch the one-shot subscribeSnapshot nor seed
-  // the firehose accumulator — the standing stream owns the live-turn slot.
+  // full-history read must NOT fetch the one-shot subscribeSnapshot — the
+  // standing stream owns the live-turn slot.
   it("skips the one-shot snapshot merge while the standing subscription is live", async () => {
     const agentId = "agent-standing-live";
     appStore.dispatch(
@@ -941,7 +918,6 @@ describe("chatReadService (fake seam, real store)", () => {
       await loadChatTranscript(agentId);
 
       expect(chatApi.subscribeSnapshot).not.toHaveBeenCalled();
-      expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
       expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
         "standing-m1",
       ]);
