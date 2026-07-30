@@ -800,6 +800,7 @@ export interface TaskMetadata {
  * - not_started: Task accepted but not yet being worked on
  * - waiting: Waiting on dependencies
  * - discussion_needed: Agent signals need for user planning input
+ * - blocked: Agent reports a blocker it cannot resolve
  * - in_progress: Agent actively working on task
  * - review_required: Agent signals work ready for user review
  * - complete: User accepts the task output
@@ -809,6 +810,7 @@ export type TaskStatus =
   | 'not_started' // Task accepted but not started
   | 'waiting' // Waiting on dependencies
   | 'discussion_needed' // Agent needs user planning input
+  | 'blocked' // Agent reports an unresolvable blocker
   | 'in_progress' // Agent actively working
   | 'review_required' // Work ready for user review
   | 'complete' // User accepts output

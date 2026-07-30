@@ -46,6 +46,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 
 import {
+  getAvatarState,
   getAvatarStateFromStore,
   isAgentStreamingFromStore,
 } from './avatar-state';
@@ -80,5 +81,50 @@ describe('avatar-state store-backed selectors', () => {
 
     expect(isAgentStreamingFromStore('ws-1', 'agent-1')).toBe(true);
     expect(selectAgentIsRespondingMock).toHaveBeenCalledWith({ marker: 'state' }, 'agent-1');
+  });
+});
+
+describe('getAvatarState attention-request states', () => {
+  it('maps a pending discussion request to attention-discussion', () => {
+    expect(getAvatarState({ status: AgentStatus.Idle }, { attentionKind: 'discussion' })).toBe(
+      'attention-discussion',
+    );
+  });
+
+  it('maps a pending blocker request to attention-blocker', () => {
+    expect(getAvatarState({ status: AgentStatus.Idle }, { attentionKind: 'blocker' })).toBe(
+      'attention-blocker',
+    );
+  });
+
+  it('lets completed/failed/needs-permission take precedence over attention', () => {
+    expect(
+      getAvatarState({ status: AgentStatus.Idle }, { attentionKind: 'blocker', isCompleted: true }),
+    ).toBe('completed');
+    expect(
+      getAvatarState({ status: AgentStatus.Error }, { attentionKind: 'discussion' }),
+    ).toBe('failed');
+    expect(
+      getAvatarState(
+        { status: AgentStatus.Idle },
+        { attentionKind: 'discussion', hasPermissionRequest: true },
+      ),
+    ).toBe('needs-permission');
+  });
+
+  it('lets attention take precedence over running/waiting', () => {
+    expect(
+      getAvatarState({ isStreaming: true, status: AgentStatus.Active }, { attentionKind: 'blocker' }),
+    ).toBe('attention-blocker');
+    expect(
+      getAvatarState({ status: AgentStatus.Waiting }, { attentionKind: 'discussion' }),
+    ).toBe('attention-discussion');
+  });
+
+  it('falls through unchanged when no attention request is pending', () => {
+    expect(getAvatarState({ status: AgentStatus.Waiting }, { attentionKind: null })).toBe(
+      'waiting',
+    );
+    expect(getAvatarState({ status: AgentStatus.Idle }, {})).toBe('idle');
   });
 });

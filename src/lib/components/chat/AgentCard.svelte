@@ -25,6 +25,7 @@
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
+  import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
@@ -375,6 +376,10 @@
       ?.replace(/@context\[[^\]]*\]/g, '')
       ?.trim() || '',
   );
+  // Pending attention request (discussion/blocker) from the daemon session
+  // fields; null when none is pending (retired on agent:updated clear).
+  const attentionRequest = $derived(getAgentAttentionRequest($agent$));
+
   // Use centralized getAvatarState for consistent state calculation
   const avatarState = $derived(
     getAvatarState(
@@ -385,6 +390,7 @@
       {
         hasPermissionRequest: $agentPermCount > 0,
         isCompleted,
+        attentionKind: attentionRequest?.kind ?? null,
       },
     ),
   );
@@ -426,6 +432,8 @@
     if (isRunning) return 'agent-glow-active';
     if (avatarState === 'failed') return 'shadow shadow-red-500 shadow-sm';
     if (avatarState === 'needs-permission') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'attention-discussion') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'attention-blocker') return 'shadow shadow-red-500 shadow-sm';
     if (avatarState === 'waiting') return 'shadow shadow-amber-500 shadow-sm';
     return 'glow-transparent';
   });
@@ -553,9 +561,26 @@
           </div>
         </div>
 
-        <!-- Message preview - show completion report if available, otherwise last response -->
+        <!-- Message preview - attention request takes precedence, then completion report, then last response -->
         {#if !hidePreview}
-          {#if effectiveCompletionReport}
+          {#if attentionRequest}
+            <div class="mt-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
+              <p
+                class="text-sm truncate {attentionRequest.kind === 'blocker'
+                  ? 'text-red-500'
+                  : 'text-amber-500'}"
+                data-testid="agent-card-attention"
+              >
+                {attentionRequest.kind === 'blocker'
+                  ? m.chat_agentCard_attentionBlocker_label()
+                  : m.chat_agentCard_attentionDiscussion_label()}{#if attentionRequest.reason}<span
+                    class="text-subtle"
+                  >
+                    · {attentionRequest.reason}</span
+                  >{/if}
+              </p>
+            </div>
+          {:else if effectiveCompletionReport}
             <div class="mt-0.5">
               <p class="text-sm text-subtle truncate">
                 {effectiveCompletionReport}

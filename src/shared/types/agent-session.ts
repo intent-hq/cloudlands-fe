@@ -273,6 +273,23 @@ export interface AgentSession {
    */
   stats?: SessionStats;
 
+  // ========== Attention Request ==========
+  /**
+   * Pending attention request raised by the agent (requestDiscussion /
+   * reportBlocker). Present only while pending — the daemon clears all three
+   * fields when the agent next receives a message, emitting `agent:updated`
+   * with `attentionRequestCleared: true`. Exposed top-level on the full
+   * session projection and under `metadata` on `AgentLite` (agent.list /
+   * agent.get). Rendered verbatim.
+   */
+  attentionRequestKind?: 'discussion' | 'blocker';
+
+  /** Reason text accompanying the pending attention request. */
+  attentionRequestReason?: string;
+
+  /** ISO timestamp when the pending attention request was raised. */
+  attentionRequestTimestamp?: string;
+
   // ========== Metadata & Progress ==========
   /** Session metadata */
   metadata?: AgentMetadata;

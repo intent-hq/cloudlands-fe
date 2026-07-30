@@ -18,20 +18,24 @@ const {
   waitingByAgentId,
   waitingForOtherAgentsByAgentId,
   respondingByAgentId,
+  attentionByAgentId,
   selectAgentIsThinkingMock,
   selectAgentIsWaitingMock,
   selectAgentIsWaitingForOtherAgentsMock,
   selectAgentIsRespondingMock,
+  selectAgentAttentionRequestMock,
 } = vi.hoisted(() => {
   const thinkingByAgentId = new Map<string, boolean>();
   const waitingByAgentId = new Map<string, boolean>();
   const waitingForOtherAgentsByAgentId = new Map<string, boolean>();
   const respondingByAgentId = new Map<string, boolean>();
+  const attentionByAgentId = new Map<string, unknown>();
   return {
     thinkingByAgentId,
     waitingByAgentId,
     waitingForOtherAgentsByAgentId,
     respondingByAgentId,
+    attentionByAgentId,
     selectAgentIsThinkingMock: vi.fn((agentId: string) => ({
       subscribe: (run: (value: boolean) => void) => {
         run(thinkingByAgentId.get(agentId) ?? false);
@@ -56,6 +60,12 @@ const {
         return () => {};
       },
     })),
+    selectAgentAttentionRequestMock: vi.fn((agentId: string) => ({
+      subscribe: (run: (value: unknown) => void) => {
+        run(attentionByAgentId.get(agentId) ?? null);
+        return () => {};
+      },
+    })),
   };
 });
 
@@ -64,6 +74,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsThinking: selectAgentIsThinkingMock,
   selectAgentIsWaiting: selectAgentIsWaitingMock,
   selectAgentIsWaitingForOtherAgents: selectAgentIsWaitingForOtherAgentsMock,
+  selectAgentAttentionRequest: selectAgentAttentionRequestMock,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -71,7 +82,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
-  default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
+  default: (await import('../../chat/__tests__/mocks/MockAvatarWithState.svelte')).default,
 }));
 
 import AgentHierarchyCard from '../AgentHierarchyCard.svelte';
@@ -101,10 +112,12 @@ describe('AgentHierarchyCard Thinking consumer wiring', () => {
     waitingByAgentId.clear();
     waitingForOtherAgentsByAgentId.clear();
     respondingByAgentId.clear();
+    attentionByAgentId.clear();
     selectAgentIsThinkingMock.mockClear();
     selectAgentIsWaitingMock.mockClear();
     selectAgentIsWaitingForOtherAgentsMock.mockClear();
     selectAgentIsRespondingMock.mockClear();
+    selectAgentAttentionRequestMock.mockClear();
   });
 
   afterEach(() => cleanup());
@@ -186,5 +199,48 @@ describe('AgentHierarchyCard Thinking consumer wiring', () => {
 
     expect(screen.queryByText('Waiting for Agent Two')).toBeNull();
     expect(screen.getByText('Thinking...')).toBeTruthy();
+  });
+
+  it('surfaces a pending attention request (kind + reason) in the status footer', () => {
+    attentionByAgentId.set('a1', {
+      kind: 'blocker',
+      reason: 'CI credentials expired',
+      timestamp: '2026-07-30T11:00:00Z',
+    });
+
+    render(AgentHierarchyCard, { props: { agent: makeAgent() } });
+
+    expect(selectAgentAttentionRequestMock).toHaveBeenCalledWith('a1');
+    expect(screen.getByText('Reports a blocker')).toBeTruthy();
+    expect(screen.getByText('CI credentials expired')).toBeTruthy();
+  });
+
+  it('lets a pending attention request take precedence over Thinking', () => {
+    thinkingByAgentId.set('a1', true);
+    attentionByAgentId.set('a1', { kind: 'discussion', reason: 'Need input' });
+
+    render(AgentHierarchyCard, { props: { agent: makeAgent() } });
+
+    expect(screen.getByText('Requests a discussion')).toBeTruthy();
+    expect(screen.queryByText('Thinking...')).toBeNull();
+  });
+
+  it('reflects a pending attention request in the avatar state', () => {
+    attentionByAgentId.set('a1', { kind: 'blocker', reason: 'Sandbox broken' });
+
+    render(AgentHierarchyCard, { props: { agent: makeAgent({ status: 'idle' }) } });
+
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('attention-blocker');
+  });
+
+  it('gives completed/failed status precedence over a pending attention request in the avatar state', () => {
+    attentionByAgentId.set('a1', { kind: 'discussion', reason: 'Need input' });
+
+    render(AgentHierarchyCard, { props: { agent: makeAgent({ status: 'completed' }) } });
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('completed');
+    cleanup();
+
+    render(AgentHierarchyCard, { props: { agent: makeAgent({ status: 'failed' }) } });
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('failed');
   });
 });

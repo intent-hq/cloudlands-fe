@@ -7,6 +7,10 @@ import {
 } from "$shared/types";
 import { AgentActivationState, getAgentProvider } from "$shared/types/agent-session";
 import { getContentBlockText } from "$shared/utils/content-block-helpers";
+import {
+  getAgentAttentionRequest,
+  type AgentAttentionRequest,
+} from "$shared/utils/agent-attention";
 import type { StoredAgentSession } from "./agent-session-types";
 import { selectAgentQueueMessages } from "../agent-queue/agent-queue-selectors";
 
@@ -325,6 +329,22 @@ export const selectAgentIsWaiting = store.createSelector(
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return false;
     return isAgentWaiting(stored) || selectAgentIsWaitingForOtherAgents.select(state, agentId);
+  },
+);
+
+/**
+ * Pending attention request (discussion/blocker) for an agent, rendered
+ * verbatim from the daemon session fields (PROTOCOL §5.5) — top-level on the
+ * full projection, under `metadata` on `AgentLite`. Returns null when no
+ * request is pending (the daemon clears the fields when the agent next
+ * receives a message, emitting `agent:updated` with
+ * `attentionRequestCleared: true`).
+ */
+export const selectAgentAttentionRequest = store.createSelector(
+  (state, agentId: string): AgentAttentionRequest | null => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return null;
+    return getAgentAttentionRequest(stored);
   },
 );
 

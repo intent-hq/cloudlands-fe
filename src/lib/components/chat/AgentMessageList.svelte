@@ -4,7 +4,10 @@
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
+  import BlockerReportNotice from './BlockerReportNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getAttentionNotice } from './attention-notice';
   import { fade } from 'svelte/transition';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -130,8 +133,15 @@
           {/if}
         </div>
       {:else if message.role === 'system'}
-        <!-- System message - render as interruption notice banner -->
-        <InterruptionNotice message={extractAllContent(message)} />
+        {@const attentionNotice = getAttentionNotice(message)}
+        <!-- System message - attention-request notice or interruption banner -->
+        {#if attentionNotice?.kind === 'discussion-request'}
+          <DiscussionRequestNotice reason={attentionNotice.reason} />
+        {:else if attentionNotice?.kind === 'blocker-report'}
+          <BlockerReportNotice reason={attentionNotice.reason} />
+        {:else}
+          <InterruptionNotice message={extractAllContent(message)} />
+        {/if}
       {/if}
     </div>
   {/each}

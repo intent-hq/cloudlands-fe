@@ -22,6 +22,7 @@ import {
   normalizeDateValue,
   replaceAgentMessageByIdWithDedup,
 } from '$shared/utils/message-dedup';
+import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -499,10 +500,14 @@ type SessionComparisonSnapshot = Pick<
   messageCount: number;
   lastMessageId: AgentMessage['id'] | undefined;
   lastMessageBlockCount: number;
+  attentionRequestKind: string | undefined;
+  attentionRequestReason: string | undefined;
+  attentionRequestTimestamp: string | undefined;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
   const messages = session.messages;
+  const attentionRequest = getAgentAttentionRequest(session);
   return {
     status: session.status,
     name: session.name,
@@ -525,6 +530,11 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     isActive: session.isActive,
     stopReason: session.stopReason,
     sessionCorrupted: session.sessionCorrupted,
+    // Derived via the shared helper so metadata-carried AgentLite attention
+    // fields register as changes too, not just the top-level projection.
+    attentionRequestKind: attentionRequest?.kind,
+    attentionRequestReason: attentionRequest?.reason,
+    attentionRequestTimestamp: attentionRequest?.timestamp,
     messageCount: messages.length,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
     // The daemon can append trailing blocks to an already-stored message

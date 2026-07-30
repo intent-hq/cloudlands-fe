@@ -13,6 +13,7 @@
   selectSpecialistName,
   selectSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { store as appStore } from '$store/renderer/store';
 
@@ -24,12 +25,20 @@
 
   let { node, isActive = false, onclick }: Props = $props();
 
+  // svelte-ignore state_referenced_locally -- graph cards are mounted per agent; selector subscriptions are initialized once.
+  const attentionRequest$ = selectAgentAttentionRequest(node.agentId);
+
   // Get avatar state from agent status
   const state = $derived(
-    getAvatarState({
-      isStreaming: node.status === 'responding',
-      status: node.status,
-    }),
+    getAvatarState(
+      {
+        isStreaming: node.status === 'responding',
+        status: node.status,
+      },
+      {
+        attentionKind: $attentionRequest$?.kind ?? null,
+      },
+    ),
   );
 
   // Get specialist ID (accepts any specialist including team specialists)

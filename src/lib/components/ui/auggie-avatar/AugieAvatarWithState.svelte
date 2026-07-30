@@ -13,6 +13,8 @@
     faX,
     faHourglass,
     faExclamationTriangle,
+    faCommentDots,
+    faCircleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { AvatarState } from './avatar-state';
@@ -95,6 +97,22 @@
     >
       <Fa icon={faExclamationTriangle} class="relative z-10" />
       <Fa icon={faExclamationTriangle} size={21} class="text-background origin-center absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-0" />
+    </span>
+  {:else if state === 'attention-discussion'}
+    <!-- Attention: discussion requested - amber comment bubble -->
+    <span
+      class="absolute -top-0.5 -right-0.75 p-0.5 bg-sidebar rounded-full flex items-center justify-center text-amber-500"
+      style="font-size: {Math.max(8, size * 0.35)}px; line-height: 1;"
+    >
+      <Fa icon={faCommentDots} />
+    </span>
+  {:else if state === 'attention-blocker'}
+    <!-- Attention: blocker reported - red exclamation -->
+    <span
+      class="absolute -top-0.5 -right-0.75 p-0.5 bg-sidebar rounded-full flex items-center justify-center text-red-500"
+      style="font-size: {Math.max(8, size * 0.35)}px; line-height: 1;"
+    >
+      <Fa icon={faCircleExclamation} />
     </span>
   {:else if state === 'waiting'}
     <!-- Waiting indicator - hourglass -->
