@@ -82,7 +82,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
-  default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
+  default: (await import('../../chat/__tests__/mocks/MockAvatarWithState.svelte')).default,
 }));
 
 import AgentHierarchyCard from '../AgentHierarchyCard.svelte';
@@ -223,5 +223,24 @@ describe('AgentHierarchyCard Thinking consumer wiring', () => {
 
     expect(screen.getByText('Requests a discussion')).toBeTruthy();
     expect(screen.queryByText('Thinking...')).toBeNull();
+  });
+
+  it('reflects a pending attention request in the avatar state', () => {
+    attentionByAgentId.set('a1', { kind: 'blocker', reason: 'Sandbox broken' });
+
+    render(AgentHierarchyCard, { props: { agent: makeAgent({ status: 'idle' }) } });
+
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('attention-blocker');
+  });
+
+  it('gives completed/failed status precedence over a pending attention request in the avatar state', () => {
+    attentionByAgentId.set('a1', { kind: 'discussion', reason: 'Need input' });
+
+    render(AgentHierarchyCard, { props: { agent: makeAgent({ status: 'completed' }) } });
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('completed');
+    cleanup();
+
+    render(AgentHierarchyCard, { props: { agent: makeAgent({ status: 'failed' }) } });
+    expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('failed');
   });
 });

@@ -72,12 +72,12 @@
     responding: boolean,
     attentionKind: AgentAttentionKind | null,
   ): AvatarState {
+    if (status === 'completed') return 'completed';
+    if (status === 'failed') return 'failed';
     if (attentionKind === 'discussion') return 'attention-discussion';
     if (attentionKind === 'blocker') return 'attention-blocker';
     if (waitingForOtherAgents) return 'waiting';
     if (responding) return 'running';
-    if (status === 'completed') return 'completed';
-    if (status === 'failed') return 'failed';
     return 'idle';
   }
 
