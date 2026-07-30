@@ -31,6 +31,7 @@ vi.mock("$lib/client", () => ({
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
   selectAgentMessages,
   selectAgentSession,
@@ -407,14 +408,21 @@ describe("chatReadService (fake seam, real store)", () => {
     );
   });
 
-  it("tab-switch mid-turn keeps interim blocks via full transcript reload", async () => {
-    // The in-flight assistant message may be included in the conversation
-    // transcript when the daemon has it. A re-mount re-hydrates it.
+  // Regression: re-entering a conversation mid-turn briefly rendered the
+  // in-flight streamed text (from the chat.subscribe seq-0 snapshot) and then
+  // it DISAPPEARED until the next delta. Root cause: this read pages
+  // agent.getConversation, which returns PERSISTED rows only (PROTOCOL §5.5 —
+  // the live partial turn is carried solely by the chat.subscribe snapshot,
+  // §7.1), and its full-list upsert landed AFTER the snapshot, clobbering the
+  // snapshot-delivered partial assistant message. The read must preserve the
+  // stream-owned in-flight message it cannot see.
+  it("tab-switch mid-turn keeps the snapshot-delivered in-flight message (persisted-only read must not clobber it)", async () => {
     const agentId = "agent-tabswitch-inflight";
     const session = makeSession({
       id: agentId,
       status: AgentStatus.Active,
       isResponding: true,
+      isProcessing: true,
       isStreaming: true,
     });
     const userTurn: AgentMessage = {
@@ -431,29 +439,89 @@ describe("chatReadService (fake seam, real store)", () => {
       contentBlocks: [{ type: "text", id: "a1:0", text: "Working" }],
     } as unknown as AgentMessage;
 
-    agentsApi.get.mockResolvedValue(session as never);
-    agentsApi.getConversation.mockResolvedValue({
-      messages: [userTurn, partial],
-      truncated: false,
-      totalMessages: 2,
-      nextToken: null,
-    } as never);
-
-    // First mount hydrates the transcript.
-    await loadChatTranscript(agentId);
+    // Seed the store as the standing chat.subscribe seq-0 snapshot does on
+    // re-entry: full session with the synthetic in-flight assistant message
+    // and the in-flight flag pair set.
+    appStore.dispatch(bulkUpsertSessions([{ ...session, messages: [userTurn, partial] }]));
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
       "u1",
       "a1",
     ]);
 
-    // Simulate switching away and back — a fresh mount dispatches
-    // initializeChatRequested again, which re-runs loadChatTranscript.
+    // The persisted read races in AFTER the snapshot: agent.getConversation
+    // carries only the persisted user row — never the live partial turn.
+    agentsApi.get.mockResolvedValue(session as never);
+    agentsApi.getConversation.mockResolvedValue({
+      messages: [userTurn],
+      truncated: false,
+      totalMessages: 1,
+      nextToken: null,
+    } as never);
+
     await loadChatTranscript(agentId);
+
     const after = selectAgentMessages.select(appStore.state, agentId);
     expect(after.map((m) => m.id)).toEqual(["u1", "a1"]);
     const streamed = after[1] as AgentMessage & { isStreaming?: boolean };
     expect(streamed.isStreaming).toBe(true);
     expect(streamed.contentBlocks?.[0]).toMatchObject({ type: "text", text: "Working" });
+  });
+
+  it("does not resurrect a finalized turn: fetched persisted row with the same id wins over the stale streaming copy", async () => {
+    // If the turn finalized between the snapshot and the read completing, the
+    // persisted read already carries the final row under the SAME message id.
+    // The fetched (final) copy must win — no duplicate, no stale partial.
+    const agentId = "agent-finalized-during-read";
+    const userTurn: AgentMessage = {
+      id: "fu1",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "go" }],
+    };
+    const stalePartial = {
+      id: "fa1",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:00.500Z",
+      isStreaming: true,
+      contentBlocks: [{ type: "text", id: "fa1:0", text: "Work" }],
+    } as unknown as AgentMessage;
+    const finalRow: AgentMessage = {
+      id: "fa1",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:00.500Z",
+      contentBlocks: [
+        { type: "text", text: "Work complete" },
+        { type: "text", text: "All checks passed." },
+      ],
+    };
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...makeSession({
+            id: agentId,
+            status: AgentStatus.Active,
+            isProcessing: true,
+            isStreaming: true,
+          }),
+          messages: [userTurn, stalePartial],
+        },
+      ]),
+    );
+
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValue({
+      messages: [userTurn, finalRow],
+      truncated: false,
+      totalMessages: 2,
+      nextToken: null,
+    } as never);
+
+    await loadChatTranscript(agentId);
+
+    const after = selectAgentMessages.select(appStore.state, agentId);
+    expect(after.map((m) => m.id)).toEqual(["fu1", "fa1"]);
+    expect(after[1].contentBlocks?.[0]).toMatchObject({ type: "text", text: "Work complete" });
+    expect((after[1] as AgentMessage & { isStreaming?: boolean }).isStreaming).toBeUndefined();
   });
 
   // Regression (intentd#336): after a user interrupts mid-stream, the daemon
