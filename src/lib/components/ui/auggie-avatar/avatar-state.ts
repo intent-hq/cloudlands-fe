@@ -1,5 +1,6 @@
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession } from '$shared/types';
+import type { AgentAttentionKind } from '$shared/utils/agent-attention';
 import { store as appStore } from '$store/renderer/store';
 import {
   selectAgentSession,
@@ -16,9 +17,11 @@ import {
  * - completed: Agent has finished (green checkmark)
  * - failed: Agent failed (red X)
  * - waiting: Agent is waiting (hourglass icon)
+ * - attention-discussion: Agent requested a discussion (amber comment icon)
+ * - attention-blocker: Agent reported a blocker (red exclamation icon)
  * - idle: No special state (no indicator)
  */
-export type AvatarState = 'running' | 'responding' | 'unread' | 'idle' | 'completed' | 'failed' | 'waiting' | 'needs-permission';
+export type AvatarState = 'running' | 'responding' | 'unread' | 'idle' | 'completed' | 'failed' | 'waiting' | 'needs-permission' | 'attention-discussion' | 'attention-blocker';
 
 /**
  * Options for determining avatar state
@@ -34,6 +37,8 @@ export interface AvatarStateOptions {
   isFailed?: boolean;
   /** Whether the agent has a pending permission request that needs user action */
   hasPermissionRequest?: boolean;
+  /** Kind of the agent's pending attention request (discussion/blocker), if any */
+  attentionKind?: AgentAttentionKind | null;
 }
 
 /**
@@ -66,7 +71,7 @@ export function isAgentActivelyWorking(input: AgentStateInput): boolean {
  * This is the core centralized logic for determining avatar display state.
  */
 export function getAvatarState(input: AgentStateInput, options: AvatarStateOptions = {}): AvatarState {
-  const { hasUnread = false, isActive = false, isCompleted = false, isFailed = false, hasPermissionRequest = false } = options;
+  const { hasUnread = false, isActive = false, isCompleted = false, isFailed = false, hasPermissionRequest = false, attentionKind = null } = options;
 
   // Completed state takes precedence
   if (isCompleted) {
@@ -82,6 +87,16 @@ export function getAvatarState(input: AgentStateInput, options: AvatarStateOptio
   // Higher priority than running/waiting since it requires user action
   if (hasPermissionRequest) {
     return 'needs-permission';
+  }
+
+  // Pending attention request (discussion/blocker) - requires user input.
+  // The daemon clears the fields when the agent next receives a message, so
+  // a pending request implies the agent is paused waiting on the user.
+  if (attentionKind === 'discussion') {
+    return 'attention-discussion';
+  }
+  if (attentionKind === 'blocker') {
+    return 'attention-blocker';
   }
 
   // Check if agent is currently running (streaming/processing/responding)

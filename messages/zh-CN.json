@@ -1473,6 +1473,8 @@
   "chat_agentCard_revealFailed_error": "在{fileManager}中显示失败",
   "chat_agentCard_menu_stop_label": "停止",
   "chat_agentCard_renameFailed_error": "重命名智能体失败",
+  "chat_agentCard_attentionDiscussion_label": "请求讨论",
+  "chat_agentCard_attentionBlocker_label": "报告阻碍",
   "chat_agentInputArea_group_ariaLabel": "聊天输入区和上下文引用",
   "chat_agentInputArea_input_placeholder": "输入消息…",
   "chat_agentInputArea_sendMessage_label": "发送消息",

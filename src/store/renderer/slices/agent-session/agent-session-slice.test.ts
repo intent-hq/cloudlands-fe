@@ -56,6 +56,7 @@ import {
   selectAgentIsWaitingForOtherAgents,
   selectAgentIsRunning,
   selectAllRetainedAgentSessions,
+  selectAgentAttentionRequest,
 } from './agent-session-selectors';
 
 // ============================================================================
@@ -295,6 +296,79 @@ describe('agent-session-slice reducer', () => {
       expect(next).not.toBe(state);
       expect(getMsgs(next, 'a1')[0].contentBlocks).toHaveLength(3);
       expect(getMsgs(next, 'a1')[0].contentBlocks?.[2]).toMatchObject({ type: 'resource' });
+    });
+
+    // Attention-request lifecycle: a re-hydration that only raises or clears
+    // the attention-request fields must not be swallowed by the no-op guard.
+    it('applies an upsert when an attention request is raised on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            attentionRequestKind: 'discussion',
+            attentionRequestReason: 'Need input on API shape',
+            attentionRequestTimestamp: '2026-07-30T10:00:00Z',
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].attentionRequestKind).toBe('discussion');
+      expect(next.byAgentId['a1'].attentionRequestReason).toBe('Need input on API shape');
+      expect(next.byAgentId['a1'].attentionRequestTimestamp).toBe('2026-07-30T10:00:00Z');
+    });
+
+    it('retires the attention request when the daemon clears the fields', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            attentionRequestKind: 'blocker',
+            attentionRequestReason: 'CI credentials expired',
+            attentionRequestTimestamp: '2026-07-30T11:00:00Z',
+          }),
+        ),
+      );
+      expect(state.byAgentId['a1'].attentionRequestKind).toBe('blocker');
+
+      // The daemon clears the fields on the agent's next message; the
+      // re-fetched projection simply omits them.
+      const next = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].attentionRequestKind).toBeUndefined();
+      expect(next.byAgentId['a1'].attentionRequestReason).toBeUndefined();
+      expect(next.byAgentId['a1'].attentionRequestTimestamp).toBeUndefined();
+    });
+
+    it('registers metadata-carried (AgentLite) attention fields as changes too', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: {
+              attentionRequestKind: 'discussion',
+              attentionRequestReason: 'From AgentLite metadata',
+            } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.attentionRequestKind).toBe('discussion');
     });
   });
 
@@ -1960,6 +2034,59 @@ describe('agent-session selectors', () => {
 
       expect(selectAgentIsThinking.select(state, 'a1')).toBe(true);
       expect(selectAgentIsThinking.select(state, 'unknown')).toBe(false);
+    });
+  });
+
+  describe('selectAgentAttentionRequest', () => {
+    it('derives a pending request from top-level session fields (both kinds)', () => {
+      const discussion = makeSession('a-disc', 'ws-1', {
+        attentionRequestKind: 'discussion',
+        attentionRequestReason: 'Need input',
+        attentionRequestTimestamp: '2026-07-30T10:00:00Z',
+      });
+      const blocker = makeSession('a-block', 'ws-1', {
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'Credentials expired',
+      });
+      const state = storeWith({
+        byAgentId: { 'a-disc': discussion, 'a-block': blocker },
+        agentIdsByWorkspace: {},
+      });
+
+      expect(selectAgentAttentionRequest.select(state, 'a-disc')).toEqual({
+        kind: 'discussion',
+        reason: 'Need input',
+        timestamp: '2026-07-30T10:00:00Z',
+      });
+      expect(selectAgentAttentionRequest.select(state, 'a-block')).toEqual({
+        kind: 'blocker',
+        reason: 'Credentials expired',
+        timestamp: undefined,
+      });
+    });
+
+    it('falls back to AgentLite metadata fields', () => {
+      const session = makeSession('a1', 'ws-1', {
+        metadata: {
+          attentionRequestKind: 'discussion',
+          attentionRequestReason: 'From metadata',
+        } as any,
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentAttentionRequest.select(state, 'a1')).toEqual({
+        kind: 'discussion',
+        reason: 'From metadata',
+        timestamp: undefined,
+      });
+    });
+
+    it('returns null when no request is pending (retired) or the agent is unknown', () => {
+      const session = makeSession('a1', 'ws-1');
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+
+      expect(selectAgentAttentionRequest.select(state, 'a1')).toBeNull();
+      expect(selectAgentAttentionRequest.select(state, 'unknown')).toBeNull();
     });
   });
 

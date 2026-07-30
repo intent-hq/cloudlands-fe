@@ -1473,6 +1473,8 @@
   "chat_agentCard_revealFailed_error": "{fileManager}에서 표시하지 못했습니다",
   "chat_agentCard_menu_stop_label": "중지",
   "chat_agentCard_renameFailed_error": "에이전트 이름을 바꾸지 못했습니다",
+  "chat_agentCard_attentionDiscussion_label": "논의를 요청합니다",
+  "chat_agentCard_attentionBlocker_label": "차단 요소를 보고합니다",
   "chat_agentInputArea_group_ariaLabel": "채팅 입력 영역 및 컨텍스트 참조",
   "chat_agentInputArea_input_placeholder": "메시지를 입력하세요...",
   "chat_agentInputArea_sendMessage_label": "메시지 보내기",

@@ -1473,6 +1473,8 @@
   "chat_agentCard_revealFailed_error": "{fileManager} で表示できませんでした",
   "chat_agentCard_menu_stop_label": "停止",
   "chat_agentCard_renameFailed_error": "エージェントの名前を変更できませんでした",
+  "chat_agentCard_attentionDiscussion_label": "相談をリクエストしています",
+  "chat_agentCard_attentionBlocker_label": "ブロッカーを報告しています",
   "chat_agentInputArea_group_ariaLabel": "チャット入力エリアとコンテキスト参照",
   "chat_agentInputArea_input_placeholder": "メッセージを入力...",
   "chat_agentInputArea_sendMessage_label": "メッセージを送信",

@@ -1473,6 +1473,8 @@
   "chat_agentCard_revealFailed_error": "Impossible d'afficher dans {fileManager}",
   "chat_agentCard_menu_stop_label": "Arrêter",
   "chat_agentCard_renameFailed_error": "Impossible de renommer l'agent",
+  "chat_agentCard_attentionDiscussion_label": "Demande une discussion",
+  "chat_agentCard_attentionBlocker_label": "Signale un blocage",
   "chat_agentInputArea_group_ariaLabel": "Zone de saisie du chat et références de contexte",
   "chat_agentInputArea_input_placeholder": "Saisissez un message...",
   "chat_agentInputArea_sendMessage_label": "Envoyer le message",

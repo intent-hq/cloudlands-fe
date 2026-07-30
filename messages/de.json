@@ -1473,6 +1473,8 @@
   "chat_agentCard_revealFailed_error": "Anzeigen in {fileManager} fehlgeschlagen",
   "chat_agentCard_menu_stop_label": "Stopp",
   "chat_agentCard_renameFailed_error": "Agent konnte nicht umbenannt werden",
+  "chat_agentCard_attentionDiscussion_label": "Bittet um eine Besprechung",
+  "chat_agentCard_attentionBlocker_label": "Meldet einen Blocker",
   "chat_agentInputArea_group_ariaLabel": "Chat-Eingabebereich und Kontextreferenzen",
   "chat_agentInputArea_input_placeholder": "Nachricht eingeben...",
   "chat_agentInputArea_sendMessage_label": "Nachricht senden",

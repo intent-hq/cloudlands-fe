@@ -1473,6 +1473,8 @@
   "chat_agentCard_revealFailed_error": "在{fileManager}中顯示失敗",
   "chat_agentCard_menu_stop_label": "停止",
   "chat_agentCard_renameFailed_error": "重新命名智慧體失敗",
+  "chat_agentCard_attentionDiscussion_label": "請求討論",
+  "chat_agentCard_attentionBlocker_label": "回報阻礙",
   "chat_agentInputArea_group_ariaLabel": "聊天輸入區和上下文引用",
   "chat_agentInputArea_input_placeholder": "輸入訊息…",
   "chat_agentInputArea_sendMessage_label": "傳送訊息",

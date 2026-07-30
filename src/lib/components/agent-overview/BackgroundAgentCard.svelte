@@ -17,7 +17,11 @@
   import { Spinner } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
-  import { selectAgentIsWaitingForOtherAgents } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+  selectAgentAttentionRequest,
+  selectAgentIsWaitingForOtherAgents,
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import type { AgentAttentionKind } from '$shared/utils/agent-attention';
 
   interface Props {
     agent: AgentNode;
@@ -30,9 +34,16 @@
 
   const isActive = $derived(agent.status === 'responding');
   const agentIsWaitingForOtherAgents$ = selectAgentIsWaitingForOtherAgents(agent.agentId);
+  const attentionRequest$ = selectAgentAttentionRequest(agent.agentId);
 
   // Map agent status to avatar state
-  function getAvatarState(status: AgentNode['status'], waitingForOtherAgents: boolean): AvatarState {
+  function getAvatarState(
+    status: AgentNode['status'],
+    waitingForOtherAgents: boolean,
+    attentionKind: AgentAttentionKind | null,
+  ): AvatarState {
+    if (attentionKind === 'discussion') return 'attention-discussion';
+    if (attentionKind === 'blocker') return 'attention-blocker';
     if (waitingForOtherAgents) return 'waiting';
     if (status === 'responding') return 'running';
     if (status === 'completed') return 'completed';
@@ -40,7 +51,9 @@
     return 'idle';
   }
 
-  const avatarState = $derived(getAvatarState(agent.status, $agentIsWaitingForOtherAgents$));
+  const avatarState = $derived(
+    getAvatarState(agent.status, $agentIsWaitingForOtherAgents$, $attentionRequest$?.kind ?? null),
+  );
 </script>
 
 <button

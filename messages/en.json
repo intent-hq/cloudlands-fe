@@ -1473,6 +1473,8 @@
   "chat_agentCard_revealFailed_error": "Failed to reveal in {fileManager}",
   "chat_agentCard_menu_stop_label": "Stop",
   "chat_agentCard_renameFailed_error": "Failed to rename agent",
+  "chat_agentCard_attentionDiscussion_label": "Requests a discussion",
+  "chat_agentCard_attentionBlocker_label": "Reports a blocker",
   "chat_agentInputArea_group_ariaLabel": "Chat input area and context references",
   "chat_agentInputArea_input_placeholder": "Type a message...",
   "chat_agentInputArea_sendMessage_label": "Send message",

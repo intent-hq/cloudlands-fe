@@ -1473,6 +1473,8 @@
   "chat_agentCard_revealFailed_error": "Error al mostrar en {fileManager}",
   "chat_agentCard_menu_stop_label": "Detener",
   "chat_agentCard_renameFailed_error": "No se pudo cambiar el nombre del agente",
+  "chat_agentCard_attentionDiscussion_label": "Solicita una conversación",
+  "chat_agentCard_attentionBlocker_label": "Informa de un bloqueo",
   "chat_agentInputArea_group_ariaLabel": "Área de entrada del chat y referencias de contexto",
   "chat_agentInputArea_input_placeholder": "Escriba un mensaje...",
   "chat_agentInputArea_sendMessage_label": "Enviar mensaje",

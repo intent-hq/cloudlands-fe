@@ -2424,6 +2424,14 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'agent:updated') {
     handleAgentUpdatedEvent(event);
   }
+  // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
+  // daemon persists the attention-request fields on the session and also
+  // emits `agent:updated`, but re-fetch here too so the sidebar/footer
+  // indicator appears even if that companion event is missed. Same
+  // metadata-only refresh as handleAgentUpdatedEvent (transcript preserved).
+  if (type === 'agent:attention-requested') {
+    handleAgentUpdatedEvent(event);
+  }
   // STAB-22: agent:message events with role="assistant" should trigger a
   // conversation refetch so AgentCard preview updates for watched agents whose
   // tab was never opened. The event payload is { agentId, messageId, role }.
