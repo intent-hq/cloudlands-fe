@@ -45,6 +45,13 @@ vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
   }),
 }));
 
+vi.mock('$store/renderer/slices/app-layout/app-layout-slice', () => ({
+  openAgentTabRequested: (wsId: string, detail: unknown) => ({
+    type: 'appLayout/openAgentTabRequested',
+    args: [wsId, detail],
+  }),
+}));
+
 let mockState: Record<string, unknown> = {};
 
 vi.mock('$store/renderer/store', async () => {
@@ -317,7 +324,7 @@ describe('agent-failure-toast-service', () => {
   });
 
   describe('Retry navigation', () => {
-    it('navigates to the agent workspace with the chat drawer open on retry', async () => {
+    it('routes to the workspace and opens the agent tab on retry', async () => {
       registerMockIpcHandler(BACKEND.REQUEST, async () => ({
         ok: true,
         result: { ok: true, redriven: true },
@@ -330,9 +337,11 @@ describe('agent-failure-toast-service', () => {
       await flush();
 
       expect(navigateToRouteMock).toHaveBeenCalledTimes(1);
-      expect(navigateToRouteMock).toHaveBeenCalledWith(
-        '/workspace/ws-1?drawerOpen=1&drawerType=agent&selectedAgent=agent-1',
-      );
+      expect(navigateToRouteMock).toHaveBeenCalledWith('/workspace/ws-1');
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'appLayout/openAgentTabRequested',
+        args: ['ws-1', { agentId: 'agent-1' }],
+      });
     });
 
     it('navigates even when the retry RPC returns ok:false', async () => {
@@ -348,9 +357,11 @@ describe('agent-failure-toast-service', () => {
       lastCustomCallFor(id)!.componentProps.onRetry();
       await flush();
 
-      expect(navigateToRouteMock).toHaveBeenCalledWith(
-        '/workspace/ws-1?drawerOpen=1&drawerType=agent&selectedAgent=agent-1',
-      );
+      expect(navigateToRouteMock).toHaveBeenCalledWith('/workspace/ws-1');
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'appLayout/openAgentTabRequested',
+        args: ['ws-1', { agentId: 'agent-1' }],
+      });
       // The entry is kept and the failure note still surfaces.
       expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-1']);
       expect(lastCustomCallFor(id)!.componentProps.retryNote).toBe('Retry failed');
@@ -399,9 +410,11 @@ describe('agent-failure-toast-service', () => {
       lastCustomCallFor(id)!.componentProps.onSwitchTo();
       await flush();
 
-      expect(navigateToRouteMock).toHaveBeenCalledWith(
-        '/workspace/ws-1?drawerOpen=1&drawerType=agent&selectedAgent=agent-1',
-      );
+      expect(navigateToRouteMock).toHaveBeenCalledWith('/workspace/ws-1');
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'appLayout/openAgentTabRequested',
+        args: ['ws-1', { agentId: 'agent-1' }],
+      });
       expect(requests).toEqual([]);
       expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-1']);
       expect(toastDismissMock).not.toHaveBeenCalled();

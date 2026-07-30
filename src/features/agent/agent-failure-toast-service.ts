@@ -213,9 +213,12 @@ async function renderSingleEntry(entry: AgentFailureEntry, state: AgentToastStat
 }
 
 /**
- * Navigate to a failed agent's workspace with its chat drawer open on that
- * agent. Chief-of-staff failures (the hidden chief virtual workspace) open
- * the sidebar Assistant panel and select the chat thread instead — mirrors
+ * Navigate to a failed agent: route to its workspace, then dispatch
+ * `openAgentTabRequested` so `createAppLayoutNavigationMiddleware` hydrates
+ * the session and opens/focuses the agent's conversation tab (query params
+ * alone are not read back into drawer state on workspace load).
+ * Chief-of-staff failures (the hidden chief virtual workspace) open the
+ * sidebar Assistant panel and select the chat thread instead — mirrors
  * `handleNotificationNavigate`'s chief branch. Navigation modules are
  * lazy-imported so this middleware-reachable module stays dependency-light.
  * Never rejects; errors are logged.
@@ -232,12 +235,11 @@ async function navigateToFailedAgent(entry: AgentFailureEntry): Promise<void> {
       return;
     }
     const { navigateToRoute } = await import('$lib/utils/navigation.client');
-    const params = new URLSearchParams({
-      drawerOpen: '1',
-      drawerType: 'agent',
-      selectedAgent: entry.agentId,
-    });
-    await navigateToRoute(`/workspace/${entry.workspaceId}?${params.toString()}`);
+    await navigateToRoute(`/workspace/${entry.workspaceId}`);
+    const { openAgentTabRequested } = await import(
+      '$store/renderer/slices/app-layout/app-layout-slice'
+    );
+    appStore.dispatch(openAgentTabRequested(entry.workspaceId, { agentId: entry.agentId }));
   } catch (error) {
     logger.warn('Failed to navigate to failed agent', {
       agentId: entry.agentId,
