@@ -6,9 +6,10 @@
    * Uses subscription for real-time updates and displays line changes stats.
    * Reads Redux-owned streaming state for real-time response updates.
    */
-  import { tick } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
+  import { createLogger } from '$lib/utils/client-logger';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
@@ -82,6 +83,8 @@
     workspace?: Workspace | null;
     /** Whether the agent has finished its delegated work (forces completed avatar state) */
     isCompleted?: boolean;
+    /** Optional actions rendered in the header row, before the relative timestamp */
+    headerActions?: Snippet;
   }
 
   let {
@@ -98,7 +101,10 @@
     hidePreview = false,
     workspace = null,
     isCompleted = false,
+    headerActions,
   }: Props = $props();
+
+  const logger = createLogger('AgentCard');
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
@@ -294,12 +300,20 @@
             : workspace?.id
               ? String(workspace.id)
               : undefined;
-          if (wsId) {
-            const action = stopAgentSessionRequested(wsId, agentId);
-            appStore.dispatch(action);
-            await action.promise;
+          // The stop trigger settles for real now (agent-mutation-service
+          // forwards agent.stop) — guard so a daemon-side failure cannot
+          // become an unhandled rejection that skips closing the menu.
+          try {
+            if (wsId) {
+              const action = stopAgentSessionRequested(wsId, agentId);
+              appStore.dispatch(action);
+              await action.promise;
+            }
+          } catch (error) {
+            logger.error('Failed to stop agent', { agentId, error });
+          } finally {
+            closeContextMenu();
           }
-          closeContextMenu();
         },
       });
     }
@@ -554,6 +568,9 @@
                 deletions={$lineChanges$.deletions}
                 size="xs"
               />
+            {/if}
+            {#if headerActions}
+              {@render headerActions()}
             {/if}
             {#if updatedAt}
               <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
