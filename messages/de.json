@@ -4151,7 +4151,7 @@
   "agent_mutation_renameSessionFailed_error": "Agenten-Sitzung konnte nicht umbenannt werden",
   "agent_mutation_dismissQuestionsFailed_error": "Fragen konnten nicht verworfen werden",
   "agent_mutation_stopFailed_error": "Agent konnte nicht gestoppt werden",
-  "agent_mutation_cancelSubscriptionsFailed_error": "Überwachung konnte nicht abgebrochen werden",
+  "agent_mutation_cancelSubscriptionsFailed_error": "Abbrechen fehlgeschlagen",
   "agent_mutation_deleteFailed_error": "Agent konnte nicht gelöscht werden",
   "agent_mutation_deleteSessionFailed_error": "Agenten-Sitzung konnte nicht gelöscht werden",
   "agent_mutation_undoDeleteFailed_error": "Löschen des Agenten konnte nicht rückgängig gemacht werden",

@@ -193,7 +193,12 @@
         sub.delegationGroup?.awaitMode !== 'all' &&
         (sub.actorIds || []).includes(watchedAgentId),
     );
-    if (!watch) return;
+    if (!watch) {
+      // Refetch race: the watch already fired/was removed between render and
+      // click, so there is nothing left to cancel.
+      logger.warn('No one-shot watch found to cancel', { watchedAgentId });
+      return;
+    }
     try {
       const action = cancelAgentSubscriptionsRequested(workspaceId, agentId, {
         subscriptionId: watch.id,
@@ -205,20 +210,29 @@
     }
   }
 
-  /** Group header stop: stop every agent in the group. */
+  /** Group header stop: stop every still-active agent in the group. */
   async function stopGroup(group: DelegationGroupStatus) {
     if (!workspaceId) return;
-    try {
-      await Promise.all(
-        group.expectedAgentIds.map((id) => {
-          const action = stopAgentSessionRequested(workspaceId, id);
-          appStore.dispatch(action);
-          return action.promise;
-        }),
-      );
-    } catch (error) {
-      logger.error('Failed to stop group agents', { groupId: group.groupId, error });
-    }
+    // Completed/deleted members have nothing to stop — including them would
+    // just produce spurious daemon-side failures.
+    const finished = new Set([...group.completedAgentIds, ...group.deletedAgentIds]);
+    const targets = group.expectedAgentIds.filter((id) => !finished.has(id));
+    const results = await Promise.allSettled(
+      targets.map((id) => {
+        const action = stopAgentSessionRequested(workspaceId, id);
+        appStore.dispatch(action);
+        return action.promise;
+      }),
+    );
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        logger.error('Failed to stop group agent', {
+          groupId: group.groupId,
+          agentId: targets[i],
+          error: result.reason,
+        });
+      }
+    });
   }
 
   /**

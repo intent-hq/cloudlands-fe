@@ -257,21 +257,22 @@ describe('AgentSubscriptions sections', () => {
     ]);
   });
 
-  it('group header stop sends agent.stop for every agent in that group only', async () => {
+  it('group header stop sends agent.stop only for still-active agents in that group', async () => {
     const WS = 'ws-sections-group-stop';
     await renderWithSnapshot(WS, {
       subscriptions: [
-        groupSubscription('grp-1', WS, ['child-a', 'child-b']),
+        groupSubscription('grp-1', WS, ['child-a', 'child-b', 'child-done']),
         groupSubscription('grp-2', WS, ['child-c']),
       ],
       delegationGroups: [
-        delegationGroup('grp-1', ['child-a', 'child-b']),
+        delegationGroup('grp-1', ['child-a', 'child-b', 'child-done'], ['child-done']),
         delegationGroup('grp-2', ['child-c']),
       ],
       agentStatuses: {
         [PARENT]: 'waiting',
         'child-a': 'responding',
         'child-b': 'responding',
+        'child-done': 'completed',
         'child-c': 'responding',
       },
     });
@@ -283,6 +284,8 @@ describe('AgentSubscriptions sections', () => {
     const stopCalls = backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.stop');
     expect(stopCalls).toContainEqual(['agent.stop', { agentId: 'child-a' }]);
     expect(stopCalls).toContainEqual(['agent.stop', { agentId: 'child-b' }]);
+    // Already-completed members and other groups' agents are not stopped.
+    expect(stopCalls).not.toContainEqual(['agent.stop', { agentId: 'child-done' }]);
     expect(stopCalls).not.toContainEqual(['agent.stop', { agentId: 'child-c' }]);
   });
 

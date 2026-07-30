@@ -4151,7 +4151,7 @@
   "agent_mutation_renameSessionFailed_error": "重命名智能体会话失败",
   "agent_mutation_dismissQuestionsFailed_error": "关闭问题失败",
   "agent_mutation_stopFailed_error": "停止智能体失败",
-  "agent_mutation_cancelSubscriptionsFailed_error": "取消监视失败",
+  "agent_mutation_cancelSubscriptionsFailed_error": "取消失败",
   "agent_mutation_deleteFailed_error": "删除智能体失败",
   "agent_mutation_deleteSessionFailed_error": "删除智能体会话失败",
   "agent_mutation_undoDeleteFailed_error": "撤销智能体删除失败",

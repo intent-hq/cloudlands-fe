@@ -4151,7 +4151,7 @@
   "agent_mutation_renameSessionFailed_error": "Impossible de renommer la session de l'agent",
   "agent_mutation_dismissQuestionsFailed_error": "Impossible de rejeter les questions",
   "agent_mutation_stopFailed_error": "Impossible d'arrêter l'agent",
-  "agent_mutation_cancelSubscriptionsFailed_error": "Impossible d'annuler la surveillance",
+  "agent_mutation_cancelSubscriptionsFailed_error": "Impossible d'annuler",
   "agent_mutation_deleteFailed_error": "Impossible de supprimer l'agent",
   "agent_mutation_deleteSessionFailed_error": "Impossible de supprimer la session de l'agent",
   "agent_mutation_undoDeleteFailed_error": "Impossible d'annuler la suppression de l'agent",

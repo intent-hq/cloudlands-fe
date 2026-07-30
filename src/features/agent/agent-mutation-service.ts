@@ -260,7 +260,9 @@ async function handleRename(action: ReturnType<typeof renameAgentSessionRequeste
  * stop buttons) awaited a promise that never settled. The daemon cancels the
  * current turn and emits the terminal `agent:stream:end` (§7), which is the
  * real convergence signal; a non-success ack folds into `action.failure` so
- * callers can surface the error.
+ * callers can surface the error. Intentionally no toast here (unlike the
+ * cancel handler): streaming state converges via `agent:stream:end`
+ * regardless, and the dispatch sites log the failure.
  */
 async function handleStopSession(
   action: ReturnType<typeof stopAgentSessionRequested>,

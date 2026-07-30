@@ -4151,7 +4151,7 @@
   "agent_mutation_renameSessionFailed_error": "Error al cambiar el nombre de la sesión del agente",
   "agent_mutation_dismissQuestionsFailed_error": "Error al descartar las preguntas",
   "agent_mutation_stopFailed_error": "Error al detener el agente",
-  "agent_mutation_cancelSubscriptionsFailed_error": "Error al cancelar la vigilancia",
+  "agent_mutation_cancelSubscriptionsFailed_error": "Error al cancelar",
   "agent_mutation_deleteFailed_error": "Error al eliminar el agente",
   "agent_mutation_deleteSessionFailed_error": "Error al eliminar la sesión del agente",
   "agent_mutation_undoDeleteFailed_error": "Error al deshacer la eliminación del agente",

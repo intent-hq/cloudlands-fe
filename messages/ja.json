@@ -4151,7 +4151,7 @@
   "agent_mutation_renameSessionFailed_error": "エージェントセッションの名前を変更できませんでした",
   "agent_mutation_dismissQuestionsFailed_error": "質問を閉じられませんでした",
   "agent_mutation_stopFailed_error": "エージェントを停止できませんでした",
-  "agent_mutation_cancelSubscriptionsFailed_error": "ウォッチをキャンセルできませんでした",
+  "agent_mutation_cancelSubscriptionsFailed_error": "キャンセルできませんでした",
   "agent_mutation_deleteFailed_error": "エージェントを削除できませんでした",
   "agent_mutation_deleteSessionFailed_error": "エージェントセッションを削除できませんでした",
   "agent_mutation_undoDeleteFailed_error": "エージェントの削除を元に戻せませんでした",

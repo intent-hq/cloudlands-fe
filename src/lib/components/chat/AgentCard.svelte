@@ -9,6 +9,7 @@
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
+  import { createLogger } from '$lib/utils/client-logger';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
@@ -102,6 +103,8 @@
     isCompleted = false,
     headerActions,
   }: Props = $props();
+
+  const logger = createLogger('AgentCard');
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
@@ -297,12 +300,20 @@
             : workspace?.id
               ? String(workspace.id)
               : undefined;
-          if (wsId) {
-            const action = stopAgentSessionRequested(wsId, agentId);
-            appStore.dispatch(action);
-            await action.promise;
+          // The stop trigger settles for real now (agent-mutation-service
+          // forwards agent.stop) — guard so a daemon-side failure cannot
+          // become an unhandled rejection that skips closing the menu.
+          try {
+            if (wsId) {
+              const action = stopAgentSessionRequested(wsId, agentId);
+              appStore.dispatch(action);
+              await action.promise;
+            }
+          } catch (error) {
+            logger.error('Failed to stop agent', { agentId, error });
+          } finally {
+            closeContextMenu();
           }
-          closeContextMenu();
         },
       });
     }
