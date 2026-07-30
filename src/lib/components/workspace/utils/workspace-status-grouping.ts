@@ -1,4 +1,5 @@
 import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
+import { PullRequestStatus } from '$shared/types';
 
 /**
  * Display status for a workspace (BE-owned or derived from PR/task state).
@@ -29,12 +30,30 @@ export function isWorkspaceRunning(
 }
 
 /**
+ * Whether the workspace's wire PR fields report an open or draft PR. This reads
+ * the workspace object only (prStatus / activePullRequest / pullRequests) — it
+ * is a PR-stage check, not a re-derivation of displayStatus.
+ */
+function hasOpenOrDraftPullRequest(workspace: Workspace): boolean {
+  const isOpenOrDraft = (status?: PullRequestStatus | null) =>
+    status === PullRequestStatus.Open || status === PullRequestStatus.Draft;
+  return (
+    isOpenOrDraft(workspace.prStatus) ||
+    isOpenOrDraft(workspace.activePullRequest?.status) ||
+    (workspace.pullRequests ?? []).some((pr) => isOpenOrDraft(pr.status))
+  );
+}
+
+/**
  * Computes the grouping status for the sidebar status view. Running workspaces
  * (activity === 'agent_running' || streaming agents > 0) are UNCONDITIONALLY
  * grouped under 'in_progress', overriding every base status including pr_merged.
  *
  * Not-running workspaces follow the existing grouping rules:
  * - PR states and 'complete' keep their status (never demoted to idle)
+ * - 'in_progress' or 'not_started' with an open/draft PR on the wire → 'pr_open'
+ *   (PR-stage workspaces never land in idle; the daemon's displayStatus does not
+ *   carry PR stage, so it comes from the workspace's PR fields)
  * - 'in_progress' or 'not_started' with zero active agents → 'idle'
  *
  * @param workspace - The workspace to group
@@ -65,8 +84,12 @@ export function getWorkspaceGroupingStatus(
     return baseStatus;
   }
 
-  // Not running + in_progress or not_started → demoted to idle
+  // Not running + in_progress or not_started: an open/draft PR on the wire
+  // keeps the workspace in the PR Open group; otherwise demoted to idle
   if (baseStatus === 'in_progress' || baseStatus === 'not_started') {
+    if (hasOpenOrDraftPullRequest(workspace)) {
+      return 'pr_open';
+    }
     return 'idle';
   }
 

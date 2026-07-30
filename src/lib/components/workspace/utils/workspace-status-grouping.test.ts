@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { getWorkspaceGroupingStatus, isWorkspaceRunning } from './workspace-status-grouping';
 import type { Workspace } from '$shared/types';
-import { WorkspaceStatus } from '$shared/types';
+import { WorkspaceStatus, PullRequestStatus } from '$shared/types';
 
-function makeWorkspace(activity?: Workspace['activity']): Workspace {
+function makeWorkspace(
+  activity?: Workspace['activity'],
+  overrides?: Partial<Workspace>,
+): Workspace {
   return {
     id: 'ws-1',
     title: 'Test Workspace',
@@ -15,6 +18,7 @@ function makeWorkspace(activity?: Workspace['activity']): Workspace {
     activity,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
   };
 }
 
@@ -117,6 +121,48 @@ describe('getWorkspaceGroupingStatus', () => {
     it('returns idle when activity is undefined with base status in_progress', () => {
       const ws = makeWorkspace();
       expect(getWorkspaceGroupingStatus(ws, 'in_progress', [])).toBe('idle');
+    });
+  });
+
+  describe('open/draft PR wire fields prevent the idle demotion', () => {
+    it('returns pr_open when idle + not_started with prStatus Open', () => {
+      const ws = makeWorkspace('idle', { prStatus: PullRequestStatus.Open });
+      expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('pr_open');
+    });
+
+    it('returns pr_open when idle + in_progress with prStatus Draft', () => {
+      const ws = makeWorkspace('idle', { prStatus: PullRequestStatus.Draft });
+      expect(getWorkspaceGroupingStatus(ws, 'in_progress', [])).toBe('pr_open');
+    });
+
+    it('returns pr_open when idle + not_started with an open activePullRequest', () => {
+      const ws = makeWorkspace('idle', {
+        activePullRequest: {
+          id: 'pr-1',
+          number: 1,
+          url: 'https://github.com/o/r/pull/1',
+          title: 'PR',
+          status: PullRequestStatus.Open,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      });
+      expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('pr_open');
+    });
+
+    it('returns idle when the only PR is merged (merged never resurrects a PR group)', () => {
+      const ws = makeWorkspace('idle', { prStatus: PullRequestStatus.Merged });
+      expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('idle');
+    });
+
+    it('returns idle when the only PR is closed', () => {
+      const ws = makeWorkspace('idle', { prStatus: PullRequestStatus.Closed });
+      expect(getWorkspaceGroupingStatus(ws, 'in_progress', [])).toBe('idle');
+    });
+
+    it('returns in_progress when running even with an open PR', () => {
+      const ws = makeWorkspace('agent_running', { prStatus: PullRequestStatus.Open });
+      expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('in_progress');
     });
   });
 });
