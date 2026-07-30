@@ -73,8 +73,13 @@
     text = result;
 
     // Step 2: Now do inline transformations (these won't affect placeholders)
-    // Handle inline code
-    text = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+    // Handle inline code — extract to placeholders like fenced blocks so its content
+    // stays literal (protected from the whitelisted-tag un-escape below)
+    text = text.replace(/`([^`]+)`/g, (_match, code) => {
+      const placeholder = `${PLACEHOLDER_PREFIX}${codeBlocks.length}${PLACEHOLDER_SUFFIX}`;
+      codeBlocks.push(`<code class="inline-code">${code}</code>`);
+      return placeholder;
+    });
 
     // Handle bold
     text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');

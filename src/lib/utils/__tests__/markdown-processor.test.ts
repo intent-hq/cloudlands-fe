@@ -591,7 +591,7 @@ Some additional notes here.
     });
 
     it('should preserve multiple XML tags in inline code', async () => {
-      const markdown = 'The `<lt;span&gt;` tag is for inline content';
+      const markdown = 'The `<span>` tag is for inline content';
       const html = await processMarkdownToHTML(markdown);
 
       expect(html).toContain('<code>');
