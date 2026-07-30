@@ -85,6 +85,11 @@
     // Handle line breaks
     text = text.replace(/\n/g, '<br>');
 
+    // Convert escaped forms of whitelisted harmless inline tags (br/sub/sup) back to
+    // real tags so the streaming view matches the final render
+    text = text.replace(/&lt;(br\s*\/?)&gt;/gi, '<$1>');
+    text = text.replace(/&lt;(\/?(?:sub|sup))&gt;/gi, '<$1>');
+
     // Step 3: Restore code blocks from placeholders
     // Guard against undefined by checking if the index exists in the array
     text = text.replace(new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g'), (_, indexStr) => {

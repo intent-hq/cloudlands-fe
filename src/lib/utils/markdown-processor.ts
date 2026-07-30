@@ -281,9 +281,14 @@ function escapeHtmlTags(content: string): string {
   // Step 2: Escape HTML tags in the remaining text
   // Match potential HTML tags: <tagname>, </tagname>, <tagname />, <tagname attr="value">
   // But NOT HTML comments which start with <!-- (the regex requires a letter after optional /)
+  // Whitelisted harmless inline tags (attribute-free br/sub/sup, case-insensitive) are
+  // left unescaped so they render as HTML: <br>, <br/>, <br />, <sub>…</sub>, <sup>…</sup>
   processedContent = processedContent.replace(
     /<(\/?)\s*([a-zA-Z][a-zA-Z0-9_-]*)(\s*)([^>]*?)(\/?)>/g,
-    (_match, closingSlash, tagName, whitespace, attributes, selfClosingSlash) => {
+    (match, closingSlash, tagName, whitespace, attributes, selfClosingSlash) => {
+      if (/^(?:<br\s*\/?>|<\/?(?:sub|sup)>)$/i.test(match)) {
+        return match;
+      }
       // Escape all angle brackets that look like HTML tags
       // Preserve whitespace between tag name and attributes
       return `&lt;${closingSlash}${tagName}${whitespace}${attributes}${selfClosingSlash}&gt;`;
