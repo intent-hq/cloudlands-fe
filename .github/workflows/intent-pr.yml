@@ -188,12 +188,13 @@ jobs:
       GIT_TERMINAL_PROMPT: '0'
       # The full production renderer build needs more heap than the other
       # jobs; 4096 OOMed, and with sourcemaps the heap flakily grew past
-      # even this 8192 cap on the old 2-core / 7 GB ubuntu-latest runner
+      # the 8192 cap on the old 2-core / 7 GB ubuntu-latest runner
       # (~7.7 GB at death, monorepo#1074), which forced
-      # INTENT_DISABLE_SOURCEMAPS=1. On the 125 GB self-hosted runner
-      # sourcemaps stay enabled; keep the 8192 cap — the build's live set
-      # exceeds 6 GB even without sourcemaps.
-      NODE_OPTIONS: '--max-old-space-size=8192'
+      # INTENT_DISABLE_SOURCEMAPS=1. Sourcemaps stay enabled on the 125 GB
+      # self-hosted runner, but 8192 OOMed here too (the 64-core box runs
+      # more build work in parallel), so the cap is 16384 — comfortably
+      # within the machine's RAM.
+      NODE_OPTIONS: '--max-old-space-size=16384'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
