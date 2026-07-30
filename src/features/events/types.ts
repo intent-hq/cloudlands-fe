@@ -105,11 +105,7 @@ export const WorkspaceEventType = {
   // Agent streaming events (for WebSocket API)
   AgentStreamStart: 'agent:stream:start',
   AgentStreamChunk: 'agent:stream:chunk',
-  AgentStreamContentBlocks: 'agent:stream:content-blocks',
   AgentStreamEnd: 'agent:stream:end',
-  AgentStreamMessage: 'agent:stream:message',
-  AgentStreamToolUse: 'agent:stream:tool_use',
-  AgentStreamToolResult: 'agent:stream:tool_result',
 
   // Agent queue events (for WebSocket API)
   AgentQueueUpdated: 'agent:queue:updated',
@@ -833,18 +829,6 @@ export interface AgentStreamChunkEvent extends WorkspaceEventBase {
 }
 
 /**
- * Emitted when an agent streams content blocks (tool calls, structured content)
- */
-export interface AgentStreamContentBlocksEvent extends WorkspaceEventBase {
-  type: 'agent:stream:content-blocks';
-  data: {
-    agentId: string;
-    content: any;
-    streamId?: string;
-  };
-}
-
-/**
  * Emitted when an agent's stream completes
  */
 export interface AgentStreamEndEvent extends WorkspaceEventBase {
@@ -937,7 +921,6 @@ export type SpecificWorkspaceEvent =
   // Agent streaming events
   | AgentStreamStartEvent
   | AgentStreamChunkEvent
-  | AgentStreamContentBlocksEvent
   | AgentStreamEndEvent
   // Agent user message events (cross-client sync)
   | AgentUserMessageSentEvent

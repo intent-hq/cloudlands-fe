@@ -1,4 +1,4 @@
-import type { AgentSession, AgentMessage, ContentBlock, AgentId } from "$shared/types";
+import type { AgentSession, AgentMessage, AgentId } from "$shared/types";
 import type { UnifiedAgentConfig } from "$shared/types/agent.types";
 import {
   createAction,
@@ -9,10 +9,6 @@ import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { omitKey } from "../../utils/utils";
 import { upsertSession } from "../agent-session/agent-session-slice";
 import { workspaceDeleted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-export {
-  agentStreamUpdateReceived,
-  type AgentStreamUpdatePayload,
-} from "./workspace-agents-stream-slice";
 
 export interface WorkspaceAgentState {
   /** Ordered list of agent IDs belonging to this workspace. Session data lives in agent-session slice. */
@@ -45,16 +41,6 @@ export interface WorkspaceAgentState {
 
 export interface WorkspaceAgentsState {
   byWorkspaceId: Record<string, WorkspaceAgentState>;
-}
-
-export interface BackendActiveStreamPayload {
-  agentId: string;
-  workspaceId?: string;
-  assistantAppMessageId?: string;
-  accumulatedContent?: {
-    content?: string;
-    contentBlocks?: ContentBlock[];
-  };
 }
 
 export interface AgentCreationRequestOptions {
@@ -275,15 +261,6 @@ export const cleanupAgentCreatedEvents = createAction<[wsId: string, cutoffTimes
   "workspaceAgents/cleanupAgentCreatedEvents"
 );
 
-/**
- * Saga-only trigger: schedule a debounced reconnection to backend streams.
- * Replaces the setTimeout-based scheduleBackendStreamReconnect() in AgentService.
- * Handled by takeLatest + delay(500) in agent-ipc-saga.ts.
- */
-export const triggerBackendStreamReconnect = createAction(
-  "workspaceAgents/triggerBackendStreamReconnect"
-);
-
 // Session lifecycle request actions (saga-owned side effects)
 export const saveAgentSessionRequested = createAsyncAction<[
   wsId: string,
@@ -319,28 +296,6 @@ export const commitPendingAgentDeletionRequested = createAction<[wsId: string, a
 export const flushPendingAgentDeletionsRequested = createAsyncAction<[
   wsId: string,
 ], void>("workspaceAgents/flushPendingAgentDeletions", "workspaceAgents/flushPendingAgentDeletionsRequested");
-
-// Stream lifecycle actions
-
-/** Request the safety timeout check after reconnect (replaces startStreamingSafetyTimeout) */
-export const triggerStreamingSafetyCheck = createAction<[confirmedActiveIds: string[]]>(
-  "workspaceAgents/triggerStreamingSafetyCheck"
-);
-
-/** Request stream handler re-registration for streaming sessions in a workspace. */
-export const reconnectStreamHandlersForWorkspaceRequested = createAction<[workspaceId: string]>(
-  "workspaceAgents/reconnectStreamHandlersForWorkspaceRequested"
-);
-
-/** Backend active-stream snapshot from the thin lifecycle adapter. */
-export const backendStreamsReconnectResultReceived = createAction<[
-  streams: BackendActiveStreamPayload[],
-]>("workspaceAgents/backendStreamsReconnectResultReceived");
-
-/** Clear stale streaming assistant messages before a new stream mutates state. */
-export const agentStreamResetStreamingMessagesRequested = createAction<[
-  payload: { workspaceId?: string; agentId: string; reason: string },
-]>("workspaceAgents/agentStreamResetStreamingMessagesRequested");
 
 /**
  * Saga-only trigger: ensure a single agent session is loaded into Redux.

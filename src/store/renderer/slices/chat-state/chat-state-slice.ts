@@ -5,7 +5,6 @@ import type {
   ChatStateSlice,
   StatusEvent,
   LastAttemptedMessage,
-  ModelUnavailableInfo,
   QueuedRetryRecord,
   SendMessagePayload,
   InitializeChatOptions,
@@ -13,10 +12,6 @@ import type {
 } from './chat-state-types';
 import { MAX_QUEUED_RETRY_RECORDS } from './chat-state-types';
 import { sanitizeStatusEvent } from './chat-state-serialization';
-import {
-  agentStreamUpdateReceived,
-  type AgentStreamUpdatePayload,
-} from '../workspace-agents/workspace-agents-stream-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import {
@@ -140,23 +135,10 @@ function parkRetryRecord(
   return next;
 }
 
-function getModelUnavailableInfo(value: unknown): ModelUnavailableInfo | null {
-  if (!isRecord(value) || !isRecord(value.metadata)) return null;
-  const { metadata } = value;
-  if (metadata.modelUnavailable !== true || typeof metadata.nextAvailableModel !== 'string') {
-    return null;
-  }
-  return {
-    failedModel: typeof metadata.failedModel === 'string' ? metadata.failedModel : '',
-    nextAvailableModel: metadata.nextAvailableModel,
-  };
-}
-
 /**
  * Preserve-on-failure predicate for the `agent:idle` reconcile finalize path
  * (#973), mirroring the clear-on-success semantics of the observed terminal
- * `complete` event (see reduceAgentStreamUpdate: cleared unless failureMessage
- * || modelUnavailable). A reconcile cannot observe how the missed turn ended, so
+ * stream-end event. A reconcile cannot observe how the missed turn ended, so
  * it reads the persisted flags instead: `error` set means the failure banner
  * is visible and its "Try again" still needs the record (#941); `modelUnavailable`
  * set means a "Retry with <model>" banner is pending (#964). Those two banners
@@ -333,14 +315,6 @@ function reduceQueuedRecordRemoved(
   return updateAgent(state, agentId, { queuedRetryRecords: remaining });
 }
 
-function getStreamFailureMessage(payload: AgentStreamUpdatePayload): string | null {
-  if (payload.error) return payload.error;
-  if (payload.eventType === 'timeout' || payload.finishReason === 'timeout') {
-    return m.chat_state_timeout_error();
-  }
-  return null;
-}
-
 function reduceChunkReceived(
   state: ChatStateSlice,
   agentId: string,
@@ -373,68 +347,39 @@ function reduceChunkReceived(
   });
 }
 
-function reduceAgentStreamUpdate(
+/**
+ * Terminal `agent:stream:end` bookkeeping (dispatched by the daemon events
+ * bridge): clear the spinner timers and status entries. The event is
+ * disposition-NEUTRAL (PROTOCOL §7) — a failed turn ends its stream the same
+ * way and only the follow-up lifecycle event carries the disposition
+ * (`agent:idle` on success, `agent:failed` on error). Clearing the retry
+ * payload here therefore raced ahead of the failure banner and left "Try
+ * again" a no-op (#984). Preserve the record and defer the success-clear to
+ * the `agent:idle` finalize (reduceAgentIdleReconcile, whose
+ * error/modelUnavailable guards keep the #941/#964 preserve-on-failure
+ * semantics). The one disposition this event DOES carry is the user
+ * interrupt (`stopReason: "interrupted"`, §7.2) — clear the abandoned
+ * payload inline here (#965), because the synthetic post-interrupt
+ * `agent:idle` (agent_manager.rs interrupt_inner, STAB-28) is SUPPRESSED
+ * when a ready-to-send queue exists or the interrupt carries a message, so
+ * the idle finalize can't be relied on. When the synthetic idle does arrive,
+ * its reconcile is a harmless no-op on the already-cleared record.
+ */
+function reduceStreamEnded(
   state: ChatStateSlice,
-  payload: AgentStreamUpdatePayload,
+  agentId: string,
+  stopReason: string | undefined,
 ): ChatStateSlice {
-  const timestamp = payload.timestamp ?? 0;
-  if (payload.eventType === 'started') {
-    return updateAgent(state, payload.agentId, {
-      error: null,
-      modelUnavailable: null,
-      lastChunkTime: timestamp,
-      receivedFirstChunk: false,
-      statusEvents: [],
-    });
-  }
-  if (payload.eventType === 'chunk') {
-    return reduceChunkReceived(state, payload.agentId, true, timestamp);
-  }
-  if (payload.eventType === 'content-blocks') {
-    return reduceChunkReceived(state, payload.agentId, false, timestamp);
-  }
-  if (payload.eventType === 'complete' || payload.eventType === 'timeout') {
-    const failureMessage = getStreamFailureMessage(payload);
-    const modelUnavailable = getModelUnavailableInfo(payload.completeMessage);
-    return updateAgent(state, payload.agentId, {
-      streamingStartTime: null,
-      lastChunkTime: null,
-      receivedFirstChunk: false,
-      statusEvents: [],
-      // This terminal maps the daemon's `agent:stream:end`, which is
-      // disposition-NEUTRAL (PROTOCOL §7: the complete/error payloads are
-      // identical by design) — a failed turn ends its stream the same way and
-      // only the follow-up lifecycle event carries the disposition
-      // (`agent:idle` on success, `agent:failed` on error). Clearing the
-      // retry payload here therefore raced ahead of the failure banner and
-      // left "Try again" a no-op (#984). Preserve the record and defer the
-      // success-clear to the `agent:idle` finalize (reduceAgentIdleReconcile,
-      // whose error/modelUnavailable guards keep the #941/#964 preserve-on-
-      // failure semantics). The one disposition this event DOES carry is the
-      // user interrupt (`stopReason: "interrupted"`, §7.2) — clear the
-      // abandoned payload inline here (#965), because the synthetic
-      // post-interrupt `agent:idle` (agent_manager.rs interrupt_inner,
-      // STAB-28) is SUPPRESSED when a ready-to-send queue exists or the
-      // interrupt carries a message, so the idle finalize can't be relied on.
-      // When the synthetic idle does arrive, its reconcile is a harmless
-      // no-op on the already-cleared record.
-      lastAttemptedMessage:
-        !failureMessage && !modelUnavailable && payload.stopReason === 'interrupted'
-          ? null
-          : getAgent(state, payload.agentId).lastAttemptedMessage,
-      modelUnavailable,
-      error: failureMessage,
-    });
-  }
-  if (payload.eventType === 'error') {
-    return updateAgent(state, payload.agentId, {
-      streamingStartTime: null,
-      statusEvents: [],
-      modelUnavailable: null,
-      error: getStreamFailureMessage(payload) || m.chat_state_interrupted_error(),
-    });
-  }
-  return state;
+  return updateAgent(state, agentId, {
+    streamingStartTime: null,
+    lastChunkTime: null,
+    receivedFirstChunk: false,
+    statusEvents: [],
+    lastAttemptedMessage:
+      stopReason === 'interrupted' ? null : getAgent(state, agentId).lastAttemptedMessage,
+    modelUnavailable: null,
+    error: null,
+  });
 }
 
 // ============================================================================
@@ -503,7 +448,7 @@ export const chatQueuedRetryRecordSet = createAction<
  * reduceQueueProcessing) and undoes the mid-turn overwrite:
  * `lastAttemptedMessage` is cleared only when it still structurally equals
  * the parked payload, so a concurrently recorded attempt is never clobbered.
- * Dispatched by the agent-stream-lifecycle queued branch. `turnId`
+ * Dispatched by the agent-send queued branch. `turnId`
  * (monorepo#1057) — see `chatQueuedRetryRecordSet`; here it comes from the
  * auto-queued `agent.sendMessage` response's top-level `turnId` (or the
  * echoed `queuedMessage.turnId`).
@@ -586,18 +531,40 @@ export const chatStreamingReconciled = createAction(
   (agentId: string) => ({ agentId, timestamp: Date.now() }),
 );
 
-// --- Streaming event actions ---
+// --- Streaming event actions (dispatched by the daemon events bridge) ---
 
-/** Stream completed — finalize streaming flags (messages now in agent-session) */
-export const streamCompleted = createAction<
-  [
-    agentId: string,
-    payload: {
-      lastAttemptedMessage: LastAttemptedMessage | null;
-      modelUnavailable: ModelUnavailableInfo | null;
-    },
-  ]
->('chatState/streamCompleted');
+/**
+ * Live stream activity tick (`agent:stream:chunk` / `agent:tool:call`,
+ * PROTOCOL §7). Content-free: the standing `chat.subscribe` delta stream
+ * owns the transcript; this action only drives the chat-state spinner
+ * bookkeeping (`lastChunkTime`, the `receivedFirstChunk` flip that appends
+ * the "Streaming response…" status entry for text chunks).
+ */
+export const streamChunkReceived = createAction(
+  'chatState/streamChunkReceived',
+  (agentId: string, isTextChunk: boolean, timestamp = Date.now()): [string, boolean, number] => [
+    agentId,
+    isTextChunk,
+    timestamp,
+  ],
+);
+
+/**
+ * Terminal `agent:stream:end` (PROTOCOL §7): clears the spinner timers and
+ * status entries in chat-state (see reduceStreamEnded for the #984/#965
+ * retry-record semantics) and the session busy flags in agent-session.
+ * `stopReason` is `"interrupted"` when the user stopped the turn.
+ */
+export const streamEnded = createAction<[agentId: string, stopReason?: string]>(
+  'chatState/streamEnded',
+);
+
+/**
+ * `agent:failed` bookkeeping: clears the spinner state and session busy
+ * flags with a default interrupted error. When the event carries an explicit
+ * error string, the bridge follows up with `chatSendFailed` to surface it.
+ */
+export const streamFailed = createAction<[agentId: string]>('chatState/streamFailed');
 
 /** Status event received during streaming */
 export const streamStatusReceived = createAction(
@@ -619,9 +586,6 @@ export const streamStatusReceived = createAction(
 export const chatStatusEventsHydrated = createAction<
   [agentId: string, statusEvents: StatusEvent[]]
 >('chatState/statusEventsHydrated');
-
-/** Stream timed out */
-export const streamTimedOut = createAction<[agentId: string]>('chatState/streamTimedOut');
 
 /** Clear error */
 export const chatErrorCleared = createAction<[agentId: string]>('chatState/errorCleared');
@@ -809,17 +773,18 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     }
     return state;
   })
-  .with(agentStreamUpdateReceived, (state, { payload: [payload] }) =>
-    reduceAgentStreamUpdate(state, payload),
+  .with(streamChunkReceived, (state, { payload: [agentId, isTextChunk, timestamp] }) =>
+    reduceChunkReceived(state, agentId, isTextChunk, timestamp),
   )
-  .with(streamCompleted, (state, { payload: [agentId, data] }) =>
+  .with(streamEnded, (state, { payload: [agentId, stopReason] }) =>
+    reduceStreamEnded(state, agentId, stopReason),
+  )
+  .with(streamFailed, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
-      lastChunkTime: null,
-      receivedFirstChunk: false,
       statusEvents: [],
-      lastAttemptedMessage: data.lastAttemptedMessage,
-      modelUnavailable: data.modelUnavailable,
+      modelUnavailable: null,
+      error: m.chat_state_interrupted_error(),
     }),
   )
   .with(streamStatusReceived, (state, { payload: [agentId, statusEvent, resetFirstChunk] }) => {
@@ -833,12 +798,6 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, {
       agentId,
       statusEvents,
-    }),
-  )
-  .with(streamTimedOut, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, {
-      streamingStartTime: null,
-      error: m.chat_state_timeout_error(),
     }),
   )
   .with(chatRebindStarted, (state, { payload: [agentId] }) =>

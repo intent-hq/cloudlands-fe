@@ -5,7 +5,7 @@
  *    ONE plain-text user message of flattened `Q:`/`A:` pairs (multi-select
  *    comma-joined, free-form `(Other) `-prefixed, skips as `(skipped)`) with
  *    NO messageMetadata, driven through the REAL store + chat-send
- *    middleware + agent-stream-lifecycle with only the BackendTransport seam
+ *    middleware + agent-send with only the BackendTransport seam
  *    mocked (PROTOCOL.md §5.5 payloads).
  * 2. PROTOCOL-shaped transcripts drive the wizard transitions: pending
  *    before the answer message exists, superseded (wizard closed, composer

@@ -29,8 +29,6 @@ export type ChiefThreadPreview = {
 };
 
 export type SidebarNavState = {
-  /** Bumped whenever active-streams data changes */
-  activeStreamsVersion: number;
   /** Bumped whenever unread-tracking data changes */
   unreadVersion: number;
   /** Currently hovered nav item (shows hover card) */

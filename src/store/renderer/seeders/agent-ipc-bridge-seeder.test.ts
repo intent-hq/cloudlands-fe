@@ -10,8 +10,8 @@
  * `appClient.agents.*` wire-contract tests in `live-agents-client.test.ts`.
  * The stream-message bridge followed once both send paths were routed
  * directly through the `BackendTransport` seam (T1/T2) — that wire contract
- * is covered by `agent-stream-lifecycle.send-wire.test.ts` and
- * `unified-agent-factory.test.ts`.
+ * is covered by `answer-submission-wire.test.ts` (chat-send middleware +
+ * agent-send) and `unified-agent-factory.test.ts`.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -244,7 +244,7 @@ describe("agent-ipc-bridge-seeder", () => {
     });
 
     it("registers no handler for agent:backend:stream-message (send paths use the BackendTransport seam, T1/T2)", () => {
-      // Both renderer producers (agent-stream-lifecycle.sendMessage and
+      // Both renderer producers (agent-send.sendMessage and
       // agent-factory.sendInitialMessage) now call
       // backendRequest("agent.sendMessage") directly; a resurrected bridge
       // would silently reintroduce the legacy channel hop.

@@ -21,7 +21,6 @@
   import Header from '$lib/components/ui/Header.svelte';
 
   import {
-  selectActiveStreamsVersion,
   selectPinnedWorkspaceIds,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
@@ -44,7 +43,6 @@
 
   const workspaceItems = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
-  const activeStreamsVersion$ = selectActiveStreamsVersion();
   const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
 
@@ -54,16 +52,22 @@
 
   let { expanded = false }: Props = $props();
 
+  // Direct tracker subscription for reactivity (no Redux bridge): bump a
+  // local version counter when the tracker notifies so deriveds recompute.
+  let activeStreamsVersion = $state(0);
+
   // Fetch fresh stream state when the card mounts so data is up-to-date
   onMount(() => {
+    activeStreamsTracker.startPolling();
     activeStreamsTracker.fetchActiveStreams();
+    return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
   });
 
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
   // Running workspaces (streaming agents)
   const runningWorkspaces = $derived.by(() => {
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     return $workspaceItems
       .filter((w) => {
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
@@ -79,7 +83,7 @@
 
   // Unread workspaces (not streaming, has unread, updated within last day)
   const unreadWorkspaces = $derived.by(() => {
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     void $unreadAgentIds$;
     const now = Date.now();
     const state = appStore.state;
@@ -103,7 +107,7 @@
 
   // Pinned workspaces (not already in running or unread)
   const pinnedWorkspaces = $derived.by(() => {
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     void $unreadAgentIds$;
     const runningIds = new Set(runningWorkspaces.map((r) => r.workspace.id));
     const unreadIds = new Set(unreadWorkspaces.map((u) => u.workspace.id));
