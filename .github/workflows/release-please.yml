@@ -29,7 +29,7 @@ jobs:
   # `permissions: {}` and the implicit token stays powerless.
   release-please:
     name: Release-please
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     if: ${{ github.repository_owner == 'intent-hq' }}
     concurrency:
       group: release-please-${{ github.ref }}
