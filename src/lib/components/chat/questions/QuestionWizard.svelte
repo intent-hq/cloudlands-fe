@@ -5,7 +5,9 @@
   multi-select keeps a Next button, Enter in the free-form field advances,
   Skip clears + advances, Back returns with the previous answer pre-selected.
   Ignore collapses the well to a compact re-expandable banner (transient —
-  the host owns the collapse flag; nothing is persisted). On the last
+  the host owns the collapse flag; nothing is persisted). Dismiss hands off
+  to `onDismiss` — the host calls `agent.dismissQuestions`, which persists
+  the dismissal (survives reload) and releases the question hold. On the last
   question Send hands the full answers array to `onComplete`. Single-question
   wizards hide the step counter, progress segments, and Back button — none
   carry information when there is only one step.
@@ -39,9 +41,17 @@
     collapsed?: boolean;
     onToggleCollapsed?: (collapsed: boolean) => void;
     onComplete?: (answers: QuestionAnswer[]) => void;
+    /** Persistent dismissal — host calls `agent.dismissQuestions`. */
+    onDismiss?: () => void;
   }
 
-  let { questions, collapsed = false, onToggleCollapsed, onComplete }: Props = $props();
+  let {
+    questions,
+    collapsed = false,
+    onToggleCollapsed,
+    onComplete,
+    onDismiss,
+  }: Props = $props();
 
   interface DraftAnswer {
     sel: number[];
@@ -138,21 +148,33 @@
   data-question-wizard
 >
   {#if collapsed}
-    <!-- Ignore-collapsed banner: click to re-expand -->
-    <button
-      type="button"
-      class="flex w-full items-center gap-2.5 px-3.5 py-2.25 cursor-pointer rounded-lg bg-transparent border-none text-left font-[inherit] hover:bg-primary/5"
-      onclick={() => onToggleCollapsed?.(false)}
-    >
-      <Fa icon={faCircleQuestion} class="text-xs text-primary" />
-      <span class="text-xs font-medium text-foreground">{m.chat_questionWizard_title()}</span>
-      <span
-        class="text-[0.7rem] font-medium px-1.75 py-px rounded-full bg-primary/12 border border-primary/35 text-foreground"
+    <!-- Ignore-collapsed banner: click to re-expand; Dismiss is a sibling
+         button (not nested — invalid HTML) that persists the dismissal. -->
+    <div class="flex w-full items-center rounded-lg hover:bg-primary/5">
+      <button
+        type="button"
+        class="flex flex-1 items-center gap-2.5 px-3.5 py-2.25 cursor-pointer rounded-l-lg bg-transparent border-none text-left font-[inherit]"
+        onclick={() => onToggleCollapsed?.(false)}
       >
-        {questions.length}
-      </span>
-      <span class="ml-auto text-[0.7rem] text-subtle">{m.chat_questionWizard_clickToExpand_label()}</span>
-    </button>
+        <Fa icon={faCircleQuestion} class="text-xs text-primary" />
+        <span class="text-xs font-medium text-foreground">{m.chat_questionWizard_title()}</span>
+        <span
+          class="text-[0.7rem] font-medium px-1.75 py-px rounded-full bg-primary/12 border border-primary/35 text-foreground"
+        >
+          {questions.length}
+        </span>
+        <span class="ml-auto text-[0.7rem] text-subtle">{m.chat_questionWizard_clickToExpand_label()}</span>
+      </button>
+      {#if onDismiss}
+        <button
+          type="button"
+          class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-3 py-2.25 rounded-r-lg hover:text-foreground"
+          onclick={onDismiss}
+        >
+          {m.chat_questionWizard_dismiss_label()}
+        </button>
+      {/if}
+    </div>
   {:else}
     <!-- Header row -->
     <div class="flex items-center gap-2.5 px-3.5 pt-2.5">
@@ -183,13 +205,24 @@
           {m.chat_questionWizard_selectAll_label()}
         </span>
       {/if}
-      <button
-        type="button"
-        class="ml-auto border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
-        onclick={() => onToggleCollapsed?.(true)}
-      >
-        {m.chat_questionWizard_ignore_label()}
-      </button>
+      <span class="ml-auto flex items-center gap-0.5">
+        <button
+          type="button"
+          class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
+          onclick={() => onToggleCollapsed?.(true)}
+        >
+          {m.chat_questionWizard_ignore_label()}
+        </button>
+        {#if onDismiss}
+          <button
+            type="button"
+            class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
+            onclick={onDismiss}
+          >
+            {m.chat_questionWizard_dismiss_label()}
+          </button>
+        {/if}
+      </span>
     </div>
 
     {#key idx}

@@ -652,6 +652,50 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('stop boom');
   });
 
+  it('dismissQuestions forwards agent.dismissQuestions with §5.5 params and folds the ack into success', async () => {
+    // PROTOCOL §5.5: agent.dismissQuestions takes `{ agentId, workspaceId,
+    // messageId }` (all required) and returns `{ success: true,
+    // dismissedQuestionsMessageId }`. The daemon persists the marker in
+    // session metadata (survives reload) and emits `agent:updated`.
+    backend.onRequest('agent.dismissQuestions', () => ({
+      success: true,
+      dismissedQuestionsMessageId: 'msg-q1',
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.dismissQuestions({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'msg-q1',
+    });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.dismissQuestions',
+      params: { agentId: 'agent-1', workspaceId: 'ws-1', messageId: 'msg-q1' },
+    });
+  });
+
+  it('dismissQuestions folds a daemon NotFound rejection into {success:false,error} (no throw)', async () => {
+    // Workspace mismatch / unknown agent rejects with NotFound (-32004) per
+    // the §5.5 contract — the mutation seam never throws.
+    backend.onRequest('agent.dismissQuestions', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session agent-x', {
+          rpcCode: -32004,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.dismissQuestions({
+      agentId: 'agent-x',
+      workspaceId: 'ws-1',
+      messageId: 'msg-q1',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
+  });
+
   it('rename forwards agent.rename with §5.5 params and folds the ack into success', async () => {
     // PROTOCOL §5.5: agent.rename takes `{ agentId, name }` (name non-empty)
     // and returns `{ success: true, name }`; an applied rename emits

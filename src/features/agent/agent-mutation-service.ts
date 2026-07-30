@@ -53,8 +53,10 @@ import { AgentActivationState } from '$shared/types/agent-session';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import {
+  agentSessionDismissQuestionsRequested,
   bulkUpsertSessions,
   removeSession,
+  updateSession,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { pruneRecentlyClosed } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -239,6 +241,59 @@ async function handleRename(action: ReturnType<typeof renameAgentSessionRequeste
   } catch (error) {
     logger.error('Failed to rename agent session', error);
     appStore.dispatch(action.failure(toError(error, m.agent_mutation_renameSessionFailed_error())));
+  }
+}
+
+/**
+ * `agentSessionDismissQuestionsRequested`: optimistically stamp the
+ * question-dismissal marker (`dismissedQuestionsMessageId`, PROTOCOL §5.5)
+ * into session metadata — the wizard gate reads it, so the wizard hides
+ * immediately — then forward `agent.dismissQuestions` to the daemon. On
+ * failure the previous metadata is restored (the wizard re-surfaces) and the
+ * error is surfaced via toast. On success the daemon persists the marker
+ * (survives reload) and emits `agent:updated`, which reconciles other windows.
+ */
+async function handleDismissQuestions(
+  action: ReturnType<typeof agentSessionDismissQuestionsRequested>,
+): Promise<void> {
+  const [agentId, wsId, messageId] = action.payload;
+  const snapshot = readSession(agentId);
+  const previousMetadata = snapshot?.metadata;
+  if (snapshot) {
+    appStore.dispatch(
+      updateSession(agentId, {
+        metadata: { ...previousMetadata, dismissedQuestionsMessageId: messageId },
+      }),
+    );
+  }
+  const rollback = () => {
+    if (!snapshot) return;
+    if (!readSession(agentId)) return;
+    appStore.dispatch(updateSession(agentId, { metadata: previousMetadata }));
+  };
+  try {
+    const result = await appClient.agents.dismissQuestions({
+      agentId,
+      workspaceId: wsId,
+      messageId,
+    });
+    if (!result.success) {
+      rollback();
+      const message = result.error || m.agent_mutation_dismissQuestionsFailed_error();
+      void getToast().then((toast) => toast.error(message));
+      appStore.dispatch(action.failure(new Error(message)));
+      return;
+    }
+    appStore.dispatch(action.success(undefined as never));
+  } catch (error) {
+    logger.error('Failed to dismiss agent questions', error);
+    rollback();
+    void getToast().then((toast) =>
+      toast.error(errorMessage(error, m.agent_mutation_dismissQuestionsFailed_error())),
+    );
+    appStore.dispatch(
+      action.failure(toError(error, m.agent_mutation_dismissQuestionsFailed_error())),
+    );
   }
 }
 
@@ -446,6 +501,11 @@ export function createAgentMutationMiddleware(): StoreMiddleware {
         break;
       case renameAgentSessionRequested.type:
         void handleRename(action as ReturnType<typeof renameAgentSessionRequested>);
+        break;
+      case agentSessionDismissQuestionsRequested.type:
+        void handleDismissQuestions(
+          action as ReturnType<typeof agentSessionDismissQuestionsRequested>,
+        );
         break;
       case deleteAgentWithUndoRequested.type:
         handleDeleteWithUndo(action as ReturnType<typeof deleteAgentWithUndoRequested>);

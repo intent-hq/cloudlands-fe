@@ -777,6 +777,19 @@ export const agentSessionForkSessionRequested = createAsyncAction<
   string
 >('agentSessions/forkSession', 'agentSessions/forkSessionRequested');
 
+/**
+ * Dismiss the pending Agent Q&A question set (`agent.dismissQuestions`,
+ * PROTOCOL §5.5). `messageId` is the question-bearing assistant message id.
+ * The mutation middleware applies the dismissal marker to session metadata
+ * optimistically BEFORE the wire call and rolls it back on failure; the
+ * daemon persists `dismissedQuestionsMessageId` (survives reload) and emits
+ * `agent:updated` to reconcile other windows.
+ */
+export const agentSessionDismissQuestionsRequested = createAsyncAction<
+  [agentId: string, wsId: string, messageId: string],
+  void
+>('agentSessions/dismissQuestions', 'agentSessions/dismissQuestionsRequested');
+
 /** Update an agent's digest field. Kept on the legacy action type for dispatch compatibility. */
 export const updateAgentDigest = createAction<
   [wsId: string, agentId: string, digest: string | null]
