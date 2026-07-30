@@ -30,6 +30,12 @@
  * `agent.rename` (PROTOCOL §5.5) and settles the promise — the daemon's
  * `agent:renamed` event reconciles other windows.
  *
+ * It also services `stopAgentSessionRequested` (forward `agent.stop`, §5.5 —
+ * the daemon's terminal `agent:stream:end` converges streaming state) and
+ * `cancelAgentSubscriptionsRequested` (forward `agent.cancelSubscriptions`,
+ * §5.5, with optional `subscriptionId` / `groupId` scoping — the daemon's
+ * `agent:subscriptions-changed` event drives the footer refetch).
+ *
  * It also services the orphaned agent-deletion triggers
  * (`deleteAgentWithUndoRequested`, `deleteAgentSessionRequested`,
  * `undoAgentDeletionRequested`, `commitPendingAgentDeletionRequested`,
@@ -70,8 +76,10 @@ import {
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
+  stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { cancelAgentSubscriptionsRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -241,6 +249,72 @@ async function handleRename(action: ReturnType<typeof renameAgentSessionRequeste
   } catch (error) {
     logger.error('Failed to rename agent session', error);
     appStore.dispatch(action.failure(toError(error, m.agent_mutation_renameSessionFailed_error())));
+  }
+}
+
+/**
+ * `stopAgentSessionRequested`: cancel the agent's in-flight stream via
+ * `agent.stop` (PROTOCOL §5.5). Another orphaned `*Requested` trigger — its
+ * saga consumer was removed with the saga runtime, so the dispatch sites
+ * (AgentCard stop menu, SpecWritingOnboarding, the subscriptions-footer
+ * stop buttons) awaited a promise that never settled. The daemon cancels the
+ * current turn and emits the terminal `agent:stream:end` (§7), which is the
+ * real convergence signal; a non-success ack folds into `action.failure` so
+ * callers can surface the error.
+ */
+async function handleStopSession(
+  action: ReturnType<typeof stopAgentSessionRequested>,
+): Promise<void> {
+  const [, agentId] = action.payload;
+  try {
+    const result = await appClient.agents.stop(agentId);
+    if (!result.success) {
+      appStore.dispatch(
+        action.failure(new Error(result.error || m.agent_mutation_stopFailed_error())),
+      );
+      return;
+    }
+    appStore.dispatch(action.success(undefined as never));
+  } catch (error) {
+    logger.error('Failed to stop agent session', error);
+    appStore.dispatch(action.failure(toError(error, m.agent_mutation_stopFailed_error())));
+  }
+}
+
+/**
+ * `cancelAgentSubscriptionsRequested`: forward `agent.cancelSubscriptions`
+ * (PROTOCOL §5.5) with the optional `subscriptionId` / `groupId` scoping. No
+ * local state is touched here — the daemon publishes
+ * `agent:subscriptions-changed` (§6.5), which the events bridge folds into a
+ * `agent.getSubscriptions` refetch, so the footer converges from the BE
+ * snapshot rather than a hand-rolled list mutation.
+ */
+async function handleCancelSubscriptions(
+  action: ReturnType<typeof cancelAgentSubscriptionsRequested>,
+): Promise<void> {
+  const [wsId, agentId, scope] = action.payload;
+  try {
+    const result = await appClient.agents.cancelSubscriptions({
+      agentId,
+      workspaceId: wsId,
+      ...(scope?.subscriptionId !== undefined ? { subscriptionId: scope.subscriptionId } : {}),
+      ...(scope?.groupId !== undefined ? { groupId: scope.groupId } : {}),
+    });
+    if (!result.success) {
+      const message = result.error || m.agent_mutation_cancelSubscriptionsFailed_error();
+      void getToast().then((toast) => toast.error(message));
+      appStore.dispatch(action.failure(new Error(message)));
+      return;
+    }
+    appStore.dispatch(action.success(undefined as never));
+  } catch (error) {
+    logger.error('Failed to cancel agent subscriptions', error);
+    void getToast().then((toast) =>
+      toast.error(errorMessage(error, m.agent_mutation_cancelSubscriptionsFailed_error())),
+    );
+    appStore.dispatch(
+      action.failure(toError(error, m.agent_mutation_cancelSubscriptionsFailed_error())),
+    );
   }
 }
 
@@ -513,6 +587,14 @@ export function createAgentMutationMiddleware(): StoreMiddleware {
         break;
       case renameAgentSessionRequested.type:
         void handleRename(action as ReturnType<typeof renameAgentSessionRequested>);
+        break;
+      case stopAgentSessionRequested.type:
+        void handleStopSession(action as ReturnType<typeof stopAgentSessionRequested>);
+        break;
+      case cancelAgentSubscriptionsRequested.type:
+        void handleCancelSubscriptions(
+          action as ReturnType<typeof cancelAgentSubscriptionsRequested>,
+        );
         break;
       case agentSessionDismissQuestionsRequested.type:
         void handleDismissQuestions(

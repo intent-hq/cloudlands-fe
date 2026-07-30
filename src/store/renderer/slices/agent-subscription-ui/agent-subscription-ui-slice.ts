@@ -5,7 +5,7 @@
  * delegation groups, and woken-up indicators.
  */
 
-import { createAction } from '$lib/store-shim/utils/store/create-action';
+import { createAction, createAsyncAction } from '$lib/store-shim/utils/store/create-action';
 import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
 import type {
   AgentSubscriptionUIState,
@@ -80,6 +80,24 @@ export const deleteSubscriptionUI = createAction<[workspaceId: string, agentId: 
  *  actual IPC call so no side effects live in the component. */
 export const requestSubscriptionFetch = createAction<[workspaceId: string, agentId: string]>(
   'agentSubscriptionUI/requestSubscriptionFetch',
+);
+
+/**
+ * Cancel the agent's completion watches / delegation groups via
+ * `agent.cancelSubscriptions` (PROTOCOL §5.5). `scope.subscriptionId` cancels
+ * exactly one completion watch; `scope.groupId` cancels one delegation group
+ * plus its grouped watches; omitting both cancels everything the agent
+ * registered. Handled by the agent mutation middleware — the daemon's
+ * `agent:subscriptions-changed` event (§6.5) drives the UI refetch, so no
+ * reducer case mutates the local entry.
+ */
+export const cancelAgentSubscriptionsRequested = createAsyncAction<[
+  workspaceId: string,
+  agentId: string,
+  scope?: { subscriptionId?: string; groupId?: string },
+], void>(
+  'agentSubscriptionUI/cancelAgentSubscriptions',
+  'agentSubscriptionUI/cancelAgentSubscriptionsRequested',
 );
 
 // ---------------------------------------------------------------------------

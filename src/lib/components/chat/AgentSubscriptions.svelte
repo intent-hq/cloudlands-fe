@@ -42,7 +42,11 @@
   selectCompletionStatus,
   selectWaitingState,
 } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
-  import { requestSubscriptionFetch } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import {
+  cancelAgentSubscriptionsRequested,
+  requestSubscriptionFetch,
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { stopAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
   import { store as appStore } from '$store/renderer/store';
 
@@ -162,23 +166,76 @@
   });
 
   // ── Button handlers ──────────────────────────────────────────────────
+  // All wire calls route through the mutation middleware (no IPC in the
+  // component); the daemon's `agent:subscriptions-changed` event drives the
+  // footer refetch, so no handler mutates the local subscription list.
 
-  // Stubs: the daemon-side wiring (scoped `events.unsubscribe`, intentd#759)
-  // lands in the follow-up stop/cancel wiring task on this branch.
-  function stopWatchedAgent(watchedAgentId: string) {
-    logger.debug('stopWatchedAgent not wired yet', { workspaceId, agentId, watchedAgentId });
+  /** One-shot row stop: cancel that agent's in-flight stream (`agent.stop`). */
+  async function stopWatchedAgent(watchedAgentId: string) {
+    if (!workspaceId) return;
+    try {
+      const action = stopAgentSessionRequested(workspaceId, watchedAgentId);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch (error) {
+      logger.error('Failed to stop watched agent', { watchedAgentId, error });
+    }
   }
 
-  function cancelWatch(watchedAgentId: string) {
-    logger.debug('cancelWatch not wired yet', { workspaceId, agentId, watchedAgentId });
+  /**
+   * One-shot row cancel: scoped `agent.cancelSubscriptions { subscriptionId }`
+   * for the parent's completion watch on this agent.
+   */
+  async function cancelWatch(watchedAgentId: string) {
+    if (!workspaceId || !agentId) return;
+    const watch = $subs$.find(
+      (sub) =>
+        sub.delegationGroup?.awaitMode !== 'all' &&
+        (sub.actorIds || []).includes(watchedAgentId),
+    );
+    if (!watch) return;
+    try {
+      const action = cancelAgentSubscriptionsRequested(workspaceId, agentId, {
+        subscriptionId: watch.id,
+      });
+      appStore.dispatch(action);
+      await action.promise;
+    } catch (error) {
+      logger.error('Failed to cancel watch', { watchedAgentId, error });
+    }
   }
 
-  function stopGroup(group: DelegationGroupStatus) {
-    logger.debug('stopGroup not wired yet', { workspaceId, agentId, groupId: group.groupId });
+  /** Group header stop: stop every agent in the group. */
+  async function stopGroup(group: DelegationGroupStatus) {
+    if (!workspaceId) return;
+    try {
+      await Promise.all(
+        group.expectedAgentIds.map((id) => {
+          const action = stopAgentSessionRequested(workspaceId, id);
+          appStore.dispatch(action);
+          return action.promise;
+        }),
+      );
+    } catch (error) {
+      logger.error('Failed to stop group agents', { groupId: group.groupId, error });
+    }
   }
 
-  function cancelGroup(group: DelegationGroupStatus) {
-    logger.debug('cancelGroup not wired yet', { workspaceId, agentId, groupId: group.groupId });
+  /**
+   * Group cancel: scoped `agent.cancelSubscriptions { groupId }` — the daemon
+   * removes the group plus its grouped watches in one critical section.
+   */
+  async function cancelGroup(group: DelegationGroupStatus) {
+    if (!workspaceId || !agentId) return;
+    try {
+      const action = cancelAgentSubscriptionsRequested(workspaceId, agentId, {
+        groupId: group.groupId,
+      });
+      appStore.dispatch(action);
+      await action.promise;
+    } catch (error) {
+      logger.error('Failed to cancel delegation group', { groupId: group.groupId, error });
+    }
   }
 
   function handleActionKeydown(e: KeyboardEvent, action: () => void) {
@@ -300,9 +357,10 @@
                   data-testid="one-shot-stop"
                   onclick={(e) => {
                     e.stopPropagation();
-                    stopWatchedAgent(watchedAgentId);
+                    void stopWatchedAgent(watchedAgentId);
                   }}
-                  onkeydown={(e) => handleActionKeydown(e, () => stopWatchedAgent(watchedAgentId))}
+                  onkeydown={(e) =>
+                    handleActionKeydown(e, () => void stopWatchedAgent(watchedAgentId))}
                 >
                   <Fa icon={faStop} class="w-2.5! h-2.5!" />
                 </span>
@@ -315,9 +373,10 @@
                   data-testid="one-shot-cancel"
                   onclick={(e) => {
                     e.stopPropagation();
-                    cancelWatch(watchedAgentId);
+                    void cancelWatch(watchedAgentId);
                   }}
-                  onkeydown={(e) => handleActionKeydown(e, () => cancelWatch(watchedAgentId))}
+                  onkeydown={(e) =>
+                    handleActionKeydown(e, () => void cancelWatch(watchedAgentId))}
                 >
                   <Fa icon={faXmark} class="w-2.5! h-2.5!" />
                 </span>

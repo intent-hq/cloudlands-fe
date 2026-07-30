@@ -9,7 +9,7 @@
  * PROTOCOL-shaped mock response back, and assert the rendered sections.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 
 const { backendRequestSpy } = vi.hoisted(() => ({
   backendRequestSpy: vi.fn(),
@@ -221,6 +221,86 @@ describe('AgentSubscriptions sections', () => {
     expect(
       oneShots.compareDocumentPosition(sections[0]) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('one-shot row stop sends agent.stop for the watched agent (§5.5)', async () => {
+    const WS = 'ws-sections-row-stop';
+    await renderWithSnapshot(WS, {
+      subscriptions: [oneShotSubscription('watch-solo', WS, 'child-solo')],
+      delegationGroups: [],
+      agentStatuses: { [PARENT]: 'waiting', 'child-solo': 'responding' },
+    });
+
+    await fireEvent.click(screen.getByTestId('one-shot-stop'));
+    await flush();
+
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.stop',
+      { agentId: 'child-solo' },
+    ]);
+  });
+
+  it('one-shot row cancel sends the scoped agent.cancelSubscriptions { subscriptionId } (§5.5)', async () => {
+    const WS = 'ws-sections-row-cancel';
+    await renderWithSnapshot(WS, {
+      subscriptions: [oneShotSubscription('watch-solo', WS, 'child-solo')],
+      delegationGroups: [],
+      agentStatuses: { [PARENT]: 'waiting', 'child-solo': 'responding' },
+    });
+
+    await fireEvent.click(screen.getByTestId('one-shot-cancel'));
+    await flush();
+
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.cancelSubscriptions',
+      { agentId: PARENT, workspaceId: WS, subscriptionId: 'watch-solo' },
+    ]);
+  });
+
+  it('group header stop sends agent.stop for every agent in that group only', async () => {
+    const WS = 'ws-sections-group-stop';
+    await renderWithSnapshot(WS, {
+      subscriptions: [
+        groupSubscription('grp-1', WS, ['child-a', 'child-b']),
+        groupSubscription('grp-2', WS, ['child-c']),
+      ],
+      delegationGroups: [
+        delegationGroup('grp-1', ['child-a', 'child-b']),
+        delegationGroup('grp-2', ['child-c']),
+      ],
+      agentStatuses: {
+        [PARENT]: 'waiting',
+        'child-a': 'responding',
+        'child-b': 'responding',
+        'child-c': 'responding',
+      },
+    });
+
+    const sections = screen.getAllByTestId('delegation-group-section');
+    await fireEvent.click(within(sections[0]).getByTestId('group-stop'));
+    await flush();
+
+    const stopCalls = backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.stop');
+    expect(stopCalls).toContainEqual(['agent.stop', { agentId: 'child-a' }]);
+    expect(stopCalls).toContainEqual(['agent.stop', { agentId: 'child-b' }]);
+    expect(stopCalls).not.toContainEqual(['agent.stop', { agentId: 'child-c' }]);
+  });
+
+  it('group cancel sends the scoped agent.cancelSubscriptions { groupId } (§5.5)', async () => {
+    const WS = 'ws-sections-group-cancel';
+    await renderWithSnapshot(WS, {
+      subscriptions: [groupSubscription('grp-1', WS, ['child-a', 'child-b'])],
+      delegationGroups: [delegationGroup('grp-1', ['child-a', 'child-b'])],
+      agentStatuses: { [PARENT]: 'waiting', 'child-a': 'responding', 'child-b': 'responding' },
+    });
+
+    await fireEvent.click(screen.getByTestId('group-cancel'));
+    await flush();
+
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.cancelSubscriptions',
+      { agentId: PARENT, workspaceId: WS, groupId: 'grp-1' },
+    ]);
   });
 
   it('shows the delivery-pending warning only in the finished-but-undelivered group', async () => {

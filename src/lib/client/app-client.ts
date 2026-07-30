@@ -490,6 +490,25 @@ export interface AgentsClient {
    */
   stop(agentId: string): Promise<MutationResult>;
   /**
+   * Cancel the agent's completion watches / delegation groups
+   * (`agent.cancelSubscriptions`, §5.5). Unscoped (neither optional param)
+   * cancels EVERYTHING the agent registered — all completion watches, all
+   * delegation groups it parents, and all event subscriptions — and is
+   * idempotent. Scoped: `subscriptionId` cancels exactly that completion
+   * watch; `groupId` cancels that delegation group plus its grouped watches;
+   * both may be combined (all-or-nothing — an unknown id rejects with
+   * `-32602` before anything is removed, folded into
+   * `{ success: false, error }`). Each scoped removal publishes the standard
+   * `agent:subscriptions-changed` snapshot (§6.5), which drives the FE
+   * refetch path — callers never hand-roll list mutation.
+   */
+  cancelSubscriptions(params: {
+    agentId: string;
+    workspaceId: string;
+    subscriptionId?: string;
+    groupId?: string;
+  }): Promise<MutationResult>;
+  /**
    * Dismiss the pending Agent Q&A question set (`agent.dismissQuestions`,
    * §5.5). The daemon persists `dismissedQuestionsMessageId` (the id of the
    * question-bearing assistant message) in session metadata — so the

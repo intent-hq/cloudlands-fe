@@ -125,6 +125,8 @@
               size="icon-xs"
               onclick={() => onStopGroup?.(group)}
               class="text-ghost hover:text-muted-foreground/70"
+              data-testid="group-stop"
+              aria-label={m.chat_agentSubscriptions_stopGroup_tooltip()}
             >
               <Fa icon={faStop} class="w-2.5! h-2.5!" />
             </Button>
@@ -143,6 +145,8 @@
               size="icon-xs"
               onclick={() => onCancelGroup?.(group)}
               class="text-ghost hover:text-muted-foreground/70"
+              data-testid="group-cancel"
+              aria-label={m.chat_agentSubscriptions_cancelGroup_tooltip()}
             >
               <Fa icon={faXmark} class="w-2.5! h-2.5!" />
             </Button>
