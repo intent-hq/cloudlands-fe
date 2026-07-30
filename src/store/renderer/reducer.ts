@@ -80,6 +80,7 @@ import { proposalLifecycleReducer } from "./slices/proposal-lifecycle/proposal-l
 import { prBranchLookupReducer } from "./slices/pr-branch-lookup/pr-branch-lookup-slice";
 import { daemonHealthReducer } from "./slices/daemon-health/daemon-health-slice";
 import { hostRequirementsReducer } from "./slices/host-requirements/host-requirements-slice";
+import { hudReducer } from "./slices/hud/hud-slice";
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -164,4 +165,5 @@ export const reducers = {
   prBranchLookup: prBranchLookupReducer,
   daemonHealth: daemonHealthReducer,
   hostRequirements: hostRequirementsReducer,
+  hud: hudReducer,
 } as const;
