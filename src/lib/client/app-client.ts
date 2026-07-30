@@ -490,6 +490,20 @@ export interface AgentsClient {
    */
   stop(agentId: string): Promise<MutationResult>;
   /**
+   * Dismiss the pending Agent Q&A question set (`agent.dismissQuestions`,
+   * §5.5). The daemon persists `dismissedQuestionsMessageId` (the id of the
+   * question-bearing assistant message) in session metadata — so the
+   * dismissal survives reload — emits `agent:updated`, and kicks the queue
+   * drain so messages held by the question hold resume. Idempotent:
+   * re-dismissing the same message succeeds. A nonexistent agent or a
+   * workspace mismatch rejects (folded into `{ success: false, error }`).
+   */
+  dismissQuestions(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+  }): Promise<MutationResult>;
+  /**
    * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
    * new name and an applied rename emits `agent:renamed` (in
    * `AGENT_LIFECYCLE_EVENTS`), so the reactive `subscribe` refetch reconciles

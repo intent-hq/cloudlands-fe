@@ -205,4 +205,34 @@ describe('QuestionWizard', () => {
     await fireEvent.click(screen.getByText('Agent Has Questions'));
     expect(onToggleCollapsed).toHaveBeenCalledWith(false);
   });
+
+  it('Dismiss fires onDismiss from the expanded header without collapsing or completing', async () => {
+    const onDismiss = vi.fn();
+    const onToggleCollapsed = vi.fn();
+    const onComplete = vi.fn();
+    render(QuestionWizard, {
+      props: { questions: [SINGLE], onDismiss, onToggleCollapsed, onComplete },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onToggleCollapsed).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('Dismiss is also available on the Ignore-collapsed banner', async () => {
+    const onDismiss = vi.fn();
+    render(QuestionWizard, {
+      props: { questions: [SINGLE], collapsed: true, onDismiss },
+    });
+    expect(screen.getByText('Click to expand')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('no onDismiss prop → no Dismiss button rendered (expanded or collapsed)', async () => {
+    const { rerender } = setup([SINGLE]);
+    expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull();
+    await rerender({ collapsed: true });
+    expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull();
+  });
 });

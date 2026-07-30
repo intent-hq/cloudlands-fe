@@ -46,6 +46,7 @@
   import type { AgentMessage } from '$shared/types';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
+  agentSessionDismissQuestionsRequested,
   agentSessionEditAndRegenerateRequested,
   agentSessionForkSessionRequested,
   agentSessionRegenerateFromMessageRequested,
@@ -486,9 +487,11 @@
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
     // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
-    // that do not change the transcript; the shared helper re-reads the same
-    // value from store state.
+    // that do not change the transcript; the dismissal marker read keeps it
+    // reactive to metadata-only session updates (optimistic dismiss /
+    // agent:updated); the shared helper re-reads both from store state.
     void $agentIsResponding$;
+    void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     return deriveWizardPendingQuestions(
       appStore.state,
       agentId,
@@ -508,6 +511,19 @@
       questionWizardCollapsed = false;
     }
   });
+
+  // Dismiss = persistent, unlike Ignore: the mutation middleware stamps
+  // `dismissedQuestionsMessageId` into session metadata optimistically (the
+  // wizard-gate reads it, so the wizard hides immediately) and forwards
+  // `agent.dismissQuestions` — the daemon persists the marker (survives
+  // reload) and releases the question hold. On failure the middleware rolls
+  // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
+  function handleQuestionWizardDismiss() {
+    if (!workspace || !pendingQuestions) return;
+    appStore.dispatch(
+      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
+    );
+  }
 
   // Completing the wizard flattens all answers into ONE plain-text user
   // message of `Q:`/`A:` pairs (wire contract — no messageMetadata) sent
@@ -3776,6 +3792,7 @@
             collapsed={questionWizardCollapsed}
             onToggleCollapsed={(c) => (questionWizardCollapsed = c)}
             onComplete={handleQuestionWizardComplete}
+            onDismiss={handleQuestionWizardDismiss}
           />
         </div>
       {/key}
