@@ -8,9 +8,8 @@
  * restores the send path WITHOUT re-adding a saga and WITHOUT changing any
  * dispatch site: `createChatSendMiddleware()` observes dispatched actions
  * and, after the reducer runs, resolves the target `Workspace` via the
- * workspace selector and invokes `agent-stream-lifecycle.sendMessage()` —
- * which already owns the optimistic user message, the streaming flag, and
- * the stream-handler lifecycle.
+ * workspace selector and invokes `agent-send.sendMessage()` — which owns
+ * the optimistic user message, the streaming flag, and the §5.5 wire call.
  *
  * Re-homed pre-send essentials (ported minimally from the deleted
  * `send-message-saga.ts`): dispatch `chatSendStarted` for immediate loading
@@ -36,7 +35,7 @@
  *
  * Dependency-light per src/store AGENTS.md: top-level imports are limited to
  * the configured store, slice actions, store-free types, and the logger.
- * Selectors and the lifecycle module (which evaluate `store.createSelector`
+ * Selectors and the send module (which evaluate `store.createSelector`
  * at import) are dynamically imported inside the handler so they are never
  * evaluated while the store is still initializing through the middleware
  * chain.
@@ -97,17 +96,17 @@ type LifecycleSendOptions = {
  * middleware-chain construction.
  */
 async function loadSendDeps() {
-  const [wsSel, asSel, queueSel, lifecycle] = await Promise.all([
+  const [wsSel, asSel, queueSel, sender] = await Promise.all([
     import('$store/renderer/slices/workspace/workspace-selectors'),
     import('$store/renderer/slices/agent-session/agent-session-selectors'),
     import('$store/renderer/slices/agent-queue/agent-queue-selectors'),
-    import('$features/agent/agent-stream-lifecycle'),
+    import('$features/agent/agent-send'),
   ]);
   return {
     selectWorkspaceById: wsSel.selectWorkspaceById,
     selectAgentIsResponding: asSel.selectAgentIsResponding,
     selectAgentQueueMessages: queueSel.selectAgentQueueMessages,
-    sendMessage: lifecycle.sendMessage,
+    sendMessage: sender.sendMessage,
   };
 }
 type SendDeps = Awaited<ReturnType<typeof loadSendDeps>>;

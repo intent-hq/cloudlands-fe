@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => {
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
   const agentFailureToastMiddleware = createPassthroughMiddleware();
   const daemonHealthMiddleware = createPassthroughMiddleware();
-  const activeStreamsReduxBridgeMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
   const modelSelectionPersistenceMiddleware = createPassthroughMiddleware();
   const backgroundAgentSettingsPersistenceMiddleware = createPassthroughMiddleware();
@@ -33,7 +32,6 @@ const mocks = vi.hoisted(() => {
   const modelReloadMiddleware = createPassthroughMiddleware();
   const providerAvailabilityCheckMiddleware = createPassthroughMiddleware();
   const hostRequirementsCheckMiddleware = createPassthroughMiddleware();
-  const agentStreamMiddleware = createPassthroughMiddleware();
   const agentCreationMiddleware = createPassthroughMiddleware();
   const agentMutationMiddleware = createPassthroughMiddleware();
   const editRegenerateMiddleware = createPassthroughMiddleware();
@@ -99,7 +97,6 @@ const mocks = vi.hoisted(() => {
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
     createAgentFailureToastMiddleware: vi.fn(() => agentFailureToastMiddleware),
     createDaemonHealthMiddleware: vi.fn(() => daemonHealthMiddleware),
-    createActiveStreamsReduxBridge: vi.fn(() => activeStreamsReduxBridgeMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
     createModelSelectionPersistenceMiddleware: vi.fn(() => modelSelectionPersistenceMiddleware),
     createBackgroundAgentSettingsPersistenceMiddleware: vi.fn(() => backgroundAgentSettingsPersistenceMiddleware),
@@ -107,7 +104,6 @@ const mocks = vi.hoisted(() => {
     createModelReloadMiddleware: vi.fn(() => modelReloadMiddleware),
     createProviderAvailabilityCheckMiddleware: vi.fn(() => providerAvailabilityCheckMiddleware),
     createHostRequirementsCheckMiddleware: vi.fn(() => hostRequirementsCheckMiddleware),
-    createAgentStreamMiddleware: vi.fn(() => agentStreamMiddleware),
     createAgentCreationMiddleware: vi.fn(() => agentCreationMiddleware),
     createAgentMutationMiddleware: vi.fn(() => agentMutationMiddleware),
     createEditRegenerateMiddleware: vi.fn(() => editRegenerateMiddleware),
@@ -179,7 +175,6 @@ const mocks = vi.hoisted(() => {
     daemonEventsBridgeMiddleware,
     agentFailureToastMiddleware,
     daemonHealthMiddleware,
-    activeStreamsReduxBridgeMiddleware,
     settingsHydrationMiddleware,
     modelSelectionPersistenceMiddleware,
     backgroundAgentSettingsPersistenceMiddleware,
@@ -187,7 +182,6 @@ const mocks = vi.hoisted(() => {
     modelReloadMiddleware,
     providerAvailabilityCheckMiddleware,
     hostRequirementsCheckMiddleware,
-    agentStreamMiddleware,
     agentCreationMiddleware,
     agentMutationMiddleware,
     editRegenerateMiddleware,
@@ -264,9 +258,6 @@ vi.mock("$features/agent/agent-failure-toast-service", () => ({
 vi.mock("./middlewares/daemon-health-service", () => ({
   createDaemonHealthMiddleware: mocks.createDaemonHealthMiddleware,
 }));
-vi.mock("$features/agent/active-streams-redux-bridge", () => ({
-  createActiveStreamsReduxBridge: mocks.createActiveStreamsReduxBridge,
-}));
 vi.mock("$features/settings/settings-hydration-service", () => ({
   createSettingsHydrationMiddleware: mocks.createSettingsHydrationMiddleware,
 }));
@@ -287,9 +278,6 @@ vi.mock("$features/providers/provider-availability-check-service", () => ({
 }));
 vi.mock("$features/system/host-requirements-check-service", () => ({
   createHostRequirementsCheckMiddleware: mocks.createHostRequirementsCheckMiddleware,
-}));
-vi.mock("$features/agent/agent-stream-service", () => ({
-  createAgentStreamMiddleware: mocks.createAgentStreamMiddleware,
 }));
 vi.mock("$features/agent/agent-creation-service", () => ({
   createAgentCreationMiddleware: mocks.createAgentCreationMiddleware,
@@ -500,7 +488,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -508,7 +495,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,
@@ -581,7 +567,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -589,7 +574,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,
@@ -662,7 +646,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -670,7 +653,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,
@@ -744,7 +726,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -752,7 +733,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,
@@ -843,7 +823,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
       mocks.daemonHealthMiddleware,
-      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.backgroundAgentSettingsPersistenceMiddleware,
@@ -851,7 +830,6 @@ describe("store middleware Redux logging gating", () => {
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
       mocks.hostRequirementsCheckMiddleware,
-      mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.editRegenerateMiddleware,

@@ -1,6 +1,6 @@
 /**
  * Agent mutation service — the post-saga consumer for the three orphaned
- * agent-session async-action triggers awaited by `agent-stream-lifecycle`:
+ * agent-session async-action triggers awaited by `agent-send`:
  * `restoreAgentSessionRequested`, `activateAgentRequested`, and
  * `saveAgentSessionRequested`.
  *
@@ -43,9 +43,8 @@
  * the configured store, the slice actions/types, store-free constants, shared
  * types, and the logger. No selector modules (importing them would evaluate
  * `store.createSelector` during middleware-chain construction); state is read
- * directly off `appStore.state.agentSessions.byAgentId`, mirroring the
- * sibling `agent-stream-service.ts`. The toast library is imported lazily
- * inside handlers so the static graph stays light.
+ * directly off `appStore.state.agentSessions.byAgentId`. The toast library
+ * is imported lazily inside handlers so the static graph stays light.
  */
 import type { StoreMiddleware } from '$lib/store-shim/types';
 import type { AgentSession } from '$shared/types';
@@ -215,7 +214,7 @@ async function handleActivate(action: ReturnType<typeof activateAgentRequested>)
 function handleSave(action: ReturnType<typeof saveAgentSessionRequested>): void {
   // The mock seam has no separate persistence layer — the agent-session slice
   // IS the runtime state. Resolve immediately so callers awaiting
-  // `saveAction.promise` (agent-stream-lifecycle pre-send) can proceed.
+  // `saveAction.promise` (agent-send pre-send) can proceed.
   appStore.dispatch(action.success(undefined as never));
 }
 

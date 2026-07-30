@@ -39,7 +39,6 @@
   import { WorkspaceStatusEnum } from '$shared/types';
 
   import {
-  selectActiveStreamsVersion,
   selectPanelItem,
   selectActiveCard,
   selectOnboardingActive,
@@ -67,7 +66,6 @@
   import { store as appStore } from '$store/renderer/store';
 
   const workspaceItems = selectWorkspaceItems();
-  const activeStreamsVersion$ = selectActiveStreamsVersion();
   const unreadAgentIds$ = selectUnreadAgentIds();
   const panelItem$ = selectPanelItem();
   const activeCard$ = selectActiveCard();
@@ -77,12 +75,20 @@
   const contextMenuOpen$ = selectContextMenuOpen();
   const statsOverlayOpen$ = selectStatsOverlayOpen();
 
+  // Direct tracker subscription for reactivity (no Redux bridge): bump a
+  // local version counter when the tracker notifies so deriveds recompute.
+  let activeStreamsVersion = $state(0);
+  $effect(() => {
+    activeStreamsTracker.startPolling();
+    return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+  });
+
   // Count unread workspaces only (within 24h)
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
   const unreadCount = $derived.by(() => {
     // Read shared version counters so this re-runs when streams/unread state changes
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     // Reading unreadAgentIds$ triggers re-evaluation when unread state changes
     void $unreadAgentIds$;
     const now = Date.now();

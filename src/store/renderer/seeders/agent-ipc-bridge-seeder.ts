@@ -15,7 +15,7 @@
  * the daemon RPCs without a legacy channel hop. The
  * `agent:backend:stream-message` bridge followed once the send paths were
  * routed directly through the `BackendTransport` seam
- * (`backendRequest("agent.sendMessage")` in `agent-stream-lifecycle.ts` (T1)
+ * (`backendRequest("agent.sendMessage")` in `agent-send.ts` (T1)
  * and `agent-factory.sendInitialMessage` (T2)).
  *
  * Per the integration principle BE = source of truth: each handler forwards

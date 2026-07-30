@@ -228,7 +228,7 @@ export const selectAgentSessionExists = store.createSelector(
  * callers can surface the stored activation error instead of waiting forever.
  *
  * Note: no production call site consumes this today — the live send path
- * guards activation inline in `agent-stream-lifecycle.ts` (`needsActivation`).
+ * guards activation inline in `agent-send.ts` (`needsActivation`).
  * The selector is kept correct for future first-send waiters.
  */
 export const selectAgentActivationWaitComplete = store.createSelector(

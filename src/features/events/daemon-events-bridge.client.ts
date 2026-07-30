@@ -9,17 +9,16 @@
  *      transitions (notably `agent:idle` clearing the optimistic
  *      `isStreaming`/`isProcessing`/`isResponding` flags set by
  *      `chatSendStarted`).
- *   2. Content-free `workspaceAgents/agentStreamUpdateReceived` bookkeeping
- *      for the live stream subset (`agent:stream:chunk`, `agent:tool:call`,
- *      `agent:stream:end`, `agent:failed`). The TRANSCRIPT itself is owned by
- *      the standing `chat.subscribe` delta stream (PROTOCOL §7.1,
- *      chat-subscribe-service) — the bridge no longer assembles messages or
- *      content blocks from these events. The dispatches carry NO
- *      `contentBlocks`/`assistantMessageId` and exist purely for the
- *      chat-state reducer's spinner/timer bookkeeping (`lastChunkTime`,
+ *   2. Content-free chat-state stream bookkeeping for the live stream subset
+ *      (`agent:stream:chunk`, `agent:tool:call`, `agent:stream:end`,
+ *      `agent:failed`). The TRANSCRIPT itself is owned by the standing
+ *      `chat.subscribe` delta stream (PROTOCOL §7.1, chat-subscribe-service)
+ *      — the bridge no longer assembles messages or content blocks from
+ *      these events. The dispatches (`streamChunkReceived` / `streamEnded` /
+ *      `streamFailed`) carry NO content and exist purely for the chat-state
+ *      reducer's spinner/timer bookkeeping (`lastChunkTime`,
  *      `receivedFirstChunk`, `statusEvents` clears, the #965 interrupted
- *      retry-record clear) and the `agent-stream-service` finalize path
- *      (`streamCompleted`/`streamTimedOut` busy-flag clears).
+ *      retry-record clear) and the agent-session busy-flag clears.
  *      `agent:stream:start` (§6.6, agent-initiated harness-wake turns only)
  *      dispatches `chatSendStarted` so the busy/Thinking UI opens without a
  *      user send — see `handleStreamStartEvent`.
@@ -128,9 +127,11 @@ import { WorkspaceStatus, isWorkspaceDisplayStatus } from '$shared/types';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
-import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
   streamStatusReceived,
+  streamChunkReceived,
+  streamEnded,
+  streamFailed,
   chatQueueProcessingReceived,
   chatErrorCleared,
   chatModelUnavailableCleared,
@@ -293,36 +294,6 @@ function extractSubscriptionId(params: unknown): string | undefined {
 }
 
 /**
- * Content-free stream bookkeeping dispatch. The standing `chat.subscribe`
- * stream (chat-subscribe-service) owns transcript message state; the bridge
- * only forwards the stream family's TIMING/DISPOSITION edges so the
- * chat-state reducer (spinner timers, `statusEvents` clears, the #965
- * interrupted retry-record clear) and the `agent-stream-service` finalize
- * bookkeeping (`streamCompleted`/`streamTimedOut` busy-flag clears) keep
- * running. Deliberately NO `contentBlocks` and NO `assistantMessageId` —
- * without them no consumer can create or grow a transcript message from
- * these events.
- */
-function dispatchStreamBookkeeping(
-  agentId: string,
-  workspaceId: string,
-  eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
-  extras: { stopReason?: string; error?: string } = {},
-): void {
-  appStore.dispatch(
-    agentStreamUpdateReceived({
-      workspaceId,
-      agentId,
-      handlerSessionId: agentId,
-      source: 'sendMessage',
-      eventType,
-      ...(extras.stopReason ? { stopReason: extras.stopReason } : {}),
-      ...(extras.error ? { error: extras.error } : {}),
-    }),
-  );
-}
-
-/**
  * `agent:stream:chunk` no longer feeds transcript assembly — the standing
  * `chat.subscribe` delta stream (PROTOCOL §7.1) is the transcript writer.
  * The event's remaining job is chat-state bookkeeping: a text chunk drives
@@ -332,7 +303,7 @@ function dispatchStreamBookkeeping(
  * (`agentId`/`messageId`/`blockIndex` plus usable content) so malformed
  * events stay inert.
  */
-function handleStreamChunkEvent(event: WorkspaceEvent, workspaceId: string): void {
+function handleStreamChunkEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
@@ -348,9 +319,9 @@ function handleStreamChunkEvent(event: WorkspaceEvent, workspaceId: string): voi
     return;
   }
   if (blockType === 'text' && typeof content === 'string') {
-    dispatchStreamBookkeeping(agentId, workspaceId, 'chunk');
+    appStore.dispatch(streamChunkReceived(agentId, true));
   } else if (content && typeof content === 'object') {
-    dispatchStreamBookkeeping(agentId, workspaceId, 'content-blocks');
+    appStore.dispatch(streamChunkReceived(agentId, false));
   }
 }
 
@@ -362,7 +333,7 @@ function handleStreamChunkEvent(event: WorkspaceEvent, workspaceId: string): voi
  * shape (`agentId`/`messageId`/`blockIndex`/`toolCallId`) so a contract
  * regression is rejected rather than silently absorbed.
  */
-function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
+function handleToolCallEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
@@ -379,7 +350,7 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
     return;
   }
 
-  dispatchStreamBookkeeping(agentId, workspaceId, 'content-blocks');
+  appStore.dispatch(streamChunkReceived(agentId, false));
 
   // Status hint: track the actual tool-execution window so the "Calling tool"
   // entry's duration in `computeCompletedEvents` ends at the tool's terminal
@@ -542,13 +513,12 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
  * metadata (`stopReason: "interrupted"` → the Stopped indicator) all arrive
  * through the standing `chat.subscribe` delta stream (§7.1), which delivers
  * the persisted final message. What remains is the non-transcript
- * bookkeeping: the `complete` dispatch drives the chat-state reducer
+ * bookkeeping: `streamEnded` drives the chat-state reducer
  * (`statusEvents`/timer clears, the #965 interrupted retry-record clear) and
- * the `agent-stream-service` finalize path (`streamCompleted` busy-flag
- * clears), and the per-agent dedup maps are dropped so the next turn starts
- * fresh.
+ * the agent-session busy-flag clears, and the per-agent dedup maps are
+ * dropped so the next turn starts fresh.
  */
-function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void {
+function handleStreamEndEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   const agentId = data?.agentId;
   if (typeof agentId !== 'string') return;
@@ -558,7 +528,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
   toolStatusByAgent.delete(agentId);
   wakeTurnMessageIdByAgent.delete(agentId);
-  dispatchStreamBookkeeping(agentId, workspaceId, 'complete', { stopReason });
+  appStore.dispatch(streamEnded(agentId, stopReason));
 }
 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
@@ -570,11 +540,11 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   toolStatusByAgent.delete(agentId);
   wakeTurnMessageIdByAgent.delete(agentId);
 
-  // Content-free `error` bookkeeping: the chat-state reducer clears
+  // Content-free failure bookkeeping: the chat-state reducer clears
   // statusEvents/streamingStartTime and supplies the default interrupted
-  // message when the event carries no explicit error; the
-  // agent-stream-service finalize path clears the session busy flags.
-  dispatchStreamBookkeeping(agentId, workspaceId, 'error');
+  // message when the event carries no explicit error; the agent-session
+  // reducer clears the session busy flags.
+  appStore.dispatch(streamFailed(agentId));
 
   // Set chat error when agent:failed arrives so the StreamingStatus component
   // displays the failure message and Retry button. Dispatch this even when no
@@ -1898,20 +1868,21 @@ function handleNotification(method: string, params: unknown): void {
     // so the legacy mock-IPC listeners and activity timeline still work.
   }
 
-  // Live stream family — accumulate per-agent and grow the in-flight assistant
-  // message. `agent:failed` flows through both paths: it finalizes any
-  // in-flight stream AND forwards the lifecycle to `eventReceived` so the
-  // session status transitions to "failed".
+  // Live stream family — content-free chat-state bookkeeping only (the
+  // transcript is owned by the chat.subscribe delta stream). `agent:failed`
+  // flows through both paths: it finalizes the stream bookkeeping AND
+  // forwards the lifecycle to `eventReceived` so the session status
+  // transitions to "failed".
   if (type === 'agent:stream:start') {
     handleStreamStartEvent(event, workspaceId);
     return;
   }
   if (type === 'agent:stream:chunk') {
-    handleStreamChunkEvent(event, workspaceId);
+    handleStreamChunkEvent(event);
     return;
   }
   if (type === 'agent:tool:call') {
-    handleToolCallEvent(event, workspaceId);
+    handleToolCallEvent(event);
     return;
   }
   if (type === 'agent:stream:status') {
@@ -1919,7 +1890,7 @@ function handleNotification(method: string, params: unknown): void {
     return;
   }
   if (type === 'agent:stream:end') {
-    handleStreamEndEvent(event, workspaceId);
+    handleStreamEndEvent(event);
     return;
   }
   if (type === 'agent:queue:updated') {

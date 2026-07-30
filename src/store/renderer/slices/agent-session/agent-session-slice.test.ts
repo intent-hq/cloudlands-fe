@@ -34,7 +34,7 @@ import {
   chatSendFailed,
   chatSendStarted,
   chatInitialized,
-  streamCompleted,
+  streamEnded,
 } from '../chat-state/chat-state-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -2417,10 +2417,7 @@ describe('stream completion clears stale responding flags', () => {
     });
     let state = agentSessionReducer(initialState, upsertSession(existing));
 
-    state = agentSessionReducer(
-      state,
-      streamCompleted('a1', { lastAttemptedMessage: null, modelUnavailable: null }),
-    );
+    state = agentSessionReducer(state, streamEnded('a1'));
 
     expect(state.byAgentId['a1'].isStreaming).toBe(false);
     expect(state.byAgentId['a1'].isProcessing).toBe(false);

@@ -35,6 +35,7 @@ vi.mock('$features/agent/services/active-streams-tracker', () => {
   return {
     activeStreamsTracker: {
       fetchActiveStreams: vi.fn(),
+      startPolling: vi.fn(),
       getStreamingAgentIdsForWorkspace: vi.fn((wsId: string) => streamingIds.get(wsId) || []),
       subscribe: vi.fn(() => () => {}),
       __getStreamingIdsMap: () => streamingIds,

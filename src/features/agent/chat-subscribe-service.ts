@@ -31,16 +31,13 @@
  * First-emit `false` deliberately writes nothing so a subscription racing a
  * just-started optimistic turn (`chatSendStarted`) cannot clobber "Thinking".
  *
- * SOLE-WRITER INVARIANT: while a subscription is live for an agent (i.e. it
- * has emitted at least once — `hasLiveChatSubscription`), it is the sole
- * writer of that agent's transcript MESSAGE state. The firehose transcript
- * path (`agent-stream-service`) consults `hasLiveChatSubscription` and skips
- * its message writes, keeping only its chat-state finalize bookkeeping —
- * otherwise the FE-preassigned placeholder id and the daemon-keyed §7.1
- * message would double-apply as duplicate assistant rows. Until the first
- * emit lands (or if the subscribe fails), the firehose path still applies, so
- * a failed registration degrades to the previous behavior instead of a dead
- * transcript.
+ * SOLE-WRITER INVARIANT: the standing subscription is the sole writer of an
+ * agent's transcript MESSAGE state — the firehose events carry no content
+ * (the daemon events bridge dispatches content-free chat-state bookkeeping
+ * only), and the initial hydration (`chat-read-service`) writes only the
+ * persisted history. `hasLiveChatSubscription` reports whether this agent's
+ * subscription has emitted its seq-0 snapshot, which consumers (e.g. the
+ * bridge's agent:message refetch gate) use to skip redundant fetches.
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam,
  * the configured store, slice actions, the shared dedup util, and the logger
@@ -85,8 +82,7 @@ const subscriptions = new Map<string, SubscriptionEntry>();
 
 /**
  * True while the standing subscription for this agent is live AND has emitted
- * at least once. The firehose transcript writer (`agent-stream-service`) must
- * skip message writes while this holds (sole-writer invariant).
+ * at least once (seq-0 snapshot applied).
  */
 export function hasLiveChatSubscription(agentId: string): boolean {
   return subscriptions.get(agentId)?.hasEmitted === true;

@@ -54,7 +54,6 @@ import {
   clearCurrentlyViewedAgent,
   markAgentAsViewed,
 } from "$store/renderer/slices/unread-tracking/unread-tracking-slice";
-import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
 import {
   __resetChatSubscribeServiceForTests,
   hasLiveChatSubscription,
@@ -173,7 +172,7 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     const sub = openChat(agentId);
     sub.handler(transcript([]));
 
-    // Optimistic append (agent-stream-lifecycle path): renderer-minted id +
+    // Optimistic append (agent-send path): renderer-minted id +
     // client appMessageId.
     const appMessageId = "app-msg-opt-1";
     appStore.dispatch(
@@ -305,56 +304,4 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     expect(hasLiveChatSubscription(agentId)).toBe(false);
   });
 
-  it("while the subscription is live, the firehose stream path does not double-apply messages", () => {
-    const agentId = "agent-sub-solewriter";
-    seedSession(agentId);
-    const sub = openChat(agentId);
-
-    // Live turn arrives via the subscription (daemon-keyed message id).
-    const user = makeMessage("msg_user-sw", "go", {
-      role: "user",
-      timestamp: "2026-01-01T00:00:00.000Z",
-    });
-    const asst = makeMessage("0190a300-asst", "working", { isStreaming: true });
-    sub.handler(transcript([user, asst], true));
-
-    // The same turn's firehose payload under the FE-preassigned placeholder
-    // id must be ignored (subscription is the sole transcript writer).
-    appStore.dispatch(
-      agentStreamUpdateReceived({
-        agentId,
-        handlerSessionId: "h-1",
-        source: "sendMessage",
-        eventType: "chunk",
-        assistantMessageId: "msg_preassigned-placeholder",
-        assistantAppMessageId: "app-asst-sw",
-        contentBlocks: [{ type: "text", text: "working" }],
-      }),
-    );
-
-    const messages = selectAgentMessages.select(appStore.state, agentId);
-    expect(messages.filter((m) => m.role === "assistant")).toHaveLength(1);
-    expect(messages.some((m) => m.id === "msg_preassigned-placeholder")).toBe(false);
-  });
-
-  it("before the first emit, the firehose stream path still applies (no dead transcript on subscribe failure)", () => {
-    const agentId = "agent-sub-fallback";
-    seedSession(agentId);
-    openChat(agentId); // registered but no snapshot emitted yet
-
-    expect(hasLiveChatSubscription(agentId)).toBe(false);
-    appStore.dispatch(
-      agentStreamUpdateReceived({
-        agentId,
-        handlerSessionId: "h-2",
-        source: "sendMessage",
-        eventType: "chunk",
-        assistantMessageId: "msg_firehose-fallback",
-        contentBlocks: [{ type: "text", text: "streaming" }],
-      }),
-    );
-
-    const messages = selectAgentMessages.select(appStore.state, agentId);
-    expect(messages.some((m) => m.id === "msg_firehose-fallback")).toBe(true);
-  });
 });

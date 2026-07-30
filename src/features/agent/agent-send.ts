@@ -1,11 +1,11 @@
 /**
- * Agent Stream Lifecycle
+ * Agent send pipeline.
  *
- * Module-level functions for the sendMessage pipeline. Streaming and
- * terminal state arrive via the daemon events bridge (events.subscribe → Redux).
- *
- * Extracted from RefactoredAgentService class to enable deletion of agent.service.ts.
- * All `this` references have been replaced by module-level state or imported functions.
+ * Module-level `sendMessage()` — session restore/activation, the optimistic
+ * user message, and the single PROTOCOL.md §5.5 `agent.sendMessage` wire call.
+ * Streaming and terminal state arrive via the standing `chat.subscribe` delta
+ * stream (chat-subscribe-service) and the daemon events bridge — this module
+ * assembles no transcript state and owns no stream lifecycle.
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -27,13 +27,10 @@ import { errorBoundary } from './browser';
 import {
   activateAgentRequested,
   saveAgentSessionRequested,
-  agentStreamResetStreamingMessagesRequested,
-  agentStreamUpdateReceived,
   restoreAgentSessionRequested,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   addMessage as addAgentSessionMessage,
-  removeMessage,
   setAgentStreaming,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -47,7 +44,7 @@ import { workspaceMetrics } from '$store/renderer/slices/workspace/utils/workspa
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
-const logger = createLogger('AgentStreamLifecycle');
+const logger = createLogger('AgentSend');
 
 type ReduxAction = { type: string; payload?: unknown };
 
@@ -72,13 +69,6 @@ function isInFlightPromptDedupResponse(response: unknown): boolean {
   return (
     typeof candidate.error === 'string' && candidate.error.includes(IN_FLIGHT_PROMPT_DROPPED_ERROR)
   );
-}
-
-function getStreamErrorMessage(error: unknown): string | undefined {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  if (isRecord(error) && typeof error.message === 'string') return error.message;
-  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,37 +260,16 @@ export async function sendMessage(
           const assistantMessageId = createMessageId(`msg_${uuidv4()}`);
           const assistantAppMessageId = createAppMessageId();
 
-          // --- Retry boundary: only wraps stream setup + backend send ---
+          // --- Retry boundary: only wraps the backend send ---
           const result = await errorRecovery.executeWithRecovery(
             async () =>
               errorBoundary.wrap(
                 async () => {
-                  dispatchRedux(
-                    agentStreamResetStreamingMessagesRequested({
-                      workspaceId: workspace.id,
-                      agentId,
-                      reason: 'sendMessage_new_stream',
-                    }),
-                  );
-
-                  dispatchRedux(
-                    agentStreamUpdateReceived({
-                      workspaceId: workspace.id,
-                      agentId,
-                      handlerSessionId: session.id,
-                      source: 'sendMessage',
-                      eventType: 'started',
-                      assistantMessageId,
-                      assistantAppMessageId,
-                      contentBlocks: [{ type: 'text' as const, text: '' }],
-                      createInitialPlaceholder: true,
-                    }),
-                  );
-
                   // Streaming and terminal state for this turn arrive via the
-                  // daemon events bridge (events.subscribe → agent:stream:* /
-                  // agent:idle, PROTOCOL §7), which dispatches straight into
-                  // Redux — no per-agent stream listener is registered here.
+                  // standing chat.subscribe delta stream (PROTOCOL §7.1,
+                  // chat-subscribe-service) and the daemon events bridge
+                  // (events.subscribe → agent:stream:* / agent:idle, §7) —
+                  // no transcript state is assembled here.
                   //
                   // NOTE: The frontend no longer imposes a wall-clock timeout on the
                   // stream, and no client-side stall detection remains (the former
@@ -388,10 +357,10 @@ export async function sendMessage(
                     // Handle queued responses (agent mid-turn, or the auto-queue race
                     // when priority: "interrupt" arrives during turn startup). The
                     // daemon returns { success: true, queued: true, messageId? }
-                    // instead of preempting. Clear the optimistic placeholder and
-                    // streaming flag so the UI doesn't stay in "Thinking", and seed
-                    // the local queue when the daemon echoes the queued entry
-                    // (agent:queue:updated reconciles either way).
+                    // instead of preempting. Clear the streaming flag so the UI
+                    // doesn't stay in "Thinking", and seed the local queue when the
+                    // daemon echoes the queued entry (agent:queue:updated reconciles
+                    // either way).
                     if ('queued' in response && response.queued === true) {
                       logger.info(
                         'sendMessage auto-queued by daemon (mid-turn or turn-startup race)',
@@ -402,12 +371,6 @@ export async function sendMessage(
                             ?.id,
                         },
                       );
-
-                      // Remove the optimistic streaming placeholder so no stale
-                      // assistant message remains in the transcript. The
-                      // placeholder was added by the stream middleware under the
-                      // pre-assigned assistantMessageId on the 'started' event.
-                      dispatchRedux(removeMessage(agentId, assistantMessageId));
 
                       // Reset streaming flag so UI doesn't stay in "Thinking"
                       dispatchRedux(setAgentStreaming(session.id, false));
@@ -467,11 +430,11 @@ export async function sendMessage(
                       return;
                     }
                   }
-                  // NOTE: Do NOT dispatch error events for send failures here — a
+                  // NOTE: Do NOT clear streaming flags for send failures here — a
                   // backendRequest error propagates to the retry boundary, and a
-                  // per-attempt dispatch would flash isStreaming false→true→false
-                  // on each retry. The error dispatch happens AFTER all retries are
-                  // exhausted (see the !result.success block below).
+                  // per-attempt clear would flash isStreaming false→true→false
+                  // on each retry. The cleanup happens AFTER all retries are
+                  // exhausted (see the catch block below).
 
                   // Track metrics
                   workspaceMetrics.incrementMessageSent(workspace.id);
@@ -496,19 +459,7 @@ export async function sendMessage(
           // If saveSession or any pre-retry-boundary code throws after
           // setAgentStreaming(true), reset the streaming flag so the UI
           // doesn't stay stuck on "Thinking…" until the safety detector fires.
-          dispatchRedux(
-            agentStreamUpdateReceived({
-              workspaceId: workspace.id,
-              agentId,
-              handlerSessionId: session.id,
-              source: 'sendMessage',
-              eventType: 'error',
-              finishReason: 'sendMessage_setup_error',
-              error:
-                getStreamErrorMessage(streamingError) ||
-                m.agent_streamLifecycle_somethingWentWrong_error(),
-            }),
-          );
+          dispatchRedux(setAgentStreaming(session.id, false));
           throw streamingError;
         }
       }

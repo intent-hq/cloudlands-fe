@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentMessage, AgentSession, QueuedMessage, Workspace } from "$shared/types";
 
-// FAKE seams: agent-stream-lifecycle.sendMessage, appClient.agents.queue,
+// FAKE seams: agent-send.sendMessage, appClient.agents.queue,
 // appClient.agents.removeQueued, and appClient.agents.sendQueuedNow are all
 // spied so no IPC/daemon call (and never the real backend pipeline) happens.
 // The service runs against the REAL configured store so the middleware wiring,
@@ -37,7 +37,7 @@ const {
   ),
   loadChatTranscriptSpy: vi.fn(() => Promise.resolve()),
 }));
-vi.mock("$features/agent/agent-stream-lifecycle", () => ({
+vi.mock("$features/agent/agent-send", () => ({
   sendMessage: lifecycleSendMessage,
 }));
 // STAB-55: the send path hydrates a non-hydrated agent via the chat-read
@@ -91,9 +91,10 @@ import {
   chatReset,
   chatSendFailed,
   sendMessage,
+  streamEnded,
+  streamFailed,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
-import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
 import type { AgentIdleEvent } from "$features/events/types";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
@@ -145,7 +146,7 @@ async function warmDeps(): Promise<void> {
     import("$store/renderer/slices/workspace/workspace-selectors"),
     import("$store/renderer/slices/agent-session/agent-session-selectors"),
     import("$store/renderer/slices/agent-queue/agent-queue-selectors"),
-    import("$features/agent/agent-stream-lifecycle"),
+    import("$features/agent/agent-send"),
   ]);
 }
 
@@ -1157,16 +1158,10 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
 
     // A's turn fails — the reducer preserves the record, so Try again
-    // retries A.
-    appStore.dispatch(
-      agentStreamUpdateReceived({
-        agentId: AGENT,
-        handlerSessionId: AGENT,
-        source: "sendMessage",
-        eventType: "error",
-        error: "turn A blew up",
-      }),
-    );
+    // retries A. (Bridge dispatch sequence for agent:failed: streamFailed
+    // bookkeeping, then chatSendFailed with the wire error.)
+    appStore.dispatch(streamFailed(AGENT));
+    appStore.dispatch(chatSendFailed(AGENT, "turn A blew up"));
     expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
       text: "message A",
     });
@@ -1206,14 +1201,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
       "qm-B": { seq: 1, record: { text: "message B" }, turnId: "qm-B" },
     });
 
-    appStore.dispatch(
-      agentStreamUpdateReceived({
-        agentId: AGENT,
-        handlerSessionId: AGENT,
-        source: "sendMessage",
-        eventType: "complete",
-      }),
-    );
+    appStore.dispatch(streamEnded(AGENT));
     // Disposition-neutral terminal — the active record survives (#984).
     expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
       text: "message A",
@@ -1275,27 +1263,13 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     await flush();
 
     // A's disposition-neutral terminal, then the drain start for B.
-    appStore.dispatch(
-      agentStreamUpdateReceived({
-        agentId: AGENT,
-        handlerSessionId: AGENT,
-        source: "sendMessage",
-        eventType: "complete",
-      }),
-    );
+    appStore.dispatch(streamEnded(AGENT));
     appStore.dispatch(replaceAgentQueue(AGENT, []));
     appStore.dispatch(chatQueueProcessingReceived(AGENT, "qm-B"));
 
     // B's drained turn fails — the failure banner appears with B recorded.
-    appStore.dispatch(
-      agentStreamUpdateReceived({
-        agentId: AGENT,
-        handlerSessionId: AGENT,
-        source: "sendMessage",
-        eventType: "error",
-        error: "turn B blew up",
-      }),
-    );
+    appStore.dispatch(streamFailed(AGENT));
+    appStore.dispatch(chatSendFailed(AGENT, "turn B blew up"));
     expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
       text: "message B",
     });

@@ -7,7 +7,7 @@ import type { AgentSession } from "$shared/types/agent-session";
 // `appClient.agents.rename` are stubbed. The mutation middleware runs against
 // the REAL configured store so the restore/activate/save + deletion + rename
 // async actions resolve through the real action.success/failure path and
-// their promises settle exactly as agent-stream-lifecycle (and the deletion/
+// their promises settle exactly as agent-send (and the deletion/
 // rename triggers) expect.
 const { get, del, list, rename } = vi.hoisted(() => ({
   get: vi.fn(),

@@ -169,7 +169,6 @@ import {
   chatSendStarted,
   chatStopCompleted,
   chatStopInitiated,
-  streamCompleted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
 import {
@@ -636,7 +635,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
 
     handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
 
-    // streamCompleted bookkeeping cleared the session busy flags without
+    // streamEnded bookkeeping cleared the session busy flags without
     // touching the (empty) transcript. The seeded status stays Active until
     // the lifecycle `agent:idle` lands, so assert the flags directly here.
     expect(readAssistantMessages()).toHaveLength(0);
@@ -5212,14 +5211,7 @@ describe('daemonEventsBridge (daemon-side redrive clears stale error banner — 
     const handler = capturedHandlers[0]!;
 
     appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
-    appStore.dispatch(
-      streamCompleted(AGENT, {
-        lastAttemptedMessage: null,
-        modelUnavailable: { failedModel: 'model-a', nextAvailableModel: 'model-b' },
-      }),
-    );
     expect(readChatAgent()?.error).toBe('previous turn failed');
-    expect(readChatAgent()?.modelUnavailable).not.toBeNull();
 
     // Daemon-side redrive (coordinator sendMessage / another client's retry)
     // flips the agent back to active — a turn this FE never initiated.
