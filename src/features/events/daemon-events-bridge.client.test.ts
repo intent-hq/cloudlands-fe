@@ -152,9 +152,11 @@ import { selectContextItems } from '$store/renderer/slices/context/context-selec
 import {
   chatQueuedRetryRecordSet,
   chatReset,
+  chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
   chatStopInitiated,
+  streamCompleted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
 import {
@@ -5884,6 +5886,182 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     });
   });
 });
+
+describe('daemonEventsBridge (daemon-side redrive clears stale error banner — monorepo#1106)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function readChatAgent() {
+    return appStore.state.chatState.byAgentId[AGENT];
+  }
+
+  it('agent:status-changed error→active clears the stale error and modelUnavailable', async () => {
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
+    appStore.dispatch(
+      streamCompleted(AGENT, {
+        lastAttemptedMessage: null,
+        modelUnavailable: { failedModel: 'model-a', nextAvailableModel: 'model-b' },
+      }),
+    );
+    expect(readChatAgent()?.error).toBe('previous turn failed');
+    expect(readChatAgent()?.modelUnavailable).not.toBeNull();
+
+    // Daemon-side redrive (coordinator sendMessage / another client's retry)
+    // flips the agent back to active — a turn this FE never initiated.
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.modelUnavailable).toBeNull();
+  });
+
+  it('agent.retry wire sequence (error→pending isActive:false, then pending→active) clears the banner', async () => {
+    // agent_retry persists Pending BEFORE draining (persist_retry_status), so
+    // the redrive arrives as error→pending with isActive:false, then
+    // pending→active. The pending edge consumes the error prior status, so it
+    // must clear the banner itself — the later active tick reads
+    // priorStatus 'pending' and cannot.
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'pending', isActive: false }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+  });
+
+  it('failure-toast agent.retry repro: agent:failed → error → pending → active → queue:processing clears the banner', async () => {
+    // Second live repro on monorepo#1106: the failure-toast Retry is
+    // FE-initiated but routes through `agent.retry`, NOT
+    // chat-send-service.dispatchToLifecycle, so the #1044 enqueue-success
+    // clear never fires. Confirmed daemon sequence: agent:failed (banner up)
+    // → status-changed {error} → status-changed {pending} → {active,
+    // isActive:true} → agent:queue:processing carrying the failed turn's
+    // ORIGINAL turnId (#1022 stable-across-requeue). The banner must be gone
+    // once the redriven turn is running.
+    const turnId = 'user-msg-792780f7';
+    seedSession({ status: AgentStatus.Active });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:failed', {
+        agentId: AGENT,
+        error: 'session/prompt idle timeout (1800s of silence)',
+        status: 'error',
+        turnId,
+      }),
+    );
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'error', isActive: false }),
+    );
+    expect(readChatAgent()?.error).toBe('session/prompt idle timeout (1800s of silence)');
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'pending', isActive: false }),
+    );
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+    handler(
+      notification('agent:queue:processing', {
+        agentId: AGENT,
+        messageId: 'queued-msg-1',
+        content: 'retried message',
+        turnId,
+      }),
+    );
+
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.modelUnavailable).toBeNull();
+  });
+
+  it('clears on error→(isActive:true) even when the payload omits a string status', async () => {
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
+
+    handler(notification('agent:status-changed', { agentId: AGENT, isActive: true }));
+
+    expect(readChatAgent()?.error).toBeNull();
+  });
+
+  it('agent:status-changed error→idle (no new turn) keeps the banner', async () => {
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'idle', isActive: false }),
+    );
+
+    expect(readChatAgent()?.error).toBe('previous turn failed');
+  });
+
+  it('mid-turn active status tick with a non-error prior status never wipes a banner (#1044 semantics)', async () => {
+    seedSession({ status: AgentStatus.Active });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // e.g. an enqueue-failure banner raised while the agent is already active
+    appStore.dispatch(chatSendFailed(AGENT, 'enqueue failed'));
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+
+    expect(readChatAgent()?.error).toBe('enqueue failed');
+  });
+
+  it('agent:stream:start on an errored agent clears the banner via chatSendStarted', async () => {
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
+    expect(readChatAgent()?.error).toBe('previous turn failed');
+
+    handler(
+      notification('agent:stream:start', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        streamId: STREAM_ID,
+      }),
+    );
+
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.modelUnavailable).toBeNull();
+  });
+});
+
 
 describe('daemonEventsBridge (changes refresh — git:commit/git:pull/changes:tracked → refreshRequested)', () => {
   beforeAll(() => {

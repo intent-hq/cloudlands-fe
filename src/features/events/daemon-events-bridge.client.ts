@@ -138,6 +138,8 @@ import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agen
 import {
   streamStatusReceived,
   chatQueueProcessingReceived,
+  chatErrorCleared,
+  chatModelUnavailableCleared,
   chatSendFailed,
   chatSendStarted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -2172,6 +2174,60 @@ function handleNotification(method: string, params: unknown): void {
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
+    }
+  }
+
+  // monorepo#1106: a redrive that bypasses chat-send-service — coordinator
+  // `agent.sendMessage`, another client's `agent.retry`, or this FE's own
+  // failure-toast Retry (also `agent.retry`, which never routes through
+  // dispatchToLifecycle) — starts a new turn without the #1044
+  // enqueue-success clear, so the previous turn's failure banner persists
+  // over the live turn ("errored" and "processing" simultaneously). Keyed
+  // off the turn-start status edges here (with `agent:stream:start` /
+  // `agent:queue:processing` as the other turn-start clears), NOT the send
+  // path, so every redrive shape is covered. Clear the stale `chatError` /
+  // `modelUnavailable` when the agent leaves the error state for a
+  // turn-starting one. Two wire shapes cover the redrive family:
+  //   - `agent.sendMessage` on an errored agent goes straight error→active;
+  //   - `agent.retry` persists Pending BEFORE draining (persist_retry_status),
+  //     so the FE sees error→pending (isActive:false) first — that edge
+  //     consumes the error prior status, so `pending` must clear too or the
+  //     follow-up pending→active tick reads priorStatus 'pending' and never
+  //     fires. An empty-queue retry goes error→idle instead, which correctly
+  //     keeps the banner (nothing was redriven).
+  // Gated on the PRIOR session status (read before the `eventReceived`
+  // dispatch below applies the transition) so a mid-turn status tick — e.g.
+  // an isStreaming flag change while an enqueue-failure banner is up — never
+  // wipes a banner set while the agent was already active (#1044/#999
+  // semantics preserved). Retry records stay parked: their promotion remains
+  // turnId-exact via `agent:queue:processing` (monorepo#1057). Side effect
+  // only — falls through to the timeline dispatch below.
+  if (type === 'agent:status-changed') {
+    const data = (event as { data?: Record<string, unknown> }).data;
+    const agentId = data?.agentId;
+    const status = typeof data?.status === 'string' ? data.status : undefined;
+    const startsTurn =
+      data?.isActive === true ||
+      status === 'active' ||
+      status === 'responding' ||
+      status === 'pending';
+    if (
+      typeof agentId === 'string' &&
+      status !== 'error' &&
+      status !== 'failed' &&
+      startsTurn
+    ) {
+      const priorStatus: string | undefined =
+        appStore.state.agentSessions.byAgentId[agentId]?.status;
+      if (priorStatus === 'error' || priorStatus === 'failed') {
+        const chatAgent = appStore.state.chatState?.byAgentId[agentId];
+        if (chatAgent?.error) {
+          appStore.dispatch(chatErrorCleared(agentId));
+        }
+        if (chatAgent?.modelUnavailable) {
+          appStore.dispatch(chatModelUnavailableCleared(agentId));
+        }
+      }
     }
   }
 
