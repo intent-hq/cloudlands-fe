@@ -9,15 +9,19 @@ import type { AgentSession } from "$shared/types/agent-session";
 // async actions resolve through the real action.success/failure path and
 // their promises settle exactly as agent-send (and the deletion/
 // rename triggers) expect.
-const { get, del, list, rename, dismissQuestions } = vi.hoisted(() => ({
+const { get, del, list, rename, dismissQuestions, stop, cancelSubscriptions } = vi.hoisted(() => ({
   get: vi.fn(),
   del: vi.fn(),
   list: vi.fn(),
   rename: vi.fn(),
   dismissQuestions: vi.fn(),
+  stop: vi.fn(),
+  cancelSubscriptions: vi.fn(),
 }));
 vi.mock("$lib/client", () => ({
-  appClient: { agents: { get, delete: del, list, rename, dismissQuestions } },
+  appClient: {
+    agents: { get, delete: del, list, rename, dismissQuestions, stop, cancelSubscriptions },
+  },
 }));
 
 // The deletion handlers lazily `import("svelte-sonner")` for the undo/error
@@ -51,8 +55,10 @@ import {
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
+  stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
+import { cancelAgentSubscriptionsRequested } from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice";
 import {
   closeTab,
   initializeLayout,
@@ -823,3 +829,122 @@ describe("agentMutationService — dismiss questions (optimistic marker + rollba
     expect(readSession(AGENT)).toBeUndefined();
   });
 });
+
+describe("agentMutationService — stop session (stopAgentSessionRequested → agent.stop)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+  afterEach(() => {
+    stop.mockReset();
+  });
+
+  it("forwards agent.stop via the seam and resolves the action promise", async () => {
+    stop.mockResolvedValueOnce({ success: true });
+
+    const action = stopAgentSessionRequested("ws-stop-ok", "agent-stop-ok");
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(stop).toHaveBeenCalledWith("agent-stop-ok");
+  });
+
+  it("rejects when the daemon reports failure", async () => {
+    stop.mockResolvedValueOnce({ success: false, error: "stop boom" });
+
+    const action = stopAgentSessionRequested("ws-stop-fail", "agent-stop-fail");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("stop boom");
+  });
+
+  it("rejects when the seam throws (transport failure)", async () => {
+    stop.mockRejectedValueOnce(new Error("wire down"));
+
+    const action = stopAgentSessionRequested("ws-stop-throw", "agent-stop-throw");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("wire down");
+  });
+});
+
+describe("agentMutationService — cancel subscriptions (scoped agent.cancelSubscriptions)", () => {
+  const toastMock = toast as unknown as { error: ReturnType<typeof vi.fn> };
+
+  beforeAll(() => {
+    appStore.init();
+  });
+  afterEach(() => {
+    cancelSubscriptions.mockReset();
+    toastMock.error.mockClear();
+  });
+
+  it("forwards the subscriptionId-scoped params and resolves the promise", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({ success: true });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-1", "agent-parent-1", {
+      subscriptionId: "watch-1",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(cancelSubscriptions).toHaveBeenCalledWith({
+      agentId: "agent-parent-1",
+      workspaceId: "ws-cancel-1",
+      subscriptionId: "watch-1",
+    });
+  });
+
+  it("forwards the groupId-scoped params and resolves the promise", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({ success: true });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-2", "agent-parent-2", {
+      groupId: "grp-1",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(cancelSubscriptions).toHaveBeenCalledWith({
+      agentId: "agent-parent-2",
+      workspaceId: "ws-cancel-2",
+      groupId: "grp-1",
+    });
+  });
+
+  it("omits both optional ids for an unscoped cancel", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({ success: true });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-3", "agent-parent-3");
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(cancelSubscriptions).toHaveBeenCalledWith({
+      agentId: "agent-parent-3",
+      workspaceId: "ws-cancel-3",
+    });
+  });
+
+  it("rejects and surfaces a toast when the daemon reports failure (e.g. -32602 unknown id)", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({
+      success: false,
+      error: "unknown subscription id: watch-missing",
+    });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-4", "agent-parent-4", {
+      subscriptionId: "watch-missing",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("unknown subscription id");
+    // Toast import is lazy; flush the microtask queue before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(toastMock.error).toHaveBeenCalledWith("unknown subscription id: watch-missing");
+  });
+
+  it("rejects when the seam throws (transport failure)", async () => {
+    cancelSubscriptions.mockRejectedValueOnce(new Error("wire down"));
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-5", "agent-parent-5", {
+      groupId: "grp-x",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("wire down");
+  });
+});
+
