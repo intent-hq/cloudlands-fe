@@ -315,13 +315,13 @@ function reduceQueuedRecordRemoved(
   return updateAgent(state, agentId, { queuedRetryRecords: remaining });
 }
 
-function reduceChunkReceived(
+function reduceActivityReceived(
   state: ChatStateSlice,
   agentId: string,
-  isTextChunk: boolean,
+  isStreamActivity: boolean,
   timestamp: number,
 ): ChatStateSlice {
-  if (!isTextChunk) {
+  if (!isStreamActivity) {
     return updateAgent(state, agentId, {
       lastChunkTime: timestamp,
       lastChunkReceivedAt: timestamp,
@@ -534,19 +534,24 @@ export const chatStreamingReconciled = createAction(
 // --- Streaming event actions (dispatched by the daemon events bridge) ---
 
 /**
- * Live stream activity tick (`agent:stream:chunk` / `agent:tool:call`,
+ * Live stream activity tick (`agent:stream:activity` / `agent:tool:call`,
  * PROTOCOL §7). Content-free: the standing `chat.subscribe` delta stream
  * owns the transcript; this action only drives the chat-state spinner
  * bookkeeping (`lastChunkTime`, the `receivedFirstChunk` flip that appends
- * the "Streaming response…" status entry for text chunks).
+ * the "Streaming response…" status entry on the turn's first
+ * `agent:stream:activity` ping). `isStreamActivity` is `true` for
+ * `agent:stream:activity` (flips `receivedFirstChunk`) and `false` for
+ * `agent:tool:call` (timestamp refresh only). The wire signal is
+ * leading-edge throttled per agent (first ping immediate, then ≤1/s), so
+ * timestamps refresh at most once a second mid-turn.
  */
-export const streamChunkReceived = createAction(
-  'chatState/streamChunkReceived',
-  (agentId: string, isTextChunk: boolean, timestamp = Date.now()): [string, boolean, number] => [
-    agentId,
-    isTextChunk,
-    timestamp,
-  ],
+export const streamActivityReceived = createAction(
+  'chatState/streamActivityReceived',
+  (
+    agentId: string,
+    isStreamActivity: boolean,
+    timestamp = Date.now(),
+  ): [string, boolean, number] => [agentId, isStreamActivity, timestamp],
 );
 
 /**
@@ -773,8 +778,8 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     }
     return state;
   })
-  .with(streamChunkReceived, (state, { payload: [agentId, isTextChunk, timestamp] }) =>
-    reduceChunkReceived(state, agentId, isTextChunk, timestamp),
+  .with(streamActivityReceived, (state, { payload: [agentId, isStreamActivity, timestamp] }) =>
+    reduceActivityReceived(state, agentId, isStreamActivity, timestamp),
   )
   .with(streamEnded, (state, { payload: [agentId, stopReason] }) =>
     reduceStreamEnded(state, agentId, stopReason),
