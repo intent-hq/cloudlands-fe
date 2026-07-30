@@ -91,7 +91,6 @@ export default defineConfig(async () => {
         '**/features/agent/main/__tests__/persistence-ipc.test.ts',
         '**/tests/unit/edge-cases.test.ts',
         '**/tests/integration/workspace-operations.test.ts',
-        '**/lib/utils/__tests__/markdown-processor.test.ts',
         // Pre-existing test-fixture bug newly surfaced by the `**/test/**` →
         // `test/**` exclude narrowing (unrelated to the scripted-transport
         // fixture): the faker workspace-name assertion expects "Workspace"
