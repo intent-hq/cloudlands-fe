@@ -643,6 +643,35 @@ describe("LiveChatClient.subscribe (standing §7.1 subscription)", () => {
     expect(user.metadata).toEqual(metadata);
     off();
   });
+
+  it("drops a malformed array-shaped entity metadata (JSON objects only)", async () => {
+    // `typeof [] === "object"` — a malformed wire payload carrying an array
+    // must not propagate an invalid shape into `message.metadata`.
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[] }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+
+    const malformedRow = {
+      agentId: "agent-1",
+      messageId: "0190a1c0-user4",
+      role: "user",
+      messageSeq: 1,
+      timestamp: "2026-06-27T01:00:04.000Z",
+      streamingComplete: true,
+      metadata: ["not", "an", "object"],
+      block: { type: "text", id: "0190a1c0-user4:0", text: "Malformed row" },
+    };
+    deltaPush("sub-1", 1, { added: [malformedRow], updated: [], removedIds: [] });
+
+    const last = seen[seen.length - 1];
+    const user = last.messages[1] as { id: string; metadata?: unknown };
+    expect(user.id).toBe("0190a1c0-user4");
+    expect(user.metadata).toBeUndefined();
+    off();
+  });
 });
 
 // ---------------------------------------------------------------------------

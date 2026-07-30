@@ -160,7 +160,7 @@ function parseDeltaEntity(raw: unknown): ChatDeltaEntity | null {
     ...(typeof e.messageSeq === "number" ? { messageSeq: e.messageSeq } : {}),
     ...(typeof e.timestamp === "string" ? { timestamp: e.timestamp } : {}),
     ...(e.streamingComplete === true ? { streamingComplete: true } : {}),
-    ...(e.metadata && typeof e.metadata === "object"
+    ...(e.metadata && typeof e.metadata === "object" && !Array.isArray(e.metadata)
       ? { metadata: e.metadata as AgentMessage["metadata"] }
       : {}),
   };
