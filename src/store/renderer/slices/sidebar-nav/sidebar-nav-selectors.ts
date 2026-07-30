@@ -77,10 +77,6 @@ function toChiefThreadPreview(session: AgentSession): ChiefThreadPreview {
 }
 
 // ── Direct state selectors ──
-export const selectActiveStreamsVersion = store.createSelector(
-  (state) => state.sidebarNav.activeStreamsVersion,
-);
-
 export const selectExpandedItem = store.createSelector((state) => state.sidebarNav.expandedItem);
 
 export const selectIsCardPinned = store.createSelector((state) => state.sidebarNav.isCardPinned);

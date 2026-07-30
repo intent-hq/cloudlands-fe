@@ -21,6 +21,7 @@ vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
 vi.mock('$features/agent/services/active-streams-tracker', () => ({
   activeStreamsTracker: {
     fetchActiveStreams: vi.fn(),
+    startPolling: vi.fn(),
     getStreamingAgentIdsForWorkspace: vi.fn(() => []),
     subscribe: vi.fn(() => () => {}),
   },

@@ -18,6 +18,7 @@ import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
 import { createAgentSubscriptionReadMiddleware } from "$features/agent/agent-subscription-read-service";
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
+import { createChatSubscribeMiddleware } from "$features/agent/chat-subscribe-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge.client";
@@ -29,7 +30,6 @@ import { createModelReloadMiddleware } from "$features/settings/model-reload-ser
 import { createProviderSettingsPersistenceMiddleware } from "$features/settings/provider-settings-persistence-service";
 import { createProviderAvailabilityCheckMiddleware } from "$features/providers/provider-availability-check-service";
 import { createHostRequirementsCheckMiddleware } from "$features/system/host-requirements-check-service";
-import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
 import { createEditRegenerateMiddleware } from "$features/agent/edit-regenerate-service";
@@ -78,7 +78,6 @@ import { createWorkspaceInitializerPersistenceMiddleware } from "./middlewares/w
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
-import { createActiveStreamsReduxBridge } from "$features/agent/active-streams-redux-bridge";
 import { createDaemonHealthMiddleware } from "./middlewares/daemon-health-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
@@ -140,10 +139,15 @@ function buildMiddleware(): StoreMiddleware[] {
     // so opening an agent loads its full retained transcript via
     // `agents.getConversation` instead of showing an empty conversation.
     createChatReadMiddleware(),
+    // Keep the open chat's transcript live from the standing `chat.subscribe`
+    // stream (PROTOCOL §7.1): on `initializeChatRequested` a per-agent
+    // subscription reconciles snapshot+deltas into the agent-session slice,
+    // swapping/tearing down on agent switch, chat close, and agent deletion.
+    createChatSubscribeMiddleware(),
     // Give the (post-saga) `sendMessage` action a real consumer so pressing
-    // Send in ChatPanel routes through `agent-stream-lifecycle.sendMessage()`
-    // again — producing a user message and a live-streaming assistant response
-    // — instead of being a no-op.
+    // Send in ChatPanel routes through `agent-send.sendMessage()` — producing
+    // a user message and a live-streaming assistant response — instead of
+    // being a no-op.
     createChatSendMiddleware(),
     // Give the (post-saga) permission triggers (`approvePermission` /
     // `denyPermission` / `cancelPermission` / `selectPermissionOption`) a real
@@ -166,13 +170,6 @@ function buildMiddleware(): StoreMiddleware[] {
     // connection events to derive tri-state daemon health (healthy/degraded/down)
     // plus stats payload for the health indicator UI.
     createDaemonHealthMiddleware(),
-    // Bridge activeStreamsTracker updates into Redux so sidebar workspace cards
-    // re-render when active-stream data arrives after mount (app refresh case).
-    // Subscribes once at boot and dispatches `bumpActiveStreamsVersion` when
-    // the tracker notifies listeners, triggering sidebar deriveds to recompute.
-    // Also ensures `activeStreamsTracker.startPolling()` is called independently
-    // of WindowTitleBar mounting.
-    createActiveStreamsReduxBridge(),
     // Boot-hydrate the BE-owned settings slices (providers, background-agents,
     // MCP, model overrides) by calling `settings.list` once on first dispatched
     // action, then keep them in sync via the `settings:changed` routing the
@@ -216,12 +213,6 @@ function buildMiddleware(): StoreMiddleware[] {
     // hostRequirements slice in a terminal state for the onboarding gate —
     // failures fold to not-available, never stuck on "checking".
     createHostRequirementsCheckMiddleware(),
-    // Give the (post-saga) `agentStreamUpdateReceived` action a real consumer
-    // so a streaming agent's text/tool blocks grow live in the chat panel
-    // (placeholder on first event, in-place block update on subsequent events,
-    // finalize on complete/error/timeout) instead of staying invisible until
-    // the conversation is re-fetched.
-    createAgentStreamMiddleware(),
     // Give the (post-saga) agent-creation triggers (create / create-with-
     // specialist / run-for-note / activate-initial) real handlers so Cmd/Ctrl+T,
     // the New-agent / specialist UI, the NoteMetadataBar run button, and fresh-
@@ -229,9 +220,9 @@ function buildMiddleware(): StoreMiddleware[] {
     // open its tab again.
     createAgentCreationMiddleware(),
     // Give the (post-saga) agent-session mutation triggers (restore / activate
-    // / save) real handlers so `agent-stream-lifecycle.sendMessage()` — which
-    // awaits each `action.promise` before dispatching the user message and
-    // opening the stream — can resolve again instead of hanging. Restore reads
+    // / save) real handlers so `agent-send.sendMessage()` — which awaits each
+    // `action.promise` before dispatching the user message and issuing the
+    // wire send — can resolve again instead of hanging. Restore reads
     // via `appClient.agents.get`; activate marks the session ACTIVE and
     // refetches; save is a no-op on the mock seam (Redux IS the state).
     createAgentMutationMiddleware(),

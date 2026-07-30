@@ -566,6 +566,20 @@ export interface AgentsClient {
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe;
 }
 
+/**
+ * Reconciled `chat.subscribe` transcript state emitted by the standing
+ * subscription (PROTOCOL §7.1): the seq-0 message page reduced with every
+ * block-granularity delta. `isStreaming` derives from the snapshot's
+ * synthetic in-flight message / activity flags and the delta stream's
+ * terminal `streamingComplete` frames.
+ */
+export interface ChatTranscript {
+  messages: AgentMessage[];
+  truncated: boolean;
+  totalMessages: number;
+  isStreaming: boolean;
+}
+
 export interface ChatClient {
   /**
    * One-shot seq-0 snapshot from the `chat.subscribe` channel (PROTOCOL §7.1).
@@ -579,6 +593,15 @@ export interface ChatClient {
   subscribeSnapshot(
     agentId: string,
   ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
+  /**
+   * Standing per-agent `chat.subscribe` subscription (PROTOCOL §7.1). Keeps
+   * the registration open and invokes `handler` with the reconciled
+   * transcript on the seq-0 snapshot and after every applied block delta.
+   * Self-healing: a sequence gap resnapshots via a fresh registration, a
+   * transport reconnect re-registers, and pushes racing the subscribe reply
+   * are buffered pre-ack. Returns the disposer (sends `chat.unsubscribe`).
+   */
+  subscribe(agentId: string, handler: (transcript: ChatTranscript) => void): Unsubscribe;
 }
 
 /** Parameters for `terminal.create` (PROTOCOL §5.13). `command` omitted ⇒ default shell. */

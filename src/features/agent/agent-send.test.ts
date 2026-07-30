@@ -1,17 +1,19 @@
 /**
- * Wire-level regression test for the chat send path (empty-transcript bug).
+ * Wire-level regression suite for the agent send pipeline (`agent-send.ts`),
+ * ported from the deleted `agent-stream-lifecycle.send-wire.test.ts` after the
+ * firehose accumulator removal (monorepo#1127).
  *
- * Drives the REAL agent-stream-lifecycle `sendMessage()` against the REAL
- * configured store and REAL mutation middleware — only
- * `backend-transport.backendRequest` is mocked, returning PROTOCOL.md
- * §5.5-shaped daemon payloads captured from a live daemon (a fresh `pending`
- * agent projection with no acpSessionId).
+ * Drives the REAL `sendMessage()` against the REAL configured store and REAL
+ * mutation middleware — only `backend-transport.backendRequest` is mocked,
+ * returning PROTOCOL.md §5.5-shaped daemon payloads captured from a live
+ * daemon (a fresh `pending` agent projection with no acpSessionId).
  *
  * `sendMessage()` calls `backendRequest("agent.sendMessage", …)` directly on
  * the BackendTransport seam (no mock-IPC hop). Asserts the daemon receives
  * `agent.sendMessage` with the exact PROTOCOL.md §5.5 params, and covers the
  * success, queued ({success:true, queued:true}) and error envelopes plus
- * transport-level rejections.
+ * transport-level rejections. Streaming/terminal state is out of scope here —
+ * it arrives via the standing chat.subscribe delta stream (§7.1).
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -35,11 +37,15 @@ import {
   bulkUpsertSessions,
   clearAllSessions,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
-import { sendMessage as lifecycleSendMessage } from "$features/agent/agent-stream-lifecycle";
+import { sendMessage } from "./agent-send";
 import { AgentStatus } from "$shared/types";
 import type { AgentSession, Workspace, QueuedMessage } from "$shared/types";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
-import { chatLastAttemptedMessageSet, chatReset } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  chatLastAttemptedMessageSet,
+  chatReset,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
+import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from "$shared/constants/agent-streaming";
 
 const WS = "c6df5dce-f8c6-44fe-8a2d-227a8815f2af";
 const AGENT = "agent-373f33d3-0a26-4b8b-9ecf-f114bfa47df4";
@@ -100,7 +106,7 @@ function seedPendingSession(): void {
   );
 }
 
-describe("send path wire contract (pending agent, first message)", () => {
+describe("agent-send wire contract (pending agent, first message)", () => {
   beforeAll(() => {
     appStore.init();
   });
@@ -122,8 +128,8 @@ describe("send path wire contract (pending agent, first message)", () => {
     appStore.dispatch(chatReset(AGENT));
   });
 
-  it("emits agent.sendMessage on the wire for a first send to a pending agent", async () => {
-    await lifecycleSendMessage(AGENT, "persist me please", workspace(), {});
+  it("emits agent.sendMessage on the wire for a first send to a pending agent (§5.5 shape)", async () => {
+    await sendMessage(AGENT, "persist me please", workspace(), {});
 
     const calls = backendRequestMock.mock.calls.map((c) => c[0]);
     // The daemon MUST receive the send — this is the empty-transcript regression.
@@ -148,13 +154,13 @@ describe("send path wire contract (pending agent, first message)", () => {
     expect(params).not.toHaveProperty("sessionId");
   }, 30000);
 
-  it("handles queued response (auto-queue race) by clearing placeholder and seeding queue", async () => {
-    // Regression test for STAB-XX: when agent.sendMessage returns
-    // { success: true, queued: true, queuedMessage } (auto-queue race during
-    // interrupt), the FE must NOT pretend a stream is starting. It should:
-    // 1. Clear the optimistic streaming placeholder (no stale message remains)
-    // 2. Reset isStreaming flag
-    // 3. Seed the local queue with queuedMessage (like chat-send-service L167-199)
+  it("handles queued response (auto-queue race) by clearing streaming and seeding the queue", async () => {
+    // When agent.sendMessage returns { success: true, queued: true,
+    // queuedMessage } (auto-queue race during interrupt), the FE must NOT
+    // pretend a stream is starting. It should:
+    // 1. Reset the isStreaming flag (no stale "Thinking")
+    // 2. Seed the local queue with queuedMessage (like the chat-send-service
+    //    queue-on-send path)
     const queuedMessage: QueuedMessage = {
       id: "queued-msg-1",
       content: "persist me please",
@@ -171,7 +177,7 @@ describe("send path wire contract (pending agent, first message)", () => {
       return {};
     });
 
-    await lifecycleSendMessage(AGENT, "persist me please", workspace(), {
+    await sendMessage(AGENT, "persist me please", workspace(), {
       priority: "interrupt",
     });
 
@@ -211,10 +217,10 @@ describe("send path wire contract (pending agent, first message)", () => {
     });
 
     // The send path (chat-send-service) records the attempt into the single
-    // slot BEFORE the lifecycle call — reproduce that mid-turn overwrite.
+    // slot BEFORE the send call — reproduce that mid-turn overwrite.
     appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "auto-queued send" }));
 
-    await lifecycleSendMessage(AGENT, "auto-queued send", workspace(), {});
+    await sendMessage(AGENT, "auto-queued send", workspace(), {});
 
     const chatAgent = appStore.state.chatState.byAgentId[AGENT];
     // The record is parked turn-scoped under the daemon-echoed id…
@@ -244,7 +250,7 @@ describe("send path wire contract (pending agent, first message)", () => {
       return {};
     });
 
-    await lifecycleSendMessage(AGENT, "auto-queued with turn", workspace(), {});
+    await sendMessage(AGENT, "auto-queued with turn", workspace(), {});
 
     const chatAgent = appStore.state.chatState.byAgentId[AGENT];
     expect(chatAgent.queuedRetryRecords["queued-msg-3"]).toMatchObject({
@@ -271,7 +277,7 @@ describe("send path wire contract (pending agent, first message)", () => {
       return {};
     });
 
-    await lifecycleSendMessage(AGENT, "no turn id", workspace(), {});
+    await sendMessage(AGENT, "no turn id", workspace(), {});
 
     const chatAgent = appStore.state.chatState.byAgentId[AGENT];
     expect(chatAgent.queuedRetryRecords).toEqual({});
@@ -291,13 +297,34 @@ describe("send path wire contract (pending agent, first message)", () => {
 
     appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: "no echo" }));
 
-    await lifecycleSendMessage(AGENT, "no echo", workspace(), {});
+    await sendMessage(AGENT, "no echo", workspace(), {});
 
     // No stable id to park under → current behavior preserved: the single
     // slot keeps the payload and no record is parked.
     const chatAgent = appStore.state.chatState.byAgentId[AGENT];
     expect(chatAgent.lastAttemptedMessage).toEqual({ text: "no echo" });
     expect(chatAgent.queuedRetryRecords).toEqual({});
+  }, 30000);
+
+  it("treats a duplicate in-flight prompt response as a benign no-op", async () => {
+    // The daemon drops a duplicate prompt for an in-flight turn and surfaces
+    // it via IN_FLIGHT_PROMPT_DROPPED_ERROR inside a success:false envelope —
+    // the send must resolve without throwing and without a retry storm.
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === "agent.get") return { agent: daemonPendingAgent };
+      if (method === "agent.sendMessage") {
+        return {
+          success: false,
+          error: `Backend error: ${IN_FLIGHT_PROMPT_DROPPED_ERROR} (agent busy)`,
+        };
+      }
+      return {};
+    });
+
+    await expect(sendMessage(AGENT, "duplicate prompt", workspace(), {})).resolves.toBeUndefined();
+    // Exactly one wire attempt — the dedup response must not trigger retries.
+    const sendCalls = backendRequestMock.mock.calls.filter(([m]) => m === "agent.sendMessage");
+    expect(sendCalls).toHaveLength(1);
   }, 30000);
 
   it("throws on a raw daemon error envelope ({success:false, error:string})", async () => {
@@ -310,9 +337,7 @@ describe("send path wire contract (pending agent, first message)", () => {
       return {};
     });
 
-    await expect(
-      lifecycleSendMessage(AGENT, "will fail", workspace(), {}),
-    ).rejects.toThrow();
+    await expect(sendMessage(AGENT, "will fail", workspace(), {})).rejects.toThrow();
     // The FE must NOT leave the UI stuck in "Thinking" after exhausting retries.
     const session = appStore.state.agentSessions?.byAgentId[AGENT];
     expect(session?.isStreaming).toBe(false);
@@ -327,9 +352,7 @@ describe("send path wire contract (pending agent, first message)", () => {
       return {};
     });
 
-    await expect(
-      lifecycleSendMessage(AGENT, "will be dropped", workspace(), {}),
-    ).rejects.toThrow();
+    await expect(sendMessage(AGENT, "will be dropped", workspace(), {})).rejects.toThrow();
     const session = appStore.state.agentSessions?.byAgentId[AGENT];
     expect(session?.isStreaming).toBe(false);
   }, 30000);

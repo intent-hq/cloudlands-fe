@@ -5,7 +5,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { page } from '$app/state';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
-  import { sendMessage as sendAgentMessage } from '$features/agent/agent-stream-lifecycle';
+  import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
   import { subscribeToAgent } from '$features/agent/browser';
   import {
   followBottom,

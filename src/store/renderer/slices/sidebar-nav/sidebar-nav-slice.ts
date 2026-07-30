@@ -23,7 +23,6 @@ export const WORKSPACE_COLLAPSED_NOTES_PREFIX = "workspace-collapsed-notes-";
 
 // ── Initial State ──
 export const initialState: SidebarNavState = {
-  activeStreamsVersion: 0,
   unreadVersion: 0,
   hoveredItem: null,
   expandedItem: null,
@@ -47,8 +46,6 @@ export const initialState: SidebarNavState = {
 
 // ── Actions ──
 
-// Version bumps for reactive tracking
-export const bumpActiveStreamsVersion = createAction("sidebarNav/bumpActiveStreamsVersion");
 // Hover card state
 export const setHoveredItem = createAction<[item: SidebarNavItem | null]>("sidebarNav/setHoveredItem");
 export const setExpandedItem = createAction<[item: SidebarNavItem | null]>("sidebarNav/setExpandedItem");
@@ -138,10 +135,6 @@ export const hydrateSidebarNav = createAction(
 export const sidebarNavReducer = cardPinnedPreference.register(
   createReducer<SidebarNavState>(initialState)
 )
-  .with(bumpActiveStreamsVersion, (state) => ({
-    ...state,
-    activeStreamsVersion: state.activeStreamsVersion + 1,
-  }))
   .with(setHoveredItem, (state, { payload: [item] }) => ({
     ...state,
     hoveredItem: item,

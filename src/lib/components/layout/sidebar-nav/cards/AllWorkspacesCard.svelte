@@ -29,7 +29,6 @@
   import Header from '$lib/components/ui/Header.svelte';
 
   import {
-  selectActiveStreamsVersion,
   selectPinnedWorkspaceIds,
   selectAllSpacesViewMode,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -64,7 +63,6 @@
 
   const workspaceItems = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
-  const activeStreamsVersion$ = selectActiveStreamsVersion();
   const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const viewMode$ = selectAllSpacesViewMode();
@@ -95,9 +93,15 @@
     }
   });
 
+  // Direct tracker subscription for reactivity (no Redux bridge): bump a
+  // local version counter when the tracker notifies so deriveds recompute.
+  let activeStreamsVersion = $state(0);
+
   // Fetch fresh stream state when the card mounts so data is up-to-date
   onMount(() => {
+    activeStreamsTracker.startPolling();
     activeStreamsTracker.fetchActiveStreams();
+    return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
   });
 
   const allWorkspaces = $derived.by(() => {
@@ -227,7 +231,7 @@
 
   function getGroupingStatus(ws: Workspace): GroupingStatus {
     const baseStatus = getDisplayStatus(ws);
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
     return getWorkspaceGroupingStatus(ws, baseStatus, streamingAgentIds);
   }
@@ -245,13 +249,13 @@
   });
 
   function _isRunning(ws: Workspace): boolean {
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
     return isWorkspaceRunning(ws, streamingAgentIds);
   }
 
   function _getStreamingIds(ws: Workspace): string[] {
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
   }
 
@@ -261,7 +265,7 @@
   }
 
   function _isUnread(ws: Workspace): boolean {
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
     if (streamingIds.length > 0) return false;
     return getUnreadAgentIds(ws).length > 0;
