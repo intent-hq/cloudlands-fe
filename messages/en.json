@@ -1813,6 +1813,8 @@
   "chat_queuedMessages_sendNow_tooltip": "Send now (interrupts current stream)",
   "chat_queuedMessages_remove_tooltip": "Remove",
   "chat_queuedMessages_edit_tooltip": "Edit",
+  "chat_queuedMessages_heldForQuestionsHint_one": "1 message waiting — held until you answer or dismiss the agent's questions",
+  "chat_queuedMessages_heldForQuestionsHint_many": "{count} messages waiting — held until you answer or dismiss the agent's questions",
   "chat_regularAgentWelcome_generalDescription_label": "This agent has full workspace context. Ask me anything about your code or what you'd like to work on.",
   "chat_shared_general_fallback": "General",
   "chat_shared_noSpecializedBehavior_label": "No specialized behavior",

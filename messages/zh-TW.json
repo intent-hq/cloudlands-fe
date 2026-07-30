@@ -1813,6 +1813,8 @@
   "chat_queuedMessages_sendNow_tooltip": "立即傳送（中斷當前流式輸出）",
   "chat_queuedMessages_remove_tooltip": "移除",
   "chat_queuedMessages_edit_tooltip": "編輯",
+  "chat_queuedMessages_heldForQuestionsHint_one": "1 則訊息等待中 — 在您回答或關閉代理程式的問題之前將暫緩傳送",
+  "chat_queuedMessages_heldForQuestionsHint_many": "{count} 則訊息等待中 — 在您回答或關閉代理程式的問題之前將暫緩傳送",
   "chat_regularAgentWelcome_generalDescription_label": "此智慧體擁有完整的工作區上下文。可以問我任何關於你程式碼的問題，或告訴我你想做什麼。",
   "chat_shared_general_fallback": "通用",
   "chat_shared_noSpecializedBehavior_label": "無專門行為",

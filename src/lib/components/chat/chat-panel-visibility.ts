@@ -80,3 +80,31 @@ export function shouldShowEndOfListStreamingStatus(
 export function shouldStopChatBeforeSending(state: StopChatBeforeSendState): boolean {
   return Boolean(state.isStreaming || state.isProcessing);
 }
+
+type QueuedMessagesVisibilityState = {
+  queueLength: number;
+  hasPendingQuestions: boolean;
+  questionWizardCollapsed: boolean;
+};
+
+/**
+ * Queued-messages visibility around the Agent Q&A wizard. While questions are
+ * pending, the daemon parks automatic deliveries in the queue (question hold,
+ * PROTOCOL §5.5) — the queue is not stalled, it is deliberately held until the
+ * user answers or dismisses. The wizard expanded state hides the queue list
+ * entirely (the wizard owns the composer area); the Ignore-collapsed state
+ * shows the queue with a held-for-questions hint so parked entries do not look
+ * stuck. `heldForQuestions` derives from the same daemon-backed pending state
+ * (transcript + `dismissedQuestionsMessageId` marker) the wizard gate uses —
+ * never local inference — so the hint clears the moment the hold releases.
+ */
+export function deriveQueuedMessagesVisibility(state: QueuedMessagesVisibilityState): {
+  showQueue: boolean;
+  heldForQuestions: boolean;
+} {
+  const wizardExpanded = state.hasPendingQuestions && !state.questionWizardCollapsed;
+  return {
+    showQueue: state.queueLength > 0 && !wizardExpanded,
+    heldForQuestions: state.queueLength > 0 && state.hasPendingQuestions,
+  };
+}

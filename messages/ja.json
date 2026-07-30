@@ -1813,6 +1813,8 @@
   "chat_queuedMessages_sendNow_tooltip": "今すぐ送信（現在のストリームを中断）",
   "chat_queuedMessages_remove_tooltip": "削除",
   "chat_queuedMessages_edit_tooltip": "編集",
+  "chat_queuedMessages_heldForQuestionsHint_one": "1 件のメッセージが待機中 — エージェントの質問に回答するか閉じるまで保留されます",
+  "chat_queuedMessages_heldForQuestionsHint_many": "{count} 件のメッセージが待機中 — エージェントの質問に回答するか閉じるまで保留されます",
   "chat_regularAgentWelcome_generalDescription_label": "このエージェントはワークスペースの完全なコンテキストを持っています。コードや取り組みたいことについて何でも質問してください。",
   "chat_shared_general_fallback": "一般",
   "chat_shared_noSpecializedBehavior_label": "専門的な動作なし",

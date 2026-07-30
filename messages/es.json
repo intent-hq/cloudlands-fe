@@ -1813,6 +1813,8 @@
   "chat_queuedMessages_sendNow_tooltip": "Enviar ahora (interrumpe la transmisión actual)",
   "chat_queuedMessages_remove_tooltip": "Quitar",
   "chat_queuedMessages_edit_tooltip": "Editar",
+  "chat_queuedMessages_heldForQuestionsHint_one": "1 mensaje en espera — retenido hasta que respondas o descartes las preguntas del agente",
+  "chat_queuedMessages_heldForQuestionsHint_many": "{count} mensajes en espera — retenidos hasta que respondas o descartes las preguntas del agente",
   "chat_regularAgentWelcome_generalDescription_label": "Este agente tiene el contexto completo del espacio de trabajo. Pregúnteme lo que quiera sobre su código o sobre lo que le gustaría trabajar.",
   "chat_shared_general_fallback": "General",
   "chat_shared_noSpecializedBehavior_label": "Sin comportamiento especializado",

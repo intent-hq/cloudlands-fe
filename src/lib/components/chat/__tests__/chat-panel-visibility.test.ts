@@ -9,6 +9,7 @@ import {
 } from '$shared/types';
 
 import {
+  deriveQueuedMessagesVisibility,
   isSessionActivelyResponding,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
@@ -212,5 +213,67 @@ describe('chat panel visibility helpers', () => {
         modelUnavailable: { failedModel: 'old', nextAvailableModel: 'new' },
       }),
     ).toBe(false);
+  });
+});
+
+describe('deriveQueuedMessagesVisibility', () => {
+  it('hides the queue while the wizard is expanded, even when non-empty', () => {
+    expect(
+      deriveQueuedMessagesVisibility({
+        queueLength: 3,
+        hasPendingQuestions: true,
+        questionWizardCollapsed: false,
+      }),
+    ).toEqual({ showQueue: false, heldForQuestions: true });
+  });
+
+  it('shows the queue as held while the wizard is Ignore-collapsed', () => {
+    expect(
+      deriveQueuedMessagesVisibility({
+        queueLength: 2,
+        hasPendingQuestions: true,
+        questionWizardCollapsed: true,
+      }),
+    ).toEqual({ showQueue: true, heldForQuestions: true });
+  });
+
+  it('keeps current behavior with no pending questions', () => {
+    expect(
+      deriveQueuedMessagesVisibility({
+        queueLength: 2,
+        hasPendingQuestions: false,
+        questionWizardCollapsed: false,
+      }),
+    ).toEqual({ showQueue: true, heldForQuestions: false });
+  });
+
+  it('clears the held hint when the hold releases (questions answered or dismissed)', () => {
+    // The daemon drains the parked queue on release; until the shrunk
+    // agent:queue:updated lands the queue may still be non-empty, but the
+    // hint must already be gone because pendingQuestions derives false.
+    expect(
+      deriveQueuedMessagesVisibility({
+        queueLength: 2,
+        hasPendingQuestions: false,
+        questionWizardCollapsed: true,
+      }),
+    ).toEqual({ showQueue: true, heldForQuestions: false });
+  });
+
+  it('never shows an empty queue', () => {
+    expect(
+      deriveQueuedMessagesVisibility({
+        queueLength: 0,
+        hasPendingQuestions: true,
+        questionWizardCollapsed: true,
+      }),
+    ).toEqual({ showQueue: false, heldForQuestions: false });
+    expect(
+      deriveQueuedMessagesVisibility({
+        queueLength: 0,
+        hasPendingQuestions: false,
+        questionWizardCollapsed: false,
+      }),
+    ).toEqual({ showQueue: false, heldForQuestions: false });
   });
 });
