@@ -218,13 +218,15 @@ describe('chat panel visibility helpers', () => {
 
 describe('deriveQueuedMessagesVisibility', () => {
   it('hides the queue while the wizard is expanded, even when non-empty', () => {
+    // heldForQuestions is normalized to false alongside showQueue so consumers
+    // reading the flag alone never hint at a hidden queue.
     expect(
       deriveQueuedMessagesVisibility({
         queueLength: 3,
         hasPendingQuestions: true,
         questionWizardCollapsed: false,
       }),
-    ).toEqual({ showQueue: false, heldForQuestions: true });
+    ).toEqual({ showQueue: false, heldForQuestions: false });
   });
 
   it('shows the queue as held while the wizard is Ignore-collapsed', () => {

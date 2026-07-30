@@ -298,6 +298,7 @@
         <div
           class="flex items-center gap-1.5 text-xs text-warning mb-2 px-2.5"
           data-testid="queued-messages-held-hint"
+          role="status"
           transition:slide={{ duration: 200 }}
         >
           <div aria-hidden="true" class="shrink-0">
