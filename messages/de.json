@@ -1817,6 +1817,8 @@
   "chat_queuedMessages_sendNow_tooltip": "Jetzt senden (unterbricht den aktuellen Stream)",
   "chat_queuedMessages_remove_tooltip": "Entfernen",
   "chat_queuedMessages_edit_tooltip": "Bearbeiten",
+  "chat_queuedMessages_heldForQuestionsHint_one": "1 Nachricht wartet — zurückgehalten, bis Sie die Fragen des Agenten beantworten oder verwerfen",
+  "chat_queuedMessages_heldForQuestionsHint_many": "{count} Nachrichten warten — zurückgehalten, bis Sie die Fragen des Agenten beantworten oder verwerfen",
   "chat_regularAgentWelcome_generalDescription_label": "Dieser Agent hat vollständigen Arbeitsbereich-Kontext. Fragen Sie mich alles über Ihren Code oder woran Sie arbeiten möchten.",
   "chat_shared_general_fallback": "Allgemein",
   "chat_shared_noSpecializedBehavior_label": "Kein spezialisiertes Verhalten",
