@@ -137,9 +137,12 @@ function applyTranscript(
     appStore.dispatch(replaceMessages(agentId, merged));
   }
 
+  // Consume the streaming edge only when the dispatch actually lands — a
+  // pre-hydration emit must not swallow the transition, so the next emit
+  // against the hydrated session still sees the edge and dispatches it.
   const streamingChanged = transcript.isStreaming !== entry.wasStreaming;
-  entry.wasStreaming = transcript.isStreaming;
   if (session && streamingChanged) {
+    entry.wasStreaming = transcript.isStreaming;
     appStore.dispatch(
       updateSession(
         agentId,

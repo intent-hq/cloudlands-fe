@@ -273,7 +273,10 @@ export class ChatTranscriptReconciler {
       });
     }
     // Terminal frame: the turn is done; a live (non-terminal) upsert always
-    // means a turn is in flight.
+    // means a turn is in flight. Terminal-wins assumes a §7.1 delta batch
+    // never mixes one turn's terminal frame with another turn's live blocks:
+    // deltas are emitted per agent-event, and each event belongs to exactly
+    // one in-flight turn (an agent runs at most one turn at a time).
     if (sawTerminal) this.streaming = false;
     else if (sawUpsert) this.streaming = true;
     this.expectedSeq = seq + 1;
@@ -309,6 +312,10 @@ export class ChatTranscriptReconciler {
         },
       ];
       index = this.messages.length - 1;
+      // Display-count metadata only: never consumed by the delta path
+      // (reconciliation keys on `messages`), and the next snapshot resets it
+      // authoritatively — an all-blocks-removed message shell may leave it
+      // one high until then, which is acceptable drift.
       this.totalMessages += 1;
     }
     const message = this.messages[index];

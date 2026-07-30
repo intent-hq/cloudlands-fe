@@ -94,7 +94,6 @@ const ENFORCED_DIRS = [
   'src/features/agent/utils',
   'src/features/agent/errors',
   'src/features/agent/config',
-  'src/features/agent/types',
   'src/features/agent/agent-context-registry.ts',
   'src/features/agent/agent-context.ipc.ts',
   'src/features/agent/agent-context.ts',
