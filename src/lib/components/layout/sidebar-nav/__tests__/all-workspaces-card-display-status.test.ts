@@ -3,10 +3,12 @@
  *
  * intent-hq/intentd#600: the daemon computes the current-cycle displayStatus
  * (open/draft PR → open tasks → merged PR → complete) and the FE renders it
- * verbatim when present. Verifies:
- * - BE displayStatus wins over the local PR/task derivation (the original bug:
+ * verbatim. Since intent-hq/intentd#743 the lite workspace.subscribe snapshot
+ * always carries the field, so there is no client-side derivation. Verifies:
+ * - BE displayStatus wins over locally cached PR fields (the original bug:
  *   merged PR + open tasks must NOT group as PR Merged when BE says in_progress)
- * - The local derivation still applies when the field is absent (older daemons)
+ * - Absent/unknown wire values default to 'not_started' (grouped Idle) instead
+ *   of triggering a local derivation
  * - The client-side running/idle grouping layer stays on top of the BE value
  * - A displayStatus entity merge (the workspace:displayStatus-changed store
  *   path) regroups the sidebar live without a refetch
@@ -94,7 +96,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     appStore.dispatch(setAllSpacesViewMode('recent'));
   });
 
-  it('prefers BE displayStatus over the local merged-PR derivation (original bug)', async () => {
+  it('prefers BE displayStatus over locally cached PR fields (original bug)', async () => {
     // Locally this workspace looks merged (prStatus Merged), but the daemon
     // says the current cycle is in_progress (merged PR + open tasks). It must
     // NOT group under PR Merged; not running, so the idle layer demotes
@@ -145,10 +147,11 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
   });
 
-  it('degrades an unknown wire displayStatus to the local derivation (forward compat)', async () => {
+  it('defaults an unknown wire displayStatus to not_started (forward compat)', async () => {
     // A future daemon that adds a 7th wire value must not make the workspace
     // vanish from the Status view — the guard treats the unknown value as
-    // absent and the local merged-PR derivation groups it under PR Merged.
+    // absent, defaulting to not_started (demoted to Idle when not running).
+    // Locally cached PR fields are ignored: there is no local derivation.
     const ws = makeWorkspace('ws-unknown-status', 'Future wire value', {
       prStatus: PullRequestStatus.Merged,
       displayStatus: 'something_new' as never,
@@ -167,11 +170,16 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
 
     await waitFor(() => {
-      expect(getGroupHeaders()).toContain('PR Merged');
+      const headers = getGroupHeaders();
+      expect(headers).toContain('Idle');
+      expect(headers).not.toContain('PR Merged');
     });
   });
 
-  it('falls back to the local derivation when displayStatus is absent (older daemon)', async () => {
+  it('defaults to not_started when displayStatus is absent (no local derivation)', async () => {
+    // The lite snapshot always carries displayStatus (intent-hq/intentd#743);
+    // an absent field is not healed from cached PR state — it defaults to
+    // not_started and groups under Idle.
     const ws = makeWorkspace('ws-legacy-merged', 'Legacy merged', {
       prStatus: PullRequestStatus.Merged,
     });
@@ -189,7 +197,9 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
 
     await waitFor(() => {
-      expect(getGroupHeaders()).toContain('PR Merged');
+      const headers = getGroupHeaders();
+      expect(headers).toContain('Idle');
+      expect(headers).not.toContain('PR Merged');
     });
   });
 

@@ -126,6 +126,7 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
 
   it('never moves PR-stage workspaces to IDLE', async () => {
     const wsPrOpen = makeWorkspace('ws-pr-open', 'PR Open WS', {
+      displayStatus: 'pr_open',
       prStatus: PullRequestStatus.Open,
     });
     const wsNoChanges = makeWorkspace('ws-no-changes', 'No Changes WS');

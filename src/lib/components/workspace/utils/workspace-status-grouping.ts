@@ -1,7 +1,7 @@
 import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
 
 /**
- * Display status for a workspace (BE-owned or derived from PR/task state).
+ * Display status for a workspace (BE-owned; encodes PR and task stage).
  * Re-exported from the canonical wire definition in `$shared/types`
  * (`WORKSPACE_DISPLAY_STATUS_VALUES`) so component consumers keep importing
  * from here.
@@ -34,11 +34,12 @@ export function isWorkspaceRunning(
  * grouped under 'in_progress', overriding every base status including pr_merged.
  *
  * Not-running workspaces follow the existing grouping rules:
- * - PR states and 'complete' keep their status (never demoted to idle)
+ * - PR states and 'complete' keep their status (never demoted to idle); the
+ *   daemon's displayStatus encodes PR stage, so no local PR-field check is needed
  * - 'in_progress' or 'not_started' with zero active agents → 'idle'
  *
  * @param workspace - The workspace to group
- * @param baseStatus - The base display status (from PR/task state)
+ * @param baseStatus - The base display status (daemon-owned workspace.displayStatus)
  * @param streamingAgentIds - Array of streaming agent IDs for this workspace
  * @returns The grouping status for sidebar display
  */
@@ -65,7 +66,7 @@ export function getWorkspaceGroupingStatus(
     return baseStatus;
   }
 
-  // Not running + in_progress or not_started → demoted to idle
+  // Not running + in_progress or not_started: demoted to idle
   if (baseStatus === 'in_progress' || baseStatus === 'not_started') {
     return 'idle';
   }
