@@ -30,6 +30,7 @@
     'not_started',
     'waiting',
     'discussion_needed',
+    'blocked',
     'in_progress',
     'review_required',
     'complete',
@@ -45,6 +46,9 @@
     },
     get discussion_needed() {
       return m.workspace_taskStatus_discussionNeeded_label();
+    },
+    get blocked() {
+      return m.workspace_taskStatus_blocked_label();
     },
     get in_progress() {
       return m.workspace_taskStatus_inProgress_label();
@@ -64,6 +68,7 @@
     not_started: 'bg-gray-400/10 text-gray-400',
     waiting: 'bg-gray-300/10 text-gray-400',
     discussion_needed: 'bg-amber-500/10 text-amber-700/70',
+    blocked: 'bg-red-500/10 text-red-600',
     in_progress: 'bg-sky-400/10 text-sky-600',
     review_required: 'bg-blue-500/10 text-blue-600',
     complete: 'bg-emerald-500/10 text-emerald-700/70',
@@ -75,6 +80,7 @@
     not_started: 'bg-gray-400',
     waiting: 'bg-gray-300',
     discussion_needed: 'bg-amber-500',
+    blocked: 'bg-red-500',
     in_progress: 'bg-sky-400',
     review_required: 'bg-blue-500',
     complete: 'bg-emerald-500',

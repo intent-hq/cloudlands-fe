@@ -213,3 +213,61 @@ describe('ChatMessage model-change notice row', () => {
     expect(onEditSubmit).not.toHaveBeenCalled();
   });
 });
+
+describe('ChatMessage attention-request notice rows', () => {
+  // Wire shape (agent attention requests): system-role message, text block
+  // with meta.kind = "discussion-request" / "blocker-report" carrying the reason.
+  function attentionMessage(kind: string, reason: string): AgentMessage {
+    return {
+      id: 'msg-att',
+      role: 'system',
+      contentBlocks: [{ type: 'text', text: reason, meta: { kind } }],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+    } as AgentMessage;
+  }
+
+  it('renders a discussion-request row as a discussion notice with the reason', () => {
+    const { container } = render(ChatMessage, {
+      props: { message: attentionMessage('discussion-request', 'Need input on the API design') },
+    });
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByText(/Discussion requested/i)).toBeTruthy();
+    expect(screen.getByText('Need input on the API design')).toBeTruthy();
+    expect(container.querySelector('.discussion-request-notice')).toBeTruthy();
+    expect(container.querySelector('.interruption-notice')).toBeNull();
+  });
+
+  it('renders a blocker-report row as a blocker notice with the reason', () => {
+    const { container } = render(ChatMessage, {
+      props: { message: attentionMessage('blocker-report', 'Docker daemon is down') },
+    });
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByText(/Blocker reported/i)).toBeTruthy();
+    expect(screen.getByText('Docker daemon is down')).toBeTruthy();
+    expect(container.querySelector('.blocker-report-notice')).toBeTruthy();
+    expect(container.querySelector('.interruption-notice')).toBeNull();
+  });
+
+  it('keeps rendering other system rows as interruption notices', () => {
+    const message: AgentMessage = {
+      id: 'msg-int',
+      role: 'system',
+      contentBlocks: [
+        {
+          type: 'text',
+          text: 'This conversation was interrupted because intentd restarted.',
+          meta: { kind: 'interruption' },
+        },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+    } as AgentMessage;
+
+    const { container } = render(ChatMessage, { props: { message } });
+
+    expect(container.querySelector('.interruption-notice')).toBeTruthy();
+    expect(container.querySelector('.discussion-request-notice')).toBeNull();
+    expect(container.querySelector('.blocker-report-notice')).toBeNull();
+  });
+});

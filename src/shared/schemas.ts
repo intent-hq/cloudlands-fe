@@ -237,6 +237,7 @@ export const TaskStatusSchema = z.enum([
   'not_started',
   'waiting',
   'discussion_needed',
+  'blocked',
   'in_progress',
   'review_required',
   'complete',
