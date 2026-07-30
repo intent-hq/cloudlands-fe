@@ -139,6 +139,11 @@ interface ChatDeltaEntity {
   messageSeq?: number;
   timestamp?: string;
   streamingComplete?: boolean;
+  /**
+   * Persisted row metadata lifted onto non-assistant row deltas (§7.1) — e.g.
+   * the `agent_message` sender attribution the chip renders live.
+   */
+  metadata?: AgentMessage["metadata"];
 }
 
 function parseDeltaEntity(raw: unknown): ChatDeltaEntity | null {
@@ -155,6 +160,9 @@ function parseDeltaEntity(raw: unknown): ChatDeltaEntity | null {
     ...(typeof e.messageSeq === "number" ? { messageSeq: e.messageSeq } : {}),
     ...(typeof e.timestamp === "string" ? { timestamp: e.timestamp } : {}),
     ...(e.streamingComplete === true ? { streamingComplete: true } : {}),
+    ...(e.metadata && typeof e.metadata === "object" && !Array.isArray(e.metadata)
+      ? { metadata: e.metadata as AgentMessage["metadata"] }
+      : {}),
   };
 }
 
@@ -334,6 +342,7 @@ export class ChatTranscriptReconciler {
     if (entity.messageSeq !== undefined) {
       (next as AgentMessage & { seq?: number }).seq = entity.messageSeq;
     }
+    if (entity.metadata) next.metadata = entity.metadata;
     this.messages = [...this.messages.slice(0, index), next, ...this.messages.slice(index + 1)];
   }
 }
