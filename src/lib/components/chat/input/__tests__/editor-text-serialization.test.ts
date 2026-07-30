@@ -19,8 +19,9 @@ import {
   beforeEach,
   afterEach,
 } from 'vitest';
-import { Editor } from '@tiptap/core';
+import { Editor, type Extensions } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import Mention from '@tiptap/extension-mention';
 import {
   Slice,
   Fragment,
@@ -32,7 +33,7 @@ import {
 } from '../editor-text-serialization';
 
 /** Mirrors the chat input's plaintext-like StarterKit configuration */
-function createEditor(): Editor {
+function createEditor(extraExtensions: Extensions = []): Editor {
   const element = document.createElement('div');
   document.body.appendChild(element);
   return new Editor({
@@ -53,6 +54,7 @@ function createEditor(): Editor {
         blockquote: false,
         dropcursor: false,
       }),
+      ...extraExtensions,
     ],
     content: '',
   });
@@ -127,5 +129,28 @@ describe('editor-text-serialization (#1151)', () => {
       pastePlainText(editor, 'x\ny');
       expect(serializeEditorText(editor)).toBe('before x\nyafter');
     });
+  });
+
+  it('keeps schema-level mention renderText serializers alongside the hardBreak override', () => {
+    // Regression guard: editor.getText() merges schema serializers (from each
+    // extension's renderText, e.g. mention/contextMention) with the explicit
+    // textSerializers map, so passing { hardBreak } must not drop mention tokens.
+    const mentionEditor = createEditor([
+      Mention.extend({
+        renderText: ({ node }) => `@${node.attrs.label ?? node.attrs.id}`,
+      }),
+    ]);
+    try {
+      mentionEditor
+        .chain()
+        .insertContent('see ')
+        .insertContent({ type: 'mention', attrs: { id: 'file.ts', label: 'file.ts' } })
+        .setHardBreak()
+        .insertContent('next line')
+        .run();
+      expect(serializeEditorText(mentionEditor)).toBe('see @file.ts\nnext line');
+    } finally {
+      mentionEditor.destroy();
+    }
   });
 });
