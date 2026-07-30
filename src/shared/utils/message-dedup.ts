@@ -47,8 +47,15 @@ export function normalizeAgentMessage(message: AgentMessage): AgentMessage {
   };
 }
 
+/**
+ * A daemon-canonical row id: `msg_` (client-supplied / assistant rows) or the
+ * server-minted user-row default `user-msg-{uuid}` (PROTOCOL §5.5). The §7.1
+ * user-row delta echo carries no appMessageId, so recognizing the `user-msg-`
+ * shape is what lets the content fallback merge the optimistic user row into
+ * the canonical copy instead of duplicating it.
+ */
 export function hasCanonicalId(id: string): boolean {
-  return id.startsWith('msg_');
+  return id.startsWith('msg_') || id.startsWith('user-msg-');
 }
 
 export function computeMessageContentHash(message: AgentMessage): string | null {

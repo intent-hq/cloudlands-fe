@@ -3259,6 +3259,9 @@ describe('hasCanonicalId', () => {
   it('returns true for msg_-prefixed IDs', () => {
     expect(hasCanonicalId('msg_abc-123')).toBe(true);
   });
+  it('returns true for server-minted user-msg- IDs (PROTOCOL §5.5)', () => {
+    expect(hasCanonicalId('user-msg-abc-123')).toBe(true);
+  });
   it('returns false for plain UUIDs', () => {
     expect(hasCanonicalId('abc-123-def')).toBe(false);
   });

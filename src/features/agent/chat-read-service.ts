@@ -22,8 +22,18 @@
  * `initializeChatRequested` also opens a standing `chat.subscribe` whose seq-0
  * snapshot covers the newest page + live-turn slot. This read pages the FULL
  * history (the snapshot is only the newest page); the standing stream owns
- * the in-flight message and reconciles live deltas after hydration, so this
- * read carries no snapshot-merge or hydration-race machinery.
+ * the in-flight message and reconciles live deltas after hydration.
+ *
+ * ONE guard that ownership split requires: `agent.getConversation` returns
+ * PERSISTED rows only (PROTOCOL §5.5) — the live partial turn exists solely
+ * in the subscription's snapshot/deltas (§7.1). When this read completes
+ * AFTER the seq-0 snapshot landed (the common mid-turn re-entry ordering),
+ * its full-list upsert would clobber the snapshot-delivered in-flight
+ * assistant message with a list that cannot contain it. So the hydrate keeps
+ * any stream-owned message (`isStreaming: true`) already in the store whose
+ * id is absent from the fetched pages. A turn that finalized during the read
+ * is unaffected: the persisted final row carries the SAME message id, so the
+ * fetched copy wins and no stale partial is retained.
  *
  * READ-ONLY: this module never invokes an agent mutation (no create/send/stop).
  *
@@ -61,6 +71,33 @@ const logger = createLogger("ChatReadService");
 
 /** In-flight loads keyed by agent id; coalesces concurrent requests. */
 const inFlight = new Map<string, Promise<void>>();
+
+/**
+ * Keep stream-owned messages the persisted read cannot see: any message
+ * already in the store with `isStreaming: true` whose id is absent from the
+ * fetched pages was delivered by the standing chat.subscribe snapshot/deltas
+ * (the daemon's live-turn slot, never persisted mid-turn) and must survive
+ * this full-list hydrate. Fetched rows win on id collision — a finalized
+ * turn persists under the same message id. State is read directly off
+ * `appStore.state` (dependency-light per src/store AGENTS.md — no selector
+ * imports in middleware-adjacent services).
+ */
+function withPreservedStreamOwnedMessages(
+  agentId: string,
+  fetched: AgentMessage[],
+): AgentMessage[] {
+  const state = appStore.state as {
+    agentSessions?: { byAgentId: Record<string, { messages?: AgentMessage[] }> };
+  };
+  const existingMessages = state.agentSessions?.byAgentId[agentId]?.messages;
+  if (!existingMessages || existingMessages.length === 0) return fetched;
+  const fetchedIds = new Set(fetched.map((message) => message.id));
+  const streamOwned = existingMessages.filter(
+    (message) => message.isStreaming === true && !fetchedIds.has(message.id),
+  );
+  if (streamOwned.length === 0) return fetched;
+  return [...fetched, ...streamOwned];
+}
 
 /**
  * Fetch a single agent's session AND its FULL transcript from the seam, then
@@ -141,15 +178,22 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // The live-turn slot and any messages that arrive during/after this
       // read are owned by the standing chat.subscribe stream
       // (chat-subscribe-service): its seq-0 snapshot covers the in-flight
-      // message and its deltas reconcile subsequent growth, so this read
-      // hydrates the persisted history as-is with no snapshot merge or
-      // hydration-race guard.
+      // message and its deltas reconcile subsequent growth.
+      //
+      // Guard (mid-turn re-entry regression): this read fetched PERSISTED
+      // rows only, so it can never contain the live partial turn. If the
+      // snapshot already hydrated a stream-owned message (`isStreaming:
+      // true`) that the fetched pages lack, keep it — replacing the list
+      // wholesale would blank the already-streamed text until the next
+      // delta. A turn that finalized during the read persists under the
+      // SAME id, so the fetched (final) copy wins and nothing stale stays.
       //
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is
       // because the daemon snapshot actually reports a turn is in-flight;
       // any orphan/stale healing belongs in the daemon, not the renderer.
-      const sessionWithMessages = { ...session, messages: allMessages };
+      const mergedMessages = withPreservedStreamOwnedMessages(agentId, allMessages);
+      const sessionWithMessages = { ...session, messages: mergedMessages };
       appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {
