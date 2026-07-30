@@ -124,18 +124,18 @@ describe('getWorkspaceGroupingStatus', () => {
     });
   });
 
-  describe('open/draft PR wire fields prevent the idle demotion', () => {
-    it('returns pr_open when idle + not_started with prStatus Open', () => {
+  describe('daemon displayStatus is the sole source of PR stage', () => {
+    it('ignores wire PR fields: idle + not_started with prStatus Open is demoted to idle', () => {
       const ws = makeWorkspace('idle', { prStatus: PullRequestStatus.Open });
-      expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('pr_open');
+      expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('idle');
     });
 
-    it('returns pr_open when idle + in_progress with prStatus Draft', () => {
+    it('ignores wire PR fields: idle + in_progress with prStatus Draft is demoted to idle', () => {
       const ws = makeWorkspace('idle', { prStatus: PullRequestStatus.Draft });
-      expect(getWorkspaceGroupingStatus(ws, 'in_progress', [])).toBe('pr_open');
+      expect(getWorkspaceGroupingStatus(ws, 'in_progress', [])).toBe('idle');
     });
 
-    it('returns pr_open when idle + not_started with an open activePullRequest', () => {
+    it('ignores wire PR fields: idle + not_started with an open activePullRequest is demoted to idle', () => {
       const ws = makeWorkspace('idle', {
         activePullRequest: {
           id: 'pr-1',
@@ -147,22 +147,17 @@ describe('getWorkspaceGroupingStatus', () => {
           updatedAt: '2026-01-01T00:00:00Z',
         },
       });
-      expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('pr_open');
-    });
-
-    it('returns idle when the only PR is merged (merged never resurrects a PR group)', () => {
-      const ws = makeWorkspace('idle', { prStatus: PullRequestStatus.Merged });
       expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('idle');
     });
 
-    it('returns idle when the only PR is closed', () => {
-      const ws = makeWorkspace('idle', { prStatus: PullRequestStatus.Closed });
-      expect(getWorkspaceGroupingStatus(ws, 'in_progress', [])).toBe('idle');
+    it('keeps a daemon-sent pr_open base status out of idle', () => {
+      const ws = makeWorkspace('idle');
+      expect(getWorkspaceGroupingStatus(ws, 'pr_open', [])).toBe('pr_open');
     });
 
-    it('returns in_progress when running even with an open PR', () => {
-      const ws = makeWorkspace('agent_running', { prStatus: PullRequestStatus.Open });
-      expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('in_progress');
+    it('returns in_progress when running even with a pr_open base status', () => {
+      const ws = makeWorkspace('agent_running');
+      expect(getWorkspaceGroupingStatus(ws, 'pr_open', [])).toBe('in_progress');
     });
   });
 });
