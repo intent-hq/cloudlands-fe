@@ -5,14 +5,9 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import {
   selectWorkspaceItems,
-  selectWorkspaceActivePullRequest,
   selectWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-selectors';
-  import {
-  WorkspaceStatusEnum,
-  PullRequestStatus,
-  isWorkspaceDisplayStatus,
-} from '$shared/types';
+  import { WorkspaceStatusEnum, isWorkspaceDisplayStatus } from '$shared/types';
   import type { Workspace } from '$shared/types';
   import {
   buildRepoPathLookup,
@@ -25,7 +20,6 @@
   type WorkspaceDisplayStatus,
 } from '$lib/components/workspace/utils/workspace-status-grouping';
   import { onMount } from 'svelte';
-  import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
   import Header from '$lib/components/ui/Header.svelte';
 
   import {
@@ -52,11 +46,6 @@
   import { store as appStore } from '$store/renderer/store';
   import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
   import WorkspaceCardSkeleton from '../WorkspaceCardSkeleton.svelte';
-  import {
-  selectWorkspaceTaskProgress,
-  selectWorkspaceTasksByWorkspaceId,
-} from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
@@ -68,7 +57,6 @@
   const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const viewMode$ = selectAllSpacesViewMode();
-  const workspaceTasksByWorkspaceId$ = selectWorkspaceTasksByWorkspaceId();
 
   interface Props {
     expanded?: boolean;
@@ -122,43 +110,12 @@
 
   function getDisplayStatus(ws: Workspace): WorkspaceDisplayStatus {
     // BE-owned current-cycle status (workspace.displayStatus, intent-hq/intentd#600):
-    // render it verbatim when present. The daemon owns the precedence (open/draft
-    // PR → open tasks → merged PR → complete), so a merged PR never masks open
-    // work. Unknown wire values (a future daemon's new value) are treated as
-    // absent so the workspace degrades to the local derivation below instead of
-    // vanishing from the grouped view.
-    if (isWorkspaceDisplayStatus(ws.displayStatus)) return ws.displayStatus;
-    const pullRequests = ws.pullRequests || [];
-    const activePR = selectWorkspaceActivePullRequest.select(appStore.state, ws.id);
-    const hasMergedPR =
-      ws.prStatus === PullRequestStatus.Merged ||
-      activePR?.status === PullRequestStatus.Merged ||
-      pullRequests.some((pr) => pr.status === PullRequestStatus.Merged);
-    if (hasMergedPR) return 'pr_merged';
-    const hasOpenPR =
-      ws.prStatus === PullRequestStatus.Open ||
-      ws.prStatus === PullRequestStatus.Draft ||
-      pullRequests.some(
-        (pr) => pr.status === PullRequestStatus.Open || pr.status === PullRequestStatus.Draft,
-      ) ||
-      activePR?.status === PullRequestStatus.Open ||
-      activePR?.status === PullRequestStatus.Draft;
-    if (hasOpenPR) {
-      if (activePR && activePR.status === PullRequestStatus.Open) {
-        if (checkPRMergeable(activePR)) return 'pr_ready';
-      }
-      return 'pr_open';
-    }
-    // Reference task map for reactivity when canonical tasks load
-    void $workspaceTasksByWorkspaceId$;
-    const taskProgress = selectWorkspaceTaskProgress.select(appStore.state, ws.id);
-    if (taskProgress.total > 0) {
-      if (taskProgress.completed > 0 && taskProgress.completed === taskProgress.total) {
-        return 'complete';
-      }
-      if (taskProgress.inProgress > 0 || taskProgress.completed > 0) return 'in_progress';
-    }
-    return 'not_started';
+    // render it verbatim. The daemon owns the precedence (open/draft PR → open
+    // tasks → merged PR → complete) and the lite workspace.subscribe snapshot
+    // always carries the field (intent-hq/intentd#743), so there is no local
+    // derivation. Unknown wire values (a future daemon's new value) default to
+    // 'not_started' so the workspace never vanishes from the grouped view.
+    return isWorkspaceDisplayStatus(ws.displayStatus) ? ws.displayStatus : 'not_started';
   }
 
   const filteredWorkspaces = $derived.by(() => {
@@ -169,14 +126,6 @@
         (w.title || '').toLowerCase().includes(q) ||
         (w.repositoryName || '').toLowerCase().includes(q),
     );
-  });
-
-  // Load canonical tasks for listed workspaces while expanded (no-op once initialized).
-  $effect(() => {
-    if (!expanded) return;
-    for (const ws of filteredWorkspaces) {
-      appStore.dispatch(ensureWorkspaceTasksLoaded(String(ws.id)));
-    }
   });
 
   // Build a lookup from repositoryPath → {owner, name} so workspaces missing
