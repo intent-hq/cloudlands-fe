@@ -25,6 +25,27 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      # Fail fast if the self-hosted runner is missing a CLI tool the
+      # promotion needs (all preinstalled on ubuntu-latest, not guaranteed
+      # here) — a mid-promotion failure after assets were already uploaded
+      # to the stable channel is much worse than an early abort.
+      - name: Preflight required tools
+        run: |
+          MISSING=""
+          for tool in gh jq curl awk sed sort; do
+            command -v "$tool" >/dev/null 2>&1 || MISSING="$MISSING $tool"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Self-hosted runner is missing required tools:$MISSING"
+            exit 1
+          fi
+          # Version-range computation needs GNU sort's -V
+          if ! printf '1.0.0\n' | sort -V >/dev/null 2>&1; then
+            echo "::error::sort on this runner does not support -V (GNU coreutils sort required)"
+            exit 1
+          fi
+          echo "All required tools present"
+
       - name: Validate version format
         run: |
           VERSION="${{ inputs.version }}"

@@ -169,9 +169,10 @@ jobs:
 
       # The runner is non-ephemeral, so signing must never touch the login
       # keychain: the certificate goes into a throwaway keychain under
-      # RUNNER_TEMP, the login keychain is kept in the search list (rather
-      # than replacing the list outright), and the always() cleanup step at
-      # the end of the job deletes the keychain and restores the search list.
+      # RUNNER_TEMP, the pre-existing user search list is captured and the
+      # temp keychain prepended to it (rather than replacing the list
+      # outright), and the always() cleanup step at the end of the job
+      # deletes the keychain and restores the captured list exactly.
       - name: Import code signing certificate
         env:
           MACOS_CERTIFICATE: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
@@ -190,7 +191,13 @@ jobs:
           security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERTIFICATE_PWD" \
             -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+          # Capture the current search list and prepend the temp keychain to
+          # it, so cleanup can restore exactly what was there before — no
+          # hardcoded login-keychain path, no dropped custom entries.
+          security list-keychains -d user | sed 's/^ *"//;s/"$//' > "$RUNNER_TEMP/keychain-list.orig"
+          KEYCHAINS=()
+          while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${KEYCHAINS[@]}"
 
       # Compile the Paraglide i18n catalog before dist:mac so the npm `prebuild`
       # type-check can resolve $shared/paraglide/messages.js on a clean checkout
@@ -206,6 +213,13 @@ jobs:
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
+          # CSC_LINK/CSC_KEY_PASSWORD make electron-builder import the cert
+          # into its own temporary keychain, independent of the one imported
+          # above (which is still load-bearing: scripts/sign-sidecar.js
+          # resolves the identity via the search list). electron-builder's
+          # keychain is not covered by this job's always() cleanup — a crash
+          # mid-build can leave it behind. Consolidating both onto the manual
+          # keychain via CSC_KEYCHAIN is a tracked follow-up.
           CSC_LINK: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE_PWD }}
           CLOUDLANDS_APPLE_ID: ${{ secrets.CLOUDLANDS_APPLE_ID }}
@@ -434,7 +448,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # The self-hosted runner is non-ephemeral: always delete the temporary
-      # signing keychain, restore the default keychain search list, and shred
+      # signing keychain, restore the pre-job keychain search list, and shred
       # the decoded certificate so no signing material outlives the job (runs
       # on failure and cancellation too).
       - name: Clean up signing keychain
@@ -442,5 +456,12 @@ jobs:
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
-          security list-keychains -d user -s "$HOME/Library/Keychains/login.keychain-db"
+          # Restore the exact search list captured by the import step. If
+          # that file is absent the import step never ran, so the search
+          # list was never modified and must be left alone.
+          if [ -f "$RUNNER_TEMP/keychain-list.orig" ]; then
+            KEYCHAINS=()
+            while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
+            security list-keychains -d user -s "${KEYCHAINS[@]}"
+          fi
           rm -f "$RUNNER_TEMP/certificate.p12"
