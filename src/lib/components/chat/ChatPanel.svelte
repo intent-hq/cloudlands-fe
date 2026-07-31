@@ -2317,6 +2317,7 @@
   let lastIsActive: boolean | undefined;
   $effect(() => {
     if (agentId === lastViewedAgentId && isActive === lastIsActive) return;
+    const previousAgentId = lastViewedAgentId;
     lastViewedAgentId = agentId;
     lastIsActive = isActive;
     if (agentId && isActive) {
@@ -2324,7 +2325,13 @@
     } else {
       // Panel is no longer active (user switched to another tab) —
       // clear so new messages for this agent are properly marked as unread.
-      appStore.dispatch(clearCurrentlyViewedAgent());
+      // Scoped to this panel's agent so a deactivating background panel's
+      // trailing clear cannot tear down the newly viewed agent's chat
+      // (monorepo#1215).
+      const scopeAgentId = agentId || previousAgentId;
+      if (scopeAgentId) {
+        appStore.dispatch(clearCurrentlyViewedAgent(scopeAgentId));
+      }
     }
   });
 
@@ -2335,9 +2342,11 @@
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
 
-    // Clear currently viewed agent so other agents can properly be marked as unread
+    // Clear currently viewed agent so other agents can properly be marked as
+    // unread — scoped so a cached background tab's destroy cannot tear down
+    // the currently viewed agent's chat (monorepo#1215).
     if (agentId) {
-      appStore.dispatch(clearCurrentlyViewedAgent());
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
     }
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
