@@ -465,6 +465,8 @@
   "settings_section_aiCodingClis_hint": "터미널에서 AI 코딩 CLI를 사용하여 로그인하거나 계정을 전환할 수 있습니다.",
   "settings_section_connections": "연결",
   "settings_section_data": "데이터",
+  "settings_section_connection": "연결",
+  "settings_connection_socket_label": "intentd 소켓",
   "settings_section_gitWorkspace": "Git 및 작업 공간",
   "settings_section_notifications": "알림",
   "settings_section_cliOptimization": "CLI 최적화",

@@ -465,6 +465,8 @@
   "settings_section_aiCodingClis_hint": "你可以在終端中使用 AI 程式設計 CLI 登入或切換帳號。",
   "settings_section_connections": "連線",
   "settings_section_data": "資料",
+  "settings_section_connection": "連線",
+  "settings_connection_socket_label": "intentd 通訊端",
   "settings_section_gitWorkspace": "Git 與工作區",
   "settings_section_notifications": "通知",
   "settings_section_cliOptimization": "CLI 最佳化",

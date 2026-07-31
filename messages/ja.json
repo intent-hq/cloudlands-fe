@@ -465,6 +465,8 @@
   "settings_section_aiCodingClis_hint": "ターミナルで AI コーディング CLI を使用して、サインインやアカウントの切り替えができます。",
   "settings_section_connections": "接続",
   "settings_section_data": "データ",
+  "settings_section_connection": "接続",
+  "settings_connection_socket_label": "intentd ソケット",
   "settings_section_gitWorkspace": "Git とワークスペース",
   "settings_section_notifications": "通知",
   "settings_section_cliOptimization": "CLI 最適化",
