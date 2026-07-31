@@ -6,8 +6,8 @@
  */
 
 import flatstr from 'flatstr';
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { ContentBlock } from '../../../../shared/types';
 import { buildOrderedContentBlocks } from '../../../../shared/utils/content-block-utils';
 import type {
@@ -78,8 +78,10 @@ export const initialState: MessageAccumulatorState = { ...EMPTY_ACCUMULATOR_STAT
 // Reducer
 // ============================================================================
 
-export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(initialState)
-  .with(startAccumulation, (state, { payload: { sessionId, metadata, now } }) => {
+export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(initialState);
+messageAccumulatorReducer.with(
+  startAccumulation,
+  (state, { payload: { sessionId, metadata, now } }) => {
     // If accumulator exists, clear it first (restart)
 
     const { [sessionId]: _removed, ...restAccumulators } = state.accumulators;
@@ -111,9 +113,12 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
         activeAccumulators: previouslyExisted ? prevActive : prevActive + 1,
       },
     };
-  })
+  },
+);
 
-  .with(addChunk, (state, { payload: { sessionId, chunk, chunkByteSize, metadata, now } }) => {
+messageAccumulatorReducer.with(
+  addChunk,
+  (state, { payload: { sessionId, chunk, chunkByteSize, metadata, now } }) => {
     const accumulator = state.accumulators[sessionId];
     if (!accumulator || accumulator.isComplete) return state;
 
@@ -182,34 +187,37 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
         largestMessage: Math.max(state.stats.largestMessage, newByteSize),
       },
     };
-  })
+  },
+);
 
-  .with(addContentBlock, (state, { payload: { sessionId, block, now } }) => {
-    const accumulator = state.accumulators[sessionId];
-    if (!accumulator) return state;
+messageAccumulatorReducer.with(addContentBlock, (state, { payload: { sessionId, block, now } }) => {
+  const accumulator = state.accumulators[sessionId];
+  if (!accumulator) return state;
 
-    const blockItem: SerializedAccumulationItem = {
-      sequence: accumulator.orderedItems.length,
-      type: 'block',
-      content: block,
-      timestamp: now,
-    };
+  const blockItem: SerializedAccumulationItem = {
+    sequence: accumulator.orderedItems.length,
+    type: 'block',
+    content: block,
+    timestamp: now,
+  };
 
-    return {
-      ...state,
-      accumulators: {
-        ...state.accumulators,
-        [sessionId]: {
-          ...accumulator,
-          contentBlocks: [...accumulator.contentBlocks, block],
-          orderedItems: [...accumulator.orderedItems, blockItem],
-          lastUpdateTime: now,
-        },
+  return {
+    ...state,
+    accumulators: {
+      ...state.accumulators,
+      [sessionId]: {
+        ...accumulator,
+        contentBlocks: [...accumulator.contentBlocks, block],
+        orderedItems: [...accumulator.orderedItems, blockItem],
+        lastUpdateTime: now,
       },
-    };
-  })
+    },
+  };
+});
 
-  .with(updateContentBlock, (state, { payload: { sessionId, block, now } }) => {
+messageAccumulatorReducer.with(
+  updateContentBlock,
+  (state, { payload: { sessionId, block, now } }) => {
     const accumulator = state.accumulators[sessionId];
     if (!accumulator || !block.id) return state;
 
@@ -244,68 +252,71 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
         },
       },
     };
-  })
+  },
+);
 
-  .with(completeAccumulation, (state, { payload: [sessionId] }) => {
-    const accumulator = state.accumulators[sessionId];
-    if (!accumulator) return state;
+messageAccumulatorReducer.with(completeAccumulation, (state, { payload: [sessionId] }) => {
+  const accumulator = state.accumulators[sessionId];
+  if (!accumulator) return state;
 
-    // Build final content blocks from ordered items
-    const finalContentBlocks = buildOrderedContentBlocksFromAccumulator(accumulator);
+  // Build final content blocks from ordered items
+  const finalContentBlocks = buildOrderedContentBlocksFromAccumulator(accumulator);
 
-    // Update average message size estimate
-    const totalMessages =
-      state.stats.totalChunksProcessed > 0 ? Math.ceil(state.stats.totalChunksProcessed / 10) : 1;
-    const averageMessageSize = Math.round(state.stats.totalBytesAccumulated / totalMessages);
+  // Update average message size estimate
+  const totalMessages =
+    state.stats.totalChunksProcessed > 0 ? Math.ceil(state.stats.totalChunksProcessed / 10) : 1;
+  const averageMessageSize = Math.round(state.stats.totalBytesAccumulated / totalMessages);
 
-    return {
-      ...state,
-      accumulators: {
-        ...state.accumulators,
-        [sessionId]: {
-          ...accumulator,
-          chunks: [],
-          contentBlocks: finalContentBlocks,
-          isComplete: true,
-        },
+  return {
+    ...state,
+    accumulators: {
+      ...state.accumulators,
+      [sessionId]: {
+        ...accumulator,
+        chunks: [],
+        contentBlocks: finalContentBlocks,
+        isComplete: true,
       },
-      stats: {
-        ...state.stats,
-        averageMessageSize,
-      },
-    };
-  })
+    },
+    stats: {
+      ...state.stats,
+      averageMessageSize,
+    },
+  };
+});
 
-  .with(clearAccumulator, (state, { payload: [sessionId] }) => {
-    if (!(sessionId in state.accumulators)) return state;
+messageAccumulatorReducer.with(clearAccumulator, (state, { payload: [sessionId] }) => {
+  if (!(sessionId in state.accumulators)) return state;
 
-    const { [sessionId]: _removed, ...restAccumulators } = state.accumulators;
+  const { [sessionId]: _removed, ...restAccumulators } = state.accumulators;
 
-    const { [sessionId]: _removedSeq, ...restCounters } = state.sequenceCounters;
-    return {
-      ...state,
-      accumulators: restAccumulators,
-      sequenceCounters: restCounters,
-      stats: {
-        ...state.stats,
-        activeAccumulators: Math.max(0, state.stats.activeAccumulators - 1),
-      },
-    };
-  })
+  const { [sessionId]: _removedSeq, ...restCounters } = state.sequenceCounters;
+  return {
+    ...state,
+    accumulators: restAccumulators,
+    sequenceCounters: restCounters,
+    stats: {
+      ...state.stats,
+      activeAccumulators: Math.max(0, state.stats.activeAccumulators - 1),
+    },
+  };
+});
 
-  .with(clearAllAccumulators, (state) => {
-    return {
-      ...state,
-      accumulators: {},
-      sequenceCounters: {},
-      stats: {
-        ...state.stats,
-        activeAccumulators: 0,
-      },
-    };
-  })
+messageAccumulatorReducer.with(clearAllAccumulators, (state) => {
+  return {
+    ...state,
+    accumulators: {},
+    sequenceCounters: {},
+    stats: {
+      ...state.stats,
+      activeAccumulators: 0,
+    },
+  };
+});
 
-  .with(cleanupStaleAccumulators, (state, { payload: [staleSessionIds] }) => {
+messageAccumulatorReducer.with(
+  cleanupStaleAccumulators,
+  (state, { payload: [staleSessionIds] }) => {
     if (staleSessionIds.length === 0) return state;
     const accumulators = { ...state.accumulators };
     const sequenceCounters = { ...state.sequenceCounters };
@@ -327,7 +338,8 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
         activeAccumulators: Math.max(0, state.stats.activeAccumulators - removed),
       },
     };
-  });
+  },
+);
 
 // ============================================================================
 // Helper: Build ordered content blocks from accumulated items

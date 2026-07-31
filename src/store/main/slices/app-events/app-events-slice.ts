@@ -9,7 +9,7 @@
  * at compile time, and runtime validation added overhead with no consumers.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import type {
   DomainEvent,
   DomainEventPayloads,

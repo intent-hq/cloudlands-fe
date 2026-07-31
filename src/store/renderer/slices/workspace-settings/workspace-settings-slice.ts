@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 
 // ============================================================================
@@ -57,22 +57,22 @@ export const clearWorkspaceSettings = createAction<[workspaceId: string]>(
 // Reducer
 // ============================================================================
 
-export const workspaceSettingsReducer = createReducer<WorkspaceSettingsState>(initialState)
-  .with(setAutoCommitEnabled, (state, { payload: [workspaceId, enabled] }) => {
+export const workspaceSettingsReducer = createReducer<WorkspaceSettingsState>(initialState);
+workspaceSettingsReducer.with(setAutoCommitEnabled, (state, { payload: [workspaceId, enabled] }) => {
     const wsState = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...wsState,
       autoCommitEnabled: enabled,
     });
-  })
-  .with(loadAutoCommitSettings, (state, { payload: [workspaceId, enabled] }) => {
+  });
+workspaceSettingsReducer.with(loadAutoCommitSettings, (state, { payload: [workspaceId, enabled] }) => {
     const wsState = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...wsState,
       autoCommitEnabled: enabled,
     });
-  })
-  .with(clearWorkspaceSettings, (state, { payload: [workspaceId] }) =>
+  });
+workspaceSettingsReducer.with(clearWorkspaceSettings, (state, { payload: [workspaceId] }) =>
     clearWorkspaceState(state, workspaceId)
   );
 

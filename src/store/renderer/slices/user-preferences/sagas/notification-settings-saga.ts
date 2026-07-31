@@ -1,0 +1,120 @@
+import { all, call, cancel, delay, fork, put, take } from 'typed-redux-saga';
+import type { Task } from 'redux-saga';
+
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { createLogger } from '$lib/utils/client-logger';
+import {
+  selectNotificationEnabled,
+  selectNotificationVolume,
+  selectSoundEnabled,
+  selectSoundOnlyWhenUnfocused,
+} from '../user-preferences-selectors';
+import {
+  resetNotificationSettings,
+  setNotificationEnabled,
+  setSoundEnabled,
+  setSoundOnlyWhenUnfocused,
+  setVolume,
+} from '../user-preferences-slice';
+
+const logger = createLogger('NotificationSettingsSaga');
+const NOTIFICATION_PATHS = {
+  enabled: 'notifications.enabled',
+  soundEnabled: 'notifications.soundEnabled',
+  soundOnlyWhenUnfocused: 'notifications.soundOnlyWhenUnfocused',
+  volume: 'notifications.volume',
+} as const;
+
+type SettingResponse = { value?: unknown };
+
+export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<object>) {
+  try {
+    const [enabled, soundEnabled, soundOnlyWhenUnfocused, volume] = yield* all([
+      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.enabled }),
+      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.soundEnabled }),
+      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused }),
+      call(backendRequest, 'settings.get', { path: NOTIFICATION_PATHS.volume }),
+    ]);
+    if (typeof (enabled as SettingResponse).value === 'boolean') {
+      const action = setNotificationEnabled((enabled as { value: boolean }).value);
+      suppressedActions?.add(action);
+      yield* put(action);
+    }
+    if (typeof (soundEnabled as SettingResponse).value === 'boolean') {
+      const action = setSoundEnabled((soundEnabled as { value: boolean }).value);
+      suppressedActions?.add(action);
+      yield* put(action);
+    }
+    if (typeof (soundOnlyWhenUnfocused as SettingResponse).value === 'boolean') {
+      const action = setSoundOnlyWhenUnfocused(
+        (soundOnlyWhenUnfocused as { value: boolean }).value,
+      );
+      suppressedActions?.add(action);
+      yield* put(action);
+    }
+    if (typeof (volume as SettingResponse).value === 'number') {
+      const action = setVolume((volume as { value: number }).value);
+      suppressedActions?.add(action);
+      yield* put(action);
+    }
+  } catch (error) {
+    logger.warn('Failed to hydrate notification settings from daemon', { error });
+  }
+}
+
+type NotificationAction =
+  | ReturnType<typeof setNotificationEnabled>
+  | ReturnType<typeof setSoundEnabled>
+  | ReturnType<typeof setSoundOnlyWhenUnfocused>
+  | ReturnType<typeof setVolume>
+  | ReturnType<typeof resetNotificationSettings>;
+
+function* watchNotificationWrites(suppressedActions: WeakSet<object>) {
+  let persistenceTask: Task | undefined;
+  try {
+    while (true) {
+      const action: NotificationAction = yield* take([
+        setNotificationEnabled,
+        setSoundEnabled,
+        setSoundOnlyWhenUnfocused,
+        setVolume,
+        resetNotificationSettings,
+      ]);
+      if (suppressedActions.delete(action)) continue;
+      if (persistenceTask) yield* cancel(persistenceTask);
+      persistenceTask = yield* fork(persistNotificationSettingsWorker);
+    }
+  } finally {
+    if (persistenceTask) yield* cancel(persistenceTask);
+  }
+}
+
+export function* persistNotificationSettingsWorker() {
+  yield* delay(100);
+  const enabled = yield* selectNotificationEnabled.effect();
+  const soundEnabled = yield* selectSoundEnabled.effect();
+  const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
+  const volume = yield* selectNotificationVolume.effect();
+  try {
+    yield* call(backendRequest, 'settings.update', {
+      changes: [
+        { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
+        { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
+        {
+          path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused,
+          value: soundOnlyWhenUnfocused ?? false,
+        },
+        { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
+      ],
+    });
+  } catch (error) {
+    logger.warn('Failed to persist notification settings to daemon', { error });
+  }
+}
+
+/** Unregistered until the S20 middleware cutover. */
+export function* notificationSettingsSaga() {
+  const suppressedActions = new WeakSet<object>();
+  yield* fork(watchNotificationWrites, suppressedActions);
+  yield* call(hydrateNotificationSettingsWorker, suppressedActions);
+}

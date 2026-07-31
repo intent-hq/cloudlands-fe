@@ -1,25 +1,19 @@
 # Redux Store — Agent Directives
 
-> **Architecture update — Redux and the saga runtime have been removed.**
-> The `redux`, `redux-saga`, `typed-redux-saga`, and `redux-saga-test-plan`
-> packages are no longer installed. The in-use store surface is a local,
-> redux/saga-free shim at `src/lib/store-shim/`, imported directly via
-> `$lib/store-shim/...` (`scripts/fix-esm-imports.ts` rewrites `$lib/...`
-> specifiers to relative paths in the emitted main/preload output).
-> The app is mock-driven via `AppClient`. There is no
-> saga runtime: `store.runSaga(sagaFn)` is a no-op, `startAllAppSagas` no longer
-> starts anything, and `selector.effect(...)` throws. Use
-> `selector.select(state, ...args)` for reads and `store.dispatch(action)` for
-> writes. Saga-specific guidance below (sections referencing `selector.effect`,
-> saga files, and `redux-saga-test-plan`) is historical context only.
+> Architecture update — the renderer uses the published Themis runtime.
+> `@augmentcode/themis@0.1.1` is the canonical Store implementation. Themis
+> owns its saga middleware and initializes it during `Store.init()`; do not add
+> another saga middleware. `store.runSaga(sagaFn)` starts an app-owned saga and
+> returns its cancellation handler. Business side effects belong to root-owned
+> sagas, not Store middleware or new renderer bridges.
 
 Use these rules when creating or editing code in `src/store/renderer/` so Redux state stays serializable and normalized.
 
 ## Source of Truth
 
-- The shim modules under `src/lib/store-shim/` are the source of truth for the store API surface.
+- The published `@augmentcode/themis@0.1.1` exports and installed Themis skills are the source of truth for the store API surface.
 - This file is a repository-local companion checklist for `src/store/renderer/`. Keep it concise.
-- If this file appears to conflict with the shim's actual behavior, follow the shim and report the instruction drift instead of extending local guidance.
+- If this file conflicts with the installed Themis runtime, follow the runtime and report the instruction drift instead of extending local guidance.
 
 ## 1. Import Boundaries
 
@@ -43,21 +37,25 @@ Use these rules when creating or editing code in `src/store/renderer/` so Redux 
 - If entities need ID-based lookup, store them as `Collection<T, K>`, not `T[]`.
 - Do not use `.find()`, `.findIndex()`, or `.some()` over entity arrays in reducers/selectors when `getItem()` can do O(1) lookup.
 - Use `getItem(collection, id)` for lookup and `getItems(collection)` when you need the ordered list.
-- In slice files, import shim collection helpers from `$lib/store-shim/utils/collections/collection-utils`.
+- In slice files, import Themis collection helpers from `@augmentcode/themis/utils/collections/collection-utils`.
 
 ```ts
-import { createCollection, getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import {
+  createCollection,
+  getItem,
+  getItems,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 ```
 
-- Reference: shim export `$lib/store-shim/utils/collections/collection-utils`.
+- Reference: Themis export `@augmentcode/themis/utils/collections/collection-utils`.
 
 ## 4. Use Existing Utilities (Don't Reinvent)
 
 - `createWorkspaceScopedHelpers(emptyState)` from `../../utils/workspace-scoped` — standard `byWorkspaceId` get/set/clear helpers.
-- `createBooleanPreference({ sliceName, field, ... })` from `$lib/store-shim/utils/store/boolean-preference` — generates consistent boolean set/toggle actions and reducer wiring.
+- `createBooleanPreference({ sliceName, field, ... })` from `@augmentcode/themis/utils/store/boolean-preference` — generates consistent boolean set/toggle actions and reducer wiring.
 - `takeEveryFromElectronChannel` / `takeEveryFromWindowEvent` from `../../../utils/ipc-channel` in saga files — standard IPC and window listener loops with cleanup.
 - `getLocalStorageJSON` / `setLocalStorageJSON` from `../../../utils/safe-local-storage-saga` in saga files — safe persistence helpers for sagas.
-- `createCollection` / `addItem` / `removeItem` / `updateItem` / `getItem` / `getItems` from `$lib/store-shim/utils/collections/collection-utils` — immutable collection CRUD and lookup.
+- `createCollection` / `addItem` / `removeItem` / `updateItem` / `getItem` / `getItems` from `@augmentcode/themis/utils/collections/collection-utils` — immutable collection CRUD and lookup.
 - If a prompt says `getAllItems`, use `getItems` here; `getItems` is the real helper in this codebase.
 
 ## 5. Selector Lifecycle Rules
@@ -69,7 +67,7 @@ import { createCollection, getItem, getItems } from "$lib/store-shim/utils/colle
 - Never call `selector()` inside event handlers or callbacks; use `selector.select(appStore.state, ...args)` for reads and `appStore.dispatch(action)` for dispatch.
 
 ```ts
-import { store as appStore } from "$store/renderer/store";
+import { store as appStore } from '$store/renderer/store';
 const value = selectWorkspaceThing.select(appStore.state, workspaceId);
 ```
 
@@ -84,22 +82,28 @@ const value = selectWorkspaceThing.select(appStore.state, workspaceId);
 ## 7. Action Naming
 
 - Always namespace action types as `"sliceName/actionName"`.
-- Use `createAction` from `$lib/store-shim/utils/store/create-action` in renderer slice files.
+- Use `createAction` from `@augmentcode/themis/utils/store/create-action` in renderer slice files.
 - For multiple arguments, use tuple types instead of untyped arrays or object payloads by default.
 
 ```ts
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-export const setEnabled = createAction<[wsId: string, value: boolean]>("example/setEnabled");
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+export const setEnabled = createAction<[wsId: string, value: boolean]>('example/setEnabled');
 ```
 
-## 8. Saga-Only Slices
+## 8. Reducer Registration Shape
+
+- Export the direct `createReducer<State>(initialState)` return before registering handlers.
+- Call each `reducer.with(...)` later as a standalone expression. Never chain, assign, return, export, or otherwise consume its result.
+- Call helper registrations such as `preference.register(reducer)` as standalone expressions too; ignore their returned builder.
+
+## 9. Saga-Only Slices
 
 - If a slice exists only to define saga trigger actions and has no meaningful state, do not register a reducer for it in `src/store/renderer/reducer.ts`.
 - A saga can exist without a reducer entry in the state tree.
 - Keep the action creators and saga registration, but omit the empty reducer.
 - Current examples: `auth`, `auto-update`, `ui-notifications`.
 
-## 9. Workspace-Scoped State Pattern
+## 10. Workspace-Scoped State Pattern
 
 - For state keyed by workspace ID, use `createWorkspaceScopedHelpers(emptyState)`.
 - Use the shape `{ byWorkspaceId: Record<string, WorkspaceState> }`.
@@ -107,12 +111,12 @@ export const setEnabled = createAction<[wsId: string, value: boolean]>("example/
 - Use `clearWorkspaceState` when workspace-scoped state must be removed on workspace unmount/cleanup.
 
 ```ts
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyState);
 ```
 
-## 10. Testing Requirements
+## 11. Testing Requirements
 
 - Every slice must have a colocated reducer test file named `*-slice.test.ts`.
 - Test the initial state, every reducer case, and important edge cases.
@@ -120,7 +124,7 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 - Keep test files next to the code they cover.
 - When you change store structure, update or add tests in the same task.
 
-## 11. File Organization
+## 12. File Organization
 
 ```text
 src/store/renderer/slices/<domain>/

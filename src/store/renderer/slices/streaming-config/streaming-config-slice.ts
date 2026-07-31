@@ -1,5 +1,5 @@
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   DEFAULT_PROFILE,
   STREAMING_PROFILES,
@@ -42,16 +42,16 @@ function isValidProfile(name: string): name is StreamingProfileName {
   return Object.hasOwn(STREAMING_PROFILES, name);
 }
 
-export const streamingConfigReducer = createReducer<StreamingConfigState>(initialState)
-  .with(setStreamingProfile, (state, { payload: [profileName] }) => {
+export const streamingConfigReducer = createReducer<StreamingConfigState>(initialState);
+streamingConfigReducer.with(setStreamingProfile, (state, { payload: [profileName] }) => {
     const validProfile = isValidProfile(profileName) ? profileName : DEFAULT_PROFILE;
     return { ...state, currentProfile: validProfile };
-  })
-  .with(resetStreamingConfig, () => ({
+  });
+streamingConfigReducer.with(resetStreamingConfig, () => ({
     ...initialState,
     sessionProfiles: {},
-  }))
-  .with(hydrateStreamingProfile, (state, { payload: [profileName] }) => {
+  }));
+streamingConfigReducer.with(hydrateStreamingProfile, (state, { payload: [profileName] }) => {
     const validProfile = isValidProfile(profileName) ? profileName : DEFAULT_PROFILE;
     return { ...state, currentProfile: validProfile };
   });

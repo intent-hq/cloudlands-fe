@@ -1,10 +1,10 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
   getItem,
   upsertItem,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import type { AgentFileRefreshEntry, ChatChangesState, ChatChangesWorkspaceState } from "./chat-changes-types";
@@ -30,18 +30,20 @@ export const agentFileRefreshTriggered = createAction<[wsId: string, path: strin
   "chatChanges/agentFileRefreshTriggered",
 );
 
-export const chatChangesReducer = createReducer<ChatChangesState>(initialState)
-  .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId))
-  .with(agentFileRefreshTriggered, (state, { payload: [wsId, path] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    const current = getItem(workspaceState.refreshes, path);
-    const next: AgentFileRefreshEntry = {
-      path,
-      version: (current?.version ?? 0) + 1,
-    };
+export const chatChangesReducer = createReducer<ChatChangesState>(initialState);
+chatChangesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);
+chatChangesReducer.with(agentFileRefreshTriggered, (state, { payload: [wsId, path] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const current = getItem(workspaceState.refreshes, path);
+  const next: AgentFileRefreshEntry = {
+    path,
+    version: (current?.version ?? 0) + 1,
+  };
 
-    return setWorkspaceState(state, wsId, {
-      ...workspaceState,
-      refreshes: upsertItem(workspaceState.refreshes, next),
-    });
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    refreshes: upsertItem(workspaceState.refreshes, next),
   });
+});

@@ -1,10 +1,10 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
   removeItem,
   upsertItem,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import type {
   CompactWorkspaceInitializerFormState,
   WorkspaceInitializerAgentSettings,
@@ -101,8 +101,8 @@ function recentReposCollection(repos: WorkspaceInitializerRecentRepo[]) {
   );
 }
 
-export const workspaceInitializerReducer = createReducer<WorkspaceInitializerState>(initialState)
-  .with(hydrateWorkspaceInitializer, (state, { payload: [hydration] }) => ({
+export const workspaceInitializerReducer = createReducer<WorkspaceInitializerState>(initialState);
+workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload: [hydration] }) => ({
     ...state,
     hydrated: true,
     compactFormState: hydration.compactFormState ?? state.compactFormState,
@@ -117,20 +117,20 @@ export const workspaceInitializerReducer = createReducer<WorkspaceInitializerSta
       ? createCollection<WorkspaceInitializerRemoteSetup, "id">("id", hydration.remoteSetups)
       : state.remoteSetups,
     lastSubmittedAgent: hydration.lastSubmittedAgent ?? state.lastSubmittedAgent,
-  }))
-  .with(setCompactWorkspaceInitializerFormState, (state, { payload: [compactFormState] }) => ({
+  }));
+workspaceInitializerReducer.with(setCompactWorkspaceInitializerFormState, (state, { payload: [compactFormState] }) => ({
     ...state,
     compactFormState,
-  }))
-  .with(setWorkspaceInitializerOnboardingFormState, (state, { payload: [onboardingFormState] }) => ({
+  }));
+workspaceInitializerReducer.with(setWorkspaceInitializerOnboardingFormState, (state, { payload: [onboardingFormState] }) => ({
     ...state,
     onboardingFormState,
-  }))
-  .with(setWorkspaceInitializerLastSelectedRepo, (state, { payload: [lastSelectedRepo] }) => ({
+  }));
+workspaceInitializerReducer.with(setWorkspaceInitializerLastSelectedRepo, (state, { payload: [lastSelectedRepo] }) => ({
     ...state,
     lastSelectedRepo,
-  }))
-  .with(setWorkspaceInitializerBranchForRepo, (state, { payload: [repoPath, branch] }) => {
+  }));
+workspaceInitializerReducer.with(setWorkspaceInitializerBranchForRepo, (state, { payload: [repoPath, branch] }) => {
     if (!repoPath) return state;
     return {
       ...state,
@@ -139,28 +139,28 @@ export const workspaceInitializerReducer = createReducer<WorkspaceInitializerSta
         [repoPath]: branch,
       },
     };
-  })
-  .with(setWorkspaceInitializerDefaultParentPath, (state, { payload: [defaultParentPath] }) => ({
+  });
+workspaceInitializerReducer.with(setWorkspaceInitializerDefaultParentPath, (state, { payload: [defaultParentPath] }) => ({
     ...state,
     defaultParentPath: defaultParentPath || DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH,
-  }))
-  .with(setWorkspaceInitializerRecentRepos, (state, { payload: [recentRepos] }) => ({
+  }));
+workspaceInitializerReducer.with(setWorkspaceInitializerRecentRepos, (state, { payload: [recentRepos] }) => ({
     ...state,
     recentRepos: recentReposCollection(recentRepos),
-  }))
-  .with(setWorkspaceInitializerRemoteSetups, (state, { payload: [remoteSetups] }) => ({
+  }));
+workspaceInitializerReducer.with(setWorkspaceInitializerRemoteSetups, (state, { payload: [remoteSetups] }) => ({
     ...state,
     remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, "id">("id", remoteSetups),
-  }))
-  .with(upsertWorkspaceInitializerRemoteSetup, (state, { payload: [setup] }) => ({
+  }));
+workspaceInitializerReducer.with(upsertWorkspaceInitializerRemoteSetup, (state, { payload: [setup] }) => ({
     ...state,
     remoteSetups: upsertItem(state.remoteSetups, setup),
-  }))
-  .with(removeWorkspaceInitializerRemoteSetup, (state, { payload: [id] }) => ({
+  }));
+workspaceInitializerReducer.with(removeWorkspaceInitializerRemoteSetup, (state, { payload: [id] }) => ({
     ...state,
     remoteSetups: removeItem(state.remoteSetups, id),
-  }))
-  .with(setWorkspaceInitializerLastSubmittedAgent, (state, { payload: [lastSubmittedAgent] }) => ({
+  }));
+workspaceInitializerReducer.with(setWorkspaceInitializerLastSubmittedAgent, (state, { payload: [lastSubmittedAgent] }) => ({
     ...state,
     lastSubmittedAgent,
   }))

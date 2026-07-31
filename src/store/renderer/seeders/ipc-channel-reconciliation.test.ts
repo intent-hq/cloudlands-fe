@@ -439,6 +439,11 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([]);
 const BRIDGE_IMPORT_CLAUSE_RE = /import\s*\{([^}]*)\}\s*from\s*['"]\$lib\/electron-bridge['"]/g;
 const BRIDGE_LISTENER_NAME_RE =
   /\b(?:listenSync|listen|on)\b(?:\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*))?/g;
+/** Saga listenSync wrapper heads (with `as` aliases) named in an import clause. */
+const SAGA_LISTENER_IMPORT_CLAUSE_RE =
+  /import\s*\{([^}]*)\}\s*from\s*['"][^'"]*\/utils\/ipc-channel['"]/g;
+const SAGA_LISTENER_NAME_RE =
+  /\b(?:createListenSyncChannel|takeEveryFromListenSync)\b(?:\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*))?/g;
 /** mock-router listener/emitter heads named in an import clause. */
 const ROUTER_IMPORT_CLAUSE_RE = /import\s*\{([^}]*)\}\s*from\s*['"][^'"]*ipc-mock-router['"]/g;
 const ROUTER_LISTENER_NAME_RE = /\baddMockIpcListener\b(?:\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*))?/g;
@@ -457,6 +462,19 @@ const EVENT_SCAN_EXCLUDED_FILES = new Set([
   path.join('shared', 'ipc-mock-router.ts'),
 ]);
 
+/**
+ * Exact generic transport forwarders whose concrete channels live at their
+ * typed helper call sites. Keys deliberately omit line numbers so unrelated
+ * edits do not stale the model. Each key is consumed once: a second matching
+ * dynamic call remains an audit failure.
+ */
+const GENERIC_LISTENER_FORWARDER_SITES: ReadonlyMap<string, string> = new Map([
+  [
+    `${path.join('store', 'renderer', 'utils', 'ipc-channel.ts')} :: listenSync :: eventName`,
+    'createListenSyncChannel forwards its ElectronEventName argument to the bridge; domain saga call sites own the concrete channel.',
+  ],
+]);
+
 interface EventScanResult {
   /** Exact listened channel → call sites. */
   listened: Map<string, string[]>;
@@ -468,6 +486,8 @@ interface EventScanResult {
   emittedPrefixes: Map<string, string[]>;
   /** Listener call sites whose channel argument the scan could not resolve. */
   dynamicListenerSites: string[];
+  /** Explicitly modeled generic transport forwarders found by the scan. */
+  genericListenerForwarderSites: Set<string>;
 }
 
 function collectAliases(source: string, clauseRe: RegExp, nameRe: RegExp): Set<string> {
@@ -488,6 +508,7 @@ function scanEventChannels(): EventScanResult {
     emitted: new Map(),
     emittedPrefixes: new Map(),
     dynamicListenerSites: [],
+    genericListenerForwarderSites: new Set(),
   };
   const record = (map: Map<string, string[]>, key: string, site: string) => {
     const sites = map.get(key) ?? [];
@@ -499,6 +520,13 @@ function scanEventChannels(): EventScanResult {
     if (EVENT_SCAN_EXCLUDED_FILES.has(relative)) continue;
     const source = fs.readFileSync(file, 'utf8');
     const listenerNames = collectAliases(source, BRIDGE_IMPORT_CLAUSE_RE, BRIDGE_LISTENER_NAME_RE);
+    for (const name of collectAliases(
+      source,
+      SAGA_LISTENER_IMPORT_CLAUSE_RE,
+      SAGA_LISTENER_NAME_RE,
+    )) {
+      listenerNames.add(name);
+    }
     for (const name of collectAliases(source, ROUTER_IMPORT_CLAUSE_RE, ROUTER_LISTENER_NAME_RE)) {
       listenerNames.add(name);
     }
@@ -527,7 +555,15 @@ function scanEventChannels(): EventScanResult {
             site,
           );
         } else if (kind === 'listen') {
-          result.dynamicListenerSites.push(`${site} :: ${argument}`);
+          const forwarderKey = `${relative} :: ${match[0].trim()} :: ${argument}`;
+          if (
+            GENERIC_LISTENER_FORWARDER_SITES.has(forwarderKey) &&
+            !result.genericListenerForwarderSites.has(forwarderKey)
+          ) {
+            result.genericListenerForwarderSites.add(forwarderKey);
+          } else {
+            result.dynamicListenerSites.push(`${site} :: ${argument}`);
+          }
         }
       }
     }
@@ -536,8 +572,14 @@ function scanEventChannels(): EventScanResult {
 }
 
 describe('IPC event-channel reconciliation (renderer listener surface vs emitters)', () => {
-  const { listened, listenedPrefixes, emitted, emittedPrefixes, dynamicListenerSites } =
-    scanEventChannels();
+  const {
+    listened,
+    listenedPrefixes,
+    emitted,
+    emittedPrefixes,
+    dynamicListenerSites,
+    genericListenerForwarderSites,
+  } = scanEventChannels();
 
   it('scanner sanity: detects the known listener surface', () => {
     // Simple literal listenSync call sites (WorkspaceProgressCard).
@@ -557,12 +599,26 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
     expect(emittedPrefixes.has('terminal:professional:exit:')).toBe(true);
   });
 
+  it('scanner sanity: recognizes imported saga listenSync wrappers and aliases', () => {
+    const source =
+      'import { createListenSyncChannel, takeEveryFromListenSync as watch } from "../../../utils/ipc-channel";';
+    expect(
+      collectAliases(source, SAGA_LISTENER_IMPORT_CLAUSE_RE, SAGA_LISTENER_NAME_RE),
+    ).toEqual(new Set(['createListenSyncChannel', 'watch']));
+  });
+
   it('resolves every listener channel argument (no unaudited dynamic listeners)', () => {
     expect(
       dynamicListenerSites,
       'Listener call sites with runtime channel arguments escape this audit — rewrite them ' +
         'as statically-resolvable literals/templates or extend the scanner.',
     ).toEqual([]);
+  });
+
+  it('keeps the explicit generic listener-forwarder model exact and non-stale', () => {
+    expect(genericListenerForwarderSites).toEqual(
+      new Set(GENERIC_LISTENER_FORWARDER_SITES.keys()),
+    );
   });
 
   it('every listened channel has a production emitter or a justified allowlist entry', () => {

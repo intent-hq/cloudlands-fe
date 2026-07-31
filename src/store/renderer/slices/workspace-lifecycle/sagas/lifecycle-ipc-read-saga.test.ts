@@ -1,0 +1,323 @@
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { runSaga, stdChannel } from 'redux-saga';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  listRepos: vi.fn(),
+  detectInstalled: vi.fn(),
+  getStatus: vi.fn(),
+  invoke: vi.fn(),
+}));
+
+vi.mock('$features/github-auth/renderer/github-auth.client', () => ({
+  githubAuthClient: { listRepos: mocks.listRepos },
+}));
+vi.mock('$features/external-editors/external-editors.client', () => ({
+  externalEditorsClient: { detectInstalled: mocks.detectInstalled },
+}));
+vi.mock('$features/accept-changes/accept-changes.client', () => ({
+  AcceptChangesClient: { getStatus: mocks.getStatus },
+}));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }),
+}));
+
+import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
+import { CACHE_TTL_MS, fetchEditors } from '../../external-editors/external-editors-slice';
+import { loadGithubRepos } from '../../github-repos/github-repos-slice';
+import { loadKnownRepos } from '../../known-repos/known-repos-slice';
+import { workspaceMounted } from '../workspace-lifecycle-slice';
+import { lifecycleIpcReadSaga } from './lifecycle-ipc-read-saga';
+
+const WS = 'ws-ipc-lifecycle';
+const NOW = new Date('2026-07-31T00:00:00.000Z');
+const defaultPostMergeState = {
+  aheadOfTrunk: null,
+  behindTrunk: 0,
+  hasConflicts: false,
+  isContentMergedToTrunk: false,
+  hasRemote: true,
+  isMergedToTrunk: false,
+  mergeHeadSha: null,
+  hasResetToTrunk: false,
+};
+
+const settle = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
+function state() {
+  return {
+    externalEditors: {
+      loading: false,
+      editors: createCollection('id', []),
+      lastFetched: 0,
+    },
+    git: { byWorkspaceId: {} },
+  };
+}
+
+function start(current = state()) {
+  const channel = stdChannel();
+  const actions: unknown[] = [];
+  const task = runSaga({ channel, dispatch: (action) => actions.push(action), getState: () => current }, lifecycleIpcReadSaga);
+  return { channel, actions, task };
+}
+
+async function stop(task: ReturnType<typeof runSaga>) {
+  task.cancel();
+  await task.toPromise();
+}
+
+describe('lifecycleIpcReadSaga', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    mocks.listRepos.mockResolvedValue([]);
+    mocks.detectInstalled.mockResolvedValue([]);
+    mocks.getStatus.mockResolvedValue({
+      aheadOfTrunk: 0,
+      behindTrunk: 0,
+      hasConflicts: false,
+      hasRemote: true,
+      isContentMergedToTrunk: false,
+    });
+    mocks.invoke.mockResolvedValue({ success: true, data: [] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('maps GitHub wire repos exactly and drops snake_case and wire-only fields', async () => {
+    mocks.listRepos.mockResolvedValue([{
+      owner: 'acme',
+      name: 'web',
+      default_branch: 'main',
+      wire_only: 'drop',
+    }]);
+    const run = start();
+    run.channel.put(loadGithubRepos());
+    await settle();
+
+    expect(mocks.listRepos.mock.calls).toEqual([[]]);
+    expect(run.actions).toEqual([
+      { type: 'githubRepos/setLoading', payload: [] },
+      {
+        type: 'githubRepos/setRepos',
+        payload: [[{ id: 'acme/web', owner: 'acme', name: 'web', defaultBranch: 'main' }]],
+      },
+    ]);
+    await stop(run.task);
+  });
+
+  it('surfaces GitHub failure, coalesces duplicates, and cancels a pending read', async () => {
+    let resolve!: (value: unknown[]) => void;
+    mocks.listRepos.mockReturnValue(new Promise((done) => { resolve = done; }));
+    const run = start();
+    run.channel.put(loadGithubRepos());
+    run.channel.put(loadGithubRepos());
+    await settle();
+    expect(mocks.listRepos.mock.calls).toEqual([[]]);
+    await stop(run.task);
+    resolve([{ owner: 'late', name: 'late', default_branch: 'main' }]);
+    await settle();
+    expect(run.actions).toEqual([{ type: 'githubRepos/setLoading', payload: [] }]);
+
+    mocks.listRepos.mockRejectedValueOnce(new Error('github failed'));
+    const failed = start();
+    failed.channel.put(loadGithubRepos());
+    await settle();
+    expect(failed.actions).toEqual([
+      { type: 'githubRepos/setLoading', payload: [] },
+      { type: 'githubRepos/setError', payload: ['github failed'] },
+    ]);
+    await stop(failed.task);
+  });
+
+  it('detects editors, preserves the protocol payload, and clears loading', async () => {
+    const editor = {
+      id: 'vscode',
+      name: 'Visual Studio Code',
+      installed: true,
+      path: '/Applications/Code.app',
+      wire_only: 'preserved',
+    };
+    mocks.detectInstalled.mockResolvedValue([editor]);
+    const run = start();
+    run.channel.put(fetchEditors());
+    await settle();
+
+    expect(mocks.detectInstalled.mock.calls).toEqual([[false]]);
+    expect(run.actions).toEqual([
+      { type: 'externalEditors/clearError', payload: [] },
+      { type: 'externalEditors/setLoading', payload: [true] },
+      { type: 'externalEditors/fetchEditorsSuccess', payload: [[editor], NOW.getTime()] },
+      { type: 'externalEditors/setLoading', payload: [false] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('honors editor loading/cache no-ops and lets force refresh bypass a fresh cache', async () => {
+    const current = state();
+    current.externalEditors.loading = true;
+    const loading = start(current);
+    loading.channel.put(fetchEditors());
+    await settle();
+    expect(mocks.detectInstalled.mock.calls).toEqual([]);
+    expect(loading.actions).toEqual([]);
+    await stop(loading.task);
+
+    current.externalEditors.loading = false;
+    current.externalEditors.editors = createCollection('id', [{ id: 'vscode', name: 'Code', installed: true }]);
+    current.externalEditors.lastFetched = NOW.getTime() - CACHE_TTL_MS + 1;
+    const cached = start(current);
+    cached.channel.put(fetchEditors());
+    await settle();
+    cached.channel.put(fetchEditors(true));
+    await settle();
+    expect(mocks.detectInstalled.mock.calls).toEqual([[true]]);
+    expect(cached.actions).toEqual([
+      { type: 'externalEditors/clearError', payload: [] },
+      { type: 'externalEditors/setLoading', payload: [true] },
+      { type: 'externalEditors/fetchEditorsSuccess', payload: [[], NOW.getTime()] },
+      { type: 'externalEditors/setLoading', payload: [false] },
+    ]);
+    await stop(cached.task);
+  });
+
+  it('reports editor failure and clears loading during root cancellation', async () => {
+    mocks.detectInstalled.mockRejectedValueOnce(new Error('detect failed'));
+    const failed = start();
+    failed.channel.put(fetchEditors(true));
+    await settle();
+    expect(failed.actions).toEqual([
+      { type: 'externalEditors/clearError', payload: [] },
+      { type: 'externalEditors/setLoading', payload: [true] },
+      { type: 'externalEditors/fetchEditorsFailure', payload: ['detect failed'] },
+      { type: 'externalEditors/setLoading', payload: [false] },
+    ]);
+    await stop(failed.task);
+
+    mocks.detectInstalled.mockReturnValueOnce(new Promise(() => {}));
+    const cancelled = start();
+    cancelled.channel.put(fetchEditors(true));
+    await settle();
+    await stop(cancelled.task);
+    expect(cancelled.actions).toEqual([
+      { type: 'externalEditors/clearError', payload: [] },
+      { type: 'externalEditors/setLoading', payload: [true] },
+      { type: 'externalEditors/setLoading', payload: [false] },
+    ]);
+  });
+
+  it('invokes the exact known-repos channel and keeps prior state on unusable responses', async () => {
+    const repo = {
+      path: '/repos/acme',
+      name: 'acme',
+      addedAt: '2026-01-01T00:00:00.000Z',
+      lastUsedAt: '2026-01-02T00:00:00.000Z',
+      wire_only: 'preserved',
+    };
+    mocks.invoke.mockResolvedValueOnce({ success: true, data: [repo] });
+    const run = start();
+    run.channel.put(loadKnownRepos());
+    await settle();
+    mocks.invoke.mockResolvedValueOnce({ success: false, data: [repo] });
+    run.channel.put(loadKnownRepos());
+    await settle();
+    mocks.invoke.mockRejectedValueOnce(new Error('ipc failed'));
+    run.channel.put(loadKnownRepos());
+    await settle();
+
+    expect(mocks.invoke.mock.calls).toEqual([
+      ['workspace:get-recent-repositories', {}],
+      ['workspace:get-recent-repositories', {}],
+      ['workspace:get-recent-repositories', {}],
+    ]);
+    expect(run.actions).toEqual([
+      { type: 'knownRepos/setRepos', payload: [[repo]] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('merges accept-changes success and resets only trunk fields on failure', async () => {
+    const current = state();
+    const preserved = {
+      ...defaultPostMergeState,
+      isMergedToTrunk: true,
+      mergeHeadSha: 'abc123',
+      hasResetToTrunk: true,
+    };
+    current.git.byWorkspaceId[WS] = { postMergeState: preserved };
+    mocks.getStatus.mockResolvedValueOnce({
+      aheadOfTrunk: 5,
+      behindTrunk: 2,
+      hasConflicts: true,
+      hasRemote: false,
+      isContentMergedToTrunk: true,
+      snake_case_wire_only: 'drop',
+    });
+    const run = start(current);
+    run.channel.put(refreshAcceptChangesStatus(WS));
+    await settle();
+    mocks.getStatus.mockRejectedValueOnce(new Error('status failed'));
+    run.channel.put(refreshAcceptChangesStatus(WS));
+    await settle();
+
+    expect(mocks.getStatus.mock.calls).toEqual([[WS], [WS]]);
+    expect(run.actions).toEqual([
+      {
+        type: 'git/setPostMergeState',
+        payload: [WS, {
+          ...preserved,
+          aheadOfTrunk: 5,
+          behindTrunk: 2,
+          hasConflicts: true,
+          hasRemote: false,
+          isContentMergedToTrunk: true,
+        }],
+      },
+      {
+        type: 'git/setPostMergeState',
+        payload: [WS, {
+          ...preserved,
+          aheadOfTrunk: null,
+          behindTrunk: 0,
+          hasConflicts: false,
+          isContentMergedToTrunk: false,
+        }],
+      },
+    ]);
+    await stop(run.task);
+  });
+
+  it('fans out workspace mount in the authoritative order and ignores malformed payloads', async () => {
+    const run = start();
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+    run.channel.put({ type: workspaceMounted.type, payload: [] });
+    await settle();
+
+    expect(run.actions).toEqual([
+      { type: 'workspaceTasks/ensureWorkspaceTasksLoaded', payload: [WS] },
+      { type: 'workspaceEvents/loadEventsRequested', payload: [WS] },
+      { type: 'changes/refreshAcceptChangesStatus', payload: [WS] },
+      { type: 'scripts/refreshScripts', payload: [WS] },
+      { type: 'skills/loadSkillsRequested', payload: [WS] },
+      { type: 'prStatus/refreshRequested', payload: [WS, false, false] },
+      { type: 'changes/loadWorkspaceDataRequested', payload: [WS] },
+      { type: 'workspaceAgents/hydrateAgentsRequested', payload: [WS] },
+      { type: 'terminals/hydrateTerminalsRequested', payload: [WS] },
+      { type: 'fileExplorer/hydrateFileExplorerRequested', payload: [WS] },
+      { type: 'context/initContextForWorkspace', payload: [WS] },
+      { type: 'taskAgentAssociations/hydrateTaskAgentAssociationsRequested', payload: [WS] },
+    ]);
+    await stop(run.task);
+  });
+});

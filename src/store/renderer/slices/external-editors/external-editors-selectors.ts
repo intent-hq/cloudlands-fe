@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItems,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import { selectIsDaemonLocal } from "../daemon-health/daemon-health-selectors";
 import type { InstalledEditor, OpenAction } from "./external-editors-slice";
 

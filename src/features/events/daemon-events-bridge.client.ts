@@ -9,25 +9,16 @@
  *      transitions (notably `agent:idle` clearing the optimistic
  *      `isStreaming`/`isProcessing`/`isResponding` flags set by
  *      `chatSendStarted`).
- *   2. Content-free chat-state stream bookkeeping for the live stream subset
- *      (`agent:stream:activity`, `agent:tool:call`, `agent:stream:end`,
- *      `agent:failed`). The TRANSCRIPT itself is owned by the standing
- *      `chat.subscribe` delta stream (PROTOCOL §7.1, chat-subscribe-service)
- *      — the bridge no longer assembles messages or content blocks from
- *      these events. The dispatches (`streamActivityReceived` / `streamEnded`
- *      / `streamFailed`) carry NO content and exist purely for the chat-state
- *      reducer's spinner/timer bookkeeping (`lastChunkTime`,
- *      `receivedFirstChunk`, `statusEvents` clears, the #965 interrupted
- *      retry-record clear) and the agent-session busy-flag clears.
- *      `agent:stream:activity` and the terminal `agent:stream:end`
- *      additionally carry the server-derived live-preview fields
- *      (`lastAgentResponse`/`digest`, intentd#792, and the optional
- *      `lastToolUse` for tool-only stretches) that the bridge applies
- *      to the agent-session slice push-style — see
- *      `handleStreamActivityEvent`.
- *      `agent:stream:start` (§6.6, agent-initiated harness-wake turns only)
- *      dispatches `chatSendStarted` so the busy/Thinking UI opens without a
- *      user send — see `handleStreamStartEvent`.
+ *   2. `workspaceAgents/agentStreamUpdateReceived` for the live stream subset
+ *      (`agent:stream:start`, `agent:stream:chunk`, `agent:tool:call`,
+ *      `agent:stream:end`, `agent:failed`), so the `agent-stream-service`
+ *      middleware grows the in-flight assistant message live and finalizes it
+ *      in place. Without this wire the assistant reply only appears after a
+ *      manual refresh (the chat-read-service hydration via
+ *      `agents.getConversation`). `agent:stream:start` (§6.6, agent-initiated
+ *      harness-wake turns only) additionally dispatches `chatSendStarted` so
+ *      the busy/Thinking UI opens without a user send — see
+ *      `handleStreamStartEvent`.
  *   3. `chatState/streamStatusReceived` on `agent:tool:call` — surfaces the
  *      "Calling tool" hint next to the Thinking spinner on `status=started`
  *      and appends a follow-up "Awaiting tool response" entry on
@@ -72,11 +63,14 @@
  *      relay path so the "View PR" pill / progress card refresh live while the
  *      app runs.
  *
- * The stream family carries NO transcript state: per-agent bookkeeping is
- * limited to the tool-status dedup map (status-hint dedup across repeated
- * `agent:tool:call` ticks) and the wake-turn dedup map, both cleaned up on
- * `agent:stream:end` / `agent:failed` so a subsequent turn starts from a
- * clean slate.
+ * The stream family is accumulated per agent (one in-flight assistant per
+ * agent) using the BE's monotonic `blockIndex` so the candidate transcript
+ * always grows and the renderer's regression guard
+ * (`resolveStreamContentBlocks`) accepts each update. Cleanup runs on
+ * `agent:stream:end` / `agent:failed` so a subsequent prompt turn starts from
+ * a clean slate. Dedup on hydration is preserved by carrying the BE-canonical
+ * `messageId` as `assistantMessageId` so the in-flight message id matches the
+ * one `agents.getConversation` returns later.
  *
  * Dependency-light: registers a one-shot subscription on first dispatch and a
  * single notification listener; both are cleaned up if the host store
@@ -113,34 +107,36 @@
  * matching subscription on the socket (PROTOCOL §6.3 / intent-transport
  * `build_event_notification`), each tagged with `params.subscriptionId`. If any
  * other consumer on the same socket subscribes to an overlapping `agent:*`
- * type, the same event would be delivered once per subscription and every
- * per-delivery side effect (status-hint appends, refetches, relays) would run
- * N times. The handler therefore gates on the envelope's `subscriptionId`:
- * notifications carrying a foreign id are dropped, and legacy/flat envelopes
- * (no id) are still accepted for back-compat. This mirrors the same fan-out
- * dedupe `live-terminals-client.ts` applies to `terminal:*` deliveries.
+ * type, the same chunk would be delivered once per subscription and
+ * `handleStreamChunkEvent`'s `priorText + content` append would run N times,
+ * echoing each delta. The handler therefore gates on the envelope's
+ * `subscriptionId`: notifications carrying a foreign id are dropped, and
+ * legacy/flat envelopes (no id) are still accepted for back-compat. This
+ * mirrors the same fan-out dedupe `live-terminals-client.ts` applies to
+ * `terminal:*` deliveries.
  */
 import { m } from '$shared/paraglide/messages.js';
-import type { StoreMiddleware } from '$lib/store-shim/types';
 import type {
+  ContentBlock,
   PullRequestInfo,
   PullRequestStatus,
   QueuedMessage,
   TaskStatus,
   Workspace,
 } from '$shared/types';
-import { WorkspaceStatus, isWorkspaceAttention, isWorkspaceDisplayStatus } from '$shared/types';
+import { WorkspaceStatus, isProposal, isWorkspaceDisplayStatus } from '$shared/types';
+import {
+  PROPOSAL_RESOURCE_MIME_TYPE,
+  createProposalResource,
+} from '$shared/types/proposal-resource';
+import { dedupeResourceBlocks, getResourceContents } from '$shared/types/resource-block-identity';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
   streamStatusReceived,
-  streamActivityReceived,
-  streamEnded,
-  streamFailed,
   chatQueueProcessingReceived,
-  chatErrorCleared,
-  chatModelUnavailableCleared,
   chatSendFailed,
   chatSendStarted,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -149,8 +145,6 @@ import {
   renameSession,
   setProcessQueueHint,
   clearProcessQueueHint,
-  updateAgentDigest,
-  updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -161,18 +155,13 @@ import {
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import {
   bulkUpdateWorkspaceEntities,
-  setWorkspaceEntity,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
-import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-seen';
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
-import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
-import { hasLiveChatSubscription } from '$features/agent/chat-subscribe-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
-import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
 import { refreshWorkspaceSubscriptionEntries } from '$features/agent/agent-subscription-read-service';
 import {
   permissionRequestReceived,
@@ -201,11 +190,6 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
-import {
-  backendRequest,
-  onBackendNotification,
-  onBackendReconnected,
-} from '$lib/client/live/backend-transport';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
@@ -213,7 +197,6 @@ import { createLogger } from '$lib/utils/client-logger';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 
 const logger = createLogger('DaemonEventsBridge');
 
@@ -232,44 +215,33 @@ const SUBSCRIPTION_REFRESH_EVENT_TYPES = new Set([
 ]);
 
 /**
- * Per-agent status-hint dedup: `toolCallId` → last recorded `agent:tool:call`
- * status. The daemon emits one `agent:tool:call` per ACP `tool_call_update`
- * (progress ticks included), so `handleToolCallEvent` records each tool's last
- * status here and only appends a status entry on a real transition
- * (`started` first seen / `started` → `completed`/`error`). Cleared per agent
- * on `agent:stream:end` / `agent:failed` so a subsequent turn starts fresh.
+ * Per-agent in-flight stream accumulator. The BE assigns each block a
+ * monotonic `blockIndex` (see `crates/intent-services/src/agent_session.rs`
+ * `Transcript`); we mirror that order on the FE so the candidate transcript
+ * monotonically grows and never regresses. `toolResultsByUseIndex` holds the
+ * synthesized `tool_result` block (the BE pushes one of its own, but only
+ * exposes the *use* index on `agent:tool:call`), so it is rendered immediately
+ * after its tool_use in `buildContentBlocks`.
  */
-const toolStatusByAgent = new Map<string, Map<string, string>>();
+interface StreamState {
+  messageId: string;
+  workspaceId: string;
+  blocksByIndex: Map<number, ContentBlock>;
+  toolResultsByUseIndex: Map<number, ContentBlock>;
+  /**
+   * `tool_use` index → standalone resource blocks (PROTOCOL §7.1) appended
+   * right after that tool's `tool_result`. The daemon-claimed canonical batch
+   * carried on the `agent:tool:call` event (`registeredAttachments`,
+   * deterministic attach) wins; otherwise the FE lifts a proposal-MIME
+   * resource item out of the echoed output (`crates/intent-services/src/
+   * tool_block.rs::lift_proposal_resource`), mirroring the daemon's
+   * `subscriptions.rs` delta path so the live transcript matches the
+   * persisted one and the card renders mid-stream.
+   */
+  attachmentsByUseIndex: Map<number, ContentBlock[]>;
+}
 
-/**
- * Per-agent wake-turn dedup: the last `agent:stream:start` messageId handled.
- * A duplicate delivery for the same messageId (at-least-once, e.g. across a
- * reconnect) must not re-dispatch `chatSendStarted` mid-turn — that would wipe
- * `statusEvents`/`receivedFirstChunk` and restart the Thinking elapsed timer.
- */
-const wakeTurnMessageIdByAgent = new Map<string, string>();
-
-/**
- * Per-agent turn tracking for the push-applied preview digest: the last
- * `agent:stream:activity` messageId seen. When a ping arrives for a NEW
- * messageId (a new turn), the previous turn's `session.digest` is cleared
- * before the ping's own fields apply, so a stale summary can't outrank this
- * turn's live text in the AgentCard preview (monorepo#1327). Unlike the maps
- * above, entries deliberately survive `agent:stream:end`: a straggler
- * same-turn ping delivered after the terminal event must not look like a new
- * turn and wipe the final digest that `agent:stream:end` just applied.
- */
-const previewTurnMessageIdByAgent = new Map<string, string>();
-let installed = false;
-let cleanup: (() => void) | null = null;
-/**
- * The subscriptionId returned by this bridge's own
- * `events.subscribe(['agent:*', 'settings:changed'])` call. The notification
- * handler uses it to drop foreign-subscription fan-out copies (see file header).
- * `undefined` until the subscribe resolves; legacy/flat envelopes carrying no
- * `subscriptionId` are always accepted regardless of this value.
- */
-let ownSubscriptionId: string | undefined;
+const streamsByAgent = new Map<string, StreamState>();
 
 /**
  * Debounce timers for changes-slice refresh per workspace. `changes:tracked`
@@ -318,148 +290,308 @@ function extractSubscriptionId(params: unknown): string | undefined {
   return typeof id === 'string' ? id : undefined;
 }
 
-/**
- * Read the optional `lastToolUse` object carried on the tool-call arm of
- * `agent:stream:activity` (PROTOCOL §7): the tool call just recorded for the
- * in-flight turn. Older daemons omit it entirely — `undefined` then, which
- * degrades to the pre-existing text-only preview behaviour. A payload that
- * diverges from the documented `{ name, status }` shape is rejected whole
- * rather than partially absorbed.
- */
-function readLastToolUse(value: unknown): { name: string; status?: string } | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const { name, status } = value as { name?: unknown; status?: unknown };
-  if (typeof name !== 'string' || name.trim().length === 0) return undefined;
-  if (status !== undefined && typeof status !== 'string') return undefined;
-  return status === undefined ? { name } : { name, status };
+function ensureStream(agentId: string, messageId: string, workspaceId: string): StreamState {
+  const existing = streamsByAgent.get(agentId);
+  if (existing && existing.messageId === messageId) return existing;
+  const fresh: StreamState = {
+    messageId,
+    workspaceId,
+    blocksByIndex: new Map(),
+    toolResultsByUseIndex: new Map(),
+    attachmentsByUseIndex: new Map(),
+  };
+  streamsByAgent.set(agentId, fresh);
+  return fresh;
 }
 
 /**
- * Push-apply the server-derived live-preview fields carried on
- * `agent:stream:activity` / terminal `agent:stream:end` (intentd#792) into
- * the agent-session slice — no RPC, no client-side debounce (the daemon
- * already throttles the activity signal to 1s leading-edge). The `updateSession`
- * reducer is a no-op for unknown agents, so this never conjures a session —
- * the stream handlers instead kick off `hydrateSessionIfUnknown` so the
- * fields land via the next ping once the fetched session arrives.
- * Empty/whitespace values are dropped (the daemon omits fields until
- * derivable; an empty string would only arise from a contract regression).
- * `lastToolUse` rides the same path so a tool-only stretch (no streamed text)
- * still advances the preview; the caller clears it at each turn boundary so a
- * previous turn's tool can never masquerade as this turn's activity.
- * The viewed agent's standing `chat.subscribe` buffer stays the authoritative
- * character-level preview — AgentCard prefers it over these fields when live.
+ * REJOIN-STREAM SEEDING: prime the stream accumulator with the content blocks
+ * from a chat.subscribe snapshot's in-flight assistant message so subsequent
+ * agent:stream:chunk events pass the regression guard (resolveStreamContentBlocks
+ * → hasActiveStreamRegression) instead of being suppressed. Called by
+ * chat-read-service after merging the snapshot's partial assistant into the
+ * hydrated transcript; the snapshot carries the full prefix built by the
+ * daemon's CS-0 D5 merge. NO-OP when the message has no content blocks or when
+ * a different message id already holds the stream slot.
  */
-function applyStreamPreviewFields(
+export function seedStreamFromSnapshot(
   agentId: string,
-  lastAgentResponse: string | undefined,
-  digest: string | undefined,
-  lastToolUse?: { name: string; status?: string },
+  inFlightMessage: { id?: string; contentBlocks?: ContentBlock[] },
+  workspaceId: string,
 ): void {
-  const updates: {
-    lastAgentResponse?: string;
-    digest?: string;
-    lastToolUse?: { name: string; status?: string };
-  } = {};
-  if (typeof lastAgentResponse === 'string' && lastAgentResponse.trim()) {
-    updates.lastAgentResponse = lastAgentResponse;
+  const messageId =
+    typeof inFlightMessage.id === 'string' && inFlightMessage.id.length > 0
+      ? inFlightMessage.id
+      : null;
+  if (!messageId) return;
+  const existing = streamsByAgent.get(agentId);
+  if (existing && existing.messageId !== messageId) return;
+  const blocks = Array.isArray(inFlightMessage.contentBlocks) ? inFlightMessage.contentBlocks : [];
+  if (blocks.length === 0) return;
+  const state = ensureStream(agentId, messageId, workspaceId);
+  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+    state.blocksByIndex.set(blockIndex, blocks[blockIndex]);
   }
-  if (typeof digest === 'string' && digest.trim()) {
-    updates.digest = digest;
+}
+
+function buildContentBlocks(state: StreamState): ContentBlock[] {
+  const sortedKeys = [...state.blocksByIndex.keys()].sort((a, b) => a - b);
+  const result: ContentBlock[] = [];
+  for (const key of sortedKeys) {
+    result.push(state.blocksByIndex.get(key)!);
+    const toolResult = state.toolResultsByUseIndex.get(key);
+    if (toolResult) result.push(toolResult);
+    const attachments = state.attachmentsByUseIndex.get(key);
+    if (attachments) result.push(...attachments);
   }
-  if (lastToolUse) {
-    updates.lastToolUse = lastToolUse;
-  }
-  if (Object.keys(updates).length === 0) return;
-  appStore.dispatch(updateSession(agentId, updates));
+  // A rejoin snapshot (seedStreamFromSnapshot) can already contain the
+  // standalone resource block the attachment map re-appends; collapse to one
+  // card per logical resource, preferring the daemon-canonical variant.
+  return dedupeResourceBlocks(result);
 }
 
 /**
- * A live-stream event can arrive for an agent the agent-session slice does
- * not know yet — e.g. a delegated sub-agent whose session was never hydrated
- * in this window. `updateSession` no-ops for unknown agents, so the
- * push-applied preview fields (`lastAgentResponse`/`digest`) and busy flags
- * would be silently dropped until an unrelated refetch. Kick off the
- * read-service hydration instead: `ensureAgentSession` coalesces concurrent
- * calls per agent via its in-flight map and the daemon throttles activity to
- * ≤1/s, so this cannot stampede. Already-hydrated agents never refetch. The
- * callers still dispatch their chat-state actions unconditionally (chat-state
- * materializes entries for unknown agents by design).
+ * Find the first well-formed proposal resource item in a completed tool's
+ * `output` array — `{ type: "resource", resource: { mimeType: <proposal MIME>,
+ * text: <string> } }` — mirroring the daemon's
+ * `crates/intent-services/src/tool_block.rs::find_proposal_resource` (§7.1).
+ * Returns null for non-array output, no matching item, or a malformed resource.
  */
-function hydrateSessionIfUnknown(agentId: string): void {
-  if (appStore.state.agentSessions?.byAgentId[agentId]) return;
-  void ensureAgentSession(agentId);
+function findProposalResourceItem(output: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(output)) return null;
+  for (const item of output) {
+    if (!item || typeof item !== 'object') continue;
+    const candidate = item as { type?: unknown; resource?: { mimeType?: unknown; text?: unknown } };
+    if (
+      candidate.type === 'resource' &&
+      candidate.resource &&
+      typeof candidate.resource === 'object' &&
+      candidate.resource.mimeType === PROPOSAL_RESOURCE_MIME_TYPE &&
+      typeof candidate.resource.text === 'string'
+    ) {
+      return item as Record<string, unknown>;
+    }
+  }
+  return null;
 }
 
 /**
- * `agent:stream:activity` (PROTOCOL §7) is the content-free liveness ping —
- * no raw transcript content, leading-edge throttled per agent (first ping of
- * a turn immediate, then ≤1/s until the turn ends). The standing
- * `chat.subscribe` delta stream (PROTOCOL §7.1) is the transcript writer.
- * Two jobs remain: chat-state bookkeeping (the `receivedFirstChunk` flip
- * that auto-appends the "Streaming response…" status entry once response
- * text exists, plus the stall-detection timestamps) and the push-applied
- * live-preview fields (`lastAgentResponse`/`digest`, intentd#792, plus
- * `lastToolUse` for tool-only stretches) so a non-viewed watched agent's
- * footer preview advances mid-turn without a fetch. The preview fields are
- * omitted until derivable (pre-first-token / pre-first-tool) — an omission
- * means "nothing to preview yet this turn", so the ping only refreshes
- * timestamps. The wire guard mirrors the §7 payload (`agentId`/`messageId`)
- * so malformed events stay inert.
+ * Size cap for the collapsed-output fallback parse — mirrors the daemon's
+ * `COLLAPSED_PROPOSAL_MAX_BYTES` (tool_block.rs): a stringified
+ * `{ok, proposal}` payload larger than this is never a real proposal echo.
  */
-function handleStreamActivityEvent(event: WorkspaceEvent): void {
-  const data = (event as { data?: Record<string, unknown> }).data;
-  if (!data) return;
-  const agentId = data.agentId;
-  const messageId = data.messageId;
-  if (typeof agentId !== 'string' || agentId.length === 0 || typeof messageId !== 'string') {
-    return;
+const COLLAPSED_PROPOSAL_MAX_BYTES = 256 * 1024;
+
+/**
+ * Extract the candidate stringified payload from a provider-collapsed tool
+ * output: `{ "output": "<string>" }` (auggie's shape) or a bare string —
+ * mirrors the daemon's `collapsed_output_text` (tool_block.rs).
+ */
+function collapsedOutputText(output: unknown): string | null {
+  if (typeof output === 'string') return output;
+  if (output && typeof output === 'object' && !Array.isArray(output)) {
+    const nested = (output as { output?: unknown }).output;
+    if (typeof nested === 'string') return nested;
   }
-  hydrateSessionIfUnknown(agentId);
-  const lastAgentResponse =
-    typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
-  const digest = typeof data.digest === 'string' ? data.digest : undefined;
-  // Meaningful `lastAgentResponse` text means the turn has streamed response
-  // text — the signal for the "Streaming response…" flip; a pre-text ping
-  // only refreshes timestamps. The predicate mirrors the empty/whitespace
-  // drop in `applyStreamPreviewFields` so the bookkeeping never advances
-  // into the text-streaming path without a preview actually applying.
-  const hasResponseText = lastAgentResponse !== undefined && lastAgentResponse.trim().length > 0;
-  appStore.dispatch(streamActivityReceived(agentId, hasResponseText));
-  // First ping of a new turn (fresh messageId): drop the previous turn's
-  // digest so it can't masquerade as this turn's summary (monorepo#1327), and
-  // the previous turn's `lastToolUse` for the same reason — the wire omits it
-  // before this turn's first tool call, so an omission cannot be distinguished
-  // from "older daemon" and a carried-over tool would render as live. Values
-  // carried on this very ping are re-applied right below; idle agents keep
-  // their last digest as the preview fallback because no ping arrives until
-  // the next turn starts.
-  if (previewTurnMessageIdByAgent.get(agentId) !== messageId) {
-    previewTurnMessageIdByAgent.set(agentId, messageId);
-    // The updateAgentDigest reducer keys on agentId and ignores the wsId
-    // element, so '' here is a placeholder, not a guess a consumer relies on.
-    appStore.dispatch(updateAgentDigest(workspaceIdOf(event) ?? '', agentId, null));
-    appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
-  }
-  applyStreamPreviewFields(agentId, lastAgentResponse, digest, readLastToolUse(data.lastToolUse));
+  return null;
 }
 
 /**
- * `agent:tool:call` no longer feeds transcript assembly (the §7.1 delta
- * stream synthesizes the tool_use/tool_result/attachment blocks). The event's
- * remaining jobs are the status hints next to the Thinking spinner and the
- * stall-detection timestamp refresh. The wire guard keeps the §7 payload
- * shape (`agentId`/`messageId`/`blockIndex`/`toolCallId`) so a contract
- * regression is rejected rather than silently absorbed.
+ * WRAP REPAIR: strip raw control characters (U+0000–U+001F) that appear
+ * inside JSON string literals, leaving everything outside strings (including
+ * pretty-print newlines) untouched. Some providers hard-wrap the collapsed
+ * `{ok, proposal}` payload at 1000 columns, injecting raw newlines into
+ * string values (even mid-word / mid-escape); raw control characters are
+ * invalid inside JSON string literals, so JSON.parse throws and the lift
+ * silently skips. The scan is a state machine honoring escapes: a control
+ * character between a backslash and its escaped character is stripped
+ * without consuming the escape. Returns null when nothing was stripped
+ * (repair cannot help). Mirrors the daemon's wrap repair in
+ * `tool_block.rs::rebuild_collapsed_proposal_resource`.
  */
-function handleToolCallEvent(event: WorkspaceEvent): void {
+function stripRawControlsInJsonStrings(text: string): string | null {
+  let out = '';
+  let changed = false;
+  let inString = false;
+  let escapePending = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (text.charCodeAt(i) < 0x20) {
+        changed = true;
+        continue;
+      }
+      if (escapePending) {
+        escapePending = false;
+      } else if (ch === '\\') {
+        escapePending = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+    } else if (ch === '"') {
+      inString = true;
+      escapePending = false;
+    }
+    out += ch;
+  }
+  return changed ? out : null;
+}
+
+/**
+ * §7.1 collapsed-output fallback — mirrors the daemon's
+ * `rebuild_collapsed_proposal_resource` (tool_block.rs). Some providers (e.g.
+ * auggie) flatten the daemon's dual text+resource MCP content items into a
+ * single `{ "output": "<stringified {ok, proposal}>" }` object, dropping the
+ * resource item, so `findProposalResourceItem` finds nothing in the live
+ * `agent:tool:call` output even though the daemon lifts the block into the
+ * persisted transcript. Recover the proposal from the collapsed string under
+ * the same guards (size cap, JSON object with `ok: true`, proposal passing
+ * canonical validation) and rebuild the resource item with the same shape the
+ * daemon's `build_proposal_resource_item` emits (`createProposalResource`).
+ * Note the rebuilt uri/text may differ superficially from the persisted
+ * block's (percent-encoding set, JSON key order); the daemon's re-hydrated
+ * transcript replaces the live block after the turn completes.
+ */
+function rebuildCollapsedProposalResourceItem(output: unknown): Record<string, unknown> | null {
+  const text = collapsedOutputText(output);
+  if (!text || !text.trimStart().startsWith('{')) return null;
+  // The cap is in BYTES like the daemon's; text.length counts UTF-16 code
+  // units (each up to 3 UTF-8 bytes), so only encode when the cheap length
+  // check cannot rule the payload in or out on its own.
+  if (text.length > COLLAPSED_PROPOSAL_MAX_BYTES) return null;
+  if (
+    text.length * 3 > COLLAPSED_PROPOSAL_MAX_BYTES &&
+    new TextEncoder().encode(text).length > COLLAPSED_PROPOSAL_MAX_BYTES
+  ) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    // Provider-wrapped payload: retry once with raw control characters
+    // stripped from inside string literals (see stripRawControlsInJsonStrings).
+    const repaired = stripRawControlsInJsonStrings(text);
+    if (repaired === null) return null;
+    try {
+      parsed = JSON.parse(repaired);
+    } catch {
+      return null;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const envelope = parsed as { ok?: unknown; proposal?: unknown };
+  if (envelope.ok !== true || !isProposal(envelope.proposal)) return null;
+  // The shared isProposal is looser than the daemon's is_valid_proposal
+  // (proposal.rs): match the daemon's extra requirements — non-empty
+  // preview.title and a payload that is a JSON object (not an array) — so the
+  // FE never lifts a block the daemon would decline to persist.
+  const proposal = envelope.proposal;
+  if (proposal.preview.title.length === 0 || Array.isArray(proposal.payload)) return null;
+  return { type: 'resource', resource: createProposalResource(proposal) };
+}
+
+/**
+ * Find or reconstruct the proposal resource item for a completed tool's
+ * output (§7.1) — mirrors the daemon's `lift_proposal_resource`
+ * (tool_block.rs): the array path first, then the collapsed-output fallback.
+ */
+function liftProposalResourceItem(output: unknown): Record<string, unknown> | null {
+  return findProposalResourceItem(output) ?? rebuildCollapsedProposalResourceItem(output);
+}
+
+/**
+ * Predict a standalone attachment block's stable id from the `tool_use`
+ * blockId: the daemon appends `tool_result` at index + 1 and the Nth
+ * attachment block at index + 2 + N (`{messageId}:{index}` scheme, §7.1
+ * tool_delta — each attachment chains off the previous block's id via
+ * `next_block_id`). Returns undefined when the blockId does not follow that
+ * scheme.
+ */
+function predictAttachmentBlockId(
+  toolUseBlockId: unknown,
+  attachmentOrdinal: number,
+): string | undefined {
+  if (typeof toolUseBlockId !== 'string') return undefined;
+  const separator = toolUseBlockId.lastIndexOf(':');
+  if (separator < 0) return undefined;
+  // Bare unsigned decimal only — mirrors the daemon's `usize::parse` in
+  // `next_block_id` (subscriptions.rs), which rejects empty/hex/exponent forms.
+  const suffix = toolUseBlockId.slice(separator + 1);
+  if (!/^[0-9]+$/.test(suffix)) return undefined;
+  return `${toolUseBlockId.slice(0, separator)}:${Number(suffix) + 2 + attachmentOrdinal}`;
+}
+
+function dispatchStreamUpdate(
+  agentId: string,
+  state: StreamState,
+  eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
+  stopReason?: string,
+): void {
+  appStore.dispatch(
+    agentStreamUpdateReceived({
+      workspaceId: state.workspaceId,
+      agentId,
+      handlerSessionId: agentId,
+      source: 'sendMessage',
+      eventType,
+      assistantMessageId: state.messageId,
+      contentBlocks: buildContentBlocks(state),
+      ...(stopReason ? { stopReason } : {}),
+    }),
+  );
+}
+
+function handleStreamChunkEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
   const messageId = data.messageId;
   const blockIndex = data.blockIndex;
+  const blockId = data.blockId;
+  const blockType = data.blockType;
+  const content = data.content;
+  if (
+    typeof agentId !== 'string' ||
+    typeof messageId !== 'string' ||
+    typeof blockIndex !== 'number'
+  ) {
+    return;
+  }
+  const state = ensureStream(agentId, messageId, workspaceId);
+
+  if (blockType === 'text' && typeof content === 'string') {
+    const prior = state.blocksByIndex.get(blockIndex);
+    const priorText = prior && prior.type === 'text' ? (prior.text ?? prior.content ?? '') : '';
+    const next: ContentBlock = {
+      type: 'text',
+      ...(typeof blockId === 'string' ? { id: blockId } : {}),
+      text: priorText + content,
+    };
+    state.blocksByIndex.set(blockIndex, next);
+  } else if (content && typeof content === 'object') {
+    state.blocksByIndex.set(blockIndex, content as ContentBlock);
+  } else {
+    return;
+  }
+
+  dispatchStreamUpdate(agentId, state, 'chunk');
+}
+
+function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const messageId = data.messageId;
+  const blockIndex = data.blockIndex;
+  const blockId = data.blockId;
   const toolCallId = data.toolCallId;
+  const toolName = data.toolName;
+  const toolKind = data.toolKind;
   const status = data.status;
+  const input = data.input;
+  const output = data.output;
+  const registeredAttachments = data.registeredAttachments;
   if (
     typeof agentId !== 'string' ||
     typeof messageId !== 'string' ||
@@ -468,8 +600,109 @@ function handleToolCallEvent(event: WorkspaceEvent): void {
   ) {
     return;
   }
+  const state = ensureStream(agentId, messageId, workspaceId);
 
-  appStore.dispatch(streamActivityReceived(agentId, false));
+  // Merge subsequent `agent:tool:call` events for the same tool_use block
+  // (identified by `blockIndex`, which the daemon holds constant across a
+  // toolCallId's lifetime — see `crates/intent-services/agent_session.rs`
+  // `record_tool`). The daemon's `map_tool_call_update` (crates/intent-acp)
+  // maps a partial ACP `tool_call_update` into `MappedToolCall` by defaulting
+  // any unset field (`title` → "", `kind` → "other", `raw_input` → null); on
+  // the wire only `status` (and sometimes `output`) is authoritative for a
+  // progress-only tick. Mirror the daemon-side `record_tool` merge policy so
+  // the tool_use block retains the initial name/input/toolKind and the
+  // classifier keeps a rich label instead of collapsing to a generic "Run".
+  const prior = state.blocksByIndex.get(blockIndex) as
+    (ContentBlock & { toolCallId?: string }) | undefined;
+  const priorIsSameToolUse = prior?.type === 'tool_use' && prior.toolCallId === toolCallId;
+  // A non-empty `toolName` on the wire signals an authoritative update
+  // (the daemon's `map_tool_call_update` only supplies a `title` when the
+  // upstream ACP update carries one); an empty string is the mapper's default
+  // for a status-only tick, in which case we preserve every non-status field
+  // on the prior block. This mirrors the persisted transcript on the daemon
+  // side (`record_tool` only patches `metadata.status` on repeats).
+  const isProgressOnlyUpdate =
+    priorIsSameToolUse && (typeof toolName !== 'string' || toolName.length === 0);
+  const priorMetadata =
+    priorIsSameToolUse && typeof (prior as { metadata?: unknown }).metadata === 'object'
+      ? ((prior as { metadata?: Record<string, unknown> }).metadata ?? {})
+      : {};
+  const nextName = isProgressOnlyUpdate
+    ? ((prior as { name?: string }).name ?? '')
+    : typeof toolName === 'string'
+      ? toolName
+      : '';
+  const nextInput = isProgressOnlyUpdate
+    ? ((prior as { input?: Record<string, unknown> | undefined }).input ?? undefined)
+    : input !== undefined && input !== null
+      ? (input as Record<string, unknown>)
+      : undefined;
+  const nextToolKind = isProgressOnlyUpdate
+    ? (priorMetadata as { toolKind?: string }).toolKind
+    : typeof toolKind === 'string' && toolKind.length > 0
+      ? toolKind
+      : undefined;
+
+  const toolUseBlock: ContentBlock = {
+    type: 'tool_use',
+    ...(typeof blockId === 'string' ? { id: blockId } : {}),
+    name: nextName,
+    input: nextInput,
+    toolCallId,
+    metadata: {
+      ...(typeof nextToolKind === 'string' ? { toolKind: nextToolKind } : {}),
+      ...(typeof status === 'string' ? { status } : {}),
+    },
+  } as ContentBlock;
+  state.blocksByIndex.set(blockIndex, toolUseBlock);
+
+  if ((status === 'completed' || status === 'error') && output !== undefined) {
+    state.toolResultsByUseIndex.set(blockIndex, {
+      type: 'tool_result',
+      tool_use_id: toolCallId,
+      output: output as ContentBlock['output'],
+      is_error: status === 'error',
+    } as ContentBlock);
+
+    // §7.1: append the standalone resource block(s) right after the
+    // tool_result of a COMPLETED tool, mirroring the daemon's persisted
+    // transcript (`record_tool`) and live delta stream (subscriptions.rs) so
+    // the card renders mid-stream. The daemon-claimed canonical batch carried
+    // on the event (`registeredAttachments`, deterministic attach) wins;
+    // otherwise fall back to the FE lift of a proposal-MIME resource item out
+    // of the echoed output — including the collapsed-output/wrap-repair
+    // fallback for providers that flatten the MCP content-item array. A tool
+    // that ends in `error` never surfaces a standalone block.
+    if (status === 'completed') {
+      // Deliberate deviation from the daemon's own delta path
+      // (subscriptions.rs::tool_delta uses the array wholesale): items are
+      // validated through getResourceContents and the lift fallback fires
+      // when ALL are malformed. Defensive only — every item the daemon sends
+      // today is well-formed by construction (TurnAttachment::resource_item);
+      // revisit if the batch shape ever grows new item variants.
+      const registered = Array.isArray(registeredAttachments)
+        ? registeredAttachments.filter((item) => getResourceContents(item) !== null)
+        : [];
+      const items =
+        registered.length > 0
+          ? registered
+          : ([liftProposalResourceItem(output)].filter(Boolean) as Record<string, unknown>[]);
+      if (items.length > 0) {
+        state.attachmentsByUseIndex.set(
+          blockIndex,
+          items.map((item, ordinal) => {
+            const attachmentBlockId = predictAttachmentBlockId(blockId, ordinal);
+            return {
+              ...(item as Record<string, unknown>),
+              ...(attachmentBlockId ? { id: attachmentBlockId } : {}),
+            } as unknown as ContentBlock;
+          }),
+        );
+      }
+    }
+  }
+
+  dispatchStreamUpdate(agentId, state, 'content-blocks');
 
   // Status hint: track the actual tool-execution window so the "Calling tool"
   // entry's duration in `computeCompletedEvents` ends at the tool's terminal
@@ -487,15 +720,11 @@ function handleToolCallEvent(event: WorkspaceEvent): void {
   //   re-arm intact if interleaved text already flipped the flag.
   //
   // Repeated ticks for the same `toolCallId` are deduped against the prior
-  // recorded status (`toolStatusByAgent`) so progress-only updates (daemon
-  // emits one `agent:tool:call` per ACP `tool_call_update`) never spam
-  // duplicates.
-  const agentToolStatuses = toolStatusByAgent.get(agentId) ?? new Map<string, string>();
-  toolStatusByAgent.set(agentId, agentToolStatuses);
-  const priorStatus = agentToolStatuses.get(toolCallId);
-  if (typeof status === 'string') {
-    agentToolStatuses.set(toolCallId, status);
-  }
+  // recorded metadata status so progress-only updates (daemon emits one
+  // `agent:tool:call` per ACP `tool_call_update`) never spam duplicates.
+  const priorStatus = priorIsSameToolUse
+    ? ((priorMetadata as { status?: unknown }).status as string | undefined)
+    : undefined;
   if (status === 'started' && priorStatus !== 'started') {
     appStore.dispatch(
       streamStatusReceived(
@@ -549,8 +778,7 @@ const STREAM_STATUS_PHASE_MESSAGES: Record<string, () => string> = {
  * payload the daemon emits while a turn is starting (`launch` / `init` /
  * `session-create` / `session-load` / `prompt`). Map it to
  * `streamStatusReceived` so the chat spinner surfaces the current phase —
- * "Sent prompt…" and friends — before the first `agent:stream:activity`
- * arrives.
+ * "Sent prompt…" and friends — before the first `agent:stream:chunk` arrives.
  *
  * The rendered message is a localized catalog string keyed off `phase`; the
  * daemon's English `message` is only used as a fallback for unknown phases,
@@ -572,7 +800,6 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || agentId.length === 0 || typeof phase !== 'string') {
     return;
   }
-  hydrateSessionIfUnknown(agentId);
   const message = typeof data.message === 'string' ? data.message : '';
   const levelRaw = data.level;
   const level: 'info' | 'warn' | 'error' =
@@ -600,15 +827,20 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
  * (Thinking indicator, busy state, active Stop/interrupt via the
  * `isStreaming`/`isProcessing` session flags) WITHOUT an optimistic user
  * message row — `chatSendStarted` only flips flags; the user row is added by
- * the lifecycle send path, which never runs for a wake turn. The wake turn's
- * transcript itself (assistant message + blocks) arrives via the standing
- * `chat.subscribe` delta stream (§7.1) — the bridge creates no placeholder.
+ * the lifecycle send path, which never runs for a wake turn.
  *
- * A duplicate delivery for the same `messageId` (at-least-once, e.g. across a
- * reconnect) is a no-op: re-dispatching `chatSendStarted` mid-turn would wipe
+ * The accumulator is primed under the wake turn's `messageId` and a `started`
+ * stream update creates the in-flight assistant placeholder, mirroring the
+ * user-initiated flow in `agent-stream-lifecycle.sendMessage`. A stale
+ * prior-turn accumulator is finalized as-is first (mirroring
+ * `handleStreamEndEvent`) so the old in-flight assistant message does not stay
+ * `isStreaming` until the next `agents.getConversation` reconcile. A duplicate
+ * delivery for the same `messageId` (at-least-once, e.g. across a reconnect)
+ * is a no-op: re-dispatching `chatSendStarted` mid-turn would wipe
  * `statusEvents`/`receivedFirstChunk` and restart the Thinking elapsed timer.
- * `agent:stream:end` + `agent:idle` clear the flags through the existing
- * paths.
+ * Subsequent `agent:stream:chunk` / `agent:tool:call` events carry the same
+ * `messageId` and grow that message in place; `agent:stream:end` +
+ * `agent:idle` finalize and clear the flags through the existing paths.
  */
 function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -623,46 +855,97 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
   ) {
     return;
   }
-  hydrateSessionIfUnknown(agentId);
-  if (wakeTurnMessageIdByAgent.get(agentId) === messageId) return;
-  wakeTurnMessageIdByAgent.set(agentId, messageId);
+  const prior = streamsByAgent.get(agentId);
+  if (prior && prior.messageId === messageId) return;
+  if (prior) {
+    dispatchStreamUpdate(agentId, prior, 'complete');
+    streamsByAgent.delete(agentId);
+  }
+  ensureStream(agentId, messageId, workspaceId);
   appStore.dispatch(chatSendStarted(agentId, workspaceId));
+  appStore.dispatch(
+    agentStreamUpdateReceived({
+      workspaceId,
+      agentId,
+      handlerSessionId: agentId,
+      source: 'sendMessage',
+      eventType: 'started',
+      assistantMessageId: messageId,
+      contentBlocks: [{ type: 'text', text: '' }],
+      createInitialPlaceholder: true,
+    }),
+  );
 }
 
-/**
- * `agent:stream:end` no longer feeds transcript assembly: the streamed
- * blocks, the §7 `trailingBlocks` (Agent Q&A), and the interrupted-turn
- * metadata (`stopReason: "interrupted"` → the Stopped indicator) all arrive
- * through the standing `chat.subscribe` delta stream (§7.1), which delivers
- * the persisted final message. What remains is the non-transcript
- * bookkeeping: `streamEnded` drives the chat-state reducer
- * (`statusEvents`/timer clears, the #965 interrupted retry-record clear) and
- * the agent-session busy-flag clears, and the per-agent dedup maps are
- * dropped so the next turn starts fresh. Transcript-bearing terminal emits
- * also carry the final `lastAgentResponse`/`digest` preview values
- * (intentd#792) — pushed into the session so a preview tracked via the
- * throttled activity signal lands on the turn's true final state. The live
- * tool preview is the inverse: it belongs to the in-flight turn only, so the
- * terminal frame clears it rather than freezing the turn's last tool into the
- * session.
- */
-function handleStreamEndEvent(event: WorkspaceEvent): void {
+function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   const agentId = data?.agentId;
   if (typeof agentId !== 'string') return;
   // Optional interrupt marker (PROTOCOL §7): `agent.stop` mid-turn emits the
-  // terminal `agent:stream:end` with `stopReason: "interrupted"`; absence
-  // means a normal turn end. Forwarded for the reducer's #965 inline clear.
+  // terminal `agent:stream:end` with `stopReason: "interrupted"` (+ the turn's
+  // `messageId`); absence means a normal turn end.
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
-  toolStatusByAgent.delete(agentId);
-  wakeTurnMessageIdByAgent.delete(agentId);
-  appStore.dispatch(streamEnded(agentId, stopReason));
-  appStore.dispatch(updateSession(agentId, { lastToolUse: undefined }));
-  applyStreamPreviewFields(
-    agentId,
-    typeof data?.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined,
-    typeof data?.digest === 'string' ? data.digest : undefined,
-  );
+  const messageId = typeof data?.messageId === 'string' ? data.messageId : undefined;
+  // LIVE Q&A DELIVERY (PROTOCOL §7): the terminal `agent:stream:end` carries
+  // `trailingBlocks` — the standalone resource blocks the daemon appended to
+  // the turn's final assistant message after the text stream finished (Agent
+  // Q&A questions today), byte-identical to the persisted transcript. Append
+  // them into the accumulator before finalizing so the wizard triggers live
+  // without a refetch. `buildContentBlocks`'s `dedupeResourceBlocks` keeps
+  // this idempotent against rejoin-snapshot seeds / tool-call-claimed copies
+  // of the same canonical block (stamped `attachmentId` nonce).
+  const trailingBlocks = Array.isArray(data?.trailingBlocks)
+    ? (data.trailingBlocks.filter((b) => b !== null && typeof b === 'object') as ContentBlock[])
+    : [];
+  const state = streamsByAgent.get(agentId);
+  if (state && (!messageId || state.messageId === messageId)) {
+    if (trailingBlocks.length > 0) {
+      const maxIndex = Math.max(-1, ...state.blocksByIndex.keys());
+      trailingBlocks.forEach((block, ordinal) => {
+        state.blocksByIndex.set(maxIndex + 1 + ordinal, block);
+      });
+    }
+    dispatchStreamUpdate(agentId, state, 'complete', stopReason);
+    streamsByAgent.delete(agentId);
+    return;
+  }
+  if (state) {
+    // Accumulator holds a DIFFERENT turn's message: finalize it as-is and
+    // fall through so the trailing blocks land under their own messageId.
+    // The stopReason belongs to THIS event's messageId — do not stamp the
+    // Stopped badge onto the unrelated accumulated turn.
+    dispatchStreamUpdate(agentId, state, 'complete');
+    streamsByAgent.delete(agentId);
+  }
+  // No local stream state for this turn (pre-first-token): the daemon
+  // persisted an assistant row under `messageId` anyway — a synthetic empty
+  // interrupted row on `agent.stop`, or a turn whose ONLY content is the
+  // trailing blocks (e.g. questions with no streamed text). Finalize a
+  // matching placeholder so the Stopped indicator / question wizard appears
+  // live. A later `agents.getConversation` reconcile dedupes by message id.
+  if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted')) {
+    appStore.dispatch(
+      agentStreamUpdateReceived({
+        workspaceId,
+        agentId,
+        handlerSessionId: agentId,
+        source: 'sendMessage',
+        eventType: 'complete',
+        assistantMessageId: messageId,
+        contentBlocks: dedupeResourceBlocks(trailingBlocks),
+        ...(stopReason ? { stopReason } : {}),
+      }),
+    );
+    return;
+  }
+  if (trailingBlocks.length > 0) {
+    // Daemon/FE version skew: PROTOCOL §7 pairs trailingBlocks with messageId,
+    // so a bare delivery has nowhere to land. Log instead of dropping silently.
+    logger.debug('Dropping agent:stream:end trailingBlocks without a messageId', {
+      agentId,
+      trailingBlockCount: trailingBlocks.length,
+    });
+  }
 }
 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
@@ -671,33 +954,22 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   const error = data?.error;
   if (typeof agentId !== 'string') return;
 
-  toolStatusByAgent.delete(agentId);
-  wakeTurnMessageIdByAgent.delete(agentId);
-
-  // Content-free failure bookkeeping: the chat-state reducer clears
-  // statusEvents/streamingStartTime and supplies the default interrupted
-  // message when the event carries no explicit error; the agent-session
-  // reducer clears the session busy flags.
-  appStore.dispatch(streamFailed(agentId));
+  const state = streamsByAgent.get(agentId);
+  if (state) {
+    dispatchStreamUpdate(agentId, state, 'error');
+    streamsByAgent.delete(agentId);
+  }
 
   // Set chat error when agent:failed arrives so the StreamingStatus component
   // displays the failure message and Retry button. Dispatch this even when no
   // stream state exists (e.g., agent spawn failed before streaming started).
   // The failure also lands in the cross-workspace aggregation registry so the
-  // grouped-failure toast layer can surface it — UNLESS the payload carries a
-  // non-empty `parentAgentId` (PROTOCOL §6.5): a delegated agent's failure is
-  // the parent's to handle and escalate, so no failure toast. Gate strictly on
-  // the payload field (no local session lookups); absent → toast shows, which
-  // keeps older daemons working. The daemon's turn-correlation id (PROTOCOL
-  // §6.6) rides along when present so the failure can be attributed to the
-  // exact turn (monorepo#1057).
+  // grouped-failure toast layer can surface it. The daemon's turn-correlation
+  // id (PROTOCOL §6.6) rides along when present so the failure can be
+  // attributed to the exact turn (monorepo#1057).
   if (typeof error === 'string' && error.length > 0) {
     const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
-    const parentAgentId = data?.parentAgentId;
-    const hasParent = typeof parentAgentId === 'string' && parentAgentId.length > 0;
-    if (!hasParent) {
-      recordAgentFailure({ agentId, workspaceId, error });
-    }
+    recordAgentFailure({ agentId, workspaceId, error });
     appStore.dispatch(chatSendFailed(agentId, error, turnId));
   }
 }
@@ -751,11 +1023,6 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
   void ensureAgentSession(agentId);
-  // Cross-window InterruptedAgentsModal reconciliation (§5.35):
-  // agent.resolveInterrupted emits agent:updated per resolved agent, so an
-  // open modal listing this agent re-checks agent.listInterrupted (debounced;
-  // no-op when the modal is closed or the agent is not listed).
-  notifyInterruptedAgentUpdated(agentId);
 }
 
 /**
@@ -1022,70 +1289,6 @@ function handlePermissionResolvedEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * `agent:attention-requested` (§6.5) carries the self-sufficient payload
- * `{ workspaceId, agentId, agentName, kind, reason }` — an agent raised a
- * discussion request or blocker report via `ws.agent.requestDiscussion` /
- * `reportBlocker`. Route it to the attention-toast service, which shows a
- * STICKY kind-flavored toast with a "Switch To" action that navigates to the
- * reporting workspace and focuses that agent's conversation. Deliberately NOT
- * gated on the focused workspace: the bridge firehose spans every workspace,
- * so attention requests surface no matter what is on screen.
- *
- * IS gated on the payload's optional `parentAgentId` (PROTOCOL §6.5): a
- * delegated agent's attention request wakes its parent, which handles it and
- * escalates to the user itself if needed — so no sticky toast. The gate reads
- * strictly the payload field (no local session lookups); absent → toast shows,
- * which keeps older daemons working. The caller still falls through to the
- * activity-timeline dispatch and the session refetch either way.
- */
-function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: string): void {
-  const data = (event as { data?: Record<string, unknown> }).data;
-  if (!data) return;
-  const agentId = data.agentId;
-  const agentName = data.agentName;
-  const kind = data.kind;
-  const reason = data.reason;
-  if (
-    typeof agentId !== 'string' ||
-    agentId.length === 0 ||
-    typeof agentName !== 'string' ||
-    (kind !== 'discussion' && kind !== 'blocker') ||
-    typeof reason !== 'string' ||
-    reason.length === 0
-  ) {
-    logger.warn('agent:attention-requested with malformed payload', { data });
-    return;
-  }
-  const parentAgentId = data.parentAgentId;
-  if (typeof parentAgentId === 'string' && parentAgentId.length > 0) {
-    return;
-  }
-  // Prefer the payload's own workspaceId (self-sufficient per the contract),
-  // falling back to the envelope's workspace scope.
-  const targetWorkspaceId =
-    typeof data.workspaceId === 'string' && data.workspaceId.length > 0
-      ? data.workspaceId
-      : workspaceId;
-  // Prefer the payload's own timestamp, falling back to the event envelope's.
-  // An empty/whitespace payload timestamp is treated as missing so the
-  // envelope timestamp can still be used instead of dropping it.
-  const rawTimestamp =
-    typeof data.timestamp === 'string' && data.timestamp.trim().length > 0
-      ? data.timestamp
-      : event.timestamp;
-  const timestamp =
-    typeof rawTimestamp === 'string' && rawTimestamp.trim().length > 0 ? rawTimestamp : undefined;
-  void showAgentAttentionToast({
-    workspaceId: targetWorkspaceId,
-    agentId,
-    agentName,
-    kind,
-    reason,
-    timestamp,
-  });
-}
-
-/**
  * `note:*` (§7 workspace-scoped) carries `{ noteId, path, action, ... }` — the
  * daemon-authoritative "something changed" ping (PROTOCOL §7 note events do
  * NOT embed the full note body). The handler routes to `applyNoteFromEvent`,
@@ -1108,19 +1311,6 @@ function handleNoteEvent(
   const noteId = data?.noteId;
   if (typeof noteId !== 'string' || noteId.length === 0) return;
   applyNoteFromEvent(workspaceId, noteId, type);
-  debouncedWorkspaceTasksRefresh(workspaceId);
-}
-
-/**
- * `task:created` (§6.5) carries `{ noteId, noteTitle, status, createdAt,
- * agentId? }` — a new task changes the BE-owned `task.list` rollup, so refetch
- * through the same debounced, initialized-workspaces-only path `note:*` uses.
- * The new task itself arrives with that refetch; the HUD feed row is rendered
- * off the HUD's own feed subscription. The dispatched refresh is single-flight
- * with a trailing rerun in `lifecycle-read-service`, so an event landing while
- * `task.list` is in flight still yields one follow-up fetch.
- */
-function handleTaskCreatedEvent(workspaceId: string): void {
   debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
@@ -1250,31 +1440,6 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
 }
 
 /**
- * `workspace:attention-changed` (PROTOCOL §6.5 / §9.9) carries the
- * self-sufficient payload `{ workspaceId, attention }` — the daemon emits it
- * only on an actual change, so the FE mirrors the new value directly into the
- * workspace entity without a follow-up `workspace.get`. The wire values are
- * snake_case and match the FE type exactly, so no mapping is needed. The
- * HUD consumes this same event through its own subscription
- * (`hud-subscription.ts`) with independent bucket semantics — this handler
- * only feeds the workspace entity store.
- */
-function handleAttentionChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
-  const data = (event as { data?: Record<string, unknown> }).data;
-  if (!data) return;
-  const attention = data.attention;
-  if (!isWorkspaceAttention(attention)) return;
-  appStore.dispatch(
-    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { attention })]),
-  );
-  // An unread raise for the workspace the user is currently viewing is marked
-  // seen immediately (fire-and-forget `workspace.markSeen`, §5.1) — no
-  // self-blue-dot while the user is looking at it. The daemon answers with a
-  // fresh attention-changed (`none`) that flows back through this handler.
-  if (attention === 'unread') markWorkspaceSeenIfViewing(workspaceId);
-}
-
-/**
  * Reconcile workspace.activity when a missed edge is detected. The daemon only
  * emits `workspace:activity-changed` on the 0↔1 edge; for coordinator-only
  * workspaces that edge can fire before the FE bridge subscribed or before the
@@ -1289,11 +1454,10 @@ async function reconcileWorkspaceActivity(
   workspaceId: string,
   impliesBusy: boolean,
 ): Promise<void> {
-  const { getItem } = await import('$lib/store-shim/utils/collections/collection-utils');
+  const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
   const state = appStore.state as { workspace: { workspaces: unknown } };
   const current = getItem(state.workspace.workspaces as never, workspaceId as never) as
-    | { activity?: 'idle' | 'agent_running' }
-    | undefined;
+    { activity?: 'idle' | 'agent_running' } | undefined;
 
   // If the entity doesn't exist yet, or if we see a busy signal and activity
   // isn't already agent_running, or if we see an idle signal (always refetch
@@ -1303,8 +1467,7 @@ async function reconcileWorkspaceActivity(
     const { backendRequest } = await import('$lib/client/live/backend-transport');
     try {
       const response = (await backendRequest('workspace.get', { workspaceId })) as
-        | { workspace?: Workspace }
-        | undefined;
+        { workspace?: Workspace } | undefined;
       const workspace = response?.workspace;
       if (!workspace) return;
 
@@ -1332,31 +1495,6 @@ async function reconcileWorkspaceActivity(
 }
 
 /**
- * Refresh the workspace entity's BE-owned `agentSummary` aggregate (PROTOCOL
- * §5.1) after an `agent:deleted` event. The HUD card agent rows are built
- * from `workspace.agentSummary.agents` (`agentInfosOf` in hud-selectors.ts),
- * which the `agent.list` hydration path does NOT touch — without this
- * refetch a deleted agent lingers on its card until an unrelated workspace
- * refetch. Fetch `workspace.get` and merge the fresh entity via
- * `setWorkspaceEntity` (the `mergeWorkspaceEnrichment` path takes the
- * incoming `agentSummary` when present). Best-effort like
- * `reconcileWorkspaceActivity`: errors (workspace itself deleted, transport)
- * are swallowed.
- */
-async function reconcileWorkspaceAgentSummary(workspaceId: string): Promise<void> {
-  try {
-    const response = (await backendRequest('workspace.get', { workspaceId })) as
-      | { workspace?: Workspace }
-      | undefined;
-    const workspace = response?.workspace;
-    if (!workspace) return;
-    appStore.dispatch(setWorkspaceEntity(workspace));
-  } catch (_error) {
-    // Workspace might have been deleted or transport error; no-op is safe.
-  }
-}
-
-/**
  * `workspace:updated` (PROTOCOL §6.5 / §7) carries `{ workspaceId, changes }`
  * where `changes` is the applied `WorkspaceUpdate` delta — the fields the
  * caller actually asked to mutate, with `Option::is_none` fields skipped in
@@ -1369,9 +1507,8 @@ async function reconcileWorkspaceAgentSummary(workspaceId: string): Promise<void
  * `WorkspaceProgressCard`'s `listenSync`, but never touched Redux).
  *
  * The wire delta is whitelisted against the applied-delta shape rather than
- * blind-spread, so unknown fields are dropped rather than leaking into the
- * entity (`attention` is deliberately absent from the whitelist — its changes
- * arrive via the dedicated `workspace:attention-changed` event). Field
+ * blind-spread, so unknown fields (e.g. `attention`, which has no FE
+ * `Workspace` field) are dropped rather than leaking into the entity. Field
  * names match FE `Workspace` camelCase 1:1 with the daemon struct.
  *
  * The legacy `relayLegacyIpcEvent` re-emit (case `"workspace:updated"`) stays
@@ -1451,7 +1588,7 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
  * screen (deleted by another client), also close its tab and route away —
  * this event path fires in both live and legacy modes, unlike the
  * workspace-list snapshot diff, which live-state suppresses post-boot
- * (intent-hq/monorepo#775; see workspace-list-subscription.ts).
+ * (intent-hq/monorepo#775; see the workspace-list saga).
  */
 function handleWorkspaceDeletedEvent(workspaceId: string): void {
   const state = appStore.state as {
@@ -1486,7 +1623,10 @@ function handleWorkspaceCreatedEvent(workspaceId: string): void {
   appStore.dispatch(hydrateAgentsRequested(workspaceId));
 }
 
-function handleSettingsChangedEvent(event: WorkspaceEvent): void {
+function handleSettingsChangedEvent(
+  event: WorkspaceEvent,
+  onSettingsChanges?: (changes: AppliedSettingChange[]) => void,
+): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const raw = (data as { changes?: unknown }).changes;
@@ -1499,7 +1639,9 @@ function handleSettingsChangedEvent(event: WorkspaceEvent): void {
     const value = (entry as { value?: unknown }).value;
     changes.push({ path, value });
   }
-  if (changes.length > 0) applySettingsChanges(changes);
+  if (changes.length === 0) return;
+  if (onSettingsChanges) onSettingsChanges(changes);
+  else applySettingsChanges(changes);
 }
 
 /**
@@ -1576,20 +1718,6 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   // `previouslyRunning` from an earlier `script.list` hydration.
   rest.previouslyRunning = rest.previouslyRunning === true;
   appStore.dispatch(updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>));
-}
-
-/** Remove an exited PTY from the transient terminal strip and release any live adapter. */
-function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): void {
-  const data = (event as { data?: Record<string, unknown> }).data;
-  const terminalId = data?.terminalId;
-  if (typeof terminalId !== 'string' || terminalId.length === 0) return;
-
-  appStore.dispatch(removeTerminal(workspaceId, terminalId));
-  void import('$features/terminal/terminal-manager.svelte')
-    .then(({ terminalManager }) => terminalManager.disposeExitedTerminal(terminalId))
-    .catch((error: unknown) => {
-      logger.warn('Failed to release exited terminal adapter', { terminalId, error });
-    });
 }
 
 /**
@@ -1891,14 +2019,23 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
   }
 }
 
-function handleNotification(method: string, params: unknown): void {
+export interface DaemonEventsRoutingOverrides {
+  onSettingsChanges?: (changes: AppliedSettingChange[]) => void;
+}
+
+export function routeDaemonEventsNotification(
+  method: string,
+  params: unknown,
+  expectedSubscriptionId: string | undefined = undefined,
+  overrides?: DaemonEventsRoutingOverrides,
+): void {
   if (method !== 'events.event') return;
   // Fan-out scope gate (see file header): drop notifications delivered through
   // a different subscription on the same socket so chunk-append/queue/idle
   // handlers never apply the same event twice. Flat/legacy envelopes (no
   // `subscriptionId` on params) are still accepted for back-compat.
   const envelopeSubscriptionId = extractSubscriptionId(params);
-  if (envelopeSubscriptionId !== undefined && envelopeSubscriptionId !== ownSubscriptionId) {
+  if (envelopeSubscriptionId !== undefined && envelopeSubscriptionId !== expectedSubscriptionId) {
     return;
   }
   const event = extractEvent(params);
@@ -1909,7 +2046,7 @@ function handleNotification(method: string, params: unknown): void {
   // `settings:changed` (§6.5) is global — no `workspaceId` envelope is
   // expected, so it must be routed BEFORE the workspace-id gate below.
   if (type === 'settings:changed') {
-    handleSettingsChangedEvent(event);
+    handleSettingsChangedEvent(event, overrides?.onSettingsChanges);
     return;
   }
 
@@ -1993,12 +2130,6 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'workspace:displayStatus-changed') {
     handleDisplayStatusChangedEvent(event, workspaceId);
   }
-  // `workspace:attention-changed` (§6.5 / §9.9) — merge the BE-owned
-  // dismissible attention flag onto the workspace entity so unread indicators
-  // update live without a refetch. Side effect, never an early return.
-  if (type === 'workspace:attention-changed') {
-    handleAttentionChangedEvent(event, workspaceId);
-  }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
@@ -2012,10 +2143,9 @@ function handleNotification(method: string, params: unknown): void {
     refreshWorkspaceSubscriptionEntries(workspaceId);
   }
 
-  // STAB-9: Agent lifecycle events (status-changed, idle, deleted) should
-  // refresh the agent list so the sidebar shows live status/last-activity
-  // updates and drops deleted agents without an unrelated refetch.
-  if (type === 'agent:status-changed' || type === 'agent:idle' || type === 'agent:deleted') {
+  // STAB-9: Agent lifecycle events (status-changed, idle) should refresh the
+  // agent list so the sidebar shows live status/last-activity updates.
+  if (type === 'agent:status-changed' || type === 'agent:idle') {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
   }
 
@@ -2041,69 +2171,6 @@ function handleNotification(method: string, params: unknown): void {
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
-      // Tie off the per-agent turn-tracking entry (kept alive across
-      // agent:stream:end for the straggler-ping case) so the map stays
-      // bounded by live agents.
-      previewTurnMessageIdByAgent.delete(data.agentId);
-    }
-    // Refresh the workspace entity's BE-owned `agentSummary` aggregate so the
-    // HUD card rows drop the deleted agent immediately — the `agent.list`
-    // hydration above does not touch it. Fire-and-forget side effect, falls
-    // through to the timeline dispatch below.
-    void reconcileWorkspaceAgentSummary(workspaceId);
-  }
-
-  // monorepo#1106: a redrive that bypasses chat-send-service — coordinator
-  // `agent.sendMessage`, another client's `agent.retry`, or this FE's own
-  // failure-toast Retry (also `agent.retry`, which never routes through
-  // dispatchToLifecycle) — starts a new turn without the #1044
-  // enqueue-success clear, so the previous turn's failure banner persists
-  // over the live turn ("errored" and "processing" simultaneously). Keyed
-  // off the turn-start status edges here (with `agent:stream:start` /
-  // `agent:queue:processing` as the other turn-start clears), NOT the send
-  // path, so every redrive shape is covered. Clear the stale `chatError` /
-  // `modelUnavailable` when the agent leaves the error state for a
-  // turn-starting one. Two wire shapes cover the redrive family:
-  //   - `agent.sendMessage` on an errored agent goes straight error→active;
-  //   - `agent.retry` persists Pending BEFORE draining (persist_retry_status),
-  //     so the FE sees error→pending (isActive:false) first — that edge
-  //     consumes the error prior status, so `pending` must clear too or the
-  //     follow-up pending→active tick reads priorStatus 'pending' and never
-  //     fires. An empty-queue retry goes error→idle instead, which correctly
-  //     keeps the banner (nothing was redriven).
-  // Gated on the PRIOR session status (read before the `eventReceived`
-  // dispatch below applies the transition) so a mid-turn status tick — e.g.
-  // an isStreaming flag change while an enqueue-failure banner is up — never
-  // wipes a banner set while the agent was already active (#1044/#999
-  // semantics preserved). Retry records stay parked: their promotion remains
-  // turnId-exact via `agent:queue:processing` (monorepo#1057). Side effect
-  // only — falls through to the timeline dispatch below.
-  if (type === 'agent:status-changed') {
-    const data = (event as { data?: Record<string, unknown> }).data;
-    const agentId = data?.agentId;
-    const status = typeof data?.status === 'string' ? data.status : undefined;
-    const startsTurn =
-      data?.isActive === true ||
-      status === 'active' ||
-      status === 'responding' ||
-      status === 'pending';
-    if (
-      typeof agentId === 'string' &&
-      status !== 'error' &&
-      status !== 'failed' &&
-      startsTurn
-    ) {
-      const priorStatus: string | undefined =
-        appStore.state.agentSessions.byAgentId[agentId]?.status;
-      if (priorStatus === 'error' || priorStatus === 'failed') {
-        const chatAgent = appStore.state.chatState?.byAgentId[agentId];
-        if (chatAgent?.error) {
-          appStore.dispatch(chatErrorCleared(agentId));
-        }
-        if (chatAgent?.modelUnavailable) {
-          appStore.dispatch(chatModelUnavailableCleared(agentId));
-        }
-      }
     }
   }
 
@@ -2125,7 +2192,7 @@ function handleNotification(method: string, params: unknown): void {
   }
   if (
     type === 'agent:stream:start' ||
-    type === 'agent:stream:activity' ||
+    type === 'agent:stream:chunk' ||
     type === 'agent:stream:status'
   ) {
     void reconcileWorkspaceActivity(workspaceId, true);
@@ -2142,10 +2209,6 @@ function handleNotification(method: string, params: unknown): void {
   // Task/comment/PR domain events converge into their owning slices so the
   // task pane, inline comment thread, and workspace PR pill refresh without a
   // reload.
-  if (type === 'task:created') {
-    handleTaskCreatedEvent(workspaceId);
-    return;
-  }
   if (type === 'task:status-changed') {
     handleTaskStatusChangedEvent(event, workspaceId);
     return;
@@ -2181,21 +2244,20 @@ function handleNotification(method: string, params: unknown): void {
     // so the legacy mock-IPC listeners and activity timeline still work.
   }
 
-  // Live stream family — content-free chat-state bookkeeping only (the
-  // transcript is owned by the chat.subscribe delta stream). `agent:failed`
-  // flows through both paths: it finalizes the stream bookkeeping AND
-  // forwards the lifecycle to `eventReceived` so the session status
-  // transitions to "failed".
+  // Live stream family — accumulate per-agent and grow the in-flight assistant
+  // message. `agent:failed` flows through both paths: it finalizes any
+  // in-flight stream AND forwards the lifecycle to `eventReceived` so the
+  // session status transitions to "failed".
   if (type === 'agent:stream:start') {
     handleStreamStartEvent(event, workspaceId);
     return;
   }
-  if (type === 'agent:stream:activity') {
-    handleStreamActivityEvent(event);
+  if (type === 'agent:stream:chunk') {
+    handleStreamChunkEvent(event, workspaceId);
     return;
   }
   if (type === 'agent:tool:call') {
-    handleToolCallEvent(event);
+    handleToolCallEvent(event, workspaceId);
     return;
   }
   if (type === 'agent:stream:status') {
@@ -2203,7 +2265,7 @@ function handleNotification(method: string, params: unknown): void {
     return;
   }
   if (type === 'agent:stream:end') {
-    handleStreamEndEvent(event);
+    handleStreamEndEvent(event, workspaceId);
     return;
   }
   if (type === 'agent:queue:updated') {
@@ -2224,11 +2286,6 @@ function handleNotification(method: string, params: unknown): void {
     // fall through to the storage dispatch below so the activity timeline
     // records the outcome.
   }
-  if (type === 'agent:attention-requested') {
-    handleAttentionRequestedEvent(event, workspaceId);
-    // fall through to the storage dispatch below so the activity timeline
-    // records the attention request alongside the sticky toast.
-  }
   // Script output/state (§6.5) — script:output feeds the live buffer the
   // `ScriptOutputViewer` xterm reads from, script:state mirrors the
   // recomputed `ScriptRuntimeState` into the scripts slice. Both fall
@@ -2243,10 +2300,6 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'script:state') {
     handleScriptStateEvent(event, workspaceId);
     // fall through to the lifecycle dispatch below
-  }
-  if (type === 'terminal:exit') {
-    handleTerminalExitEvent(event, workspaceId);
-    // fall through so the activity timeline records the exit
   }
   if (type === 'agent:failed') {
     handleAgentFailedStream(event, workspaceId);
@@ -2265,14 +2318,6 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'agent:updated') {
     handleAgentUpdatedEvent(event);
   }
-  // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
-  // daemon persists the attention-request fields on the session and also
-  // emits `agent:updated`, but re-fetch here too so the sidebar/footer
-  // indicator appears even if that companion event is missed. Same
-  // metadata-only refresh as handleAgentUpdatedEvent (transcript preserved).
-  if (type === 'agent:attention-requested') {
-    handleAgentUpdatedEvent(event);
-  }
   // STAB-22: agent:message events with role="assistant" should trigger a
   // conversation refetch so AgentCard preview updates for watched agents whose
   // tab was never opened. The event payload is { agentId, messageId, role }.
@@ -2285,19 +2330,9 @@ function handleNotification(method: string, params: unknown): void {
   // QUEUED-MESSAGES: also handle role="user" — if the session is missing or its
   // messages do not contain the messageId, refetch to fold in dequeued and
   // agent-to-agent messages.
-  //
-  // KEPT despite the standing chat.subscribe transcript path: the standing
-  // subscription only exists for the VIEWED agent (chat-subscribe-service
-  // opens one per opened chat and closes the rest on switch), so
-  // watched-but-never-opened agents still depend on this echo refetch for
-  // their sidebar preview. While the standing subscription IS live for the
-  // event's agent it is the sole transcript writer and delivers the persisted
-  // row itself — skip the redundant refetch (`hasLiveChatSubscription` is
-  // false until the first emit, so a failed/slow registration degrades to
-  // the refetch instead of a dead preview).
   if (type === 'agent:message') {
     const { agentId, messageId, role } = event.data ?? {};
-    if (typeof agentId === 'string' && !hasLiveChatSubscription(agentId)) {
+    if (typeof agentId === 'string') {
       if (role === 'assistant') {
         const session = appStore.state.agentSessions.byAgentId[agentId];
         const hasMessage =
@@ -2355,13 +2390,12 @@ function handleNotification(method: string, params: unknown): void {
  * (RESUB-1) — a divergence here would silently drop event families after a
  * daemon restart.
  */
-const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
+export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'agent:*',
   'file:*',
   'note:*',
   'comment:*',
   'script:*',
-  'terminal:*',
   'settings:changed',
   'workspace:tokenUsage-changed',
   // `workspace:context-changed` (§5.1 / §6.5) — chat-context attachment
@@ -2376,9 +2410,6 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   // current-cycle display status transitions so the sidebar grouping updates
   // without a refetch.
   'workspace:displayStatus-changed',
-  // `workspace:attention-changed` (§6.5 / §9.9) — self-sufficient dismissible
-  // attention flag changes so unread indicators update without a refetch.
-  'workspace:attention-changed',
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',
@@ -2410,47 +2441,7 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   'app:workspace-open',
 ] as const;
 
-/**
- * Issue the firehose `events.subscribe` and stash the resulting id on
- * `ownSubscriptionId` for the notification-scope gate. Shared by the one-shot
- * install and the post-reconnect replay so both go through the same code path.
- */
-async function subscribeFirehose(): Promise<void> {
-  try {
-    const result = (await backendRequest('events.subscribe', {
-      eventTypes: [...BRIDGE_SUBSCRIBE_EVENT_TYPES],
-    })) as { subscriptionId?: string } | undefined;
-    if (typeof result?.subscriptionId === 'string' && result.subscriptionId.length > 0) {
-      ownSubscriptionId = result.subscriptionId;
-    } else {
-      logger.warn('events.subscribe returned no subscriptionId', result);
-    }
-  } catch (error) {
-    logger.error('events.subscribe (bridge firehose + legacy relay families) failed', error);
-  }
-}
-
-/**
- * After the daemon restarts and the socket reconnects, its in-memory
- * subscription registry is empty and the old `ownSubscriptionId` refers to
- * nothing. Replay the firehose subscribe (obtaining a fresh id), then refresh
- * coarse state so anything missed during the outage converges: re-hydrate the
- * active workspace's agent list and the open chat conversation via the
- * existing read-service paths (LEAK-1: both reads pin to the workspace/agent
- * that are active AT DISPATCH TIME — a subsequent switch is handled by the
- * read-service's own workspace guards).
- */
-async function replayAfterReconnect(): Promise<void> {
-  // Drop the stale id first: the notification-scope gate accepts flat/legacy
-  // envelopes (no id) and matches on our own id — leaving the old id in place
-  // during the resubscribe window would let a foreign subscription's
-  // notifications leak through if they happened to share the old id.
-  ownSubscriptionId = undefined;
-  await subscribeFirehose();
-
-  // LEAK-1: capture the active workspace/agent at completion time; the
-  // read-services themselves coalesce concurrent loads per key so a workspace
-  // switch racing this replay does not double-hydrate.
+export async function refreshDaemonEventsAfterReconnect(): Promise<void> {
   const state = appStore.state as {
     workspace?: { activeWorkspaceId?: string | null };
     workspaceAgents?: {
@@ -2468,72 +2459,8 @@ async function replayAfterReconnect(): Promise<void> {
   }
 }
 
-async function installSubscriptionOnce(): Promise<void> {
-  if (installed) return;
-  installed = true;
-
-  const off = onBackendNotification((n) => {
-    try {
-      handleNotification(n.method, n.params);
-    } catch (error) {
-      logger.error('daemon-events-bridge notification handler threw', error);
-    }
-  });
-
-  // Ask the daemon to firehose `agent:*` events, `settings:changed`
-  // (§5.12 / §6.5), `workspace:tokenUsage-changed` (§5.23), the
-  // activity-timeline families (`file:*`, `note:*`, `comment:*`, `script:*`
-  // — §6.5) that populate `selectWorkspaceEvents`, and the legacy-relay
-  // families (`workspace:updated`, `task:ready-tasks-changed`,
-  // `changes:git-status`/`changes:tracked` §5.18, `line-attribution:updated`
-  // §5.2.1 / §6.5, `pr:*` §6.5 — see relayLegacyIpcEvent) to this socket.
-  // The subscription id is owned by the bridge (no consumer needs it);
-  // refetch delta-subscriptions in `live-agents-client` register their own.
-  await subscribeFirehose();
-
-  // Daemon restart replay: the in-memory subscription registry is dropped on
-  // restart, so a straight `notification` re-registration is not enough — we
-  // must re-issue the subscribe AND converge coarse state (RESUB-1).
-  const offReconnect = onBackendReconnected(() => {
-    void replayAfterReconnect();
-  });
-
-  cleanup = () => {
-    try {
-      off();
-    } catch (error) {
-      logger.error('backend notification off() threw', error);
-    }
-    try {
-      offReconnect();
-    } catch (error) {
-      logger.error('backend reconnect off() threw', error);
-    }
-  };
-}
-
-/**
- * Lazily install the bridge on the first dispatched action so the renderer
- * store is fully constructed before we touch `appClient`/`appStore`. Calling
- * the middleware factory does not perform any I/O.
- */
-export function createDaemonEventsBridgeMiddleware(): StoreMiddleware {
-  return () => (next) => (action) => {
-    if (!installed) void installSubscriptionOnce();
-    return next(action);
-  };
-}
-
-/** Test-only — tear down the singleton subscription and per-agent dedup maps. */
-export function __resetDaemonEventsBridgeForTests(): void {
-  if (cleanup) cleanup();
-  cleanup = null;
-  installed = false;
-  ownSubscriptionId = undefined;
-  toolStatusByAgent.clear();
-  wakeTurnMessageIdByAgent.clear();
-  previewTurnMessageIdByAgent.clear();
-  // Clear all pending debounce timers so tests start from a clean slate
+export function disposeDaemonEventsRoutingState(): void {
+  streamsByAgent.clear();
   for (const timer of changesRefreshTimersByWorkspace.values()) {
     clearTimeout(timer);
   }
@@ -2543,4 +2470,9 @@ export function __resetDaemonEventsBridgeForTests(): void {
   }
   tasksRefreshTimersByWorkspace.clear();
   scriptOutputDecoders.clear();
+}
+
+/** Test-only — reset stream accumulators and debounce state. */
+export function __resetDaemonEventsBridgeForTests(): void {
+  disposeDaemonEventsRoutingState();
 }

@@ -2,13 +2,10 @@
  * Agent subscription read service — populates the agent-subscription-ui slice
  * from the daemon's `agent.getSubscriptions` (PROTOCOL §5.5 extensions).
  *
- * `requestSubscriptionFetch` (dispatched by AgentSubscriptions.svelte on mount /
- * agent switch) lost its consumer when the saga runtime was removed. Like the
- * other read services, `createAgentSubscriptionReadMiddleware()` restores the
- * read path WITHOUT re-adding a saga and WITHOUT changing any call site: it
- * observes dispatched actions and, on `requestSubscriptionFetch`, fetches the
- * completion-watch payload over the live transport and dispatches
- * `setSubscriptionSnapshot` with the mapped slice shape.
+ * The agent-subscription saga calls these helpers for request actions and
+ * lifecycle cleanup. The helpers fetch the completion-watch payload over the
+ * live transport and dispatch `setSubscriptionSnapshot` with the mapped slice
+ * shape.
  *
  * Wire mapping (`{ subscriptions, delegationGroups, agentStatuses }`):
  * - subscriptions map field-for-field onto the slice `Subscription` shape (the
@@ -35,8 +32,8 @@
  * refresh fans out to all tracked entries instead of matching ids (entries are
  * few: only agents whose subscription row was rendered).
  *
- * LEAK-1 (workspace switches / recycled ids): `workspaceDeleted` — dispatched
- * by the bridge for both real deletes and the recycled-ID purge — bumps the
+ * LEAK-1 (workspace switches / recycled ids): saga cleanup calls
+ * `purgeWorkspaceSubscriptionEntries`, which bumps the
  * per-workspace hydration generation, evicts in-flight fetches, and resets
  * every entry of that workspace. A pre-purge fetch that resolves late is
  * discarded (generation re-checked after the await) so stale "Waiting for N
@@ -45,30 +42,24 @@
  * Dependency-light per src/store AGENTS.md: imports only the live transport,
  * the configured store, slice actions/types, and the logger (NOT selectors).
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
-import { backendRequest } from "$lib/client/live/backend-transport";
-import { store as appStore } from "$store/renderer/store";
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { store as appStore } from '$store/renderer/store';
 import {
   deleteSubscriptionUI,
   makeKey,
-  requestSubscriptionFetch,
   resetSubscriptionUI,
   setSubscriptionSnapshot,
-} from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice";
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import type {
   AgentStatus,
   AgentSubscriptionUIEntry,
   DelegationGroupStatus,
   Subscription,
   WaitingState,
-} from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types";
-import { createLogger } from "$lib/utils/client-logger";
+} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
+import { createLogger } from '$lib/utils/client-logger';
 
-const logger = createLogger("AgentSubscriptionReadService");
+const logger = createLogger('AgentSubscriptionReadService');
 
 /** How long a `completed` entry is displayed before it is reset. */
 export const COMPLETED_DISPLAY_DURATION_MS = 3000;
@@ -79,7 +70,7 @@ export const COMPLETED_DISPLAY_DURATION_MS = 3000;
 
 interface WireDelegationGroupInfo {
   groupId: string;
-  awaitMode: "all";
+  awaitMode: 'all';
   expectedAgentIds: string[];
 }
 
@@ -95,7 +86,7 @@ interface WireSubscription {
 
 interface WireDelegationGroup {
   groupId: string;
-  awaitMode: "all";
+  awaitMode: 'all';
   expectedAgentIds: string[];
   completedAgentIds: string[];
   deletedAgentIds: string[];
@@ -197,8 +188,8 @@ export function fetchAgentSubscriptionSnapshot(wsId: string, agentId: string): P
   // eslint-disable-next-line prefer-const
   run = (async () => {
     try {
-      const previousWaitingState: WaitingState = readEntries()[key]?.waitingState ?? "idle";
-      const result = await backendRequest<WireGetSubscriptionsResult>("agent.getSubscriptions", {
+      const previousWaitingState: WaitingState = readEntries()[key]?.waitingState ?? 'idle';
+      const result = await backendRequest<WireGetSubscriptionsResult>('agent.getSubscriptions', {
         workspaceId: wsId,
         agentId,
       });
@@ -213,13 +204,13 @@ export function fetchAgentSubscriptionSnapshot(wsId: string, agentId: string): P
 
       // Transition: was waiting/woken but now empty → the group delivered its
       // wake (the daemon drops delivered groups + watches) → show "completed".
-      if (!hasData && (previousWaitingState === "waiting" || previousWaitingState === "woken")) {
+      if (!hasData && (previousWaitingState === 'waiting' || previousWaitingState === 'woken')) {
         appStore.dispatch(
           setSubscriptionSnapshot(wsId, agentId, {
             subscriptions,
             delegationGroups,
             agentStatuses,
-            waitingState: "completed",
+            waitingState: 'completed',
           }),
         );
         scheduleCompletedCleanup(wsId, agentId, generation);
@@ -231,7 +222,7 @@ export function fetchAgentSubscriptionSnapshot(wsId: string, agentId: string): P
           subscriptions,
           delegationGroups,
           agentStatuses,
-          waitingState: hasData ? "waiting" : "idle",
+          waitingState: hasData ? 'waiting' : 'idle',
         }),
       );
     } catch (error) {
@@ -261,7 +252,7 @@ function scheduleCompletedCleanup(wsId: string, agentId: string, generation: num
       completionGeneration.delete(key);
       if (currentWorkspaceGeneration(wsId) !== generation) return;
       try {
-        const fresh = await backendRequest<WireGetSubscriptionsResult>("agent.getSubscriptions", {
+        const fresh = await backendRequest<WireGetSubscriptionsResult>('agent.getSubscriptions', {
           workspaceId: wsId,
           agentId,
         });
@@ -314,47 +305,6 @@ export function purgeWorkspaceSubscriptionEntries(wsId: string): void {
     inFlight.delete(key);
     appStore.dispatch(deleteSubscriptionUI(wsId, key.slice(prefix.length)));
   }
-}
-
-/**
- * `workspaceUnmounted` housekeeping: drop pending completion generations for
- * the workspace so the maps never grow unbounded across mount/unmount cycles
- * (a remount re-fetches via the component's `requestSubscriptionFetch`).
- */
-function pruneWorkspaceGenerations(wsId: string): void {
-  const prefix = `${wsId}:`;
-  for (const key of completionGeneration.keys()) {
-    if (key.startsWith(prefix)) completionGeneration.delete(key);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Middleware
-// ---------------------------------------------------------------------------
-
-/**
- * Middleware that gives `requestSubscriptionFetch` a real handler and hooks the
- * LEAK-1 purge into `workspaceDeleted`. Fire-and-forget — dispatch stays
- * synchronous and never throws.
- */
-export function createAgentSubscriptionReadMiddleware(): StoreMiddleware {
-  return () => (next) => (action) => {
-    const result = next(action);
-    if (!action || typeof action !== "object") return result;
-    if (action.type === requestSubscriptionFetch.type) {
-      const [wsId, agentId] = (action.payload ?? []) as [string?, string?];
-      if (typeof wsId === "string" && wsId && typeof agentId === "string" && agentId) {
-        void fetchAgentSubscriptionSnapshot(wsId, agentId);
-      }
-    } else if (action.type === workspaceDeleted.type) {
-      const [wsId] = (action.payload ?? []) as [string?];
-      if (typeof wsId === "string" && wsId) purgeWorkspaceSubscriptionEntries(wsId);
-    } else if (action.type === workspaceUnmounted.type) {
-      const [wsId] = (action.payload ?? []) as [string?];
-      if (typeof wsId === "string" && wsId) pruneWorkspaceGenerations(wsId);
-    }
-    return result;
-  };
 }
 
 /** @internal Reset module-level maps between tests. */

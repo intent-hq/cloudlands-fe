@@ -5,8 +5,8 @@
  * and agents actively working.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import type { AgentLockState, AgentLockWorkspaceState } from "./agent-lock-types";
@@ -50,18 +50,19 @@ export const setAgentLockState = createAction(
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const agentLockReducer = createReducer<AgentLockState>(initialState)
-  .with(setAgentLockState, (state, action) => {
-    const { workspaceId, lockedAgentIds, lockedFilePaths } = action.payload;
-    const ws = getWorkspaceState(state, workspaceId);
-    // Return same reference if nothing changed
-    if (ws.lockedAgentIds === lockedAgentIds && ws.lockedFilePaths === lockedFilePaths) {
-      return state;
-    }
-    return setWorkspaceState(state, workspaceId, {
-      lockedAgentIds,
-      lockedFilePaths,
-    });
-  })
-  .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
-
+export const agentLockReducer = createReducer<AgentLockState>(initialState);
+agentLockReducer.with(setAgentLockState, (state, action) => {
+  const { workspaceId, lockedAgentIds, lockedFilePaths } = action.payload;
+  const ws = getWorkspaceState(state, workspaceId);
+  // Return same reference if nothing changed
+  if (ws.lockedAgentIds === lockedAgentIds && ws.lockedFilePaths === lockedFilePaths) {
+    return state;
+  }
+  return setWorkspaceState(state, workspaceId, {
+    lockedAgentIds,
+    lockedFilePaths,
+  });
+});
+agentLockReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);

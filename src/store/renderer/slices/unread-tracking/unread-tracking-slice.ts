@@ -10,8 +10,8 @@
  * FE-local unread feed this slice used to keep has been retired.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { UnreadTrackingState } from "./unread-tracking-types";
 
 export const initialState: UnreadTrackingState = {
@@ -59,18 +59,18 @@ export const endAllDividerSessions = createAction(
 
 // ── Reducer ──
 
-export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialState)
-  .with(markAgentAsViewed, (state, { payload: [agentId] }) => {
+export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialState);
+unreadTrackingReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
     if (!agentId) return state;
     if (state.currentlyViewedAgentId === agentId) return state;
     return { ...state, currentlyViewedAgentId: agentId };
-  })
-  .with(clearCurrentlyViewedAgent, (state, { payload: [agentId] }) => {
+  });
+unreadTrackingReducer.with(clearCurrentlyViewedAgent, (state, { payload: [agentId] }) => {
     if (state.currentlyViewedAgentId === null) return state;
     if (agentId !== undefined && state.currentlyViewedAgentId !== agentId) return state;
     return { ...state, currentlyViewedAgentId: null };
-  })
-  .with(startDividerSession, (state, { payload: [agentId, anchorId] }) => {
+  });
+unreadTrackingReducer.with(startDividerSession, (state, { payload: [agentId, anchorId] }) => {
     if (!agentId) return state;
     if (state.dividerSessionByAgentId[agentId] !== undefined) return state;
     return {
@@ -80,14 +80,14 @@ export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialS
         [agentId]: { anchorId: anchorId ?? null },
       },
     };
-  })
-  .with(endDividerSession, (state, { payload: [agentId] }) => {
+  });
+unreadTrackingReducer.with(endDividerSession, (state, { payload: [agentId] }) => {
     if (state.dividerSessionByAgentId[agentId] === undefined) return state;
     const dividerSessionByAgentId = { ...state.dividerSessionByAgentId };
     delete dividerSessionByAgentId[agentId];
     return { ...state, dividerSessionByAgentId };
-  })
-  .with(endAllDividerSessions, (state) => {
+  });
+unreadTrackingReducer.with(endAllDividerSessions, (state) => {
     if (Object.keys(state.dividerSessionByAgentId).length === 0) return state;
     return { ...state, dividerSessionByAgentId: {} };
   });

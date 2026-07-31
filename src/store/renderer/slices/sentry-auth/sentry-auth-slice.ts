@@ -4,8 +4,8 @@
  * Actions and reducer for Sentry authentication and issue state.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type { SentryAuthState } from "./sentry-auth-types";
 import type { SentryIssueResult, SentryProject } from "$features/sentry-auth/types";
 import type { SentryIssueStatusType } from "$features/sentry-auth/constants";
@@ -113,52 +113,52 @@ export const setSentryLoadingIssues = createAction<[isLoading: boolean]>(
 // Reducer
 // =============================================================================
 
-export const sentryAuthReducer = createReducer<SentryAuthState>(initialState)
-  .with(setSentryAuthState, (state, { payload }) => ({
+export const sentryAuthReducer = createReducer<SentryAuthState>(initialState);
+sentryAuthReducer.with(setSentryAuthState, (state, { payload }) => ({
     ...state,
     isAuthenticated: payload.isAuthenticated,
     organization: payload.organization,
     error: payload.error,
-  }))
-  .with(setSentryConnecting, (state, { payload: [isConnecting] }) => ({
+  }));
+sentryAuthReducer.with(setSentryConnecting, (state, { payload: [isConnecting] }) => ({
     ...state,
     isConnecting,
-  }))
-  .with(setSentryError, (state, { payload: [error] }) => ({
+  }));
+sentryAuthReducer.with(setSentryError, (state, { payload: [error] }) => ({
     ...state,
     error,
-  }))
-  .with(clearSentryError, (state) => ({
+  }));
+sentryAuthReducer.with(clearSentryError, (state) => ({
     ...state,
     error: null,
-  }))
-  .with(setSentryConnected, (state, { payload }) => ({
+  }));
+sentryAuthReducer.with(setSentryConnected, (state, { payload }) => ({
     ...state,
     isAuthenticated: true,
     organization: payload.organization,
     isConnecting: false,
     error: null,
-  }))
-  .with(setSentryLoggedOut, (state) => ({
+  }));
+sentryAuthReducer.with(setSentryLoggedOut, (state) => ({
     ...state,
     isAuthenticated: false,
     organization: null,
     projects: [],
     issues: [],
-  }))
-  .with(setSentryProjects, (state, { payload: [projects] }) => ({
+  }));
+sentryAuthReducer.with(setSentryProjects, (state, { payload: [projects] }) => ({
     ...state,
     projects,
-  }))
-  .with(setSentryLoadingProjects, (state, { payload: [isLoading] }) => ({
+  }));
+sentryAuthReducer.with(setSentryLoadingProjects, (state, { payload: [isLoading] }) => ({
     ...state,
     isLoadingProjects: isLoading,
-  }))
-  .with(setSentryIssues, (state, { payload: [issues] }) => ({
+  }));
+sentryAuthReducer.with(setSentryIssues, (state, { payload: [issues] }) => ({
     ...state,
     issues,
-  }))
-  .with(setSentryLoadingIssues, (state, { payload: [isLoading] }) => ({
+  }));
+sentryAuthReducer.with(setSentryLoadingIssues, (state, { payload: [isLoading] }) => ({
     ...state,
     isLoadingIssues: isLoading,
   }));

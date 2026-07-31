@@ -15,8 +15,8 @@
  * - cleanupWorkspace: Remove workspace state entirely
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../../utils/workspace-scoped";
 import type { WorkspaceEvent } from "../../../../features/events/types";
 import {
@@ -101,15 +101,14 @@ function appendEvents(
 // Reducer
 // ============================================================================
 
-export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initialState)
-  .with(workspaceEventAccepted, (state, { payload: [event] }) => {
-    // Only accepted (deduped) events reach here — the coordinating saga
-    // dispatches workspaceEventAccepted after the dedup check passes.
-    const wsId = event.workspaceId;
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, appendEvents(ws, [event]));
-  })
-  .with(cleanupWorkspace, (state, { payload: [workspaceId] }) => {
-    return clearWorkspaceState(state, workspaceId);
-  });
-
+export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initialState);
+workspaceEventsReducer.with(workspaceEventAccepted, (state, { payload: [event] }) => {
+  // Only accepted (deduped) events reach here — the coordinating saga
+  // dispatches workspaceEventAccepted after the dedup check passes.
+  const wsId = event.workspaceId;
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, appendEvents(ws, [event]));
+});
+workspaceEventsReducer.with(cleanupWorkspace, (state, { payload: [workspaceId] }) => {
+  return clearWorkspaceState(state, workspaceId);
+});

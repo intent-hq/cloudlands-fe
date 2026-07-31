@@ -20,21 +20,23 @@ import {
   afterEach,
   vi,
 } from "vitest";
-import {
-  combineReducers,
-  createStoreCore as createStore,
-  type StoreCore as Store,
-} from "$lib/store-shim/internal/store-core";
+import { Store } from "@augmentcode/themis/svelte-store";
+
+vi.mock("svelte", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("svelte")>()),
+  getContext: () => undefined,
+}));
+
 import {
   agentSubscriptionsReducer,
   markAgentDeleted,
 } from "../../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice";
 
-let testStore: Store;
+let testStore: Store<any, any>;
 
 const getTestBridgeStore = () => ({
   get state() {
-    return testStore.getState();
+    return testStore.state;
   },
   dispatch: (action: any) => testStore.dispatch(action),
 });
@@ -67,7 +69,8 @@ const GROUP_ID = "group-42";
 describe("agentSubscribeToGroup", () => {
   beforeEach(() => {
     nextId = 0;
-    testStore = createStore(combineReducers({ agentSubscriptions: agentSubscriptionsReducer }));
+    testStore = new Store({ agentSubscriptions: agentSubscriptionsReducer });
+    testStore.init();
   });
 
   afterEach(() => {
@@ -85,7 +88,7 @@ describe("agentSubscribeToGroup", () => {
     expect(id3).toBe(id1);
     expect(id4).toBe(id1);
 
-    const ws = (testStore.getState() as any).agentSubscriptions.byWorkspaceId[WS];
+    const ws = (testStore.state as any).agentSubscriptions.byWorkspaceId[WS];
     expect(Object.keys(ws.subscriptions)).toEqual(["seed-1"]);
     const sub = ws.subscriptions["seed-1"];
     expect(sub.filter.actorIds).toEqual(["child-a", "child-b", "child-c", "child-d"]);
@@ -108,7 +111,7 @@ describe("agentSubscribeToGroup", () => {
     expect(id2).toBe("seed-2");
     expect(id1).not.toBe(id2);
 
-    const ws = (testStore.getState() as any).agentSubscriptions.byWorkspaceId[WS];
+    const ws = (testStore.state as any).agentSubscriptions.byWorkspaceId[WS];
     expect(Object.keys(ws.subscriptions).sort()).toEqual(["seed-1", "seed-2"]);
   });
 
@@ -119,7 +122,7 @@ describe("agentSubscribeToGroup", () => {
     expect(id1).toBe("seed-1");
     expect(id2).toBe("seed-2");
 
-    const ws = (testStore.getState() as any).agentSubscriptions.byWorkspaceId[WS];
+    const ws = (testStore.state as any).agentSubscriptions.byWorkspaceId[WS];
     expect(Object.keys(ws.subscriptions).sort()).toEqual(["seed-1", "seed-2"]);
   });
 
@@ -128,7 +131,7 @@ describe("agentSubscribeToGroup", () => {
     const id2 = agentSubscribeToGroup(WS, PARENT_ID, PARENT_NAME, GROUP_ID, "child-a");
 
     expect(id1).toBe(id2);
-    const ws = (testStore.getState() as any).agentSubscriptions.byWorkspaceId[WS];
+    const ws = (testStore.state as any).agentSubscriptions.byWorkspaceId[WS];
     expect(ws.subscriptions["seed-1"].filter.actorIds).toEqual(["child-a"]);
     expect(ws.delegationGroups[GROUP_ID].expectedAgentIds).toEqual(["child-a"]);
   });
@@ -139,7 +142,7 @@ describe("agentSubscribeToGroup", () => {
     const id = agentSubscribeToGroup(WS, PARENT_ID, PARENT_NAME, GROUP_ID, "child-a");
 
     expect(id).toBe("");
-    const ws = (testStore.getState() as any).agentSubscriptions.byWorkspaceId[WS];
+    const ws = (testStore.state as any).agentSubscriptions.byWorkspaceId[WS];
     expect(ws.subscriptions).toEqual({});
     expect(ws.delegationGroups).toEqual({});
   });
