@@ -174,6 +174,21 @@ describe('agent-failure-toast-service', () => {
     expect(props.contextLine).toBeUndefined();
   });
 
+  it('toasts only registry entries — delegated failures (parentAgentId on the wire) never enter the registry', async () => {
+    // The daemon-events bridge skips `recordAgentFailure` for `agent:failed`
+    // events carrying a non-empty parentAgentId (PROTOCOL §6.5), so a
+    // delegated agent's failure never reaches this toast layer
+    // (daemon-events-bridge.client.test.ts covers the gate). This pins the
+    // boundary: no registry entry → no toast; a recorded entry always toasts.
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+    await flush();
+
+    expect(lastCustomCallFor(agentFailureToastId('agent-1'))).toBeDefined();
+    // agent-2 failed with a parent upstream — the bridge never recorded it.
+    expect(lastCustomCallFor(agentFailureToastId('agent-2'))).toBeUndefined();
+    expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-1']);
+  });
+
   it('auto-dismisses the toast when the agent leaves the registry', async () => {
     recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
     await flush();

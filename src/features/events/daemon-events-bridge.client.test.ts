@@ -199,6 +199,10 @@ import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-se
 import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
+import {
+  clearAgentFailureRegistry,
+  listAgentFailureEntries,
+} from '$features/agent/agent-failure-registry';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -2914,6 +2918,55 @@ describe('daemonEventsBridge (attention flow — agent:attention-requested → s
     const events = state.workspaceEvents?.byWorkspaceId?.[WS]?.events ?? [];
     expect(events.some((event) => event.type === 'agent:attention-requested')).toBe(true);
   });
+
+  it('skips the toast when the payload carries parentAgentId (delegated agent — parent handles it)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    ensureAgentSessionSpy.mockClear();
+
+    // PROTOCOL §6.5: optional parentAgentId, present for delegated agents.
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'discussion',
+        reason: 'Need a decision on the API shape',
+        parentAgentId: 'agent-parent-1',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).not.toHaveBeenCalled();
+    // The gate only suppresses the toast — the session refetch and the
+    // activity timeline still fire so the sidebar indicator/timeline work.
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    const state = appStore.state as {
+      workspaceEvents?: { byWorkspaceId?: Record<string, { events?: Array<{ type: string }> }> };
+    };
+    const events = state.workspaceEvents?.byWorkspaceId?.[WS]?.events ?? [];
+    expect(events.some((event) => event.type === 'agent:attention-requested')).toBe(true);
+  });
+
+  it('still toasts when parentAgentId is absent or empty (parentless agent / older daemon)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'blocker',
+        reason: 'CI is red',
+        parentAgentId: '',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: AGENT, kind: 'blocker' }),
+    );
+  });
 });
 
 describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5)', () => {
@@ -5333,6 +5386,59 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       const chatState = appStore.state.chatState.byAgentId[agentId];
       expect(chatState).toBeDefined();
       expect(chatState.error).toBe(errorMsg);
+    });
+
+    it('skips recordAgentFailure when the payload carries parentAgentId, but still dispatches streamFailed/chatSendFailed', async () => {
+      const agentId = 'agent-failed-delegated';
+      const errorMsg = 'session/prompt idle timeout (1800s of silence)';
+      clearAgentFailureRegistry();
+
+      appStore.dispatch(upsertSession({ id: agentId, name: 'Delegated Agent', workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0];
+
+      // PROTOCOL §6.5: optional parentAgentId, present for delegated agents.
+      handler!(
+        notification('agent:failed', {
+          agentId,
+          error: errorMsg,
+          status: 'error',
+          turnId: 'turn-delegated-1',
+          parentAgentId: 'agent-parent-1',
+        }),
+      );
+
+      // No failure-registry entry → no failure toast for the delegated agent.
+      expect(listAgentFailureEntries()).toHaveLength(0);
+      // The in-conversation error + Retry button keep working.
+      const chatState = appStore.state.chatState.byAgentId[agentId];
+      expect(chatState).toBeDefined();
+      expect(chatState.error).toBe(errorMsg);
+    });
+
+    it('records the failure when parentAgentId is absent or empty (parentless agent / older daemon)', async () => {
+      const agentId = 'agent-failed-parentless';
+      const errorMsg = 'boom';
+      clearAgentFailureRegistry();
+
+      appStore.dispatch(upsertSession({ id: agentId, name: 'Parentless Agent', workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0];
+
+      handler!(
+        notification('agent:failed', {
+          agentId,
+          error: errorMsg,
+          status: 'error',
+          parentAgentId: '',
+        }),
+      );
+
+      const entries = listAgentFailureEntries();
+      expect(entries.map((entry) => entry.agentId)).toEqual([agentId]);
+      expect(entries[0]!.workspaceId).toBe(WS);
+      expect(entries[0]!.error).toBe(errorMsg);
+      clearAgentFailureRegistry();
     });
   });
 });

@@ -551,12 +551,20 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   // displays the failure message and Retry button. Dispatch this even when no
   // stream state exists (e.g., agent spawn failed before streaming started).
   // The failure also lands in the cross-workspace aggregation registry so the
-  // grouped-failure toast layer can surface it. The daemon's turn-correlation
-  // id (PROTOCOL §6.6) rides along when present so the failure can be
-  // attributed to the exact turn (monorepo#1057).
+  // grouped-failure toast layer can surface it — UNLESS the payload carries a
+  // non-empty `parentAgentId` (PROTOCOL §6.5): a delegated agent's failure is
+  // the parent's to handle and escalate, so no failure toast. Gate strictly on
+  // the payload field (no local session lookups); absent → toast shows, which
+  // keeps older daemons working. The daemon's turn-correlation id (PROTOCOL
+  // §6.6) rides along when present so the failure can be attributed to the
+  // exact turn (monorepo#1057).
   if (typeof error === 'string' && error.length > 0) {
     const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
-    recordAgentFailure({ agentId, workspaceId, error });
+    const parentAgentId = data?.parentAgentId;
+    const hasParent = typeof parentAgentId === 'string' && parentAgentId.length > 0;
+    if (!hasParent) {
+      recordAgentFailure({ agentId, workspaceId, error });
+    }
     appStore.dispatch(chatSendFailed(agentId, error, turnId));
   }
 }
@@ -884,6 +892,13 @@ function handlePermissionResolvedEvent(event: WorkspaceEvent): void {
  * reporting workspace and focuses that agent's conversation. Deliberately NOT
  * gated on the focused workspace: the bridge firehose spans every workspace,
  * so attention requests surface no matter what is on screen.
+ *
+ * IS gated on the payload's optional `parentAgentId` (PROTOCOL §6.5): a
+ * delegated agent's attention request wakes its parent, which handles it and
+ * escalates to the user itself if needed — so no sticky toast. The gate reads
+ * strictly the payload field (no local session lookups); absent → toast shows,
+ * which keeps older daemons working. The caller still falls through to the
+ * activity-timeline dispatch and the session refetch either way.
  */
 function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -901,6 +916,10 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
     reason.length === 0
   ) {
     logger.warn('agent:attention-requested with malformed payload', { data });
+    return;
+  }
+  const parentAgentId = data.parentAgentId;
+  if (typeof parentAgentId === 'string' && parentAgentId.length > 0) {
     return;
   }
   // Prefer the payload's own workspaceId (self-sufficient per the contract),
