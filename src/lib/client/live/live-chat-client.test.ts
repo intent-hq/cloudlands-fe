@@ -644,6 +644,67 @@ describe("LiveChatClient.subscribe (standing §7.1 subscription)", () => {
     off();
   });
 
+  it("carries the user-row entity's appMessageId onto the materialized message (intentd#781)", async () => {
+    // A user row persisted with a client-minted `userAppMessageId` (§5.5) is
+    // echoed on the §7.1 delta with `appMessageId` lifted onto each entity, so
+    // the optimistic-insert dedup matches by exact appMessageId — no content
+    // heuristics. Older daemons omit the field entirely (version skew): the
+    // materialized message then carries no appMessageId and dedup falls back
+    // to the user-msg- prefix + content match.
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[] }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+
+    const echoedRow = {
+      agentId: "agent-1",
+      messageId: "user-msg-7c1f4e0a-1111-2222-3333-444455556666",
+      role: "user",
+      messageSeq: 1,
+      timestamp: "2026-06-27T01:00:05.000Z",
+      streamingComplete: true,
+      appMessageId: "app-msg-client-1",
+      block: {
+        type: "text",
+        id: "user-msg-7c1f4e0a-1111-2222-3333-444455556666:0",
+        text: "Deploy it",
+      },
+    };
+    deltaPush("sub-1", 1, { added: [echoedRow], updated: [], removedIds: [] });
+
+    let last = seen[seen.length - 1];
+    let user = last.messages[1] as { id: string; appMessageId?: string };
+    expect(user.id).toBe("user-msg-7c1f4e0a-1111-2222-3333-444455556666");
+    expect(user.appMessageId).toBe("app-msg-client-1");
+
+    // Re-delivery upserts keep the appMessageId (same authoritative entity).
+    deltaPush("sub-1", 2, { added: [], updated: [echoedRow], removedIds: [] });
+    last = seen[seen.length - 1];
+    user = last.messages[1] as { id: string; appMessageId?: string };
+    expect(user.appMessageId).toBe("app-msg-client-1");
+
+    // Version skew: an older daemon's entity carries no appMessageId — the
+    // materialized message must not invent one (empty string reads as absent).
+    const legacyRow = {
+      agentId: "agent-1",
+      messageId: "user-msg-legacy-1",
+      role: "user",
+      messageSeq: 2,
+      timestamp: "2026-06-27T01:00:06.000Z",
+      streamingComplete: true,
+      appMessageId: "",
+      block: { type: "text", id: "user-msg-legacy-1:0", text: "Old daemon row" },
+    };
+    deltaPush("sub-1", 3, { added: [legacyRow], updated: [], removedIds: [] });
+    last = seen[seen.length - 1];
+    const legacy = last.messages[2] as { id: string; appMessageId?: string };
+    expect(legacy.id).toBe("user-msg-legacy-1");
+    expect(legacy.appMessageId).toBeUndefined();
+    off();
+  });
+
   it("drops a malformed array-shaped entity metadata (JSON objects only)", async () => {
     // `typeof [] === "object"` — a malformed wire payload carrying an array
     // must not propagate an invalid shape into `message.metadata`.
