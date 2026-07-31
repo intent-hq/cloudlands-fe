@@ -204,10 +204,133 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     expect(userRows[0].appMessageId).toBe(appMessageId);
   });
 
+  it("dedups the optimistic user row by appMessageId even when the canonical content differs (§7.1 delta path)", () => {
+    // intentd#781: the daemon echoes appMessageId on §7.1 user-row deltas, so
+    // the reconciled canonical copy carries the client-minted logical id.
+    // Exact appMessageId matching wins over every content heuristic — the
+    // rows collapse even when the daemon-persisted content was normalized
+    // and no longer hashes equal to the optimistic copy.
+    const agentId = "agent-sub-optimistic-appid-diff";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([]));
+
+    const appMessageId = "app-msg-opt-3";
+    appStore.dispatch(
+      addMessage(agentId, {
+        id: "0190bbbb-optimistic-user",
+        appMessageId,
+        role: "user",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        contentBlocks: [{ type: "text", text: "deploy now\r\n" }],
+      }),
+    );
+
+    // Canonical delta echo: server-minted user-msg id, SAME appMessageId,
+    // daemon-normalized content (differs from the optimistic copy).
+    const canonical: AgentMessage = {
+      id: "user-msg-aaaa1111-2222-3333-4444-555566667777",
+      appMessageId,
+      role: "user",
+      timestamp: "2026-01-01T00:00:02.100Z",
+      contentBlocks: [
+        {
+          type: "text",
+          id: "user-msg-aaaa1111-2222-3333-4444-555566667777:0",
+          text: "deploy now",
+        },
+      ],
+    };
+    sub.handler(transcript([canonical]));
+
+    const messages = selectAgentMessages.select(appStore.state, agentId);
+    const userRows = messages.filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(1);
+    expect(userRows[0].id).toBe("user-msg-aaaa1111-2222-3333-4444-555566667777");
+    expect(userRows[0].appMessageId).toBe(appMessageId);
+  });
+
+  it("keeps identical-content sends distinct when their appMessageIds differ (§7.1 delta path)", () => {
+    // Two messages with the SAME text sent in quick succession are distinct
+    // logical messages: each optimistic row and each canonical echo carries
+    // its own appMessageId, so id matching pairs them one-to-one and the
+    // content fallback (gated off when both sides carry an appMessageId)
+    // never collapses them into one row.
+    const agentId = "agent-sub-identical-content";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([]));
+
+    for (const [rendererId, appMessageId] of [
+      ["0190cccc-optimistic-a", "app-msg-same-a"],
+      ["0190cccc-optimistic-b", "app-msg-same-b"],
+    ] as const) {
+      appStore.dispatch(
+        addMessage(agentId, {
+          id: rendererId,
+          appMessageId,
+          role: "user",
+          timestamp: "2026-01-01T00:00:02.000Z",
+          contentBlocks: [{ type: "text", text: "run it again" }],
+        }),
+      );
+    }
+
+    // First echo lands alone: it must collapse ONLY its own optimistic row.
+    const canonicalA: AgentMessage = {
+      id: "user-msg-aaaa0000-1111-2222-3333-444444444444",
+      appMessageId: "app-msg-same-a",
+      role: "user",
+      timestamp: "2026-01-01T00:00:02.050Z",
+      contentBlocks: [
+        {
+          type: "text",
+          id: "user-msg-aaaa0000-1111-2222-3333-444444444444:0",
+          text: "run it again",
+        },
+      ],
+    };
+    sub.handler(transcript([canonicalA]));
+
+    let userRows = selectAgentMessages
+      .select(appStore.state, agentId)
+      .filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(2);
+    expect(userRows.map((m) => m.appMessageId).sort()).toEqual([
+      "app-msg-same-a",
+      "app-msg-same-b",
+    ]);
+
+    // Second echo arrives: both rows are canonical, still two messages.
+    const canonicalB: AgentMessage = {
+      id: "user-msg-bbbb0000-1111-2222-3333-444444444444",
+      appMessageId: "app-msg-same-b",
+      role: "user",
+      timestamp: "2026-01-01T00:00:02.150Z",
+      contentBlocks: [
+        {
+          type: "text",
+          id: "user-msg-bbbb0000-1111-2222-3333-444444444444:0",
+          text: "run it again",
+        },
+      ],
+    };
+    sub.handler(transcript([canonicalA, canonicalB]));
+
+    userRows = selectAgentMessages
+      .select(appStore.state, agentId)
+      .filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(2);
+    expect(userRows.map((m) => m.id)).toEqual([
+      "user-msg-aaaa0000-1111-2222-3333-444444444444",
+      "user-msg-bbbb0000-1111-2222-3333-444444444444",
+    ]);
+  });
+
   it("dedups the optimistic user row against a canonical user-msg echo lacking appMessageId (§7.1 delta path)", () => {
-    // P0 regression (post-#559): the daemon's §7.1 user-row delta does not
-    // carry appMessageId, so the reconciled canonical copy arrives with only
-    // its server-minted `user-msg-{uuid}` id. The optimistic row must still
+    // Version-skew fallback: an OLDER daemon's §7.1 user-row delta carries no
+    // appMessageId, so the reconciled canonical copy arrives with only its
+    // server-minted `user-msg-{uuid}` id. The optimistic row must still
     // collapse against it (content fallback recognizes the daemon-canonical
     // user-msg id), or every normal send — including structured-question
     // Q:/A: answers, which take the same send path — renders twice until a
