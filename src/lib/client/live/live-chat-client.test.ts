@@ -685,6 +685,18 @@ describe("LiveChatClient.subscribe (standing §7.1 subscription)", () => {
     user = last.messages[1] as { id: string; appMessageId?: string };
     expect(user.appMessageId).toBe("app-msg-client-1");
 
+    // Sticky across skewed re-delivery: a later frame for the same row that
+    // omits/blanks appMessageId must not clear the previously-stamped value.
+    const { appMessageId: _dropped, ...rowWithoutAppId } = echoedRow;
+    deltaPush("sub-1", 3, {
+      added: [],
+      updated: [{ ...rowWithoutAppId, appMessageId: "" }],
+      removedIds: [],
+    });
+    last = seen[seen.length - 1];
+    user = last.messages[1] as { id: string; appMessageId?: string };
+    expect(user.appMessageId).toBe("app-msg-client-1");
+
     // Version skew: an older daemon's entity carries no appMessageId — the
     // materialized message must not invent one (empty string reads as absent).
     const legacyRow = {
@@ -697,7 +709,7 @@ describe("LiveChatClient.subscribe (standing §7.1 subscription)", () => {
       appMessageId: "",
       block: { type: "text", id: "user-msg-legacy-1:0", text: "Old daemon row" },
     };
-    deltaPush("sub-1", 3, { added: [legacyRow], updated: [], removedIds: [] });
+    deltaPush("sub-1", 4, { added: [legacyRow], updated: [], removedIds: [] });
     last = seen[seen.length - 1];
     const legacy = last.messages[2] as { id: string; appMessageId?: string };
     expect(legacy.id).toBe("user-msg-legacy-1");
