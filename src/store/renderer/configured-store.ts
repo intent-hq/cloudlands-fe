@@ -1,11 +1,13 @@
 import { Store } from '@augmentcode/themis/svelte-store';
-import type { StoreMiddleware } from '@augmentcode/themis/types';
+import type { StoreMiddleware, StoreStateFromReducers } from '@augmentcode/themis/types';
 
 import { middleware } from './middleware';
 import { reducers } from './reducer';
 
-class RendererStore extends Store<typeof reducers> {
-  init(initialState?: Parameters<Store<typeof reducers>['init']>[0]) {
+type RendererStateMap = StoreStateFromReducers<typeof reducers>;
+
+class RendererStore extends Store<RendererStateMap, typeof reducers> {
+  init(initialState?: Parameters<Store<RendererStateMap, typeof reducers>['init']>[0]) {
     const dispose = super.init(initialState);
     Object.defineProperty(this, 'dispatch', {
       configurable: true,
