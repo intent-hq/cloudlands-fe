@@ -62,7 +62,7 @@
  * the configured store, slice actions, the shared dedup util, and the logger
  * (NOT selectors).
  */
-import type { StoreMiddleware } from "$lib/store-shim/types";
+import type { StoreMiddleware } from "@augmentcode/themis/types";
 import type { AgentMessage } from "$shared/types";
 import type { ChatTranscript, Unsubscribe } from "$lib/client/app-client";
 import { appClient } from "$lib/client";

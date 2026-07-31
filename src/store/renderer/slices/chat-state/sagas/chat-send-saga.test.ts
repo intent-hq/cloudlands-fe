@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   rename: vi.fn(),
   toastInfo: vi.fn(),
 }));
-vi.mock('$features/agent/agent-stream-lifecycle', () => ({ sendMessage: mocks.send }));
+vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
 vi.mock('svelte-sonner', () => ({ toast: { info: mocks.toastInfo } }));
 vi.mock('$lib/client', () => ({
   appClient: { agents: {
