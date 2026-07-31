@@ -40,11 +40,15 @@ vi.mock("$lib/client", () => {
 import * as clientModule from "$lib/client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
-import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  initializeChatRequested,
+  transcriptHydrationSettled,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   addMessage,
   bulkUpsertSessions,
   removeSession,
+  updateSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
   selectAgentMessages,
@@ -559,6 +563,92 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     appStore.dispatch(removeSession(agentId));
     expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
     expect(hasLiveChatSubscription(agentId)).toBe(false);
+  });
+
+  it("re-applies the last reconciled transcript when a slower hydrate settles without the finalized row (monorepo#1161)", () => {
+    // Hydrate/finalize race: the standing subscription's reconcile delivered
+    // the finalized assistant row, then a slower chat-read hydrate (whose
+    // paged fetch predates the finalize) lands a full-list upsert WITHOUT
+    // that row — clobbering it. The persisted row is not stream-owned
+    // (isStreaming false), so the read-side guard cannot preserve it; the
+    // subscription must re-assert its canonical transcript on
+    // transcriptHydrationSettled.
+    const agentId = "agent-sub-hydrate-race";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+
+    const user = makeMessage("0190a1b2-user", "Run the tests", {
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+    });
+    const finalized = makeMessage("0190a200-asst", "All tests pass.");
+    sub.handler(transcript([user, finalized]));
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "0190a1b2-user",
+      "0190a200-asst",
+    ]);
+
+    // The stale hydrate lands: full-list upsert covering only the user row.
+    appStore.dispatch(bulkUpsertSessions([makeSession(agentId, { messages: [user] })]));
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "0190a1b2-user",
+    ]);
+
+    // Hydration settles: the subscription re-asserts its last transcript.
+    appStore.dispatch(transcriptHydrationSettled(agentId));
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "0190a1b2-user",
+      "0190a200-asst",
+    ]);
+  });
+
+  it("does not re-fire the streaming edge when re-applying on hydrate settle", () => {
+    const agentId = "agent-sub-settle-no-edge";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+
+    // Rising then falling edge: the turn streamed and finalized.
+    sub.handler(transcript([makeMessage("m-turn", "working")], true));
+    const finalized = makeMessage("m-turn", "done");
+    sub.handler(transcript([finalized], false));
+    expect(selectAgentSession.select(appStore.state, agentId)?.isStreaming).toBe(false);
+
+    // A fresh optimistic turn starts (chatSendStarted equivalent) before the
+    // stale hydrate settles.
+    appStore.dispatch(updateSession(agentId, { isStreaming: true, isProcessing: true }));
+    appStore.dispatch(bulkUpsertSessions([makeSession(agentId, { messages: [] })]));
+
+    appStore.dispatch(transcriptHydrationSettled(agentId));
+
+    // The re-apply restores the finalized row without re-dispatching the
+    // already-consumed falling edge — the fresh optimistic flags survive.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "m-turn",
+    ]);
+    const session = selectAgentSession.select(appStore.state, agentId);
+    expect(session?.isStreaming).toBe(true);
+    expect(session?.isProcessing).toBe(true);
+  });
+
+  it("treats transcriptHydrationSettled as a no-op with no live subscription or before the first emit", () => {
+    // No subscription at all.
+    const agentA = "agent-sub-settle-nosub";
+    const seeded = makeMessage("seeded-a", "hydrated history");
+    seedSession(agentA, { messages: [seeded] });
+    appStore.dispatch(transcriptHydrationSettled(agentA));
+    expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toEqual([
+      "seeded-a",
+    ]);
+
+    // Subscription open but nothing emitted yet.
+    const agentB = "agent-sub-settle-preemit";
+    seedSession(agentB, { messages: [makeMessage("seeded-b", "hydrated history")] });
+    openChat(agentB);
+    appStore.dispatch(transcriptHydrationSettled(agentB));
+    expect(hasLiveChatSubscription(agentB)).toBe(false);
+    expect(selectAgentMessages.select(appStore.state, agentB).map((m) => m.id)).toEqual([
+      "seeded-b",
+    ]);
   });
 
 });
