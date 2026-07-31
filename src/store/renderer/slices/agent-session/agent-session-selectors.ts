@@ -220,7 +220,10 @@ export const selectAgentSessionStreamingContent = store.createSelector(
  * only). Distinguishes character-level live content from
  * `selectAgentSessionStreamingContent`'s session-flag fallback, which can
  * surface the last PERSISTED assistant message's text while a non-viewed
- * agent streams a new turn (its transcript never grows mid-turn).
+ * agent streams a new turn (its transcript never grows mid-turn). The
+ * message-level flag stays accurate across navigate-away because
+ * `closeChatSubscription` normalizes stale `isStreaming` /
+ * `streamingComplete` flags when it tears down a mid-turn subscription.
  */
 export const selectAgentSessionHasStreamOwnedMessage = store.createSelector(
   (state, agentId: string): boolean => {

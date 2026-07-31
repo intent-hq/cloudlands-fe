@@ -193,6 +193,31 @@ export function openChatSubscription(agentId: string, wsId?: string): void {
   }
 }
 
+/**
+ * Clear stale message-level streaming flags left behind when the standing
+ * subscription closes mid-turn (navigate-away): nothing else rewrites the
+ * stream-owned partial message, so its `isStreaming: true` /
+ * `streamingComplete: false` would otherwise keep reporting a stream-owned
+ * buffer that no longer grows — freezing the AgentCard tier-1 preview and
+ * masking the push-applied `lastAgentResponse` that IS advancing. The
+ * message content is untouched; a re-view's seq-0 snapshot re-canonicalizes
+ * everything (same message id).
+ */
+function clearStaleStreamingMessageFlags(agentId: string): void {
+  const messages = readSession(agentId)?.messages;
+  if (!messages?.length) return;
+  const hasStale = messages.some(
+    (message) => message.isStreaming === true || message.streamingComplete === false,
+  );
+  if (!hasStale) return;
+  const normalized = messages.map((message) =>
+    message.isStreaming === true || message.streamingComplete === false
+      ? { ...message, isStreaming: false, streamingComplete: true }
+      : message,
+  );
+  appStore.dispatch(replaceMessages(agentId, normalized));
+}
+
 /** Close (and forget) the standing subscription for an agent. Idempotent. */
 export function closeChatSubscription(agentId: string): void {
   const entry = subscriptions.get(agentId);
@@ -202,6 +227,11 @@ export function closeChatSubscription(agentId: string): void {
     entry.unsubscribe();
   } catch (error) {
     logger.error("Failed to close chat subscription", error);
+  }
+  try {
+    clearStaleStreamingMessageFlags(agentId);
+  } catch (error) {
+    logger.error("Failed to clear stale streaming message flags", error);
   }
 }
 
