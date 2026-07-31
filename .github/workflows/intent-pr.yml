@@ -45,7 +45,9 @@ jobs:
       # trade-off.
       actions: read
     outputs:
-      linux_labels: ${{ steps.decide.outputs.linux_labels }}
+      checks_labels: ${{ steps.decide.outputs.checks_labels }}
+      build_labels: ${{ steps.decide.outputs.build_labels }}
+      test_labels: ${{ steps.decide.outputs.test_labels }}
       utility_labels: ${{ steps.decide.outputs.utility_labels }}
       linux_burst: ${{ steps.decide.outputs.linux_burst }}
     steps:
@@ -64,10 +66,13 @@ jobs:
           script: |
             const tinybox = ["self-hosted", "Linux", "X64"];
             // The heavy jobs (checks / build-web / test) are pnpm/Node
-            // workloads — install + typecheck/build/vitest; a 16x runner
-            // is plenty (they don't need the 32x sized for intentd's
-            // instrumented Rust coverage suites).
-            const burst = ["warp-ubuntu-latest-x64-16x"];
+            // workloads sized per WarpBuild usage recommendations: checks
+            // showed low CPU and memory (4x), build-web low memory (8x),
+            // and test keeps the 16x for vitest parallelism. None need the
+            // 32x sized for intentd's instrumented Rust coverage suites.
+            const checksBurst = ["warp-ubuntu-latest-x64-4x"];
+            const buildBurst = ["warp-ubuntu-latest-x64-8x"];
+            const testBurst = ["warp-ubuntu-latest-x64-16x"];
             // The utility jobs (pr-title / conflict-markers / gate) are
             // seconds-long; a 2x runner is plenty when bursting.
             const utilityBurst = ["warp-ubuntu-latest-x64-2x"];
@@ -96,7 +101,9 @@ jobs:
             }
             const useBurst = depth > threshold;
             core.info(`linux queue depth=${depth} threshold=${threshold} burst=${useBurst}`);
-            core.setOutput("linux_labels", JSON.stringify(useBurst ? burst : tinybox));
+            core.setOutput("checks_labels", JSON.stringify(useBurst ? checksBurst : tinybox));
+            core.setOutput("build_labels", JSON.stringify(useBurst ? buildBurst : tinybox));
+            core.setOutput("test_labels", JSON.stringify(useBurst ? testBurst : tinybox));
             core.setOutput("utility_labels", JSON.stringify(useBurst ? utilityBurst : tinybox));
             core.setOutput("linux_burst", String(useBurst));
 
@@ -179,7 +186,7 @@ jobs:
   checks:
     name: Type Check & Lint
     needs: route
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
+    runs-on: ${{ fromJSON(needs.route.outputs.checks_labels) }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -275,7 +282,7 @@ jobs:
     # Moved from m1mac to the self-hosted Linux runner (tinybox, 64 cores /
     # 125 GB) so the single-slot Mac is free for release/signing work.
     needs: route
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
+    runs-on: ${{ fromJSON(needs.route.outputs.build_labels) }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -326,7 +333,7 @@ jobs:
     # within the single job.
     name: Unit Tests
     needs: route
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
+    runs-on: ${{ fromJSON(needs.route.outputs.test_labels) }}
     timeout-minutes: 30
     permissions:
       contents: read
