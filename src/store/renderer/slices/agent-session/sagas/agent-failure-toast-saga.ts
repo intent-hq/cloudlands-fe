@@ -63,7 +63,9 @@ function createFailureChannel(): {
   let emit: FailureEmitter = () => {};
   const channel = eventChannel<FailureMessage>((emitter) => {
     emit = emitter;
-    const unsubscribe = subscribeToAgentFailures((groups) => emitter({ kind: 'snapshot', groups }));
+    const unsubscribe = subscribeToAgentFailures(() => {
+      emitter({ kind: 'snapshot', groups: listAgentFailureGroups() });
+    });
     emitter({ kind: 'snapshot', groups: listAgentFailureGroups() });
     return unsubscribe;
   }, buffers.expanding());
