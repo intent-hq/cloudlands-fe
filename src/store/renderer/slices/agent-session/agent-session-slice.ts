@@ -492,10 +492,16 @@ type SessionComparisonSnapshot = Pick<
   | 'isActive'
   | 'stopReason'
   | 'sessionCorrupted'
+  | 'attentionRequestKind'
+  | 'attentionRequestReason'
+  | 'attentionRequestTimestamp'
 > & {
   messageCount: number;
   lastMessageId: AgentMessage['id'] | undefined;
   lastMessageBlockCount: number;
+  metadataAttentionRequestKind: NonNullable<StoredAgentSession['metadata']>['attentionRequestKind'];
+  metadataAttentionRequestReason: NonNullable<StoredAgentSession['metadata']>['attentionRequestReason'];
+  metadataAttentionRequestTimestamp: NonNullable<StoredAgentSession['metadata']>['attentionRequestTimestamp'];
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
@@ -522,6 +528,9 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     isActive: session.isActive,
     stopReason: session.stopReason,
     sessionCorrupted: session.sessionCorrupted,
+    attentionRequestKind: session.attentionRequestKind,
+    attentionRequestReason: session.attentionRequestReason,
+    attentionRequestTimestamp: session.attentionRequestTimestamp,
     messageCount: messages.length,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
     // The daemon can append trailing blocks to an already-stored message
@@ -530,6 +539,9 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     // count so re-hydration is not swallowed as a no-op.
     lastMessageBlockCount:
       messages.length === 0 ? 0 : (messages[messages.length - 1]?.contentBlocks?.length ?? 0),
+    metadataAttentionRequestKind: session.metadata?.attentionRequestKind,
+    metadataAttentionRequestReason: session.metadata?.attentionRequestReason,
+    metadataAttentionRequestTimestamp: session.metadata?.attentionRequestTimestamp,
   };
 }
 

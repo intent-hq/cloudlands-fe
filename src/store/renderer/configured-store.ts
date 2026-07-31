@@ -6,6 +6,10 @@ import { reducers } from './reducer';
 
 type RendererStateMap = StoreStateFromReducers<typeof reducers>;
 
+function isTestEnvironment(): boolean {
+  return typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
+}
+
 class RendererStore extends Store<RendererStateMap, typeof reducers> {
   init(initialState?: Parameters<Store<RendererStateMap, typeof reducers>['init']>[0]) {
     const dispose = super.init(initialState);
@@ -29,7 +33,7 @@ class RendererStore extends Store<RendererStateMap, typeof reducers> {
     try {
       return super.getExistingStoreContext();
     } catch (error) {
-      if (import.meta.env.MODE === 'test' && error instanceof Error) {
+      if (isTestEnvironment() && error instanceof Error) {
         if (error.message.includes('Store context accessed outside component initialization')) {
           return undefined;
         }
