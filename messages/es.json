@@ -465,6 +465,8 @@
   "settings_section_aiCodingClis_hint": "Puede iniciar sesión o cambiar de cuenta usando su CLI de programación con IA en la terminal.",
   "settings_section_connections": "Conexiones",
   "settings_section_data": "Datos",
+  "settings_section_connection": "Conexión",
+  "settings_connection_socket_label": "Socket de intentd",
   "settings_section_gitWorkspace": "Git y espacio de trabajo",
   "settings_section_notifications": "Notificaciones",
   "settings_section_cliOptimization": "Optimización de CLI",

@@ -465,6 +465,8 @@
   "settings_section_aiCodingClis_hint": "你可以在终端中使用 AI 编程 CLI 登录或切换账号。",
   "settings_section_connections": "连接",
   "settings_section_data": "数据",
+  "settings_section_connection": "连接",
+  "settings_connection_socket_label": "intentd 套接字",
   "settings_section_gitWorkspace": "Git 与工作区",
   "settings_section_notifications": "通知",
   "settings_section_cliOptimization": "CLI 优化",
