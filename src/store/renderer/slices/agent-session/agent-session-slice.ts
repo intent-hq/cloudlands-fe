@@ -2,10 +2,7 @@ import { shallowEqual } from 'fast-equals';
 import type { AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
-import {
-  createAction,
-  createAsyncAction,
-} from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   AgentSessionForkOptions,
@@ -719,6 +716,12 @@ export const agentSessionStopChatRequested = createAsyncAction<[agentId: string]
   'agentSessions/stopChat',
   'agentSessions/stopChatRequested',
 );
+
+/** Saga-owned persistent question dismissal trigger. */
+export const agentSessionDismissQuestionsRequested = createAsyncAction<
+  [agentId: string, wsId: string, messageId: string],
+  void
+>('agentSessions/dismissQuestions', 'agentSessions/dismissQuestionsRequested');
 
 /** Saga-owned agent launch side effect trigger. Resolves with the created session. */
 export const agentSessionLaunchAgentRequested = createAsyncAction<
