@@ -205,7 +205,15 @@ async function showWebNotification(
   if (!granted) return;
 
   try {
-    const notification = new Notification(content.title, { body: content.body });
+    // Native tag-based replacement: same workspace+agent notifications
+    // replace instead of stacking. No `renotify` — our own sound gate above
+    // already plays the sound on every idle that reaches this path. Test
+    // notifications (no workspaceId/agentId) carry no tag and stack freely.
+    const tag = workspaceId && agentId ? `${workspaceId}:${agentId}` : undefined;
+    const notification = new Notification(content.title, {
+      body: content.body,
+      ...(tag ? { tag } : {}),
+    });
     activeNotifications.add(notification);
     notification.onclick = () => {
       activeNotifications.delete(notification);

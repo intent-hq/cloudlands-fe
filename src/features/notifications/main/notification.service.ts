@@ -500,6 +500,12 @@ export class NotificationService {
 
   /**
    * Show a desktop notification
+   *
+   * Agent-idle notifications carry a stable `id` of `workspaceId:agentId`
+   * (macOS `UNNotificationRequest.identifier`) so a repeat idle from the same
+   * agent natively REPLACES the delivered notification — at most one per
+   * agent at any time. Test notifications omit `id` (Electron falls back to
+   * a random UUID) so they never replace or get replaced.
    */
   private showNotification(
     content: NotificationContent,
@@ -519,6 +525,7 @@ export class NotificationService {
       const notification = new Notification({
         title: content.title,
         body: content.body,
+        ...(workspaceId && agentId ? { id: `${workspaceId}:${agentId}` } : {}),
       });
 
       // Keep a strong reference to prevent GC before user interaction

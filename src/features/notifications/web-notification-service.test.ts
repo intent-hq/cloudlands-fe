@@ -65,7 +65,7 @@ class MockNotification {
   close = vi.fn();
   constructor(
     public title: string,
-    public options?: { body?: string },
+    public options?: { body?: string; tag?: string },
   ) {
     MockNotification.instances.push(this);
   }
@@ -264,6 +264,24 @@ describe('web-notification-service', () => {
       expect(MockNotification.instances[0].title).toBe('My Workspace - Implementor: Fix bug');
       expect(MockNotification.instances[0].options?.body).toBe('Task completed');
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('tags idle notifications with workspaceId:agentId so same-agent banners replace', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(MockNotification.instances[0].options?.tag).toBe('ws-1:agent-1');
+    });
+
+    it('sound gate still runs on every tagged idle notification', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+      await handleWebAgentIdle(makeIdleEvent());
+      await flushAsync();
+
+      expect(MockNotification.instances).toHaveLength(2);
+      expect(MockNotification.instances[0].options?.tag).toBe('ws-1:agent-1');
+      expect(MockNotification.instances[1].options?.tag).toBe('ws-1:agent-1');
+      expect(mockPlayNotificationSound).toHaveBeenCalledTimes(2);
     });
 
     it('falls back to "Agent"/"Finished" without specialist/taskTitle/workspace title', async () => {
@@ -564,12 +582,13 @@ describe('web-notification-service', () => {
   });
 
   describe('test notification + permission envelopes', () => {
-    it('showTestWebNotification shows the Electron-parity test payload', async () => {
+    it('showTestWebNotification shows the Electron-parity test payload without a tag', async () => {
       const result = await showTestWebNotification();
 
       expect(result).toEqual({ success: true });
       expect(MockNotification.instances[0].title).toBe('Agent');
       expect(MockNotification.instances[0].options?.body).toBe('Test notification');
+      expect(MockNotification.instances[0].options).not.toHaveProperty('tag');
     });
 
     it('showTestWebNotification folds a denied permission to a shaped failure', async () => {
