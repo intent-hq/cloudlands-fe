@@ -212,8 +212,6 @@ import {
   clearAgentFailureRegistry,
   listAgentFailureEntries,
 } from '$features/agent/agent-failure-registry';
-import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
-import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
 import { loadWorkspaceTerminals } from '$store/renderer/slices/terminals/terminals-slice';
 import {
   selectActiveTerminalIdForWorkspace,
