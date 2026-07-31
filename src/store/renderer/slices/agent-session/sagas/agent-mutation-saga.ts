@@ -24,6 +24,8 @@ import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AgentActivationState } from '$shared/types/agent-session';
 import { pruneRecentlyClosed } from '../../panel-layout/panel-layout-slice';
+import { cancelAgentSubscriptionsRequested } from '../../agent-subscription-ui/agent-subscription-ui-slice';
+import { agentSessionDismissQuestionsRequested } from '../agent-session-slice';
 import {
   activateAgentRequested,
   commitPendingAgentDeletionRequested,
@@ -34,6 +36,7 @@ import {
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
+  stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
 import { bulkUpsertSessions, removeSession, upsertSession } from '../agent-session-slice';
@@ -207,6 +210,79 @@ function* renameAgent(action: ReturnType<typeof renameAgentSessionRequested>): S
   }
 }
 
+function* stopAgent(action: ReturnType<typeof stopAgentSessionRequested>): SagaGenerator<void> {
+  const [, agentId] = action.payload;
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.stop], agentId);
+    if (!result.success) throw new Error(result.error || m.agent_mutation_stopFailed_error());
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(mutationError(error, m.agent_mutation_stopFailed_error())));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_stopFailed_error())));
+    }
+  }
+}
+
+function* dismissQuestions(
+  action: ReturnType<typeof agentSessionDismissQuestionsRequested>,
+): SagaGenerator<void> {
+  const [agentId, workspaceId, messageId] = action.payload;
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.dismissQuestions], {
+      agentId,
+      workspaceId,
+      messageId,
+    });
+    if (!result.success)
+      throw new Error(result.error || m.agent_mutation_dismissQuestionsFailed_error());
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(
+      action.failure(mutationError(error, m.agent_mutation_dismissQuestionsFailed_error())),
+    );
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_dismissQuestionsFailed_error())));
+    }
+  }
+}
+
+function* cancelAgentSubscriptions(
+  action: ReturnType<typeof cancelAgentSubscriptionsRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, agentId, scope = {}] = action.payload;
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.cancelSubscriptions], {
+      agentId,
+      workspaceId,
+      ...(scope.subscriptionId ? { subscriptionId: scope.subscriptionId } : {}),
+      ...(scope.groupId ? { groupId: scope.groupId } : {}),
+    });
+    if (!result.success)
+      throw new Error(result.error || m.agent_mutation_cancelSubscriptionsFailed_error());
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    yield* put(
+      action.failure(mutationError(error, m.agent_mutation_cancelSubscriptionsFailed_error())),
+    );
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_cancelSubscriptionsFailed_error())));
+    }
+  }
+}
+
 function* cancelPendingTimer(agentId: string): SagaGenerator<void> {
   const task = pendingCommitTasks.get(agentId);
   pendingCommitTasks.delete(agentId);
@@ -366,6 +442,9 @@ export function* agentMutationSaga(): SagaGenerator<void> {
       takeEvery(activateAgentRequested, activateAgent),
       takeEvery(saveAgentSessionRequested, saveAgent),
       takeEvery(renameAgentSessionRequested, renameAgent),
+      takeEvery(stopAgentSessionRequested, stopAgent),
+      takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),
+      takeEvery(cancelAgentSubscriptionsRequested, cancelAgentSubscriptions),
       takeEvery(deleteAgentWithUndoRequested, deleteWithUndo),
       takeEvery(undoAgentDeletionRequested, undoDeletion),
       takeEvery(deleteAgentSessionRequested, deleteImmediately),
