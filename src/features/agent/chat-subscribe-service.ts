@@ -9,6 +9,10 @@
  *  - `markAgentAsViewed` swaps subscriptions on agent switch: it closes every
  *    other agent's subscription and (re)opens the viewed agent's when its
  *    session exists — so switching chats never leaks registrations.
+ *  - `transcriptHydrationSettled` re-applies the entry's last reconciled
+ *    transcript: a slower chat-read hydrate whose pages predate a finalize
+ *    would otherwise clobber the finalized row this stream already delivered
+ *    (monorepo#1161).
  *  - `clearCurrentlyViewedAgent` (chat close / panel destroy) closes all.
  *  - `removeSession` (agent-deletion soft-hide), `workspaceDeleted`,
  *    `removeWorkspaceSessions`, and `clearAllSessions` tear down the affected
@@ -48,7 +52,10 @@ import type { AgentMessage } from "$shared/types";
 import type { ChatTranscript, Unsubscribe } from "$lib/client/app-client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
-import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  initializeChatRequested,
+  transcriptHydrationSettled,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   clearAllSessions,
   removeSession,
@@ -75,6 +82,8 @@ interface SubscriptionEntry {
   hasEmitted: boolean;
   /** Last emitted transcript.isStreaming, for edge-triggered flag writes. */
   wasStreaming: boolean;
+  /** Last reconciled transcript, re-applied on transcriptHydrationSettled. */
+  lastTranscript?: ChatTranscript;
 }
 
 /** Standing subscriptions keyed by agent id — at most one per agent. */
@@ -181,6 +190,7 @@ export function openChatSubscription(agentId: string, wsId?: string): void {
         return;
       }
       entry.hasEmitted = true;
+      entry.lastTranscript = transcript;
       try {
         applyTranscript(agentId, entry, transcript);
       } catch (error) {
@@ -282,6 +292,22 @@ export function createChatSubscribeMiddleware(): StoreMiddleware {
           // known — ChatPanel's initializeChatRequested covers first-open.
           if (readSession(agentId)) {
             openChatSubscription(agentId, readSession(agentId)?.workspaceId);
+          }
+        }
+      } else if (type === transcriptHydrationSettled.type) {
+        // A slower full-history hydrate (chat-read-service) may have landed a
+        // paged fetch that predates a row this stream already finalized —
+        // clobbering it (the persisted row is not stream-owned, so the read
+        // side's isStreaming guard cannot preserve it). Re-assert the
+        // canonical reconciled transcript against the post-hydrate store.
+        // The reducer for this action has already run, and applyTranscript's
+        // streaming edge is keyed on entry.wasStreaming, so a re-apply with
+        // the same transcript never re-dispatches a consumed flag edge.
+        const [agentId] = (action as { payload: [string] }).payload;
+        if (typeof agentId === "string") {
+          const entry = subscriptions.get(agentId);
+          if (entry?.hasEmitted && entry.lastTranscript) {
+            applyTranscript(agentId, entry, entry.lastTranscript);
           }
         }
       } else if (type === clearCurrentlyViewedAgent.type) {
