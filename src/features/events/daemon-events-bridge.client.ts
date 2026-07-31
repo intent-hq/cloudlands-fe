@@ -10,12 +10,12 @@
  *      `isStreaming`/`isProcessing`/`isResponding` flags set by
  *      `chatSendStarted`).
  *   2. Content-free chat-state stream bookkeeping for the live stream subset
- *      (`agent:stream:chunk`, `agent:tool:call`, `agent:stream:end`,
+ *      (`agent:stream:activity`, `agent:tool:call`, `agent:stream:end`,
  *      `agent:failed`). The TRANSCRIPT itself is owned by the standing
  *      `chat.subscribe` delta stream (PROTOCOL §7.1, chat-subscribe-service)
  *      — the bridge no longer assembles messages or content blocks from
- *      these events. The dispatches (`streamChunkReceived` / `streamEnded` /
- *      `streamFailed`) carry NO content and exist purely for the chat-state
+ *      these events. The dispatches (`streamActivityReceived` / `streamEnded`
+ *      / `streamFailed`) carry NO content and exist purely for the chat-state
  *      reducer's spinner/timer bookkeeping (`lastChunkTime`,
  *      `receivedFirstChunk`, `statusEvents` clears, the #965 interrupted
  *      retry-record clear) and the agent-session busy-flag clears.
@@ -129,7 +129,7 @@ import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import {
   streamStatusReceived,
-  streamChunkReceived,
+  streamActivityReceived,
   streamEnded,
   streamFailed,
   chatQueueProcessingReceived,
@@ -295,35 +295,26 @@ function extractSubscriptionId(params: unknown): string | undefined {
 }
 
 /**
- * `agent:stream:chunk` no longer feeds transcript assembly — the standing
- * `chat.subscribe` delta stream (PROTOCOL §7.1) is the transcript writer.
- * The event's remaining job is chat-state bookkeeping: a text chunk drives
- * the `receivedFirstChunk` flip (which auto-appends the "Streaming
- * response…" status entry) and the stall-detection timestamps; a non-text
- * block only refreshes the timestamps. The wire guard mirrors the §7 payload
- * (`agentId`/`messageId`/`blockIndex` plus usable content) so malformed
- * events stay inert.
+ * `agent:stream:activity` (PROTOCOL §7, renamed from `agent:stream:chunk`)
+ * is the content-free liveness ping — `{ agentId, messageId }` only, no
+ * content, leading-edge throttled per agent (first ping of a turn immediate,
+ * then ≤1/s until the turn ends). The standing `chat.subscribe` delta stream
+ * (PROTOCOL §7.1) is the transcript writer. The event's job is chat-state
+ * bookkeeping: it drives the `receivedFirstChunk` flip (which auto-appends
+ * the "Streaming response…" status entry and clears the §6.5 pre-first-token
+ * startup hint) and refreshes the stall-detection timestamps. The wire guard
+ * mirrors the §7 payload (`agentId`/`messageId`) so malformed events stay
+ * inert.
  */
-function handleStreamChunkEvent(event: WorkspaceEvent): void {
+function handleStreamActivityEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
   const messageId = data.messageId;
-  const blockIndex = data.blockIndex;
-  const blockType = data.blockType;
-  const content = data.content;
-  if (
-    typeof agentId !== 'string' ||
-    typeof messageId !== 'string' ||
-    typeof blockIndex !== 'number'
-  ) {
+  if (typeof agentId !== 'string' || typeof messageId !== 'string') {
     return;
   }
-  if (blockType === 'text' && typeof content === 'string') {
-    appStore.dispatch(streamChunkReceived(agentId, true));
-  } else if (content && typeof content === 'object') {
-    appStore.dispatch(streamChunkReceived(agentId, false));
-  }
+  appStore.dispatch(streamActivityReceived(agentId, true));
 }
 
 /**
@@ -351,7 +342,7 @@ function handleToolCallEvent(event: WorkspaceEvent): void {
     return;
   }
 
-  appStore.dispatch(streamChunkReceived(agentId, false));
+  appStore.dispatch(streamActivityReceived(agentId, false));
 
   // Status hint: track the actual tool-execution window so the "Calling tool"
   // entry's duration in `computeCompletedEvents` ends at the tool's terminal
@@ -431,7 +422,8 @@ const STREAM_STATUS_PHASE_MESSAGES: Record<string, () => string> = {
  * payload the daemon emits while a turn is starting (`launch` / `init` /
  * `session-create` / `session-load` / `prompt`). Map it to
  * `streamStatusReceived` so the chat spinner surfaces the current phase —
- * "Sent prompt…" and friends — before the first `agent:stream:chunk` arrives.
+ * "Sent prompt…" and friends — before the first `agent:stream:activity`
+ * arrives.
  *
  * The rendered message is a localized catalog string keyed off `phase`; the
  * daemon's English `message` is only used as a fallback for unknown phases,
@@ -1860,7 +1852,7 @@ function handleNotification(method: string, params: unknown): void {
   }
   if (
     type === 'agent:stream:start' ||
-    type === 'agent:stream:chunk' ||
+    type === 'agent:stream:activity' ||
     type === 'agent:stream:status'
   ) {
     void reconcileWorkspaceActivity(workspaceId, true);
@@ -1921,8 +1913,8 @@ function handleNotification(method: string, params: unknown): void {
     handleStreamStartEvent(event, workspaceId);
     return;
   }
-  if (type === 'agent:stream:chunk') {
-    handleStreamChunkEvent(event);
+  if (type === 'agent:stream:activity') {
+    handleStreamActivityEvent(event);
     return;
   }
   if (type === 'agent:tool:call') {

@@ -17,7 +17,7 @@ import {
   chatStopCompleted,
   chatReset,
   chatStreamingReconciled,
-  streamChunkReceived,
+  streamActivityReceived,
   streamEnded,
   streamFailed,
   chatModelUnavailableCleared,
@@ -665,9 +665,9 @@ describe('chatStateReducer', () => {
     expect(s.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempted);
   });
 
-  it('streamChunkReceived(text) sets receivedFirstChunk and adds status event', () => {
+  it('streamActivityReceived(stream activity) sets receivedFirstChunk and adds status event', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const action = streamChunkReceived(AGENT, true);
+    const action = streamActivityReceived(AGENT, true);
     const s2 = chatStateReducer(s1, action);
     const agent = s2.byAgentId[AGENT];
     expect(agent.receivedFirstChunk).toBe(true);
@@ -676,9 +676,9 @@ describe('chatStateReducer', () => {
     expect(agent.statusEvents[0]).toMatchObject({ phase: 'streaming' });
   });
 
-  it('streamChunkReceived(non-text) records activity without first chunk', () => {
+  it('streamActivityReceived(tool tick) records activity without first chunk', () => {
     const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const action = streamChunkReceived(AGENT, false);
+    const action = streamActivityReceived(AGENT, false);
     const s2 = chatStateReducer(s1, action);
     const agent = s2.byAgentId[AGENT];
     expect(agent.receivedFirstChunk).toBe(false);
@@ -686,9 +686,21 @@ describe('chatStateReducer', () => {
     expect(agent.lastChunkReceivedAt).toBe(action.payload[2]);
   });
 
+  it('repeated streamActivityReceived pings (throttled cadence) refresh timestamps without duplicate status entries', () => {
+    let s = chatStateReducer(initialState, chatSendStarted(AGENT));
+    const first = streamActivityReceived(AGENT, true, 1000);
+    s = chatStateReducer(s, first);
+    const second = streamActivityReceived(AGENT, true, 2000);
+    s = chatStateReducer(s, second);
+    const agent = s.byAgentId[AGENT];
+    expect(agent.lastChunkTime).toBe(2000);
+    expect(agent.lastChunkReceivedAt).toBe(2000);
+    expect(agent.statusEvents).toHaveLength(1);
+  });
+
   it('streamEnded clears streaming metadata and status events', () => {
     let state = chatStateReducer(initialState, chatSendStarted(AGENT));
-    state = chatStateReducer(state, streamChunkReceived(AGENT, true));
+    state = chatStateReducer(state, streamActivityReceived(AGENT, true));
     const completed = chatStateReducer(state, streamEnded(AGENT));
     const agent = completed.byAgentId[AGENT];
     expect(agent.streamingStartTime).toBeNull();
@@ -760,7 +772,7 @@ describe('chatStateReducer', () => {
 
   it('streamStatusReceived resets receivedFirstChunk when resetFirstChunk is true', () => {
     let s = chatStateReducer(initialState, chatSendStarted(AGENT));
-    s = chatStateReducer(s, streamChunkReceived(AGENT, true));
+    s = chatStateReducer(s, streamActivityReceived(AGENT, true));
     expect(s.byAgentId[AGENT].receivedFirstChunk).toBe(true);
     const event = { phase: 'tool_use', message: 'running', level: 'info' as const, timestamp: 2000 };
     s = chatStateReducer(s, streamStatusReceived(AGENT, event, true));

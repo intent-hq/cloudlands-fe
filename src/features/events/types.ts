@@ -104,7 +104,7 @@ export const WorkspaceEventType = {
 
   // Agent streaming events (for WebSocket API)
   AgentStreamStart: 'agent:stream:start',
-  AgentStreamChunk: 'agent:stream:chunk',
+  AgentStreamActivity: 'agent:stream:activity',
   AgentStreamEnd: 'agent:stream:end',
 
   // Agent queue events (for WebSocket API)
@@ -804,7 +804,7 @@ export interface AgentProcessEvictedEvent extends WorkspaceEventBase {
  * §6.6 / §7). Only agent-initiated (harness-wake) turns emit this event;
  * prompt (user-initiated) turns never do. `messageId` is the assistant
  * messageId minted for the wake turn — the same id carried by the turn's
- * `agent:stream:chunk` / `agent:tool:call` events and the persisted row.
+ * `agent:stream:activity` / `agent:tool:call` events and the persisted row.
  */
 export interface AgentStreamStartEvent extends WorkspaceEventBase {
   type: 'agent:stream:start';
@@ -817,14 +817,18 @@ export interface AgentStreamStartEvent extends WorkspaceEventBase {
 }
 
 /**
- * Emitted when an agent streams a text chunk (token-by-token)
+ * Content-free per-agent activity signal (PROTOCOL §7, renamed from
+ * `agent:stream:chunk`): the turn produced streamed output, but the content
+ * itself travels only on the §7.1 `chat.subscribe` channel. Leading-edge
+ * throttled per agent — the first activity of a turn emits immediately, then
+ * at most one emission per second; the throttle resets when the turn ends.
+ * `messageId` is the turn's assistant message id (§7.1).
  */
-export interface AgentStreamChunkEvent extends WorkspaceEventBase {
-  type: 'agent:stream:chunk';
+export interface AgentStreamActivityEvent extends WorkspaceEventBase {
+  type: 'agent:stream:activity';
   data: {
     agentId: string;
-    content: any;
-    streamId?: string;
+    messageId: string;
   };
 }
 
@@ -920,7 +924,7 @@ export type SpecificWorkspaceEvent =
   | McpNotificationEvent
   // Agent streaming events
   | AgentStreamStartEvent
-  | AgentStreamChunkEvent
+  | AgentStreamActivityEvent
   | AgentStreamEndEvent
   // Agent user message events (cross-client sync)
   | AgentUserMessageSentEvent
