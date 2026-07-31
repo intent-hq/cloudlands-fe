@@ -355,9 +355,10 @@ export const selectAgentIsWaiting = store.createSelector(
  * Pending attention request (discussion/blocker) for an agent, rendered
  * verbatim from the daemon session fields (PROTOCOL §5.5) — top-level on the
  * full projection, under `metadata` on `AgentLite`. Returns null when no
- * request is pending (the daemon clears the fields when the agent next
- * receives a message, emitting `agent:updated` with
- * `attentionRequestCleared: true`).
+ * request is pending (the daemon clears the fields only on a user-origin
+ * delivery — sendMessage, sendQueuedMessageNow, editAndRegenerate, or a
+ * drained user-origin queue entry — emitting `agent:updated` with
+ * `attentionRequestCleared: true`; automatic deliveries leave it pending).
  */
 export const selectAgentAttentionRequest = store.createSelector(
   (state, agentId: string): AgentAttentionRequest | null => {

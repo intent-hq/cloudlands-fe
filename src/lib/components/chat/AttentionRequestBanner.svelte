@@ -6,7 +6,10 @@
    * attention request (requestDiscussion / reportBlocker). Renders alongside
    * the existing waiting/completed treatments (AgentSubscriptions) and
    * retires automatically when the daemon clears the session fields on the
-   * agent's next message (`agent:updated` with `attentionRequestCleared`).
+   * user's next response — a user-origin delivery (sendMessage,
+   * sendQueuedMessageNow, editAndRegenerate, drained user-origin queue
+   * entry) — emitting `agent:updated` with `attentionRequestCleared`;
+   * automatic deliveries leave it pending.
    */
   import { writable } from 'svelte/store';
   import { slide } from 'svelte/transition';

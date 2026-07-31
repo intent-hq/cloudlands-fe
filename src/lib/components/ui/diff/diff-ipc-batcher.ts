@@ -25,6 +25,9 @@
 import { invoke } from '$lib/electron-bridge';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
+import { store as appStore } from '$store/renderer/store';
+import { getItem } from '$lib/store-shim/utils/collections/collection-utils';
+import type { Workspace } from '$shared/types';
 
 const logger = createLogger('diff-ipc-batcher');
 
@@ -74,6 +77,9 @@ interface PendingDiff {
   resolvers: Map<string, Array<(chunk: DiffChunk | undefined) => void>>;
   rejecters: Array<(err: unknown) => void>;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Original request path → the (possibly worktree-relative-normalized) path
+   * sent on the wire; used by the `git.diffs` batcher only. */
+  wirePaths?: Map<string, string>;
 }
 
 const pendingDiffs = new Map<string, PendingDiff>();
@@ -112,6 +118,53 @@ function isSuspiciousDiffPath(filePath: string): boolean {
     /^[A-Za-z]:[\\/]/.test(filePath) ||
     filePath.startsWith('\\\\')
   );
+}
+
+/** Read-only resolution of the workspace's checkout root from the store
+ * (worktree, else repository path — same precedence as
+ * TrackedChangeDiffViewer). '' when the workspace row is not loaded (yet). */
+function workspaceWorktreeRoot(workspaceId: string): string {
+  try {
+    const workspace = getItem(
+      appStore.state.workspace.workspaces,
+      workspaceId as Workspace['id'],
+    );
+    return workspace?.worktreePath || workspace?.repositoryPath || '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Convert a mis-normalized request path (see `isSuspiciousDiffPath`) that lies
+ * under the workspace root into its worktree-relative form, so the daemon-side
+ * `paths[]` narrowing (PROTOCOL §5.6) can match it without a full-tree
+ * recovery read. `~`-prefixed paths are resolved by matching the components
+ * after `~/` against the longest slash-boundary suffix of the root (the
+ * renderer does not know the home directory). Returns `null` when the path
+ * does not lie under the root.
+ */
+function toWorktreeRelative(filePath: string, root: string): string | null {
+  if (!root) return null;
+  const normRoot = root.replaceAll('\\', '/').replace(/\/+$/, '');
+  if (!normRoot) return null;
+  const normPath = filePath.replaceAll('\\', '/');
+  if (normPath.startsWith(`${normRoot}/`)) {
+    const relative = normPath.slice(normRoot.length + 1);
+    return relative.length > 0 ? relative : null;
+  }
+  if (normPath.startsWith('~/')) {
+    const rest = normPath.slice(2);
+    const rootParts = normRoot.split('/').filter(Boolean);
+    for (let i = 0; i < rootParts.length; i++) {
+      const prefix = `${rootParts.slice(i).join('/')}/`;
+      if (rest.startsWith(prefix)) {
+        const relative = rest.slice(prefix.length);
+        return relative.length > 0 ? relative : null;
+      }
+    }
+  }
+  return null;
 }
 
 /** Map the daemon `git.diffs` bare-array result (`[{ path, hunks }]`) into the
@@ -191,6 +244,27 @@ async function enrichChunkContents(
   });
 }
 
+const pendingFullTreeReads = new Map<string, Promise<DiffChunk[]>>();
+
+/** Full-tree `git.diffs` recovery read (no `paths`), single-flight per
+ * `(workspaceId, staged)`: concurrent flush groups awaiting recovery share one
+ * in-flight daemon read instead of issuing duplicates. */
+function sharedFullTreeDiffRead(workspaceId: string, staged: boolean): Promise<DiffChunk[]> {
+  const key = diffGroupKey(workspaceId, staged);
+  const existing = pendingFullTreeReads.get(key);
+  if (existing) return existing;
+
+  const promise = backendRequest<unknown>(
+    'git.diffs',
+    staged ? { workspaceId, staged: true } : { workspaceId },
+  )
+    .then(toDaemonDiffChunks)
+    .finally(() => pendingFullTreeReads.delete(key));
+
+  pendingFullTreeReads.set(key, promise);
+  return promise;
+}
+
 async function flushDiffGroup(key: string) {
   const pending = pendingDiffs.get(key);
   if (!pending) return;
@@ -216,19 +290,29 @@ async function flushDiffGroup(key: string) {
     const chunks = toDaemonDiffChunks(result);
 
     // Client-side matching stays as a safety net on top of the daemon-side
-    // narrowing (e.g. suffix matches for path-prefix mismatches).
+    // narrowing (e.g. suffix matches for path-prefix mismatches). Callers'
+    // promises are keyed by their ORIGINAL request path; matching runs against
+    // the path actually sent on the wire (worktree-relative when the request
+    // path was normalized at enqueue time).
+    const wirePathOf = (path: string) => pending.wirePaths?.get(path) ?? path;
     const matches = new Map<string, DiffChunk | undefined>();
     for (const path of pending.resolvers.keys()) {
-      matches.set(path, findChunkForPath(chunks, path));
+      const wirePath = wirePathOf(path);
+      matches.set(
+        path,
+        findChunkForPath(chunks, wirePath) ??
+          (wirePath === path ? undefined : findChunkForPath(chunks, path)),
+      );
     }
 
-    // A mis-normalized (non-worktree-relative) request path can never match a
-    // literal pathspec on the daemon side, so the narrowed read returns
-    // nothing for it. Recover with ONE full-tree read (no `paths`) for the
-    // whole group and re-run the suffix-match fallback against it. Well-formed
-    // relative paths that simply have no diff do NOT trigger this.
+    // A mis-normalized (non-worktree-relative) request path that could not be
+    // normalized against the workspace root can never match a literal pathspec
+    // on the daemon side, so the narrowed read returns nothing for it. Recover
+    // with one full-tree read (no `paths`) — single-flight per
+    // (workspaceId, staged) — and re-run the suffix-match fallback against it.
+    // Well-formed relative paths that simply have no diff do NOT trigger this.
     const suspiciousUnmatched = [...matches.keys()].filter(
-      (path) => matches.get(path) === undefined && isSuspiciousDiffPath(path),
+      (path) => matches.get(path) === undefined && isSuspiciousDiffPath(wirePathOf(path)),
     );
     if (suspiciousUnmatched.length > 0) {
       logger.warn(
@@ -236,11 +320,7 @@ async function flushDiffGroup(key: string) {
         { workspaceId: wsId, staged, paths: suspiciousUnmatched },
       );
       try {
-        const recoveryResult = await backendRequest<unknown>(
-          'git.diffs',
-          staged ? { workspaceId: wsId, staged: true } : { workspaceId: wsId },
-        );
-        const recoveryChunks = toDaemonDiffChunks(recoveryResult);
+        const recoveryChunks = await sharedFullTreeDiffRead(wsId, staged);
         for (const path of suspiciousUnmatched) {
           matches.set(path, findChunkForPath(recoveryChunks, path));
         }
@@ -318,8 +398,12 @@ async function flushBranchBaseDiffGroup(key: string) {
 /**
  * Request a diff chunk for one file; same-tick requests for the same
  * `(workspaceId, staged)` are merged into a single daemon `git.diffs` read
- * (plus the per-file content enrichment). Returns the matching chunk, or
- * `undefined` if the daemon returned no entry for it.
+ * (plus the per-file content enrichment). A request path that is absolute (or
+ * `~`-prefixed) and lies under the workspace root is normalized to its
+ * worktree-relative form before joining the batch `paths`, so the daemon-side
+ * narrowing matches it; the caller's promise still resolves against the
+ * original path. Returns the matching chunk, or `undefined` if the daemon
+ * returned no entry for it.
  */
 export function batchedGitDiff(
   workspaceId: string,
@@ -333,6 +417,7 @@ export function batchedGitDiff(
     resolvers: new Map(),
     rejecters: [],
     timer: null,
+    wirePaths: new Map(),
   };
   if (!existing) {
     pendingDiffs.set(key, pending);
@@ -340,7 +425,11 @@ export function batchedGitDiff(
     // same-frame mounts a chance to join the same IPC without blocking.
     pending.timer = setTimeout(() => flushDiffGroup(key), 0);
   }
-  pending.paths.add(filePath);
+  const wirePath = isSuspiciousDiffPath(filePath)
+    ? (toWorktreeRelative(filePath, workspaceWorktreeRoot(workspaceId)) ?? filePath)
+    : filePath;
+  pending.paths.add(wirePath);
+  pending.wirePaths?.set(filePath, wirePath);
 
   return new Promise<DiffChunk | undefined>((resolve, reject) => {
     let resolvers = pending.resolvers.get(filePath);

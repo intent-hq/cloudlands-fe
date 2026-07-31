@@ -45,16 +45,18 @@ describe('connection-mode', () => {
 });
 
 describe('formatTransportInfo', () => {
-  it('reports sidecar-uds for UDS when the mode is sidecar', () => {
+  it('reports sidecar-uds with the socket path when the mode is sidecar', () => {
     setConnectionMode('sidecar');
     expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
       mode: 'sidecar-uds',
+      target: '/tmp/i.sock',
     });
   });
 
-  it('reports sidecar-uds for UDS while the mode is still unknown (legacy default)', () => {
+  it('reports sidecar-uds with the socket path while the mode is still unknown (legacy default)', () => {
     expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
       mode: 'sidecar-uds',
+      target: '/tmp/i.sock',
     });
   });
 
@@ -93,6 +95,7 @@ describe('formatTransportInfo', () => {
     setDaemonVersionInfo({ daemonVersion: '0.2.0', pinnedVersion: '0.1.0', versionMismatch: true });
     expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
       mode: 'sidecar-uds',
+      target: '/tmp/i.sock',
     });
   });
 

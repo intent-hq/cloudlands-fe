@@ -49,10 +49,11 @@ export function normalizeAgentMessage(message: AgentMessage): AgentMessage {
 
 /**
  * A daemon-canonical row id: `msg_` (client-supplied / assistant rows) or the
- * server-minted user-row default `user-msg-{uuid}` (PROTOCOL §5.5). The §7.1
- * user-row delta echo carries no appMessageId, so recognizing the `user-msg-`
- * shape is what lets the content fallback merge the optimistic user row into
- * the canonical copy instead of duplicating it.
+ * server-minted user-row default `user-msg-{uuid}` (PROTOCOL §5.5). Current
+ * daemons echo `appMessageId` on §7.1 user-row deltas (intentd#781), which
+ * dedups exactly; recognizing the `user-msg-` shape is what lets the content
+ * fallback merge the optimistic user row into the canonical copy for older
+ * daemons whose delta echoes carry no appMessageId.
  */
 export function hasCanonicalId(id: string): boolean {
   return id.startsWith('msg_') || id.startsWith('user-msg-');
@@ -107,8 +108,8 @@ function hasSameAppMessageId(a: AgentMessage, b: AgentMessage): boolean {
 /**
  * Content-hash matching is a FALLBACK for pairs where id-based matching is
  * impossible: at least one side lacks an `appMessageId` (e.g. rows from older
- * daemons that do not echo `userAppMessageId` — PROTOCOL §5.5). When BOTH
- * sides carry an appMessageId,
+ * daemons that do not echo `userAppMessageId` on reads or §7.1 user-row
+ * deltas — PROTOCOL §5.5/§7.1). When BOTH sides carry an appMessageId,
  * the id comparison is authoritative: equal ids merge via the appMessageId
  * paths, and differing ids are distinct logical messages even with identical
  * content, so content fallback must never collapse them.

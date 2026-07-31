@@ -817,12 +817,15 @@ export interface AgentStreamStartEvent extends WorkspaceEventBase {
 }
 
 /**
- * Throttled liveness signal while an agent turn streams (PROTOCOL §7).
- * Content-free (no raw transcript payload); leading-edge throttled per agent
- * to at most one per second. Carries the server-derived live preview
+ * Content-free per-agent activity signal (PROTOCOL §7): the turn produced
+ * streamed output, but the raw content itself travels only on the §7.1
+ * `chat.subscribe` channel. Leading-edge throttled per agent — the first
+ * activity of a turn emits immediately, then at most one emission per
+ * second; the throttle resets when the turn ends. `messageId` is the turn's
+ * assistant message id (§7.1). Carries the server-derived live preview
  * (`lastAgentResponse` / `digest` from the streamed-so-far text, same values
- * as the `AgentLite` live-turn overlay) so watched-agent rows update
- * push-style without a refetch — fields are omitted until derivable.
+ * as the `AgentLite` live-turn overlay, intentd#792) so watched-agent rows
+ * update push-style without a refetch — fields are omitted until derivable.
  */
 export interface AgentStreamActivityEvent extends WorkspaceEventBase {
   type: 'agent:stream:activity';

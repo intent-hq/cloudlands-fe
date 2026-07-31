@@ -11,18 +11,18 @@
  *      `chatSendStarted`).
  *   2. Content-free chat-state stream bookkeeping for the live stream subset
  *      (`agent:stream:activity`, `agent:tool:call`, `agent:stream:end`,
- *      `agent:failed`). The TRANSCRIPT
- *      itself is owned by the standing `chat.subscribe` delta stream
- *      (PROTOCOL §7.1, chat-subscribe-service) — the bridge no longer
- *      assembles messages or content blocks from these events. The dispatches
- *      (`streamChunkReceived` / `streamEnded` / `streamFailed`) carry NO
- *      transcript content and exist purely for the chat-state reducer's
- *      spinner/timer bookkeeping (`lastChunkTime`, `receivedFirstChunk`,
- *      `statusEvents` clears, the #965 interrupted retry-record clear) and
- *      the agent-session busy-flag clears. `agent:stream:activity` and the
- *      terminal `agent:stream:end` additionally carry the server-derived
- *      live-preview fields (`lastAgentResponse`/`digest`, intentd#792) that
- *      the bridge applies to the agent-session slice push-style — see
+ *      `agent:failed`). The TRANSCRIPT itself is owned by the standing
+ *      `chat.subscribe` delta stream (PROTOCOL §7.1, chat-subscribe-service)
+ *      — the bridge no longer assembles messages or content blocks from
+ *      these events. The dispatches (`streamActivityReceived` / `streamEnded`
+ *      / `streamFailed`) carry NO content and exist purely for the chat-state
+ *      reducer's spinner/timer bookkeeping (`lastChunkTime`,
+ *      `receivedFirstChunk`, `statusEvents` clears, the #965 interrupted
+ *      retry-record clear) and the agent-session busy-flag clears.
+ *      `agent:stream:activity` and the terminal `agent:stream:end`
+ *      additionally carry the server-derived live-preview fields
+ *      (`lastAgentResponse`/`digest`, intentd#792) that the bridge applies
+ *      to the agent-session slice push-style — see
  *      `handleStreamActivityEvent`.
  *      `agent:stream:start` (§6.6, agent-initiated harness-wake turns only)
  *      dispatches `chatSendStarted` so the busy/Thinking UI opens without a
@@ -134,7 +134,7 @@ import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import {
   streamStatusReceived,
-  streamChunkReceived,
+  streamActivityReceived,
   streamEnded,
   streamFailed,
   chatQueueProcessingReceived,
@@ -328,16 +328,19 @@ function applyStreamPreviewFields(
 }
 
 /**
- * `agent:stream:activity` (PROTOCOL §7) is the throttled, content-free
- * liveness signal — the standing `chat.subscribe` delta stream (§7.1) is the
- * transcript writer. Two jobs remain: chat-state bookkeeping (the
- * `receivedFirstChunk` flip that auto-appends the "Streaming response…"
- * status entry once response text exists, plus the stall-detection
- * timestamps) and the push-applied live-preview fields
- * (`lastAgentResponse`/`digest`, intentd#792) so a non-viewed watched
- * agent's footer preview advances mid-turn without a fetch. The preview
- * fields are omitted until derivable (pre-first-token) — an omission means
- * "no text yet this turn", so the ping only refreshes timestamps.
+ * `agent:stream:activity` (PROTOCOL §7) is the content-free liveness ping —
+ * no raw transcript content, leading-edge throttled per agent (first ping of
+ * a turn immediate, then ≤1/s until the turn ends). The standing
+ * `chat.subscribe` delta stream (PROTOCOL §7.1) is the transcript writer.
+ * Two jobs remain: chat-state bookkeeping (the `receivedFirstChunk` flip
+ * that auto-appends the "Streaming response…" status entry once response
+ * text exists, plus the stall-detection timestamps) and the push-applied
+ * live-preview fields (`lastAgentResponse`/`digest`, intentd#792) so a
+ * non-viewed watched agent's footer preview advances mid-turn without a
+ * fetch. The preview fields are omitted until derivable (pre-first-token) —
+ * an omission means "no text yet this turn", so the ping only refreshes
+ * timestamps. The wire guard mirrors the §7 payload (`agentId`/`messageId`)
+ * so malformed events stay inert.
  */
 function handleStreamActivityEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -356,7 +359,7 @@ function handleStreamActivityEvent(event: WorkspaceEvent): void {
   // drop in `applyStreamPreviewFields` so the bookkeeping never advances
   // into the text-streaming path without a preview actually applying.
   const hasResponseText = lastAgentResponse !== undefined && lastAgentResponse.trim().length > 0;
-  appStore.dispatch(streamChunkReceived(agentId, hasResponseText));
+  appStore.dispatch(streamActivityReceived(agentId, hasResponseText));
   applyStreamPreviewFields(agentId, lastAgentResponse, digest);
 }
 
@@ -385,7 +388,7 @@ function handleToolCallEvent(event: WorkspaceEvent): void {
     return;
   }
 
-  appStore.dispatch(streamChunkReceived(agentId, false));
+  appStore.dispatch(streamActivityReceived(agentId, false));
 
   // Status hint: track the actual tool-execution window so the "Calling tool"
   // entry's duration in `computeCompletedEvents` ends at the tool's terminal
@@ -594,12 +597,20 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
   // displays the failure message and Retry button. Dispatch this even when no
   // stream state exists (e.g., agent spawn failed before streaming started).
   // The failure also lands in the cross-workspace aggregation registry so the
-  // grouped-failure toast layer can surface it. The daemon's turn-correlation
-  // id (PROTOCOL §6.6) rides along when present so the failure can be
-  // attributed to the exact turn (monorepo#1057).
+  // grouped-failure toast layer can surface it — UNLESS the payload carries a
+  // non-empty `parentAgentId` (PROTOCOL §6.5): a delegated agent's failure is
+  // the parent's to handle and escalate, so no failure toast. Gate strictly on
+  // the payload field (no local session lookups); absent → toast shows, which
+  // keeps older daemons working. The daemon's turn-correlation id (PROTOCOL
+  // §6.6) rides along when present so the failure can be attributed to the
+  // exact turn (monorepo#1057).
   if (typeof error === 'string' && error.length > 0) {
     const turnId = typeof data?.turnId === 'string' ? data.turnId : undefined;
-    recordAgentFailure({ agentId, workspaceId, error });
+    const parentAgentId = data?.parentAgentId;
+    const hasParent = typeof parentAgentId === 'string' && parentAgentId.length > 0;
+    if (!hasParent) {
+      recordAgentFailure({ agentId, workspaceId, error });
+    }
     appStore.dispatch(chatSendFailed(agentId, error, turnId));
   }
 }
@@ -927,6 +938,13 @@ function handlePermissionResolvedEvent(event: WorkspaceEvent): void {
  * reporting workspace and focuses that agent's conversation. Deliberately NOT
  * gated on the focused workspace: the bridge firehose spans every workspace,
  * so attention requests surface no matter what is on screen.
+ *
+ * IS gated on the payload's optional `parentAgentId` (PROTOCOL §6.5): a
+ * delegated agent's attention request wakes its parent, which handles it and
+ * escalates to the user itself if needed — so no sticky toast. The gate reads
+ * strictly the payload field (no local session lookups); absent → toast shows,
+ * which keeps older daemons working. The caller still falls through to the
+ * activity-timeline dispatch and the session refetch either way.
  */
 function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -944,6 +962,10 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
     reason.length === 0
   ) {
     logger.warn('agent:attention-requested with malformed payload', { data });
+    return;
+  }
+  const parentAgentId = data.parentAgentId;
+  if (typeof parentAgentId === 'string' && parentAgentId.length > 0) {
     return;
   }
   // Prefer the payload's own workspaceId (self-sufficient per the contract),

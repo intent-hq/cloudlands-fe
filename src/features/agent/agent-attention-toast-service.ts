@@ -31,7 +31,12 @@ const logger = createLogger('AgentAttentionToastService');
 /** Cap on the attention-request reason length shown in the toast. */
 const REASON_MAX_CHARS = 300;
 
-/** Wire payload of `agent:attention-requested` (self-sufficient per PROTOCOL). */
+/**
+ * Wire payload of `agent:attention-requested` (self-sufficient per PROTOCOL),
+ * minus the optional `parentAgentId`: events carrying a non-empty
+ * `parentAgentId` (delegated agents — the parent handles the request) are
+ * gated out by the daemon-events bridge and never reach this service.
+ */
 export interface AgentAttentionRequest {
   workspaceId: string;
   agentId: string;
