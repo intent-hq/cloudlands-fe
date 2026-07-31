@@ -5,7 +5,7 @@
  * delegation groups, and woken-up indicators.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   AgentSubscriptionUIState,
@@ -80,6 +80,14 @@ export const deleteSubscriptionUI = createAction<[workspaceId: string, agentId: 
  *  actual IPC call so no side effects live in the component. */
 export const requestSubscriptionFetch = createAction<[workspaceId: string, agentId: string]>(
   'agentSubscriptionUI/requestSubscriptionFetch',
+);
+
+export const cancelAgentSubscriptionsRequested = createAsyncAction<
+  [workspaceId: string, agentId: string, scope?: { subscriptionId?: string; groupId?: string }],
+  void
+>(
+  'agentSubscriptionUI/cancelAgentSubscriptions',
+  'agentSubscriptionUI/cancelAgentSubscriptionsRequested',
 );
 
 /** Refresh every subscription entry currently tracked for a workspace. */

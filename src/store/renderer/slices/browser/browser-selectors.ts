@@ -1,22 +1,25 @@
-import { store } from "../../store";
-import { emptyBrowserWorkspaceState } from "./browser-slice";
-import type {
-  BrowserWorkspaceState,
-  BrowserZoomAction,
-  RecentUrl,
-} from "./browser-types";
+import { store } from '../../store';
+import { emptyBrowserWorkspaceState } from './browser-slice';
+import type { BrowserWorkspaceState, BrowserZoomAction, RecentUrl } from './browser-types';
 
-const selectBrowserWorkspaceState = store.createSelector<
+export const selectBrowserWorkspaceState = store.createSelector<
   [wsId: string],
   BrowserWorkspaceState
 >((state, wsId) => {
   return state.browser.byWorkspaceId[wsId] ?? emptyBrowserWorkspaceState;
 });
 
+export const selectExistingBrowserWorkspaceState = store.createSelector<
+  [wsId: string],
+  BrowserWorkspaceState | undefined
+>((state, wsId) => {
+  return state.browser.byWorkspaceId[wsId];
+});
+
 export const selectBrowserRecentUrls = store.createSelector<[wsId: string], RecentUrl[]>(
   (state, wsId) => {
     return selectBrowserWorkspaceState.select(state, wsId).recentUrls;
-  }
+  },
 );
 
 /**
@@ -31,4 +34,3 @@ export const selectPendingBrowserZoom = store.createSelector<
   const queue = selectBrowserWorkspaceState.select(state, wsId).pendingZoomByTabId[tabId];
   return queue && queue.length > 0 ? queue : null;
 });
-

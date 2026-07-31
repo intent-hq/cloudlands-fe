@@ -1,10 +1,6 @@
-import { put, select, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
-import {
-  getLocalStorageJSON,
-  setLocalStorageJSON,
-} from '../../../utils/safe-local-storage-saga';
-import type { StoreState } from '../../../types';
+import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
 import {
   addRecentUrl,
   clearRecentUrls,
@@ -13,6 +9,7 @@ import {
   removeRecentUrl,
   updateUrlMetadata,
 } from '../browser-slice';
+import { selectExistingBrowserWorkspaceState } from '../browser-selectors';
 import { isRecentUrl, storageKey } from '../browser-storage-utils';
 import { MAX_RECENT_URLS } from '../browser-types';
 
@@ -37,9 +34,7 @@ export function* persistBrowserRecentUrlsWorker(
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   if (!workspaceId) return;
-  const workspaceState = yield* select(
-    (state: StoreState) => state.browser.byWorkspaceId[workspaceId],
-  );
+  const workspaceState = yield* selectExistingBrowserWorkspaceState.effect(workspaceId);
   if (!workspaceState) return;
   yield* setLocalStorageJSON(storageKey(workspaceId), workspaceState.recentUrls);
 }
