@@ -15,6 +15,7 @@
   import {
   selectAgentSession,
   selectAgentIsResponding,
+  selectAgentSessionHasStreamOwnedMessage,
   selectAgentSessionStreamingContent,
   selectAgentIsWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -378,6 +379,7 @@
 
   // Streaming state is derived from Redux-owned stream lifecycle/message state.
   const streamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
+  const hasStreamOwnedMessage$ = selectAgentSessionHasStreamOwnedMessage(agentIdStore);
   const streamingBuffer = $derived($streamingContent$);
   const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 
@@ -421,13 +423,23 @@
     return typeof path === 'string' && path.length > 0 ? path : null;
   });
 
-  // Show streaming content if actively streaming, otherwise show last response.
-  // When actively streaming, prefer the live text buffer so we reflect
-  // character-by-character progress. Tool previews (lastToolUse) only kick in
-  // when there's no meaningful text to show.
+  // Preview precedence while a turn is live:
+  //   1. the stream-owned chat.subscribe buffer (viewed agent only —
+  //      character-level progress from the standing delta stream);
+  //   2. the session's push-applied `lastAgentResponse` (refreshed ~1s by
+  //      `agent:stream:activity`, intentd#792) so a non-viewed watched
+  //      agent's preview advances mid-turn instead of freezing on stale
+  //      transcript-derived peek text — absent only pre-first-token, when
+  //      there is simply no text to preview yet;
+  //   3. the persisted transcript peek text (idle agents).
+  // Tool previews (lastToolUse) only kick in when there's no text to show.
   const lastResponse = $derived.by(() => {
-    if (isStreamActive && streamingBuffer) {
+    if (isStreamActive && $hasStreamOwnedMessage$ && streamingBuffer) {
       const line = getLastMeaningfulLine(streamingBuffer);
+      if (line) return line;
+    }
+    if ($agentIsResponding$ && $agent$?.lastAgentResponse) {
+      const line = getLastMeaningfulLine($agent$.lastAgentResponse);
       if (line) return line;
     }
     return agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : '';
@@ -453,12 +465,18 @@
   });
 
   // Show completion report if available - priority order:
+  // 0. Live session digest while responding (push-applied from
+  //    `agent:stream:activity`, fresher than the transcript-derived one)
   // 1. Digest from <agent_digest> tag (most concise, agent-provided summary)
   // 2. Completion report from report_to_parent tool (prop from event data)
   // 3. Completion report from agent metadata
   // 4. lastResponseSummary (fallback from event data)
   const effectiveCompletionReport = $derived(
-    agentData?.digest || completionReport || agentData?.completionReport || lastResponseSummary,
+    ($agentIsResponding$ ? $agent$?.digest : undefined) ||
+      agentData?.digest ||
+      completionReport ||
+      agentData?.completionReport ||
+      lastResponseSummary,
   );
 
   // Handle click - navigate to agent

@@ -104,7 +104,7 @@ export const WorkspaceEventType = {
 
   // Agent streaming events (for WebSocket API)
   AgentStreamStart: 'agent:stream:start',
-  AgentStreamChunk: 'agent:stream:chunk',
+  AgentStreamActivity: 'agent:stream:activity',
   AgentStreamEnd: 'agent:stream:end',
 
   // Agent queue events (for WebSocket API)
@@ -804,7 +804,7 @@ export interface AgentProcessEvictedEvent extends WorkspaceEventBase {
  * §6.6 / §7). Only agent-initiated (harness-wake) turns emit this event;
  * prompt (user-initiated) turns never do. `messageId` is the assistant
  * messageId minted for the wake turn — the same id carried by the turn's
- * `agent:stream:chunk` / `agent:tool:call` events and the persisted row.
+ * `agent:stream:activity` / `agent:tool:call` events and the persisted row.
  */
 export interface AgentStreamStartEvent extends WorkspaceEventBase {
   type: 'agent:stream:start';
@@ -817,14 +817,22 @@ export interface AgentStreamStartEvent extends WorkspaceEventBase {
 }
 
 /**
- * Emitted when an agent streams a text chunk (token-by-token)
+ * Throttled liveness signal while an agent turn streams (PROTOCOL §7).
+ * Content-free (no raw transcript payload); leading-edge throttled per agent
+ * to at most one per second. Carries the server-derived live preview
+ * (`lastAgentResponse` / `digest` from the streamed-so-far text, same values
+ * as the `AgentLite` live-turn overlay) so watched-agent rows update
+ * push-style without a refetch — fields are omitted until derivable.
  */
-export interface AgentStreamChunkEvent extends WorkspaceEventBase {
-  type: 'agent:stream:chunk';
+export interface AgentStreamActivityEvent extends WorkspaceEventBase {
+  type: 'agent:stream:activity';
   data: {
     agentId: string;
-    content: any;
-    streamId?: string;
+    messageId: string;
+    /** Live preview of the turn's last response text (trailing 500 chars). */
+    lastAgentResponse?: string;
+    /** Live `<agent_digest>` value from the streamed-so-far text. */
+    digest?: string;
   };
 }
 
@@ -841,6 +849,13 @@ export interface AgentStreamEndEvent extends WorkspaceEventBase {
      * `agent:stream:end` of a correlated turn; omitted when absent.
      */
     turnId?: string;
+    /**
+     * Final live-preview values re-derived from the full turn text (the last
+     * throttled `agent:stream:activity` may have missed the response tail).
+     * Omitted on transcript-free terminal emits (pre-output failures).
+     */
+    lastAgentResponse?: string;
+    digest?: string;
   };
 }
 
@@ -920,7 +935,7 @@ export type SpecificWorkspaceEvent =
   | McpNotificationEvent
   // Agent streaming events
   | AgentStreamStartEvent
-  | AgentStreamChunkEvent
+  | AgentStreamActivityEvent
   | AgentStreamEndEvent
   // Agent user message events (cross-client sync)
   | AgentUserMessageSentEvent

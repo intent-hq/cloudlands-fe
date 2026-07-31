@@ -534,11 +534,11 @@ export const chatStreamingReconciled = createAction(
 // --- Streaming event actions (dispatched by the daemon events bridge) ---
 
 /**
- * Live stream activity tick (`agent:stream:chunk` / `agent:tool:call`,
+ * Live stream activity tick (`agent:stream:activity` / `agent:tool:call`,
  * PROTOCOL §7). Content-free: the standing `chat.subscribe` delta stream
  * owns the transcript; this action only drives the chat-state spinner
  * bookkeeping (`lastChunkTime`, the `receivedFirstChunk` flip that appends
- * the "Streaming response…" status entry for text chunks).
+ * the "Streaming response…" status entry once response text exists).
  */
 export const streamChunkReceived = createAction(
   'chatState/streamChunkReceived',

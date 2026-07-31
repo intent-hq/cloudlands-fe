@@ -214,6 +214,25 @@ export const selectAgentSessionStreamingContent = store.createSelector(
   },
 );
 
+/**
+ * Select whether the session holds a stream-owned assistant message — one the
+ * standing `chat.subscribe` delta stream is actively growing (viewed agents
+ * only). Distinguishes character-level live content from
+ * `selectAgentSessionStreamingContent`'s session-flag fallback, which can
+ * surface the last PERSISTED assistant message's text while a non-viewed
+ * agent streams a new turn (its transcript never grows mid-turn).
+ */
+export const selectAgentSessionHasStreamOwnedMessage = store.createSelector(
+  (state, agentId: string): boolean => {
+    const messages = state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === 'assistant' && isStreamingMessage(message)) return true;
+    }
+    return false;
+  },
+);
+
 /** Select the workspace ID for a given agent session. */
 export const selectAgentSessionWorkspaceId = store.createSelector(
   (state, agentId: string): AgentSession['workspaceId'] | undefined =>
