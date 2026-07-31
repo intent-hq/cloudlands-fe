@@ -63,31 +63,29 @@ describe('MockStreamManager', () => {
         manager.addChunk(streamId, 'Hello');
       }));
 
-    it('should accumulate text', (done) => {
+    it('should accumulate text', async () => {
       const streamId = manager.startStream('agent-1', 'session-1');
 
       manager.addChunk(streamId, 'Hello');
       manager.addChunk(streamId, ' ');
       manager.addChunk(streamId, 'World');
 
-      setTimeout(() => {
-        const stream = manager.getStream(streamId);
-        expect(stream?.accumulatedText).toBe('Hello World');
-        (done as any)();
-      }, 50);
+      await new Promise((r) => setTimeout(r, 50));
+
+      const stream = manager.getStream(streamId);
+      expect(stream?.accumulatedText).toBe('Hello World');
     });
 
-    it('should handle delayed chunks', (done) => {
+    it('should handle delayed chunks', async () => {
       const streamId = manager.startStream('agent-1', 'session-1');
 
       manager.addChunk(streamId, 'First', 10);
       manager.addChunk(streamId, 'Second', 20);
 
-      setTimeout(() => {
-        const stream = manager.getStream(streamId);
-        expect(stream?.accumulatedText).toBe('FirstSecond');
-        (done as any)();
-      }, 50);
+      await new Promise((r) => setTimeout(r, 50));
+
+      const stream = manager.getStream(streamId);
+      expect(stream?.accumulatedText).toBe('FirstSecond');
     });
   });
 
@@ -110,7 +108,7 @@ describe('MockStreamManager', () => {
         manager.addContentBlock(streamId, block);
       }));
 
-    it('should accumulate content blocks', (done) => {
+    it('should accumulate content blocks', async () => {
       const streamId = manager.startStream('agent-1', 'session-1');
       const block1: ContentBlock = {
         id: 'block-1',
@@ -128,13 +126,12 @@ describe('MockStreamManager', () => {
       manager.addContentBlock(streamId, block1);
       manager.addContentBlock(streamId, block2);
 
-      setTimeout(() => {
-        const stream = manager.getStream(streamId);
-        expect(stream?.contentBlocks).toHaveLength(2);
-        expect(stream?.contentBlocks[0]).toEqual(block1);
-        expect(stream?.contentBlocks[1]).toEqual(block2);
-        (done as any)();
-      }, 50);
+      await new Promise((r) => setTimeout(r, 50));
+
+      const stream = manager.getStream(streamId);
+      expect(stream?.contentBlocks).toHaveLength(2);
+      expect(stream?.contentBlocks[0]).toEqual(block1);
+      expect(stream?.contentBlocks[1]).toEqual(block2);
     });
   });
 
@@ -171,7 +168,7 @@ describe('MockStreamManager', () => {
   });
 
   describe('Stream Management', () => {
-    it('should get active streams', () => {
+    it('should get active streams', async () => {
       const stream1 = manager.startStream('agent-1', 'session-1');
       const stream2 = manager.startStream('agent-2', 'session-2');
 
@@ -180,10 +177,10 @@ describe('MockStreamManager', () => {
 
       manager.completeStream(stream1);
 
-      setTimeout(() => {
-        active = manager.getActiveStreams();
-        expect(active).toHaveLength(1);
-      }, 50);
+      await new Promise((r) => setTimeout(r, 50));
+
+      active = manager.getActiveStreams();
+      expect(active).toHaveLength(1);
     });
 
     it('should clear all streams', () => {
