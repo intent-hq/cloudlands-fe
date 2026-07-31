@@ -17,9 +17,6 @@ import {
   chatStopCompleted,
   chatReset,
   chatStreamingReconciled,
-  streamActivityReceived,
-  streamEnded,
-  streamFailed,
   chatModelUnavailableCleared,
   chatRebindStarted,
   chatRebindEnded,
@@ -35,6 +32,7 @@ import {
   chatQueuedRetryRecordsCleared,
   chatLiveStreamPhaseChanged,
 } from './chat-state-slice';
+import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-stream-slice';
 import {
   removeQueuedMessageFromAgentQueue,
   replaceAgentQueue,
@@ -55,6 +53,39 @@ import type {
 } from '$features/events/types';
 
 const AGENT = 'agent-1';
+
+const streamEnded = (agentId: string, stopReason?: string) =>
+  agentStreamUpdateReceived({
+    agentId,
+    workspaceId: 'ws-1',
+    handlerSessionId: agentId,
+    source: 'sendMessage',
+    eventType: 'complete',
+    ...(stopReason ? { stopReason } : {}),
+  });
+
+const streamFailed = (agentId: string) =>
+  agentStreamUpdateReceived({
+    agentId,
+    workspaceId: 'ws-1',
+    handlerSessionId: agentId,
+    source: 'sendMessage',
+    eventType: 'error',
+  });
+
+const streamActivityReceived = (
+  agentId: string,
+  isTextChunk: boolean,
+  timestamp = Date.now(),
+) =>
+  agentStreamUpdateReceived({
+    agentId,
+    workspaceId: 'ws-1',
+    handlerSessionId: agentId,
+    source: 'sendMessage',
+    eventType: isTextChunk ? 'chunk' : 'content-blocks',
+    timestamp,
+  });
 
 function asStoreState(chatState: ReturnType<typeof chatStateReducer>): StoreState {
   return { chatState } as unknown as StoreState;
@@ -673,7 +704,7 @@ describe('chatStateReducer', () => {
     const s2 = chatStateReducer(s1, action);
     const agent = s2.byAgentId[AGENT];
     expect(agent.receivedFirstChunk).toBe(true);
-    expect(agent.lastChunkReceivedAt).toBe(action.payload[2]);
+    expect(agent.lastChunkReceivedAt).toBe(action.payload[0].timestamp);
     expect(agent.statusEvents).toHaveLength(1);
     expect(agent.statusEvents[0]).toMatchObject({ phase: 'streaming' });
   });
@@ -685,7 +716,7 @@ describe('chatStateReducer', () => {
     const agent = s2.byAgentId[AGENT];
     expect(agent.receivedFirstChunk).toBe(false);
     expect(agent.statusEvents).toHaveLength(0);
-    expect(agent.lastChunkReceivedAt).toBe(action.payload[2]);
+    expect(agent.lastChunkReceivedAt).toBe(action.payload[0].timestamp);
   });
 
   it('repeated streamActivityReceived pings (throttled cadence) refresh timestamps without duplicate status entries', () => {

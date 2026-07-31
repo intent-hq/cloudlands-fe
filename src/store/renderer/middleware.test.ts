@@ -9,16 +9,19 @@ const mocks = vi.hoisted(() => {
   const batchingMiddleware = passthrough();
   const refCheckMiddleware = passthrough();
   const structuredCloneMiddleware = passthrough();
+  const chatSubscribeMiddleware = passthrough();
   const loggerMiddleware = passthrough();
 
   return {
     createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
+    createChatSubscribeMiddleware: vi.fn(() => chatSubscribeMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     storeGuardMiddleware,
     batchingMiddleware,
+    chatSubscribeMiddleware,
     refCheckMiddleware,
     structuredCloneMiddleware,
     loggerMiddleware,
@@ -30,6 +33,9 @@ vi.mock('../../store/utils/store-guard-middleware', () => ({
 }));
 vi.mock('./middlewares/batch', () => ({
   createBatchingMiddleware: mocks.createBatchingMiddleware,
+}));
+vi.mock('$features/agent/chat-subscribe-service', () => ({
+  createChatSubscribeMiddleware: mocks.createChatSubscribeMiddleware,
 }));
 vi.mock('./middlewares/state-reference-checks', () => ({
   createReferenceChangeDetectorMiddleware: mocks.createReferenceChangeDetectorMiddleware,
@@ -75,11 +81,13 @@ describe('renderer middleware ownership', () => {
     expect(mocks.createStoreGuardMiddleware).toHaveBeenCalledWith('renderer');
     expect(mocks.createBatchingMiddleware).toHaveBeenCalledOnce();
     expect(mocks.createBatchingMiddleware).toHaveBeenCalledWith([]);
+    expect(mocks.createChatSubscribeMiddleware).toHaveBeenCalledOnce();
     expect(mocks.createReferenceChangeDetectorMiddleware).not.toHaveBeenCalled();
     expect(mocks.createLoggerMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });
@@ -95,6 +103,7 @@ describe('renderer middleware ownership', () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.refCheckMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -109,6 +118,7 @@ describe('renderer middleware ownership', () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -137,6 +147,7 @@ describe('renderer middleware ownership', () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
+      mocks.chatSubscribeMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });

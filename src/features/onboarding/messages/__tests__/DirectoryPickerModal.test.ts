@@ -19,7 +19,7 @@
  * dispatches the folder request followed by an unwanted home request, so we
  * observe THREE calls (home, folder, home) instead of the expected two.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -46,10 +46,12 @@ import {
   resetDirectoryPicker,
   type DirectoryPickerListing,
 } from '$store/renderer/slices/directory-picker/directory-picker-slice';
+import { directoryPickerSaga } from '$store/renderer/slices/directory-picker/sagas/directory-picker-saga';
 
 import DirectoryPickerModal from '../DirectoryPickerModal.svelte';
 
 const backendRequestMock = vi.mocked(backendRequest);
+let stopDirectoryPickerSaga: (() => void) | undefined;
 
 const homeListing = (): DirectoryPickerListing => ({
   path: '/Users/me',
@@ -86,6 +88,12 @@ beforeAll(() => {
     });
   }
   appStore.init();
+  stopDirectoryPickerSaga = appStore.runSaga(directoryPickerSaga);
+});
+
+afterAll(() => {
+  stopDirectoryPickerSaga?.();
+  stopDirectoryPickerSaga = undefined;
 });
 
 afterEach(() => {
