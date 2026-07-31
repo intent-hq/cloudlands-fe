@@ -29,8 +29,13 @@ export const markAgentAsViewed = createAction<[agentId: string]>(
   "unreadTracking/markAgentAsViewed"
 );
 
-/** Clear the currently viewed agent (drawer closed / tab switched). */
-export const clearCurrentlyViewedAgent = createAction(
+/**
+ * Clear the currently viewed agent (drawer closed / tab switched).
+ * Optionally scoped to an agent id: a scoped clear is a no-op unless that
+ * agent is the one currently viewed, so a deactivating background panel's
+ * trailing clear cannot clobber the newly viewed agent (monorepo#1215).
+ */
+export const clearCurrentlyViewedAgent = createAction<[agentId?: string]>(
   "unreadTracking/clearCurrentlyViewedAgent"
 );
 
@@ -88,8 +93,9 @@ export const unreadTrackingReducer = createReducer<UnreadTrackingState>(initialS
       ? state
       : { ...next, currentlyViewedAgentId: agentId };
   })
-  .with(clearCurrentlyViewedAgent, (state) => {
+  .with(clearCurrentlyViewedAgent, (state, { payload: [agentId] }) => {
     if (state.currentlyViewedAgentId === null) return state;
+    if (agentId !== undefined && state.currentlyViewedAgentId !== agentId) return state;
     return { ...state, currentlyViewedAgentId: null };
   })
   .with(newAssistantMessage, (state, action) => {

@@ -664,10 +664,12 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     //      tab cache evicts the hidden tab.
     //
     // Neither trailing clear means "no chat is viewed": A is still the
-    // visible, viewed chat. Today the middleware maps the clear to
-    // closeAllChatSubscriptions(), tearing down A's subscription — the sole
-    // transcript writer — so A's next live turn renders NOTHING (no thinking,
-    // no stop button) until a remount re-initializes the chat.
+    // visible, viewed chat. Each panel scopes its clear to its own agent, so
+    // B's trailing clear is a reducer no-op (A is viewed) and the middleware
+    // must NOT map it to closeAllChatSubscriptions() — otherwise A's
+    // subscription (the sole transcript writer) dies and A's next live turn
+    // renders NOTHING (no thinking, no stop button) until a remount
+    // re-initializes the chat.
     const agentA = "agent-sub-handoff-a";
     const agentB = "agent-sub-handoff-b";
     seedSession(agentA);
@@ -677,9 +679,9 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     openChat(agentA);
     appStore.dispatch(markAgentAsViewed(agentA));
 
-    // Switch A → B: A's deactivating panel clears, B's activating panel
-    // views + mounts.
-    appStore.dispatch(clearCurrentlyViewedAgent());
+    // Switch A → B: A's deactivating panel clears (scoped to its own agent),
+    // B's activating panel views + mounts.
+    appStore.dispatch(clearCurrentlyViewedAgent(agentA));
     appStore.dispatch(markAgentAsViewed(agentB));
     openChat(agentB);
 
@@ -691,7 +693,7 @@ describe("chatSubscribeService (fake seam, real store)", () => {
 
     // …then B's still-mounted panel emits the trailing clear (deactivation
     // effect now, onDestroy again on cache eviction — same dispatch).
-    appStore.dispatch(clearCurrentlyViewedAgent());
+    appStore.dispatch(clearCurrentlyViewedAgent(agentB));
 
     // REGRESSION: the trailing clear must not close the viewed agent's
     // standing subscription.
