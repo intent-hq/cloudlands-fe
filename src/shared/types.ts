@@ -220,6 +220,7 @@ export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
 export const WORKSPACE_DISPLAY_STATUS_VALUES = [
   'not_started',
   'in_progress',
+  'idle',
   'complete',
   'pr_ready',
   'pr_open',
@@ -229,8 +230,8 @@ export const WORKSPACE_DISPLAY_STATUS_VALUES = [
 export type WorkspaceDisplayStatus = (typeof WORKSPACE_DISPLAY_STATUS_VALUES)[number];
 
 /** Runtime guard for BE-sent displayStatus values. Unknown wire values (a future
- *  daemon's 7th value, or a malformed one) must be treated as absent so the FE
- *  defaults to 'not_started' (Idle) instead of rendering an unknown group — there
+ *  daemon's new value, or a malformed one) must be treated as absent so the FE
+ *  defaults to 'not_started' instead of rendering an unknown group — there
  *  is no local re-derivation from PR/task fields. */
 export function isWorkspaceDisplayStatus(value: unknown): value is WorkspaceDisplayStatus {
   return (

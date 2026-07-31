@@ -1426,6 +1426,7 @@
   "workspace_specTaskDonut_noTasks_label": "暫無任務",
   "workspace_specTaskDonut_tasksRatio_label": "{completed} / {total} 個任務",
   "workspace_statusIcon_complete_label": "已完成",
+  "workspace_statusIcon_idle_label": "空閒",
   "workspace_statusIcon_inProgress_label": "進行中",
   "workspace_statusIcon_notStarted_label": "未開始",
   "workspace_statusIcon_prMerged_label": "PR 已合併",

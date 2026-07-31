@@ -1,11 +1,13 @@
 /**
- * Test: IDLE section grouping in AllWorkspacesCard Status view
+ * Test: Idle section grouping in AllWorkspacesCard Status view
  *
+ * The daemon owns the idle demotion (spec: compute idle displayStatus in
+ * daemon): a not-running workspace with open tasks arrives on the wire as
+ * displayStatus: 'idle', and the FE renders the BE-sent value verbatim.
  * Verifies:
- * - Workspaces with zero streaming agents land in IDLE section (when in_progress or not_started)
- * - PR-stage and complete workspaces never go to IDLE
- * - IDLE section appears above In Progress
- * - Grouping updates reactively when streaming agents change
+ * - Workspaces with a BE-sent 'idle' displayStatus land in the Idle section
+ * - The Idle section appears above other sections
+ * - PR-stage workspaces group under their own section, never Idle
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
@@ -76,9 +78,9 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
     appStore.dispatch(setAllSpacesViewMode('recent'));
   });
 
-  it('groups workspaces with zero streaming agents into IDLE section', async () => {
-    const wsIdle1 = makeWorkspace('ws-idle-1', 'Idle WS 1');
-    const wsIdle2 = makeWorkspace('ws-idle-2', 'Idle WS 2');
+  it('groups BE-sent idle workspaces into the Idle section', async () => {
+    const wsIdle1 = makeWorkspace('ws-idle-1', 'Idle WS 1', { displayStatus: 'idle' });
+    const wsIdle2 = makeWorkspace('ws-idle-2', 'Idle WS 2', { displayStatus: 'idle' });
 
     render(AllWorkspacesCardHarness, {
       props: {
@@ -86,7 +88,6 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
           appStore.dispatch(setWorkspaceEntity(wsIdle1));
           appStore.dispatch(setWorkspaceEntity(wsIdle2));
           appStore.dispatch(setWorkspaceHasLoaded(true));
-          // No streaming agents for these workspaces (map defaults to empty)
           appStore.dispatch(setAllSpacesViewMode('status'));
         },
         expanded: true,
@@ -99,17 +100,18 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
     });
   });
 
-  it('places IDLE section above other sections when workspaces have no agents', async () => {
-    const wsIdle1 = makeWorkspace('ws-idle-1', 'Idle WS 1');
-    const wsIdle2 = makeWorkspace('ws-idle-2', 'Idle WS 2');
+  it('places the Idle section above other sections', async () => {
+    const wsIdle = makeWorkspace('ws-idle-1', 'Idle WS 1', { displayStatus: 'idle' });
+    const wsInProgress = makeWorkspace('ws-running-1', 'Running WS', {
+      displayStatus: 'in_progress',
+    });
 
     render(AllWorkspacesCardHarness, {
       props: {
         setup: () => {
-          appStore.dispatch(setWorkspaceEntity(wsIdle1));
-          appStore.dispatch(setWorkspaceEntity(wsIdle2));
+          appStore.dispatch(setWorkspaceEntity(wsIdle));
+          appStore.dispatch(setWorkspaceEntity(wsInProgress));
           appStore.dispatch(setWorkspaceHasLoaded(true));
-          // No streaming agents (map defaults to empty) -> IDLE
           appStore.dispatch(setAllSpacesViewMode('status'));
         },
         expanded: true,
@@ -119,29 +121,27 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
     await waitFor(() => {
       const headers = getGroupHeaders();
       expect(headers).toContain('Idle');
-      // IDLE should be first
+      expect(headers).toContain('In Progress');
+      // Idle should be first
       expect(headers[0]).toBe('Idle');
     });
   });
 
-  it('never moves PR-stage workspaces to IDLE', async () => {
+  it('groups PR-stage workspaces under their own section, never Idle', async () => {
+    // The daemon never demotes PR-stage statuses to idle; the FE renders both
+    // values verbatim side by side.
     const wsPrOpen = makeWorkspace('ws-pr-open', 'PR Open WS', {
       displayStatus: 'pr_open',
       prStatus: PullRequestStatus.Open,
     });
-    const wsNoChanges = makeWorkspace('ws-no-changes', 'No Changes WS');
+    const wsIdle = makeWorkspace('ws-idle', 'Idle WS', { displayStatus: 'idle' });
 
     render(AllWorkspacesCardHarness, {
       props: {
         setup: () => {
           appStore.dispatch(setWorkspaceEntity(wsPrOpen));
-          appStore.dispatch(setWorkspaceEntity(wsNoChanges));
+          appStore.dispatch(setWorkspaceEntity(wsIdle));
           appStore.dispatch(setWorkspaceHasLoaded(true));
-
-          // Zero streaming agents for both (map defaults to empty)
-          // PR workspace should show in PR Open, not IDLE
-          // No changes workspace should show in IDLE
-
           appStore.dispatch(setAllSpacesViewMode('status'));
         },
         expanded: true,
@@ -152,10 +152,9 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
       const headers = getGroupHeaders();
       expect(headers).toContain('PR Open');
       expect(headers).toContain('Idle');
-      // Should have both sections
       const prOpenIndex = headers.indexOf('PR Open');
       const idleIndex = headers.indexOf('Idle');
-      expect(idleIndex).toBeLessThan(prOpenIndex); // IDLE comes first
+      expect(idleIndex).toBeLessThan(prOpenIndex); // Idle comes first
     });
   });
 });
