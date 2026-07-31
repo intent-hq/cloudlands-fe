@@ -71,6 +71,17 @@ describe("unreadTrackingReducer", () => {
     it("should be no-op when already null", () => {
       expect(reduce(initialState, clearCurrentlyViewedAgent())).toBe(initialState);
     });
+
+    it("should clear when scoped to the currently viewed agent", () => {
+      const before: UnreadTrackingState = { ...initialState, currentlyViewedAgentId: "a1" };
+      const state = reduce(before, clearCurrentlyViewedAgent("a1"));
+      expect(state.currentlyViewedAgentId).toBeNull();
+    });
+
+    it("should be no-op when scoped to a different agent", () => {
+      const before: UnreadTrackingState = { ...initialState, currentlyViewedAgentId: "a1" };
+      expect(reduce(before, clearCurrentlyViewedAgent("a2"))).toBe(before);
+    });
   });
 
   describe("newAssistantMessage", () => {

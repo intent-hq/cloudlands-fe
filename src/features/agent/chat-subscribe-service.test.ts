@@ -651,4 +651,60 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     ]);
   });
 
+  it("keeps the viewed agent's subscription open when a background panel's trailing clearCurrentlyViewedAgent lands after the handoff (missing-live-turn regression)", () => {
+    // Two agent tabs mounted in ONE panel (the panel system keeps inactive
+    // tabs mounted for PANEL_TAB_CACHE_TTL_MS before unmounting). This is the
+    // exact action sequence the two ChatPanels emit:
+    //
+    //   1. Switching BACK to tab A (earlier in tree order), A's unread
+    //      effect runs first: markAgentAsViewed(A) closes B's subscription
+    //      and reopens A's.
+    //   2. THEN B's panel emits clearCurrentlyViewedAgent — from its
+    //      deactivation effect, and again ~30s later from onDestroy when the
+    //      tab cache evicts the hidden tab.
+    //
+    // Neither trailing clear means "no chat is viewed": A is still the
+    // visible, viewed chat. Each panel scopes its clear to its own agent, so
+    // B's trailing clear is a reducer no-op (A is viewed) and the middleware
+    // must NOT map it to closeAllChatSubscriptions() — otherwise A's
+    // subscription (the sole transcript writer) dies and A's next live turn
+    // renders NOTHING (no thinking, no stop button) until a remount
+    // re-initializes the chat.
+    const agentA = "agent-sub-handoff-a";
+    const agentB = "agent-sub-handoff-b";
+    seedSession(agentA);
+    seedSession(agentB);
+
+    // A's ChatPanel mounts and is viewed.
+    openChat(agentA);
+    appStore.dispatch(markAgentAsViewed(agentA));
+
+    // Switch A → B: A's deactivating panel clears (scoped to its own agent),
+    // B's activating panel views + mounts.
+    appStore.dispatch(clearCurrentlyViewedAgent(agentA));
+    appStore.dispatch(markAgentAsViewed(agentB));
+    openChat(agentB);
+
+    // Switch back B → A: A's panel activates first and reopens A's
+    // subscription…
+    appStore.dispatch(markAgentAsViewed(agentA));
+    const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
+    expect(reopened).toBeDefined();
+
+    // …then B's still-mounted panel emits the trailing clear (deactivation
+    // effect now, onDestroy again on cache eviction — same dispatch).
+    appStore.dispatch(clearCurrentlyViewedAgent(agentB));
+
+    // REGRESSION: the trailing clear must not close the viewed agent's
+    // standing subscription.
+    expect(reopened!.unsubscribe).not.toHaveBeenCalled();
+
+    // A live emit for the viewed agent must still apply to the store.
+    reopened!.handler(transcript([makeMessage("live-turn-msg", "thinking…")], true));
+    expect(hasLiveChatSubscription(agentA)).toBe(true);
+    expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toContain(
+      "live-turn-msg",
+    );
+  });
+
 });

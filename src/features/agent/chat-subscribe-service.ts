@@ -13,7 +13,10 @@
  *    transcript: a slower chat-read hydrate whose pages predate a finalize
  *    would otherwise clobber the finalized row this stream already delivered
  *    (monorepo#1161).
- *  - `clearCurrentlyViewedAgent` (chat close / panel destroy) closes all.
+ *  - `clearCurrentlyViewedAgent` (chat close / panel destroy) closes all —
+ *    but only when the clear actually applied (no agent remains viewed after
+ *    the reducer). A background panel's trailing scoped clear is ignored by
+ *    the reducer, so the viewed agent's subscription survives (monorepo#1215).
  *  - `removeSession` (agent-deletion soft-hide), `workspaceDeleted`,
  *    `removeWorkspaceSessions`, and `clearAllSessions` tear down the affected
  *    subscriptions so a deleted agent's stream can never resurrect its state.
@@ -110,6 +113,14 @@ function readSession(agentId: string): StoredSessionLite | undefined {
     agentSessions?: { byAgentId: Record<string, StoredSessionLite> };
   };
   return state.agentSessions?.byAgentId[agentId];
+}
+
+/** Dependency-light one-time read of the viewed agent (no selector import). */
+function readCurrentlyViewedAgentId(): string | null {
+  const state = appStore.state as {
+    unreadTracking?: { currentlyViewedAgentId: string | null };
+  };
+  return state.unreadTracking?.currentlyViewedAgentId ?? null;
 }
 
 /**
@@ -311,7 +322,11 @@ export function createChatSubscribeMiddleware(): StoreMiddleware {
           }
         }
       } else if (type === clearCurrentlyViewedAgent.type) {
-        closeAllChatSubscriptions();
+        // Runs post-reducer: a scoped clear from a background/deactivating
+        // panel that does not match the viewed agent is a reducer no-op, so
+        // an agent still being viewed means the chat did NOT close — keep
+        // its standing subscription (monorepo#1215).
+        if (readCurrentlyViewedAgentId() === null) closeAllChatSubscriptions();
       } else if (type === removeSession.type) {
         const [agentId] = (action as { payload: [string] }).payload;
         if (typeof agentId === "string") closeChatSubscription(agentId);
