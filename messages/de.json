@@ -465,6 +465,8 @@
   "settings_section_aiCodingClis_hint": "Sie können sich über Ihre KI-Coding-CLI im Terminal anmelden oder das Konto wechseln.",
   "settings_section_connections": "Verbindungen",
   "settings_section_data": "Daten",
+  "settings_section_connection": "Verbindung",
+  "settings_connection_socket_label": "intentd-Socket",
   "settings_section_gitWorkspace": "Git & Arbeitsbereich",
   "settings_section_notifications": "Benachrichtigungen",
   "settings_section_cliOptimization": "CLI-Optimierung",

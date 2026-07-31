@@ -465,6 +465,8 @@
   "settings_section_aiCodingClis_hint": "Vous pouvez vous connecter ou changer de compte via votre CLI de codage IA dans le terminal.",
   "settings_section_connections": "Connexions",
   "settings_section_data": "Données",
+  "settings_section_connection": "Connexion",
+  "settings_connection_socket_label": "Socket intentd",
   "settings_section_gitWorkspace": "Git et espace de travail",
   "settings_section_notifications": "Notifications",
   "settings_section_cliOptimization": "Optimisation CLI",
