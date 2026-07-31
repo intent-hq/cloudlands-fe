@@ -8,10 +8,13 @@
  *   - `attentionRequestKind`: "discussion" | "blocker"
  *   - `attentionRequestReason`: string
  *   - `attentionRequestTimestamp`: ISO string
- * The fields are a *pending* state — the daemon clears them when the agent
- * next receives a message (emitting `agent:updated` with
- * `attentionRequestCleared: true`), so an absent kind means no pending
- * request and the indicator retires.
+ * The fields are a *pending* state — the daemon clears them when the user
+ * next responds, i.e. on a user-origin delivery (`agent.sendMessage`,
+ * `agent.sendQueuedMessageNow`, `agent.editAndRegenerate`, or a drained
+ * user-origin queue entry), emitting `agent:updated` with
+ * `attentionRequestCleared: true`; automatic deliveries (A2A sends,
+ * parent/subscription wakes) do not clear them. An absent kind means no
+ * pending request and the indicator retires.
  */
 
 export type AgentAttentionKind = 'discussion' | 'blocker';
