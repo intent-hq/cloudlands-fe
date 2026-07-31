@@ -31,16 +31,18 @@
  * its full-list upsert would clobber the snapshot-delivered in-flight
  * assistant message with a list that cannot contain it. So the hydrate keeps
  * any stream-owned message (`isStreaming: true`) already in the store whose
- * id is absent from the fetched pages. A turn that finalized during the read
- * is unaffected: the persisted final row carries the SAME message id, so the
- * fetched copy wins and no stale partial is retained.
+ * id is absent from the fetched pages. A turn that FINALIZED during the read
+ * is not covered by that guard (the persisted row is no longer stream-owned),
+ * so the subscription re-asserts its last reconciled transcript on this
+ * module's `transcriptHydrationSettled` dispatch — a fetch whose pages
+ * predate the finalize cannot silently drop the finalized row.
  *
  * READ-ONLY: this module never invokes an agent mutation (no create/send/stop).
  *
  * Loads are coalesced per agent via an in-flight map: a request arriving while
  * a load is already in flight shares the in-flight read. Post-hydration
- * convergence is owned by the standing subscription's delta reconcile, so no
- * follow-up rerun is scheduled.
+ * convergence is owned by the standing subscription — its settle-time
+ * re-apply plus its delta reconcile — so no follow-up rerun is scheduled.
  *
  * Errors are swallowed (logged only) so a failed read leaves any prior session
  * intact rather than clobbering it with an empty transcript. If `agents.get`
