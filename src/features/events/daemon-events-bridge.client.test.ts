@@ -664,6 +664,25 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.get', expect.anything());
   });
 
+  it('a whitespace-only lastAgentResponse is treated like an absent preview (no streaming flip, no session write)', async () => {
+    appStore.dispatch(updateSession(AGENT, { lastAgentResponse: 'previous turn text' }));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: '   \n  ',
+      }),
+    );
+
+    // The bookkeeping predicate mirrors applyStreamPreviewFields' meaningful-
+    // text check: no preview applied and no "Streaming response…" entry.
+    expect(readSession()?.lastAgentResponse).toBe('previous turn text');
+    expect(readStatusEvents()).toEqual([]);
+  });
+
   it('terminal agent:stream:end applies the final lastAgentResponse/digest so the preview lands on the turn end-state', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

@@ -350,10 +350,13 @@ function handleStreamActivityEvent(event: WorkspaceEvent): void {
   const lastAgentResponse =
     typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
   const digest = typeof data.digest === 'string' ? data.digest : undefined;
-  // `lastAgentResponse` presence means the turn has streamed response text —
-  // the signal for the "Streaming response…" flip; a pre-text ping only
-  // refreshes timestamps.
-  appStore.dispatch(streamChunkReceived(agentId, lastAgentResponse !== undefined));
+  // Meaningful `lastAgentResponse` text means the turn has streamed response
+  // text — the signal for the "Streaming response…" flip; a pre-text ping
+  // only refreshes timestamps. The predicate mirrors the empty/whitespace
+  // drop in `applyStreamPreviewFields` so the bookkeeping never advances
+  // into the text-streaming path without a preview actually applying.
+  const hasResponseText = lastAgentResponse !== undefined && lastAgentResponse.trim().length > 0;
+  appStore.dispatch(streamChunkReceived(agentId, hasResponseText));
   applyStreamPreviewFields(agentId, lastAgentResponse, digest);
 }
 
