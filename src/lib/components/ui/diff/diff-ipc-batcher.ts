@@ -158,7 +158,10 @@ function toWorktreeRelative(filePath: string, root: string): string | null {
     const rootParts = normRoot.split('/').filter(Boolean);
     for (let i = 0; i < rootParts.length; i++) {
       const prefix = `${rootParts.slice(i).join('/')}/`;
-      if (rest.startsWith(prefix)) return rest.slice(prefix.length);
+      if (rest.startsWith(prefix)) {
+        const relative = rest.slice(prefix.length);
+        return relative.length > 0 ? relative : null;
+      }
     }
   }
   return null;

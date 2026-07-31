@@ -307,6 +307,23 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       expect(diffCalls).toEqual([['git.diffs', { workspaceId: 'ws-n3', paths: ['src/a.ts'] }]]);
     });
 
+    it('does not emit an empty wire path when a ~-prefixed request points at the root itself', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      storeState.workspaces = [{ id: 'ws-n5', worktreePath: '/Users/u/root/ws' }];
+      mockNarrowingDaemon([{ path: 'src/a.ts', hunks: [HUNK] }]);
+
+      const promise = batchedGitDiff('ws-n5', false, '~/root/ws/');
+      await vi.runAllTimersAsync();
+
+      await expect(promise).resolves.toBeUndefined();
+      const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
+      expect(diffCalls).toEqual([
+        ['git.diffs', { workspaceId: 'ws-n5', paths: ['~/root/ws/'] }],
+        ['git.diffs', { workspaceId: 'ws-n5' }],
+      ]);
+      vi.mocked(console.warn).mockRestore();
+    });
+
     it('falls back to repositoryPath as the root when worktreePath is absent', async () => {
       storeState.workspaces = [{ id: 'ws-n4', repositoryPath: '/repos/proj' }];
       mockNarrowingDaemon([{ path: 'src/a.ts', hunks: [HUNK] }]);
