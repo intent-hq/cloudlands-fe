@@ -1313,6 +1313,33 @@ describe('NotificationService native id-based replacement', () => {
     expect(mockNotificationInstances[0].opts).not.toHaveProperty('id');
   });
 
+  it('evicts the replaced same-id notification from activeNotifications even when the OS never fires close (leak regression)', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    await service.handleAgentIdle(buildIdleEvent());
+    await service.handleAgentIdle(buildIdleEvent());
+
+    // Three same-id idles, no 'close' events at all: only the latest instance
+    // may be retained — replaced ones are evicted at replacement time.
+    expect(mockNotificationInstances.length).toBe(3);
+    expect((service as any).activeNotifications.size).toBe(1);
+    expect((service as any).notificationsById.size).toBe(1);
+
+    // Closing the survivor drains both structures completely.
+    mockNotificationInstances[2].handlers['close']();
+    expect((service as any).activeNotifications.size).toBe(0);
+    expect((service as any).notificationsById.size).toBe(0);
+  });
+
+  it('distinct-id notifications never evict each other from activeNotifications', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('workspace-1', 'agent-a'));
+    await service.handleAgentIdle(buildIdleEvent('workspace-1', 'agent-b'));
+
+    expect((service as any).activeNotifications.size).toBe(2);
+    expect((service as any).notificationsById.size).toBe(2);
+  });
+
   it('sends the notification:show sound event for EVERY shown notification, including same-id repeats', async () => {
     const focusedWindow = createMockWindow(32);
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(focusedWindow as never);

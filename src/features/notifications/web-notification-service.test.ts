@@ -45,6 +45,7 @@ import {
   showTestWebNotification,
   requestWebNotificationPermission,
   __resetWebNotificationServiceForTesting,
+  __getActiveWebNotificationCountForTesting,
 } from './web-notification-service';
 import { emitMockIpcEvent, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -282,6 +283,29 @@ describe('web-notification-service', () => {
       expect(MockNotification.instances[0].options?.tag).toBe('ws-1:agent-1');
       expect(MockNotification.instances[1].options?.tag).toBe('ws-1:agent-1');
       expect(mockPlayNotificationSound).toHaveBeenCalledTimes(2);
+    });
+
+    it('evicts the replaced same-tag notification from the strong-ref set even without onclose (leak regression)', async () => {
+      await handleWebAgentIdle(makeIdleEvent());
+      await handleWebAgentIdle(makeIdleEvent());
+      await handleWebAgentIdle(makeIdleEvent());
+
+      // Three same-tag idles, no onclose fired: only the latest survives.
+      expect(MockNotification.instances).toHaveLength(3);
+      expect(__getActiveWebNotificationCountForTesting()).toBe(1);
+
+      // Closing the survivor drains the set.
+      MockNotification.instances[2].onclose?.();
+      expect(__getActiveWebNotificationCountForTesting()).toBe(0);
+    });
+
+    it('distinct-tag notifications never evict each other', async () => {
+      stubBackendWire({ workspaceIds: ['ws-1', 'ws-2'] });
+      await handleWebAgentIdle(makeIdleEvent());
+      await handleWebAgentIdle(makeIdleEvent({ agentId: 'agent-1' }, 'ws-2'));
+
+      expect(MockNotification.instances).toHaveLength(2);
+      expect(__getActiveWebNotificationCountForTesting()).toBe(2);
     });
 
     it('falls back to "Agent"/"Finished" without specialist/taskTitle/workspace title', async () => {

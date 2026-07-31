@@ -119,6 +119,13 @@ export class NotificationService {
   /** Detaches the pending connect-retry `status` listener, when armed. */
   private statusRetryDisposer?: () => void;
   private activeNotifications = new Set<Notification>();
+  /**
+   * Latest notification per stable id. When a same-id notification replaces a
+   * delivered one, the OS may never emit `close` for the replaced instance —
+   * this map lets us evict it from `activeNotifications` so the set cannot
+   * grow over repeated idles from the same agent.
+   */
+  private notificationsById = new Map<string, Notification>();
 
   constructor() {
     // Warm the preferences cache eagerly; each `handleAgentIdle` re-fetches.
@@ -522,18 +529,34 @@ export class NotificationService {
         return;
       }
 
+      const stableId = workspaceId && agentId ? `${workspaceId}:${agentId}` : undefined;
       const notification = new Notification({
         title: content.title,
         body: content.body,
-        ...(workspaceId && agentId ? { id: `${workspaceId}:${agentId}` } : {}),
+        ...(stableId ? { id: stableId } : {}),
       });
 
       // Keep a strong reference to prevent GC before user interaction
       this.activeNotifications.add(notification);
+      if (stableId) {
+        // Native replacement may retire the previous same-id notification
+        // WITHOUT a 'close' event — evict it here so the set cannot leak.
+        const replaced = this.notificationsById.get(stableId);
+        if (replaced) {
+          this.activeNotifications.delete(replaced);
+        }
+        this.notificationsById.set(stableId, notification);
+      }
+      const release = () => {
+        this.activeNotifications.delete(notification);
+        if (stableId && this.notificationsById.get(stableId) === notification) {
+          this.notificationsById.delete(stableId);
+        }
+      };
 
       // Focus workspace window on click and navigate to the correct workspace
       notification.on('click', () => {
-        this.activeNotifications.delete(notification);
+        release();
 
         if (process.platform === 'darwin') {
           app.show();
@@ -562,19 +585,19 @@ export class NotificationService {
       });
 
       notification.on('close', () => {
-        this.activeNotifications.delete(notification);
+        release();
       });
 
       // Log any errors that occur during notification display
       notification.on('failed', (_event, error) => {
-        this.activeNotifications.delete(notification);
+        release();
         logger.error('Notification failed to show', { error });
       });
 
       try {
         notification.show();
       } catch (error) {
-        this.activeNotifications.delete(notification);
+        release();
         logger.error('Notification.show() threw', error as Error);
         return;
       }
