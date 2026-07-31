@@ -14,7 +14,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 
-import { sendMessage as sendAgentMessage } from '$features/agent/agent-stream-lifecycle';
+import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';

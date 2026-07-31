@@ -52,6 +52,7 @@ let loggedPermissionSkip = false;
 let pendingPermissionRequest: Promise<NotificationPermission> | null = null;
 /** Strong refs so pending notifications aren't GC'd before click (parity with main). */
 const activeNotifications = new Set<Notification>();
+const activeNotificationsByTag = new Map<string, Notification>();
 
 /** True when the browser exposes the Notification API (jsdom-safe guard). */
 function isNotificationSupported(): boolean {
@@ -195,10 +196,15 @@ async function showWebNotification(
   if (!granted) return;
 
   try {
-    const notification = new Notification(content.title, { body: content.body });
+    const tag = workspaceId && agentId ? `${workspaceId}:${agentId}` : undefined;
+    const notification = new Notification(content.title, { body: content.body, ...(tag ? { tag } : {}) });
+    const previous = tag ? activeNotificationsByTag.get(tag) : undefined;
+    if (previous) activeNotifications.delete(previous);
     activeNotifications.add(notification);
+    if (tag) activeNotificationsByTag.set(tag, notification);
     notification.onclick = () => {
       activeNotifications.delete(notification);
+      if (tag && activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
       try {
         window.focus();
       } catch {
@@ -215,9 +221,11 @@ async function showWebNotification(
     };
     notification.onclose = () => {
       activeNotifications.delete(notification);
+      if (tag && activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
     };
     notification.onerror = () => {
       activeNotifications.delete(notification);
+      if (tag && activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
       logger.warn('Web notification failed to show', { title: content.title });
     };
   } catch (error) {
@@ -405,4 +413,10 @@ export function __resetWebNotificationServiceForTesting(): void {
   loggedPermissionSkip = false;
   pendingPermissionRequest = null;
   activeNotifications.clear();
+  activeNotificationsByTag.clear();
+}
+
+/** Test-only: visible active notification strong-reference count. @internal */
+export function __getActiveWebNotificationCountForTesting(): number {
+  return activeNotifications.size;
 }
