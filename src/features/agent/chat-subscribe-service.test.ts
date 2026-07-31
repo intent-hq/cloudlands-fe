@@ -441,6 +441,43 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, agentA)).toBe(before);
   });
 
+  it("clears stale message-level streaming flags when a mid-turn subscription closes (navigate-away)", () => {
+    // Viewed mid-turn then navigated away: the delta stream grew a message
+    // with isStreaming: true, and nothing else rewrites it after the
+    // subscription closes. The stale flag would keep the AgentCard tier-1
+    // frozen buffer winning over the push-applied lastAgentResponse that IS
+    // advancing (~1s activity pings), so closeChatSubscription normalizes
+    // the flags on teardown.
+    const agentA = "agent-sub-stale-a";
+    const agentB = "agent-sub-stale-b";
+    seedSession(agentA);
+    seedSession(agentB);
+    const subA = openChat(agentA);
+
+    subA.handler(
+      transcript(
+        [makeMessage("partial-a", "streamed so far", { isStreaming: true })],
+        true,
+      ),
+    );
+    expect(
+      selectAgentMessages.select(appStore.state, agentA).find((m) => m.id === "partial-a")
+        ?.isStreaming,
+    ).toBe(true);
+
+    // Navigate away mid-turn: markAgentAsViewed(B) closes A's subscription.
+    appStore.dispatch(markAgentAsViewed(agentB));
+    expect(hasLiveChatSubscription(agentA)).toBe(false);
+
+    const partial = selectAgentMessages
+      .select(appStore.state, agentA)
+      .find((m) => m.id === "partial-a");
+    expect(partial?.isStreaming).toBe(false);
+    expect(partial?.streamingComplete).toBe(true);
+    // Content untouched — only the flags normalize.
+    expect(partial?.contentBlocks?.[0]).toMatchObject({ text: "streamed so far" });
+  });
+
   it("tears down all subscriptions when the chat closes (clearCurrentlyViewedAgent)", () => {
     const agentId = "agent-sub-close";
     seedSession(agentId);

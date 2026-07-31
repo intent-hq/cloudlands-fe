@@ -817,18 +817,25 @@ export interface AgentStreamStartEvent extends WorkspaceEventBase {
 }
 
 /**
- * Content-free per-agent activity signal (PROTOCOL §7, renamed from
- * `agent:stream:chunk`): the turn produced streamed output, but the content
- * itself travels only on the §7.1 `chat.subscribe` channel. Leading-edge
- * throttled per agent — the first activity of a turn emits immediately, then
- * at most one emission per second; the throttle resets when the turn ends.
- * `messageId` is the turn's assistant message id (§7.1).
+ * Content-free per-agent activity signal (PROTOCOL §7): the turn produced
+ * streamed output, but the raw content itself travels only on the §7.1
+ * `chat.subscribe` channel. Leading-edge throttled per agent — the first
+ * activity of a turn emits immediately, then at most one emission per
+ * second; the throttle resets when the turn ends. `messageId` is the turn's
+ * assistant message id (§7.1). Carries the server-derived live preview
+ * (`lastAgentResponse` / `digest` from the streamed-so-far text, same values
+ * as the `AgentLite` live-turn overlay, intentd#792) so watched-agent rows
+ * update push-style without a refetch — fields are omitted until derivable.
  */
 export interface AgentStreamActivityEvent extends WorkspaceEventBase {
   type: 'agent:stream:activity';
   data: {
     agentId: string;
     messageId: string;
+    /** Live preview of the turn's last response text (trailing 500 chars). */
+    lastAgentResponse?: string;
+    /** Live `<agent_digest>` value from the streamed-so-far text. */
+    digest?: string;
   };
 }
 
@@ -845,6 +852,13 @@ export interface AgentStreamEndEvent extends WorkspaceEventBase {
      * `agent:stream:end` of a correlated turn; omitted when absent.
      */
     turnId?: string;
+    /**
+     * Final live-preview values re-derived from the full turn text (the last
+     * throttled `agent:stream:activity` may have missed the response tail).
+     * Omitted on transcript-free terminal emits (pre-output failures).
+     */
+    lastAgentResponse?: string;
+    digest?: string;
   };
 }
 

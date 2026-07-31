@@ -167,6 +167,7 @@ import {
   bulkUpsertSessions,
   clearAllSessions,
   setAgentStreaming,
+  updateSession,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -597,6 +598,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       notification('agent:stream:activity', {
         agentId: AGENT,
         messageId: MESSAGE_ID,
+        lastAgentResponse: 'Hello ',
       }),
     );
     handler(
@@ -626,6 +628,94 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(readAssistantMessages()).toHaveLength(0);
   });
 
+  // intentd#792: `agent:stream:activity` carries the server-derived live
+  // preview — the bridge push-applies it to the session slice with zero RPCs
+  // (no agent.get refetch, no debounce).
+  it('agent:stream:activity applies lastAgentResponse/digest to the session without any RPC', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'Working through the parser rewrite',
+        digest: 'Parser rewrite in progress',
+      }),
+    );
+
+    expect(readSession()?.lastAgentResponse).toBe('Working through the parser rewrite');
+    expect(readSession()?.digest).toBe('Parser rewrite in progress');
+    expect(readAssistantMessages()).toHaveLength(0);
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.get', expect.anything());
+    // Bookkeeping: response text present → the streaming status entry arms.
+    expect(readStatusEvents().map((e) => e.phase)).toEqual(['streaming']);
+  });
+
+  it('agent:stream:activity without preview fields (pre-first-token ping) only refreshes bookkeeping', async () => {
+    appStore.dispatch(updateSession(AGENT, { lastAgentResponse: 'previous turn text' }));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+
+    // No preview fields → no text derivable yet this turn: session preview
+    // untouched, no streaming entry yet.
+    expect(readSession()?.lastAgentResponse).toBe('previous turn text');
+    expect(readSession()?.digest).toBeUndefined();
+    expect(readStatusEvents()).toEqual([]);
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.get', expect.anything());
+  });
+
+  it('a whitespace-only lastAgentResponse is treated like an absent preview (no streaming flip, no session write)', async () => {
+    appStore.dispatch(updateSession(AGENT, { lastAgentResponse: 'previous turn text' }));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: '   \n  ',
+      }),
+    );
+
+    // The bookkeeping predicate mirrors applyStreamPreviewFields' meaningful-
+    // text check: no preview applied and no "Streaming response…" entry.
+    expect(readSession()?.lastAgentResponse).toBe('previous turn text');
+    expect(readStatusEvents()).toEqual([]);
+  });
+
+  it('terminal agent:stream:end applies the final lastAgentResponse/digest so the preview lands on the turn end-state', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'partial mid-turn text',
+      }),
+    );
+    expect(readSession()?.lastAgentResponse).toBe('partial mid-turn text');
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'The full final response tail.',
+        digest: 'Turn complete',
+      }),
+    );
+
+    expect(readSession()?.lastAgentResponse).toBe('The full final response tail.');
+    expect(readSession()?.digest).toBe('Turn complete');
+    // Terminal bookkeeping still ran: busy flags cleared, no transcript writes.
+    expect(readSession()?.isStreaming).toBe(false);
+    expect(readAssistantMessages()).toHaveLength(0);
+  });
+
   it('agent:stream:end clears the busy flags and agent:idle clears the spinner', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -634,6 +724,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       notification('agent:stream:activity', {
         agentId: AGENT,
         messageId: MESSAGE_ID,
+        lastAgentResponse: 'Hello',
       }),
     );
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
@@ -668,6 +759,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       notification('agent:stream:activity', {
         agentId: AGENT,
         messageId: MESSAGE_ID,
+        lastAgentResponse: 'Working',
       }),
     );
     handler(
@@ -687,16 +779,17 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(chatAgent?.error).toBe('boom');
   });
 
-  it("emits status hint transitions: 'Streaming response…' on first activity → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next activity → cleared on stream:end/idle", async () => {
+  it("emits status hint transitions: 'Streaming response…' on first text-bearing activity → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next activity → cleared on stream:end/idle", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    // First activity ping arms the "Streaming response…" status entry via the
-    // activity reducer (no explicit dispatch needed from the bridge).
+    // First text-bearing activity ping arms the "Streaming response…" status
+    // entry via the activity reducer (no explicit dispatch needed from the bridge).
     handler(
       notification('agent:stream:activity', {
         agentId: AGENT,
         messageId: MESSAGE_ID,
+        lastAgentResponse: 'Looking',
       }),
     );
 
@@ -756,6 +849,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       notification('agent:stream:activity', {
         agentId: AGENT,
         messageId: MESSAGE_ID,
+        lastAgentResponse: 'Done.',
       }),
     );
 
@@ -783,7 +877,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(readStatusEvents()).toEqual([]);
   });
 
-  it('maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with a localized message keyed off phase (wire message ignored for known phases); first chunk still clears it via the chunk reducer', async () => {
+  it('maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with a localized message keyed off phase (wire message ignored for known phases); first text-bearing activity still clears it via the chunk reducer', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -849,14 +943,16 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       message: 'Daemon-authored fallback text',
     });
 
-    // First `agent:stream:activity` appends the activity reducer's "Streaming
-    // response…" entry after the startup hints — the bridge itself does NOT
-    // clear anything on the way in (mirrors the existing tool-call bridge
-    // path). The terminal reducer paths below own the clear.
+    // First text-bearing `agent:stream:activity` appends the activity
+    // reducer's "Streaming response…" entry after the startup hints — the
+    // bridge itself does NOT clear anything on the way in (mirrors the
+    // existing tool-call bridge path). The terminal reducer paths below own
+    // the clear.
     handler(
       notification('agent:stream:activity', {
         agentId: AGENT,
         messageId: MESSAGE_ID,
+        lastAgentResponse: 'Hi',
       }),
     );
     events = readStatusEvents();
@@ -1007,13 +1103,14 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       phaseExpectations.map(({ phase, localized }) => ({ phase, message: localized })),
     );
 
-    // The streaming state (first activity ping) is also a catalog string,
-    // appended by the activity reducer — completing the full pre-first-token
-    // → streaming set.
+    // The streaming state (first text-bearing activity) is also a catalog
+    // string, appended by the activity reducer — completing the full
+    // pre-first-token → streaming set.
     handler(
       notification('agent:stream:activity', {
         agentId: AGENT,
         messageId: MESSAGE_ID,
+        lastAgentResponse: 'Hi',
       }),
     );
     events = readStatusEvents();
@@ -1312,6 +1409,7 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
       notification('agent:stream:activity', {
         agentId: AGENT,
         messageId: WAKE_MESSAGE_ID,
+        lastAgentResponse: 'Waking…',
       }),
     );
     const statusEventsBefore = readStatusEvents();
@@ -5271,6 +5369,7 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
         notification('agent:stream:activity', {
           agentId,
           messageId,
+          lastAgentResponse: 'Working',
         }),
       );
 
@@ -5300,6 +5399,7 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
         notification('agent:stream:activity', {
           agentId,
           messageId,
+          lastAgentResponse: 'Working',
         }),
       );
 
@@ -5910,6 +6010,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
           data: {
             agentId: 'agent-1',
             messageId: 'msg-1',
+            lastAgentResponse: 'streamed-so-far text',
           },
         },
       },

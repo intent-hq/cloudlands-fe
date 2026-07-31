@@ -538,10 +538,10 @@ export const chatStreamingReconciled = createAction(
  * PROTOCOL §7). Content-free: the standing `chat.subscribe` delta stream
  * owns the transcript; this action only drives the chat-state spinner
  * bookkeeping (`lastChunkTime`, the `receivedFirstChunk` flip that appends
- * the "Streaming response…" status entry on the turn's first
- * `agent:stream:activity` ping). `isStreamActivity` is `true` for
- * `agent:stream:activity` (flips `receivedFirstChunk`) and `false` for
- * `agent:tool:call` (timestamp refresh only). The wire signal is
+ * the "Streaming response…" status entry once response text exists).
+ * `isStreamActivity` is `true` for a text-bearing `agent:stream:activity`
+ * ping (flips `receivedFirstChunk`) and `false` for `agent:tool:call` and
+ * pre-first-token pings (timestamp refresh only). The wire signal is
  * leading-edge throttled per agent (first ping immediate, then ≤1/s), so
  * timestamps refresh at most once a second mid-turn.
  */
