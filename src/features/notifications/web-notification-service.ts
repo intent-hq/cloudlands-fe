@@ -61,6 +61,12 @@ let loggedPermissionSkip = false;
 let pendingPermissionRequest: Promise<NotificationPermission> | null = null;
 /** Strong refs so pending notifications aren't GC'd before click (parity with main). */
 const activeNotifications = new Set<Notification>();
+/**
+ * Latest notification per tag. Tag-based replacement may not fire `onclose`
+ * for the replaced instance, so we evict it here to keep the strong-reference
+ * set from growing over repeated same-tag idles.
+ */
+const notificationsByTag = new Map<string, Notification>();
 
 /** True when the browser exposes the Notification API (jsdom-safe guard). */
 function isNotificationSupported(): boolean {
@@ -205,10 +211,33 @@ async function showWebNotification(
   if (!granted) return;
 
   try {
-    const notification = new Notification(content.title, { body: content.body });
+    // Native tag-based replacement: same workspace+agent notifications
+    // replace instead of stacking. No `renotify` — our own sound gate above
+    // already plays the sound on every idle that reaches this path. Test
+    // notifications (no workspaceId/agentId) carry no tag and stack freely.
+    const tag = workspaceId && agentId ? `${workspaceId}:${agentId}` : undefined;
+    const notification = new Notification(content.title, {
+      body: content.body,
+      ...(tag ? { tag } : {}),
+    });
     activeNotifications.add(notification);
-    notification.onclick = () => {
+    if (tag) {
+      // Tag replacement may retire the previous notification WITHOUT an
+      // onclose — evict it so the set cannot leak.
+      const replaced = notificationsByTag.get(tag);
+      if (replaced) {
+        activeNotifications.delete(replaced);
+      }
+      notificationsByTag.set(tag, notification);
+    }
+    const release = () => {
       activeNotifications.delete(notification);
+      if (tag && notificationsByTag.get(tag) === notification) {
+        notificationsByTag.delete(tag);
+      }
+    };
+    notification.onclick = () => {
+      release();
       try {
         window.focus();
       } catch {
@@ -224,10 +253,10 @@ async function showWebNotification(
       notification.close();
     };
     notification.onclose = () => {
-      activeNotifications.delete(notification);
+      release();
     };
     notification.onerror = () => {
-      activeNotifications.delete(notification);
+      release();
       logger.warn('Web notification failed to show', { title: content.title });
     };
   } catch (error) {
@@ -431,10 +460,16 @@ export function createWebNotificationMiddleware(): StoreMiddleware {
   };
 }
 
+/** Test-only: observe the strong-reference set size (leak regression). @internal */
+export function __getActiveWebNotificationCountForTesting(): number {
+  return activeNotifications.size;
+}
+
 /** Test-only: reset module state between tests. @internal */
 export function __resetWebNotificationServiceForTesting(): void {
   installed = false;
   loggedPermissionSkip = false;
   pendingPermissionRequest = null;
   activeNotifications.clear();
+  notificationsByTag.clear();
 }
