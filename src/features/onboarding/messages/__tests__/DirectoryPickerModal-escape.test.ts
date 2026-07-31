@@ -5,7 +5,7 @@
  * Escape closes the picker, EXCEPT while the path input is focused — the
  * layer declines so the input's own handler cancels the edit instead.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -32,10 +32,12 @@ import {
   resetDirectoryPicker,
   type DirectoryPickerListing,
 } from '$store/renderer/slices/directory-picker/directory-picker-slice';
+import { directoryPickerSaga } from '$store/renderer/slices/directory-picker/sagas/directory-picker-saga';
 
 import DirectoryPickerModal from '../DirectoryPickerModal.svelte';
 
 const backendRequestMock = vi.mocked(backendRequest);
+let stopDirectoryPickerSaga: (() => void) | undefined;
 
 const homeListing = (): DirectoryPickerListing => ({
   path: '/Users/me',
@@ -76,6 +78,12 @@ describe('DirectoryPickerModal Escape handling (escape-layer stack)', () => {
       });
     }
     appStore.init();
+    stopDirectoryPickerSaga = appStore.runSaga(directoryPickerSaga);
+  });
+
+  afterAll(() => {
+    stopDirectoryPickerSaga?.();
+    stopDirectoryPickerSaga = undefined;
   });
 
   afterEach(() => {
