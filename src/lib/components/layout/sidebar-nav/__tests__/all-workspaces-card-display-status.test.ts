@@ -328,8 +328,13 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     streamingIdsMap.set('ws-tracker-live', ['agent-1']);
     notify();
 
-    // Let any (incorrect) regroup flush before asserting nothing moved.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Deterministic flush signal: the notify observably propagates through the
+    // card's reactivity as the running-dot affordance flipping on. Once it has,
+    // the grouping must still be the BE-sent one.
+    await waitFor(() => {
+      const card = screen.getByTestId('workspace-card');
+      expect(card.getAttribute('data-running')).toBe('true');
+    });
     const headers = getGroupHeaders();
     expect(headers).toContain('PR Merged');
     expect(headers).not.toContain('In Progress');
