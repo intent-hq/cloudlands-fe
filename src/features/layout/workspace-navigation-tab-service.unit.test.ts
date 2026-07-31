@@ -45,6 +45,7 @@ import {
   type JsonValue,
 } from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
 import { ChangeStage, type TrackedChange } from "$features/file-tracking/types";
+import { m } from "$shared/paraglide/messages.js";
 
 type Dispatch = (action: { type: string; payload?: unknown }) => unknown;
 
@@ -517,7 +518,7 @@ describe("workspaceNavigationTabMiddleware (unit)", () => {
       expect(payload.force).toBe(true);
       expect(payload.tab).toMatchObject({
         type: "local-changes",
-        title: "All Changes",
+        title: m.layout_presetExecutor_allChanges_title(),
         workspaceId: "ws-l",
         closable: true,
       });
@@ -573,7 +574,10 @@ describe("workspaceNavigationTabMiddleware (unit)", () => {
     it("openLocalChangesTab dispatches openTab with the same shape as the middleware path", () => {
       openLocalChangesTab("ws-h");
       const payload = findOpenTab()!.payload as { tab: Record<string, unknown> };
-      expect(payload.tab).toMatchObject({ type: "local-changes", title: "All Changes" });
+      expect(payload.tab).toMatchObject({
+        type: "local-changes",
+        title: m.layout_presetExecutor_allChanges_title(),
+      });
     });
   });
 });
