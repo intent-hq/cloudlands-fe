@@ -8,9 +8,10 @@
  *   - `external-uds` → local UDS to a daemon we did not spawn (adopted an
  *     already-running daemon, or `INTENTD_SOCKET` override).
  *   - `external-ws`  → remote WebSocket (or the TCP stub).
- * `target` is the sanitized WS URL when remote, and the socket path for
- * UDS (sidecar and external — a local socket path carries no secrets). URLs
- * are sanitized to strip userinfo and query parameters (secrets/tokens).
+ * `target` is the sanitized WS URL when remote (`tcp:host:port` for the TCP
+ * stub), and the socket path for UDS (sidecar and external — a local socket
+ * path carries no secrets). URLs are sanitized to strip userinfo and query
+ * parameters (secrets/tokens).
  */
 import { getConnectionMode, getDaemonVersionInfo } from './connection-mode';
 
