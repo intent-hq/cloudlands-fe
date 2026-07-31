@@ -32,6 +32,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: () => makeReadable(false),
   selectAgentIsWaiting: () => makeReadable(false),
   selectAgentSessionStreamingContent: () => makeReadable(''),
+  selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
   selectAgentProvider: () => makeReadable(undefined),
 }));
 

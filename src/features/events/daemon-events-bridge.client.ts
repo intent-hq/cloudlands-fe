@@ -19,6 +19,11 @@
  *      reducer's spinner/timer bookkeeping (`lastChunkTime`,
  *      `receivedFirstChunk`, `statusEvents` clears, the #965 interrupted
  *      retry-record clear) and the agent-session busy-flag clears.
+ *      `agent:stream:activity` and the terminal `agent:stream:end`
+ *      additionally carry the server-derived live-preview fields
+ *      (`lastAgentResponse`/`digest`, intentd#792) that the bridge applies
+ *      to the agent-session slice push-style — see
+ *      `handleStreamActivityEvent`.
  *      `agent:stream:start` (§6.6, agent-initiated harness-wake turns only)
  *      dispatches `chatSendStarted` so the busy/Thinking UI opens without a
  *      user send — see `handleStreamStartEvent`.
@@ -143,6 +148,7 @@ import {
   renameSession,
   setProcessQueueHint,
   clearProcessQueueHint,
+  updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -295,16 +301,46 @@ function extractSubscriptionId(params: unknown): string | undefined {
 }
 
 /**
- * `agent:stream:activity` (PROTOCOL §7, renamed from `agent:stream:chunk`)
- * is the content-free liveness ping — `{ agentId, messageId }` only, no
- * content, leading-edge throttled per agent (first ping of a turn immediate,
- * then ≤1/s until the turn ends). The standing `chat.subscribe` delta stream
- * (PROTOCOL §7.1) is the transcript writer. The event's job is chat-state
- * bookkeeping: it drives the `receivedFirstChunk` flip (which auto-appends
- * the "Streaming response…" status entry and clears the §6.5 pre-first-token
- * startup hint) and refreshes the stall-detection timestamps. The wire guard
- * mirrors the §7 payload (`agentId`/`messageId`) so malformed events stay
- * inert.
+ * Push-apply the server-derived live-preview fields carried on
+ * `agent:stream:activity` / terminal `agent:stream:end` (intentd#792) into
+ * the agent-session slice — no RPC, no client-side debounce (the daemon
+ * already throttles the activity signal to 1s leading-edge). The `updateSession`
+ * reducer is a no-op for unknown agents, so this never conjures a session.
+ * Empty/whitespace values are dropped (the daemon omits fields until
+ * derivable; an empty string would only arise from a contract regression).
+ * The viewed agent's standing `chat.subscribe` buffer stays the authoritative
+ * character-level preview — AgentCard prefers it over these fields when live.
+ */
+function applyStreamPreviewFields(
+  agentId: string,
+  lastAgentResponse: string | undefined,
+  digest: string | undefined,
+): void {
+  const updates: { lastAgentResponse?: string; digest?: string } = {};
+  if (typeof lastAgentResponse === 'string' && lastAgentResponse.trim()) {
+    updates.lastAgentResponse = lastAgentResponse;
+  }
+  if (typeof digest === 'string' && digest.trim()) {
+    updates.digest = digest;
+  }
+  if (Object.keys(updates).length === 0) return;
+  appStore.dispatch(updateSession(agentId, updates));
+}
+
+/**
+ * `agent:stream:activity` (PROTOCOL §7) is the content-free liveness ping —
+ * no raw transcript content, leading-edge throttled per agent (first ping of
+ * a turn immediate, then ≤1/s until the turn ends). The standing
+ * `chat.subscribe` delta stream (PROTOCOL §7.1) is the transcript writer.
+ * Two jobs remain: chat-state bookkeeping (the `receivedFirstChunk` flip
+ * that auto-appends the "Streaming response…" status entry once response
+ * text exists, plus the stall-detection timestamps) and the push-applied
+ * live-preview fields (`lastAgentResponse`/`digest`, intentd#792) so a
+ * non-viewed watched agent's footer preview advances mid-turn without a
+ * fetch. The preview fields are omitted until derivable (pre-first-token) —
+ * an omission means "no text yet this turn", so the ping only refreshes
+ * timestamps. The wire guard mirrors the §7 payload (`agentId`/`messageId`)
+ * so malformed events stay inert.
  */
 function handleStreamActivityEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -314,7 +350,17 @@ function handleStreamActivityEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || typeof messageId !== 'string') {
     return;
   }
-  appStore.dispatch(streamActivityReceived(agentId, true));
+  const lastAgentResponse =
+    typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
+  const digest = typeof data.digest === 'string' ? data.digest : undefined;
+  // Meaningful `lastAgentResponse` text means the turn has streamed response
+  // text — the signal for the "Streaming response…" flip; a pre-text ping
+  // only refreshes timestamps. The predicate mirrors the empty/whitespace
+  // drop in `applyStreamPreviewFields` so the bookkeeping never advances
+  // into the text-streaming path without a preview actually applying.
+  const hasResponseText = lastAgentResponse !== undefined && lastAgentResponse.trim().length > 0;
+  appStore.dispatch(streamActivityReceived(agentId, hasResponseText));
+  applyStreamPreviewFields(agentId, lastAgentResponse, digest);
 }
 
 /**
@@ -509,7 +555,10 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
  * bookkeeping: `streamEnded` drives the chat-state reducer
  * (`statusEvents`/timer clears, the #965 interrupted retry-record clear) and
  * the agent-session busy-flag clears, and the per-agent dedup maps are
- * dropped so the next turn starts fresh.
+ * dropped so the next turn starts fresh. Transcript-bearing terminal emits
+ * also carry the final `lastAgentResponse`/`digest` preview values
+ * (intentd#792) — pushed into the session so a preview tracked via the
+ * throttled activity signal lands on the turn's true final state.
  */
 function handleStreamEndEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -522,6 +571,11 @@ function handleStreamEndEvent(event: WorkspaceEvent): void {
   toolStatusByAgent.delete(agentId);
   wakeTurnMessageIdByAgent.delete(agentId);
   appStore.dispatch(streamEnded(agentId, stopReason));
+  applyStreamPreviewFields(
+    agentId,
+    typeof data?.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined,
+    typeof data?.digest === 'string' ? data.digest : undefined,
+  );
 }
 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
