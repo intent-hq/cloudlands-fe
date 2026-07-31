@@ -457,7 +457,7 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     const handler = capturedHandlers[0]!;
 
     // Unrelated method — no-op.
-    handler({ method: 'agent.stream:chunk', params: { agentId: AGENT } });
+    handler({ method: 'agent.stream:activity', params: { agentId: AGENT } });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
     // events.event carrying a non-lifecycle domain event — still stored in the
@@ -585,19 +585,14 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
   // The standing chat.subscribe delta stream (PROTOCOL §7.1,
   // chat-subscribe-service) is the sole transcript writer — the firehose
   // stream family must never create or grow transcript messages.
-  it('agent:stream:chunk / agent:tool:call / agent:stream:end never write transcript messages', async () => {
+  it('agent:stream:activity / agent:tool:call / agent:stream:end never write transcript messages', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Hello ',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
       }),
     );
     handler(
@@ -632,14 +627,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     const handler = capturedHandlers[0]!;
 
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Hello',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
       }),
     );
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
@@ -671,14 +661,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     const handler = capturedHandlers[0]!;
 
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Working',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
       }),
     );
     handler(
@@ -698,21 +683,16 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(chatAgent?.error).toBe('boom');
   });
 
-  it("emits status hint transitions: 'Streaming response…' on first chunk → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next chunk → cleared on stream:end/idle", async () => {
+  it("emits status hint transitions: 'Streaming response…' on first activity → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next activity → cleared on stream:end/idle", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    // First text chunk arms the "Streaming response…" status entry via the
-    // chunk reducer (no explicit dispatch needed from the bridge).
+    // First activity ping arms the "Streaming response…" status entry via the
+    // activity reducer (no explicit dispatch needed from the bridge).
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Looking',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
       }),
     );
 
@@ -769,14 +749,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     ]);
 
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Done.',
         messageId: MESSAGE_ID,
-        blockIndex: 2,
-        blockId: `${MESSAGE_ID}:2`,
-        blockType: 'text',
-        streamId: STREAM_ID,
       }),
     );
 
@@ -870,19 +845,14 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       message: 'Daemon-authored fallback text',
     });
 
-    // First `agent:stream:chunk` appends the chunk reducer's "Streaming
+    // First `agent:stream:activity` appends the activity reducer's "Streaming
     // response…" entry after the startup hints — the bridge itself does NOT
     // clear anything on the way in (mirrors the existing tool-call bridge
     // path). The terminal reducer paths below own the clear.
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Hi',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
       }),
     );
     events = readStatusEvents();
@@ -1033,17 +1003,13 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       phaseExpectations.map(({ phase, localized }) => ({ phase, message: localized })),
     );
 
-    // The streaming state (first chunk) is also a catalog string, appended by
-    // the chunk reducer — completing the full pre-first-token → streaming set.
+    // The streaming state (first activity ping) is also a catalog string,
+    // appended by the activity reducer — completing the full pre-first-token
+    // → streaming set.
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Hi',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
       }),
     );
     events = readStatusEvents();
@@ -1339,14 +1305,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
       }),
     );
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Waking…',
         messageId: WAKE_MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${WAKE_MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
       }),
     );
     const statusEventsBefore = readStatusEvents();
@@ -5246,7 +5207,6 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     it('dispatches chatSendFailed when agent:failed carries an error message', async () => {
       const agentId = 'agent-failed-1';
       const messageId = 'msg-failed-1';
-      const streamId = 'stream-failed-1';
       const errorMsg = 'Agent spawn failed after 3 retries';
 
       appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
@@ -5255,14 +5215,9 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
       // Start a stream so there's something for agent:failed to finalize
       handler!(
-        notification('agent:stream:chunk', {
+        notification('agent:stream:activity', {
           agentId,
-          content: 'Working',
           messageId,
-          blockIndex: 0,
-          blockId: `${messageId}:0`,
-          blockType: 'text',
-          streamId,
         }),
       );
 
@@ -5282,7 +5237,6 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     it('sets default error message when agent:failed has no explicit error', async () => {
       const agentId = 'agent-failed-2';
       const messageId = 'msg-failed-2';
-      const streamId = 'stream-failed-2';
 
       appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
       await primeBridge();
@@ -5290,14 +5244,9 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
       // Start a stream so there's something for agent:failed to finalize
       handler!(
-        notification('agent:stream:chunk', {
+        notification('agent:stream:activity', {
           agentId,
-          content: 'Working',
           messageId,
-          blockIndex: 0,
-          blockId: `${messageId}:0`,
-          blockType: 'text',
-          streamId,
         }),
       );
 
@@ -5842,20 +5791,19 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     };
   }
 
-  function agentStreamChunkNotification() {
+  function agentStreamActivityNotification() {
     return {
       method: 'events.event',
       params: {
         event: {
-          id: 'evt-chunk-1',
+          id: 'evt-activity-1',
           workspaceId: WS_RECON,
           timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'agent:stream:chunk',
+          type: 'agent:stream:activity',
           actor: { type: 'system' },
           data: {
             agentId: 'agent-1',
-            content: 'chunk data',
-            streamId: 'stream-1',
+            messageId: 'msg-1',
           },
         },
       },
@@ -5926,7 +5874,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     expect(ws.activity).toBe('agent_running');
   });
 
-  it('reconciles activity to agent_running when agent:stream:chunk arrives and entity is idle', async () => {
+  it('reconciles activity to agent_running when agent:stream:activity arrives and entity is idle', async () => {
     await seedWorkspace('idle');
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5947,7 +5895,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
       },
     });
 
-    handler(agentStreamChunkNotification());
+    handler(agentStreamActivityNotification());
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
