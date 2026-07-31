@@ -3,6 +3,7 @@
 
   Displays a circular icon that represents workspace status:
   - not_started: Empty outline circle (gray)
+  - idle: Empty outline circle (gray)
   - in_progress: Half-filled circle (blue)
   - complete: Filled circle with checkmark (green)
   - pr_open: Filled circle with PR icon (purple)
@@ -13,7 +14,7 @@
   draw,
   scale,
 } from 'svelte/transition';
-  import type { WorkspaceDisplayStatus } from '$lib/components/workspace/utils/workspace-status-grouping';
+  import type { WorkspaceDisplayStatus } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
@@ -32,6 +33,7 @@
     { stroke: string; fill: string; innerCircleRPercentage: number }
   > = {
     not_started: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
+    idle: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
     in_progress: { stroke: '#00BCFF', fill: '#00BCFF', innerCircleRPercentage: 55 },
     complete: { stroke: '#22c55e', fill: '#00BD7D', innerCircleRPercentage: 100 },
     pr_ready: { stroke: '#22c55e', fill: '#22c55e', innerCircleRPercentage: 100 },
@@ -42,6 +44,9 @@
   const statusLabels: Record<WorkspaceDisplayStatus, string> = {
     get not_started() {
       return m.workspace_statusIcon_notStarted_label();
+    },
+    get idle() {
+      return m.workspace_statusIcon_idle_label();
     },
     get in_progress() {
       return m.workspace_statusIcon_inProgress_label();

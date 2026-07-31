@@ -1426,6 +1426,7 @@
   "workspace_specTaskDonut_noTasks_label": "Sin tareas",
   "workspace_specTaskDonut_tasksRatio_label": "{completed} / {total} tareas",
   "workspace_statusIcon_complete_label": "Completado",
+  "workspace_statusIcon_idle_label": "Inactivo",
   "workspace_statusIcon_inProgress_label": "En curso",
   "workspace_statusIcon_notStarted_label": "Sin empezar",
   "workspace_statusIcon_prMerged_label": "PR fusionada",
