@@ -1,6 +1,6 @@
 import type { WorkspaceDiffSummary, WorkspaceGitSummary } from "$shared/types";
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
@@ -56,8 +56,8 @@ export const clearWorkspaceSummaries = createAction<[workspaceId: string]>(
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const workspaceSummariesReducer = createReducer<WorkspaceSummariesState>(initialState)
-  .with(loadWorkspaceSummariesRequested, (state, { payload: [workspaceId] }) => {
+export const workspaceSummariesReducer = createReducer<WorkspaceSummariesState>(initialState);
+workspaceSummariesReducer.with(loadWorkspaceSummariesRequested, (state, { payload: [workspaceId] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     if (ws.loading && ws.error === null) return state;
     return setWorkspaceState(state, workspaceId, {
@@ -65,8 +65,8 @@ export const workspaceSummariesReducer = createReducer<WorkspaceSummariesState>(
       loading: true,
       error: null,
     });
-  })
-  .with(
+  });
+workspaceSummariesReducer.with(
     loadWorkspaceSummariesSucceeded,
     (state, { payload: [workspaceId, diffSummary, gitSummary] }) => {
       const ws = getWorkspaceState(state, workspaceId);
@@ -79,8 +79,8 @@ export const workspaceSummariesReducer = createReducer<WorkspaceSummariesState>(
         initialized: true,
       });
     }
-  )
-  .with(loadWorkspaceSummariesFailed, (state, { payload: [workspaceId, error] }) => {
+  );
+workspaceSummariesReducer.with(loadWorkspaceSummariesFailed, (state, { payload: [workspaceId, error] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     if (!ws.loading && ws.error === error) return state;
     return setWorkspaceState(state, workspaceId, {
@@ -88,10 +88,10 @@ export const workspaceSummariesReducer = createReducer<WorkspaceSummariesState>(
       loading: false,
       error,
     });
-  })
-  .with(clearWorkspaceSummaries, (state, { payload: [workspaceId] }) =>
+  });
+workspaceSummariesReducer.with(clearWorkspaceSummaries, (state, { payload: [workspaceId] }) =>
     clearWorkspaceState(state, workspaceId)
-  )
-  .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId))
-  .with(removeWorkspaceEntity, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+  );
+workspaceSummariesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+workspaceSummariesReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
 

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
 
 // Use vi.hoisted to ensure mocks are available before module resolution
-const { mockAppStore, mockState, mockGetPlatform, mockPlayNotificationSound, mockBackendRequest } =
-  vi.hoisted(() => {
+const { mockAppStore, mockState, mockPlayNotificationSound, mockBackendRequest } = vi.hoisted(
+  () => {
     const mockState = {
       userPreferences: {
         enabled: true,
@@ -16,18 +16,14 @@ const { mockAppStore, mockState, mockGetPlatform, mockPlayNotificationSound, moc
     return {
       mockState,
       mockAppStore: { state: mockState, dispatch: vi.fn() },
-      mockGetPlatform: vi.fn(() => 'web'),
       mockPlayNotificationSound: vi.fn(() => Promise.resolve()),
       mockBackendRequest: vi.fn(),
     };
-  });
+  },
+);
 
 vi.mock('$store/renderer/store', () => ({
   store: mockAppStore,
-}));
-
-vi.mock('$lib/utils/platform-capabilities', () => ({
-  getPlatform: mockGetPlatform,
 }));
 
 vi.mock('$lib/utils/notification-sound', () => ({
@@ -40,14 +36,12 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 // Import after mocking
 import {
-  createWebNotificationMiddleware,
   handleWebAgentIdle,
   showTestWebNotification,
   requestWebNotificationPermission,
   __resetWebNotificationServiceForTesting,
   __getActiveWebNotificationCountForTesting,
 } from './web-notification-service';
-import { emitMockIpcEvent, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   openPanel,
@@ -192,8 +186,6 @@ describe('web-notification-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __resetWebNotificationServiceForTesting();
-    resetMockIpcRouter();
-    mockGetPlatform.mockReturnValue('web');
     mockState.userPreferences.enabled = true;
     mockState.userPreferences.soundEnabled = true;
     mockState.userPreferences.soundOnlyWhenUnfocused = false;
@@ -210,51 +202,6 @@ describe('web-notification-service', () => {
   afterEach(() => {
     hasFocusSpy.mockRestore();
     vi.unstubAllGlobals();
-    resetMockIpcRouter();
-  });
-
-  describe('middleware installation', () => {
-    it('listens on the relayed agent:idle channel on web', async () => {
-      const middleware = createWebNotificationMiddleware();
-      const next = vi.fn((action) => action);
-      middleware({} as never)(next)({ type: 'boot' });
-
-      emitMockIpcEvent('agent:idle', makeIdleEvent());
-      await flushAsync();
-
-      expect(MockNotification.instances).toHaveLength(1);
-      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
-    });
-
-    it('registers nothing on electron (native pipeline unchanged)', async () => {
-      mockGetPlatform.mockReturnValue('electron');
-      const middleware = createWebNotificationMiddleware();
-      const next = vi.fn((action) => action);
-      middleware({} as never)(next)({ type: 'boot' });
-
-      emitMockIpcEvent('agent:idle', makeIdleEvent());
-      await flushAsync();
-
-      expect(MockNotification.instances).toHaveLength(0);
-      expect(mockBackendRequest).not.toHaveBeenCalled();
-    });
-
-    it('does not request permission at boot (lazy request only)', () => {
-      MockNotification.permission = 'default';
-      const middleware = createWebNotificationMiddleware();
-      const next = vi.fn((action) => action);
-      middleware({} as never)(next)({ type: 'boot' });
-
-      expect(MockNotification.requestPermission).not.toHaveBeenCalled();
-    });
-
-    it('passes through all actions', () => {
-      const middleware = createWebNotificationMiddleware();
-      const next = vi.fn((action) => action);
-      const action = { type: 'test/action' };
-      expect(middleware({} as never)(next)(action)).toBe(action);
-      expect(next).toHaveBeenCalledWith(action);
-    });
   });
 
   describe('trigger conditions (Electron NotificationService parity)', () => {

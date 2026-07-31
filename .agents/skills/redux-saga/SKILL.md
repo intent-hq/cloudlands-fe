@@ -18,6 +18,7 @@ triggers:
   - saga cancellation
   - saga testing
 ---
+
 # redux-saga — API reference skill
 
 > Source: official redux-saga API Reference, https://redux-saga.js.org/docs/api, retrieved 2026-05-15.
@@ -39,12 +40,12 @@ Before editing code or docs that use this skill:
 `createSagaMiddleware(options)` creates Redux middleware. Supported options includeinitial `context`, `sagaMonitor`, `onError`, `effectMiddlewares`, and a custom`channel` used by `take` and `put` effects.
 
 ```typescript
-import { applyMiddleware, createStore } from "redux";
-import createSagaMiddleware from "redux-saga";
-import { all, call } from "redux-saga/effects";
+import { applyMiddleware, createStore } from 'redux';
+import createSagaMiddleware from 'redux-saga';
+import { all, call } from 'redux-saga/effects';
 
 function reducer(state = { ready: false }, action: { type: string }) {
-  return action.type === "READY" ? { ready: true } : state;
+  return action.type === 'READY' ? { ready: true } : state;
 }
 
 function* rootSaga() {
@@ -53,7 +54,7 @@ function* rootSaga() {
 
 const sagaMiddleware = createSagaMiddleware({
   onError(error, { sagaStack }) {
-    console.error("uncaught saga error", error, sagaStack);
+    console.error('uncaught saga error', error, sagaStack);
   },
 });
 
@@ -76,19 +77,19 @@ void task.toPromise();
 Use `take(pattern)` for one action, `takeMaybe(pattern)` when the saga must receivethe `END` sentinel instead of auto-terminating, and watcher helpers for commonloops. Patterns can be `"*"`, strings, arrays, predicates, or action creators whose`toString()` returns an action type.
 
 ```typescript
-import { call, fork, put, take, takeEvery, takeLatest, takeLeading } from "redux-saga/effects";
+import { call, fork, put, take, takeEvery, takeLatest, takeLeading } from 'redux-saga/effects';
 
 function* loadUser(action: { type: string; userId: string }) {
   const user: User = yield call(api.loadUser, action.userId);
-  yield put({ type: "USER_LOADED", user });
+  yield put({ type: 'USER_LOADED', user });
 }
 
 export function* usersSaga() {
-  yield takeEvery("USER_REQUESTED", loadUser);     // concurrent workers
-  yield takeLatest("SEARCH_CHANGED", runSearch);   // cancel stale worker
-  yield takeLeading("SUBMIT_ORDER", submitOrder);  // ignore while running
+  yield takeEvery('USER_REQUESTED', loadUser); // concurrent workers
+  yield takeLatest('SEARCH_CHANGED', runSearch); // cancel stale worker
+  yield takeLeading('SUBMIT_ORDER', submitOrder); // ignore while running
 
-  const action: { type: string } = yield take(["LOGOUT", "SESSION_EXPIRED"]);
+  const action: { type: string } = yield take(['LOGOUT', 'SESSION_EXPIRED']);
   yield fork(cleanupSession, action);
 }
 ```
@@ -100,7 +101,7 @@ export function* usersSaga() {
 `call`, `apply`, and `cps` are blocking; `fork` and `spawn` start work withoutblocking the parent. `fork` is attached to the parent: parent completion waits forchildren, child errors bubble upward, and cancellation propagates downward. `spawn`is detached and does not share parent completion, error, or cancellation flow.
 
 ```typescript
-import { call, cancel, cancelled, fork, join, spawn } from "redux-saga/effects";
+import { call, cancel, cancelled, fork, join, spawn } from 'redux-saga/effects';
 
 function* worker() {
   try {
@@ -114,7 +115,7 @@ function* supervisor() {
   const attachedTask: Task = yield fork(worker);
   const detachedTask: Task = yield spawn(backgroundMetrics);
   yield cancel(detachedTask); // non-blocking cancellation request
-  yield join(attachedTask);   // blocking wait for attachedTask outcome
+  yield join(attachedTask); // blocking wait for attachedTask outcome
 }
 ```
 
@@ -125,17 +126,26 @@ Use `cancel(task)`, `cancel([...tasks])`, or `cancel()` for self-cancellation.Ca
 Use `put(action)` for scheduled dispatch, `putResolve(action)` when dispatch returnsa Promise and the saga must wait, `put(channel, message)` for channel output, and`select(selector, ...args)` for state reads. `setContext(props)` merges saga context;`getContext(prop)` reads one context value. `delay(ms, value)` blocks for time.
 
 ```typescript
-import { call, delay, getContext, put, putResolve, retry, select, setContext } from "redux-saga/effects";
+import {
+  call,
+  delay,
+  getContext,
+  put,
+  putResolve,
+  retry,
+  select,
+  setContext,
+} from 'redux-saga/effects';
 
 function* saveProfile(action: { type: string; id: string }) {
   const token: string = yield select((state: RootState) => state.session.token);
   yield setContext({ requestId: action.id });
-  const requestId: string = yield getContext("requestId");
+  const requestId: string = yield getContext('requestId');
 
   const profile: Profile = yield retry(3, 1_000, api.loadProfile, token, requestId);
-  yield put({ type: "PROFILE_LOADED", profile });
+  yield put({ type: 'PROFILE_LOADED', profile });
   yield delay(250);
-  yield putResolve({ type: "PROFILE_PERSISTED" });
+  yield putResolve({ type: 'PROFILE_PERSISTED' });
 }
 ```
 
@@ -146,8 +156,8 @@ function* saveProfile(action: { type: string; id: string }) {
 Use `actionChannel(pattern, buffer?)` to queue matching store actions while a workeris blocked. Use `channel(buffer?)` for task-to-task messages and `eventChannel` tobridge external event sources; the `subscribe` function must return an unsubscribefunction. Close channels in `finally`, and use `flush(channel)` to recover bufferedmessages during cleanup.
 
 ```typescript
-import { buffers, channel, eventChannel, END } from "redux-saga";
-import { actionChannel, call, flush, put, take } from "redux-saga/effects";
+import { buffers, channel, eventChannel, END } from 'redux-saga';
+import { actionChannel, call, flush, put, take } from 'redux-saga/effects';
 
 function socketChannel(socket: WebSocket) {
   return eventChannel<string>((emit) => {
@@ -158,7 +168,7 @@ function socketChannel(socket: WebSocket) {
 }
 
 function* serializeRequests() {
-  const requests: Channel<RequestAction> = yield actionChannel("REQUEST", buffers.expanding(10));
+  const requests: Channel<RequestAction> = yield actionChannel('REQUEST', buffers.expanding(10));
   try {
     while (true) {
       const action: RequestAction = yield take(requests);
@@ -166,7 +176,7 @@ function* serializeRequests() {
     }
   } finally {
     const leftovers: RequestAction[] = yield flush(requests);
-    yield put({ type: "REQUESTS_FLUSHED", leftovers });
+    yield put({ type: 'REQUESTS_FLUSHED', leftovers });
   }
 }
 
@@ -180,22 +190,22 @@ Buffer choices: `buffers.none()`, `fixed(limit)`, `expanding(initialSize)`,`drop
 Use `race` when the first completion wins; losing effects are automaticallycancelled. Use `all` to run effects in parallel and wait for all successes, or throwwhen any effect rejects.
 
 ```typescript
-import { all, call, debounce, delay, put, race, take, throttle } from "redux-saga/effects";
+import { all, call, debounce, delay, put, race, take, throttle } from 'redux-saga/effects';
 
 function* fetchWithTimeout() {
   const { response, timeout } = yield race({
     response: call(api.fetchReport),
     timeout: delay(5_000),
   });
-  if (timeout) yield put({ type: "REPORT_TIMEOUT" });
-  else yield put({ type: "REPORT_READY", response });
+  if (timeout) yield put({ type: 'REPORT_TIMEOUT' });
+  else yield put({ type: 'REPORT_READY', response });
 }
 
 function* rootSaga() {
   yield all([call(fetchWithTimeout), call(watchUpload)]);
-  yield throttle(1_000, "TYPEAHEAD_CHANGED", fetchSuggestions);
-  yield debounce(300, "FILTER_CHANGED", refreshResults);
-  yield take("SHUTDOWN");
+  yield throttle(1_000, 'TYPEAHEAD_CHANGED', fetchSuggestions);
+  yield debounce(300, 'FILTER_CHANGED', refreshResults);
+  yield take('SHUTDOWN');
 }
 ```
 
@@ -203,34 +213,34 @@ function* rootSaga() {
 
 ## Interface quick reference
 
-| Interface | What agents need to know |
-| --- | --- |
-| Task | Returned by fork, spawn, middleware.run, and runSaga; supports isRunning(), isCancelled(), result(), error(), toPromise(), and cancel(). |
-| Channel | Message queue with take(callback), put(message), flush(callback), and close(); closed empty channels deliver END. |
-| Buffer | Strategy behind a channel; implements isEmpty(), put(message), and take(). |
+| Interface   | What agents need to know                                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task        | Returned by fork, spawn, middleware.run, and runSaga; supports isRunning(), isCancelled(), result(), error(), toPromise(), and cancel().     |
+| Channel     | Message queue with take(callback), put(message), flush(callback), and close(); closed empty channels deliver END.                            |
+| Buffer      | Strategy behind a channel; implements isEmpty(), put(message), and take().                                                                   |
 | SagaMonitor | Receives rootSagaStarted, effectTriggered, effectResolved, effectRejected, effectCancelled, and actionDispatched events for instrumentation. |
 
 ## Blocking / non-blocking cheat sheet
 
-| Effect | Blocking? | Notes |
-| --- | --- | --- |
-| take, takeMaybe, call, apply, cps, join, putResolve, cancelled, delay, retry, race | Yes | race blocks until one branch wins, then cancels losers. |
-| put, fork, spawn, cancel, actionChannel, flush, select, setContext, getContext | No | select resolves immediately against current state. |
-| put(channel, message) | Depends | It can block when an unbuffered put is consumed immediately by a taker. |
-| all([...]) / all({ ... }) | Mixed | Blocks until all child effects complete; child effect types determine actual waits. |
-| takeEvery, takeLatest, takeLeading, throttle, debounce | No | Helpers fork watcher tasks; their internals may use blocking effects. |
+| Effect                                                                             | Blocking? | Notes                                                                               |
+| ---------------------------------------------------------------------------------- | --------- | ----------------------------------------------------------------------------------- |
+| take, takeMaybe, call, apply, cps, join, putResolve, cancelled, delay, retry, race | Yes       | race blocks until one branch wins, then cancels losers.                             |
+| put, fork, spawn, cancel, actionChannel, flush, select, setContext, getContext     | No        | select resolves immediately against current state.                                  |
+| put(channel, message)                                                              | Depends   | It can block when an unbuffered put is consumed immediately by a taker.             |
+| all([...]) / all({ ... })                                                          | Mixed     | Blocks until all child effects complete; child effect types determine actual waits. |
+| takeEvery, takeLatest, takeLeading, throttle, debounce                             | No        | Helpers fork watcher tasks; their internals may use blocking effects.               |
 
 ## External execution with `runSaga`
 
 `runSaga(options, saga, ...args)` starts a saga without Redux middleware. Provide a`channel` for `take`, a `dispatch(output)` function for `put`, and `getState()` for`select`. It returns the same `Task` interface as `middleware.run`.
 
 ```typescript
-import { runSaga, stdChannel } from "redux-saga";
-import { put, take } from "redux-saga/effects";
+import { runSaga, stdChannel } from 'redux-saga';
+import { put, take } from 'redux-saga/effects';
 
 function* auditSaga() {
-  const action: { type: string } = yield take("AUDIT");
-  yield put({ type: "AUDITED", action });
+  const action: { type: string } = yield take('AUDIT');
+  yield put({ type: 'AUDITED', action });
 }
 
 const dispatched: Array<{ type: string; action?: { type: string } }> = [];
@@ -240,7 +250,7 @@ const task = runSaga(
   auditSaga,
 );
 
-input.put({ type: "AUDIT" });
+input.put({ type: 'AUDIT' });
 await task.toPromise();
 ```
 
@@ -251,8 +261,8 @@ await task.toPromise();
 - Prefer effect-level assertions for small generators and integration-style sagatests for cancellation, channel cleanup, and watcher concurrency.
 
 ```typescript
-import { cloneableGenerator, createMockTask } from "@redux-saga/testing-utils";
-import { cancel, fork } from "redux-saga/effects";
+import { cloneableGenerator, createMockTask } from '@redux-saga/testing-utils';
+import { cancel, fork } from 'redux-saga/effects';
 
 function* worker() {}
 function* parent() {
@@ -291,3 +301,6 @@ expect(generator.next(mockTask).value).toEqual(cancel(mockTask));
 ## See also
 
 - Official redux-saga API Reference: https://redux-saga.js.org/docs/api
+- Themis core store guidance: .agents/skills/themis/core/SKILL.md
+- Themis Svelte integration guidance: .agents/skills/themis/svelte/SKILL.md
+- Themis setup guidance: .agents/skills/themis/setup/SKILL.md

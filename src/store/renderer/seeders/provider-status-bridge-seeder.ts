@@ -57,7 +57,7 @@ import {
   OPENCODE_CHANNELS,
   PROVIDERS_CHANNELS,
 } from "$shared/ipc/channels";
-import { getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { getItem, getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 import { store as appStore } from "$store/renderer/store";
 import { MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";

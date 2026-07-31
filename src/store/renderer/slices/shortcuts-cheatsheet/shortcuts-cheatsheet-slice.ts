@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 export type CheatSheetContext = "global" | "chat" | "editor" | "panel" | "terminal";
 
@@ -21,17 +21,17 @@ export const toggleCheatSheet = createAction<[context: CheatSheetContext]>(
   "shortcutsCheatSheet/toggleCheatSheet"
 );
 
-export const shortcutsCheatSheetReducer = createReducer<ShortcutsCheatSheetState>(initialState)
-  .with(openCheatSheet, (state, { payload: [context] }) => ({
+export const shortcutsCheatSheetReducer = createReducer<ShortcutsCheatSheetState>(initialState);
+shortcutsCheatSheetReducer.with(openCheatSheet, (state, { payload: [context] }) => ({
     ...state,
     isOpen: true,
     context,
-  }))
-  .with(closeCheatSheet, (state) => ({
+  }));
+shortcutsCheatSheetReducer.with(closeCheatSheet, (state) => ({
     ...state,
     isOpen: false,
-  }))
-  .with(toggleCheatSheet, (state, { payload: [context] }) => {
+  }));
+shortcutsCheatSheetReducer.with(toggleCheatSheet, (state, { payload: [context] }) => {
     if (state.isOpen) {
       return {
         ...state,

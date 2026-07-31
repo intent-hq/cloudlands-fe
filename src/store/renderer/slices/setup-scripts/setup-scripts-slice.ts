@@ -1,5 +1,5 @@
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
   addItemAt,
@@ -8,7 +8,7 @@ import {
   removeItem as collectionRemoveItem,
   updateItem,
   type Collection,
-} from '$lib/store-shim/utils/collections/collection-utils';
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type { SetupScript, SetupScriptsState } from './setup-scripts-types';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -92,12 +92,12 @@ function trimCollection(scripts: Collection<SetupScript, 'id'>): Collection<Setu
   return createCollection<SetupScript, 'id'>('id', items.slice(0, MAX_SCRIPTS));
 }
 
-export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState)
-  .with(hydrateScripts, (state, { payload: [scripts] }) => ({
+export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState);
+setupScriptsReducer.with(hydrateScripts, (state, { payload: [scripts] }) => ({
     ...state,
     scripts: createCollection<SetupScript, 'id'>('id', scripts),
-  }))
-  .with(saveScript, (state, { payload: [script] }) => {
+  }));
+setupScriptsReducer.with(saveScript, (state, { payload: [script] }) => {
     // Check if script already exists (by id)
     const existing = getItem(state.scripts, script.id);
     if (existing) {
@@ -113,8 +113,8 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
       ...state,
       scripts: trimCollection(added),
     };
-  })
-  .with(recordScriptUsage, (state, { payload: [scriptId, lastUsedAt, repoPath] }) => {
+  });
+setupScriptsReducer.with(recordScriptUsage, (state, { payload: [scriptId, lastUsedAt, repoPath] }) => {
     const script = getItem(state.scripts, scriptId);
     if (!script) return state;
     const updated: SetupScript = {
@@ -124,8 +124,8 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
       ...(repoPath && !script.repoPath ? { repoPath } : {}),
     };
     return { ...state, scripts: updateItem(state.scripts, updated) };
-  })
-  .with(renameScript, (state, { payload: [scriptId, newName] }) => {
+  });
+setupScriptsReducer.with(renameScript, (state, { payload: [scriptId, newName] }) => {
     const script = getItem(state.scripts, scriptId);
     if (!script) return state;
     const trimmed = newName.trim() || m.workspace_setupScripts_customScript_name();
@@ -134,37 +134,37 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
       ...state,
       scripts: updateItem(state.scripts, { ...script, name: trimmed }),
     };
-  })
-  .with(updateScriptContent, (state, { payload: [scriptId, content, lastUsedAt] }) => {
+  });
+setupScriptsReducer.with(updateScriptContent, (state, { payload: [scriptId, content, lastUsedAt] }) => {
     const script = getItem(state.scripts, scriptId);
     if (!script) return state;
     return {
       ...state,
       scripts: updateItem(state.scripts, { ...script, content, lastUsedAt }),
     };
-  })
-  .with(removeScriptFromUI, (state, { payload: [scriptId] }) => {
+  });
+setupScriptsReducer.with(removeScriptFromUI, (state, { payload: [scriptId] }) => {
     if (state.pendingDeletions[scriptId]) return state;
     return {
       ...state,
       pendingDeletions: { ...state.pendingDeletions, [scriptId]: true as const },
     };
-  })
-  .with(restoreScriptToUI, (state, { payload: [scriptId] }) => {
+  });
+setupScriptsReducer.with(restoreScriptToUI, (state, { payload: [scriptId] }) => {
     if (!state.pendingDeletions[scriptId]) return state;
 
     const { [scriptId]: _, ...rest } = state.pendingDeletions;
     return { ...state, pendingDeletions: rest };
-  })
-  .with(deleteScript, (state, { payload: [scriptId] }) => {
+  });
+setupScriptsReducer.with(deleteScript, (state, { payload: [scriptId] }) => {
     const { [scriptId]: _, ...rest } = state.pendingDeletions;
     return {
       ...state,
       scripts: collectionRemoveItem(state.scripts, scriptId),
       pendingDeletions: rest,
     };
-  })
-  .with(
+  });
+setupScriptsReducer.with(
     hydrateSetupScriptBannerDismissals,
     (state, { payload: [isDismissedGlobally, workspaceIds] }) => ({
       ...state,
@@ -176,12 +176,12 @@ export const setupScriptsReducer = createReducer<SetupScriptsState>(initialState
         return acc;
       }, {}),
     }),
-  )
-  .with(dismissSetupScriptBannerGlobally, (state) => ({
+  );
+setupScriptsReducer.with(dismissSetupScriptBannerGlobally, (state) => ({
     ...state,
     isBannerDismissedGlobally: true,
-  }))
-  .with(dismissSetupScriptBannerForWorkspace, (state, { payload: [workspaceId] }) => {
+  }));
+setupScriptsReducer.with(dismissSetupScriptBannerForWorkspace, (state, { payload: [workspaceId] }) => {
     if (!workspaceId) return state;
     return {
       ...state,

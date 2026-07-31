@@ -1,5 +1,5 @@
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type {
   ApplyProposalRequest,
   ProposalApplyResult,
@@ -69,8 +69,8 @@ export function pruneAppliedProposalLifecycleEntries(
   );
 }
 
-export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(initialState)
-  .with(proposalApplyStarted, (state, { payload: [{ proposalId, startedAt }] }) => {
+export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(initialState);
+proposalLifecycleReducer.with(proposalApplyStarted, (state, { payload: [{ proposalId, startedAt }] }) => {
     const current = state[proposalId];
     if (
       current?.status === 'applying' ||
@@ -83,8 +83,8 @@ export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(in
       ...state,
       [proposalId]: { status: 'applying', startedAt, lastAction: 'apply' },
     };
-  })
-  .with(proposalApplySucceeded, (state, { payload: [{ proposalId, completedAt, result }] }) => ({
+  });
+proposalLifecycleReducer.with(proposalApplySucceeded, (state, { payload: [{ proposalId, completedAt, result }] }) => ({
     ...state,
     [proposalId]: {
       ...state[proposalId],
@@ -95,8 +95,8 @@ export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(in
       lastAction: 'apply',
       ...(result !== undefined ? { result } : {}),
     },
-  }))
-  .with(proposalUndoStarted, (state, { payload: [{ proposalId, startedAt }] }) => {
+  }));
+proposalLifecycleReducer.with(proposalUndoStarted, (state, { payload: [{ proposalId, startedAt }] }) => {
     const current = state[proposalId];
     if (
       current?.status === 'undoing' ||
@@ -116,8 +116,8 @@ export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(in
         lastAction: 'undo',
       },
     };
-  })
-  .with(proposalUndoSucceeded, (state, { payload: [{ proposalId, completedAt }] }) => ({
+  });
+proposalLifecycleReducer.with(proposalUndoSucceeded, (state, { payload: [{ proposalId, completedAt }] }) => ({
     ...state,
     [proposalId]: {
       ...state[proposalId],
@@ -127,8 +127,8 @@ export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(in
       completedAt,
       lastAction: 'undo',
     },
-  }))
-  .with(
+  }));
+proposalLifecycleReducer.with(
     proposalFailed,
     (state, { payload: [{ proposalId, error, errorCode, completedAt, lastAction }] }) => ({
       ...state,
@@ -141,10 +141,10 @@ export const proposalLifecycleReducer = createReducer<ProposalLifecycleState>(in
         lastAction,
       },
     }),
-  )
-  .with(clearProposalLifecycle, (state, { payload: [proposalId] }) => {
+  );
+proposalLifecycleReducer.with(clearProposalLifecycle, (state, { payload: [proposalId] }) => {
     if (!(proposalId in state)) return state;
     const { [proposalId]: _removed, ...rest } = state;
     return rest;
-  })
-  .with(hydrateProposalLifecycle, (_state, { payload: [entries] }) => entries);
+  });
+proposalLifecycleReducer.with(hydrateProposalLifecycle, (_state, { payload: [entries] }) => entries);

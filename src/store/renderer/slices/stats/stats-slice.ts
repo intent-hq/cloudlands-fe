@@ -9,8 +9,8 @@
  * mode/key so the reducer can discard stale replies after rapid switching.
  */
 
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type { UsageStatsPeriod, UsageStatsResult } from "$lib/client/app-client";
 
 export type StatsState = {
@@ -57,20 +57,20 @@ export const usageStatsFailed = createAction<[
 
 // ── Reducer ──
 
-export const statsReducer = createReducer<StatsState>(initialState)
-  .with(loadUsageStatsRequested, (state, { payload: [mode, key] }) => ({
+export const statsReducer = createReducer<StatsState>(initialState);
+statsReducer.with(loadUsageStatsRequested, (state, { payload: [mode, key] }) => ({
     ...state,
     mode,
     periodKey: key,
     loading: true,
     error: null,
-  }))
-  .with(usageStatsLoaded, (state, { payload: [mode, key, data] }) => {
+  }));
+statsReducer.with(usageStatsLoaded, (state, { payload: [mode, key, data] }) => {
     // Discard stale replies from an older selection.
     if (mode !== state.mode || key !== state.periodKey) return state;
     return { ...state, loading: false, error: null, data };
-  })
-  .with(usageStatsFailed, (state, { payload: [mode, key, error] }) => {
+  });
+statsReducer.with(usageStatsFailed, (state, { payload: [mode, key, error] }) => {
     if (mode !== state.mode || key !== state.periodKey) return state;
     return { ...state, loading: false, error };
   });

@@ -7,7 +7,7 @@ import {
 import {
   getItem,
   getItems,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import { terminalDisplayName } from "$lib/utils/terminal-display-name";
 
 function getActiveWs(state: StoreState) {
@@ -96,7 +96,7 @@ export const selectTerminalDisplayName = store.createSelector(
     // Read languagePreference (even though terminalDisplayName() doesn't take
     // it directly) so the cached selector's path-tracking sees it as a
     // dependency: m.*() output changes when the locale changes, and without
-    // this the store-shim's memoization has no state path to invalidate on.
+    // this Themis selector's memoization has no state path to invalidate on.
     void state.userPreferences?.languagePreference;
     return terminalDisplayName(term ?? {});
   }

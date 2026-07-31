@@ -15,8 +15,8 @@
  * for (or `null` for "daemon-host home") so the read service can echo it back
  * with the success/error action and the slice can ignore stale responses.
  */
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 /** One directory entry returned by `host.listDirectory`. */
 export interface DirectoryPickerEntry {
@@ -53,12 +53,6 @@ export type DirectoryPickerState = {
    * intact so the user can correct the typed path without losing context.
    */
   pathError: string | null;
-  /**
-   * Inline failure hint for a `createDirectoryRequested` that failed. Like
-   * `pathError`, this keeps the current `listing` intact so the user can
-   * correct the new-folder name without losing context.
-   */
-  createError: string | null;
 };
 
 export const initialState: DirectoryPickerState = {
@@ -67,7 +61,6 @@ export const initialState: DirectoryPickerState = {
   error: null,
   requestedPath: null,
   pathError: null,
-  createError: null,
 };
 
 /**
@@ -111,61 +104,27 @@ export const clearPathNavigationError = createAction(
   "directoryPicker/clearPathNavigationError",
 );
 
-/**
- * Trigger: create a directory at `path` on the daemon host. The read service
- * calls `host.createDirectory` and, on success, dispatches
- * `loadDirectoryRequested(createdPath)` so the picker navigates into the new
- * folder; on failure it dispatches `createDirectoryFailed` so the current
- * listing survives and the modal shows an inline hint.
- */
-export const createDirectoryRequested = createAction<[path: string]>(
-  "directoryPicker/createDirectoryRequested",
-);
-
-/**
- * Service → reducer: a directory creation failed. Keeps the current `listing`
- * and records `createError` as the inline hint.
- */
-export const createDirectoryFailed = createAction<
-  [requestedPath: string, error: string]
->("directoryPicker/createDirectoryFailed");
-
-/** Clear the create hint — dispatched when the user cancels the name input. */
-export const clearCreateDirectoryError = createAction(
-  "directoryPicker/clearCreateDirectoryError",
-);
-
 /** Reset back to the initial state — dispatched when the modal closes. */
 export const resetDirectoryPicker = createAction("directoryPicker/reset");
 
-export const directoryPickerReducer = createReducer<DirectoryPickerState>(
-  initialState,
-)
-  .with(loadDirectoryRequested, (state, { payload: [path] }) => ({
-    ...state,
-    loading: true,
-    error: null,
-    pathError: null,
-    createError: null,
-    requestedPath: path ?? null,
-  }))
-  .with(navigateToPathRequested, (state, { payload: [path] }) => ({
-    ...state,
-    loading: true,
-    error: null,
-    pathError: null,
-    createError: null,
-    requestedPath: path,
-  }))
-  .with(createDirectoryRequested, (state, { payload: [path] }) => ({
-    ...state,
-    loading: true,
-    error: null,
-    pathError: null,
-    createError: null,
-    requestedPath: path,
-  }))
-  .with(directoryListingLoaded, (state, { payload: [requestedPath, listing] }) => {
+export const directoryPickerReducer = createReducer<DirectoryPickerState>(initialState);
+directoryPickerReducer.with(loadDirectoryRequested, (state, { payload: [path] }) => ({
+  ...state,
+  loading: true,
+  error: null,
+  pathError: null,
+  requestedPath: path ?? null,
+}));
+directoryPickerReducer.with(navigateToPathRequested, (state, { payload: [path] }) => ({
+  ...state,
+  loading: true,
+  error: null,
+  pathError: null,
+  requestedPath: path,
+}));
+directoryPickerReducer.with(
+  directoryListingLoaded,
+  (state, { payload: [requestedPath, listing] }) => {
     // Discard stale responses: only apply when the response matches the most
     // recent request the reducer recorded.
     if (state.requestedPath !== requestedPath) return state;
@@ -174,11 +133,13 @@ export const directoryPickerReducer = createReducer<DirectoryPickerState>(
       loading: false,
       error: null,
       pathError: null,
-      createError: null,
       listing,
     };
-  })
-  .with(directoryListingFailed, (state, { payload: [requestedPath, error] }) => {
+  },
+);
+directoryPickerReducer.with(
+  directoryListingFailed,
+  (state, { payload: [requestedPath, error] }) => {
     if (state.requestedPath !== requestedPath) return state;
     return {
       ...state,
@@ -186,29 +147,18 @@ export const directoryPickerReducer = createReducer<DirectoryPickerState>(
       error,
       listing: null,
     };
-  })
-  .with(pathNavigationFailed, (state, { payload: [requestedPath, error] }) => {
-    if (state.requestedPath !== requestedPath) return state;
-    return {
-      ...state,
-      loading: false,
-      pathError: error,
-    };
-  })
-  .with(createDirectoryFailed, (state, { payload: [requestedPath, error] }) => {
-    if (state.requestedPath !== requestedPath) return state;
-    return {
-      ...state,
-      loading: false,
-      createError: error,
-    };
-  })
-  .with(clearPathNavigationError, (state) => ({
+  },
+);
+directoryPickerReducer.with(pathNavigationFailed, (state, { payload: [requestedPath, error] }) => {
+  if (state.requestedPath !== requestedPath) return state;
+  return {
     ...state,
-    pathError: null,
-  }))
-  .with(clearCreateDirectoryError, (state) => ({
-    ...state,
-    createError: null,
-  }))
-  .with(resetDirectoryPicker, () => initialState);
+    loading: false,
+    pathError: error,
+  };
+});
+directoryPickerReducer.with(clearPathNavigationError, (state) => ({
+  ...state,
+  pathError: null,
+}));
+directoryPickerReducer.with(resetDirectoryPicker, () => initialState);

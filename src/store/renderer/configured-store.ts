@@ -1,5 +1,5 @@
-import { Store } from "$lib/store-shim/svelte-store";
-import type { StoreMiddleware } from "$lib/store-shim/types";
+import { Store } from "@augmentcode/themis/svelte-store";
+import type { StoreMiddleware } from "@augmentcode/themis/types";
 
 import { middleware } from "./middleware";
 import { reducers } from "./reducer";

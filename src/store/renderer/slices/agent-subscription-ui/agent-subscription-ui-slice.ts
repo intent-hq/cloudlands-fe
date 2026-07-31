@@ -5,8 +5,8 @@
  * delegation groups, and woken-up indicators.
  */
 
-import { createAction, createAsyncAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   AgentSubscriptionUIState,
   AgentSubscriptionUIEntry,
@@ -75,18 +75,6 @@ export const deleteSubscriptionUI = createAction<[workspaceId: string, agentId: 
   'agentSubscriptionUI/deleteSubscriptionUI',
 );
 
-/**
- * Optimistically drop a (soft-)deleted agent from every subscription-UI entry
- * in the workspace: its membership in watches (a subscription whose actorIds
- * empties is dropped, multi-actor watches survive pruned), its membership in
- * delegation groups (a group whose expectedAgentIds empties is dropped), and
- * its status rows. Dispatched by the agent-deletion soft-hide; on undo the
- * daemon's still-live watch repopulates via a workspace refetch.
- */
-export const removeWatchedAgent = createAction<[workspaceId: string, watchedAgentId: string]>(
-  'agentSubscriptionUI/removeWatchedAgent',
-);
-
 /** Dispatched by the AgentSubscriptions component to request an initial fetch
  *  when the component mounts or the agentId changes. The saga handles the
  *  actual IPC call so no side effects live in the component. */
@@ -94,93 +82,85 @@ export const requestSubscriptionFetch = createAction<[workspaceId: string, agent
   'agentSubscriptionUI/requestSubscriptionFetch',
 );
 
-/**
- * Cancel the agent's completion watches / delegation groups via
- * `agent.cancelSubscriptions` (PROTOCOL §5.5). `scope.subscriptionId` cancels
- * exactly one completion watch; `scope.groupId` cancels one delegation group
- * plus its grouped watches; omitting both cancels everything the agent
- * registered. Handled by the agent mutation middleware — the daemon's
- * `agent:subscriptions-changed` event (§6.5) drives the UI refetch, so no
- * reducer case mutates the local entry.
- */
-export const cancelAgentSubscriptionsRequested = createAsyncAction<[
-  workspaceId: string,
-  agentId: string,
-  scope?: { subscriptionId?: string; groupId?: string },
-], void>(
-  'agentSubscriptionUI/cancelAgentSubscriptions',
-  'agentSubscriptionUI/cancelAgentSubscriptionsRequested',
+/** Refresh every subscription entry currently tracked for a workspace. */
+export const refreshWorkspaceSubscriptionEntriesRequested = createAction<[workspaceId: string]>(
+  'agentSubscriptionUI/refreshWorkspaceSubscriptionEntriesRequested',
 );
 
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const agentSubscriptionUIReducer = createReducer<AgentSubscriptionUIState>(initialState)
-  .with(setSubscriptionSnapshot, (state, { payload }) => {
-    const key = makeKey(payload.workspaceId, payload.agentId);
-    const existing = state.entries[key] ?? emptyEntry;
-    return {
-      ...state,
-      entries: {
-        ...state.entries,
-        [key]: {
-          ...existing,
-          subscriptions: payload.data.subscriptions,
-          delegationGroups: payload.data.delegationGroups,
-          agentStatuses: payload.data.agentStatuses,
-          waitingState: payload.data.waitingState,
-        },
+export const agentSubscriptionUIReducer = createReducer<AgentSubscriptionUIState>(initialState);
+agentSubscriptionUIReducer.with(setSubscriptionSnapshot, (state, { payload }) => {
+  const key = makeKey(payload.workspaceId, payload.agentId);
+  const existing = state.entries[key] ?? emptyEntry;
+  return {
+    ...state,
+    entries: {
+      ...state.entries,
+      [key]: {
+        ...existing,
+        subscriptions: payload.data.subscriptions,
+        delegationGroups: payload.data.delegationGroups,
+        agentStatuses: payload.data.agentStatuses,
+        waitingState: payload.data.waitingState,
       },
-    };
-  })
-  .with(setWokenUp, (state, { payload }) => {
-    const key = makeKey(payload.workspaceId, payload.agentId);
-    const existing = state.entries[key] ?? emptyEntry;
-    return {
-      ...state,
-      entries: {
-        ...state.entries,
-        [key]: {
-          ...existing,
-          waitingState: 'woken',
-          wokenUpInfo: payload.info,
-        },
+    },
+  };
+});
+agentSubscriptionUIReducer.with(setWokenUp, (state, { payload }) => {
+  const key = makeKey(payload.workspaceId, payload.agentId);
+  const existing = state.entries[key] ?? emptyEntry;
+  return {
+    ...state,
+    entries: {
+      ...state.entries,
+      [key]: {
+        ...existing,
+        waitingState: 'woken',
+        wokenUpInfo: payload.info,
       },
-    };
-  })
-  .with(clearWokenUp, (state, { payload: [workspaceId, agentId] }) => {
-    const key = makeKey(workspaceId, agentId);
-    const existing = state.entries[key];
-    if (!existing) return state;
-    // Don't override 'completed' state — let the cleanup timer handle it
-    if (existing.waitingState === 'completed') {
-      return {
-        ...state,
-        entries: {
-          ...state.entries,
-          [key]: {
-            ...existing,
-            wokenUpInfo: null,
-          },
-        },
-      };
-    }
+    },
+  };
+});
+agentSubscriptionUIReducer.with(clearWokenUp, (state, { payload: [workspaceId, agentId] }) => {
+  const key = makeKey(workspaceId, agentId);
+  const existing = state.entries[key];
+  if (!existing) return state;
+  // Don't override 'completed' state — let the cleanup timer handle it
+  if (existing.waitingState === 'completed') {
     return {
       ...state,
       entries: {
         ...state.entries,
         [key]: {
           ...existing,
-          waitingState: existing.waitingState === 'woken'
-            ? (existing.subscriptions.length > 0 || existing.delegationGroups.length > 0 ? 'waiting' : 'idle')
-            : existing.waitingState,
           wokenUpInfo: null,
         },
       },
     };
-  })
-  .with(resetSubscriptionUI, (state, { payload: [workspaceId, agentId] }) => {
+  }
+  return {
+    ...state,
+    entries: {
+      ...state.entries,
+      [key]: {
+        ...existing,
+        waitingState:
+          existing.waitingState === 'woken'
+            ? existing.subscriptions.length > 0 || existing.delegationGroups.length > 0
+              ? 'waiting'
+              : 'idle'
+            : existing.waitingState,
+        wokenUpInfo: null,
+      },
+    },
+  };
+});
+agentSubscriptionUIReducer.with(
+  resetSubscriptionUI,
+  (state, { payload: [workspaceId, agentId] }) => {
     const key = makeKey(workspaceId, agentId);
     const existing = state.entries[key];
     if (!existing) return state;
@@ -197,8 +177,11 @@ export const agentSubscriptionUIReducer = createReducer<AgentSubscriptionUIState
         },
       },
     };
-  })
-  .with(deleteSubscriptionUI, (state, { payload: [workspaceId, agentId] }) => {
+  },
+);
+agentSubscriptionUIReducer.with(
+  deleteSubscriptionUI,
+  (state, { payload: [workspaceId, agentId] }) => {
     const key = makeKey(workspaceId, agentId);
     if (!state.entries[key]) return state;
     const { [key]: _, ...rest } = state.entries;
@@ -206,77 +189,5 @@ export const agentSubscriptionUIReducer = createReducer<AgentSubscriptionUIState
       ...state,
       entries: rest,
     };
-  })
-  .with(removeWatchedAgent, (state, { payload: [workspaceId, watchedAgentId] }) => {
-    const prefix = `${workspaceId}:`;
-    let changed = false;
-    const entries = { ...state.entries };
-    for (const [key, entry] of Object.entries(state.entries)) {
-      if (!key.startsWith(prefix)) continue;
-
-      let subsChanged = false;
-      const subscriptions: Subscription[] = [];
-      for (const sub of entry.subscriptions) {
-        if (!sub.actorIds.includes(watchedAgentId)) {
-          subscriptions.push(sub);
-          continue;
-        }
-        subsChanged = true;
-        const actorIds = sub.actorIds.filter((id) => id !== watchedAgentId);
-        // Drop a subscription whose actor list emptied out; a multi-actor
-        // watch survives with the deleted agent pruned (mirroring the
-        // delegation-group treatment below).
-        if (actorIds.length === 0) continue;
-        subscriptions.push({ ...sub, actorIds });
-      }
-
-      let groupsChanged = false;
-      const delegationGroups: DelegationGroupStatus[] = [];
-      for (const group of entry.delegationGroups) {
-        const touchesGroup =
-          group.expectedAgentIds.includes(watchedAgentId) ||
-          group.completedAgentIds.includes(watchedAgentId) ||
-          group.deletedAgentIds.includes(watchedAgentId) ||
-          watchedAgentId in group.agentStatuses;
-        if (!touchesGroup) {
-          delegationGroups.push(group);
-          continue;
-        }
-        groupsChanged = true;
-        const expectedAgentIds = group.expectedAgentIds.filter((id) => id !== watchedAgentId);
-        // Drop a group whose expected membership emptied out.
-        if (expectedAgentIds.length === 0) continue;
-        const { [watchedAgentId]: _droppedGroupStatus, ...groupStatuses } = group.agentStatuses;
-        delegationGroups.push({
-          ...group,
-          expectedAgentIds,
-          completedAgentIds: group.completedAgentIds.filter((id) => id !== watchedAgentId),
-          deletedAgentIds: group.deletedAgentIds.filter((id) => id !== watchedAgentId),
-          agentStatuses: groupStatuses,
-        });
-      }
-
-      const statusChanged = watchedAgentId in entry.agentStatuses;
-      if (!subsChanged && !groupsChanged && !statusChanged) continue;
-
-      let agentStatuses = entry.agentStatuses;
-      if (statusChanged) {
-        const { [watchedAgentId]: _droppedStatus, ...rest } = entry.agentStatuses;
-        agentStatuses = rest;
-      }
-      const finalGroups = groupsChanged ? delegationGroups : entry.delegationGroups;
-      const finalSubs = subsChanged ? subscriptions : entry.subscriptions;
-      changed = true;
-      entries[key] = {
-        ...entry,
-        subscriptions: finalSubs,
-        delegationGroups: finalGroups,
-        agentStatuses,
-        waitingState:
-          entry.waitingState === 'waiting' && finalSubs.length === 0 && finalGroups.length === 0
-            ? 'idle'
-            : entry.waitingState,
-      };
-    }
-    return changed ? { ...state, entries } : state;
-  });
+  },
+);

@@ -3,7 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
+import { createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
 import type { StoreState } from "../../types";
 import type { BackendTransportInfo } from "../daemon-health/daemon-health-types";
 import type { InstalledEditor } from "./external-editors-slice";

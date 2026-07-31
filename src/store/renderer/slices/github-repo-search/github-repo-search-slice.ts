@@ -12,12 +12,12 @@
  * UI can show stale/mismatched data defensively (e.g. clear results the
  * moment the input diverges from `lastQuery`).
  */
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import type { GithubRepoItem } from "../github-repos/github-repos-slice";
 
 export type GithubRepoSearchState = {
@@ -64,30 +64,29 @@ export const clearGithubRepoSearch = createAction(
   "githubRepoSearch/clear",
 );
 
-export const githubRepoSearchReducer = createReducer<GithubRepoSearchState>(
-  initialState,
-)
-  .with(setGithubRepoSearchLoading, (state, { payload: [query] }) => ({
+export const githubRepoSearchReducer = createReducer<GithubRepoSearchState>(initialState);
+
+githubRepoSearchReducer.with(setGithubRepoSearchLoading, (state, { payload: [query] }) => ({
+  ...state,
+  loading: true,
+  error: null,
+  lastQuery: query,
+}));
+githubRepoSearchReducer.with(
+  setGithubRepoSearchResults,
+  (state, { payload: [query, results] }) => ({
     ...state,
-    loading: true,
+    results: createCollection<GithubRepoItem, 'id'>('id', results),
+    loading: false,
     error: null,
     lastQuery: query,
-  }))
-  .with(
-    setGithubRepoSearchResults,
-    (state, { payload: [query, results] }) => ({
-      ...state,
-      results: createCollection<GithubRepoItem, "id">("id", results),
-      loading: false,
-      error: null,
-      lastQuery: query,
-    }),
-  )
-  .with(setGithubRepoSearchError, (state, { payload: [query, error] }) => ({
-    ...state,
-    results: createCollection<GithubRepoItem, "id">("id"),
-    loading: false,
-    error,
-    lastQuery: query,
-  }))
-  .with(clearGithubRepoSearch, () => initialState);
+  }),
+);
+githubRepoSearchReducer.with(setGithubRepoSearchError, (state, { payload: [query, error] }) => ({
+  ...state,
+  results: createCollection<GithubRepoItem, 'id'>('id'),
+  loading: false,
+  error,
+  lastQuery: query,
+}));
+githubRepoSearchReducer.with(clearGithubRepoSearch, () => initialState);

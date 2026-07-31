@@ -1,6 +1,6 @@
 import type { Note, NoteVersion, TaskStatus } from "$shared/types";
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   addItem,
   createCollection,
@@ -8,7 +8,7 @@ import {
   removeItem,
   updateItem,
   upsertItem,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import type { WorkspaceNotesWorkspaceState, WorkspaceNotesState } from "./workspace-notes-types";
@@ -173,13 +173,13 @@ export const applyReadyTasksError = createAction<[workspaceId: string, error: st
   "workspaceNotes/applyReadyTasksError"
 );
 
-export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialState)
-  .with(clearWorkspaceNotesForWorkspaces, (state, { payload: [workspaceIds] }) => {
+export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialState);
+workspaceNotesReducer.with(clearWorkspaceNotesForWorkspaces, (state, { payload: [workspaceIds] }) => {
     return workspaceIds.reduce((nextState, workspaceId) => {
       return clearWorkspaceState(nextState, workspaceId);
     }, state);
-  })
-  .with(setWorkspaceNotesLoading, (state, { payload: [workspaceIds, isLoading] }) => {
+  });
+workspaceNotesReducer.with(setWorkspaceNotesLoading, (state, { payload: [workspaceIds, isLoading] }) => {
     return workspaceIds.reduce((nextState, workspaceId) => {
       const workspaceState = getWorkspaceState(nextState, workspaceId);
       if (workspaceState.loading === isLoading) {
@@ -191,8 +191,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         error: isLoading ? null : workspaceState.error,
       });
     }, state);
-  })
-  .with(loadWorkspaceNotesSucceeded, (state, { payload: [workspaceIds, notesByWorkspace] }) => {
+  });
+workspaceNotesReducer.with(loadWorkspaceNotesSucceeded, (state, { payload: [workspaceIds, notesByWorkspace] }) => {
     return workspaceIds.reduce((nextState, workspaceId) => {
       const workspaceState = getWorkspaceState(nextState, workspaceId);
       return setWorkspaceState(nextState, workspaceId, {
@@ -204,8 +204,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         notesVersion: workspaceState.notesVersion + 1,
       });
     }, state);
-  })
-  .with(loadWorkspaceNotesFailed, (state, { payload: [workspaceIds, error] }) => {
+  });
+workspaceNotesReducer.with(loadWorkspaceNotesFailed, (state, { payload: [workspaceIds, error] }) => {
     return workspaceIds.reduce((nextState, workspaceId) => {
       const workspaceState = getWorkspaceState(nextState, workspaceId);
       return setWorkspaceState(nextState, workspaceId, {
@@ -214,8 +214,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         error,
       });
     }, state);
-  })
-  .with(applyTaskStatusChanged, (state, { payload: [workspaceId, noteId, newStatus] }) => {
+  });
+workspaceNotesReducer.with(applyTaskStatusChanged, (state, { payload: [workspaceId, noteId, newStatus] }) => {
     const workspaceState = state.byWorkspaceId[workspaceId];
     if (!workspaceState?.initialized) return state;
 
@@ -237,8 +237,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
       }),
       notesVersion: workspaceState.notesVersion + 1,
     });
-  })
-  .with(applyNoteCreated, (state, { payload: [workspaceId, note] }) => {
+  });
+workspaceNotesReducer.with(applyNoteCreated, (state, { payload: [workspaceId, note] }) => {
     const workspaceState = state.byWorkspaceId[workspaceId];
     if (!workspaceState?.initialized) return state;
 
@@ -247,8 +247,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
       notes: addItem(workspaceState.notes, note),
       notesVersion: workspaceState.notesVersion + 1,
     });
-  })
-  .with(applyNoteDeleted, (state, { payload: [workspaceId, noteId] }) => {
+  });
+workspaceNotesReducer.with(applyNoteDeleted, (state, { payload: [workspaceId, noteId] }) => {
     const workspaceState = state.byWorkspaceId[workspaceId];
     if (!workspaceState?.initialized) return state;
 
@@ -260,8 +260,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
       notes,
       notesVersion: workspaceState.notesVersion + 1,
     });
-  })
-  .with(applyNoteUpdated, (state, { payload: [workspaceId, noteId, note] }) => {
+  });
+workspaceNotesReducer.with(applyNoteUpdated, (state, { payload: [workspaceId, noteId, note] }) => {
     if (note.workspaceId !== workspaceId) return state;
 
     const workspaceState = getWorkspaceState(state, workspaceId);
@@ -287,9 +287,9 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
       }),
       notesVersion: workspaceState.notesVersion + 1,
     });
-  })
+  });
   // ---- New reducers from notes.store.svelte.ts migration ----
-  .with(selectNote, (state, { payload: [workspaceId, noteId] }) => {
+workspaceNotesReducer.with(selectNote, (state, { payload: [workspaceId, noteId] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     if (ws.selectedNoteId === noteId) return state;
     return setWorkspaceState(state, workspaceId, {
@@ -298,22 +298,22 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
       isUserTyping: false,
       editorHasFocus: false,
     });
-  })
-  .with(setIsUserTyping, (state, { payload: [workspaceId, isTyping] }) => {
+  });
+workspaceNotesReducer.with(setIsUserTyping, (state, { payload: [workspaceId, isTyping] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     if (ws.isUserTyping === isTyping) return state;
     return setWorkspaceState(state, workspaceId, { ...ws, isUserTyping: isTyping });
-  })
-  .with(setLastUserInputTime, (state, { payload: [workspaceId, timestamp] }) => {
+  });
+workspaceNotesReducer.with(setLastUserInputTime, (state, { payload: [workspaceId, timestamp] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, { ...ws, lastUserInputTime: timestamp });
-  })
-  .with(clearNewlyCreatedNoteId, (state, { payload: [workspaceId] }) => {
+  });
+workspaceNotesReducer.with(clearNewlyCreatedNoteId, (state, { payload: [workspaceId] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     if (ws.newlyCreatedNoteId === null) return state;
     return setWorkspaceState(state, workspaceId, { ...ws, newlyCreatedNoteId: null });
-  })
-  .with(applyLocalNoteUpdate, (state, { payload }) => {
+  });
+workspaceNotesReducer.with(applyLocalNoteUpdate, (state, { payload }) => {
     const { workspaceId, noteId, updates, timestamp } = payload;
     const ws = getWorkspaceState(state, workspaceId);
     const existing = getItem(ws.notes, noteId as Note["id"]);
@@ -324,8 +324,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
       notes: updateItem(ws.notes, updatedNote),
       notesVersion: ws.notesVersion + 1,
     });
-  })
-  .with(addOptimisticNote, (state, { payload: [workspaceId, note] }) => {
+  });
+workspaceNotesReducer.with(addOptimisticNote, (state, { payload: [workspaceId, note] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...ws,
@@ -333,8 +333,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
       newlyCreatedNoteId: note.id,
       notesVersion: ws.notesVersion + 1,
     });
-  })
-  .with(removeOptimisticNote, (state, { payload: [workspaceId, noteId] }) => {
+  });
+workspaceNotesReducer.with(removeOptimisticNote, (state, { payload: [workspaceId, noteId] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     const notes = removeItem(ws.notes, noteId as Note["id"]);
     if (notes === ws.notes) return state;
@@ -344,8 +344,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
       newlyCreatedNoteId: ws.newlyCreatedNoteId === noteId ? null : ws.newlyCreatedNoteId,
       notesVersion: ws.notesVersion + 1,
     });
-  })
-  .with(fetchNoteVersions, (state, { payload: [workspaceId, noteId] }) => {
+  });
+workspaceNotesReducer.with(fetchNoteVersions, (state, { payload: [workspaceId, noteId] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...ws,
@@ -356,8 +356,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         noteId,
       },
     });
-  })
-  .with(applyNoteVersions, (state, { payload: [workspaceId, noteId, versions] }) => {
+  });
+workspaceNotesReducer.with(applyNoteVersions, (state, { payload: [workspaceId, noteId, versions] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...ws,
@@ -368,8 +368,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         noteId,
       },
     });
-  })
-  .with(applyNoteVersionsError, (state, { payload: [workspaceId, error] }) => {
+  });
+workspaceNotesReducer.with(applyNoteVersionsError, (state, { payload: [workspaceId, error] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...ws,
@@ -380,8 +380,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         noteId: ws.noteVersions?.noteId ?? null,
       },
     });
-  })
-  .with(fetchReadyTasks, (state, { payload: [workspaceId] }) => {
+  });
+workspaceNotesReducer.with(fetchReadyTasks, (state, { payload: [workspaceId] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     if (ws.readyTasks?.loading) return state; // Already loading, no change
     return setWorkspaceState(state, workspaceId, {
@@ -393,8 +393,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         searched: ws.readyTasks?.searched ?? false,
       },
     });
-  })
-  .with(applyReadyTasks, (state, { payload: [workspaceId, tasks] }) => {
+  });
+workspaceNotesReducer.with(applyReadyTasks, (state, { payload: [workspaceId, tasks] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...ws,
@@ -405,8 +405,8 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         searched: true,
       },
     });
-  })
-  .with(applyReadyTasksError, (state, { payload: [workspaceId, error] }) => {
+  });
+workspaceNotesReducer.with(applyReadyTasksError, (state, { payload: [workspaceId, error] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...ws,
@@ -417,5 +417,5 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         searched: true,
       },
     });
-  })
-  .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+  });
+workspaceNotesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));

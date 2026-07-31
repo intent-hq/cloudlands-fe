@@ -1,6 +1,6 @@
 import type { WorkspaceEvent } from '$features/events/types';
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import {
   sanitizeWorkspaceEvent,
@@ -55,8 +55,8 @@ export const setEventsLoading = createAction<[workspaceId: string, loading: bool
 // Reducer
 // ---------------------------------------------------------------------------
 
-export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initialState)
-  .with(eventReceived, (state, { payload: [workspaceId, event] }) => {
+export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initialState);
+workspaceEventsReducer.with(eventReceived, (state, { payload: [workspaceId, event] }) => {
     const safeEvent = sanitizeWorkspaceEvent(event, workspaceId);
     if (!safeEvent) return state;
     const wsState = getWorkspaceState(state, workspaceId);
@@ -75,8 +75,8 @@ export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initia
     });
     const nextEvents = combined.slice(-MAX_EVENTS);
     return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
-  })
-  .with(bulkEventsReceived, (state, { payload: [workspaceId, events] }) => {
+  });
+workspaceEventsReducer.with(bulkEventsReceived, (state, { payload: [workspaceId, events] }) => {
     const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
     if (safeEvents.length === 0) return state;
     const wsState = getWorkspaceState(state, workspaceId);
@@ -97,8 +97,8 @@ export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initia
     });
     const nextEvents = combined.slice(-MAX_EVENTS);
     return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
-  })
-  .with(eventsLoaded, (state, { payload: [workspaceId, events] }) => {
+  });
+workspaceEventsReducer.with(eventsLoaded, (state, { payload: [workspaceId, events] }) => {
     const wsState = getWorkspaceState(state, workspaceId);
     const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
     return setWorkspaceState(state, workspaceId, {
@@ -106,11 +106,11 @@ export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initia
       events: safeEvents.slice(-MAX_EVENTS),
       loading: false,
     });
-  })
-  .with(eventsCleared, (state, { payload: [workspaceId] }) => {
+  });
+workspaceEventsReducer.with(eventsCleared, (state, { payload: [workspaceId] }) => {
     return clearWorkspaceState(state, workspaceId);
-  })
-  .with(setEventsLoading, (state, { payload: [workspaceId, loading] }) => {
+  });
+workspaceEventsReducer.with(setEventsLoading, (state, { payload: [workspaceId, loading] }) => {
     const wsState = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, { ...wsState, loading });
   });

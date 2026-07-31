@@ -1,0 +1,218 @@
+import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { all, call, fork, take } from 'typed-redux-saga';
+
+import type { AgentIdleEvent } from '$features/events/types';
+import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
+import { playNotificationSoundPerSettings } from '$features/notifications/notification-sound-gate';
+import { buildNotificationContent } from '$features/notifications/utils/notification-content';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { isElectron } from '$lib/electron-bridge';
+import { createLogger } from '$lib/utils/client-logger';
+import { getPlatform } from '$lib/utils/platform-capabilities';
+import { addMockIpcListener } from '$shared/ipc-mock-router';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { selectNotificationEnabled, selectSoundOnlyWhenUnfocused } from '../../user-preferences/user-preferences-selectors';
+import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
+
+const logger = createLogger('NotificationsSaga');
+const activeNotifications = new Set<Notification>();
+let pendingPermissionRequest: Promise<NotificationPermission> | null = null;
+let loggedPermissionSkip = false;
+
+type NotificationShowEvent = { title?: string; body?: string; timestamp?: string };
+type NotificationNavigateEvent = { workspaceId?: string; chief?: boolean; agentId?: string };
+type NativeNotificationEvent =
+  | { kind: 'show'; data?: NotificationShowEvent }
+  | { kind: 'navigate'; data?: NotificationNavigateEvent | null };
+
+type AgentListResult = {
+  agents?: Array<{
+    id?: string;
+    isStreaming?: boolean;
+    isResponding?: boolean;
+    metadata?: { isBackground?: boolean; specialist?: string };
+  }>;
+};
+
+export function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent> {
+  return eventChannel<NativeNotificationEvent>((emit) => {
+    if (typeof window === 'undefined' || !window.electronAPI?.on) return () => {};
+    const listeners = [
+      ['notification:show', window.electronAPI.on('notification:show', (data) => emit({ kind: 'show', data }))],
+      ['notification:navigate', window.electronAPI.on('notification:navigate', (data) => emit({ kind: 'navigate', data }))],
+    ] as const;
+    return () => {
+      for (const [channel, id] of listeners) window.electronAPI.offById(channel, id);
+    };
+  }, buffers.sliding(1_000));
+}
+
+export function createWebNotificationChannel(): EventChannel<AgentIdleEvent> {
+  return eventChannel<AgentIdleEvent>((emit) =>
+    addMockIpcListener('agent:idle', (payload) => {
+      const event = payload as AgentIdleEvent | undefined;
+      if (event?.type === 'agent:idle' && event.data) emit(event);
+    }),
+  buffers.expanding<AgentIdleEvent>());
+}
+
+async function resolvePermission(): Promise<NotificationPermission> {
+  let permission = Notification.permission;
+  if (permission === 'default') {
+    pendingPermissionRequest ??= Promise.resolve(Notification.requestPermission()).finally(() => {
+      pendingPermissionRequest = null;
+    });
+    permission = await pendingPermissionRequest;
+  }
+  return permission;
+}
+
+async function ensurePermission(): Promise<boolean> {
+  if (typeof window === 'undefined' || typeof Notification === 'undefined') {
+    if (!loggedPermissionSkip) logger.warn('Browser Notification API is not available; skipping web notifications');
+    loggedPermissionSkip = true;
+    return false;
+  }
+  try {
+    const permission = await resolvePermission();
+    if (permission === 'granted') return true;
+    if (!loggedPermissionSkip) logger.info('Notification permission not granted; web notifications disabled', { permission });
+  } catch (error) {
+    if (!loggedPermissionSkip) logger.warn('Notification permission request failed', { error });
+  }
+  loggedPermissionSkip = true;
+  return false;
+}
+
+function createBrowserNotification(title: string, body: string): Notification {
+  return new Notification(title, { body });
+}
+
+function* showBrowserNotification(
+  title: string,
+  body: string,
+  workspaceId: string,
+  agentId: string,
+) {
+  yield* fork(playNotificationSoundPerSettings);
+  const granted: boolean = yield* call(ensurePermission);
+  if (!granted) return;
+  try {
+    const notification: Notification = yield* call(createBrowserNotification, title, body);
+    activeNotifications.add(notification);
+    notification.onclick = () => {
+      activeNotifications.delete(notification);
+      try { window.focus(); } catch { /* Navigation still runs. */ }
+      const payload = workspaceId === CHIEF_WORKSPACE_ID
+        ? { workspaceId, chief: true, agentId }
+        : { workspaceId };
+      void handleNotificationNavigate(payload);
+      notification.close();
+    };
+    notification.onclose = () => activeNotifications.delete(notification);
+    notification.onerror = () => {
+      activeNotifications.delete(notification);
+      logger.warn('Web notification failed to show', { title });
+    };
+  } catch (error) {
+    logger.warn('Failed to show web notification', { error });
+  }
+}
+
+function* handleWebIdle(event: AgentIdleEvent) {
+  try {
+    const workspaceId = event.workspaceId;
+    if (!workspaceId) return;
+    const [fallbackEnabled, fallbackSoundOnly] = yield* all([
+      selectNotificationEnabled.effect(),
+      selectSoundOnlyWhenUnfocused.effect(),
+    ]);
+    let enabled = fallbackEnabled ?? true;
+    let soundOnlyWhenUnfocused = fallbackSoundOnly ?? true;
+    try {
+      const [enabledResult, soundResult] = yield* all([
+        call(backendRequest, 'settings.get', { path: 'notifications.enabled' }),
+        call(backendRequest, 'settings.get', { path: 'notifications.soundOnlyWhenUnfocused' }),
+      ]);
+      const enabledValue = (enabledResult as { value?: unknown } | null)?.value;
+      const soundValue = (soundResult as { value?: unknown } | null)?.value;
+      if (typeof enabledValue === 'boolean') enabled = enabledValue;
+      if (typeof soundValue === 'boolean') soundOnlyWhenUnfocused = soundValue;
+    } catch (error) {
+      logger.warn('Failed to fetch notifications.* settings from daemon', { error });
+    }
+    if (!enabled || event.data.isBackground || event.data.isWaitingForOtherAgents) return;
+
+    const agentList = (yield* call(backendRequest, 'agent.list', { workspaceId })) as AgentListResult | undefined;
+    const agents = agentList?.agents ?? [];
+    const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
+    if (idleAgent?.metadata?.isBackground) return;
+    if (agents.some((agent) => agent.id !== event.data.agentId && (agent.isStreaming || agent.isResponding))) return;
+
+    const isChief = workspaceId === CHIEF_WORKSPACE_ID;
+    let workspaceTitle: string | undefined;
+    if (!isChief) {
+      try {
+        const response = (yield* call(backendRequest, 'workspace.get', { workspaceId })) as
+          | { workspace?: { title?: string } }
+          | undefined;
+        if (response?.workspace?.title) workspaceTitle = response.workspace.title;
+      } catch {
+        // Missing workspace context is non-fatal.
+      }
+    }
+    const content = buildNotificationContent({
+      isChief,
+      agentName: event.data.agentName,
+      specialist: event.data.specialist ?? idleAgent?.metadata?.specialist,
+      taskTitle: event.data.taskTitle,
+    }, workspaceTitle);
+    const activeWorkspaceId = yield* selectActiveWorkspaceId.effect();
+    if (typeof document !== 'undefined' && document.hasFocus() && activeWorkspaceId === workspaceId && soundOnlyWhenUnfocused) {
+      yield* fork(playNotificationSoundPerSettings);
+      return;
+    }
+    yield* call(showBrowserNotification, content.title, content.body, workspaceId, event.data.agentId);
+  } catch (error) {
+    logger.error('Failed to handle agent:idle event', error);
+  }
+}
+
+function* handleNativeNotificationEvent(event: NativeNotificationEvent) {
+  try {
+    if (event.kind === 'show') yield* call(playNotificationSoundPerSettings);
+    else yield* call(handleNotificationNavigate, event.data);
+  } catch {
+    // Native notification effects are best-effort and independent.
+  }
+}
+
+export function* notificationIpcSaga() {
+  if (!isElectron()) return;
+  const channel = createNativeNotificationChannel();
+  try {
+    while (true) {
+      const event: NativeNotificationEvent = yield* take(channel);
+      if (event === (END as unknown as NativeNotificationEvent)) break;
+      yield* fork(handleNativeNotificationEvent, event);
+    }
+  } finally {
+    channel.close();
+  }
+}
+
+export function* webNotificationSaga() {
+  if (getPlatform() !== 'web') return;
+  const channel = createWebNotificationChannel();
+  try {
+    while (true) {
+      const event: AgentIdleEvent = yield* take(channel);
+      if (event === (END as unknown as AgentIdleEvent)) break;
+      yield* fork(handleWebIdle, event);
+    }
+  } finally {
+    channel.close();
+    for (const notification of activeNotifications) notification.close();
+    activeNotifications.clear();
+  }
+}

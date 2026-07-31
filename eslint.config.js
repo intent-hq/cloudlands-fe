@@ -5,6 +5,7 @@ import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import unusedImports from 'eslint-plugin-unused-imports';
+import { svelte as themisFullConfig } from '@augmentcode/themis/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
 
@@ -13,6 +14,61 @@ const intentPlugin = {
     'no-component-async-data-fetch': noComponentAsyncDataFetchRule,
     'no-production-dynamic-import': noProductionDynamicImportRule,
   },
+};
+
+const themisSourceFiles = ['src/**/*.{js,jsx,mjs,ts,tsx}'];
+const themisSelectorFiles = [
+  'src/**/*-selector.{js,jsx,mjs,ts,tsx}',
+  'src/**/*-selectors.{js,jsx,mjs,ts,tsx}',
+];
+const themisTestFiles = ['**/*.{test,spec}.{js,jsx,mjs,ts,tsx}'];
+const themisSelectorRuleIgnores = [
+  '**/__tests__/**/*.{js,jsx,mjs,ts,tsx}',
+  '**/tests/**/*.{js,jsx,mjs,ts,tsx}',
+  '**/*.{test,spec}.{js,jsx,mjs,ts,tsx}',
+  '**/*.manual-test.{js,jsx,mjs,ts,tsx}',
+];
+const themisSourceSelectorRules = {
+  'themis/duplicate-selector-export': 'error',
+  'themis/duplicate-selector-implementation': 'error',
+  'themis/inline-saga-selector': 'error',
+  'themis/direct-selector-call-mode': 'error',
+  'themis/wait-for-named-selector': 'error',
+};
+const themisTestSelectorRuleOverrides = {
+  'themis/duplicate-selector-export': 'off',
+  'themis/duplicate-selector-implementation': 'off',
+  'themis/inline-saga-selector': 'off',
+  'themis/direct-selector-call-mode': 'off',
+  'themis/wait-for-named-selector': 'off',
+  'themis/selector-file-name': 'off',
+  'themis/selector-export-name': 'off',
+};
+const themisTestArchitectureRuleOverrides = {
+  'themis/collection-internal-mutation': 'off',
+  'themis/create-action-owner': 'off',
+  'themis/duplicate-saga-name': 'off',
+};
+const themisArchitectureRules = {
+  'themis/duplicate-action-type': 'error',
+  'themis/duplicate-selector-export': 'error',
+  'themis/duplicate-selector-implementation': 'error',
+  'themis/duplicate-saga-registration': 'error',
+  'themis/pass-through-wrapper': 'error',
+  'themis/non-serializable-state-type': 'error',
+  'themis/non-serializable-initial-state': 'error',
+  'themis/nondeterministic-reducer-state': 'error',
+  'themis/reducer-side-effect': 'error',
+  'themis/async-reducer-handler': 'error',
+  'themis/collection-internal-mutation': 'error',
+  'themis/inline-saga-selector': 'error',
+  'themis/raw-channel-cleanup': 'error',
+  'themis/forbidden-redux-api': 'error',
+  'themis/create-action-owner': 'error',
+  'themis/saga-watcher-action-type': 'error',
+  'themis/unnamespaced-action-type': 'error',
+  'themis/action-type-shape': 'error',
+  'themis/forbidden-component-import': 'error',
 };
 
 // Staged rollout: enforce the dynamic-import ban only on files that have already
@@ -198,8 +254,8 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/routes/workspace/[id]/+page.svelte',
 ];
 
-const componentAsyncDataFetchBaselineIgnorePatterns = componentAsyncDataFetchBaselineFiles.map((file) =>
-  file.replaceAll('[', '\\[').replaceAll(']', '\\]'),
+const componentAsyncDataFetchBaselineIgnorePatterns = componentAsyncDataFetchBaselineFiles.map(
+  (file) => file.replaceAll('[', '\\[').replaceAll(']', '\\]'),
 );
 
 // Browser safety: renderer code (src/lib, src/routes, src/store, feature roots)
@@ -247,24 +303,28 @@ const rendererBrowserSafetyRestrictedImportsOptions = {
   paths: [
     {
       name: 'electron',
-      message: 'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+      message:
+        'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
       allowTypeImports: true,
     },
   ],
   patterns: [
     {
       regex: '^electron/',
-      message: 'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+      message:
+        'Renderer code must stay browser-safe: Electron is only available in the main process. Route through IPC/preload instead (docs/MODULE_BOUNDARY_GUIDE.md).',
       allowTypeImports: true,
     },
     {
       regex: `^(node:)?(${nodeBuiltinModules.join('|')})(/|$)`,
-      message: 'Renderer code must stay browser-safe: Node builtins are not available in the browser. Move the logic to the main process or use a browser-safe alternative (docs/MODULE_BOUNDARY_GUIDE.md).',
+      message:
+        'Renderer code must stay browser-safe: Node builtins are not available in the browser. Move the logic to the main process or use a browser-safe alternative (docs/MODULE_BOUNDARY_GUIDE.md).',
       allowTypeImports: true,
     },
     {
       regex: '(^|/)main(/|$)',
-      message: 'Renderer code must never import from a main/ subtree. Extract a shared/browser-safe module or route through IPC instead (docs/MODULE_BOUNDARY_GUIDE.md).',
+      message:
+        'Renderer code must never import from a main/ subtree. Extract a shared/browser-safe module or route through IPC instead (docs/MODULE_BOUNDARY_GUIDE.md).',
       allowTypeImports: true,
     },
   ],
@@ -350,12 +410,15 @@ export default [
       'object-shorthand': 'off',
       'prefer-template': 'off',
       'prefer-arrow-callback': 'off',
-      'no-unused-vars': ['error', {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
-        caughtErrorsIgnorePattern: '^_',
-        destructuredArrayIgnorePattern: '^_',
-      }],
+      'no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+        },
+      ],
       'unused-imports/no-unused-imports': 'error',
     },
   },
@@ -409,12 +472,15 @@ export default [
       ...typescript.configs.recommended.rules,
       'no-console': 'off',
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': ['error', {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
-        caughtErrorsIgnorePattern: '^_',
-        destructuredArrayIgnorePattern: '^_',
-      }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+        },
+      ],
       'unused-imports/no-unused-imports': 'error',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
@@ -450,13 +516,19 @@ export default [
       'src/shared/git/**/*.ts',
     ],
     rules: {
-      'no-restricted-imports': ['error', {
-        paths: [{
-          name: 'child_process',
-          importNames: ['execSync', 'spawnSync', 'execFileSync'],
-          message: 'Synchronous child_process calls block the Electron main thread. Use exec/spawn with util.promisify or the execAsync helper instead.',
-        }],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'child_process',
+              importNames: ['execSync', 'spawnSync', 'execFileSync'],
+              message:
+                'Synchronous child_process calls block the Electron main thread. Use exec/spawn with util.promisify or the execAsync helper instead.',
+            },
+          ],
+        },
+      ],
     },
   },
   // Browser safety for renderer code: no Electron, no Node builtins, no
@@ -469,11 +541,7 @@ export default [
       'src/store/**/*.{js,mjs,ts,tsx,svelte}',
       'src/features/**/*.{js,mjs,ts,tsx,svelte}',
     ],
-    ignores: [
-      'src/**/main/**',
-      ...productionModuleIgnores,
-      ...rendererBrowserSafetyBaselineFiles,
-    ],
+    ignores: ['src/**/main/**', ...productionModuleIgnores, ...rendererBrowserSafetyBaselineFiles],
     plugins: {
       '@typescript-eslint': typescript,
     },
@@ -519,12 +587,15 @@ export default [
     rules: {
       ...svelte.configs.recommended.rules,
       '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': ['error', {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
-        caughtErrorsIgnorePattern: '^_',
-        destructuredArrayIgnorePattern: '^_',
-      }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+        },
+      ],
       'unused-imports/no-unused-imports': 'error',
       'max-lines': ['error', { max: 1200 }],
     },
@@ -539,15 +610,56 @@ export default [
       'intent/no-component-async-data-fetch': 'error',
     },
   },
+  ...themisFullConfig,
+  {
+    files: themisSourceFiles,
+    ignores: productionModuleIgnores,
+    rules: themisArchitectureRules,
+  },
+  {
+    files: ['src/**/*.svelte'],
+    ignores: productionModuleIgnores,
+    rules: {
+      'themis/forbidden-component-import': 'error',
+    },
+  },
+  {
+    files: themisSourceFiles,
+    ignores: themisSelectorRuleIgnores,
+    rules: themisSourceSelectorRules,
+  },
+  {
+    files: themisSourceFiles,
+    ignores: [...themisSelectorFiles, ...themisSelectorRuleIgnores],
+    rules: {
+      'themis/selector-file-name': 'error',
+    },
+  },
+  {
+    files: themisSelectorFiles,
+    ignores: themisSelectorRuleIgnores,
+    rules: {
+      'themis/selector-export-name': 'error',
+    },
+  },
+  {
+    files: themisSelectorRuleIgnores,
+    rules: themisTestSelectorRuleOverrides,
+  },
+  {
+    files: themisSelectorRuleIgnores,
+    rules: themisTestArchitectureRuleOverrides,
+  },
+  {
+    files: themisTestFiles,
+    rules: {
+      'themis/test-selector-select': 'error',
+    },
+  },
   // Test files: allow non-null assertions. `!` on known fixtures/mocks is an
   // accepted test idiom; production code still warns via the base TS rules.
   {
-    files: [
-      '**/*.test.{ts,tsx}',
-      '**/*.spec.{ts,tsx}',
-      '**/__tests__/**',
-      'tests/**',
-    ],
+    files: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/__tests__/**', 'tests/**'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
     },

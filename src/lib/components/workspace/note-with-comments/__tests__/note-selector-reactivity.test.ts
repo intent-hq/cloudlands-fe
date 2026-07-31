@@ -19,7 +19,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/svelte";
-import { Store } from "$lib/store-shim/svelte-store";
+import { Store } from "@augmentcode/themis/svelte-store";
 import {
   get,
 } from "svelte/store";

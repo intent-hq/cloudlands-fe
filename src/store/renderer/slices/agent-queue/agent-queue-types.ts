@@ -1,5 +1,5 @@
 import type { QueuedMessage } from "$shared/types";
-import type { Collection } from "$lib/store-shim/utils/collections/collection-utils";
+import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
 
 /** Queue metadata and messages for a single agent. */
 export interface AgentQueueEntryState {

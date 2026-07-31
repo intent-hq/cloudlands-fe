@@ -4,7 +4,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
+import { createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
 import {
   initialState,
   knownReposReducer,

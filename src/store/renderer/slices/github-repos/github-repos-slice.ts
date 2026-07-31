@@ -6,12 +6,12 @@
  * populate the collection. The slice is automatically re-loaded on GitHub
  * auth changes and cleared on sign-out. Components never call IPC directly.
  */
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 
 /**
  * Normalized repo shape stored in the Collection. `id` is derived at the
@@ -60,22 +60,23 @@ export const setGithubReposError = createAction<[error: string]>(
 /** Reset to the initial empty state (e.g. on GitHub logout). */
 export const clearGithubRepos = createAction("githubRepos/clear");
 
-export const githubReposReducer = createReducer<GithubReposState>(initialState)
-  .with(setGithubReposLoading, (state) => ({
-    ...state,
-    loading: true,
-    error: null,
-  }))
-  .with(setGithubRepos, (state, { payload: [repos] }) => ({
-    ...state,
-    repos: createCollection<GithubRepoItem, "id">("id", repos),
-    loading: false,
-    loaded: true,
-    error: null,
-  }))
-  .with(setGithubReposError, (state, { payload: [error] }) => ({
-    ...state,
-    loading: false,
-    error,
-  }))
-  .with(clearGithubRepos, () => initialState);
+export const githubReposReducer = createReducer<GithubReposState>(initialState);
+
+githubReposReducer.with(setGithubReposLoading, (state) => ({
+  ...state,
+  loading: true,
+  error: null,
+}));
+githubReposReducer.with(setGithubRepos, (state, { payload: [repos] }) => ({
+  ...state,
+  repos: createCollection<GithubRepoItem, 'id'>('id', repos),
+  loading: false,
+  loaded: true,
+  error: null,
+}));
+githubReposReducer.with(setGithubReposError, (state, { payload: [error] }) => ({
+  ...state,
+  loading: false,
+  error,
+}));
+githubReposReducer.with(clearGithubRepos, () => initialState);
