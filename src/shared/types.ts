@@ -998,6 +998,10 @@ export interface AgentMetadata {
   // by the daemon in session metadata so the dismissed question set never
   // re-surfaces (survives reload).
   dismissedQuestionsMessageId?: string;
+  // Completion report persisted by `agent.reportToParent` and re-served on
+  // agent.get / agent.list AgentLite metadata (PROTOCOL §5.5); feeds
+  // AgentCard's effectiveCompletionReport preview.
+  completionReport?: string;
   // Allow additional properties for flexibility with proper typing
   [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
 }

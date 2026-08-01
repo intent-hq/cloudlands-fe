@@ -428,7 +428,7 @@ describe('agent-session-slice reducer', () => {
         state,
         upsertSession(
           makeSession('a1', 'ws-1', {
-            metadata: { completionReport: 'Done — tests pass, PR ready.' } as any,
+            metadata: { completionReport: 'Done — tests pass, PR ready.' },
           }),
         ),
       );
