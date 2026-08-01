@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: read
+  # Needed by the notifier step's `gh pr view` calls (GH_TOKEN=github.token)
+  pull-requests: read
 
 # Never cancel a release in progress
 concurrency:
