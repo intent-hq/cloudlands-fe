@@ -30,7 +30,10 @@ vi.mock("$lib/client", () => ({
 
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
-import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  chatSendStarted,
+  initializeChatRequested,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
   selectAgentMessages,
@@ -465,6 +468,113 @@ describe("chatReadService (fake seam, real store)", () => {
     const streamed = after[1] as AgentMessage & { isStreaming?: boolean };
     expect(streamed.isStreaming).toBe(true);
     expect(streamed.contentBlocks?.[0]).toMatchObject({ type: "text", text: "Working" });
+  });
+
+  // Regression (monorepo#1160): a daemon crash mid-turn leaves a renderer-
+  // local stream-owned partial in the store that the daemon never persisted.
+  // On the next hydrate the fresh session reports IDLE (no turnInFlight /
+  // isResponding / isStreaming), so preservation must not apply — otherwise
+  // the ghost row survives every rehydrate forever.
+  it("drops a stale stream-owned ghost when the fresh session reports no turn in flight", async () => {
+    const agentId = "agent-stale-ghost-idle";
+    const userTurn: AgentMessage = {
+      id: "gu1",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "hi" }],
+    };
+    const ghostPartial = {
+      id: "ga1",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:00.500Z",
+      isStreaming: true,
+      contentBlocks: [{ type: "text", id: "ga1:0", text: "Working" }],
+    } as unknown as AgentMessage;
+
+    // Seed the store as a pre-crash snapshot did: in-flight session (the
+    // crash-orphaned both-true pair) with the synthetic stream-owned
+    // assistant message.
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...makeSession({
+            id: agentId,
+            status: AgentStatus.Active,
+            isResponding: true,
+            isProcessing: true,
+            isStreaming: true,
+          }),
+          messages: [userTurn, ghostPartial],
+        },
+      ]),
+    );
+
+    // Post-restart daemon state (PROTOCOL §5.5 AgentLite): the session is
+    // idle and the persisted transcript never contains the partial row.
+    agentsApi.get.mockResolvedValue(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isProcessing: false,
+        isStreaming: false,
+      }) as never,
+    );
+    agentsApi.getConversation.mockResolvedValue({
+      messages: [userTurn],
+      truncated: false,
+      totalMessages: 1,
+      nextToken: null,
+    } as never);
+
+    await loadChatTranscript(agentId);
+
+    // The ghost partial is evicted — only the persisted row remains.
+    const after = selectAgentMessages.select(appStore.state, agentId);
+    expect(after.map((m) => m.id)).toEqual(["gu1"]);
+
+    // Runtime-flag convergence (monorepo#1250): the pre-fetch crash-orphaned
+    // pair meets an authoritatively idle snapshot, so the explicit-false
+    // flags win over the upsert pair-guard and the responding indicator dies.
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.isStreaming).toBe(false);
+    expect(stored?.isProcessing).toBe(false);
+    expect(stored?.isResponding).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+  });
+
+  // Designed race (monorepo#1250 non-goal): a turn that starts WHILE the
+  // transcript read is in flight must keep its runtime flags — the idle
+  // snapshot the read fetched predates the send and is stale for these
+  // ephemeral flags. Only a pair that predates the fetch may be cleared.
+  it("preserves a turn started during the read (chatSendStarted racing the fetch)", async () => {
+    const agentId = "agent-race-send-during-read";
+    let resolveGet!: (value: unknown) => void;
+    agentsApi.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGet = resolve;
+      }) as never,
+    );
+    agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
+
+    const load = loadChatTranscript(agentId);
+    // The send begins while agent.get is in flight: the pair is set now.
+    appStore.dispatch(chatSendStarted(agentId, WS));
+    // The fetched snapshot predates the send, so it reports idle.
+    resolveGet(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isProcessing: false,
+        isStreaming: false,
+      }),
+    );
+    await load;
+
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.isStreaming).toBe(true);
+    expect(stored?.isProcessing).toBe(true);
   });
 
   it("does not resurrect a finalized turn: fetched persisted row with the same id wins over the stale streaming copy", async () => {

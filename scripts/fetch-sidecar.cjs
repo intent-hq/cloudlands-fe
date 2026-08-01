@@ -11,7 +11,9 @@
  *   INTENTD_READ_PAT / GH_TOKEN / GITHUB_TOKEN  auth token (required while the
  *                                               intentd repo is private)
  *   INTENTD_VERSION   override the pinned version
- *   INTENTD_TARGET    override the cargo-dist target triple (cross-staging)
+ *   INTENTD_TARGET    override the cargo-dist target triple (cross-staging, e.g. the
+ *                     linux-arm64 sidecar on an x64 runner); must be one of the
+ *                     TARGET_BY_PLATFORM_ARCH values in fetch-sidecar-lib.mjs
  *   INTENTD_REPO      override the source repo (default intent-hq/intentd)
  *   INTENTD_APP_NAME  override the cargo-dist app/binary name (testing only)
  *
@@ -133,8 +135,10 @@ async function main() {
   const version =
     process.env.INTENTD_VERSION?.trim().replace(/^v/, '') ||
     lib.parseVersionPin(fs.readFileSync(PIN_FILE, 'utf8'));
-  const target =
-    process.env.INTENTD_TARGET?.trim() || lib.resolveTarget(process.platform, process.arch);
+  const targetOverride = process.env.INTENTD_TARGET?.trim();
+  const target = targetOverride
+    ? lib.validateTargetOverride(targetOverride)
+    : lib.resolveTarget(process.platform, process.arch);
   const appName = process.env.INTENTD_APP_NAME?.trim() || lib.INTENTD_APP_NAME;
   const binaryName = lib.sidecarBinaryName(target, appName);
   const destBin = path.join(DEST_DIR, binaryName);

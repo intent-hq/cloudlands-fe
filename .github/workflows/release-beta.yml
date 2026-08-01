@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: read
+  # Needed by the notifier step's `gh pr view` calls (GH_TOKEN=github.token)
+  pull-requests: read
 
 # Never cancel a release in progress
 concurrency:
@@ -20,9 +22,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  beta-release:
-    runs-on: macos-14
-    timeout-minutes: 90
+  # Tag resolution/validation, the package.json version check, and the
+  # duplicate-release guard run once here; every build job depends on it and
+  # the publish job consumes its tag/version outputs.
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
 
     steps:
       # Tags are created by release-please when its Release PR merges; this resolves
@@ -78,15 +86,6 @@ jobs:
           ref: refs/tags/${{ steps.release.outputs.tag }}
           token: ${{ steps.token.outputs.token }}
 
-      # The tag commit exists on origin, so release notes can use its SHA with the
-      # compare API
-      - name: Capture fe SHA for release notes
-        id: fe_info
-        run: |
-          FE_SHA=$(git rev-parse HEAD)
-          echo "sha=${FE_SHA}" >> "$GITHUB_OUTPUT"
-          echo "Captured fe SHA (tag commit): ${FE_SHA}"
-
       # Guards against tags not created by release-please: release-please tags the
       # version-bump commit, so the tag and package.json always agree
       - name: Verify tag matches package.json version
@@ -122,10 +121,28 @@ jobs:
             exit 1
           fi
 
+  # Each build job checks out the resolved tag, stages its pinned intentd
+  # sidecar, builds via the platform dist:* script, and uploads its
+  # dist-electron release assets as a workflow artifact for the publish job.
+  build-macos:
+    needs: resolve
+    runs-on: macos-14
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
+          # Per-runner-instance dest: concurrent self-hosted slots share $HOME
+          # and race on the default ~/setup-pnpm (monorepo#1239). The action
+          # expands ~ via os.homedir(), so this is safe on Windows too.
+          dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
         # No cache: 'pnpm' — dropped in #553 for the self-hosted runner;
@@ -146,17 +163,6 @@ jobs:
             exit 1
           fi
           echo "INTENTD_READ_PAT is configured"
-
-      - name: Read pinned intentd version
-        id: intentd_pin
-        run: |
-          INTENTD_VERSION=$(node --input-type=module -e "
-            import { readFileSync } from 'node:fs';
-            import { parseVersionPin } from './scripts/fetch-sidecar-lib.mjs';
-            console.log(parseVersionPin(readFileSync('intentd.version', 'utf8')));
-          ")
-          echo "version=${INTENTD_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Pinned intentd version: ${INTENTD_VERSION}"
 
       # Downloads the pinned intentd release asset, verifies its sha256, and stages
       # the binary at resources/sidecar/intentd. Fails fast with a clear error when
@@ -232,13 +238,324 @@ jobs:
           echo "Built artifacts:"
           find dist-electron -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" -o -name "latest-mac.yml" \) -exec ls -lh {} \;
 
+      - name: Upload macOS release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-macos
+          path: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/*.blockmap
+            dist-electron/latest-mac.yml
+          retention-days: 7
+          if-no-files-found: error
+
+      # Always delete the temporary signing keychain, restore the pre-job
+      # keychain search list, and shred the decoded certificate so no signing
+      # material outlives the job (runs on failure and cancellation too).
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          # Restore the exact search list captured by the import step. If
+          # that file is absent the import step never ran, so the search
+          # list was never modified and must be left alone.
+          if [ -f "$RUNNER_TEMP/keychain-list.orig" ]; then
+            KEYCHAINS=()
+            while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
+            security list-keychains -d user -s "${KEYCHAINS[@]}"
+          fi
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+  # Unsigned Windows build: INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING is
+  # deliberately not set, so scripts/windows-sign.cjs skips silently
+  # (integrated DigiCert signing is a tracked follow-up). Modeled on
+  # intent-manual-windows-build.yml.
+  build-windows:
+    needs: resolve
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+
+      # On the self-hosted Windows runner C:\WINDOWS\system32\bash.EXE (the
+      # WSL stub) shadows Git Bash in PATH, and WSL bash can't execute the
+      # runner's Windows-path step scripts. Prepend Git's bin dir so every
+      # later `shell: bash` step resolves Git Bash instead (same workaround
+      # as intent-manual-windows-build.yml).
+      - name: Put Git Bash first on PATH
+        shell: cmd
+        run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          # Per-runner-instance dest (see build-macos).
+          dest: ~/setup-pnpm-${{ runner.name }}
+
+      - name: Setup Node.js
+        # No cache: 'pnpm' — the self-hosted runner is non-ephemeral, so the
+        # local pnpm store persists between runs and the GH Actions cache
+        # tarball round-trip would only add network time.
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate INTENTD_READ_PAT secret
+        shell: bash
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: |
+          if [ -z "$INTENTD_READ_PAT" ]; then
+            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
+            exit 1
+          fi
+          echo "INTENTD_READ_PAT is configured"
+
+      # Downloads the pinned intentd release asset, verifies its sha256, and
+      # stages the binary at resources/sidecar/intentd.exe.
+      - name: Fetch pinned intentd sidecar
+        shell: bash
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: node scripts/fetch-sidecar.cjs
+
+      # The self-hosted runner is non-ephemeral; drop build output left by a
+      # previous run so the artifact upload can't pick up stale files.
+      - name: Clean previous build output
+        shell: bash
+        run: rm -rf dist-electron
+
+      # Same rationale as the macOS job: keeps the workflow_dispatch fallback
+      # able to rebuild older tags (intent-hq/monorepo#1046).
+      - name: Generate i18n catalog
+        shell: bash
+        run: pnpm run generate:i18n
+
+      - name: Build and package Windows app
+        shell: pwsh
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
+          # detects the pre-staged binary and leaves it in place.
+          INTENTD_BIN: ${{ github.workspace }}\resources\sidecar\intentd.exe
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pnpm run dist:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: List built artifacts
+        shell: bash
+        run: |
+          echo "Built artifacts:"
+          find dist-electron -maxdepth 1 -type f \( -name "*.exe" -o -name "*.blockmap" -o -name "latest.yml" \) -exec ls -lh {} \;
+
+      - name: Upload Windows release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.exe.blockmap
+            dist-electron/latest.yml
+          retention-days: 7
+          if-no-files-found: error
+
+  build-linux:
+    needs: resolve
+    strategy:
+      # Let the other arch finish (and report) even when one fails; the
+      # publish gate still fails the release if either arch is missing.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+            intentd_target: x86_64-unknown-linux-musl
+          # arm64 builds natively on the self-hosted arm64 Linux runner. If it
+          # is unavailable, fall back to cross-building by switching `runner`
+          # to ubuntu-latest — INTENTD_TARGET is set explicitly below, so the
+          # staged intentd matches the package arch regardless of the host.
+          - arch: arm64
+            runner: [self-hosted, Linux, ARM64, comfy]
+            intentd_target: aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          # Per-runner-instance dest (see build-macos).
+          dest: ~/setup-pnpm-${{ runner.name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate INTENTD_READ_PAT secret
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: |
+          if [ -z "$INTENTD_READ_PAT" ]; then
+            echo "::error::INTENTD_READ_PAT secret is required to fetch the pinned intentd release"
+            exit 1
+          fi
+          echo "INTENTD_READ_PAT is configured"
+
+      - name: Fetch pinned intentd sidecar
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          # Always pass the explicit target (rather than deriving it from the
+          # host) so the staged intentd matches the package arch, including
+          # when cross-building.
+          INTENTD_TARGET: ${{ matrix.intentd_target }}
+        run: node scripts/fetch-sidecar.cjs
+
+      # The arm64 runner is non-ephemeral; drop build output left by a
+      # previous run so the artifact upload can't pick up stale files
+      # (no-op on ephemeral hosted runners).
+      - name: Clean previous build output
+        run: rm -rf dist-electron
+
+      # Same rationale as the macOS job: keeps the workflow_dispatch fallback
+      # able to rebuild older tags (intent-hq/monorepo#1046).
+      - name: Generate i18n catalog
+        run: pnpm run generate:i18n
+
+      # electron-builder builds only the matrix arch (x64 emits
+      # latest-linux.yml; arm64 emits latest-linux-arm64.yml).
+      - name: Build and package Linux app
+        run: pnpm run dist:linux --${{ matrix.arch }}
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
+          # detects the pre-staged binary and leaves it in place.
+          INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List built artifacts
+        run: |
+          echo "Built artifacts:"
+          find dist-electron -maxdepth 1 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.blockmap" -o -name "latest-linux*.yml" \) -exec ls -lh {} \;
+
+      - name: Upload Linux release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: |
+            dist-electron/*.AppImage
+            dist-electron/*.deb
+            dist-electron/*.blockmap
+            dist-electron/latest-linux*.yml
+          retention-days: 7
+          if-no-files-found: error
+
+  # Single publish gate: it needs every build job, so a failed build on any
+  # platform fails the whole release and nothing is partially published.
+  publish:
+    needs: [resolve, build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # Use RELEASE_PAT to publish to cloudlands-releases. Secrets can't cross
+      # job boundaries via outputs, so this step is repeated from resolve.
+      - name: Configure git token
+        id: token
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+          FALLBACK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_PAT" ]; then
+            echo "token=$RELEASE_PAT" >> "$GITHUB_OUTPUT"
+            echo "Using RELEASE_PAT for git operations and release publishing"
+          else
+            echo "::error::RELEASE_PAT secret is required for this workflow"
+            exit 1
+          fi
+
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+
+      # The tag commit exists on origin, so release notes can use its SHA with the
+      # compare API
+      - name: Capture fe SHA for release notes
+        id: fe_info
+        run: |
+          FE_SHA=$(git rev-parse HEAD)
+          echo "sha=${FE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Captured fe SHA (tag commit): ${FE_SHA}"
+
+      # The release-notes and version-pin scripts used below are
+      # dependency-free (node builtins only), so no pnpm install is needed.
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Read pinned intentd version
+        id: intentd_pin
+        run: |
+          INTENTD_VERSION=$(node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            import { parseVersionPin } from './scripts/fetch-sidecar-lib.mjs';
+            console.log(parseVersionPin(readFileSync('intentd.version', 'utf8')));
+          ")
+          echo "version=${INTENTD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Pinned intentd version: ${INTENTD_VERSION}"
+
+      - name: Download platform release assets
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: dist-electron
+          merge-multiple: true
+
+      - name: Verify collected release assets
+        run: |
+          echo "Collected release assets:"
+          ls -lh dist-electron/
+          MISSING=""
+          for FEED in latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml; do
+            if [ ! -f "dist-electron/$FEED" ]; then
+              MISSING="${MISSING:+$MISSING, }$FEED"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing auto-updater feed(s) in downloaded artifacts: $MISSING"
+            exit 1
+          fi
+
       - name: Find previous release
         id: prev_release
         env:
           # RELEASE_PAT has repo scope on cloudlands-releases; keeps INTENTD_READ_PAT
           # scoped to downloading intentd release assets only
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          VERSION: ${{ steps.release.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           # Find the previous versioned release (highest vX.Y.Z tag strictly less than current version)
           # Node.js performs portable semver comparison (BSD sort lacks -V)
@@ -336,7 +653,7 @@ jobs:
           # it for the compare API and fails soft (pin-only notes) if it is missing
           # or the compare is unavailable.
           INTENTD_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
-          VERSION: ${{ steps.release.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_VERSION: ${{ steps.intentd_pin.outputs.version }}
           INTENTD_BASE: ${{ steps.prev_intentd.outputs.version }}
@@ -375,7 +692,7 @@ jobs:
       - name: Publish to GitHub Releases (versioned tag)
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          VERSION: ${{ steps.release.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           # Create an immutable versioned release on intent-hq/cloudlands-releases
           gh release create "v${VERSION}" \
@@ -386,14 +703,20 @@ jobs:
             --prerelease \
             dist-electron/*.dmg \
             dist-electron/*.zip \
+            dist-electron/*.exe \
+            dist-electron/*.AppImage \
+            dist-electron/*.deb \
             dist-electron/*.blockmap \
             dist-electron/latest-mac.yml \
+            dist-electron/latest.yml \
+            dist-electron/latest-linux.yml \
+            dist-electron/latest-linux-arm64.yml \
             release-manifest.json
 
       - name: Publish to GitHub Releases (rolling beta tag)
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          VERSION: ${{ steps.release.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           # Ensure the rolling 'beta' release tag exists
           if ! gh release view beta --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
@@ -417,20 +740,66 @@ jobs:
           gh release upload beta --repo intent-hq/cloudlands-releases \
             dist-electron/*.dmg \
             dist-electron/*.zip \
+            dist-electron/*.exe \
+            dist-electron/*.AppImage \
+            dist-electron/*.deb \
             dist-electron/*.blockmap \
-            dist-electron/latest-mac.yml
+            dist-electron/latest-mac.yml \
+            dist-electron/latest.yml \
+            dist-electron/latest-linux.yml \
+            dist-electron/latest-linux-arm64.yml
 
           # Update beta release body to match versioned release notes
           gh release edit beta --repo intent-hq/cloudlands-releases \
             --notes-file release-notes.md
 
+      # Comments on the intent-hq/monorepo issues fixed in this release. Fail-soft:
+      # skips with a warning when MONOREPO_ISSUES_TOKEN is absent, and never blocks
+      # the release (continue-on-error). The marker check inside the script makes
+      # workflow_dispatch rebuilds of an existing tag no-ops (no duplicate comments).
+      - name: Notify fixed monorepo issues
+        continue-on-error: true
+        env:
+          ISSUES_GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
+          INTENTD_PIN: ${{ steps.intentd_pin.outputs.version }}
+        run: |
+          if [ -z "$ISSUES_GH_TOKEN" ]; then
+            echo "::warning::MONOREPO_ISSUES_TOKEN secret is not set; skipping issue notifications"
+            exit 0
+          fi
+          if [ -z "$PREV_FE_TAG" ]; then
+            echo "::warning::No previous versioned release found; skipping issue notifications"
+            exit 0
+          fi
+          # The checkout is shallow (fetch-depth 1); the notifier needs the
+          # commit range and both tags to walk it
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --quiet --unshallow --tags origin
+          else
+            git fetch --quiet --tags origin
+          fi
+          # Prefer the intentdVersion published in this release's manifest
+          # (authoritative); fall back to the intentd.version pin
+          BUNDLED_INTENTD=$(jq -r '.intentdVersion // empty' release-manifest.json 2>/dev/null || echo "")
+          BUNDLED_INTENTD="${BUNDLED_INTENTD:-$INTENTD_PIN}"
+          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" beta \
+            "${PREV_FE_TAG}" "v${VERSION}" "${BUNDLED_INTENTD}"
+
       - name: Post summary
         env:
-          VERSION: ${{ steps.release.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          # Derive actual DMG filename from dist-electron and URL-encode it
+          # Derive actual artifact filenames from dist-electron and URL-encode
+          # them (nsis installers contain "Setup"; portable exes do not)
+          encode() { printf '%s' "$1" | jq -sRr @uri; }
           DMG_FILE=$(find dist-electron -maxdepth 1 -name "*.dmg" -exec basename {} \; -quit)
-          DMG_ENCODED=$(printf '%s' "$DMG_FILE" | jq -sRr @uri)
+          EXE_FILE=$(find dist-electron -maxdepth 1 -name "*Setup*.exe" -exec basename {} \; -quit)
+          APPIMAGE_X64=$(find dist-electron -maxdepth 1 -name "*.AppImage" ! -name "*arm64*" -exec basename {} \; -quit)
+          APPIMAGE_ARM64=$(find dist-electron -maxdepth 1 -name "*arm64*.AppImage" -exec basename {} \; -quit)
+          BETA_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta"
           {
             echo "## Beta Release"
             echo ""
@@ -439,28 +808,13 @@ jobs:
             echo "**Channel:** beta"
             echo ""
             echo "### Download URLs"
-            echo "- [Apple Silicon Mac (DMG)](https://github.com/intent-hq/cloudlands-releases/releases/download/beta/$DMG_ENCODED)"
-            echo "- [Auto-updater feed](https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml)"
+            echo "- [Apple Silicon Mac (DMG)]($BETA_URL/$(encode "$DMG_FILE"))"
+            echo "- [Windows x64 installer (EXE, unsigned)]($BETA_URL/$(encode "$EXE_FILE"))"
+            echo "- [Linux x64 (AppImage)]($BETA_URL/$(encode "$APPIMAGE_X64"))"
+            echo "- [Linux arm64 (AppImage)]($BETA_URL/$(encode "$APPIMAGE_ARM64"))"
+            echo "- Auto-updater feeds: [latest-mac.yml]($BETA_URL/latest-mac.yml), [latest.yml]($BETA_URL/latest.yml), [latest-linux.yml]($BETA_URL/latest-linux.yml), [latest-linux-arm64.yml]($BETA_URL/latest-linux-arm64.yml)"
             echo ""
             echo "### Releases"
             echo "- [Versioned release](https://github.com/intent-hq/cloudlands-releases/releases/tag/v$VERSION)"
             echo "- [Rolling beta channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/beta)"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      # Always delete the temporary signing keychain, restore the pre-job
-      # keychain search list, and shred the decoded certificate so no signing
-      # material outlives the job (runs on failure and cancellation too).
-      - name: Clean up signing keychain
-        if: always()
-        run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
-          # Restore the exact search list captured by the import step. If
-          # that file is absent the import step never ran, so the search
-          # list was never modified and must be left alone.
-          if [ -f "$RUNNER_TEMP/keychain-list.orig" ]; then
-            KEYCHAINS=()
-            while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
-            security list-keychains -d user -s "${KEYCHAINS[@]}"
-          fi
-          rm -f "$RUNNER_TEMP/certificate.p12"
