@@ -19,6 +19,7 @@
   selectAgentSessionStreamingContent,
   selectAgentIsWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
   deleteAgentWithUndoRequested,
   ensureAgentSessionLoaded,
@@ -380,6 +381,9 @@
   // Streaming state is derived from Redux-owned stream lifecycle/message state.
   const streamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const hasStreamOwnedMessage$ = selectAgentSessionHasStreamOwnedMessage(agentIdStore);
+  // Per-turn "response text landed this turn" flag (chat-state): reset by
+  // `agent:stream:end`, flipped by the first text-bearing activity ping.
+  const receivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const streamingBuffer = $derived($streamingContent$);
   const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 
@@ -430,8 +434,11 @@
   //   2. the session's push-applied `lastAgentResponse` (refreshed ~1s by
   //      `agent:stream:activity`, intentd#792) so a non-viewed watched
   //      agent's preview advances mid-turn instead of freezing on stale
-  //      transcript-derived peek text — absent only pre-first-token, when
-  //      there is simply no text to preview yet;
+  //      transcript-derived peek text — gated on the per-turn
+  //      `receivedFirstChunk` flag (reset by `agent:stream:end`, flipped by
+  //      a text-bearing `agent:stream:activity`) so a leftover previous-turn
+  //      `lastAgentResponse` doesn't masquerade as this turn's text in the
+  //      pre-first-token window;
   //   3. the persisted transcript peek text (idle agents).
   // Tool previews (lastToolUse) only kick in when there's no text to show.
   const liveResponseLine = $derived.by(() => {
@@ -439,7 +446,7 @@
       const line = getLastMeaningfulLine(streamingBuffer);
       if (line) return line;
     }
-    if ($agentIsResponding$ && $agent$?.lastAgentResponse) {
+    if ($agentIsResponding$ && $receivedFirstChunk$ && $agent$?.lastAgentResponse) {
       const line = getLastMeaningfulLine($agent$.lastAgentResponse);
       if (line) return line;
     }

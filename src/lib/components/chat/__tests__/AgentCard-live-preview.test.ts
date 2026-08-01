@@ -20,6 +20,7 @@ import {
   removeSession,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { streamActivityReceived } from '$store/renderer/slices/chat-state/chat-state-slice';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
@@ -74,6 +75,7 @@ describe('AgentCard live preview precedence', () => {
       isStreaming: true,
       messages: [assistantMessage('stale persisted text from last turn')],
     });
+    appStore.dispatch(streamActivityReceived(agentId, true));
     appStore.dispatch(
       updateSession(agentId, { lastAgentResponse: 'fresh mid-turn activity text' }),
     );
@@ -235,6 +237,9 @@ describe('AgentCard user-message-newest preview (freshness wins)', () => {
       lastUserMessage: 'just sent this',
       lastMessageRole: 'user',
     });
+    // Text-bearing activity ping: flips the per-turn receivedFirstChunk flag
+    // and push-applies the fresh response text.
+    appStore.dispatch(streamActivityReceived(agentId, true));
     appStore.dispatch(updateSession(agentId, { lastAgentResponse: 'streaming text now' }));
 
     render(AgentCard, { props: { agentId } });
@@ -242,6 +247,26 @@ describe('AgentCard user-message-newest preview (freshness wins)', () => {
     const preview = await screen.findByTestId('agent-card-preview');
     expect(preview.textContent).toContain('streaming text now');
     expect(preview.textContent).not.toContain('just sent this');
+  });
+
+  it('keeps the user first line on turn 2 despite a leftover previous-turn lastAgentResponse', async () => {
+    // Regression: nothing clears the session's push-applied lastAgentResponse
+    // at turn start, so pre-first-token the per-turn receivedFirstChunk flag
+    // (reset by agent:stream:end) is what distinguishes leftover text from
+    // text streamed this turn.
+    seedSession({
+      isStreaming: true,
+      messages: [],
+      lastUserMessage: 'second turn question',
+      lastMessageRole: 'user',
+      lastAgentResponse: 'final text from turn one',
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('second turn question');
+    expect(preview.textContent).not.toContain('final text from turn one');
   });
 
   it('resumes the agent-side preview once the assistant reply lands (lastMessageRole flips)', async () => {
