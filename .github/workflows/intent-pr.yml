@@ -15,12 +15,12 @@ env:
   # Burst the heavy jobs to GH-hosted larger runners when more than this many
   # self-hosted Linux jobs are queued/running ahead of this run (see the route
   # job). Jobs still blocked on `needs` are invisible to the jobs API, so a
-  # queued run ahead of us may undercount — one fully queued PR run is already
-  # enough to clear this threshold, which is intended: it means tinybox is at
-  # least one full run behind. Bursted jobs don't carry the self-hosted+Linux
+  # queued run ahead of us may undercount — with 8 tinybox slots, clearing
+  # this threshold means every slot is occupied and a genuine backlog is
+  # queued behind them. Bursted jobs don't carry the self-hosted+Linux
   # labels and stop counting toward the depth, so the system naturally falls
   # back to tinybox as it frees up.
-  LINUX_BURST_THRESHOLD: 2
+  LINUX_BURST_THRESHOLD: 8
 
 jobs:
   # Decides where the heavy jobs (checks / build-web / test) run: the local
@@ -63,10 +63,10 @@ jobs:
             // (documented OOM history, monorepo#1074), and 32 GB clears its
             // 16 GB Node heap cap comfortably.
             const burst = ["gh-linux-8x"];
-            const threshold = parseInt(process.env.THRESHOLD || "2", 10);
+            const threshold = parseInt(process.env.THRESHOLD || "8", 10);
             // Count self-hosted Linux jobs that are queued or running in
-            // queued/in-progress runs: a running job occupies the single
-            // tinybox slot just as much as a queued one. GH-hosted jobs —
+            // queued/in-progress runs: a running job occupies a tinybox
+            // slot just as much as a queued one. GH-hosted jobs —
             // including this route job and bursted heavy jobs — don't match
             // the self-hosted+Linux label filter, so they never inflate the
             // depth.
@@ -165,9 +165,10 @@ jobs:
 
   # Consolidated typecheck + lint job. Previously four separate ubuntu-latest
   # jobs (typecheck-renderer, typecheck-main, typecheck-preload,
-  # static-checks); on the single-slot self-hosted Linux runner they would
-  # queue serially, each paying its own checkout + pnpm install. One job on
-  # the 64-core box runs the shared setup once and all checks back-to-back.
+  # static-checks); as separate self-hosted jobs each would pay its own
+  # checkout + pnpm install (and queue serially in the single-slot era).
+  # One job on the 64-core box runs the shared setup once and all checks
+  # back-to-back.
   checks:
     name: Type Check & Lint
     needs: route
@@ -309,10 +310,10 @@ jobs:
           echo "✓ dist/web/index.html present."
 
   test:
-    # Unsharded on the single-slot self-hosted Linux runner (tinybox): shards
-    # would just queue serially on it, so one job avoids the extra
-    # checkout/install overhead — vitest parallelism uses the 64 cores
-    # within the single job.
+    # Unsharded on the self-hosted Linux runner (tinybox): shards would each
+    # pay their own checkout/install overhead (and queued serially in the
+    # single-slot era), so one job stays cheaper — vitest parallelism uses
+    # the 64 cores within the single job.
     name: Unit Tests
     needs: route
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
