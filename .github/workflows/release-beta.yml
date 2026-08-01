@@ -139,6 +139,10 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
+          # Per-runner-instance dest: concurrent self-hosted slots share $HOME
+          # and race on the default ~/setup-pnpm (monorepo#1239). The action
+          # expands ~ via os.homedir(), so this is safe on Windows too.
+          dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
         # No cache: 'pnpm' — dropped in #553 for the self-hosted runner;
@@ -292,6 +296,8 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
+          # Per-runner-instance dest (see build-macos).
+          dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
         # No cache: 'pnpm' — the self-hosted runner is non-ephemeral, so the
@@ -396,6 +402,8 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
+          # Per-runner-instance dest (see build-macos).
+          dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
