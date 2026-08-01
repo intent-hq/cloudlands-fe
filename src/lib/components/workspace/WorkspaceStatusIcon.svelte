@@ -2,6 +2,7 @@
   WorkspaceStatusIcon - Compact SVG-based workspace status indicator
 
   Displays a circular icon that represents workspace status:
+  - needs_attention: Filled circle with exclamation mark (amber)
   - not_started: Empty outline circle (gray)
   - idle: Empty outline circle (gray)
   - in_progress: Half-filled circle (blue)
@@ -32,6 +33,7 @@
     WorkspaceDisplayStatus,
     { stroke: string; fill: string; innerCircleRPercentage: number }
   > = {
+    needs_attention: { stroke: '#F59E0B', fill: '#F59E0B', innerCircleRPercentage: 100 },
     not_started: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
     idle: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
     in_progress: { stroke: '#00BCFF', fill: '#00BCFF', innerCircleRPercentage: 55 },
@@ -42,6 +44,9 @@
   };
 
   const statusLabels: Record<WorkspaceDisplayStatus, string> = {
+    get needs_attention() {
+      return m.workspace_statusIcon_needsAttention_label();
+    },
     get not_started() {
       return m.workspace_statusIcon_notStarted_label();
     },
@@ -115,6 +120,18 @@
         fill="none"
         transition:draw={{ duration: 300 }}
       />
+    {:else if status === 'needs_attention'}
+      <!-- Filled circle with exclamation mark -->
+      <g transition:scale={{ duration: 300 }}>
+        <path
+          d="M12 6.5V13.5"
+          stroke="white"
+          stroke-width="3.5"
+          stroke-linecap="round"
+          fill="none"
+        />
+        <circle cx="12" cy="17.5" r="1.75" fill="white" />
+      </g>
     {:else if status === 'pr_open'}
       <!-- PR open icon (pull request symbol) -->
       <g transition:scale={{ duration: 300 }}>
