@@ -260,6 +260,14 @@ export interface AgentSession {
   stopReason?: string | null;
 
   /**
+   * ISO timestamp of when the latest terminal stop/failure occurred.
+   * Accompanies `stopReason`; exposed top-level on the full session projection
+   * and under `metadata` on `AgentLite` (agent.list / agent.get). Rendered
+   * verbatim — used for "failed X ago" displays.
+   */
+  stopReasonTimestamp?: string | null;
+
+  /**
    * Derived corrupted/poisoned-session flag (monorepo#940). Present (`true`)
    * only when the session is parked in `error` and the failure classifies as
    * session-fatal — `agent.retry` will recreate the provider session instead

@@ -974,12 +974,17 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
     typeof data.workspaceId === 'string' && data.workspaceId.length > 0
       ? data.workspaceId
       : workspaceId;
+  // Prefer the payload's own timestamp, falling back to the event envelope's.
+  const rawTimestamp = typeof data.timestamp === 'string' ? data.timestamp : event.timestamp;
+  const timestamp =
+    typeof rawTimestamp === 'string' && rawTimestamp.length > 0 ? rawTimestamp : undefined;
   void showAgentAttentionToast({
     workspaceId: targetWorkspaceId,
     agentId,
     agentName,
     kind,
     reason,
+    timestamp,
   });
 }
 

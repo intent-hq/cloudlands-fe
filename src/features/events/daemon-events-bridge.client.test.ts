@@ -2877,6 +2877,8 @@ describe('daemonEventsBridge (attention flow — agent:attention-requested → s
       agentName: 'Implementor',
       kind: 'discussion',
       reason: 'Need a decision on the API shape',
+      // Envelope timestamp (the payload carries no timestamp of its own).
+      timestamp: '2026-01-02T00:00:00.000Z',
     });
   });
 
@@ -2902,6 +2904,7 @@ describe('daemonEventsBridge (attention flow — agent:attention-requested → s
       agentName: 'Verifier',
       kind: 'blocker',
       reason: 'Blocked: main branch is broken',
+      timestamp: '2026-01-02T00:00:00.000Z',
     });
   });
 

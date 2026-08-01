@@ -17,6 +17,7 @@
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import { Spinner } from '$lib/components/ui/indicators';
+  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { deriveErrorDisplay, formatDuration } from './streaming-status-utils';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -38,6 +39,8 @@
      * error surface shows recreate-aware copy instead of the raw error.
      */
     sessionCorrupted?: boolean;
+    /** ISO timestamp of when the failure occurred - renders a live "failed X ago" */
+    failedAt?: string | null;
     /** Model unavailable info - when set, shows retry with suggested model */
     modelUnavailable?: {
       failedModel: string;
@@ -71,6 +74,7 @@
     streamingContentLength = 0,
     error = null,
     sessionCorrupted = false,
+    failedAt = null,
     modelUnavailable = null,
     statusEvents = [],
     streamingStartTime = null,
@@ -256,7 +260,13 @@
         {:else if status === 'error' && errorDisplay}
           <Fa icon={faExclamationTriangle} class="text-destructive-foreground/70 shrink-0" />
           <div class="flex flex-col gap-0.5">
-            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title">{errorDisplay.title}</span>
+            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title"
+              >{errorDisplay.title}{#if failedAt}
+                <span class="text-destructive-foreground/60 text-xs font-normal" data-testid="error-failed-at">
+                  <!-- i18n-ignore (punctuation separator) -->
+                  · <RelativeTime date={failedAt} />
+                </span>
+              {/if}</span>
             <span class="text-destructive-foreground text-sm" data-testid="error-message">{errorDisplay.message}</span>
             {#if errorDisplay.detail}
               <span class="text-destructive-foreground/60 text-xs" data-testid="error-detail">{errorDisplay.detail}</span>

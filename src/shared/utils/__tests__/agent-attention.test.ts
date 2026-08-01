@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getAgentAttentionRequest } from '../agent-attention';
+import { getAgentAttentionRequest, getAgentStopReasonTimestamp } from '../agent-attention';
 
 describe('getAgentAttentionRequest', () => {
   it('derives a discussion request from top-level session fields', () => {
@@ -93,5 +93,38 @@ describe('getAgentAttentionRequest', () => {
         attentionRequestTimestamp: '',
       }),
     ).toEqual({ kind: 'discussion', reason: undefined, timestamp: undefined });
+  });
+});
+
+describe('getAgentStopReasonTimestamp', () => {
+  it('reads the top-level session field', () => {
+    expect(
+      getAgentStopReasonTimestamp({ stopReasonTimestamp: '2026-07-30T10:00:00Z' }),
+    ).toBe('2026-07-30T10:00:00Z');
+  });
+
+  it('falls back to AgentLite metadata', () => {
+    expect(
+      getAgentStopReasonTimestamp({
+        metadata: { stopReasonTimestamp: '2026-07-30T11:00:00Z' },
+      }),
+    ).toBe('2026-07-30T11:00:00Z');
+  });
+
+  it('prefers top-level over metadata', () => {
+    expect(
+      getAgentStopReasonTimestamp({
+        stopReasonTimestamp: '2026-07-30T10:00:00Z',
+        metadata: { stopReasonTimestamp: '2026-07-30T11:00:00Z' },
+      }),
+    ).toBe('2026-07-30T10:00:00Z');
+  });
+
+  it('returns null when unknown, empty, or non-string', () => {
+    expect(getAgentStopReasonTimestamp({})).toBeNull();
+    expect(getAgentStopReasonTimestamp({ stopReasonTimestamp: '' })).toBeNull();
+    expect(getAgentStopReasonTimestamp({ stopReasonTimestamp: 123 })).toBeNull();
+    expect(getAgentStopReasonTimestamp(null)).toBeNull();
+    expect(getAgentStopReasonTimestamp(undefined)).toBeNull();
   });
 });
