@@ -652,6 +652,116 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('stop boom');
   });
 
+  it('cancelSubscriptions forwards the unscoped §5.5 request with no optional keys on the wire', async () => {
+    // PROTOCOL §5.5: unscoped agent.cancelSubscriptions takes exactly
+    // `{ agentId, workspaceId }` — a present-but-non-string subscriptionId /
+    // groupId is rejected with -32602, so undefined must never be serialized.
+    backend.onRequest('agent.cancelSubscriptions', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.cancelSubscriptions({ agentId: 'agent-1', workspaceId: 'ws-1' });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.cancelSubscriptions',
+      params: { agentId: 'agent-1', workspaceId: 'ws-1' },
+    });
+  });
+
+  it('cancelSubscriptions forwards subscriptionId scoping (§5.5 scoped watch cancel)', async () => {
+    backend.onRequest('agent.cancelSubscriptions', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    await client.cancelSubscriptions({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      subscriptionId: 'watch-1',
+    });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.cancelSubscriptions',
+      params: { agentId: 'agent-1', workspaceId: 'ws-1', subscriptionId: 'watch-1' },
+    });
+  });
+
+  it('cancelSubscriptions forwards groupId scoping (§5.5 scoped group cancel)', async () => {
+    backend.onRequest('agent.cancelSubscriptions', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    await client.cancelSubscriptions({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      groupId: 'grp-1',
+    });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.cancelSubscriptions',
+      params: { agentId: 'agent-1', workspaceId: 'ws-1', groupId: 'grp-1' },
+    });
+  });
+
+  it('cancelSubscriptions folds an unknown-id -32602 rejection into a non-success result', async () => {
+    // PROTOCOL §5.5: an id that does not name a watch/group owned by agentId
+    // rejects with -32602 BEFORE anything is removed (all-or-nothing).
+    backend.onRequest('agent.cancelSubscriptions', () => {
+      throw new BackendError(
+        buildErrorPayload('INVALID_PARAMS', 'unknown subscription id: watch-missing', {
+          rpcCode: -32602,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.cancelSubscriptions({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      subscriptionId: 'watch-missing',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('unknown subscription id');
+  });
+
+  it('dismissQuestions forwards agent.dismissQuestions with §5.5 params and folds the ack into success', async () => {
+    // PROTOCOL §5.5: agent.dismissQuestions takes `{ agentId, workspaceId,
+    // messageId }` (all required) and returns `{ success: true,
+    // dismissedQuestionsMessageId }`. The daemon persists the marker in
+    // session metadata (survives reload) and emits `agent:updated`.
+    backend.onRequest('agent.dismissQuestions', () => ({
+      success: true,
+      dismissedQuestionsMessageId: 'msg-q1',
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.dismissQuestions({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'msg-q1',
+    });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.dismissQuestions',
+      params: { agentId: 'agent-1', workspaceId: 'ws-1', messageId: 'msg-q1' },
+    });
+  });
+
+  it('dismissQuestions folds a daemon NotFound rejection into {success:false,error} (no throw)', async () => {
+    // Workspace mismatch / unknown agent rejects with NotFound (-32004) per
+    // the §5.5 contract — the mutation seam never throws.
+    backend.onRequest('agent.dismissQuestions', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session agent-x', {
+          rpcCode: -32004,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.dismissQuestions({
+      agentId: 'agent-x',
+      workspaceId: 'ws-1',
+      messageId: 'msg-q1',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
+  });
+
   it('rename forwards agent.rename with §5.5 params and folds the ack into success', async () => {
     // PROTOCOL §5.5: agent.rename takes `{ agentId, name }` (name non-empty)
     // and returns `{ success: true, name }`; an applied rename emits

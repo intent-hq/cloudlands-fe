@@ -16,6 +16,7 @@ import type { HudFeedEntry } from './hud-slice';
 import {
   WORKSPACE_DISPLAY_STATUS_VALUES,
   WorkspaceStatus,
+  isWorkspaceDisplayStatus,
   type WorkspaceDisplayStatus,
   type Workspace,
   type WorkspaceAgentInfo,
@@ -28,7 +29,6 @@ import {
   selectAgentIsWaiting,
 } from '../agent-session/agent-session-selectors';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-import { getWorkspaceGroupingStatus } from '$lib/components/workspace/utils/workspace-status-grouping';
 
 export const selectHudActive = store.createSelector((state) => state.hud.active);
 
@@ -151,8 +151,8 @@ export interface HudWorkspaceStateBars {
 
 /**
  * WORKSPACES panel state bars, bucketed like the mock's `wsCounts` — derived
- * from the card `stateKey` (the sidebar-agreeing grouping derivation plus the
- * HUD attention overlays) so the rollup always agrees with the center grid:
+ * from the card `stateKey` (the verbatim BE displayStatus plus the HUD
+ * attention overlays) so the rollup always agrees with the center grid:
  * the attention states (`wait`/`blocked`/`failed`) bucket as ATTENTION,
  * in_progress/complete as PROGRESS, PR states as PR OPEN / PR MERGED, and
  * everything else (`idle`/`not_started`) as IDLE.
@@ -372,17 +372,12 @@ const ZERO_TASKS = { total: 0, completed: 0, inProgress: 0 };
 
 /**
  * Card state key precedence: a failed live agent wins, then `blocked` /
- * `wait` from the pending attention signals, then the sidebar-agreeing
- * grouping status (`getWorkspaceGroupingStatus`, the same util
- * `AllWorkspacesCard` groups with): running workspaces
- * (`workspace.activity === 'agent_running'` or any running-bucket card
- * agent — the HUD's live agent-session join stands in for the sidebar's
- * streaming tracker) are always `in_progress`; otherwise a BE-sent
- * `displayStatus` renders VERBATIM (`idle` is a wire value since
- * intentd#793 — the daemon owns the idle/in_progress split), and only the
- * absent-displayStatus fallback demotes not-running
- * `in_progress`/`not_started` to `idle`; PR states and `complete` keep
- * their status.
+ * `wait` from the pending attention signals, then the BE-owned
+ * `workspace.displayStatus` rendered VERBATIM (cloudlands-fe#578 — the
+ * daemon owns the derivation including the agent-running promotion and the
+ * idle demotion, intentd#793). Unknown or absent wire values default to
+ * `not_started` so the card never vanishes (same convention as
+ * `AllWorkspacesCard`); there is no local promotion or demotion.
  *
  * The agent-driven states are gated on TOP-LEVEL (delegation-tree root),
  * NON-BACKGROUND agents only — a child or background agent raising a blocker
@@ -407,14 +402,9 @@ function cardStateKey(
   ) {
     return 'wait';
   }
-  const runningAgentIds = agents
-    .filter((agent) => agent.bucket === 'running')
-    .map((agent) => agent.id);
-  return getWorkspaceGroupingStatus(
-    workspace,
-    workspace.displayStatus ?? 'not_started',
-    runningAgentIds,
-  );
+  return isWorkspaceDisplayStatus(workspace.displayStatus)
+    ? workspace.displayStatus
+    : 'not_started';
 }
 
 const LIVE_BUCKETS: ReadonlySet<HudAgentStateBucket> = new Set(['running', 'waiting', 'failed']);

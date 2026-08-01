@@ -1308,6 +1308,7 @@ describe('NotificationService chief-of-staff special-case', () => {
     expect(mockNotificationInstances[0].opts).toEqual({
       title: 'Assistant — Morning planning',
       body: 'Finished',
+      id: `${CHIEF_WORKSPACE_ID}:chief-agent-1`,
     });
     // The chief workspace is virtual — no workspace title lookup.
     expect(workspaceService.getWorkspace).not.toHaveBeenCalled();
@@ -1325,6 +1326,7 @@ describe('NotificationService chief-of-staff special-case', () => {
     expect(mockNotificationInstances[0].opts).toEqual({
       title: `Assistant — ${'a'.repeat(37)}...`,
       body: 'Finished',
+      id: `${CHIEF_WORKSPACE_ID}:chief-agent-1`,
     });
   });
 
@@ -1369,5 +1371,142 @@ describe('NotificationService chief-of-staff special-case', () => {
     expect(onlyWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
       workspaceId: 'workspace-1',
     });
+  });
+});
+
+describe('NotificationService native id-based replacement', () => {
+  function buildIdleEvent(workspaceId = 'workspace-1', agentId = 'agent-self'): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId,
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId,
+        agentName: 'Self Agent',
+        isBackground: false,
+      },
+    } as AgentIdleEvent;
+  }
+
+  function createMockWindow(id: number) {
+    return {
+      id,
+      webContents: { send: vi.fn(), isDestroyed: () => false },
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => false,
+      isDestroyed: () => false,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([]);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(undefined);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([] as never);
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
+  });
+
+  it('constructs agent-idle notifications with id = `workspaceId:agentId`', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('workspace-1', 'agent-self'));
+
+    expect(mockNotificationInstances.length).toBe(1);
+    expect(mockNotificationInstances[0].opts).toEqual(
+      expect.objectContaining({ id: 'workspace-1:agent-self' }),
+    );
+  });
+
+  it('repeat idles from the same agent reuse the SAME id (native OS replacement, no manual close)', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(2);
+    const [first, second] = mockNotificationInstances;
+    expect((first.opts as { id?: string }).id).toBe('workspace-1:agent-self');
+    expect((second.opts as { id?: string }).id).toBe('workspace-1:agent-self');
+    // Both notifications were shown — replacement is delegated to the OS via
+    // the shared id, never emulated with close()-before-show.
+    expect(first.show).toHaveBeenCalledTimes(1);
+    expect(second.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('distinct agents and workspaces produce distinct ids (never replace each other)', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('workspace-1', 'agent-a'));
+    await service.handleAgentIdle(buildIdleEvent('workspace-1', 'agent-b'));
+    await service.handleAgentIdle(buildIdleEvent('workspace-2', 'agent-a'));
+
+    expect(mockNotificationInstances.length).toBe(3);
+    const ids = mockNotificationInstances.map((n) => (n.opts as { id?: string }).id);
+    expect(ids).toEqual(['workspace-1:agent-a', 'workspace-1:agent-b', 'workspace-2:agent-a']);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('showTestNotification passes NO id (random-UUID fallback, never replaces)', () => {
+    const onlyWindow = createMockWindow(31);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
+
+    const service = new NotificationService();
+    service.showTestNotification();
+
+    expect(mockNotificationInstances.length).toBe(1);
+    expect(mockNotificationInstances[0].opts).not.toHaveProperty('id');
+  });
+
+  it('evicts the replaced same-id notification from activeNotifications even when the OS never fires close (leak regression)', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    await service.handleAgentIdle(buildIdleEvent());
+    await service.handleAgentIdle(buildIdleEvent());
+
+    // Three same-id idles, no 'close' events at all: only the latest instance
+    // may be retained — replaced ones are evicted at replacement time.
+    expect(mockNotificationInstances.length).toBe(3);
+    expect((service as any).activeNotifications.size).toBe(1);
+    expect((service as any).notificationsById.size).toBe(1);
+
+    // Closing the survivor drains both structures completely.
+    mockNotificationInstances[2].handlers['close']();
+    expect((service as any).activeNotifications.size).toBe(0);
+    expect((service as any).notificationsById.size).toBe(0);
+  });
+
+  it('distinct-id notifications never evict each other from activeNotifications', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('workspace-1', 'agent-a'));
+    await service.handleAgentIdle(buildIdleEvent('workspace-1', 'agent-b'));
+
+    expect((service as any).activeNotifications.size).toBe(2);
+    expect((service as any).notificationsById.size).toBe(2);
+  });
+
+  it('sends the notification:show sound event for EVERY shown notification, including same-id repeats', async () => {
+    const focusedWindow = createMockWindow(32);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(focusedWindow as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([focusedWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(2);
+    const soundCalls = focusedWindow.webContents.send.mock.calls.filter(
+      ([channel]) => channel === 'notification:show',
+    );
+    expect(soundCalls).toHaveLength(2);
   });
 });

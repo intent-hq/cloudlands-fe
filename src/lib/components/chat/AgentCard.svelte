@@ -6,14 +6,16 @@
    * Uses subscription for real-time updates and displays line changes stats.
    * Reads Redux-owned streaming state for real-time response updates.
    */
-  import { tick } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { toast } from 'svelte-sonner';
+  import { createLogger } from '$lib/utils/client-logger';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import {
   selectAgentSession,
   selectAgentIsResponding,
+  selectAgentSessionHasStreamOwnedMessage,
   selectAgentSessionStreamingContent,
   selectAgentIsWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -82,6 +84,8 @@
     workspace?: Workspace | null;
     /** Whether the agent has finished its delegated work (forces completed avatar state) */
     isCompleted?: boolean;
+    /** Optional actions rendered in the header row, before the relative timestamp */
+    headerActions?: Snippet;
   }
 
   let {
@@ -98,7 +102,10 @@
     hidePreview = false,
     workspace = null,
     isCompleted = false,
+    headerActions,
   }: Props = $props();
+
+  const logger = createLogger('AgentCard');
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
@@ -294,12 +301,20 @@
             : workspace?.id
               ? String(workspace.id)
               : undefined;
-          if (wsId) {
-            const action = stopAgentSessionRequested(wsId, agentId);
-            appStore.dispatch(action);
-            await action.promise;
+          // The stop trigger settles for real now (agent-mutation-service
+          // forwards agent.stop) — guard so a daemon-side failure cannot
+          // become an unhandled rejection that skips closing the menu.
+          try {
+            if (wsId) {
+              const action = stopAgentSessionRequested(wsId, agentId);
+              appStore.dispatch(action);
+              await action.promise;
+            }
+          } catch (error) {
+            logger.error('Failed to stop agent', { agentId, error });
+          } finally {
+            closeContextMenu();
           }
-          closeContextMenu();
         },
       });
     }
@@ -364,6 +379,7 @@
 
   // Streaming state is derived from Redux-owned stream lifecycle/message state.
   const streamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
+  const hasStreamOwnedMessage$ = selectAgentSessionHasStreamOwnedMessage(agentIdStore);
   const streamingBuffer = $derived($streamingContent$);
   const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 
@@ -407,13 +423,23 @@
     return typeof path === 'string' && path.length > 0 ? path : null;
   });
 
-  // Show streaming content if actively streaming, otherwise show last response.
-  // When actively streaming, prefer the live text buffer so we reflect
-  // character-by-character progress. Tool previews (lastToolUse) only kick in
-  // when there's no meaningful text to show.
+  // Preview precedence while a turn is live:
+  //   1. the stream-owned chat.subscribe buffer (viewed agent only —
+  //      character-level progress from the standing delta stream);
+  //   2. the session's push-applied `lastAgentResponse` (refreshed ~1s by
+  //      `agent:stream:activity`, intentd#792) so a non-viewed watched
+  //      agent's preview advances mid-turn instead of freezing on stale
+  //      transcript-derived peek text — absent only pre-first-token, when
+  //      there is simply no text to preview yet;
+  //   3. the persisted transcript peek text (idle agents).
+  // Tool previews (lastToolUse) only kick in when there's no text to show.
   const lastResponse = $derived.by(() => {
-    if (isStreamActive && streamingBuffer) {
+    if (isStreamActive && $hasStreamOwnedMessage$ && streamingBuffer) {
       const line = getLastMeaningfulLine(streamingBuffer);
+      if (line) return line;
+    }
+    if ($agentIsResponding$ && $agent$?.lastAgentResponse) {
+      const line = getLastMeaningfulLine($agent$.lastAgentResponse);
       if (line) return line;
     }
     return agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : '';
@@ -439,12 +465,18 @@
   });
 
   // Show completion report if available - priority order:
+  // 0. Live session digest while responding (push-applied from
+  //    `agent:stream:activity`, fresher than the transcript-derived one)
   // 1. Digest from <agent_digest> tag (most concise, agent-provided summary)
   // 2. Completion report from report_to_parent tool (prop from event data)
   // 3. Completion report from agent metadata
   // 4. lastResponseSummary (fallback from event data)
   const effectiveCompletionReport = $derived(
-    agentData?.digest || completionReport || agentData?.completionReport || lastResponseSummary,
+    ($agentIsResponding$ ? $agent$?.digest : undefined) ||
+      agentData?.digest ||
+      completionReport ||
+      agentData?.completionReport ||
+      lastResponseSummary,
   );
 
   // Handle click - navigate to agent
@@ -554,6 +586,9 @@
                 deletions={$lineChanges$.deletions}
                 size="xs"
               />
+            {/if}
+            {#if headerActions}
+              {@render headerActions()}
             {/if}
             {#if updatedAt}
               <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />

@@ -5,6 +5,19 @@ on:
     branches: ['main']
   merge_group:
 
+env:
+  # Burst the Linux jobs to WarpBuild when more than this many Linux
+  # jobs are queued/running ahead of this run (see the route job). Note
+  # that jobs still blocked on `needs` are invisible to the jobs API, so
+  # a queued run ahead of us counts only its utility jobs (pr-title /
+  # conflict-markers / gate when routed to tinybox) — one fully queued
+  # PR run is already enough to clear this threshold, which is intended:
+  # it means tinybox is at least one full run behind. Bursted jobs
+  # (utility included) don't carry the self-hosted+Linux labels and stop
+  # counting toward the depth, so the system naturally falls back to
+  # tinybox as it frees up.
+  LINUX_BURST_THRESHOLD: 2
+
 # Cancel in progress workflows on pull_requests.
 # https://docs.github.com/en/actions/using-jobs/using-concurrency#example-using-a-fallback-value
 concurrency:
@@ -12,9 +25,92 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides where the Linux jobs — heavy (checks / build-web / test) and
+  # utility (pr-title / conflict-markers / gate) — run: the local tinybox
+  # runner normally, or WarpBuild ephemeral runners when the tinybox queue
+  # is backed up. Runs on a small WarpBuild ephemeral runner so the burst
+  # decision is independent of the tinybox queue: when the probe ran on
+  # tinybox it queued behind the very backlog it measures (and deadlocked
+  # entirely with tinybox offline). The probe fails open to tinybox on API
+  # errors; if the job itself fails (runner outage, timeout), the routed
+  # jobs are skipped and need a re-run — a deliberate trade-off.
+  route:
+    runs-on: warp-ubuntu-latest-x64-2x
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # Reads the Actions queue; job-level so the other jobs don't inherit
+      # it. The probe (and the optional cross-repo CI_QUEUE_READ_TOKEN)
+      # runs on third-party WarpBuild ephemeral runners — an accepted
+      # trade-off.
+      actions: read
+    outputs:
+      checks_labels: ${{ steps.decide.outputs.checks_labels }}
+      build_labels: ${{ steps.decide.outputs.build_labels }}
+      test_labels: ${{ steps.decide.outputs.test_labels }}
+      utility_labels: ${{ steps.decide.outputs.utility_labels }}
+      linux_burst: ${{ steps.decide.outputs.linux_burst }}
+    steps:
+      - id: decide
+        uses: actions/github-script@v7
+        env:
+          THRESHOLD: ${{ env.LINUX_BURST_THRESHOLD }}
+        with:
+          # tinybox serves several repos on one runner slot, so the probe
+          # wants to size the queue across all of them — but the default
+          # GITHUB_TOKEN is repo-scoped and can only see cloudlands-fe. Set
+          # the CI_QUEUE_READ_TOKEN secret (fine-grained PAT with
+          # actions:read on the sibling repos) to enable cross-repo
+          # counting; without it those repos are skipped and contribute 0.
+          github-token: ${{ secrets.CI_QUEUE_READ_TOKEN || github.token }}
+          script: |
+            const tinybox = ["self-hosted", "Linux", "X64"];
+            // The heavy jobs (checks / build-web / test) are pnpm/Node
+            // workloads sized per WarpBuild usage recommendations: checks
+            // showed low CPU and memory (4x), build-web low memory (8x),
+            // and test keeps the 16x for vitest parallelism. None need the
+            // 32x sized for intentd's instrumented Rust coverage suites.
+            const checksBurst = ["warp-ubuntu-latest-x64-4x"];
+            const buildBurst = ["warp-ubuntu-latest-x64-8x"];
+            const testBurst = ["warp-ubuntu-latest-x64-16x"];
+            // The utility jobs (pr-title / conflict-markers / gate) are
+            // seconds-long; a 2x runner is plenty when bursting.
+            const utilityBurst = ["warp-ubuntu-latest-x64-2x"];
+            const threshold = parseInt(process.env.THRESHOLD || "2", 10);
+            // Count self-hosted Linux jobs that are queued or running in
+            // queued/in-progress runs: a running job occupies the single
+            // tinybox slot just as much as a queued one. WarpBuild jobs —
+            // including this route job and bursted heavy jobs — don't match
+            // the self-hosted+Linux label filter, so they never inflate the
+            // depth.
+            const owner = context.repo.owner;
+            const repos = ["intentd", "cloudlands-fe", "monorepo"];
+            let depth = 0;
+            for (const repo of repos) {
+              try {
+                for (const status of ["queued", "in_progress"]) {
+                  const runs = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, status, per_page: 20 });
+                  for (const run of runs.data.workflow_runs.filter(r => r.id !== context.runId).slice(0, 10)) {
+                    const jobs = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: run.id, per_page: 100 });
+                    depth += jobs.data.jobs.filter(j => (j.status === "queued" || j.status === "in_progress") && j.labels.includes("self-hosted") && j.labels.includes("Linux")).length;
+                  }
+                }
+              } catch (e) {
+                core.info(`queue probe skipped ${repo}: ${e.message}`);
+              }
+            }
+            const useBurst = depth > threshold;
+            core.info(`linux queue depth=${depth} threshold=${threshold} burst=${useBurst}`);
+            core.setOutput("checks_labels", JSON.stringify(useBurst ? checksBurst : tinybox));
+            core.setOutput("build_labels", JSON.stringify(useBurst ? buildBurst : tinybox));
+            core.setOutput("test_labels", JSON.stringify(useBurst ? testBurst : tinybox));
+            core.setOutput("utility_labels", JSON.stringify(useBurst ? utilityBurst : tinybox));
+            core.setOutput("linux_burst", String(useBurst));
+
   pr-title:
     name: Validate PR Title
-    runs-on: [self-hosted, Linux, X64]
+    needs: route
+    runs-on: ${{ fromJSON(needs.route.outputs.utility_labels) }}
     if: github.event_name == 'pull_request'
     permissions:
       pull-requests: read
@@ -43,7 +139,8 @@ jobs:
   # don't false-positive.
   conflict-markers:
     name: Conflict Markers
-    runs-on: [self-hosted, Linux, X64]
+    needs: route
+    runs-on: ${{ fromJSON(needs.route.outputs.utility_labels) }}
     if: github.event_name == 'pull_request'
     timeout-minutes: 5
     permissions:
@@ -88,7 +185,8 @@ jobs:
   # the 64-core box runs the shared setup once and all checks back-to-back.
   checks:
     name: Type Check & Lint
-    runs-on: [self-hosted, Linux, X64]
+    needs: route
+    runs-on: ${{ fromJSON(needs.route.outputs.checks_labels) }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -104,12 +202,15 @@ jobs:
           version: 10.30.3
           run_install: false
       - name: Setup Node.js
-        # No cache: 'pnpm' — persistent pnpm store on the non-ephemeral
-        # self-hosted runner makes the GH Actions cache redundant (same as
-        # the jobs below).
+        # cache: 'pnpm' only when bursting — ephemeral WarpBuild runners
+        # have no persistent pnpm store, so the GH Actions cache is worth
+        # the tarball round-trip there. On the non-ephemeral self-hosted
+        # runner the local pnpm store persists between runs and the cache
+        # would be pure overhead (same as the jobs below).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
+          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate build config
@@ -180,7 +281,8 @@ jobs:
     name: Build (web)
     # Moved from m1mac to the self-hosted Linux runner (tinybox, 64 cores /
     # 125 GB) so the single-slot Mac is free for release/signing work.
-    runs-on: [self-hosted, Linux, X64]
+    needs: route
+    runs-on: ${{ fromJSON(needs.route.outputs.build_labels) }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -204,12 +306,14 @@ jobs:
           version: 10.30.3
           run_install: false
       - name: Setup Node.js
-        # No cache: 'pnpm' here — the self-hosted runner is non-ephemeral, so
-        # the local pnpm store persists between runs and the GH Actions cache
-        # tarball round-trip would only add network time.
+        # cache: 'pnpm' only when bursting — no persistent pnpm store on
+        # ephemeral WarpBuild runners; on tinybox the local store persists
+        # between runs and the GH Actions cache tarball round-trip would
+        # only add network time (see checks).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
+          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build web renderer
@@ -228,7 +332,8 @@ jobs:
     # checkout/install overhead — vitest parallelism uses the 64 cores
     # within the single job.
     name: Unit Tests
-    runs-on: [self-hosted, Linux, X64]
+    needs: route
+    runs-on: ${{ fromJSON(needs.route.outputs.test_labels) }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -244,12 +349,13 @@ jobs:
           version: 10.30.3
           run_install: false
       - name: Setup Node.js
-        # No cache: 'pnpm' — persistent pnpm store on the non-ephemeral
-        # self-hosted runner makes the GH Actions cache redundant (see
-        # build-web).
+        # cache: 'pnpm' only when bursting — no persistent pnpm store on
+        # ephemeral WarpBuild runners; redundant on the non-ephemeral
+        # self-hosted runner (see checks / build-web).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
+          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Unit tests
@@ -257,10 +363,10 @@ jobs:
 
   gate:
     name: Type Check & Test
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ${{ fromJSON(needs.route.outputs.utility_labels) }}
     permissions: {}
     if: always()
-    needs: [checks, build-web, test]
+    needs: [route, checks, build-web, test]
     steps:
       - name: Check results
         run: |

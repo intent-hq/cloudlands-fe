@@ -46,6 +46,7 @@
   import type { AgentMessage } from '$shared/types';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
+  agentSessionDismissQuestionsRequested,
   agentSessionEditAndRegenerateRequested,
   agentSessionForkSessionRequested,
   agentSessionRegenerateFromMessageRequested,
@@ -200,6 +201,7 @@
   import { getModelChangeNotice } from './model-change-notice';
   import { resolveHydratedInputModel } from './input-hydration';
   import {
+  deriveQueuedMessagesVisibility,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
 } from './chat-panel-visibility';
@@ -486,9 +488,11 @@
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
     // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
-    // that do not change the transcript; the shared helper re-reads the same
-    // value from store state.
+    // that do not change the transcript; the dismissal marker read keeps it
+    // reactive to metadata-only session updates (optimistic dismiss /
+    // agent:updated); the shared helper re-reads both from store state.
     void $agentIsResponding$;
+    void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     return deriveWizardPendingQuestions(
       appStore.state,
       agentId,
@@ -508,6 +512,31 @@
       questionWizardCollapsed = false;
     }
   });
+
+  // Queue visibility around the wizard: hidden while the wizard is expanded,
+  // shown with a held-for-questions hint while Ignore-collapsed (the daemon
+  // parks automatic deliveries behind the pending Q&A — question hold,
+  // PROTOCOL §5.5). Derivation shared with the regression suite.
+  const queuedMessagesVisibility = $derived(
+    deriveQueuedMessagesVisibility({
+      queueLength: $queuedMessages$.length,
+      hasPendingQuestions: !!pendingQuestions,
+      questionWizardCollapsed,
+    }),
+  );
+
+  // Dismiss = persistent, unlike Ignore: the mutation middleware stamps
+  // `dismissedQuestionsMessageId` into session metadata optimistically (the
+  // wizard-gate reads it, so the wizard hides immediately) and forwards
+  // `agent.dismissQuestions` — the daemon persists the marker (survives
+  // reload) and releases the question hold. On failure the middleware rolls
+  // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
+  function handleQuestionWizardDismiss() {
+    if (!workspace || !pendingQuestions) return;
+    appStore.dispatch(
+      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
+    );
+  }
 
   // Completing the wizard flattens all answers into ONE plain-text user
   // message of `Q:`/`A:` pairs (wire contract — no messageMetadata) sent
@@ -2288,6 +2317,7 @@
   let lastIsActive: boolean | undefined;
   $effect(() => {
     if (agentId === lastViewedAgentId && isActive === lastIsActive) return;
+    const previousAgentId = lastViewedAgentId;
     lastViewedAgentId = agentId;
     lastIsActive = isActive;
     if (agentId && isActive) {
@@ -2295,7 +2325,13 @@
     } else {
       // Panel is no longer active (user switched to another tab) —
       // clear so new messages for this agent are properly marked as unread.
-      appStore.dispatch(clearCurrentlyViewedAgent());
+      // Scoped to this panel's agent so a deactivating background panel's
+      // trailing clear cannot tear down the newly viewed agent's chat
+      // (monorepo#1215).
+      const scopeAgentId = agentId || previousAgentId;
+      if (scopeAgentId) {
+        appStore.dispatch(clearCurrentlyViewedAgent(scopeAgentId));
+      }
     }
   });
 
@@ -2306,9 +2342,11 @@
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
 
-    // Clear currently viewed agent so other agents can properly be marked as unread
+    // Clear currently viewed agent so other agents can properly be marked as
+    // unread — scoped so a cached background tab's destroy cannot tear down
+    // the currently viewed agent's chat (monorepo#1215).
     if (agentId) {
-      appStore.dispatch(clearCurrentlyViewedAgent());
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
     }
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
@@ -3735,11 +3773,14 @@
     {/if}
   </div>
 
-  <!-- Queued Messages -->
-  {#if $queuedMessages$.length > 0}
+  <!-- Queued Messages: hidden while the question wizard is expanded; shown
+       with a held-for-questions hint while it is Ignore-collapsed (question
+       hold, PROTOCOL §5.5). -->
+  {#if queuedMessagesVisibility.showQueue}
     <QueuedMessageList
       bind:this={queuedMessageListRef}
       messages={$queuedMessages$}
+      heldForQuestions={queuedMessagesVisibility.heldForQuestions}
       onedit={handleEditQueuedMessage}
       onremove={handleRemoveQueuedMessage}
       onsendnow={handleSendQueuedMessageNow}
@@ -3776,6 +3817,7 @@
             collapsed={questionWizardCollapsed}
             onToggleCollapsed={(c) => (questionWizardCollapsed = c)}
             onComplete={handleQuestionWizardComplete}
+            onDismiss={handleQuestionWizardDismiss}
           />
         </div>
       {/key}

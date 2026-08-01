@@ -90,8 +90,10 @@ export function getAvatarState(input: AgentStateInput, options: AvatarStateOptio
   }
 
   // Pending attention request (discussion/blocker) - requires user input.
-  // The daemon clears the fields when the agent next receives a message, so
-  // a pending request implies the agent is paused waiting on the user.
+  // The daemon clears the fields only on a user-origin delivery (sendMessage,
+  // sendQueuedMessageNow, editAndRegenerate, drained user-origin queue entry);
+  // automatic deliveries leave it pending, so a pending request implies the
+  // agent is still waiting on the user.
   if (attentionKind === 'discussion') {
     return 'attention-discussion';
   }

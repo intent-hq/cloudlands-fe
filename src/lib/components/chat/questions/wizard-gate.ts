@@ -8,9 +8,13 @@ import { derivePendingQuestions, type PendingQuestionSet } from './pending-quest
  * active turn (`selectAgentIsResponding`) — NOT the broad
  * `selectAgentIsRunning` gate, which stays true while the agent merely waits
  * on delegated agents (isWaitingForOtherAgents) and must not suppress the
- * wizard. Lives outside pending-questions.ts so that module stays
- * dependency-light (no stores). Shared by ChatPanel and the regression suite
- * so tests exercise the real gate.
+ * wizard. A question set the user dismissed never pends: the daemon persists
+ * `dismissedQuestionsMessageId` in session metadata (`agent.dismissQuestions`,
+ * PROTOCOL §5.5), so the suppression survives reload/rehydrate; a NEWER
+ * question-bearing message (different id) pends normally. Lives outside
+ * pending-questions.ts so that module stays dependency-light (no stores).
+ * Shared by ChatPanel and the regression suite so tests exercise the real
+ * gate.
  */
 export function deriveWizardPendingQuestions(
   state: StoreState,
@@ -19,5 +23,10 @@ export function deriveWizardPendingQuestions(
   showingPendingUserMessage = false,
 ): PendingQuestionSet | null {
   const isTurnActive = selectAgentIsResponding.select(state, agentId);
-  return derivePendingQuestions(messages, isTurnActive, showingPendingUserMessage);
+  const pending = derivePendingQuestions(messages, isTurnActive, showingPendingUserMessage);
+  if (!pending) return null;
+  const session = state.agentSessions?.byAgentId[agentId];
+  const dismissedId = session?.metadata?.dismissedQuestionsMessageId;
+  if (typeof dismissedId === 'string' && dismissedId === pending.messageId) return null;
+  return pending;
 }

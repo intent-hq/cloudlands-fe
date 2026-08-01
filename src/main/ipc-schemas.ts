@@ -50,12 +50,8 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:message:delivery-failed',
   // Agent streaming events
   'agent:stream:start',
-  'agent:stream:chunk',
-  'agent:stream:content-blocks',
+  'agent:stream:activity',
   'agent:stream:end',
-  'agent:stream:message',
-  'agent:stream:tool_use',
-  'agent:stream:tool_result',
   // Agent queue events
   'agent:queue:updated',
   'agent:queue:processing',

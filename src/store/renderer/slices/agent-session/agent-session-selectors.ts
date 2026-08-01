@@ -214,6 +214,28 @@ export const selectAgentSessionStreamingContent = store.createSelector(
   },
 );
 
+/**
+ * Select whether the session holds a stream-owned assistant message — one the
+ * standing `chat.subscribe` delta stream is actively growing (viewed agents
+ * only). Distinguishes character-level live content from
+ * `selectAgentSessionStreamingContent`'s session-flag fallback, which can
+ * surface the last PERSISTED assistant message's text while a non-viewed
+ * agent streams a new turn (its transcript never grows mid-turn). The
+ * message-level flag stays accurate across navigate-away because
+ * `closeChatSubscription` normalizes stale `isStreaming` /
+ * `streamingComplete` flags when it tears down a mid-turn subscription.
+ */
+export const selectAgentSessionHasStreamOwnedMessage = store.createSelector(
+  (state, agentId: string): boolean => {
+    const messages = state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === 'assistant' && isStreamingMessage(message)) return true;
+    }
+    return false;
+  },
+);
+
 /** Select the workspace ID for a given agent session. */
 export const selectAgentSessionWorkspaceId = store.createSelector(
   (state, agentId: string): AgentSession['workspaceId'] | undefined =>
@@ -232,7 +254,7 @@ export const selectAgentSessionExists = store.createSelector(
  * callers can surface the stored activation error instead of waiting forever.
  *
  * Note: no production call site consumes this today — the live send path
- * guards activation inline in `agent-stream-lifecycle.ts` (`needsActivation`).
+ * guards activation inline in `agent-send.ts` (`needsActivation`).
  * The selector is kept correct for future first-send waiters.
  */
 export const selectAgentActivationWaitComplete = store.createSelector(
@@ -336,9 +358,10 @@ export const selectAgentIsWaiting = store.createSelector(
  * Pending attention request (discussion/blocker) for an agent, rendered
  * verbatim from the daemon session fields (PROTOCOL §5.5) — top-level on the
  * full projection, under `metadata` on `AgentLite`. Returns null when no
- * request is pending (the daemon clears the fields when the agent next
- * receives a message, emitting `agent:updated` with
- * `attentionRequestCleared: true`).
+ * request is pending (the daemon clears the fields only on a user-origin
+ * delivery — sendMessage, sendQueuedMessageNow, editAndRegenerate, or a
+ * drained user-origin queue entry — emitting `agent:updated` with
+ * `attentionRequestCleared: true`; automatic deliveries leave it pending).
  */
 export const selectAgentAttentionRequest = store.createSelector(
   (state, agentId: string): AgentAttentionRequest | null => {

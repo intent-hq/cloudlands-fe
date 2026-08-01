@@ -344,6 +344,43 @@ export class LiveAgentsClient implements AgentsClient {
     // `agent:stream:end` (§7), which converges the FE streaming state.
     return runMutation("agent.stop", { agentId });
   }
+  async cancelSubscriptions(params: {
+    agentId: string;
+    workspaceId: string;
+    subscriptionId?: string;
+    groupId?: string;
+  }): Promise<MutationResult> {
+    // `agent.cancelSubscriptions` (§5.5) takes `{ agentId, workspaceId }` plus
+    // optional `subscriptionId` / `groupId` scoping. The optional keys are
+    // omitted entirely when unset — the daemon rejects a present-but-non-string
+    // id with `-32602` rather than coercing it into an unscoped cancel, so an
+    // explicit `undefined` must never hit the wire. Scoped removals publish
+    // `agent:subscriptions-changed` (§6.5), which reconciles the footer UI.
+    const rpcParams: Record<string, unknown> = {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+    };
+    if (params.subscriptionId !== undefined) rpcParams.subscriptionId = params.subscriptionId;
+    if (params.groupId !== undefined) rpcParams.groupId = params.groupId;
+    return runMutation("agent.cancelSubscriptions", rpcParams);
+  }
+  async dismissQuestions(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+  }): Promise<MutationResult> {
+    // `agent.dismissQuestions` (§5.5) takes `{ agentId, workspaceId,
+    // messageId }` (all required — workspace mismatch surfaces as NotFound)
+    // and returns `{ success: true, dismissedQuestionsMessageId }`. The daemon
+    // persists the marker in session metadata (survives reload), emits
+    // `agent:updated`, and kicks the queue drain so messages held by the
+    // question hold resume. Idempotent on the same messageId.
+    return runMutation("agent.dismissQuestions", {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      messageId: params.messageId,
+    });
+  }
   async rename(
     agentId: string,
     name: string,

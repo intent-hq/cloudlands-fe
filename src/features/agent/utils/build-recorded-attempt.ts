@@ -8,9 +8,9 @@ import type { LastAttemptedMessage } from '$store/renderer/slices/chat-state/cha
  * so a retry resends the attachments (#965).
  *
  * Single construction site shared by chat-send-service (direct/queue-on-send
- * recording) and agent-stream-lifecycle (auto-queue park, #1011) — the park
- * reducer's structural-equality clear relies on both producing the exact same
- * shape, so drift between hand-rolled copies would silently break it.
+ * recording) and agent-send (auto-queue park, #1011) — the park reducer's
+ * structural-equality clear relies on both producing the exact same shape,
+ * so drift between hand-rolled copies would silently break it.
  */
 export function buildRecordedAttempt(
   text: string,

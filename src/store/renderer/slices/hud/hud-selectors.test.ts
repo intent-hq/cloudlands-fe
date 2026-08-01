@@ -384,11 +384,11 @@ describe('selectHudWorkspaceCards', () => {
     ]);
   });
 
-  it('falls back to the branch when no repository is known and idle when no displayStatus', () => {
+  it('falls back to the branch when no repository is known and not_started when no displayStatus', () => {
     const state = cardState([makeWorkspace('ws-1', { branch: 'feat/rpc-batching' })]);
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.repoRef).toBe('feat/rpc-batching');
-    expect(card.stateKey).toBe('idle');
+    expect(card.stateKey).toBe('not_started');
     expect(card.statusMessage).toBeNull();
     expect(card.prNumber).toBeNull();
   });
@@ -607,22 +607,10 @@ describe('selectHudWorkspaceCards', () => {
     expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('pr_open');
   });
 
-  it('a running agent overrides a BE-sent idle to in_progress', () => {
-    const state = cardState([
-      makeWorkspace('ws-1', {
-        displayStatus: 'idle',
-        agentSummary: {
-          count: 1,
-          agentIds: ['a1'],
-          agents: [{ id: 'a1', name: 'Implementor', status: 'active' }],
-        } as Workspace['agentSummary'],
-      }),
-    ]);
-    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('in_progress');
-  });
-
-  it('a running agent forces in_progress regardless of the base status', () => {
-    for (const displayStatus of ['not_started', 'pr_merged', 'complete'] as const) {
+  it('never lets running agent rows override the BE status (cloudlands-fe#578)', () => {
+    // The daemon owns the agent-running promotion (intentd#793); a running
+    // agent row must not locally promote a BE-sent idle/pr_merged/complete.
+    for (const displayStatus of ['idle', 'not_started', 'pr_merged', 'complete'] as const) {
       const state = cardState([
         makeWorkspace('ws-1', {
           displayStatus,
@@ -633,15 +621,22 @@ describe('selectHudWorkspaceCards', () => {
           } as Workspace['agentSummary'],
         }),
       ]);
-      expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('in_progress');
+      expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe(displayStatus);
     }
   });
 
-  it('workspace.activity agent_running counts as running without any agent rows', () => {
+  it('workspace.activity agent_running does not promote the BE status either', () => {
     const state = cardState([
       makeWorkspace('ws-1', { displayStatus: 'not_started', activity: 'agent_running' }),
     ]);
-    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('in_progress');
+    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('not_started');
+  });
+
+  it('defaults an unknown wire displayStatus to not_started (forward compat)', () => {
+    const state = cardState([
+      makeWorkspace('ws-1', { displayStatus: 'something_new' as never }),
+    ]);
+    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('not_started');
   });
 
   it('state precedence: failed agent > attention/waiting agent > displayStatus', () => {

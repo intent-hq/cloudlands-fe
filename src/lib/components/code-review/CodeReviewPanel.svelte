@@ -33,7 +33,7 @@
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import { executeBackgroundAgent } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import { createLogger } from '$lib/utils/client-logger';
-  import { sendMessage } from '$features/agent/agent-stream-lifecycle';
+  import { sendMessage } from '$features/agent/agent-send';
   import { buildWorkspaceContext } from '$features/agent/agent-launch-core';
 
 

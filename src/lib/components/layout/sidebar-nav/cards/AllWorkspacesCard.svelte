@@ -5,31 +5,18 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import {
   selectWorkspaceItems,
-  selectWorkspaceActivePullRequest,
   selectWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-selectors';
-  import {
-  WorkspaceStatusEnum,
-  PullRequestStatus,
-  isWorkspaceDisplayStatus,
-} from '$shared/types';
-  import type { Workspace } from '$shared/types';
+  import { WorkspaceStatusEnum, isWorkspaceDisplayStatus } from '$shared/types';
+  import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
   import {
   buildRepoPathLookup,
   getGroupKey,
 } from '$lib/components/workspace/utils/workspace-grouping';
-  import {
-  getWorkspaceGroupingStatus,
-  isWorkspaceRunning,
-  type GroupingStatus,
-  type WorkspaceDisplayStatus,
-} from '$lib/components/workspace/utils/workspace-status-grouping';
   import { onMount } from 'svelte';
-  import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
   import Header from '$lib/components/ui/Header.svelte';
 
   import {
-  selectActiveStreamsVersion,
   selectPinnedWorkspaceIds,
   selectAllSpacesViewMode,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -52,11 +39,6 @@
   import { store as appStore } from '$store/renderer/store';
   import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
   import WorkspaceCardSkeleton from '../WorkspaceCardSkeleton.svelte';
-  import {
-  selectWorkspaceTaskProgress,
-  selectWorkspaceTasksByWorkspaceId,
-} from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
@@ -64,11 +46,9 @@
 
   const workspaceItems = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
-  const activeStreamsVersion$ = selectActiveStreamsVersion();
   const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const viewMode$ = selectAllSpacesViewMode();
-  const workspaceTasksByWorkspaceId$ = selectWorkspaceTasksByWorkspaceId();
 
   interface Props {
     expanded?: boolean;
@@ -95,9 +75,15 @@
     }
   });
 
+  // Direct tracker subscription for reactivity (no Redux bridge): bump a
+  // local version counter when the tracker notifies so deriveds recompute.
+  let activeStreamsVersion = $state(0);
+
   // Fetch fresh stream state when the card mounts so data is up-to-date
   onMount(() => {
+    activeStreamsTracker.startPolling();
     activeStreamsTracker.fetchActiveStreams();
+    return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
   });
 
   const allWorkspaces = $derived.by(() => {
@@ -122,43 +108,13 @@
 
   function getDisplayStatus(ws: Workspace): WorkspaceDisplayStatus {
     // BE-owned current-cycle status (workspace.displayStatus, intent-hq/intentd#600):
-    // render it verbatim when present. The daemon owns the precedence (open/draft
-    // PR → open tasks → merged PR → complete), so a merged PR never masks open
-    // work. Unknown wire values (a future daemon's new value) are treated as
-    // absent so the workspace degrades to the local derivation below instead of
-    // vanishing from the grouped view.
-    if (isWorkspaceDisplayStatus(ws.displayStatus)) return ws.displayStatus;
-    const pullRequests = ws.pullRequests || [];
-    const activePR = selectWorkspaceActivePullRequest.select(appStore.state, ws.id);
-    const hasMergedPR =
-      ws.prStatus === PullRequestStatus.Merged ||
-      activePR?.status === PullRequestStatus.Merged ||
-      pullRequests.some((pr) => pr.status === PullRequestStatus.Merged);
-    if (hasMergedPR) return 'pr_merged';
-    const hasOpenPR =
-      ws.prStatus === PullRequestStatus.Open ||
-      ws.prStatus === PullRequestStatus.Draft ||
-      pullRequests.some(
-        (pr) => pr.status === PullRequestStatus.Open || pr.status === PullRequestStatus.Draft,
-      ) ||
-      activePR?.status === PullRequestStatus.Open ||
-      activePR?.status === PullRequestStatus.Draft;
-    if (hasOpenPR) {
-      if (activePR && activePR.status === PullRequestStatus.Open) {
-        if (checkPRMergeable(activePR)) return 'pr_ready';
-      }
-      return 'pr_open';
-    }
-    // Reference task map for reactivity when canonical tasks load
-    void $workspaceTasksByWorkspaceId$;
-    const taskProgress = selectWorkspaceTaskProgress.select(appStore.state, ws.id);
-    if (taskProgress.total > 0) {
-      if (taskProgress.completed > 0 && taskProgress.completed === taskProgress.total) {
-        return 'complete';
-      }
-      if (taskProgress.inProgress > 0 || taskProgress.completed > 0) return 'in_progress';
-    }
-    return 'not_started';
+    // render it verbatim. The daemon owns the whole derivation — the agent-running
+    // promotion to in_progress and the not-running demotion to idle included — and
+    // the lite workspace.subscribe snapshot always carries the field
+    // (intent-hq/intentd#743), so there is no local derivation or override.
+    // Unknown wire values (a future daemon's new value) default to
+    // 'not_started' so the workspace never vanishes from the grouped view.
+    return isWorkspaceDisplayStatus(ws.displayStatus) ? ws.displayStatus : 'not_started';
   }
 
   const filteredWorkspaces = $derived.by(() => {
@@ -169,14 +125,6 @@
         (w.title || '').toLowerCase().includes(q) ||
         (w.repositoryName || '').toLowerCase().includes(q),
     );
-  });
-
-  // Load canonical tasks for listed workspaces while expanded (no-op once initialized).
-  $effect(() => {
-    if (!expanded) return;
-    for (const ws of filteredWorkspaces) {
-      appStore.dispatch(ensureWorkspaceTasksLoaded(String(ws.id)));
-    }
   });
 
   // Build a lookup from repositoryPath → {owner, name} so workspaces missing
@@ -205,7 +153,7 @@
     });
   });
 
-  const statusLabels: Record<GroupingStatus, () => string> = {
+  const statusLabels: Record<WorkspaceDisplayStatus, () => string> = {
     idle: () => m.layout_allCard_statusIdle_label(),
     not_started: () => m.layout_allCard_statusNoChanges_label(),
     in_progress: () => m.layout_allCard_statusInProgress_label(),
@@ -215,7 +163,7 @@
     pr_merged: () => m.layout_allCard_statusPrMerged_label(),
   };
 
-  const statusOrder: GroupingStatus[] = [
+  const statusOrder: WorkspaceDisplayStatus[] = [
     'idle',
     'in_progress',
     'pr_ready',
@@ -225,17 +173,10 @@
     'pr_merged',
   ];
 
-  function getGroupingStatus(ws: Workspace): GroupingStatus {
-    const baseStatus = getDisplayStatus(ws);
-    void $activeStreamsVersion$;
-    const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
-    return getWorkspaceGroupingStatus(ws, baseStatus, streamingAgentIds);
-  }
-
   const groupedByStatus = $derived.by(() => {
-    const groups = new Map<GroupingStatus, Workspace[]>();
+    const groups = new Map<WorkspaceDisplayStatus, Workspace[]>();
     for (const ws of filteredWorkspaces) {
-      const status = getGroupingStatus(ws);
+      const status = getDisplayStatus(ws);
       if (!groups.has(status)) groups.set(status, []);
       groups.get(status)!.push(ws);
     }
@@ -245,13 +186,16 @@
   });
 
   function _isRunning(ws: Workspace): boolean {
-    void $activeStreamsVersion$;
+    // Streaming-based UI affordance only (the running dot on the card); the
+    // status grouping above renders the BE displayStatus verbatim and is never
+    // influenced by this signal.
+    void activeStreamsVersion;
     const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
-    return isWorkspaceRunning(ws, streamingAgentIds);
+    return ws.activity === 'agent_running' || streamingAgentIds.length > 0;
   }
 
   function _getStreamingIds(ws: Workspace): string[] {
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
   }
 
@@ -261,7 +205,7 @@
   }
 
   function _isUnread(ws: Workspace): boolean {
-    void $activeStreamsVersion$;
+    void activeStreamsVersion;
     const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
     if (streamingIds.length > 0) return false;
     return getUnreadAgentIds(ws).length > 0;

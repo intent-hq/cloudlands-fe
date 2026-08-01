@@ -34,7 +34,7 @@ import {
   chatSendFailed,
   chatSendStarted,
   chatInitialized,
-  streamCompleted,
+  streamEnded,
 } from '../chat-state/chat-state-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -336,7 +336,7 @@ describe('agent-session-slice reducer', () => {
       );
       expect(state.byAgentId['a1'].attentionRequestKind).toBe('blocker');
 
-      // The daemon clears the fields on the agent's next message; the
+      // The daemon clears the fields on the next user-origin delivery; the
       // re-fetched projection simply omits them.
       const next = agentSessionReducer(
         state,
@@ -2567,10 +2567,7 @@ describe('stream completion clears stale responding flags', () => {
     });
     let state = agentSessionReducer(initialState, upsertSession(existing));
 
-    state = agentSessionReducer(
-      state,
-      streamCompleted('a1', { lastAttemptedMessage: null, modelUnavailable: null }),
-    );
+    state = agentSessionReducer(state, streamEnded('a1'));
 
     expect(state.byAgentId['a1'].isStreaming).toBe(false);
     expect(state.byAgentId['a1'].isProcessing).toBe(false);
@@ -3284,6 +3281,9 @@ describe('pruneMessages sorts before pruning (prune-after-sort)', () => {
 describe('hasCanonicalId', () => {
   it('returns true for msg_-prefixed IDs', () => {
     expect(hasCanonicalId('msg_abc-123')).toBe(true);
+  });
+  it('returns true for server-minted user-msg- IDs (PROTOCOL §5.5)', () => {
+    expect(hasCanonicalId('user-msg-abc-123')).toBe(true);
   });
   it('returns false for plain UUIDs', () => {
     expect(hasCanonicalId('abc-123-def')).toBe(false);

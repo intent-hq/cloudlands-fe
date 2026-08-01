@@ -6,7 +6,10 @@
    * attention request (requestDiscussion / reportBlocker). Renders alongside
    * the existing waiting/completed treatments (AgentSubscriptions) and
    * retires automatically when the daemon clears the session fields on the
-   * agent's next message (`agent:updated` with `attentionRequestCleared`).
+   * user's next response — a user-origin delivery (sendMessage,
+   * sendQueuedMessageNow, editAndRegenerate, drained user-origin queue
+   * entry) — emitting `agent:updated` with `attentionRequestCleared`;
+   * automatic deliveries leave it pending.
    */
   import { writable } from 'svelte/store';
   import { slide } from 'svelte/transition';
@@ -36,7 +39,7 @@
     data-testid="attention-request-banner"
     transition:slide={{ axis: 'y', duration: 200 }}
   >
-    <div class="flex items-center gap-2 px-3 py-1.5 text-sm">
+    <div class="flex items-start gap-2 px-3 py-1.5 text-sm">
       <span
         class="shrink-0 flex items-center gap-2 whitespace-nowrap {$attentionRequest$.kind ===
         'blocker'
@@ -52,7 +55,7 @@
           : m.chat_agentCard_attentionDiscussion_label()}
       </span>
       {#if $attentionRequest$.reason}
-        <span class="min-w-0 flex-1 truncate text-subtle">
+        <span class="min-w-0 flex-1 break-words whitespace-pre-wrap text-subtle">
           {$attentionRequest$.reason}
         </span>
       {/if}

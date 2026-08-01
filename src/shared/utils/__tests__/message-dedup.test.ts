@@ -108,6 +108,49 @@ describe('message-dedup utility', () => {
     });
   });
 
+  it('merges a user-msg-prefixed daemon echo lacking appMessageId into the optimistic message (§7.1 delta path)', () => {
+    // P0 regression (post-#559): the §7.1 chat.subscribe user-row delta
+    // carries no appMessageId, and the daemon mints user rows as
+    // `user-msg-{uuid}` (PROTOCOL §5.5) — not `msg_…`. The content fallback
+    // must recognize that id shape as daemon-canonical, or every normal send
+    // duplicates in the live transcript.
+    const optimistic: AgentMessage = {
+      id: '550e8400-e29b-41d4-a716-446655440030',
+      role: 'user',
+      appMessageId: 'app_msg_user_delta',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Q: Deploy now?\nA: Yes' }],
+    };
+    const canonicalEcho: AgentMessage = {
+      id: 'user-msg-7c1f4e0a-1111-2222-3333-444455556666',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [
+        {
+          type: 'text',
+          id: 'user-msg-7c1f4e0a-1111-2222-3333-444455556666:0',
+          text: 'Q: Deploy now?\nA: Yes',
+        },
+      ],
+    };
+
+    const deduped = deduplicateAgentMessages([optimistic, canonicalEcho]);
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]).toMatchObject({
+      id: 'user-msg-7c1f4e0a-1111-2222-3333-444455556666',
+      appMessageId: 'app_msg_user_delta',
+      role: 'user',
+    });
+
+    const inserted = insertAgentMessageWithDedup([optimistic], canonicalEcho);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({
+      id: 'user-msg-7c1f4e0a-1111-2222-3333-444455556666',
+      appMessageId: 'app_msg_user_delta',
+      role: 'user',
+    });
+  });
+
   it('prefers the id-based match over a same-content sibling when the echo carries appMessageId', () => {
     const contentTwin: AgentMessage = {
       id: 'msg_older_same_content',

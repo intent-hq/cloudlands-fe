@@ -3,7 +3,7 @@
 
   Displays a circular icon that represents workspace status:
   - not_started: Empty outline circle (gray)
-  - idle: Empty outline circle (gray) — BE-derived "no agent running" (intentd#793)
+  - idle: Empty outline circle (gray)
   - in_progress: Half-filled circle (blue)
   - complete: Filled circle with checkmark (green)
   - pr_open: Filled circle with PR icon (purple)
@@ -14,7 +14,7 @@
   draw,
   scale,
 } from 'svelte/transition';
-  import type { WorkspaceDisplayStatus } from '$lib/components/workspace/utils/workspace-status-grouping';
+  import type { WorkspaceDisplayStatus } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
 
   let {

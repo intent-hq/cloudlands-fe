@@ -29,7 +29,9 @@
   import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsProviderActive } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
@@ -80,6 +82,17 @@
   const codeFontFamilyLabel = selectCodeFontFamilyLabel();
   const codeFontOptions = selectCodeFontOptions();
   const themePreference = selectThemePreference();
+  const daemonTransport$ = selectDaemonTransport();
+
+  // UDS socket path of the connected intentd; null hides the Connection section
+  // (external-ws, unknown transport, or missing target).
+  const udsSocketPath = $derived(
+    $daemonTransport$ &&
+      ($daemonTransport$.mode === 'sidecar-uds' || $daemonTransport$.mode === 'external-uds') &&
+      $daemonTransport$.target
+      ? $daemonTransport$.target
+      : null,
+  );
 
   // Tab types
   type SettingsTab = 'accounts' | 'agents' | 'setup' | 'fonts-colors' | 'general';
@@ -734,6 +747,30 @@
                       Reset
                     </Button>
                   </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Connection (UDS only; hidden for WS/unknown transports) -->
+        {#if udsSocketPath}
+          <div class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_connection()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <div class="flex items-center justify-between gap-4">
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium text-foreground">
+                      {m.settings_connection_socket_label()}
+                    </p>
+                    <p class="text-xs text-subtle mt-0.5 font-mono select-text break-all">
+                      {udsSocketPath}
+                    </p>
+                  </div>
+                  <CopyButton text={udsSocketPath} class="shrink-0" />
                 </div>
               </section>
             </div>

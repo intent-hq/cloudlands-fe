@@ -490,6 +490,39 @@ export interface AgentsClient {
    */
   stop(agentId: string): Promise<MutationResult>;
   /**
+   * Cancel the agent's completion watches / delegation groups
+   * (`agent.cancelSubscriptions`, §5.5). Unscoped (neither optional param)
+   * cancels EVERYTHING the agent registered — all completion watches, all
+   * delegation groups it parents, and all event subscriptions — and is
+   * idempotent. Scoped: `subscriptionId` cancels exactly that completion
+   * watch; `groupId` cancels that delegation group plus its grouped watches;
+   * both may be combined (all-or-nothing — an unknown id rejects with
+   * `-32602` before anything is removed, folded into
+   * `{ success: false, error }`). Each scoped removal publishes the standard
+   * `agent:subscriptions-changed` snapshot (§6.5), which drives the FE
+   * refetch path — callers never hand-roll list mutation.
+   */
+  cancelSubscriptions(params: {
+    agentId: string;
+    workspaceId: string;
+    subscriptionId?: string;
+    groupId?: string;
+  }): Promise<MutationResult>;
+  /**
+   * Dismiss the pending Agent Q&A question set (`agent.dismissQuestions`,
+   * §5.5). The daemon persists `dismissedQuestionsMessageId` (the id of the
+   * question-bearing assistant message) in session metadata — so the
+   * dismissal survives reload — emits `agent:updated`, and kicks the queue
+   * drain so messages held by the question hold resume. Idempotent:
+   * re-dismissing the same message succeeds. A nonexistent agent or a
+   * workspace mismatch rejects (folded into `{ success: false, error }`).
+   */
+  dismissQuestions(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+  }): Promise<MutationResult>;
+  /**
    * Rename an agent session (`agent.rename`, §5.5). The daemon persists the
    * new name and an applied rename emits `agent:renamed` (in
    * `AGENT_LIFECYCLE_EVENTS`), so the reactive `subscribe` refetch reconciles
@@ -566,6 +599,20 @@ export interface AgentsClient {
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe;
 }
 
+/**
+ * Reconciled `chat.subscribe` transcript state emitted by the standing
+ * subscription (PROTOCOL §7.1): the seq-0 message page reduced with every
+ * block-granularity delta. `isStreaming` derives from the snapshot's
+ * synthetic in-flight message / activity flags and the delta stream's
+ * terminal `streamingComplete` frames.
+ */
+export interface ChatTranscript {
+  messages: AgentMessage[];
+  truncated: boolean;
+  totalMessages: number;
+  isStreaming: boolean;
+}
+
 export interface ChatClient {
   /**
    * One-shot seq-0 snapshot from the `chat.subscribe` channel (PROTOCOL §7.1).
@@ -579,6 +626,15 @@ export interface ChatClient {
   subscribeSnapshot(
     agentId: string,
   ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
+  /**
+   * Standing per-agent `chat.subscribe` subscription (PROTOCOL §7.1). Keeps
+   * the registration open and invokes `handler` with the reconciled
+   * transcript on the seq-0 snapshot and after every applied block delta.
+   * Self-healing: a sequence gap resnapshots via a fresh registration, a
+   * transport reconnect re-registers, and pushes racing the subscribe reply
+   * are buffered pre-ack. Returns the disposer (sends `chat.unsubscribe`).
+   */
+  subscribe(agentId: string, handler: (transcript: ChatTranscript) => void): Unsubscribe;
 }
 
 /** Parameters for `terminal.create` (PROTOCOL §5.13). `command` omitted ⇒ default shell. */

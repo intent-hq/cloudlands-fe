@@ -11,6 +11,7 @@ import {
 } from 'vitest';
 import type { AgentIpc, WorkspaceIpc, FileIpc, TerminalIpc, IpcResponse } from '../contracts';
 import {
+  AgentCancelSubscriptionsRequestSchema,
   AgentCreateRequestSchema,
   AgentGetRequestSchema,
   AgentSendMessageRequestSchema,
@@ -93,6 +94,45 @@ describe('IPC Contracts', () => {
 
       const validated = AgentListRequestSchema.parse(request);
       expect(validated.includeDeleted).toBe(false);
+    });
+
+    // PROTOCOL §5.5: agent.cancelSubscriptions takes agentId (req),
+    // workspaceId (req), and optional subscriptionId / groupId scoping.
+    it('should validate unscoped cancel-subscriptions request (no optional ids)', () => {
+      const validated = AgentCancelSubscriptionsRequestSchema.parse({
+        agentId: '550e8400-e29b-41d4-a716-446655440000',
+        workspaceId: 'amber-forest',
+      });
+      expect(validated.subscriptionId).toBeUndefined();
+      expect(validated.groupId).toBeUndefined();
+    });
+
+    it('should validate scoped cancel-subscriptions request (subscriptionId + groupId)', () => {
+      const validated = AgentCancelSubscriptionsRequestSchema.parse({
+        agentId: '550e8400-e29b-41d4-a716-446655440000',
+        workspaceId: 'amber-forest',
+        subscriptionId: 'watch-1',
+        groupId: 'grp-1',
+      });
+      expect(validated.subscriptionId).toBe('watch-1');
+      expect(validated.groupId).toBe('grp-1');
+    });
+
+    it('should reject non-string scoping ids (daemon rejects them with -32602)', () => {
+      expect(() =>
+        AgentCancelSubscriptionsRequestSchema.parse({
+          agentId: '550e8400-e29b-41d4-a716-446655440000',
+          workspaceId: 'amber-forest',
+          subscriptionId: 42,
+        }),
+      ).toThrow();
+      expect(() =>
+        AgentCancelSubscriptionsRequestSchema.parse({
+          agentId: '550e8400-e29b-41d4-a716-446655440000',
+          workspaceId: 'amber-forest',
+          groupId: { id: 'grp-1' },
+        }),
+      ).toThrow();
     });
   });
 

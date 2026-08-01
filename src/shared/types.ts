@@ -233,8 +233,9 @@ export const WORKSPACE_DISPLAY_STATUS_VALUES = [
 export type WorkspaceDisplayStatus = (typeof WORKSPACE_DISPLAY_STATUS_VALUES)[number];
 
 /** Runtime guard for BE-sent displayStatus values. Unknown wire values (a future
- *  daemon's 7th value, or a malformed one) must be treated as absent so the FE
- *  degrades to its local derivation instead of rendering an unknown group. */
+ *  daemon's new value, or a malformed one) must be treated as absent so the FE
+ *  defaults to 'not_started' instead of rendering an unknown group — there
+ *  is no local re-derivation from PR/task fields. */
 export function isWorkspaceDisplayStatus(value: unknown): value is WorkspaceDisplayStatus {
   return (
     typeof value === 'string' && (WORKSPACE_DISPLAY_STATUS_VALUES as readonly string[]).includes(value)
@@ -270,7 +271,7 @@ export interface Workspace {
   activity?: 'idle' | 'agent_running';
   /** BE-owned current-cycle display status (intent-hq/intentd#600). Precedence is
    *  daemon-side: open/draft PR → open tasks → merged PR → complete. Optional on
-   *  decode — absent on older daemons, where the FE falls back to its local derivation. */
+   *  decode — when absent (older daemons) the FE defaults to 'not_started'. */
   displayStatus?: WorkspaceDisplayStatus;
   createdAt: string;
   updatedAt: string;
@@ -1000,6 +1001,11 @@ export interface AgentMetadata {
   sandboxPath?: string; // Absolute daemon-host path of the sandbox directory
   sandboxId?: string; // Sandbox identifier
   sandboxBranch?: string; // Git branch checked out inside the sandbox
+  // Question-hold dismissal marker (PROTOCOL §5.5, `agent.dismissQuestions`):
+  // id of the question-bearing assistant message the user dismissed. Persisted
+  // by the daemon in session metadata so the dismissed question set never
+  // re-surfaces (survives reload).
+  dismissedQuestionsMessageId?: string;
   // Allow additional properties for flexibility with proper typing
   [key: string]: string | number | boolean | null | undefined | any[] | ContextReference[];
 }

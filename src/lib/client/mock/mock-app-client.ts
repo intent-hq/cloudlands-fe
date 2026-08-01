@@ -53,6 +53,8 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     // Mock parity with the §7.1 seq-0 snapshot: an empty transcript is the
     // safe default since fixtures don't model turn-granular AgentMessage lists.
     subscribeSnapshot: async () => ({ messages: [], truncated: false, totalMessages: 0 }),
+    subscribe: (_agentId, handler) =>
+      emitOnce(handler, { messages: [], truncated: false, totalMessages: 0, isStreaming: false }),
   };
 
   readonly terminals: AppClient["terminals"] = {

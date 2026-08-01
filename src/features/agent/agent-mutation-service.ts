@@ -1,6 +1,6 @@
 /**
  * Agent mutation service — the post-saga consumer for the three orphaned
- * agent-session async-action triggers awaited by `agent-stream-lifecycle`:
+ * agent-session async-action triggers awaited by `agent-send`:
  * `restoreAgentSessionRequested`, `activateAgentRequested`, and
  * `saveAgentSessionRequested`.
  *
@@ -30,6 +30,12 @@
  * `agent.rename` (PROTOCOL §5.5) and settles the promise — the daemon's
  * `agent:renamed` event reconciles other windows.
  *
+ * It also services `stopAgentSessionRequested` (forward `agent.stop`, §5.5 —
+ * the daemon's terminal `agent:stream:end` converges streaming state) and
+ * `cancelAgentSubscriptionsRequested` (forward `agent.cancelSubscriptions`,
+ * §5.5, with optional `subscriptionId` / `groupId` scoping — the daemon's
+ * `agent:subscriptions-changed` event drives the footer refetch).
+ *
  * It also services the orphaned agent-deletion triggers
  * (`deleteAgentWithUndoRequested`, `deleteAgentSessionRequested`,
  * `undoAgentDeletionRequested`, `commitPendingAgentDeletionRequested`,
@@ -43,9 +49,8 @@
  * the configured store, the slice actions/types, store-free constants, shared
  * types, and the logger. No selector modules (importing them would evaluate
  * `store.createSelector` during middleware-chain construction); state is read
- * directly off `appStore.state.agentSessions.byAgentId`, mirroring the
- * sibling `agent-stream-service.ts`. The toast library is imported lazily
- * inside handlers so the static graph stays light.
+ * directly off `appStore.state.agentSessions.byAgentId`. The toast library
+ * is imported lazily inside handlers so the static graph stays light.
  */
 import type { StoreMiddleware } from '$lib/store-shim/types';
 import type { AgentSession } from '$shared/types';
@@ -54,8 +59,10 @@ import { AgentActivationState } from '$shared/types/agent-session';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import {
+  agentSessionDismissQuestionsRequested,
   bulkUpsertSessions,
   removeSession,
+  updateSession,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { pruneRecentlyClosed } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -69,8 +76,10 @@ import {
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
+  stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { cancelAgentSubscriptionsRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -215,7 +224,7 @@ async function handleActivate(action: ReturnType<typeof activateAgentRequested>)
 function handleSave(action: ReturnType<typeof saveAgentSessionRequested>): void {
   // The mock seam has no separate persistence layer — the agent-session slice
   // IS the runtime state. Resolve immediately so callers awaiting
-  // `saveAction.promise` (agent-stream-lifecycle pre-send) can proceed.
+  // `saveAction.promise` (agent-send pre-send) can proceed.
   appStore.dispatch(action.success(undefined as never));
 }
 
@@ -240,6 +249,139 @@ async function handleRename(action: ReturnType<typeof renameAgentSessionRequeste
   } catch (error) {
     logger.error('Failed to rename agent session', error);
     appStore.dispatch(action.failure(toError(error, m.agent_mutation_renameSessionFailed_error())));
+  }
+}
+
+/**
+ * `stopAgentSessionRequested`: cancel the agent's in-flight stream via
+ * `agent.stop` (PROTOCOL §5.5). Another orphaned `*Requested` trigger — its
+ * saga consumer was removed with the saga runtime, so the dispatch sites
+ * (AgentCard stop menu, SpecWritingOnboarding, the subscriptions-footer
+ * stop buttons) awaited a promise that never settled. The daemon cancels the
+ * current turn and emits the terminal `agent:stream:end` (§7), which is the
+ * real convergence signal; a non-success ack folds into `action.failure` so
+ * callers can surface the error. Intentionally no toast here (unlike the
+ * cancel handler): streaming state converges via `agent:stream:end`
+ * regardless, and the dispatch sites log the failure.
+ */
+async function handleStopSession(
+  action: ReturnType<typeof stopAgentSessionRequested>,
+): Promise<void> {
+  const [, agentId] = action.payload;
+  try {
+    const result = await appClient.agents.stop(agentId);
+    if (!result.success) {
+      appStore.dispatch(
+        action.failure(new Error(result.error || m.agent_mutation_stopFailed_error())),
+      );
+      return;
+    }
+    appStore.dispatch(action.success(undefined as never));
+  } catch (error) {
+    logger.error('Failed to stop agent session', error);
+    appStore.dispatch(action.failure(toError(error, m.agent_mutation_stopFailed_error())));
+  }
+}
+
+/**
+ * `cancelAgentSubscriptionsRequested`: forward `agent.cancelSubscriptions`
+ * (PROTOCOL §5.5) with the optional `subscriptionId` / `groupId` scoping. No
+ * local state is touched here — the daemon publishes
+ * `agent:subscriptions-changed` (§6.5), which the events bridge folds into a
+ * `agent.getSubscriptions` refetch, so the footer converges from the BE
+ * snapshot rather than a hand-rolled list mutation.
+ */
+async function handleCancelSubscriptions(
+  action: ReturnType<typeof cancelAgentSubscriptionsRequested>,
+): Promise<void> {
+  const [wsId, agentId, scope] = action.payload;
+  try {
+    const result = await appClient.agents.cancelSubscriptions({
+      agentId,
+      workspaceId: wsId,
+      ...(scope?.subscriptionId !== undefined ? { subscriptionId: scope.subscriptionId } : {}),
+      ...(scope?.groupId !== undefined ? { groupId: scope.groupId } : {}),
+    });
+    if (!result.success) {
+      const message = result.error || m.agent_mutation_cancelSubscriptionsFailed_error();
+      void getToast().then((toast) => toast.error(message));
+      appStore.dispatch(action.failure(new Error(message)));
+      return;
+    }
+    appStore.dispatch(action.success(undefined as never));
+  } catch (error) {
+    logger.error('Failed to cancel agent subscriptions', error);
+    void getToast().then((toast) =>
+      toast.error(errorMessage(error, m.agent_mutation_cancelSubscriptionsFailed_error())),
+    );
+    appStore.dispatch(
+      action.failure(toError(error, m.agent_mutation_cancelSubscriptionsFailed_error())),
+    );
+  }
+}
+
+/**
+ * `agentSessionDismissQuestionsRequested`: optimistically stamp the
+ * question-dismissal marker (`dismissedQuestionsMessageId`, PROTOCOL §5.5)
+ * into session metadata — the wizard gate reads it, so the wizard hides
+ * immediately — then forward `agent.dismissQuestions` to the daemon. On
+ * failure only the marker key is reverted (the wizard re-surfaces) and the
+ * error is surfaced via toast: the rollback re-reads the CURRENT metadata
+ * rather than restoring the dispatch-time snapshot wholesale, so metadata
+ * updates that landed while the RPC was in flight (e.g. an `agent:updated`
+ * refetch) are not clobbered. On success the daemon persists the marker
+ * (survives reload) and emits `agent:updated`, which reconciles other windows.
+ */
+async function handleDismissQuestions(
+  action: ReturnType<typeof agentSessionDismissQuestionsRequested>,
+): Promise<void> {
+  const [agentId, wsId, messageId] = action.payload;
+  const snapshot = readSession(agentId);
+  const previousDismissedId = snapshot?.metadata?.dismissedQuestionsMessageId;
+  if (snapshot) {
+    appStore.dispatch(
+      updateSession(agentId, {
+        metadata: { ...snapshot.metadata, dismissedQuestionsMessageId: messageId },
+      }),
+    );
+  }
+  const rollback = () => {
+    if (!snapshot) return;
+    const current = readSession(agentId);
+    // Session deleted mid-flight, or a concurrent write already replaced the
+    // marker with a different value — nothing of ours left to revert.
+    if (!current || current.metadata?.dismissedQuestionsMessageId !== messageId) return;
+    const metadata = { ...current.metadata };
+    if (previousDismissedId === undefined) {
+      delete metadata.dismissedQuestionsMessageId;
+    } else {
+      metadata.dismissedQuestionsMessageId = previousDismissedId;
+    }
+    appStore.dispatch(updateSession(agentId, { metadata }));
+  };
+  try {
+    const result = await appClient.agents.dismissQuestions({
+      agentId,
+      workspaceId: wsId,
+      messageId,
+    });
+    if (!result.success) {
+      rollback();
+      const message = result.error || m.agent_mutation_dismissQuestionsFailed_error();
+      void getToast().then((toast) => toast.error(message));
+      appStore.dispatch(action.failure(new Error(message)));
+      return;
+    }
+    appStore.dispatch(action.success(undefined as never));
+  } catch (error) {
+    logger.error('Failed to dismiss agent questions', error);
+    rollback();
+    void getToast().then((toast) =>
+      toast.error(errorMessage(error, m.agent_mutation_dismissQuestionsFailed_error())),
+    );
+    appStore.dispatch(
+      action.failure(toError(error, m.agent_mutation_dismissQuestionsFailed_error())),
+    );
   }
 }
 
@@ -447,6 +589,19 @@ export function createAgentMutationMiddleware(): StoreMiddleware {
         break;
       case renameAgentSessionRequested.type:
         void handleRename(action as ReturnType<typeof renameAgentSessionRequested>);
+        break;
+      case stopAgentSessionRequested.type:
+        void handleStopSession(action as ReturnType<typeof stopAgentSessionRequested>);
+        break;
+      case cancelAgentSubscriptionsRequested.type:
+        void handleCancelSubscriptions(
+          action as ReturnType<typeof cancelAgentSubscriptionsRequested>,
+        );
+        break;
+      case agentSessionDismissQuestionsRequested.type:
+        void handleDismissQuestions(
+          action as ReturnType<typeof agentSessionDismissQuestionsRequested>,
+        );
         break;
       case deleteAgentWithUndoRequested.type:
         handleDeleteWithUndo(action as ReturnType<typeof deleteAgentWithUndoRequested>);

@@ -277,10 +277,13 @@ export interface AgentSession {
   /**
    * Pending attention request raised by the agent (requestDiscussion /
    * reportBlocker). Present only while pending — the daemon clears all three
-   * fields when the agent next receives a message, emitting `agent:updated`
-   * with `attentionRequestCleared: true`. Exposed top-level on the full
-   * session projection and under `metadata` on `AgentLite` (agent.list /
-   * agent.get). Rendered verbatim.
+   * fields when the user next responds, i.e. on a user-origin delivery
+   * (`agent.sendMessage`, `agent.sendQueuedMessageNow`,
+   * `agent.editAndRegenerate`, or a drained user-origin queue entry),
+   * emitting `agent:updated` with `attentionRequestCleared: true`; automatic
+   * deliveries (A2A sends, parent/subscription wakes) do not clear them.
+   * Exposed top-level on the full session projection and under `metadata` on
+   * `AgentLite` (agent.list / agent.get). Rendered verbatim.
    */
   attentionRequestKind?: 'discussion' | 'blocker';
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { sortWorkingAgentsFirst } from './delegation-ordering';
+import {
+  groupDoneCount,
+  isGroupDeliveryPending,
+  sortWorkingAgentsFirst,
+} from './delegation-ordering';
 
 describe('sortWorkingAgentsFirst', () => {
   it('sorts still-working agents before finished ones', () => {
@@ -32,5 +36,69 @@ describe('sortWorkingAgentsFirst', () => {
   it('ignores completed ids not present in the list', () => {
     const result = sortWorkingAgentsFirst(['a', 'b'], new Set(['z', 'b']));
     expect(result).toEqual(['a', 'b']);
+  });
+});
+
+const makeGroup = (
+  overrides: Partial<{
+    expectedAgentIds: string[];
+    completedAgentIds: string[];
+    deletedAgentIds: string[];
+    delivered: boolean;
+  }> = {},
+) => ({
+  expectedAgentIds: [],
+  completedAgentIds: [],
+  deletedAgentIds: [],
+  delivered: false,
+  ...overrides,
+});
+
+describe('groupDoneCount', () => {
+  it('counts completed and deleted agents together', () => {
+    const group = makeGroup({
+      expectedAgentIds: ['a', 'b', 'c'],
+      completedAgentIds: ['a'],
+      deletedAgentIds: ['b'],
+    });
+    expect(groupDoneCount(group)).toBe(2);
+  });
+
+  it('returns 0 for a group with no finished agents', () => {
+    expect(groupDoneCount(makeGroup({ expectedAgentIds: ['a', 'b'] }))).toBe(0);
+  });
+});
+
+describe('isGroupDeliveryPending', () => {
+  it('is true when all expected agents finished but the wake is undelivered', () => {
+    const group = makeGroup({
+      expectedAgentIds: ['a', 'b'],
+      completedAgentIds: ['a'],
+      deletedAgentIds: ['b'],
+      delivered: false,
+    });
+    expect(isGroupDeliveryPending(group)).toBe(true);
+  });
+
+  it('is false while agents are still working', () => {
+    const group = makeGroup({
+      expectedAgentIds: ['a', 'b'],
+      completedAgentIds: ['a'],
+      delivered: false,
+    });
+    expect(isGroupDeliveryPending(group)).toBe(false);
+  });
+
+  it('is false once the wake has been delivered', () => {
+    const group = makeGroup({
+      expectedAgentIds: ['a'],
+      completedAgentIds: ['a'],
+      delivered: true,
+    });
+    expect(isGroupDeliveryPending(group)).toBe(false);
+  });
+
+  it('is false for an empty group (no expected agents)', () => {
+    expect(isGroupDeliveryPending(makeGroup())).toBe(false);
   });
 });

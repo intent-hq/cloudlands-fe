@@ -33,8 +33,8 @@ import {
   chatReset,
   chatStreamingReconciled,
   chatInitialized,
-  streamCompleted,
-  streamTimedOut,
+  streamEnded,
+  streamFailed,
 } from '../chat-state/chat-state-slice';
 
 export {
@@ -580,7 +580,7 @@ function applySessionUpsert(
     // When a turn is actively in flight (both runtime flags set, e.g. right
     // after chatSendStarted started a queued turn), a session snapshot's
     // explicit `false` is stale for these ephemeral flags and must not clobber
-    // the live turn — only explicit clear actions (streamCompleted,
+    // the live turn — only explicit clear actions (streamEnded,
     // setAgentStreaming, chatStopCompleted, …) may end it. Deliberate
     // upsert-based clears (e.g. the stream safety timeout) flip a flag off
     // first, so this pair-guard never blocks them.
@@ -608,7 +608,7 @@ function applySessionUpsert(
       finalSession.isProcessing = true;
     }
 
-    // Guard: if agent:idle/streamCompleted already cleared the streaming
+    // Guard: if agent:idle/streamEnded already cleared the streaming
     // flags (existing is authoritatively idle), don't let stale incoming
     // data from an async saga re-introduce isStreaming=true.
     // Only chatSendStarted should transition idle→streaming.
@@ -791,6 +791,19 @@ export const agentSessionForkSessionRequested = createAsyncAction<
   [agentId: string, wsId: string, options?: AgentSessionForkOptions],
   string
 >('agentSessions/forkSession', 'agentSessions/forkSessionRequested');
+
+/**
+ * Dismiss the pending Agent Q&A question set (`agent.dismissQuestions`,
+ * PROTOCOL §5.5). `messageId` is the question-bearing assistant message id.
+ * The mutation middleware applies the dismissal marker to session metadata
+ * optimistically BEFORE the wire call and rolls it back on failure; the
+ * daemon persists `dismissedQuestionsMessageId` (survives reload) and emits
+ * `agent:updated` to reconcile other windows.
+ */
+export const agentSessionDismissQuestionsRequested = createAsyncAction<
+  [agentId: string, wsId: string, messageId: string],
+  void
+>('agentSessions/dismissQuestions', 'agentSessions/dismissQuestionsRequested');
 
 /** Update an agent's digest field. Kept on the legacy action type for dispatch compatibility. */
 export const updateAgentDigest = createAction<
@@ -1070,14 +1083,14 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     }
     return state;
   })
-  .with(streamCompleted, (state, { payload: [agentId] }) =>
+  .with(streamEnded, (state, { payload: [agentId] }) =>
     updateSessionFields(state, agentId, {
       isStreaming: false,
       isProcessing: false,
       isResponding: false,
     }),
   )
-  .with(streamTimedOut, (state, { payload: [agentId] }) =>
+  .with(streamFailed, (state, { payload: [agentId] }) =>
     updateSessionFields(state, agentId, {
       isStreaming: false,
       isProcessing: false,

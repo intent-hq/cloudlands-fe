@@ -7,16 +7,21 @@ import type { AgentSession } from "$shared/types/agent-session";
 // `appClient.agents.rename` are stubbed. The mutation middleware runs against
 // the REAL configured store so the restore/activate/save + deletion + rename
 // async actions resolve through the real action.success/failure path and
-// their promises settle exactly as agent-stream-lifecycle (and the deletion/
+// their promises settle exactly as agent-send (and the deletion/
 // rename triggers) expect.
-const { get, del, list, rename } = vi.hoisted(() => ({
+const { get, del, list, rename, dismissQuestions, stop, cancelSubscriptions } = vi.hoisted(() => ({
   get: vi.fn(),
   del: vi.fn(),
   list: vi.fn(),
   rename: vi.fn(),
+  dismissQuestions: vi.fn(),
+  stop: vi.fn(),
+  cancelSubscriptions: vi.fn(),
 }));
 vi.mock("$lib/client", () => ({
-  appClient: { agents: { get, delete: del, list, rename } },
+  appClient: {
+    agents: { get, delete: del, list, rename, dismissQuestions, stop, cancelSubscriptions },
+  },
 }));
 
 // The deletion handlers lazily `import("svelte-sonner")` for the undo/error
@@ -34,7 +39,9 @@ vi.mock("svelte-sonner", () => ({
 import { store as appStore } from "$store/renderer/store";
 import { toast } from "svelte-sonner";
 import {
+  agentSessionDismissQuestionsRequested,
   bulkUpsertSessions,
+  removeSession,
   updateSession,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
@@ -48,8 +55,10 @@ import {
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
+  stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
+import { cancelAgentSubscriptionsRequested } from "$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice";
 import {
   closeTab,
   initializeLayout,
@@ -673,3 +682,269 @@ describe("agentMutationService — rename (Bug 1: renameAgentSessionRequested re
     expect(toastMock.error).toHaveBeenCalledWith("Failed to rename agent");
   });
 });
+
+describe("agentMutationService — dismiss questions (optimistic marker + rollback)", () => {
+  const toastMock = toast as unknown as { error: ReturnType<typeof vi.fn> };
+
+  beforeAll(() => {
+    appStore.init();
+  });
+  afterEach(() => {
+    dismissQuestions.mockReset();
+    toastMock.error.mockClear();
+  });
+
+  it("optimistically stamps dismissedQuestionsMessageId, forwards agent.dismissQuestions, and resolves", async () => {
+    const WS = "ws-dismiss-ok";
+    const AGENT = "agent-dismiss-ok";
+    seedSession(makeSession(AGENT, WS, { metadata: { model: "sonnet" } }));
+    let metadataAtWireCall: unknown;
+    dismissQuestions.mockImplementationOnce(async () => {
+      metadataAtWireCall = readSession(AGENT)?.metadata;
+      return { success: true };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(dismissQuestions).toHaveBeenCalledWith({
+      agentId: AGENT,
+      workspaceId: WS,
+      messageId: "msg-q1",
+    });
+    // The marker was applied BEFORE the wire call (optimistic hide) and
+    // pre-existing metadata was preserved.
+    expect(metadataAtWireCall).toMatchObject({
+      model: "sonnet",
+      dismissedQuestionsMessageId: "msg-q1",
+    });
+    expect(readSession(AGENT)?.metadata?.dismissedQuestionsMessageId).toBe("msg-q1");
+  });
+
+  it("rolls the metadata back and surfaces a toast when the daemon reports failure", async () => {
+    const WS = "ws-dismiss-fail";
+    const AGENT = "agent-dismiss-fail";
+    seedSession(makeSession(AGENT, WS, { metadata: { model: "sonnet" } }));
+    dismissQuestions.mockResolvedValueOnce({ success: false, error: "dismiss boom" });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    expect(readSession(AGENT)?.metadata).toEqual({ model: "sonnet" });
+    // Toast import is lazy; flush the microtask queue before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(toastMock.error).toHaveBeenCalledWith("dismiss boom");
+  });
+
+  it("rolls back and rejects when the seam throws (transport failure)", async () => {
+    const WS = "ws-dismiss-throw";
+    const AGENT = "agent-dismiss-throw";
+    seedSession(makeSession(AGENT, WS));
+    dismissQuestions.mockRejectedValueOnce(new Error("wire down"));
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("wire down");
+
+    expect(readSession(AGENT)?.metadata?.dismissedQuestionsMessageId).toBeUndefined();
+  });
+
+  it("still forwards the wire call when the session is not in the store (no optimistic stamp)", async () => {
+    dismissQuestions.mockResolvedValueOnce({ success: true });
+
+    const action = agentSessionDismissQuestionsRequested(
+      "agent-dismiss-missing",
+      "ws-dismiss-missing",
+      "msg-q1",
+    );
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(dismissQuestions).toHaveBeenCalledWith({
+      agentId: "agent-dismiss-missing",
+      workspaceId: "ws-dismiss-missing",
+      messageId: "msg-q1",
+    });
+  });
+
+  it("rollback only reverts the marker key — a concurrent in-flight metadata write survives", async () => {
+    const WS = "ws-dismiss-concurrent";
+    const AGENT = "agent-dismiss-concurrent";
+    seedSession(makeSession(AGENT, WS, { metadata: { model: "sonnet" } }));
+    dismissQuestions.mockImplementationOnce(async () => {
+      // A concurrent write lands while the RPC is in flight (e.g. an
+      // agent:updated refetch that persisted a model switch).
+      const current = readSession(AGENT);
+      appStore.dispatch(
+        updateSession(AGENT, { metadata: { ...current?.metadata, model: "opus" } }),
+      );
+      return { success: false, error: "dismiss boom" };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    // The concurrent model switch is preserved; only the marker is reverted.
+    expect(readSession(AGENT)?.metadata).toEqual({ model: "opus" });
+  });
+
+  it("rollback no-ops when a concurrent write already replaced the marker with a different value", async () => {
+    const WS = "ws-dismiss-replaced";
+    const AGENT = "agent-dismiss-replaced";
+    seedSession(makeSession(AGENT, WS, { metadata: {} }));
+    dismissQuestions.mockImplementationOnce(async () => {
+      const current = readSession(AGENT);
+      appStore.dispatch(
+        updateSession(AGENT, {
+          metadata: { ...current?.metadata, dismissedQuestionsMessageId: "msg-q2" },
+        }),
+      );
+      return { success: false, error: "dismiss boom" };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    // The newer marker (a later dismissal for msg-q2) is not clobbered.
+    expect(readSession(AGENT)?.metadata?.dismissedQuestionsMessageId).toBe("msg-q2");
+  });
+
+  it("rollback no-ops when the session was deleted mid-flight", async () => {
+    const WS = "ws-dismiss-deleted";
+    const AGENT = "agent-dismiss-deleted";
+    seedSession(makeSession(AGENT, WS));
+    dismissQuestions.mockImplementationOnce(async () => {
+      appStore.dispatch(removeSession(AGENT));
+      return { success: false, error: "dismiss boom" };
+    });
+
+    const action = agentSessionDismissQuestionsRequested(AGENT, WS, "msg-q1");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("dismiss boom");
+
+    expect(readSession(AGENT)).toBeUndefined();
+  });
+});
+
+describe("agentMutationService — stop session (stopAgentSessionRequested → agent.stop)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+  afterEach(() => {
+    stop.mockReset();
+  });
+
+  it("forwards agent.stop via the seam and resolves the action promise", async () => {
+    stop.mockResolvedValueOnce({ success: true });
+
+    const action = stopAgentSessionRequested("ws-stop-ok", "agent-stop-ok");
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(stop).toHaveBeenCalledWith("agent-stop-ok");
+  });
+
+  it("rejects when the daemon reports failure", async () => {
+    stop.mockResolvedValueOnce({ success: false, error: "stop boom" });
+
+    const action = stopAgentSessionRequested("ws-stop-fail", "agent-stop-fail");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("stop boom");
+  });
+
+  it("rejects when the seam throws (transport failure)", async () => {
+    stop.mockRejectedValueOnce(new Error("wire down"));
+
+    const action = stopAgentSessionRequested("ws-stop-throw", "agent-stop-throw");
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("wire down");
+  });
+});
+
+describe("agentMutationService — cancel subscriptions (scoped agent.cancelSubscriptions)", () => {
+  const toastMock = toast as unknown as { error: ReturnType<typeof vi.fn> };
+
+  beforeAll(() => {
+    appStore.init();
+  });
+  afterEach(() => {
+    cancelSubscriptions.mockReset();
+    toastMock.error.mockClear();
+  });
+
+  it("forwards the subscriptionId-scoped params and resolves the promise", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({ success: true });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-1", "agent-parent-1", {
+      subscriptionId: "watch-1",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(cancelSubscriptions).toHaveBeenCalledWith({
+      agentId: "agent-parent-1",
+      workspaceId: "ws-cancel-1",
+      subscriptionId: "watch-1",
+    });
+  });
+
+  it("forwards the groupId-scoped params and resolves the promise", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({ success: true });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-2", "agent-parent-2", {
+      groupId: "grp-1",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(cancelSubscriptions).toHaveBeenCalledWith({
+      agentId: "agent-parent-2",
+      workspaceId: "ws-cancel-2",
+      groupId: "grp-1",
+    });
+  });
+
+  it("omits both optional ids for an unscoped cancel", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({ success: true });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-3", "agent-parent-3");
+    appStore.dispatch(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(cancelSubscriptions).toHaveBeenCalledWith({
+      agentId: "agent-parent-3",
+      workspaceId: "ws-cancel-3",
+    });
+  });
+
+  it("rejects and surfaces a toast when the daemon reports failure (e.g. -32602 unknown id)", async () => {
+    cancelSubscriptions.mockResolvedValueOnce({
+      success: false,
+      error: "unknown subscription id: watch-missing",
+    });
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-4", "agent-parent-4", {
+      subscriptionId: "watch-missing",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("unknown subscription id");
+    // Toast import is lazy; flush the microtask queue before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(toastMock.error).toHaveBeenCalledWith("unknown subscription id: watch-missing");
+  });
+
+  it("rejects when the seam throws (transport failure)", async () => {
+    cancelSubscriptions.mockRejectedValueOnce(new Error("wire down"));
+
+    const action = cancelAgentSubscriptionsRequested("ws-cancel-5", "agent-parent-5", {
+      groupId: "grp-x",
+    });
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow("wire down");
+  });
+});
+
