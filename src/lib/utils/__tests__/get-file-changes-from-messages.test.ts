@@ -229,6 +229,182 @@ describe('getFileChangesFromMessage', () => {
     });
   });
 
+  describe('non-file tool calls (regression: monorepo#1245)', () => {
+    const workspaceApiCode =
+      'const tasks = await ws.note.listTasks("spec");\nreturn tasks;\n' +
+      'const x = 1;\n'.repeat(28);
+
+    it('ignores a workspace_api call whose title starts with "Create "', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-ws-api',
+          name: 'Create follow-up task for AgentMetadata typing and delegate AgentMetadata typing task',
+          toolName: 'workspace_api',
+          input: {
+            code: workspaceApiCode,
+            summary: 'Create follow-up task and delegate it',
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+      expect(result.totalAdditions).toBe(0);
+    });
+
+    it('ignores a workspace_api call identified via metadata.toolName', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-ws-api-meta',
+          name: 'Edit spec note with progress update',
+          metadata: { toolName: 'workspace_api', toolId: 'tool-ws-api-meta' },
+          input: {
+            code: 'await ws.note.add("spec", { content: "done" });',
+            summary: 'Update spec',
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('ignores MCP-decorated workspace_api name variants', () => {
+      const variants = [
+        'workspace_api_workspace-mcp',
+        'mcp__workspace-mcp__workspace_api',
+        '//local/mcp/workspace_api',
+        'workspace-mcp_workspace_api',
+      ];
+      const message = makeAssistantMessage(
+        variants.map((variant, index) => ({
+          type: 'tool_use',
+          id: `tool-ws-variant-${index}`,
+          name: 'Create follow-up task and delegate it',
+          toolName: variant,
+          input: { code: workspaceApiCode, summary: 'Create task' },
+        })),
+      );
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('ignores raw workspace_api name even without a title', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-ws-api-raw',
+          name: 'workspace_api',
+          input: { code: workspaceApiCode, summary: 'Create task note' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('rejects sentence-style title-derived paths even without a raw tool name', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-sentence-create',
+          name: 'Create follow-up task and delegate the typing work',
+          input: { code: workspaceApiCode, summary: 'Create follow-up task' },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-sentence-edit',
+          name: 'Edit the config to support new panels',
+          input: { old_str: 'old', new_str: 'new' },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-sentence-save',
+          name: 'Save the results of the analysis',
+          input: { body: 'analysis text' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('rejects bare-word title-derived paths without extension or separator', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-bare-word',
+          name: 'Create Foo',
+          input: { file_text: 'content' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('still extracts genuine file edits from title-derived paths', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-title-edit',
+          name: 'Edit src/foo.ts',
+          input: { old_str: 'old', new_str: 'new' },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-title-save',
+          name: 'Save ThemeToggle.svelte',
+          input: { file_content: '<button>toggle</button>' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(2);
+      const editChange = result.changes.find((c) => c.filePath === 'src/foo.ts');
+      const saveChange = result.changes.find((c) => c.filePath === 'ThemeToggle.svelte');
+      expect(editChange?.action).toBe('modify');
+      expect(saveChange?.action).toBe('create');
+    });
+
+    it('does not use loose content fallbacks (code/body/text) for title-prefix matches', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-title-loose',
+          name: 'Create foo.swift',
+          input: { code: 'let x = 1' },
+        },
+      ]);
+
+      // Path looks valid but content comes from a loose field on a
+      // title-matched tool: no content is extracted, so the empty
+      // create is filtered as a no-op.
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('still uses loose content fallbacks for raw save_file tools', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-raw-loose',
+          name: 'save_file',
+          input: { path: 'src/from-code.ts', code: 'const x = 1;\nconst y = 2;' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].filePath).toBe('src/from-code.ts');
+      expect(result.changes[0].newContent).toBe('const x = 1;\nconst y = 2;');
+      expect(result.changes[0].additions).toBe(2);
+    });
+  });
+
   describe('str_replace_editor with command: insert', () => {
     it('still handles insert correctly', () => {
       const message = makeAssistantMessage([

@@ -129,22 +129,43 @@ jobs:
           fi
 
       - name: Upload new assets to stable
+        id: upload_assets
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           VERSION: ${{ inputs.version }}
         run: |
           cd "$RUNNER_TEMP/release-assets"
 
-          # Require latest-mac.yml
+          # Auto-updater feed files, one per platform. latest-mac.yml is
+          # required; the others are promoted when present so older mac-only
+          # releases can still be promoted.
+          FEED_FILES=(latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml)
+
           if [ ! -f "latest-mac.yml" ]; then
             echo "::error::Missing required latest-mac.yml"
             exit 1
           fi
 
-          # Build list of all downloaded assets except latest-mac.yml
+          PROMOTED_FEEDS=()
+          for feed in "${FEED_FILES[@]}"; do
+            if [ -f "$feed" ]; then
+              PROMOTED_FEEDS+=("$feed")
+            else
+              echo "::warning::Feed file $feed not present in v${VERSION} - skipping (release predates Windows/Linux builds?)"
+            fi
+          done
+
+          # Build list of all downloaded assets except the feed files
           UPLOAD_FILES=()
           for file in *; do
-            if [ -f "$file" ] && [ "$file" != "latest-mac.yml" ]; then
+            IS_FEED=false
+            for feed in "${FEED_FILES[@]}"; do
+              if [ "$file" = "$feed" ]; then
+                IS_FEED=true
+                break
+              fi
+            done
+            if [ -f "$file" ] && [ "$IS_FEED" = "false" ]; then
               UPLOAD_FILES+=("$file")
             fi
           done
@@ -156,9 +177,12 @@ jobs:
             gh release upload stable --repo intent-hq/cloudlands-releases --clobber -- "${UPLOAD_FILES[@]}"
           fi
 
-          # Replace latest-mac.yml last with --clobber (atomic switch of auto-updater feed)
-          echo "Replacing latest-mac.yml (auto-updater feed)"
-          gh release upload stable --repo intent-hq/cloudlands-releases --clobber -- latest-mac.yml
+          # Replace the feed files last with --clobber (atomic switch of all
+          # auto-updater feeds, after every referenced asset is in place)
+          echo "Replacing auto-updater feeds: ${PROMOTED_FEEDS[*]}"
+          gh release upload stable --repo intent-hq/cloudlands-releases --clobber -- "${PROMOTED_FEEDS[@]}"
+
+          echo "promoted_feeds=${PROMOTED_FEEDS[*]}" >> "$GITHUB_OUTPUT"
 
       - name: Delete previous version assets
         env:
@@ -199,48 +223,59 @@ jobs:
             fi
           done
 
-      - name: Verify stable feed matches versioned release
+      - name: Verify stable feeds match versioned release
         env:
           VERSION: ${{ inputs.version }}
+          PROMOTED_FEEDS: ${{ steps.upload_assets.outputs.promoted_feeds }}
         run: |
-          # Fetch versioned release sha512
-          VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
-          if [ -z "$VERSIONED_SHA" ]; then
-            echo "::error::Failed to fetch or parse sha512 from versioned release v${VERSION}"
+          read -ra FEEDS <<< "$PROMOTED_FEEDS"
+          if [ ${#FEEDS[@]} -eq 0 ]; then
+            echo "::error::No promoted feeds recorded by the upload step"
             exit 1
           fi
 
-          # Retry stable feed fetch with exponential backoff (CDN propagation can take a few seconds)
-          MAX_RETRIES=5
-          RETRY_DELAY=2
-          for i in $(seq 1 "$MAX_RETRIES"); do
-            STABLE_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+          for feed in "${FEEDS[@]}"; do
+            echo "Verifying $feed"
 
-            if [ -z "$STABLE_SHA" ]; then
-              echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch or parse sha512 from stable release"
-              if [ "$i" -lt "$MAX_RETRIES" ]; then
-                sleep "$RETRY_DELAY"
-                RETRY_DELAY=$((RETRY_DELAY * 2))
-                continue
-              else
-                echo "::error::Failed to fetch stable sha512 after $MAX_RETRIES retries"
-                exit 1
-              fi
+            # Fetch versioned release sha512
+            VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/${feed}" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+            if [ -z "$VERSIONED_SHA" ]; then
+              echo "::error::Failed to fetch or parse sha512 for $feed from versioned release v${VERSION}"
+              exit 1
             fi
 
-            if [ "$VERSIONED_SHA" = "$STABLE_SHA" ]; then
-              echo "✓ Stable feed sha512 matches versioned release ($VERSIONED_SHA) [attempt $i]"
-              break
-            else
-              echo "::warning::Retry $i/$MAX_RETRIES: sha512 mismatch - versioned: $VERSIONED_SHA, stable: $STABLE_SHA (likely CDN propagation delay)"
-              if [ "$i" -lt "$MAX_RETRIES" ]; then
-                sleep "$RETRY_DELAY"
-                RETRY_DELAY=$((RETRY_DELAY * 2))
-              else
-                echo "::error::sha512 mismatch after $MAX_RETRIES retries - versioned: $VERSIONED_SHA, stable: $STABLE_SHA"
-                exit 1
+            # Retry stable feed fetch with exponential backoff (CDN propagation can take a few seconds)
+            MAX_RETRIES=5
+            RETRY_DELAY=2
+            for i in $(seq 1 "$MAX_RETRIES"); do
+              STABLE_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/${feed}?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+
+              if [ -z "$STABLE_SHA" ]; then
+                echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch or parse sha512 for $feed from stable release"
+                if [ "$i" -lt "$MAX_RETRIES" ]; then
+                  sleep "$RETRY_DELAY"
+                  RETRY_DELAY=$((RETRY_DELAY * 2))
+                  continue
+                else
+                  echo "::error::Failed to fetch stable sha512 for $feed after $MAX_RETRIES retries"
+                  exit 1
+                fi
               fi
-            fi
+
+              if [ "$VERSIONED_SHA" = "$STABLE_SHA" ]; then
+                echo "✓ Stable $feed sha512 matches versioned release ($VERSIONED_SHA) [attempt $i]"
+                break
+              else
+                echo "::warning::Retry $i/$MAX_RETRIES: $feed sha512 mismatch - versioned: $VERSIONED_SHA, stable: $STABLE_SHA (likely CDN propagation delay)"
+                if [ "$i" -lt "$MAX_RETRIES" ]; then
+                  sleep "$RETRY_DELAY"
+                  RETRY_DELAY=$((RETRY_DELAY * 2))
+                else
+                  echo "::error::$feed sha512 mismatch after $MAX_RETRIES retries - versioned: $VERSIONED_SHA, stable: $STABLE_SHA"
+                  exit 1
+                fi
+              fi
+            done
           done
 
       # The summary script ships with the repo; check out the promoted tag so the
@@ -436,7 +471,19 @@ jobs:
           VERSION: ${{ inputs.version }}
           PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
           IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
+          PROMOTED_FEEDS: ${{ steps.upload_assets.outputs.promoted_feeds }}
         run: |
+          feed_platform() {
+            case "$1" in
+              latest-mac.yml) echo "macOS" ;;
+              latest.yml) echo "Windows" ;;
+              latest-linux.yml) echo "Linux x64" ;;
+              latest-linux-arm64.yml) echo "Linux arm64" ;;
+              *) echo "$1" ;;
+            esac
+          }
+
+          read -ra FEEDS <<< "$PROMOTED_FEEDS"
           {
             echo "## Stable Promotion"
             echo ""
@@ -449,10 +496,12 @@ jobs:
             echo ""
             echo "### Download URLs"
             echo "- [Rolling stable channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/stable)"
-            echo "- [Auto-updater feed](https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml)"
+            for feed in "${FEEDS[@]}"; do
+              echo "- [Auto-updater feed ($(feed_platform "$feed"))](https://github.com/intent-hq/cloudlands-releases/releases/download/stable/${feed})"
+            done
             echo ""
             echo "### Verification"
             echo "- ✓ Assets copied from versioned release v$VERSION"
-            echo "- ✓ sha512 verification passed"
+            echo "- ✓ sha512 verification passed for: ${FEEDS[*]}"
             echo "- ✓ Aggregated release notes updated"
           } >> "$GITHUB_STEP_SUMMARY"

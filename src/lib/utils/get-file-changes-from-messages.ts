@@ -383,6 +383,69 @@ export function isAggregateFileChangesRedundant(messages: AgentMessage[]): boole
 const KNOWN_NOTE_IDS = new Set(['spec', 'notes', 'tasks', 'readme', 'todo', 'changelog']);
 
 /**
+ * Raw tool names that never represent codebase file edits (workspace/note MCP
+ * tools). Their sentence-style display titles can start with "Create "/"Save "/
+ * "Edit " and would otherwise be misparsed as file changes (monorepo#1245).
+ */
+const NON_FILE_TOOL_NAMES = new Set([
+  'workspace_api',
+  'get_note',
+  'create_note',
+  'update_note',
+  'add_to_note',
+  'edit_note',
+  'delegate_task',
+  'create_agent',
+]);
+
+/**
+ * Normalize a raw tool name by stripping MCP transport decorations, mirroring
+ * the variants cleanToolName() in the chat tool-classifier handles:
+ * "//local/mcp/workspace_api", "mcp__workspace-mcp__workspace_api",
+ * "workspace-mcp_workspace_api", and "workspace_api_workspace-mcp".
+ */
+function normalizeRawToolName(name: string): string {
+  let normalized = name.toLowerCase();
+  const mcpUrlMatch = normalized.match(/\/\/local\/mcp\/(.+)$/);
+  if (mcpUrlMatch) normalized = mcpUrlMatch[1];
+  normalized = normalized.replace(/^mcp__[^_]+__/, '');
+  normalized = normalized.replace(/^workspace[-_]mcp[-_]/, '');
+  // Loop to handle garbled names with a doubled server suffix
+  while (/[-_]workspace-mcp$/.test(normalized)) {
+    normalized = normalized.replace(/[-_]workspace-mcp$/, '');
+  }
+  return normalized;
+}
+
+/**
+ * Check whether any raw tool name candidate on the block identifies a known
+ * non-file tool. The display name in block.name may be a sentence-style title
+ * while the raw tool name lives in block.toolName or block.metadata.
+ */
+function isNonFileToolBlock(block: ContentBlock): boolean {
+  const metadata = block.metadata as Record<string, unknown> | undefined;
+  const candidates = [block.name, block.toolName, metadata?.toolName];
+  return candidates.some(
+    (candidate) =>
+      typeof candidate === 'string' && NON_FILE_TOOL_NAMES.has(normalizeRawToolName(candidate)),
+  );
+}
+
+/**
+ * Check whether a path candidate derived from a tool title ("Edit X" /
+ * "Save X" / "Create X") plausibly refers to a file. Sentence-style titles
+ * like "Create follow-up task and delegate it" must not be treated as paths:
+ * reject candidates containing whitespace or lacking both a file extension
+ * and a path separator (monorepo#1245).
+ */
+function isPlausibleTitleDerivedPath(candidate: string): boolean {
+  if (/\s/.test(candidate)) return false;
+  const hasExtension = candidate.includes('.');
+  const hasPathSeparator = candidate.includes('/') || candidate.includes('\\');
+  return hasExtension || hasPathSeparator;
+}
+
+/**
  * Check if a path looks like a workspace note rather than a codebase file.
  * Notes typically:
  * - Are known note IDs (spec, notes, tasks, etc.)
@@ -422,6 +485,12 @@ function isNotePath(filePath: string): boolean {
  * Extract file change from a tool_use content block
  */
 function extractFileChangeFromBlock(block: ContentBlock): ChatFileChange | null {
+  // Known non-file tools (workspace/note MCP tools) never produce file changes,
+  // even when their display titles start with "Create "/"Save "/"Edit "
+  if (isNonFileToolBlock(block)) {
+    return null;
+  }
+
   // Tool names are not guaranteed to be strings; use the first non-empty string candidate
   const toolName =
     typeof block.name === 'string' && block.name
@@ -448,17 +517,20 @@ function extractFileChangeFromBlock(block: ContentBlock): ChatFileChange | null 
     return change;
   }
 
-  if (
+  const isRawSaveFileTool =
     toolNameLower === 'save_file' ||
     toolNameLower === 'save-file' ||
     toolNameLower === 'write_file' ||
     toolNameLower === 'write-file' ||
     toolNameLower === 'create_file' ||
-    toolNameLower === 'create-file' ||
+    toolNameLower === 'create-file';
+
+  if (
+    isRawSaveFileTool ||
     toolNameLower.startsWith('save ') ||
     toolNameLower.startsWith('create ')
   ) {
-    const change = extractFromSaveFile(id, toolName, input);
+    const change = extractFromSaveFile(id, toolName, input, isRawSaveFileTool);
     // Filter out note paths
     if (change && isNotePath(change.filePath)) {
       return null;
@@ -528,7 +600,9 @@ function extractFromStrReplace(
   // Get path from input or extract from tool name like "Edit spec" or "Edit src/foo.ts"
   let path = asPathString(input.path);
   if (!path && typeof toolName === 'string' && toolName.toLowerCase().startsWith('edit ')) {
-    path = asPathString(toolName.substring(5));
+    const titlePath = asPathString(toolName.substring(5));
+    // Sentence-style titles ("Edit the config to …") are not file paths
+    path = titlePath && isPlausibleTitleDerivedPath(titlePath) ? titlePath : null;
   }
   if (!path) return null;
 
@@ -662,6 +736,7 @@ function extractFromSaveFile(
   id: string,
   toolName: string,
   input: Record<string, any>,
+  isRawSaveFileTool: boolean,
 ): ChatFileChange | null {
   // Get path from input or extract from tool name like "Save ThemeToggle.svelte" or "Create src/foo.ts"
   let path =
@@ -669,22 +744,26 @@ function extractFromSaveFile(
 
   if (!path && typeof toolName === 'string') {
     const toolNameLower = toolName.toLowerCase();
+    let titlePath: string | null = null;
     if (toolNameLower.startsWith('save ')) {
-      path = asPathString(toolName.substring(5));
+      titlePath = asPathString(toolName.substring(5));
     } else if (toolNameLower.startsWith('create ')) {
-      path = asPathString(toolName.substring(7));
+      titlePath = asPathString(toolName.substring(7));
     }
+    // Sentence-style titles ("Create follow-up task …") are not file paths
+    path = titlePath && isPlausibleTitleDerivedPath(titlePath) ? titlePath : null;
   }
 
-  // Try multiple possible content field names (tools use different conventions)
+  // Try multiple possible content field names (tools use different conventions).
+  // The loose fallbacks (text/code/body) are only trusted for recognized
+  // file-writing tools matched by raw name, not title-prefix matches —
+  // arbitrary tools carry unrelated payloads in those fields (monorepo#1245)
   const rawContent =
     input.file_content ??
     input.fileContent ??
     input.content ??
     input.file_text ??
-    input.text ??
-    input.code ??
-    input.body ??
+    (isRawSaveFileTool ? (input.text ?? input.code ?? input.body) : undefined) ??
     '';
 
   // Unescape literal \n characters from JSON encoding
