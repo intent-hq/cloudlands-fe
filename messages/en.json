@@ -1698,6 +1698,7 @@
   "chat_chatMessage_viewAttachedImage_ariaLabel": "View attached image {number} of {total} full size",
   "chat_chatPanel_agentFailedToStart_error": "Agent failed to start",
   "chat_chatPanel_agentSpawnFailed_error": "Agent spawn failed",
+  "chat_chatPanel_fileChangesAggregate_suffix": "in conversation so far",
   "chat_chatPanel_nothingToRetry_toast": "Nothing to retry — error cleared. Send a message to start a new turn.",
   "chat_contextApi_readFileFailed_error": "Failed to read file",
   "chat_contextPicker_active_badge": "Active",

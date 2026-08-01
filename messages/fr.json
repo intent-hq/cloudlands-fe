@@ -1698,6 +1698,7 @@
   "chat_chatMessage_viewAttachedImage_ariaLabel": "Voir l'image jointe {number} sur {total} en taille réelle",
   "chat_chatPanel_agentFailedToStart_error": "L'agent n'a pas pu démarrer",
   "chat_chatPanel_agentSpawnFailed_error": "Échec du lancement de l'agent",
+  "chat_chatPanel_fileChangesAggregate_suffix": "dans la conversation jusqu'ici",
   "chat_chatPanel_nothingToRetry_toast": "Rien à réessayer — erreur effacée. Envoyez un message pour démarrer un nouveau tour.",
   "chat_contextApi_readFileFailed_error": "Impossible de lire le fichier",
   "chat_contextPicker_active_badge": "Actif",
