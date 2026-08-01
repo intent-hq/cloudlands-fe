@@ -34,6 +34,22 @@ export function resolveTarget(platform, arch) {
   return target;
 }
 
+/**
+ * Validate an explicit target-triple override (INTENTD_TARGET) against the known
+ * release-pipeline targets, so cross-staging (e.g. the linux-arm64 sidecar on an x64
+ * runner) can't silently fetch an asset the pipeline never publishes. Throws when the
+ * override is not a TARGET_BY_PLATFORM_ARCH value.
+ */
+export function validateTargetOverride(target) {
+  const supported = Object.values(TARGET_BY_PLATFORM_ARCH);
+  if (!supported.includes(target)) {
+    throw new Error(
+      `Unsupported target override "${target}" for intentd sidecar. Supported: ${supported.join(', ')}`,
+    );
+  }
+  return target;
+}
+
 export function isWindowsTarget(target) {
   return target.includes('-windows-');
 }

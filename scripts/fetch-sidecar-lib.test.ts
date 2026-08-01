@@ -11,6 +11,7 @@ import {
   resolveTarget,
   sha256Hex,
   sidecarBinaryName,
+  validateTargetOverride,
 } from './fetch-sidecar-lib.mjs';
 
 const HASH = 'a'.repeat(64);
@@ -41,6 +42,28 @@ describe('resolveTarget', () => {
       'x86_64-pc-windows-msvc',
       'x86_64-unknown-linux-musl',
     ]);
+  });
+});
+
+describe('validateTargetOverride', () => {
+  it.each(Object.values(TARGET_BY_PLATFORM_ARCH))('accepts release-pipeline target %s', (target) => {
+    expect(validateTargetOverride(target)).toBe(target);
+  });
+
+  it('accepts the linux-arm64 cross-staging target', () => {
+    expect(validateTargetOverride('aarch64-unknown-linux-musl')).toBe(
+      'aarch64-unknown-linux-musl',
+    );
+  });
+
+  it('rejects targets the release pipeline never publishes, listing supported ones', () => {
+    expect(() => validateTargetOverride('aarch64-pc-windows-msvc')).toThrow(
+      /Unsupported target override "aarch64-pc-windows-msvc"/,
+    );
+    expect(() => validateTargetOverride('x86_64-unknown-linux-gnu')).toThrow(
+      /aarch64-unknown-linux-musl/,
+    );
+    expect(() => validateTargetOverride('')).toThrow(/Unsupported target override/);
   });
 });
 
