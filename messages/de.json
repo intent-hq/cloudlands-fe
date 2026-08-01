@@ -1865,6 +1865,7 @@
   "chat_streamingStatus_retryWith_label": "Mit {model} erneut versuchen",
   "chat_streamingStatus_tryAgain_label": "Erneut versuchen",
   "chat_streamingStatus_took_label": "dauerte {duration}",
+  "chat_streamingStatus_elapsedAgo_label": "vor {duration}",
   "chat_suggestedActions_explain_label": "Diese Codebasis erklären",
   "chat_suggestedActions_explain_prompt": "Geben Sie mir einen groben Überblick über diese Codebasis. Was sind die Hauptkomponenten und wie arbeiten sie zusammen?",
   "chat_suggestedActions_implement_label": "Mir bei der Implementierung einer Funktion helfen",

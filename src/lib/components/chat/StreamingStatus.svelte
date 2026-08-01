@@ -176,7 +176,7 @@
   let elapsedTime = $derived.by(() => {
     if (!latestEvent) return '';
     const elapsed = nowMs - latestEvent.timestamp;
-    return `${formatElapsed(elapsed)} ago`;
+    return m.chat_streamingStatus_elapsedAgo_label({ duration: formatElapsed(elapsed) });
   });
 
   // Completed events with their durations

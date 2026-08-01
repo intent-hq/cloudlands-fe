@@ -1865,6 +1865,7 @@
   "chat_streamingStatus_retryWith_label": "{model} で再試行",
   "chat_streamingStatus_tryAgain_label": "再試行",
   "chat_streamingStatus_took_label": "所要時間 {duration}",
+  "chat_streamingStatus_elapsedAgo_label": "{duration}前",
   "chat_suggestedActions_explain_label": "このコードベースを説明",
   "chat_suggestedActions_explain_prompt": "このコードベースの概要を教えてください。主要なコンポーネントは何で、どのように連携していますか？",
   "chat_suggestedActions_implement_label": "機能の実装を手伝って",
