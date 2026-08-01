@@ -1865,6 +1865,7 @@
   "chat_streamingStatus_retryWith_label": "{model}(으)로 다시 시도",
   "chat_streamingStatus_tryAgain_label": "다시 시도",
   "chat_streamingStatus_took_label": "소요 시간 {duration}",
+  "chat_streamingStatus_elapsedAgo_label": "{duration} 전",
   "chat_suggestedActions_explain_label": "이 코드베이스 설명하기",
   "chat_suggestedActions_explain_prompt": "이 코드베이스의 개요를 알려 주세요. 주요 구성 요소는 무엇이고 어떻게 함께 작동하나요?",
   "chat_suggestedActions_implement_label": "기능 구현 돕기",

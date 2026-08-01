@@ -1865,6 +1865,7 @@
   "chat_streamingStatus_retryWith_label": "Reintentar con {model}",
   "chat_streamingStatus_tryAgain_label": "Reintentar",
   "chat_streamingStatus_took_label": "tardó {duration}",
+  "chat_streamingStatus_elapsedAgo_label": "hace {duration}",
   "chat_suggestedActions_explain_label": "Explicar esta base de código",
   "chat_suggestedActions_explain_prompt": "Deme una visión general de esta base de código. ¿Cuáles son los componentes principales y cómo funcionan juntos?",
   "chat_suggestedActions_implement_label": "Ayudarme a implementar una función",

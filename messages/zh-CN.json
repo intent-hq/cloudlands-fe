@@ -1865,6 +1865,7 @@
   "chat_streamingStatus_retryWith_label": "使用 {model} 重试",
   "chat_streamingStatus_tryAgain_label": "重试",
   "chat_streamingStatus_took_label": "耗时 {duration}",
+  "chat_streamingStatus_elapsedAgo_label": "{duration}前",
   "chat_suggestedActions_explain_label": "解释这个代码库",
   "chat_suggestedActions_explain_prompt": "给我一个此代码库的高层概览。主要组件有哪些？它们如何协同工作？",
   "chat_suggestedActions_implement_label": "帮我实现一个功能",

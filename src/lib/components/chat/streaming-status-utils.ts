@@ -36,6 +36,17 @@ export function formatDuration(ms: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
+/**
+ * Format a live elapsed duration ("Xs ago" timers) as whole seconds:
+ * rounds ms to the nearest second and clamps to a minimum of 1s, then
+ * reuses formatDuration for the m/h formatting above 60s. Never produces
+ * decimals or "0s" — use formatDuration for completed-event durations
+ * where sub-second precision matters.
+ */
+export function formatElapsed(ms: number): string {
+  return formatDuration(Math.max(1000, Math.round(ms / 1000) * 1000));
+}
+
 export interface StatusEvent {
   phase: string;
   message: string;
