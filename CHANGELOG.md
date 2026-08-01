@@ -4,6 +4,41 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.11.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.10.2...v2.11.0) (2026-08-01)
+
+
+### 🚀 Features
+
+* add Dismiss to the question wizard honoring the daemon dismissal marker ([#561](https://github.com/intent-hq/cloudlands-fe/issues/561)) ([f7678b6](https://github.com/intent-hq/cloudlands-fe/commit/f7678b66861159d433498c6cac50707a5280461f))
+* consume content-free agent:stream:activity instead of agent:stream:chunk ([#568](https://github.com/intent-hq/cloudlands-fe/issues/568)) ([13c713a](https://github.com/intent-hq/cloudlands-fe/commit/13c713a2aaa04caffdba8b7c548195ac8af62b00))
+* dedupe agent idle notifications via native identifiers ([#572](https://github.com/intent-hq/cloudlands-fe/issues/572)) ([28c8d93](https://github.com/intent-hq/cloudlands-fe/commit/28c8d93308da0dad7e6cf617befa4a5ed31f87d9))
+* live watched-agent footer previews via agent:stream:activity payloads ([#579](https://github.com/intent-hq/cloudlands-fe/issues/579)) ([a4cacc0](https://github.com/intent-hq/cloudlands-fe/commit/a4cacc09d5a91355f3390d68e6c63403024913f7))
+* migrate live transcript to chat.subscribe deltas ([#559](https://github.com/intent-hq/cloudlands-fe/issues/559)) ([f5da91b](https://github.com/intent-hq/cloudlands-fe/commit/f5da91bd241f6eca4775485da1738e182da513a7))
+* per-row and per-group stop/cancel actions in the subscriptions footer ([744491f](https://github.com/intent-hq/cloudlands-fe/commit/744491f872ecdd6c337bb83ab8cd12053998b6a8))
+* prefer appMessageId matching on the chat.subscribe delta path ([#576](https://github.com/intent-hq/cloudlands-fe/issues/576)) ([5f6a0a4](https://github.com/intent-hq/cloudlands-fe/commit/5f6a0a4954cbe27df0d94f3c9bf48815f1020681))
+* prefer the user's newest message in agent card previews ([#586](https://github.com/intent-hq/cloudlands-fe/issues/586)) ([c4edb27](https://github.com/intent-hq/cloudlands-fe/commit/c4edb27e70cff37c491447aa95ba08a3ee6e51f3))
+* render BE displayStatus verbatim, drop FE grouping demotion/promotion ([#578](https://github.com/intent-hq/cloudlands-fe/issues/578)) ([a80626c](https://github.com/intent-hq/cloudlands-fe/commit/a80626c6d2703843f1380b6ca1e8e74787acf6ac))
+* settings-backed workspace setup (retry-safe app settings, daemon-backed auto-commit toggle) ([#550](https://github.com/intent-hq/cloudlands-fe/issues/550)) ([381100e](https://github.com/intent-hq/cloudlands-fe/commit/381100e08aa11833b9a318e772f35af449b4af55))
+* show intentd UDS socket path in Settings &gt; General ([#574](https://github.com/intent-hq/cloudlands-fe/issues/574)) ([cbca646](https://github.com/intent-hq/cloudlands-fe/commit/cbca64692cd58da2ce02e5d610f937685f9afe64))
+* show queue visibility and held-messages hint around the Q&A wizard ([#566](https://github.com/intent-hq/cloudlands-fe/issues/566)) ([cda1d62](https://github.com/intent-hq/cloudlands-fe/commit/cda1d6238c103f7115a84ff9e240799c2486c96b))
+* skip attention and failure toasts for delegated agents (parentAgentId) ([#573](https://github.com/intent-hq/cloudlands-fe/issues/573)) ([75f7b04](https://github.com/intent-hq/cloudlands-fe/commit/75f7b0447dfa7e5c935c5dd7aff3c2b1eeefce5f))
+* surface agent attention requests (blocked status, notices, sticky toast, indicators) ([#558](https://github.com/intent-hq/cloudlands-fe/issues/558)) ([eebf778](https://github.com/intent-hq/cloudlands-fe/commit/eebf778ca4af60b98df2e7f82670ae6a983c8631))
+* ungroup agent-failure toasts and add a Switch To button ([#555](https://github.com/intent-hq/cloudlands-fe/issues/555)) ([f454519](https://github.com/intent-hq/cloudlands-fe/commit/f4545195fcd0e63dee23d943eb4e843ea2a8a2b1))
+
+
+### 🐛 Bug Fixes
+
+* apply entity-level metadata in live reconciler so agent chips render live ([#564](https://github.com/intent-hq/cloudlands-fe/issues/564)) ([4622f7e](https://github.com/intent-hq/cloudlands-fe/commit/4622f7e50e4fb89abec563da047bc72fe87d6a79))
+* clear stale error banner when a daemon-side redrive turn starts (intent-hq/monorepo[#1106](https://github.com/intent-hq/cloudlands-fe/issues/1106)) ([#549](https://github.com/intent-hq/cloudlands-fe/issues/549)) ([dfd9e10](https://github.com/intent-hq/cloudlands-fe/commit/dfd9e1041fb7b5570258b2999c291e802ca8ddc4))
+* dedup user-row echoes and preserve in-flight stream on re-entry (post-[#559](https://github.com/intent-hq/cloudlands-fe/issues/559) P0s) ([#565](https://github.com/intent-hq/cloudlands-fe/issues/565)) ([e3b38a3](https://github.com/intent-hq/cloudlands-fe/commit/e3b38a3b42448a4799400df091defde11936328c))
+* let attention-request reason wrap to multiple lines ([#563](https://github.com/intent-hq/cloudlands-fe/issues/563)) ([d524b63](https://github.com/intent-hq/cloudlands-fe/commit/d524b6331efd36cd63589d3584f68da379ca796f))
+* normalize diff request paths to worktree-relative in diff-ipc-batcher ([#577](https://github.com/intent-hq/cloudlands-fe/issues/577)) ([01ac0a7](https://github.com/intent-hq/cloudlands-fe/commit/01ac0a7ceb3e343e65175ba6a740fd30310cbdaf))
+* preserve single line breaks in chat input serialization ([2eee6c4](https://github.com/intent-hq/cloudlands-fe/commit/2eee6c40b19f22257e1fc496d11da653a3d2364c))
+* re-apply reconciler transcript on hydrate settle (monorepo[#1161](https://github.com/intent-hq/cloudlands-fe/issues/1161)) ([#582](https://github.com/intent-hq/cloudlands-fe/issues/582)) ([0b73fcd](https://github.com/intent-hq/cloudlands-fe/commit/0b73fcd39b3817a1b55047b7a2310f6e173e8a9a))
+* render harmless inline tags (br/sub/sup) in chat markdown ([#556](https://github.com/intent-hq/cloudlands-fe/issues/556)) ([a9dc8f5](https://github.com/intent-hq/cloudlands-fe/commit/a9dc8f535771298c9920bbea87fd4629f6784c2c))
+* restore chat-changes and local-changes tab opening in navigation middleware ([#569](https://github.com/intent-hq/cloudlands-fe/issues/569)) ([c57c62e](https://github.com/intent-hq/cloudlands-fe/commit/c57c62e405ac81fbd30c420644a246003b9dd547))
+* scope clearCurrentlyViewedAgent so a background panel cannot kill the viewed chat's subscription ([#583](https://github.com/intent-hq/cloudlands-fe/issues/583)) ([788acfc](https://github.com/intent-hq/cloudlands-fe/commit/788acfc31133b82d5c97963386b8b25082d909b8))
+
 ## [2.10.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.10.1...v2.10.2) (2026-07-29)
 
 
