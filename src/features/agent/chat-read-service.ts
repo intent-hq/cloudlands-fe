@@ -72,6 +72,7 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { createLogger } from "$lib/utils/client-logger";
 import { isAgentDeletionPending } from "./utils/pending-agent-deletions";
+import { staleRuntimeFlagClearUpsertOptions } from "./utils/stale-runtime-flag-clear";
 
 const logger = createLogger("ChatReadService");
 
@@ -166,6 +167,15 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   // Actually perform the work
   (async () => {
     try {
+      // Capture BEFORE the fetch (monorepo#1250): a both-true runtime-flag
+      // pair that already exists when this read begins is either a genuinely
+      // live turn (the fresh session will report it in flight) or a stale
+      // leftover from a daemon crash mid-turn (the fresh session reports
+      // idle). A pair set DURING the fetch — chatSendStarted racing this
+      // read — is never cleared; that is the slice pair-guard's designed case.
+      const storedBefore = appStore.state.agentSessions?.byAgentId[agentId];
+      const hadInFlightPairBeforeFetch =
+        storedBefore?.isStreaming === true && storedBefore?.isProcessing === true;
       const session = await appClient.agents.get(agentId);
       if (!session) return;
       // Re-check after the fetch: a deletion may have become pending while
@@ -226,7 +236,16 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         session,
       );
       const sessionWithMessages = { ...session, messages: mergedMessages };
-      appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
+      // Stale-pair convergence (monorepo#1250): when the in-flight flag pair
+      // predates this fetch and the daemon authoritatively reports the
+      // session idle, the snapshot's explicit-false runtime flags win over
+      // the pair-guard — a crash-orphaned pair has no clearing event left.
+      appStore.dispatch(
+        bulkUpsertSessions(
+          [sessionWithMessages],
+          staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, session),
+        ),
+      );
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {
       logger.error("Failed to load agent conversation transcript", error);
