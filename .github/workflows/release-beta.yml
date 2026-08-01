@@ -805,7 +805,7 @@ jobs:
         env:
           ISSUES_GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.release.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_PIN: ${{ steps.intentd_pin.outputs.version }}
         run: |
