@@ -22,6 +22,7 @@
   selectAgentIsWaitingForOtherAgents,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { AgentAttentionKind } from '$shared/utils/agent-attention';
+  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 
   interface Props {
     agent: AgentNode;
@@ -82,6 +83,19 @@
       {:else}
         <Spinner seed={agent.agentId} size={4} />
       {/if}
+    </div>
+  {:else if $attentionRequest$?.timestamp}
+    <!-- Compact "X ago" for a pending attention request -->
+    <div
+      class="status-indicator absolute bottom-0 transform translate-y-1/2 flex items-center justify-center"
+    >
+      <RelativeTime
+        date={$attentionRequest$.timestamp}
+        compact
+        class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
+          ? 'text-red-500'
+          : 'text-amber-500'}"
+      />
     </div>
   {/if}
 </button>

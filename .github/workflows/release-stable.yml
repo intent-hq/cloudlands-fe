@@ -20,7 +20,7 @@ jobs:
   promote-to-stable:
     # Non-ephemeral self-hosted runner: all scratch files live under
     # RUNNER_TEMP (wiped by the runner between jobs) instead of /tmp, so a
-    # previous run's assets can never leak into this promotion.
+    # previous run's assets can never leak into this promotion (#553).
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
 

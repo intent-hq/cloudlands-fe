@@ -19,6 +19,7 @@
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
   import BlockerReportNotice from './BlockerReportNotice.svelte';
+  import TurnFailureNotice from './TurnFailureNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
@@ -1200,6 +1201,8 @@
         <DiscussionRequestNotice reason={attentionNotice.reason} />
       {:else if attentionNotice?.kind === 'blocker-report'}
         <BlockerReportNotice reason={attentionNotice.reason} />
+      {:else if attentionNotice?.kind === 'turn-failure'}
+        <TurnFailureNotice reason={attentionNotice.reason} />
       {:else}
         <InterruptionNotice message={extractAllContent(message)} />
       {/if}

@@ -9,7 +9,7 @@
  * PROTOCOL-shaped mock response back, and assert the rendered sections.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const { backendRequestSpy } = vi.hoisted(() => ({
   backendRequestSpy: vi.fn(),
@@ -224,6 +224,78 @@ describe('AgentSubscriptions sections', () => {
     ).toBeTruthy();
   });
 
+  it('shows a count-free "Waiting for agent" header with a single one-shot watch', async () => {
+    const WS = 'ws-sections-header-one';
+    await renderWithSnapshot(WS, {
+      subscriptions: [oneShotSubscription('watch-solo', WS, 'child-solo')],
+      delegationGroups: [],
+      agentStatuses: { [PARENT]: 'waiting', 'child-solo': 'responding' },
+    });
+
+    const header = screen.getByTestId('one-shot-header');
+    expect(header.textContent).toContain('Waiting for agent');
+    // Singular header carries no count
+    expect(header.textContent).not.toMatch(/\d/);
+  });
+
+  it('shows a counted "Waiting for {count} agents" header with multiple one-shot watches', async () => {
+    const WS = 'ws-sections-header-many';
+    await renderWithSnapshot(WS, {
+      subscriptions: [
+        oneShotSubscription('watch-1', WS, 'child-1'),
+        oneShotSubscription('watch-2', WS, 'child-2'),
+      ],
+      delegationGroups: [],
+      agentStatuses: { [PARENT]: 'waiting', 'child-1': 'responding', 'child-2': 'responding' },
+    });
+
+    expect(screen.getByTestId('one-shot-header').textContent).toContain('Waiting for 2 agents');
+  });
+
+  it('renders no one-shot header when there are no one-shot watches', async () => {
+    const WS = 'ws-sections-header-none';
+    await renderWithSnapshot(WS, {
+      subscriptions: [groupSubscription('grp-1', WS, ['child-a'])],
+      delegationGroups: [delegationGroup('grp-1', ['child-a'])],
+      agentStatuses: { [PARENT]: 'waiting', 'child-a': 'responding' },
+    });
+
+    expect(screen.queryByTestId('one-shot-header')).toBeNull();
+    expect(screen.queryByTestId('one-shot-watches')).toBeNull();
+  });
+
+  it('collapsing the one-shot header hides the rows and shows the inline avatar strip', async () => {
+    const WS = 'ws-sections-header-collapse';
+    await renderWithSnapshot(WS, {
+      subscriptions: [
+        oneShotSubscription('watch-1', WS, 'child-1'),
+        oneShotSubscription('watch-2', WS, 'child-2'),
+      ],
+      delegationGroups: [],
+      agentStatuses: { [PARENT]: 'waiting', 'child-1': 'responding', 'child-2': 'responding' },
+    });
+
+    const oneShots = screen.getByTestId('one-shot-watches');
+    expect(within(oneShots).getAllByTestId('agent-list-item')).toHaveLength(2);
+    expect(screen.queryByTestId('one-shot-avatar-strip')).toBeNull();
+
+    await fireEvent.click(screen.getByTestId('one-shot-collapse-toggle'));
+
+    // Rows leave via an outro transition, so wait for them to detach
+    await waitFor(() =>
+      expect(within(oneShots).queryAllByTestId('agent-list-item')).toHaveLength(0),
+    );
+    const strip = screen.getByTestId('one-shot-avatar-strip');
+    expect(within(strip).getAllByTestId('mock-avatar-with-state')).toHaveLength(2);
+
+    // Expanding again restores the rows and removes the strip
+    await fireEvent.click(screen.getByTestId('one-shot-collapse-toggle'));
+    await waitFor(() =>
+      expect(within(oneShots).getAllByTestId('agent-list-item')).toHaveLength(2),
+    );
+    await waitFor(() => expect(screen.queryByTestId('one-shot-avatar-strip')).toBeNull());
+  });
+
   it('one-shot row stop sends agent.stop for the watched agent (§5.5)', async () => {
     const WS = 'ws-sections-row-stop';
     await renderWithSnapshot(WS, {
@@ -235,10 +307,7 @@ describe('AgentSubscriptions sections', () => {
     await fireEvent.click(screen.getByTestId('one-shot-stop'));
     await flush();
 
-    expect(backendRequestSpy.mock.calls).toContainEqual([
-      'agent.stop',
-      { agentId: 'child-solo' },
-    ]);
+    expect(backendRequestSpy.mock.calls).toContainEqual(['agent.stop', { agentId: 'child-solo' }]);
   });
 
   it('one-shot row cancel sends the scoped agent.cancelSubscriptions { subscriptionId } (§5.5)', async () => {

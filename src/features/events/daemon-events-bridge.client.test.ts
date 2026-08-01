@@ -22,6 +22,14 @@ const {
   // restart by invoking each captured handler.
   capturedReconnectHandlers: [] as Array<() => void>,
 }));
+
+const { disposeExitedTerminalSpy } = vi.hoisted(() => ({
+  disposeExitedTerminalSpy: vi.fn(),
+}));
+vi.mock('$features/terminal/terminal-manager.svelte', () => ({
+  terminalManager: { disposeExitedTerminal: disposeExitedTerminalSpy },
+}));
+
 vi.mock('$lib/client/live/backend-transport', () => ({
   onBackendNotification: (handler: (n: { method: string; params?: unknown }) => void) => {
     onBackendNotificationSpy(handler);
@@ -204,6 +212,12 @@ import {
   clearAgentFailureRegistry,
   listAgentFailureEntries,
 } from '$features/agent/agent-failure-registry';
+import { loadWorkspaceTerminals } from '$store/renderer/slices/terminals/terminals-slice';
+import {
+  selectActiveTerminalIdForWorkspace,
+  selectIsTerminalOverlayOpenForWorkspace,
+  selectTerminalsForWorkspace,
+} from '$store/renderer/slices/terminals/terminals-selectors';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -322,6 +336,7 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
         'note:*',
         'comment:*',
         'script:*',
+        'terminal:*',
         'settings:changed',
         'workspace:tokenUsage-changed',
         'workspace:context-changed',
@@ -366,6 +381,28 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(matchesFilter('task:ready-tasks-changed')).toBe(true);
     expect(matchesFilter('git:commit')).toBe(true);
     expect(matchesFilter('git:pull')).toBe(true);
+    expect(matchesFilter('terminal:exit')).toBe(true);
+  });
+
+  it('terminal:exit removes the terminal tab, closes an empty overlay, and releases its adapter', async () => {
+    appStore.dispatch(
+      loadWorkspaceTerminals(
+        WS,
+        [{ id: 'term-finished', name: 'Command' }],
+        { isOpen: true, activeTerminalId: 'term-finished' },
+      ),
+    );
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      notification('terminal:exit', { terminalId: 'term-finished', exitCode: 0 }),
+    );
+    await flush();
+
+    expect(selectTerminalsForWorkspace.select(appStore.state, WS)).toEqual([]);
+    expect(selectActiveTerminalIdForWorkspace.select(appStore.state, WS)).toBeNull();
+    expect(selectIsTerminalOverlayOpenForWorkspace.select(appStore.state, WS)).toBe(false);
+    expect(disposeExitedTerminalSpy).toHaveBeenCalledWith('term-finished');
   });
 
   it('agent:idle notification flips selectAgentIsResponding from true → false', async () => {
@@ -2128,6 +2165,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         'note:*',
         'comment:*',
         'script:*',
+        'terminal:*',
         'settings:changed',
         'workspace:tokenUsage-changed',
         'workspace:context-changed',
@@ -2877,6 +2915,8 @@ describe('daemonEventsBridge (attention flow — agent:attention-requested → s
       agentName: 'Implementor',
       kind: 'discussion',
       reason: 'Need a decision on the API shape',
+      // Envelope timestamp (the payload carries no timestamp of its own).
+      timestamp: '2026-01-02T00:00:00.000Z',
     });
   });
 
@@ -2902,7 +2942,28 @@ describe('daemonEventsBridge (attention flow — agent:attention-requested → s
       agentName: 'Verifier',
       kind: 'blocker',
       reason: 'Blocked: main branch is broken',
+      timestamp: '2026-01-02T00:00:00.000Z',
     });
+  });
+
+  it('falls back to the envelope timestamp when the payload timestamp is an empty/whitespace string', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'discussion',
+        reason: 'Need a decision on the API shape',
+        timestamp: '   ',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ timestamp: '2026-01-02T00:00:00.000Z' }),
+    );
   });
 
   it('falls back to the envelope workspaceId when the payload omits it', async () => {

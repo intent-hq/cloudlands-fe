@@ -19,6 +19,7 @@
   selectAgentSessionStreamingContent,
   selectAgentIsWaiting,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectChatReceivedFirstChunk } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
   deleteAgentWithUndoRequested,
   ensureAgentSessionLoaded,
@@ -380,18 +381,22 @@
   // Streaming state is derived from Redux-owned stream lifecycle/message state.
   const streamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const hasStreamOwnedMessage$ = selectAgentSessionHasStreamOwnedMessage(agentIdStore);
+  // Per-turn "response text landed this turn" flag (chat-state): reset by
+  // `agent:stream:end`, flipped by the first text-bearing activity ping.
+  const receivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const streamingBuffer = $derived($streamingContent$);
   const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 
   // Extract display data
   const displayName = $derived(agentData?.name || agentName || m.chat_shared_agentName_fallback());
-  const lastUserMsg = $derived(
-    // filter out [Currently viewing: ...] prefixes and @context[...] mentions (raw base64/pipe format)
-    agentData?.lastUserMessage
-      ?.replace(/^\[.*?\]\s*/g, '')
-      ?.replace(/@context\[[^\]]*\]/g, '')
-      ?.trim() || '',
-  );
+  // filter out [Currently viewing: ...] prefixes and @context[...] mentions (raw base64/pipe format)
+  function stripUserMessagePrefixes(text: string): string {
+    return text
+      .replace(/^(\[.*?\]\s*)+/, '')
+      .replace(/@context\[[^\]]*\]/g, '')
+      .trim();
+  }
+  const lastUserMsg = $derived(stripUserMessagePrefixes(agentData?.lastUserMessage ?? ''));
   // Pending attention request (discussion/blocker) from the daemon session
   // fields; null when none is pending (retired on agent:updated clear).
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
@@ -429,21 +434,46 @@
   //   2. the session's push-applied `lastAgentResponse` (refreshed ~1s by
   //      `agent:stream:activity`, intentd#792) so a non-viewed watched
   //      agent's preview advances mid-turn instead of freezing on stale
-  //      transcript-derived peek text — absent only pre-first-token, when
-  //      there is simply no text to preview yet;
+  //      transcript-derived peek text — gated on the per-turn
+  //      `receivedFirstChunk` flag (reset by `agent:stream:end`, flipped by
+  //      a text-bearing `agent:stream:activity`) so a leftover previous-turn
+  //      `lastAgentResponse` doesn't masquerade as this turn's text in the
+  //      pre-first-token window;
   //   3. the persisted transcript peek text (idle agents).
   // Tool previews (lastToolUse) only kick in when there's no text to show.
-  const lastResponse = $derived.by(() => {
+  const liveResponseLine = $derived.by(() => {
     if (isStreamActive && $hasStreamOwnedMessage$ && streamingBuffer) {
       const line = getLastMeaningfulLine(streamingBuffer);
       if (line) return line;
     }
-    if ($agentIsResponding$ && $agent$?.lastAgentResponse) {
+    if ($agentIsResponding$ && $receivedFirstChunk$ && $agent$?.lastAgentResponse) {
       const line = getLastMeaningfulLine($agent$.lastAgentResponse);
       if (line) return line;
     }
-    return agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : '';
+    return '';
   });
+  const lastResponse = $derived(
+    liveResponseLine ||
+      (agentData?.lastResponse ? getLastMeaningfulLine(agentData.lastResponse) : ''),
+  );
+
+  // Freshness-wins preview: when the newest transcript message is the user's
+  // (wire `lastMessageRole`, transcript-derived fallback in agent-peek-utils)
+  // and no streamed text exists yet for an in-flight turn, the user's first
+  // line outranks digest/completionReport/lastResponse/lastToolUse (attention
+  // requests still take top precedence). Absent role (older daemon) keeps the
+  // existing precedence. Once streamed text lands (or the daemon overlay flips
+  // the role to "assistant"), the live-preview precedence above resumes.
+  // Text source: transcript-derived first, then the wire `lastUserMessage`
+  // (AgentLite list/get projection) for sessions without a loaded transcript.
+  const userFirstLine = $derived(
+    stripUserMessagePrefixes(agentData?.lastUserMessage || $agent$?.lastUserMessage || '')
+      .split('\n')[0]
+      ?.trim() ?? '',
+  );
+  const showUserMessagePreview = $derived(
+    agentData?.lastMessageRole === 'user' && !!userFirstLine && !liveResponseLine,
+  );
 
   // Tool-use block to preview when the latest thing the agent did was a tool
   // call (see agent-peek-utils). Only used when there's no text to display.
@@ -596,7 +626,8 @@
           </div>
         </div>
 
-        <!-- Message preview - attention request takes precedence, then completion report, then last response -->
+        <!-- Message preview - attention request takes precedence, then the newest
+             user message (freshness wins), then completion report, then last response -->
         {#if !hidePreview}
           {#if attentionRequest}
             <div class="mt-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
@@ -613,6 +644,12 @@
                   >
                     · {attentionRequest.reason}</span
                   >{/if}
+              </p>
+            </div>
+          {:else if showUserMessagePreview}
+            <div class="mt-0.5">
+              <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
+                {userFirstLine}
               </p>
             </div>
           {:else if effectiveCompletionReport}

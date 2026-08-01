@@ -4,6 +4,5 @@ self-hosted-runner:
   labels:
     - m1mac
     - tinybox
-    # WarpBuild ephemeral runners the route job bursts to.
-    - warp-ubuntu-latest-x64-2x
-    - warp-ubuntu-latest-x64-16x
+    # GH-hosted larger runner the route job bursts the heavy jobs to.
+    - gh-linux-8x

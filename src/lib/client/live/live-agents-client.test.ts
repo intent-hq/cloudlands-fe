@@ -925,6 +925,38 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(agent?.waitingForAgentIds).toBeUndefined();
   });
 
+  it('list carries lastMessageRole + lastUserMessage verbatim (§5.5 additive freshness fields)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-1',
+          workspaceId: 'ws-1',
+          name: 'A1',
+          status: 'idle',
+          lastUserMessage: 'newest user line\nsecond line',
+          lastMessageRole: 'user',
+        },
+      ],
+    }));
+    const client = new LiveAgentsClient();
+
+    const [agent] = await client.list('ws-1');
+    expect(agent).toMatchObject({
+      lastUserMessage: 'newest user line\nsecond line',
+      lastMessageRole: 'user',
+    });
+  });
+
+  it('does not synthesize lastMessageRole when the daemon omits it (older daemon)', async () => {
+    backend.onRequest('agent.get', () => ({
+      agent: { id: 'agent-1', workspaceId: 'ws-1', name: 'A1', status: 'idle' },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-1');
+    expect(agent?.lastMessageRole).toBeUndefined();
+  });
+
   // ---- §5.5 agent.getConversation pagination -----------------------------
 
   it('getConversation forwards limit only when no pageToken is given (first page)', async () => {
