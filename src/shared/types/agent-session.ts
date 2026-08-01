@@ -218,6 +218,15 @@ export interface AgentSession {
   /** Last agent response */
   lastAgentResponse?: string;
 
+  /**
+   * Role of the session's newest user/assistant transcript message
+   * (PROTOCOL.md §5.5 `AgentLite` additive field); system rows are
+   * transparent. Omitted by older daemons and when the session has no
+   * user/assistant message. Mid-turn the daemon overlays `'assistant'` once
+   * the in-flight turn has derivable streamed text. Rendered verbatim.
+   */
+  lastMessageRole?: 'user' | 'assistant';
+
   /** Whether the agent is currently responding */
   isResponding?: boolean;
 

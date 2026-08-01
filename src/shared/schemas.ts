@@ -590,6 +590,7 @@ export const AgentSessionSchema = z.object({
   currentUserMessage: z.string().optional(),
   lastUserMessage: z.string().optional(),
   lastAgentResponse: z.string().optional(),
+  lastMessageRole: z.enum(['user', 'assistant']).optional(),
   isResponding: z.boolean().optional(),
   isWaitingOnTool: z.boolean().optional(),
   isWaitingForOtherAgents: z.boolean().optional(),
