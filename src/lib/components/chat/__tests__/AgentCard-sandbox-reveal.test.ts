@@ -57,15 +57,18 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 /** Dispatch a system.status poll result with the given daemon locality. */
 function seedLocality(locality: 'local' | 'remote') {
   appStore.dispatch(
-    systemStatusSuccess({
-      running: true,
-      listenMode: 'both',
-      transports: ['uds'],
-      clients: 1,
-      agents: 1,
-      protocolVersion: '2.4',
-      host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality },
-    }),
+    systemStatusSuccess(
+      {
+        running: true,
+        listenMode: 'both',
+        transports: ['uds'],
+        clients: 1,
+        agents: 1,
+        protocolVersion: '2.4',
+        host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality },
+      },
+      '2026-07-01T00:00:00.000Z',
+    ),
   );
 }
 
