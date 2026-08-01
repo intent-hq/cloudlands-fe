@@ -271,6 +271,27 @@ describe('getFileChangesFromMessage', () => {
       expect(result.changes).toHaveLength(0);
     });
 
+    it('ignores MCP-decorated workspace_api name variants', () => {
+      const variants = [
+        'workspace_api_workspace-mcp',
+        'mcp__workspace-mcp__workspace_api',
+        '//local/mcp/workspace_api',
+        'workspace-mcp_workspace_api',
+      ];
+      const message = makeAssistantMessage(
+        variants.map((variant, index) => ({
+          type: 'tool_use',
+          id: `tool-ws-variant-${index}`,
+          name: 'Create follow-up task and delegate it',
+          toolName: variant,
+          input: { code: workspaceApiCode, summary: 'Create task' },
+        })),
+      );
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
     it('ignores raw workspace_api name even without a title', () => {
       const message = makeAssistantMessage([
         {

@@ -399,16 +399,35 @@ const NON_FILE_TOOL_NAMES = new Set([
 ]);
 
 /**
+ * Normalize a raw tool name by stripping MCP transport decorations, mirroring
+ * the variants cleanToolName() in the chat tool-classifier handles:
+ * "//local/mcp/workspace_api", "mcp__workspace-mcp__workspace_api",
+ * "workspace-mcp_workspace_api", and "workspace_api_workspace-mcp".
+ */
+function normalizeRawToolName(name: string): string {
+  let normalized = name.toLowerCase();
+  const mcpUrlMatch = normalized.match(/\/\/local\/mcp\/(.+)$/);
+  if (mcpUrlMatch) normalized = mcpUrlMatch[1];
+  normalized = normalized.replace(/^mcp__[^_]+__/, '');
+  normalized = normalized.replace(/^workspace[-_]mcp[-_]/, '');
+  // Loop to handle garbled names with a doubled server suffix
+  while (/[-_]workspace-mcp$/.test(normalized)) {
+    normalized = normalized.replace(/[-_]workspace-mcp$/, '');
+  }
+  return normalized;
+}
+
+/**
  * Check whether any raw tool name candidate on the block identifies a known
  * non-file tool. The display name in block.name may be a sentence-style title
  * while the raw tool name lives in block.toolName or block.metadata.
  */
 function isNonFileToolBlock(block: ContentBlock): boolean {
   const metadata = block.metadata as Record<string, unknown> | undefined;
-  const candidates = [block.name, block.toolName, metadata?.toolId, metadata?.toolName];
+  const candidates = [block.name, block.toolName, metadata?.toolName];
   return candidates.some(
     (candidate) =>
-      typeof candidate === 'string' && NON_FILE_TOOL_NAMES.has(candidate.toLowerCase()),
+      typeof candidate === 'string' && NON_FILE_TOOL_NAMES.has(normalizeRawToolName(candidate)),
   );
 }
 
