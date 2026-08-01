@@ -95,6 +95,13 @@ export interface MessageMetadata {
   // Context
   contextReferences?: any[];
 
+  // Queued-message delivery info stamped by the daemon on drained queue
+  // entries (PROTOCOL §5.5 "Dequeue-wait annotation")
+  queueInfo?: {
+    queuedAt: string;
+    waitedMs: number;
+  };
+
   // Allow additional properties
   [key: string]: any;
 }

@@ -1539,6 +1539,7 @@
   "chat_turnFailureNotice_title_label": "回合失敗",
   "chat_msgAttribution_openAgent_title": "開啟智慧體 {name}",
   "chat_msgAttribution_sentMessage_after": "傳送了一條訊息",
+  "chat_queuedNotice_label": "{time} 加入佇列 · 等待 {duration} 後送達",
   "chat_shared_agentName_fallback": "智慧體",
   "chat_shared_context_fallback": "上下文",
   "chat_shared_moreAgents_label": "還有 {count} 個智慧體",

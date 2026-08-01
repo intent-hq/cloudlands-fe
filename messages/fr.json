@@ -1539,6 +1539,7 @@
   "chat_turnFailureNotice_title_label": "Échec du tour",
   "chat_msgAttribution_openAgent_title": "Ouvrir l'agent {name}",
   "chat_msgAttribution_sentMessage_after": "a envoyé un message",
+  "chat_queuedNotice_label": "Mis en file à {time} · a attendu {duration} avant la livraison",
   "chat_shared_agentName_fallback": "Agent",
   "chat_shared_context_fallback": "Contexte",
   "chat_shared_moreAgents_label": "+{count} agents de plus",
