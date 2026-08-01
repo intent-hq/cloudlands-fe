@@ -39,10 +39,9 @@
     data-testid="attention-request-banner"
     transition:slide={{ axis: 'y', duration: 200 }}
   >
-    <div class="flex items-start gap-2 px-3 py-1.5 text-sm">
+    <div class="flex flex-col gap-1 px-3 py-1.5 text-sm">
       <span
-        class="shrink-0 flex items-center gap-2 whitespace-nowrap {$attentionRequest$.kind ===
-        'blocker'
+        class="flex items-center gap-2 whitespace-nowrap {$attentionRequest$.kind === 'blocker'
           ? 'text-red-500'
           : 'text-amber-500'}"
       >
@@ -55,7 +54,7 @@
           : m.chat_agentCard_attentionDiscussion_label()}
       </span>
       {#if $attentionRequest$.reason}
-        <span class="min-w-0 flex-1 break-words whitespace-pre-wrap text-subtle">
+        <span class="break-words whitespace-pre-wrap text-subtle">
           {$attentionRequest$.reason}
         </span>
       {/if}
