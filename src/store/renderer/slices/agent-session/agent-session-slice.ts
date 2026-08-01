@@ -515,11 +515,18 @@ type SessionComparisonSnapshot = Pick<
   attentionRequestKind: string | undefined;
   attentionRequestReason: string | undefined;
   attentionRequestTimestamp: string | undefined;
+  completionReport: string | undefined;
+  taskNoteId: string | undefined;
+  dismissedQuestionsMessageId: string | undefined;
+  sandboxId: string | undefined;
+  sandboxPath: string | undefined;
+  sandboxBranch: string | undefined;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
   const messages = session.messages;
   const attentionRequest = getAgentAttentionRequest(session);
+  const metadata = session.metadata;
   return {
     status: session.status,
     name: session.name,
@@ -554,6 +561,25 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     attentionRequestKind: attentionRequest?.kind,
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,
+    // Mutable render-relevant metadata scalars (monorepo#1231) — an upsert
+    // whose only change is one of these must not be swallowed as a no-op:
+    // completionReport feeds AgentCard's effectiveCompletionReport preview,
+    // dismissedQuestionsMessageId gates the questions wizard, taskNoteId can
+    // change on post-creation task assignment.
+    completionReport:
+      typeof metadata?.completionReport === 'string' ? metadata.completionReport : undefined,
+    taskNoteId: typeof metadata?.taskNoteId === 'string' ? metadata.taskNoteId : undefined,
+    dismissedQuestionsMessageId:
+      typeof metadata?.dismissedQuestionsMessageId === 'string'
+        ? metadata.dismissedQuestionsMessageId
+        : undefined,
+    // Sandbox fields settle onto the session AFTER creation (async CoW
+    // provisioning, settle_provisioned_sandbox) and gate the reveal-sandbox
+    // affordance — the settling re-hydration must not be swallowed either.
+    sandboxId: typeof metadata?.sandboxId === 'string' ? metadata.sandboxId : undefined,
+    sandboxPath: typeof metadata?.sandboxPath === 'string' ? metadata.sandboxPath : undefined,
+    sandboxBranch:
+      typeof metadata?.sandboxBranch === 'string' ? metadata.sandboxBranch : undefined,
     messageCount: messages.length,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
     // The daemon can append trailing blocks to an already-stored message
