@@ -129,6 +129,7 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
+  import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefChatEmptyState from './ChiefChatEmptyState.svelte';
@@ -357,6 +358,14 @@
   const effectiveSessionCorrupted = $derived(
     $agentSession$?.status === AgentStatus.Error && $agentSession$?.sessionCorrupted === true,
   );
+
+  // ISO timestamp of the terminal failure — shows "X ago" next to the error
+  // title. Only surfaced when the session is parked in Error (accompanies
+  // stopReason); null on older daemons or transient chat errors.
+  const effectiveFailedAt = $derived.by(() => {
+    if ($agentSession$?.status !== AgentStatus.Error) return null;
+    return getAgentStopReasonTimestamp($agentSession$);
+  });
 
   // Track if there's a pending permission request for this agent
   // When a permission is pending, we hide the "Thinking" indicator since the permission UI shows instead
@@ -3210,6 +3219,7 @@
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
                         sessionCorrupted={effectiveSessionCorrupted}
+                        failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
@@ -3234,6 +3244,7 @@
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
                       sessionCorrupted={effectiveSessionCorrupted}
+                      failedAt={effectiveFailedAt}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
@@ -3314,6 +3325,7 @@
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
                         error={effectiveError}
                         sessionCorrupted={effectiveSessionCorrupted}
+                        failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
                         onRetry={handleRetry}
@@ -3338,6 +3350,7 @@
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
                       error={effectiveError}
                       sessionCorrupted={effectiveSessionCorrupted}
+                      failedAt={effectiveFailedAt}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
                       onRetry={handleRetry}
@@ -3367,6 +3380,7 @@
                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
                 error={effectiveError}
                 sessionCorrupted={effectiveSessionCorrupted}
+                failedAt={effectiveFailedAt}
                 modelUnavailable={$chatModelUnavailable$}
                 {hasPendingPermission}
                 onRetry={handleRetry}
@@ -3573,6 +3587,7 @@
                             streamingContentLength={$chatStreamingContent$?.length ?? 0}
                             error={effectiveError}
                             sessionCorrupted={effectiveSessionCorrupted}
+                            failedAt={effectiveFailedAt}
                             modelUnavailable={$chatModelUnavailable$}
                             {hasPendingPermission}
                             onRetry={handleRetry}
@@ -3630,6 +3645,7 @@
                               streamingContentLength={$chatStreamingContent$?.length ?? 0}
                               error={effectiveError}
                               sessionCorrupted={effectiveSessionCorrupted}
+                              failedAt={effectiveFailedAt}
                               modelUnavailable={$chatModelUnavailable$}
                               {hasPendingPermission}
                               onRetry={handleRetry}
@@ -3677,6 +3693,7 @@
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
                   error={effectiveError}
                   sessionCorrupted={effectiveSessionCorrupted}
+                  failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}
                   onRetry={handleRetry}

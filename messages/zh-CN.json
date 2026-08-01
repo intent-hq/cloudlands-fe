@@ -1518,6 +1518,7 @@
   "chat_autoCommitStatus_hooksFailedAfter_label": "· 钩子在 {count} 次尝试后失败",
   "chat_blockerReportNotice_title_label": "报告阻塞",
   "chat_discussionRequestNotice_title_label": "请求讨论",
+  "chat_turnFailureNotice_title_label": "回合失败",
   "chat_msgAttribution_openAgent_title": "打开智能体 {name}",
   "chat_msgAttribution_sentMessage_after": "发送了一条消息",
   "chat_shared_agentName_fallback": "智能体",

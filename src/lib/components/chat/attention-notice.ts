@@ -5,13 +5,15 @@
  * `ws.agent.reportBlocker(reason)`, intentd appends a system-role message
  * whose text block carries `meta.kind = "discussion-request"` or
  * `"blocker-report"` with the reason as its text (same shape as the
- * `meta.kind = "interruption"` abandon-path notice). The FE renders these
- * as distinct attention-styled notices, live and after rehydration.
+ * `meta.kind = "interruption"` abandon-path notice). When a turn ends in a
+ * terminal failure, intentd appends a `meta.kind = "turn-failure"` notice
+ * carrying the failure text. The FE renders these as distinct styled
+ * notices, live and after rehydration.
  */
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 
-export type AttentionNoticeKind = 'discussion-request' | 'blocker-report';
+export type AttentionNoticeKind = 'discussion-request' | 'blocker-report' | 'turn-failure';
 
 export interface AttentionNoticeInfo {
   kind: AttentionNoticeKind;
@@ -19,7 +21,11 @@ export interface AttentionNoticeInfo {
   reason: string;
 }
 
-const ATTENTION_KINDS = new Set<AttentionNoticeKind>(['discussion-request', 'blocker-report']);
+const ATTENTION_KINDS = new Set<AttentionNoticeKind>([
+  'discussion-request',
+  'blocker-report',
+  'turn-failure',
+]);
 
 /**
  * Returns the attention-notice info when the system message is a

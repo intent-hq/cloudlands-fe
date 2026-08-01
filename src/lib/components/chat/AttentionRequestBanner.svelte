@@ -16,6 +16,7 @@
   import Fa from 'svelte-fa';
   import { faCommentDots, faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
   import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -57,6 +58,12 @@
         <span class="break-words whitespace-pre-wrap text-subtle">
           {$attentionRequest$.reason}
         </span>
+      {/if}
+      {#if $attentionRequest$.timestamp}
+        <RelativeTime
+          date={$attentionRequest$.timestamp}
+          class="shrink-0 whitespace-nowrap text-xs text-ghost self-center"
+        />
       {/if}
     </div>
   </div>

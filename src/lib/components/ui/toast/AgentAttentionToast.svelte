@@ -2,6 +2,7 @@
   import Fa from 'svelte-fa';
   import { faComments, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
+  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -11,11 +12,13 @@
     reason: string;
     /** "discussion" | "blocker" — picks the icon/tint. */
     kind: 'discussion' | 'blocker';
+    /** ISO timestamp when the request was raised — renders a live "X ago". */
+    timestamp?: string;
     onSwitchTo: () => void;
     onClose: () => void;
   }
 
-  let { title, reason, kind, onSwitchTo, onClose }: Props = $props();
+  let { title, reason, kind, timestamp, onSwitchTo, onClose }: Props = $props();
 </script>
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
@@ -28,7 +31,12 @@
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
-    <p class="text-sm font-medium text-foreground">{title}</p>
+    <p class="text-sm font-medium text-foreground">
+      {title}
+      {#if timestamp}
+        <RelativeTime date={timestamp} class="text-xs font-normal text-muted-foreground ml-1" />
+      {/if}
+    </p>
     <p class="text-sm text-muted-foreground line-clamp-3 mt-0.5">{reason}</p>
 
     <!-- Action buttons -->

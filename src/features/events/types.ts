@@ -48,6 +48,12 @@ export interface CanonicalAgentStatusFields {
   isResponding: boolean | null;
   stopReason: string | null;
   /**
+   * ISO timestamp of when the terminal stop/failure occurred. Accompanies
+   * `stopReason` on terminal lifecycle events; optional on the wire (older
+   * daemons omit it).
+   */
+  stopReasonTimestamp?: string | null;
+  /**
    * Derived corrupted/poisoned-session flag (monorepo#940). Present (`true`)
    * only on the terminal-failure `agent:status-changed` when the failure
    * classifies as session-fatal; omitted otherwise (absent ≠ present-false on
