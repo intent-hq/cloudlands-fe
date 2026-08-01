@@ -40,6 +40,8 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
+  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
+  import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -228,6 +230,11 @@
   let agentAttribution = $derived(
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
   );
+
+  // Queued-delivery info for messages drained from the pending queue
+  // (metadata-first, null when absent/malformed so old transcripts keep
+  // rendering the raw [SYSTEM NOTE] unchanged).
+  let queueInfo = $derived(role === 'user' ? getQueueInfo(message?.metadata) : null);
 
   // Local state
   let messageElement: HTMLDivElement;
@@ -663,7 +670,11 @@
   const parsedMessage = $derived.by(() => {
     const rawText = extractTextFromMessage();
     if (role === 'user') {
-      const parsed = parseContextFromMessage(rawText);
+      // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the displayed body
+      // when structured queueInfo metadata renders it as a chip instead.
+      const parsed = parseContextFromMessage(
+        queueInfo ? stripDequeueWaitNote(rawText) : rawText,
+      );
       // Get metadata refs for URL lookup
       const metadataRefs = message?.metadata?.contextReferences;
 
@@ -818,8 +829,10 @@
 
   // Handle edit mode
   function handleStartEdit() {
-    // Parse the stored message to extract context and user message
-    const rawText = getMessageText();
+    // Parse the stored message to extract context and user message; the
+    // dequeue-wait [SYSTEM NOTE] hidden from the body stays out of the edit
+    // box too (it must not be re-sent as user text).
+    const rawText = queueInfo ? stripDequeueWaitNote(getMessageText()) : getMessageText();
     const parsed = parseStoredMessage(rawText);
     editValue = parsed.userMessage;
 
@@ -991,6 +1004,11 @@
           <!-- Sender attribution header for agent-to-agent messages -->
           {#if agentAttribution}
             <AgentMessageAttributionHeader attribution={agentAttribution} class="mb-1.5" />
+          {/if}
+
+          <!-- Queued-delivery notice for messages drained from the pending queue -->
+          {#if queueInfo}
+            <QueuedMessageNoticeHeader {queueInfo} class="mb-1.5" />
           {/if}
 
           <!-- Message content - line-clamp-6 -->

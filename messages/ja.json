@@ -1539,6 +1539,7 @@
   "chat_turnFailureNotice_title_label": "ターンが失敗しました",
   "chat_msgAttribution_openAgent_title": "エージェント {name} を開く",
   "chat_msgAttribution_sentMessage_after": "がメッセージを送信しました",
+  "chat_queuedNotice_label": "{time} にキューに追加 · 配信まで {duration} 待機",
   "chat_shared_agentName_fallback": "エージェント",
   "chat_shared_context_fallback": "コンテキスト",
   "chat_shared_moreAgents_label": "他 {count} 件のエージェント",

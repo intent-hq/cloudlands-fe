@@ -1539,6 +1539,7 @@
   "chat_turnFailureNotice_title_label": "Durchlauf fehlgeschlagen",
   "chat_msgAttribution_openAgent_title": "Agent {name} öffnen",
   "chat_msgAttribution_sentMessage_after": "hat eine Nachricht gesendet",
+  "chat_queuedNotice_label": "Um {time} eingereiht · wartete {duration} bis zur Zustellung",
   "chat_shared_agentName_fallback": "Agent",
   "chat_shared_context_fallback": "Kontext",
   "chat_shared_moreAgents_label": "+{count} weitere Agenten",
