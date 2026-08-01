@@ -424,6 +424,41 @@ jobs:
           gh release edit beta --repo intent-hq/cloudlands-releases \
             --notes-file release-notes.md
 
+      # Comments on the intent-hq/monorepo issues fixed in this release. Fail-soft:
+      # skips with a warning when MONOREPO_ISSUES_TOKEN is absent, and never blocks
+      # the release (continue-on-error). The marker check inside the script makes
+      # workflow_dispatch rebuilds of an existing tag no-ops (no duplicate comments).
+      - name: Notify fixed monorepo issues
+        continue-on-error: true
+        env:
+          ISSUES_GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
+          INTENTD_PIN: ${{ steps.intentd_pin.outputs.version }}
+        run: |
+          if [ -z "$ISSUES_GH_TOKEN" ]; then
+            echo "::warning::MONOREPO_ISSUES_TOKEN secret is not set; skipping issue notifications"
+            exit 0
+          fi
+          if [ -z "$PREV_FE_TAG" ]; then
+            echo "::warning::No previous versioned release found; skipping issue notifications"
+            exit 0
+          fi
+          # The checkout is shallow (fetch-depth 1); the notifier needs the
+          # commit range and both tags to walk it
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --quiet --unshallow --tags origin
+          else
+            git fetch --quiet --tags origin
+          fi
+          # Prefer the intentdVersion published in this release's manifest
+          # (authoritative); fall back to the intentd.version pin
+          BUNDLED_INTENTD=$(jq -r '.intentdVersion // empty' release-manifest.json 2>/dev/null || echo "")
+          BUNDLED_INTENTD="${BUNDLED_INTENTD:-$INTENTD_PIN}"
+          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" beta \
+            "${PREV_FE_TAG}" "v${VERSION}" "${BUNDLED_INTENTD}"
+
       - name: Post summary
         env:
           VERSION: ${{ steps.release.outputs.version }}
