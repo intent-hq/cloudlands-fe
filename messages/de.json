@@ -1518,6 +1518,7 @@
   "chat_autoCommitStatus_hooksFailedAfter_label": "· Hooks nach {count} Versuchen fehlgeschlagen",
   "chat_blockerReportNotice_title_label": "Blocker gemeldet",
   "chat_discussionRequestNotice_title_label": "Diskussion angefragt",
+  "chat_turnFailureNotice_title_label": "Durchlauf fehlgeschlagen",
   "chat_msgAttribution_openAgent_title": "Agent {name} öffnen",
   "chat_msgAttribution_sentMessage_after": "hat eine Nachricht gesendet",
   "chat_shared_agentName_fallback": "Agent",

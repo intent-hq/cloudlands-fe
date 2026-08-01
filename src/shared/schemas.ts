@@ -629,6 +629,10 @@ export const AgentSessionSchema = z.object({
   attentionRequestKind: z.enum(['discussion', 'blocker']).optional(),
   attentionRequestReason: z.string().optional(),
   attentionRequestTimestamp: z.string().optional(),
+  // Canonical stop/finish reason + ISO timestamp of the latest terminal
+  // stop/failure (accompanies stopReason; used for "failed X ago" displays)
+  stopReason: z.string().nullable().optional(),
+  stopReasonTimestamp: z.string().nullable().optional(),
 });
 
 /**

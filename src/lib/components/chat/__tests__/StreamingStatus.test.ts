@@ -193,6 +193,30 @@ describe('StreamingStatus rendered UI', () => {
     const errorTitle = screen.getByTestId('error-title');
     expect(errorTitle.className).toContain('text-destructive-foreground');
   });
+
+  it('renders a live "failed X ago" span next to the error title when failedAt is set', () => {
+    render(StreamingStatus, {
+      props: {
+        error: 'Stream timeout after 10 minutes',
+        failedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      },
+    });
+
+    const failedAtEl = screen.getByTestId('error-failed-at');
+    expect(failedAtEl).toBeTruthy();
+    expect(screen.getByTestId('error-title').textContent).toContain('Response failed');
+  });
+
+  it('omits the failed-X-ago span when failedAt is absent (older daemons / transient chat errors)', () => {
+    render(StreamingStatus, {
+      props: {
+        error: 'Stream timeout after 10 minutes',
+      },
+    });
+
+    expect(screen.queryByTestId('error-failed-at')).toBeNull();
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+  });
 });
 
 describe('StreamingStatus utilities', () => {

@@ -1518,6 +1518,7 @@
   "chat_autoCommitStatus_hooksFailedAfter_label": "· {count} 回の試行後にフックが失敗しました",
   "chat_blockerReportNotice_title_label": "ブロッカーの報告",
   "chat_discussionRequestNotice_title_label": "議論のリクエスト",
+  "chat_turnFailureNotice_title_label": "ターンが失敗しました",
   "chat_msgAttribution_openAgent_title": "エージェント {name} を開く",
   "chat_msgAttribution_sentMessage_after": "がメッセージを送信しました",
   "chat_shared_agentName_fallback": "エージェント",

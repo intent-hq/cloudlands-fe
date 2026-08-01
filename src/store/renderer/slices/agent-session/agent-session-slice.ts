@@ -257,6 +257,7 @@ type CanonicalAgentSessionUpdates = {
   isProcessing?: boolean;
   isResponding?: boolean;
   stopReason?: string | null;
+  stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
   lastAgentResponse?: string;
   processQueueHint?: AgentSession['processQueueHint'];
@@ -291,6 +292,10 @@ function canonicalSessionUpdates(
   // agent:status-changed arrives without a stopReason field.
   if (Object.prototype.hasOwnProperty.call(fields, 'stopReason')) {
     updates.stopReason = fields.stopReason;
+  }
+  // Same key-exists guard for the companion timestamp.
+  if (Object.prototype.hasOwnProperty.call(fields, 'stopReasonTimestamp')) {
+    updates.stopReasonTimestamp = fields.stopReasonTimestamp;
   }
   // sessionCorrupted is omitted-when-false on the wire (monorepo#940): apply
   // it when present, and clear any stale flag on a status transition that
@@ -361,6 +366,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isProcessing: data.isProcessing ?? false,
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.finishReason ?? null,
+        stopReasonTimestamp: data.stopReasonTimestamp ?? null,
       },
     ];
   }
@@ -376,6 +382,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isProcessing: data.isProcessing ?? false,
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.error ?? null,
+        stopReasonTimestamp: data.stopReasonTimestamp ?? null,
       },
     ];
   }
@@ -391,6 +398,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isProcessing: data.isProcessing ?? false,
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.finishReason ?? null,
+        stopReasonTimestamp: data.stopReasonTimestamp ?? null,
       },
     ];
   }
@@ -498,6 +506,7 @@ type SessionComparisonSnapshot = Pick<
   | 'activationState'
   | 'isActive'
   | 'stopReason'
+  | 'stopReasonTimestamp'
   | 'sessionCorrupted'
 > & {
   messageCount: number;
@@ -538,6 +547,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     activationState: session.activationState,
     isActive: session.isActive,
     stopReason: session.stopReason,
+    stopReasonTimestamp: session.stopReasonTimestamp,
     sessionCorrupted: session.sessionCorrupted,
     // Derived via the shared helper so metadata-carried AgentLite attention
     // fields register as changes too, not just the top-level projection.
@@ -635,6 +645,13 @@ function applySessionUpsert(
       !Object.prototype.hasOwnProperty.call(session, 'stopReason')
     ) {
       finalSession.stopReason = existing.stopReason;
+    }
+    // Same guard for the companion timestamp.
+    if (
+      existing.stopReasonTimestamp !== undefined &&
+      !Object.prototype.hasOwnProperty.call(session, 'stopReasonTimestamp')
+    ) {
+      finalSession.stopReasonTimestamp = existing.stopReasonTimestamp;
     }
   }
 

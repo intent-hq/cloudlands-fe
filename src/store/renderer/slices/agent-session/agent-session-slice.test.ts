@@ -1122,6 +1122,92 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].isActive).toBe(false);
     });
 
+    it('applies stopReasonTimestamp from agent:failed and preserves it when agent:status-changed arrives without the key', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-failed-ts-1',
+          type: 'agent:failed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            error: 'Provider stream aborted',
+            stopReasonTimestamp: '2024-01-01T00:00:01.000Z',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBe('2024-01-01T00:00:01.000Z');
+
+      // status-changed without the key must not clobber the timestamp
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-ts-1',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBe('2024-01-01T00:00:01.000Z');
+    });
+
+    it('applies stopReasonTimestamp via the real wire sequence: agent:failed (no timestamp key) followed by the terminal-failure agent:status-changed carrying it', () => {
+      // Per PROTOCOL §7, `agent:failed` data is `{ agentId, error, turnId?,
+      // parentAgentId? }` — it never carries stopReasonTimestamp on the wire.
+      // The timestamp actually arrives on the terminal-failure
+      // `agent:status-changed` that follows it (intentd emission order:
+      // publish_terminal_failure_events -> persist_error_and_requeue).
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-failed-1',
+          type: 'agent:failed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            error: 'Provider stream aborted',
+          },
+        } as any),
+      );
+
+      // agent:failed's own null-defaulting must not persist past the
+      // following status-changed apply.
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBeNull();
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-1',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+            stopReason: 'Provider stream aborted',
+            stopReasonTimestamp: '2024-01-01T00:00:02.000Z',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stopReasonTimestamp).toBe('2024-01-01T00:00:02.000Z');
+      expect(state.byAgentId['a1'].stopReason).toBe('Provider stream aborted');
+    });
+
     it('applies sessionCorrupted from a terminal-failure agent:status-changed (monorepo#940)', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
 

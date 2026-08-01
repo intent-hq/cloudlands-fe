@@ -58,3 +58,27 @@ export function getAgentAttentionRequest(
     timestamp: typeof timestamp === 'string' && timestamp.length > 0 ? timestamp : undefined,
   };
 }
+
+/** Structural subset of AgentSession/AgentLite the stop-timestamp derivation reads. */
+export interface AgentStopTimestampFieldsLike {
+  stopReasonTimestamp?: unknown;
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * Derive the ISO timestamp of the latest terminal stop/failure for a session,
+ * or null when unknown. Per PROTOCOL §5.5, `stopReasonTimestamp` is
+ * top-level on BOTH the full `AgentSession` projection and `AgentLite` —
+ * unlike the attention-request trio above, there is no `metadata`-nested
+ * copy. The `metadata` read below is defensive-only (harmless if a future
+ * projection nests it there) and not part of the documented contract. Used
+ * for "failed X ago" displays.
+ */
+export function getAgentStopReasonTimestamp(
+  session?: AgentStopTimestampFieldsLike | null,
+): string | null {
+  if (!session) return null;
+  const metadata = session.metadata ?? {};
+  const timestamp = session.stopReasonTimestamp ?? metadata.stopReasonTimestamp;
+  return typeof timestamp === 'string' && timestamp.length > 0 ? timestamp : null;
+}
