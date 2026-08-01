@@ -357,8 +357,11 @@ jobs:
         shell: bash
         run: pnpm run generate:i18n
 
+      # shell: powershell (Windows PowerShell 5.1, present on every Windows
+      # host) rather than pwsh — the self-hosted runner has no PowerShell Core
+      # ("pwsh: command not found", intent-hq/monorepo#1282 follow-up run).
       - name: Build and package Windows app
-        shell: pwsh
+        shell: powershell
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
@@ -458,10 +461,20 @@ jobs:
       - name: Generate i18n catalog
         run: pnpm run generate:i18n
 
-      # electron-builder builds only the matrix arch (x64 emits
-      # latest-linux.yml; arm64 emits latest-linux-arm64.yml).
+      # Explicit per-arch CLI targets (x64 emits latest-linux.yml; arm64 emits
+      # latest-linux-arm64.yml): a bare --x64/--arm64 flag does NOT override
+      # electron-builder.yml's per-target arch lists, so each matrix job built
+      # BOTH arches — and the cross-arch package embedded this job's (wrong
+      # -arch) staged sidecar. CLI targets fully override the config's target
+      # list. The maintainer override backfills the deb Maintainer field for
+      # dispatch rebuilds of tags whose checked-out package.json author still
+      # lacks an email (fixed on main; both were first exercised by the
+      # v2.12.0 rebuild, run 30714120208, intent-hq/monorepo#1282).
       - name: Build and package Linux app
-        run: pnpm run dist:linux --${{ matrix.arch }}
+        run: >
+          pnpm run dist:linux
+          AppImage:${{ matrix.arch }} deb:${{ matrix.arch }}
+          -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
           # Sourcemap generation multiplies rollup's peak heap past the 8192
