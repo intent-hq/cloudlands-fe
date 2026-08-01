@@ -27,6 +27,7 @@
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
+  import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
@@ -454,6 +455,14 @@
             {m.settings_section_websocketApi()}
           </h2>
           <WebSocketApiSettings />
+        </div>
+
+        <!-- Workspace API Output -->
+        <div id="workspace-api" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {m.settings_section_workspaceApi()}
+          </h2>
+          <WorkspaceApiSettings />
         </div>
 
         <!-- Agent Backend -->
