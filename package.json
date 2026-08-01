@@ -170,7 +170,7 @@
     "sveltekit",
     "intent"
   ],
-  "author": "Intent Contributors",
+  "author": "Intent HQ <intent-hq@users.noreply.github.com>",
   "license": "Apache-2.0",
   "devDependencies": {
     "@electron/notarize": "^2.5.0",
