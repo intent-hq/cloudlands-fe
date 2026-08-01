@@ -148,6 +148,25 @@ describe('agent-attention-toast-service', () => {
     expect(toastDismissMock).toHaveBeenCalledWith(agentAttentionToastId(AGENT));
   });
 
+  it('is gate-agnostic: renders whatever it receives — parentAgentId gating lives in the bridge', async () => {
+    // The daemon-events bridge drops `agent:attention-requested` events whose
+    // PROTOCOL payload carries a non-empty parentAgentId BEFORE calling this
+    // service (daemon-events-bridge.client.test.ts covers the gated path).
+    // This pins the boundary: the service itself never inspects the field, so
+    // moving the gate here must be a deliberate, test-breaking decision.
+    await showAgentAttentionToast({
+      workspaceId: WS,
+      agentId: AGENT,
+      agentName: 'Implementor',
+      kind: 'discussion',
+      reason: 'Need a decision',
+      ...({ parentAgentId: 'agent-parent-1' } as Record<string, unknown>),
+    });
+
+    expect(toastCustomMock).toHaveBeenCalledTimes(1);
+    expect(lastCustomCall().id).toBe(agentAttentionToastId(AGENT));
+  });
+
   it('wires onSwitchTo / onClose component props to the Switch To and dismissal flows', async () => {
     await showAgentAttentionToast({
       workspaceId: WS,

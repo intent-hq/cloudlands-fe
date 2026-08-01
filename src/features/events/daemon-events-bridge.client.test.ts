@@ -167,6 +167,7 @@ import {
   bulkUpsertSessions,
   clearAllSessions,
   setAgentStreaming,
+  updateSession,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -199,6 +200,10 @@ import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-se
 import { disposeScripts, upsertScript } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
+import {
+  clearAgentFailureRegistry,
+  listAgentFailureEntries,
+} from '$features/agent/agent-failure-registry';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -457,7 +462,7 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     const handler = capturedHandlers[0]!;
 
     // Unrelated method — no-op.
-    handler({ method: 'agent.stream:chunk', params: { agentId: AGENT } });
+    handler({ method: 'agent.stream:activity', params: { agentId: AGENT } });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
     // events.event carrying a non-lifecycle domain event — still stored in the
@@ -585,19 +590,15 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
   // The standing chat.subscribe delta stream (PROTOCOL §7.1,
   // chat-subscribe-service) is the sole transcript writer — the firehose
   // stream family must never create or grow transcript messages.
-  it('agent:stream:chunk / agent:tool:call / agent:stream:end never write transcript messages', async () => {
+  it('agent:stream:activity / agent:tool:call / agent:stream:end never write transcript messages', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Hello ',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
+        lastAgentResponse: 'Hello ',
       }),
     );
     handler(
@@ -627,19 +628,103 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(readAssistantMessages()).toHaveLength(0);
   });
 
+  // intentd#792: `agent:stream:activity` carries the server-derived live
+  // preview — the bridge push-applies it to the session slice with zero RPCs
+  // (no agent.get refetch, no debounce).
+  it('agent:stream:activity applies lastAgentResponse/digest to the session without any RPC', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'Working through the parser rewrite',
+        digest: 'Parser rewrite in progress',
+      }),
+    );
+
+    expect(readSession()?.lastAgentResponse).toBe('Working through the parser rewrite');
+    expect(readSession()?.digest).toBe('Parser rewrite in progress');
+    expect(readAssistantMessages()).toHaveLength(0);
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.get', expect.anything());
+    // Bookkeeping: response text present → the streaming status entry arms.
+    expect(readStatusEvents().map((e) => e.phase)).toEqual(['streaming']);
+  });
+
+  it('agent:stream:activity without preview fields (pre-first-token ping) only refreshes bookkeeping', async () => {
+    appStore.dispatch(updateSession(AGENT, { lastAgentResponse: 'previous turn text' }));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:stream:activity', { agentId: AGENT, messageId: MESSAGE_ID }));
+
+    // No preview fields → no text derivable yet this turn: session preview
+    // untouched, no streaming entry yet.
+    expect(readSession()?.lastAgentResponse).toBe('previous turn text');
+    expect(readSession()?.digest).toBeUndefined();
+    expect(readStatusEvents()).toEqual([]);
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.get', expect.anything());
+  });
+
+  it('a whitespace-only lastAgentResponse is treated like an absent preview (no streaming flip, no session write)', async () => {
+    appStore.dispatch(updateSession(AGENT, { lastAgentResponse: 'previous turn text' }));
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: '   \n  ',
+      }),
+    );
+
+    // The bookkeeping predicate mirrors applyStreamPreviewFields' meaningful-
+    // text check: no preview applied and no "Streaming response…" entry.
+    expect(readSession()?.lastAgentResponse).toBe('previous turn text');
+    expect(readStatusEvents()).toEqual([]);
+  });
+
+  it('terminal agent:stream:end applies the final lastAgentResponse/digest so the preview lands on the turn end-state', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'partial mid-turn text',
+      }),
+    );
+    expect(readSession()?.lastAgentResponse).toBe('partial mid-turn text');
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'The full final response tail.',
+        digest: 'Turn complete',
+      }),
+    );
+
+    expect(readSession()?.lastAgentResponse).toBe('The full final response tail.');
+    expect(readSession()?.digest).toBe('Turn complete');
+    // Terminal bookkeeping still ran: busy flags cleared, no transcript writes.
+    expect(readSession()?.isStreaming).toBe(false);
+    expect(readAssistantMessages()).toHaveLength(0);
+  });
+
   it('agent:stream:end clears the busy flags and agent:idle clears the spinner', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Hello',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
+        lastAgentResponse: 'Hello',
       }),
     );
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
@@ -671,14 +756,10 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     const handler = capturedHandlers[0]!;
 
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Working',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
+        lastAgentResponse: 'Working',
       }),
     );
     handler(
@@ -698,21 +779,17 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(chatAgent?.error).toBe('boom');
   });
 
-  it("emits status hint transitions: 'Streaming response…' on first chunk → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next chunk → cleared on stream:end/idle", async () => {
+  it("emits status hint transitions: 'Streaming response…' on first text-bearing activity → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next activity → cleared on stream:end/idle", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    // First text chunk arms the "Streaming response…" status entry via the
-    // chunk reducer (no explicit dispatch needed from the bridge).
+    // First text-bearing activity ping arms the "Streaming response…" status
+    // entry via the activity reducer (no explicit dispatch needed from the bridge).
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Looking',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
+        lastAgentResponse: 'Looking',
       }),
     );
 
@@ -769,14 +846,10 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     ]);
 
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Done.',
         messageId: MESSAGE_ID,
-        blockIndex: 2,
-        blockId: `${MESSAGE_ID}:2`,
-        blockType: 'text',
-        streamId: STREAM_ID,
+        lastAgentResponse: 'Done.',
       }),
     );
 
@@ -804,7 +877,7 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(readStatusEvents()).toEqual([]);
   });
 
-  it('maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with a localized message keyed off phase (wire message ignored for known phases); first chunk still clears it via the chunk reducer', async () => {
+  it('maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with a localized message keyed off phase (wire message ignored for known phases); first text-bearing activity still clears it via the chunk reducer', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -870,19 +943,16 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       message: 'Daemon-authored fallback text',
     });
 
-    // First `agent:stream:chunk` appends the chunk reducer's "Streaming
-    // response…" entry after the startup hints — the bridge itself does NOT
-    // clear anything on the way in (mirrors the existing tool-call bridge
-    // path). The terminal reducer paths below own the clear.
+    // First text-bearing `agent:stream:activity` appends the activity
+    // reducer's "Streaming response…" entry after the startup hints — the
+    // bridge itself does NOT clear anything on the way in (mirrors the
+    // existing tool-call bridge path). The terminal reducer paths below own
+    // the clear.
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Hi',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
+        lastAgentResponse: 'Hi',
       }),
     );
     events = readStatusEvents();
@@ -1033,17 +1103,14 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
       phaseExpectations.map(({ phase, localized }) => ({ phase, message: localized })),
     );
 
-    // The streaming state (first chunk) is also a catalog string, appended by
-    // the chunk reducer — completing the full pre-first-token → streaming set.
+    // The streaming state (first text-bearing activity) is also a catalog
+    // string, appended by the activity reducer — completing the full
+    // pre-first-token → streaming set.
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Hi',
         messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
+        lastAgentResponse: 'Hi',
       }),
     );
     events = readStatusEvents();
@@ -1339,14 +1406,10 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
       }),
     );
     handler(
-      notification('agent:stream:chunk', {
+      notification('agent:stream:activity', {
         agentId: AGENT,
-        content: 'Waking…',
         messageId: WAKE_MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${WAKE_MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
+        lastAgentResponse: 'Waking…',
       }),
     );
     const statusEventsBefore = readStatusEvents();
@@ -2913,6 +2976,55 @@ describe('daemonEventsBridge (attention flow — agent:attention-requested → s
     };
     const events = state.workspaceEvents?.byWorkspaceId?.[WS]?.events ?? [];
     expect(events.some((event) => event.type === 'agent:attention-requested')).toBe(true);
+  });
+
+  it('skips the toast when the payload carries parentAgentId (delegated agent — parent handles it)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    ensureAgentSessionSpy.mockClear();
+
+    // PROTOCOL §6.5: optional parentAgentId, present for delegated agents.
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'discussion',
+        reason: 'Need a decision on the API shape',
+        parentAgentId: 'agent-parent-1',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).not.toHaveBeenCalled();
+    // The gate only suppresses the toast — the session refetch and the
+    // activity timeline still fire so the sidebar indicator/timeline work.
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    const state = appStore.state as {
+      workspaceEvents?: { byWorkspaceId?: Record<string, { events?: Array<{ type: string }> }> };
+    };
+    const events = state.workspaceEvents?.byWorkspaceId?.[WS]?.events ?? [];
+    expect(events.some((event) => event.type === 'agent:attention-requested')).toBe(true);
+  });
+
+  it('still toasts when parentAgentId is absent or empty (parentless agent / older daemon)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'blocker',
+        reason: 'CI is red',
+        parentAgentId: '',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: AGENT, kind: 'blocker' }),
+    );
   });
 });
 
@@ -5246,7 +5358,6 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     it('dispatches chatSendFailed when agent:failed carries an error message', async () => {
       const agentId = 'agent-failed-1';
       const messageId = 'msg-failed-1';
-      const streamId = 'stream-failed-1';
       const errorMsg = 'Agent spawn failed after 3 retries';
 
       appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
@@ -5255,14 +5366,10 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
       // Start a stream so there's something for agent:failed to finalize
       handler!(
-        notification('agent:stream:chunk', {
+        notification('agent:stream:activity', {
           agentId,
-          content: 'Working',
           messageId,
-          blockIndex: 0,
-          blockId: `${messageId}:0`,
-          blockType: 'text',
-          streamId,
+          lastAgentResponse: 'Working',
         }),
       );
 
@@ -5282,7 +5389,6 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     it('sets default error message when agent:failed has no explicit error', async () => {
       const agentId = 'agent-failed-2';
       const messageId = 'msg-failed-2';
-      const streamId = 'stream-failed-2';
 
       appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
       await primeBridge();
@@ -5290,14 +5396,10 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
       // Start a stream so there's something for agent:failed to finalize
       handler!(
-        notification('agent:stream:chunk', {
+        notification('agent:stream:activity', {
           agentId,
-          content: 'Working',
           messageId,
-          blockIndex: 0,
-          blockId: `${messageId}:0`,
-          blockType: 'text',
-          streamId,
+          lastAgentResponse: 'Working',
         }),
       );
 
@@ -5333,6 +5435,59 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       const chatState = appStore.state.chatState.byAgentId[agentId];
       expect(chatState).toBeDefined();
       expect(chatState.error).toBe(errorMsg);
+    });
+
+    it('skips recordAgentFailure when the payload carries parentAgentId, but still dispatches streamFailed/chatSendFailed', async () => {
+      const agentId = 'agent-failed-delegated';
+      const errorMsg = 'session/prompt idle timeout (1800s of silence)';
+      clearAgentFailureRegistry();
+
+      appStore.dispatch(upsertSession({ id: agentId, name: 'Delegated Agent', workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0];
+
+      // PROTOCOL §6.5: optional parentAgentId, present for delegated agents.
+      handler!(
+        notification('agent:failed', {
+          agentId,
+          error: errorMsg,
+          status: 'error',
+          turnId: 'turn-delegated-1',
+          parentAgentId: 'agent-parent-1',
+        }),
+      );
+
+      // No failure-registry entry → no failure toast for the delegated agent.
+      expect(listAgentFailureEntries()).toHaveLength(0);
+      // The in-conversation error + Retry button keep working.
+      const chatState = appStore.state.chatState.byAgentId[agentId];
+      expect(chatState).toBeDefined();
+      expect(chatState.error).toBe(errorMsg);
+    });
+
+    it('records the failure when parentAgentId is absent or empty (parentless agent / older daemon)', async () => {
+      const agentId = 'agent-failed-parentless';
+      const errorMsg = 'boom';
+      clearAgentFailureRegistry();
+
+      appStore.dispatch(upsertSession({ id: agentId, name: 'Parentless Agent', workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0];
+
+      handler!(
+        notification('agent:failed', {
+          agentId,
+          error: errorMsg,
+          status: 'error',
+          parentAgentId: '',
+        }),
+      );
+
+      const entries = listAgentFailureEntries();
+      expect(entries.map((entry) => entry.agentId)).toEqual([agentId]);
+      expect(entries[0]!.workspaceId).toBe(WS);
+      expect(entries[0]!.error).toBe(errorMsg);
+      clearAgentFailureRegistry();
     });
   });
 });
@@ -5842,20 +5997,20 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     };
   }
 
-  function agentStreamChunkNotification() {
+  function agentStreamActivityNotification() {
     return {
       method: 'events.event',
       params: {
         event: {
-          id: 'evt-chunk-1',
+          id: 'evt-activity-1',
           workspaceId: WS_RECON,
           timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'agent:stream:chunk',
+          type: 'agent:stream:activity',
           actor: { type: 'system' },
           data: {
             agentId: 'agent-1',
-            content: 'chunk data',
-            streamId: 'stream-1',
+            messageId: 'msg-1',
+            lastAgentResponse: 'streamed-so-far text',
           },
         },
       },
@@ -5926,7 +6081,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     expect(ws.activity).toBe('agent_running');
   });
 
-  it('reconciles activity to agent_running when agent:stream:chunk arrives and entity is idle', async () => {
+  it('reconciles activity to agent_running when agent:stream:activity arrives and entity is idle', async () => {
     await seedWorkspace('idle');
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5947,7 +6102,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
       },
     });
 
-    handler(agentStreamChunkNotification());
+    handler(agentStreamActivityNotification());
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 

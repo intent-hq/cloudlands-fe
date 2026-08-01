@@ -9,7 +9,14 @@
  *  - `markAgentAsViewed` swaps subscriptions on agent switch: it closes every
  *    other agent's subscription and (re)opens the viewed agent's when its
  *    session exists — so switching chats never leaks registrations.
- *  - `clearCurrentlyViewedAgent` (chat close / panel destroy) closes all.
+ *  - `transcriptHydrationSettled` re-applies the entry's last reconciled
+ *    transcript: a slower chat-read hydrate whose pages predate a finalize
+ *    would otherwise clobber the finalized row this stream already delivered
+ *    (monorepo#1161).
+ *  - `clearCurrentlyViewedAgent` (chat close / panel destroy) closes all —
+ *    but only when the clear actually applied (no agent remains viewed after
+ *    the reducer). A background panel's trailing scoped clear is ignored by
+ *    the reducer, so the viewed agent's subscription survives (monorepo#1215).
  *  - `removeSession` (agent-deletion soft-hide), `workspaceDeleted`,
  *    `removeWorkspaceSessions`, and `clearAllSessions` tear down the affected
  *    subscriptions so a deleted agent's stream can never resurrect its state.
@@ -48,7 +55,10 @@ import type { AgentMessage } from "$shared/types";
 import type { ChatTranscript, Unsubscribe } from "$lib/client/app-client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
-import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  initializeChatRequested,
+  transcriptHydrationSettled,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   clearAllSessions,
   removeSession,
@@ -75,6 +85,8 @@ interface SubscriptionEntry {
   hasEmitted: boolean;
   /** Last emitted transcript.isStreaming, for edge-triggered flag writes. */
   wasStreaming: boolean;
+  /** Last reconciled transcript, re-applied on transcriptHydrationSettled. */
+  lastTranscript?: ChatTranscript;
 }
 
 /** Standing subscriptions keyed by agent id — at most one per agent. */
@@ -101,6 +113,14 @@ function readSession(agentId: string): StoredSessionLite | undefined {
     agentSessions?: { byAgentId: Record<string, StoredSessionLite> };
   };
   return state.agentSessions?.byAgentId[agentId];
+}
+
+/** Dependency-light one-time read of the viewed agent (no selector import). */
+function readCurrentlyViewedAgentId(): string | null {
+  const state = appStore.state as {
+    unreadTracking?: { currentlyViewedAgentId: string | null };
+  };
+  return state.unreadTracking?.currentlyViewedAgentId ?? null;
 }
 
 /**
@@ -181,6 +201,7 @@ export function openChatSubscription(agentId: string, wsId?: string): void {
         return;
       }
       entry.hasEmitted = true;
+      entry.lastTranscript = transcript;
       try {
         applyTranscript(agentId, entry, transcript);
       } catch (error) {
@@ -193,6 +214,31 @@ export function openChatSubscription(agentId: string, wsId?: string): void {
   }
 }
 
+/**
+ * Clear stale message-level streaming flags left behind when the standing
+ * subscription closes mid-turn (navigate-away): nothing else rewrites the
+ * stream-owned partial message, so its `isStreaming: true` /
+ * `streamingComplete: false` would otherwise keep reporting a stream-owned
+ * buffer that no longer grows — freezing the AgentCard tier-1 preview and
+ * masking the push-applied `lastAgentResponse` that IS advancing. The
+ * message content is untouched; a re-view's seq-0 snapshot re-canonicalizes
+ * everything (same message id).
+ */
+function clearStaleStreamingMessageFlags(agentId: string): void {
+  const messages = readSession(agentId)?.messages;
+  if (!messages?.length) return;
+  const hasStale = messages.some(
+    (message) => message.isStreaming === true || message.streamingComplete === false,
+  );
+  if (!hasStale) return;
+  const normalized = messages.map((message) =>
+    message.isStreaming === true || message.streamingComplete === false
+      ? { ...message, isStreaming: false, streamingComplete: true }
+      : message,
+  );
+  appStore.dispatch(replaceMessages(agentId, normalized));
+}
+
 /** Close (and forget) the standing subscription for an agent. Idempotent. */
 export function closeChatSubscription(agentId: string): void {
   const entry = subscriptions.get(agentId);
@@ -202,6 +248,11 @@ export function closeChatSubscription(agentId: string): void {
     entry.unsubscribe();
   } catch (error) {
     logger.error("Failed to close chat subscription", error);
+  }
+  try {
+    clearStaleStreamingMessageFlags(agentId);
+  } catch (error) {
+    logger.error("Failed to clear stale streaming message flags", error);
   }
 }
 
@@ -254,8 +305,28 @@ export function createChatSubscribeMiddleware(): StoreMiddleware {
             openChatSubscription(agentId, readSession(agentId)?.workspaceId);
           }
         }
+      } else if (type === transcriptHydrationSettled.type) {
+        // A slower full-history hydrate (chat-read-service) may have landed a
+        // paged fetch that predates a row this stream already finalized —
+        // clobbering it (the persisted row is not stream-owned, so the read
+        // side's isStreaming guard cannot preserve it). Re-assert the
+        // canonical reconciled transcript against the post-hydrate store.
+        // The reducer for this action has already run, and applyTranscript's
+        // streaming edge is keyed on entry.wasStreaming, so a re-apply with
+        // the same transcript never re-dispatches a consumed flag edge.
+        const [agentId] = (action as { payload: [string] }).payload;
+        if (typeof agentId === "string") {
+          const entry = subscriptions.get(agentId);
+          if (entry?.hasEmitted && entry.lastTranscript) {
+            applyTranscript(agentId, entry, entry.lastTranscript);
+          }
+        }
       } else if (type === clearCurrentlyViewedAgent.type) {
-        closeAllChatSubscriptions();
+        // Runs post-reducer: a scoped clear from a background/deactivating
+        // panel that does not match the viewed agent is a reducer no-op, so
+        // an agent still being viewed means the chat did NOT close — keep
+        // its standing subscription (monorepo#1215).
+        if (readCurrentlyViewedAgentId() === null) closeAllChatSubscriptions();
       } else if (type === removeSession.type) {
         const [agentId] = (action as { payload: [string] }).payload;
         if (typeof agentId === "string") closeChatSubscription(agentId);

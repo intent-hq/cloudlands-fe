@@ -8,17 +8,11 @@
   selectWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum, isWorkspaceDisplayStatus } from '$shared/types';
-  import type { Workspace } from '$shared/types';
+  import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
   import {
   buildRepoPathLookup,
   getGroupKey,
 } from '$lib/components/workspace/utils/workspace-grouping';
-  import {
-  getWorkspaceGroupingStatus,
-  isWorkspaceRunning,
-  type GroupingStatus,
-  type WorkspaceDisplayStatus,
-} from '$lib/components/workspace/utils/workspace-status-grouping';
   import { onMount } from 'svelte';
   import Header from '$lib/components/ui/Header.svelte';
 
@@ -114,10 +108,11 @@
 
   function getDisplayStatus(ws: Workspace): WorkspaceDisplayStatus {
     // BE-owned current-cycle status (workspace.displayStatus, intent-hq/intentd#600):
-    // render it verbatim. The daemon owns the precedence (open/draft PR → open
-    // tasks → merged PR → complete) and the lite workspace.subscribe snapshot
-    // always carries the field (intent-hq/intentd#743), so there is no local
-    // derivation. Unknown wire values (a future daemon's new value) default to
+    // render it verbatim. The daemon owns the whole derivation — the agent-running
+    // promotion to in_progress and the not-running demotion to idle included — and
+    // the lite workspace.subscribe snapshot always carries the field
+    // (intent-hq/intentd#743), so there is no local derivation or override.
+    // Unknown wire values (a future daemon's new value) default to
     // 'not_started' so the workspace never vanishes from the grouped view.
     return isWorkspaceDisplayStatus(ws.displayStatus) ? ws.displayStatus : 'not_started';
   }
@@ -158,7 +153,7 @@
     });
   });
 
-  const statusLabels: Record<GroupingStatus, () => string> = {
+  const statusLabels: Record<WorkspaceDisplayStatus, () => string> = {
     idle: () => m.layout_allCard_statusIdle_label(),
     not_started: () => m.layout_allCard_statusNoChanges_label(),
     in_progress: () => m.layout_allCard_statusInProgress_label(),
@@ -168,7 +163,7 @@
     pr_merged: () => m.layout_allCard_statusPrMerged_label(),
   };
 
-  const statusOrder: GroupingStatus[] = [
+  const statusOrder: WorkspaceDisplayStatus[] = [
     'idle',
     'in_progress',
     'pr_ready',
@@ -178,17 +173,10 @@
     'pr_merged',
   ];
 
-  function getGroupingStatus(ws: Workspace): GroupingStatus {
-    const baseStatus = getDisplayStatus(ws);
-    void activeStreamsVersion;
-    const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
-    return getWorkspaceGroupingStatus(ws, baseStatus, streamingAgentIds);
-  }
-
   const groupedByStatus = $derived.by(() => {
-    const groups = new Map<GroupingStatus, Workspace[]>();
+    const groups = new Map<WorkspaceDisplayStatus, Workspace[]>();
     for (const ws of filteredWorkspaces) {
-      const status = getGroupingStatus(ws);
+      const status = getDisplayStatus(ws);
       if (!groups.has(status)) groups.set(status, []);
       groups.get(status)!.push(ws);
     }
@@ -198,9 +186,12 @@
   });
 
   function _isRunning(ws: Workspace): boolean {
+    // Streaming-based UI affordance only (the running dot on the card); the
+    // status grouping above renders the BE displayStatus verbatim and is never
+    // influenced by this signal.
     void activeStreamsVersion;
     const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
-    return isWorkspaceRunning(ws, streamingAgentIds);
+    return ws.activity === 'agent_running' || streamingAgentIds.length > 0;
   }
 
   function _getStreamingIds(ws: Workspace): string[] {

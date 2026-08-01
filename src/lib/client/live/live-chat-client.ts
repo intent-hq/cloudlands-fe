@@ -144,6 +144,14 @@ interface ChatDeltaEntity {
    * the `agent_message` sender attribution the chip renders live.
    */
   metadata?: AgentMessage["metadata"];
+  /**
+   * The client-minted logical id lifted onto user-row deltas (§7.1,
+   * intentd#781) — present only when the persisted row carries a
+   * `userAppMessageId` (§5.5); older daemons omit it entirely. Stamped onto
+   * the materialized message so optimistic-insert dedup matches by exact
+   * appMessageId on the delta path.
+   */
+  appMessageId?: string;
 }
 
 function parseDeltaEntity(raw: unknown): ChatDeltaEntity | null {
@@ -162,6 +170,9 @@ function parseDeltaEntity(raw: unknown): ChatDeltaEntity | null {
     ...(e.streamingComplete === true ? { streamingComplete: true } : {}),
     ...(e.metadata && typeof e.metadata === "object" && !Array.isArray(e.metadata)
       ? { metadata: e.metadata as AgentMessage["metadata"] }
+      : {}),
+    ...(typeof e.appMessageId === "string" && e.appMessageId.length > 0
+      ? { appMessageId: e.appMessageId }
       : {}),
   };
 }
@@ -343,6 +354,7 @@ export class ChatTranscriptReconciler {
       (next as AgentMessage & { seq?: number }).seq = entity.messageSeq;
     }
     if (entity.metadata) next.metadata = entity.metadata;
+    if (entity.appMessageId) next.appMessageId = entity.appMessageId;
     this.messages = [...this.messages.slice(0, index), next, ...this.messages.slice(index + 1)];
   }
 }

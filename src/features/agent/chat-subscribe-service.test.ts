@@ -40,11 +40,15 @@ vi.mock("$lib/client", () => {
 import * as clientModule from "$lib/client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
-import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  initializeChatRequested,
+  transcriptHydrationSettled,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   addMessage,
   bulkUpsertSessions,
   removeSession,
+  updateSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
   selectAgentMessages,
@@ -204,10 +208,133 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     expect(userRows[0].appMessageId).toBe(appMessageId);
   });
 
+  it("dedups the optimistic user row by appMessageId even when the canonical content differs (§7.1 delta path)", () => {
+    // intentd#781: the daemon echoes appMessageId on §7.1 user-row deltas, so
+    // the reconciled canonical copy carries the client-minted logical id.
+    // Exact appMessageId matching wins over every content heuristic — the
+    // rows collapse even when the daemon-persisted content was normalized
+    // and no longer hashes equal to the optimistic copy.
+    const agentId = "agent-sub-optimistic-appid-diff";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([]));
+
+    const appMessageId = "app-msg-opt-3";
+    appStore.dispatch(
+      addMessage(agentId, {
+        id: "0190bbbb-optimistic-user",
+        appMessageId,
+        role: "user",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        contentBlocks: [{ type: "text", text: "deploy now\r\n" }],
+      }),
+    );
+
+    // Canonical delta echo: server-minted user-msg id, SAME appMessageId,
+    // daemon-normalized content (differs from the optimistic copy).
+    const canonical: AgentMessage = {
+      id: "user-msg-aaaa1111-2222-3333-4444-555566667777",
+      appMessageId,
+      role: "user",
+      timestamp: "2026-01-01T00:00:02.100Z",
+      contentBlocks: [
+        {
+          type: "text",
+          id: "user-msg-aaaa1111-2222-3333-4444-555566667777:0",
+          text: "deploy now",
+        },
+      ],
+    };
+    sub.handler(transcript([canonical]));
+
+    const messages = selectAgentMessages.select(appStore.state, agentId);
+    const userRows = messages.filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(1);
+    expect(userRows[0].id).toBe("user-msg-aaaa1111-2222-3333-4444-555566667777");
+    expect(userRows[0].appMessageId).toBe(appMessageId);
+  });
+
+  it("keeps identical-content sends distinct when their appMessageIds differ (§7.1 delta path)", () => {
+    // Two messages with the SAME text sent in quick succession are distinct
+    // logical messages: each optimistic row and each canonical echo carries
+    // its own appMessageId, so id matching pairs them one-to-one and the
+    // content fallback (gated off when both sides carry an appMessageId)
+    // never collapses them into one row.
+    const agentId = "agent-sub-identical-content";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([]));
+
+    for (const [rendererId, appMessageId] of [
+      ["0190cccc-optimistic-a", "app-msg-same-a"],
+      ["0190cccc-optimistic-b", "app-msg-same-b"],
+    ] as const) {
+      appStore.dispatch(
+        addMessage(agentId, {
+          id: rendererId,
+          appMessageId,
+          role: "user",
+          timestamp: "2026-01-01T00:00:02.000Z",
+          contentBlocks: [{ type: "text", text: "run it again" }],
+        }),
+      );
+    }
+
+    // First echo lands alone: it must collapse ONLY its own optimistic row.
+    const canonicalA: AgentMessage = {
+      id: "user-msg-aaaa0000-1111-2222-3333-444444444444",
+      appMessageId: "app-msg-same-a",
+      role: "user",
+      timestamp: "2026-01-01T00:00:02.050Z",
+      contentBlocks: [
+        {
+          type: "text",
+          id: "user-msg-aaaa0000-1111-2222-3333-444444444444:0",
+          text: "run it again",
+        },
+      ],
+    };
+    sub.handler(transcript([canonicalA]));
+
+    let userRows = selectAgentMessages
+      .select(appStore.state, agentId)
+      .filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(2);
+    expect(userRows.map((m) => m.appMessageId).sort()).toEqual([
+      "app-msg-same-a",
+      "app-msg-same-b",
+    ]);
+
+    // Second echo arrives: both rows are canonical, still two messages.
+    const canonicalB: AgentMessage = {
+      id: "user-msg-bbbb0000-1111-2222-3333-444444444444",
+      appMessageId: "app-msg-same-b",
+      role: "user",
+      timestamp: "2026-01-01T00:00:02.150Z",
+      contentBlocks: [
+        {
+          type: "text",
+          id: "user-msg-bbbb0000-1111-2222-3333-444444444444:0",
+          text: "run it again",
+        },
+      ],
+    };
+    sub.handler(transcript([canonicalA, canonicalB]));
+
+    userRows = selectAgentMessages
+      .select(appStore.state, agentId)
+      .filter((m) => m.role === "user");
+    expect(userRows).toHaveLength(2);
+    expect(userRows.map((m) => m.id)).toEqual([
+      "user-msg-aaaa0000-1111-2222-3333-444444444444",
+      "user-msg-bbbb0000-1111-2222-3333-444444444444",
+    ]);
+  });
+
   it("dedups the optimistic user row against a canonical user-msg echo lacking appMessageId (§7.1 delta path)", () => {
-    // P0 regression (post-#559): the daemon's §7.1 user-row delta does not
-    // carry appMessageId, so the reconciled canonical copy arrives with only
-    // its server-minted `user-msg-{uuid}` id. The optimistic row must still
+    // Version-skew fallback: an OLDER daemon's §7.1 user-row delta carries no
+    // appMessageId, so the reconciled canonical copy arrives with only its
+    // server-minted `user-msg-{uuid}` id. The optimistic row must still
     // collapse against it (content fallback recognizes the daemon-canonical
     // user-msg id), or every normal send — including structured-question
     // Q:/A: answers, which take the same send path — renders twice until a
@@ -318,6 +445,43 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, agentA)).toBe(before);
   });
 
+  it("clears stale message-level streaming flags when a mid-turn subscription closes (navigate-away)", () => {
+    // Viewed mid-turn then navigated away: the delta stream grew a message
+    // with isStreaming: true, and nothing else rewrites it after the
+    // subscription closes. The stale flag would keep the AgentCard tier-1
+    // frozen buffer winning over the push-applied lastAgentResponse that IS
+    // advancing (~1s activity pings), so closeChatSubscription normalizes
+    // the flags on teardown.
+    const agentA = "agent-sub-stale-a";
+    const agentB = "agent-sub-stale-b";
+    seedSession(agentA);
+    seedSession(agentB);
+    const subA = openChat(agentA);
+
+    subA.handler(
+      transcript(
+        [makeMessage("partial-a", "streamed so far", { isStreaming: true })],
+        true,
+      ),
+    );
+    expect(
+      selectAgentMessages.select(appStore.state, agentA).find((m) => m.id === "partial-a")
+        ?.isStreaming,
+    ).toBe(true);
+
+    // Navigate away mid-turn: markAgentAsViewed(B) closes A's subscription.
+    appStore.dispatch(markAgentAsViewed(agentB));
+    expect(hasLiveChatSubscription(agentA)).toBe(false);
+
+    const partial = selectAgentMessages
+      .select(appStore.state, agentA)
+      .find((m) => m.id === "partial-a");
+    expect(partial?.isStreaming).toBe(false);
+    expect(partial?.streamingComplete).toBe(true);
+    // Content untouched — only the flags normalize.
+    expect(partial?.contentBlocks?.[0]).toMatchObject({ text: "streamed so far" });
+  });
+
   it("tears down all subscriptions when the chat closes (clearCurrentlyViewedAgent)", () => {
     const agentId = "agent-sub-close";
     seedSession(agentId);
@@ -399,6 +563,148 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     appStore.dispatch(removeSession(agentId));
     expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
     expect(hasLiveChatSubscription(agentId)).toBe(false);
+  });
+
+  it("re-applies the last reconciled transcript when a slower hydrate settles without the finalized row (monorepo#1161)", () => {
+    // Hydrate/finalize race: the standing subscription's reconcile delivered
+    // the finalized assistant row, then a slower chat-read hydrate (whose
+    // paged fetch predates the finalize) lands a full-list upsert WITHOUT
+    // that row — clobbering it. The persisted row is not stream-owned
+    // (isStreaming false), so the read-side guard cannot preserve it; the
+    // subscription must re-assert its canonical transcript on
+    // transcriptHydrationSettled.
+    const agentId = "agent-sub-hydrate-race";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+
+    const user = makeMessage("0190a1b2-user", "Run the tests", {
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+    });
+    const finalized = makeMessage("0190a200-asst", "All tests pass.");
+    sub.handler(transcript([user, finalized]));
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "0190a1b2-user",
+      "0190a200-asst",
+    ]);
+
+    // The stale hydrate lands: full-list upsert covering only the user row.
+    appStore.dispatch(bulkUpsertSessions([makeSession(agentId, { messages: [user] })]));
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "0190a1b2-user",
+    ]);
+
+    // Hydration settles: the subscription re-asserts its last transcript.
+    appStore.dispatch(transcriptHydrationSettled(agentId));
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "0190a1b2-user",
+      "0190a200-asst",
+    ]);
+  });
+
+  it("does not re-fire the streaming edge when re-applying on hydrate settle", () => {
+    const agentId = "agent-sub-settle-no-edge";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+
+    // Rising then falling edge: the turn streamed and finalized.
+    sub.handler(transcript([makeMessage("m-turn", "working")], true));
+    const finalized = makeMessage("m-turn", "done");
+    sub.handler(transcript([finalized], false));
+    expect(selectAgentSession.select(appStore.state, agentId)?.isStreaming).toBe(false);
+
+    // A fresh optimistic turn starts (chatSendStarted equivalent) before the
+    // stale hydrate settles.
+    appStore.dispatch(updateSession(agentId, { isStreaming: true, isProcessing: true }));
+    appStore.dispatch(bulkUpsertSessions([makeSession(agentId, { messages: [] })]));
+
+    appStore.dispatch(transcriptHydrationSettled(agentId));
+
+    // The re-apply restores the finalized row without re-dispatching the
+    // already-consumed falling edge — the fresh optimistic flags survive.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "m-turn",
+    ]);
+    const session = selectAgentSession.select(appStore.state, agentId);
+    expect(session?.isStreaming).toBe(true);
+    expect(session?.isProcessing).toBe(true);
+  });
+
+  it("treats transcriptHydrationSettled as a no-op with no live subscription or before the first emit", () => {
+    // No subscription at all.
+    const agentA = "agent-sub-settle-nosub";
+    const seeded = makeMessage("seeded-a", "hydrated history");
+    seedSession(agentA, { messages: [seeded] });
+    appStore.dispatch(transcriptHydrationSettled(agentA));
+    expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toEqual([
+      "seeded-a",
+    ]);
+
+    // Subscription open but nothing emitted yet.
+    const agentB = "agent-sub-settle-preemit";
+    seedSession(agentB, { messages: [makeMessage("seeded-b", "hydrated history")] });
+    openChat(agentB);
+    appStore.dispatch(transcriptHydrationSettled(agentB));
+    expect(hasLiveChatSubscription(agentB)).toBe(false);
+    expect(selectAgentMessages.select(appStore.state, agentB).map((m) => m.id)).toEqual([
+      "seeded-b",
+    ]);
+  });
+
+  it("keeps the viewed agent's subscription open when a background panel's trailing clearCurrentlyViewedAgent lands after the handoff (missing-live-turn regression)", () => {
+    // Two agent tabs mounted in ONE panel (the panel system keeps inactive
+    // tabs mounted for PANEL_TAB_CACHE_TTL_MS before unmounting). This is the
+    // exact action sequence the two ChatPanels emit:
+    //
+    //   1. Switching BACK to tab A (earlier in tree order), A's unread
+    //      effect runs first: markAgentAsViewed(A) closes B's subscription
+    //      and reopens A's.
+    //   2. THEN B's panel emits clearCurrentlyViewedAgent — from its
+    //      deactivation effect, and again ~30s later from onDestroy when the
+    //      tab cache evicts the hidden tab.
+    //
+    // Neither trailing clear means "no chat is viewed": A is still the
+    // visible, viewed chat. Each panel scopes its clear to its own agent, so
+    // B's trailing clear is a reducer no-op (A is viewed) and the middleware
+    // must NOT map it to closeAllChatSubscriptions() — otherwise A's
+    // subscription (the sole transcript writer) dies and A's next live turn
+    // renders NOTHING (no thinking, no stop button) until a remount
+    // re-initializes the chat.
+    const agentA = "agent-sub-handoff-a";
+    const agentB = "agent-sub-handoff-b";
+    seedSession(agentA);
+    seedSession(agentB);
+
+    // A's ChatPanel mounts and is viewed.
+    openChat(agentA);
+    appStore.dispatch(markAgentAsViewed(agentA));
+
+    // Switch A → B: A's deactivating panel clears (scoped to its own agent),
+    // B's activating panel views + mounts.
+    appStore.dispatch(clearCurrentlyViewedAgent(agentA));
+    appStore.dispatch(markAgentAsViewed(agentB));
+    openChat(agentB);
+
+    // Switch back B → A: A's panel activates first and reopens A's
+    // subscription…
+    appStore.dispatch(markAgentAsViewed(agentA));
+    const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
+    expect(reopened).toBeDefined();
+
+    // …then B's still-mounted panel emits the trailing clear (deactivation
+    // effect now, onDestroy again on cache eviction — same dispatch).
+    appStore.dispatch(clearCurrentlyViewedAgent(agentB));
+
+    // REGRESSION: the trailing clear must not close the viewed agent's
+    // standing subscription.
+    expect(reopened!.unsubscribe).not.toHaveBeenCalled();
+
+    // A live emit for the viewed agent must still apply to the store.
+    reopened!.handler(transcript([makeMessage("live-turn-msg", "thinking…")], true));
+    expect(hasLiveChatSubscription(agentA)).toBe(true);
+    expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toContain(
+      "live-turn-msg",
+    );
   });
 
 });

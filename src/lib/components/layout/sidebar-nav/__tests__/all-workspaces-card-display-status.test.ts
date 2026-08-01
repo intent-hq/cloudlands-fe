@@ -1,15 +1,18 @@
 /**
  * Test: BE-owned workspace.displayStatus in AllWorkspacesCard Status view
  *
- * intent-hq/intentd#600: the daemon computes the current-cycle displayStatus
- * (open/draft PR → open tasks → merged PR → complete) and the FE renders it
- * verbatim. Since intent-hq/intentd#743 the lite workspace.subscribe snapshot
- * always carries the field, so there is no client-side derivation. Verifies:
+ * intent-hq/intentd#600: the daemon computes the current-cycle displayStatus —
+ * including the agent-running promotion to in_progress and the not-running
+ * demotion to idle (spec: compute idle displayStatus in daemon) — and the FE
+ * renders it verbatim. Since intent-hq/intentd#743 the lite workspace.subscribe
+ * snapshot always carries the field, so there is no client-side derivation.
+ * Verifies:
  * - BE displayStatus wins over locally cached PR fields (the original bug:
  *   merged PR + open tasks must NOT group as PR Merged when BE says in_progress)
- * - Absent/unknown wire values default to 'not_started' (grouped Idle) instead
- *   of triggering a local derivation
- * - The client-side running/idle grouping layer stays on top of the BE value
+ * - BE-sent 'idle' and 'in_progress' render verbatim under their own groups
+ * - Absent/unknown wire values default to 'not_started' instead of triggering
+ *   a local derivation
+ * - The FE streaming-agents signal never influences the grouping
  * - A displayStatus entity merge (the workspace:displayStatus-changed store
  *   path) regroups the sidebar live without a refetch
  */
@@ -98,9 +101,9 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
 
   it('prefers BE displayStatus over locally cached PR fields (original bug)', async () => {
     // Locally this workspace looks merged (prStatus Merged), but the daemon
-    // says the current cycle is in_progress (merged PR + open tasks). It must
-    // NOT group under PR Merged; not running, so the idle layer demotes
-    // in_progress to Idle.
+    // says the current cycle is in_progress (merged PR + open tasks + running
+    // agent). It must group under In Progress verbatim, NOT PR Merged — and
+    // there is no local idle demotion.
     const ws = makeWorkspace('ws-be-inprog', 'Merged PR but open tasks', {
       prStatus: PullRequestStatus.Merged,
       displayStatus: 'in_progress',
@@ -120,8 +123,35 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
 
     await waitFor(() => {
       const headers = getGroupHeaders();
-      expect(headers).toContain('Idle');
+      expect(headers).toContain('In Progress');
       expect(headers).not.toContain('PR Merged');
+      expect(headers).not.toContain('Idle');
+    });
+  });
+
+  it('renders a BE-sent idle verbatim under the Idle group', async () => {
+    // The daemon demotes a not-running in_progress/not_started cycle to the
+    // 'idle' wire value; the FE renders it as-is.
+    const ws = makeWorkspace('ws-be-idle', 'Open tasks, nothing running', {
+      displayStatus: 'idle',
+    });
+
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          appStore.dispatch(resetWorkspaceState());
+          appStore.dispatch(setWorkspaceEntity(ws));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+          appStore.dispatch(setAllSpacesViewMode('status'));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => {
+      const headers = getGroupHeaders();
+      expect(headers).toContain('Idle');
+      expect(headers).not.toContain('In Progress');
     });
   });
 
@@ -148,9 +178,9 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
   });
 
   it('defaults an unknown wire displayStatus to not_started (forward compat)', async () => {
-    // A future daemon that adds a 7th wire value must not make the workspace
+    // A future daemon that adds a new wire value must not make the workspace
     // vanish from the Status view — the guard treats the unknown value as
-    // absent, defaulting to not_started (demoted to Idle when not running).
+    // absent, defaulting to not_started (the No Code Changes group).
     // Locally cached PR fields are ignored: there is no local derivation.
     const ws = makeWorkspace('ws-unknown-status', 'Future wire value', {
       prStatus: PullRequestStatus.Merged,
@@ -171,7 +201,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
 
     await waitFor(() => {
       const headers = getGroupHeaders();
-      expect(headers).toContain('Idle');
+      expect(headers).toContain('No Code Changes');
       expect(headers).not.toContain('PR Merged');
     });
   });
@@ -179,7 +209,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
   it('defaults to not_started when displayStatus is absent (no local derivation)', async () => {
     // The lite snapshot always carries displayStatus (intent-hq/intentd#743);
     // an absent field is not healed from cached PR state — it defaults to
-    // not_started and groups under Idle.
+    // not_started and groups under No Code Changes.
     const ws = makeWorkspace('ws-legacy-merged', 'Legacy merged', {
       prStatus: PullRequestStatus.Merged,
     });
@@ -198,14 +228,15 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
 
     await waitFor(() => {
       const headers = getGroupHeaders();
-      expect(headers).toContain('Idle');
+      expect(headers).toContain('No Code Changes');
       expect(headers).not.toContain('PR Merged');
     });
   });
 
-  it('keeps the running override on top of the BE status', async () => {
-    // A streaming agent unconditionally groups the workspace under In
-    // Progress, even when the BE base status is pr_merged.
+  it('never lets the streaming-agents signal override the BE status', async () => {
+    // The daemon owns the agent-running promotion; the FE streaming signal is
+    // a card affordance (running dot) only. A streaming agent must NOT regroup
+    // a pr_merged workspace under In Progress.
     const ws = makeWorkspace('ws-be-running', 'Running with merged cycle', {
       displayStatus: 'pr_merged',
     });
@@ -225,8 +256,8 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
 
     await waitFor(() => {
       const headers = getGroupHeaders();
-      expect(headers).toContain('In Progress');
-      expect(headers).not.toContain('PR Merged');
+      expect(headers).toContain('PR Merged');
+      expect(headers).not.toContain('In Progress');
     });
   });
 
@@ -256,7 +287,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
 
     appStore.dispatch(
       bulkUpdateWorkspaceEntities([
-        updateWorkspaceEntity('ws-be-live', { displayStatus: 'in_progress' }),
+        updateWorkspaceEntity('ws-be-live', { displayStatus: 'idle' }),
       ]),
     );
 
@@ -267,11 +298,10 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
   });
 
-  it('regroups live when the activeStreamsTracker notifies a streaming change (direct subscription)', async () => {
-    // The sidebar cards subscribe to the tracker directly (the Redux bridge
-    // was deleted, monorepo#1127): when agent:status-changed / agent:idle
-    // refresh the tracker state and it notifies, the card must regroup
-    // without any Redux dispatch.
+  it('does not regroup when the activeStreamsTracker notifies a streaming change', async () => {
+    // The tracker still drives the running-dot affordance, but a stream
+    // starting must not move the workspace out of its BE-sent group — only a
+    // workspace:displayStatus-changed entity merge regroups.
     const { activeStreamsTracker } = await import('$features/agent/services/active-streams-tracker');
     const notify = (activeStreamsTracker as any).__notify as () => void;
     const ws = makeWorkspace('ws-tracker-live', 'Tracker-driven badge', {
@@ -298,20 +328,15 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     streamingIdsMap.set('ws-tracker-live', ['agent-1']);
     notify();
 
+    // Deterministic flush signal: the notify observably propagates through the
+    // card's reactivity as the running-dot affordance flipping on. Once it has,
+    // the grouping must still be the BE-sent one.
     await waitFor(() => {
-      const headers = getGroupHeaders();
-      expect(headers).toContain('In Progress');
-      expect(headers).not.toContain('PR Merged');
+      const card = screen.getByTestId('workspace-card');
+      expect(card.getAttribute('data-running')).toBe('true');
     });
-
-    // The stream ends (agent:idle): the next notify regroups back.
-    streamingIdsMap.clear();
-    notify();
-
-    await waitFor(() => {
-      const headers = getGroupHeaders();
-      expect(headers).toContain('PR Merged');
-      expect(headers).not.toContain('In Progress');
-    });
+    const headers = getGroupHeaders();
+    expect(headers).toContain('PR Merged');
+    expect(headers).not.toContain('In Progress');
   });
 });

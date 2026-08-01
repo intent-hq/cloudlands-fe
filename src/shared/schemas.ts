@@ -621,7 +621,10 @@ export const AgentSessionSchema = z.object({
   // Task delegation
   digest: z.string().optional(), // Short summary for display in task status
   // Pending attention request (requestDiscussion / reportBlocker); cleared by
-  // the daemon when the agent next receives a message
+  // the daemon only on a user-origin delivery (sendMessage,
+  // sendQueuedMessageNow, editAndRegenerate, drained user-origin queue entry)
+  // — automatic deliveries (A2A sends, parent/subscription wakes) leave it
+  // pending
   attentionRequestKind: z.enum(['discussion', 'blocker']).optional(),
   attentionRequestReason: z.string().optional(),
   attentionRequestTimestamp: z.string().optional(),

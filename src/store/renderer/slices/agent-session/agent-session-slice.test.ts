@@ -336,7 +336,7 @@ describe('agent-session-slice reducer', () => {
       );
       expect(state.byAgentId['a1'].attentionRequestKind).toBe('blocker');
 
-      // The daemon clears the fields on the agent's next message; the
+      // The daemon clears the fields on the next user-origin delivery; the
       // re-fetched projection simply omits them.
       const next = agentSessionReducer(
         state,
