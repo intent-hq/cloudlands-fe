@@ -24,6 +24,7 @@
   selectAgentIsWaitingForOtherAgents,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { AgentAttentionKind } from '$shared/utils/agent-attention';
+  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Fa from 'svelte-fa';
   import {
   faHourglass,
@@ -154,6 +155,9 @@
             <div class="text-ui text-subtle line-clamp-2 leading-tight px-1">
               {$attentionRequest$.reason}
             </div>
+          {/if}
+          {#if $attentionRequest$.timestamp}
+            <RelativeTime date={$attentionRequest$.timestamp} class="text-ui text-ghost" />
           {/if}
         </div>
       {:else if $agentIsWaitingForOtherAgents$}

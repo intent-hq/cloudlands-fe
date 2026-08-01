@@ -3,6 +3,8 @@ import {
   getFileChangesFromMessage,
   getFileChangesFromMessages,
   getFileChangesFromMessageMemoKey,
+  getLastTurnAssistantMessages,
+  isAggregateFileChangesRedundant,
 } from '../get-file-changes-from-messages';
 import type { AgentMessage } from '$shared/types';
 
@@ -11,6 +13,22 @@ function makeAssistantMessage(blocks: any[]): AgentMessage {
     role: 'assistant',
     contentBlocks: blocks,
   } as AgentMessage;
+}
+
+function makeUserMessage(): AgentMessage {
+  return {
+    role: 'user',
+    contentBlocks: [{ type: 'text', text: 'do something' }],
+  } as AgentMessage;
+}
+
+function makeEditBlock(id: string, path: string): any {
+  return {
+    type: 'tool_use',
+    id,
+    name: 'str_replace_editor',
+    input: { command: 'str_replace', path, old_str: 'old', new_str: 'new' },
+  };
 }
 
 describe('getFileChangesFromMessage', () => {
@@ -208,6 +226,182 @@ describe('getFileChangesFromMessage', () => {
       expect(change.action).toBe('create');
       expect(change.newContent).toBe(fileContent);
       expect(change.toolCallId).toBe('tool-ft');
+    });
+  });
+
+  describe('non-file tool calls (regression: monorepo#1245)', () => {
+    const workspaceApiCode =
+      'const tasks = await ws.note.listTasks("spec");\nreturn tasks;\n' +
+      'const x = 1;\n'.repeat(28);
+
+    it('ignores a workspace_api call whose title starts with "Create "', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-ws-api',
+          name: 'Create follow-up task for AgentMetadata typing and delegate AgentMetadata typing task',
+          toolName: 'workspace_api',
+          input: {
+            code: workspaceApiCode,
+            summary: 'Create follow-up task and delegate it',
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+      expect(result.totalAdditions).toBe(0);
+    });
+
+    it('ignores a workspace_api call identified via metadata.toolName', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-ws-api-meta',
+          name: 'Edit spec note with progress update',
+          metadata: { toolName: 'workspace_api', toolId: 'tool-ws-api-meta' },
+          input: {
+            code: 'await ws.note.add("spec", { content: "done" });',
+            summary: 'Update spec',
+          },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('ignores MCP-decorated workspace_api name variants', () => {
+      const variants = [
+        'workspace_api_workspace-mcp',
+        'mcp__workspace-mcp__workspace_api',
+        '//local/mcp/workspace_api',
+        'workspace-mcp_workspace_api',
+      ];
+      const message = makeAssistantMessage(
+        variants.map((variant, index) => ({
+          type: 'tool_use',
+          id: `tool-ws-variant-${index}`,
+          name: 'Create follow-up task and delegate it',
+          toolName: variant,
+          input: { code: workspaceApiCode, summary: 'Create task' },
+        })),
+      );
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('ignores raw workspace_api name even without a title', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-ws-api-raw',
+          name: 'workspace_api',
+          input: { code: workspaceApiCode, summary: 'Create task note' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('rejects sentence-style title-derived paths even without a raw tool name', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-sentence-create',
+          name: 'Create follow-up task and delegate the typing work',
+          input: { code: workspaceApiCode, summary: 'Create follow-up task' },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-sentence-edit',
+          name: 'Edit the config to support new panels',
+          input: { old_str: 'old', new_str: 'new' },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-sentence-save',
+          name: 'Save the results of the analysis',
+          input: { body: 'analysis text' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('rejects bare-word title-derived paths without extension or separator', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-bare-word',
+          name: 'Create Foo',
+          input: { file_text: 'content' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('still extracts genuine file edits from title-derived paths', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-title-edit',
+          name: 'Edit src/foo.ts',
+          input: { old_str: 'old', new_str: 'new' },
+        },
+        {
+          type: 'tool_use',
+          id: 'tool-title-save',
+          name: 'Save ThemeToggle.svelte',
+          input: { file_content: '<button>toggle</button>' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(2);
+      const editChange = result.changes.find((c) => c.filePath === 'src/foo.ts');
+      const saveChange = result.changes.find((c) => c.filePath === 'ThemeToggle.svelte');
+      expect(editChange?.action).toBe('modify');
+      expect(saveChange?.action).toBe('create');
+    });
+
+    it('does not use loose content fallbacks (code/body/text) for title-prefix matches', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-title-loose',
+          name: 'Create foo.swift',
+          input: { code: 'let x = 1' },
+        },
+      ]);
+
+      // Path looks valid but content comes from a loose field on a
+      // title-matched tool: no content is extracted, so the empty
+      // create is filtered as a no-op.
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(0);
+    });
+
+    it('still uses loose content fallbacks for raw save_file tools', () => {
+      const message = makeAssistantMessage([
+        {
+          type: 'tool_use',
+          id: 'tool-raw-loose',
+          name: 'save_file',
+          input: { path: 'src/from-code.ts', code: 'const x = 1;\nconst y = 2;' },
+        },
+      ]);
+
+      const result = getFileChangesFromMessage(message);
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].filePath).toBe('src/from-code.ts');
+      expect(result.changes[0].newContent).toBe('const x = 1;\nconst y = 2;');
+      expect(result.changes[0].additions).toBe(2);
     });
   });
 
@@ -662,5 +856,104 @@ describe('getFileChangesFromMessage', () => {
       expect(result.changes[0].filePath).toBe('src/from-tool-name.ts');
       expect(result.changes[0].toolName).toBe('save_file');
     });
+  });
+});
+
+describe('getLastTurnAssistantMessages', () => {
+  it('returns the trailing assistant messages after the last user message', () => {
+    const lastTurnA = makeAssistantMessage([makeEditBlock('tool-3', 'src/c.ts')]);
+    const lastTurnB = makeAssistantMessage([makeEditBlock('tool-4', 'src/d.ts')]);
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+      lastTurnA,
+      lastTurnB,
+    ];
+
+    expect(getLastTurnAssistantMessages(messages)).toEqual([lastTurnA, lastTurnB]);
+  });
+
+  it('returns all assistant messages when there is no user message', () => {
+    const a = makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]);
+    const b = makeAssistantMessage([makeEditBlock('tool-2', 'src/b.ts')]);
+
+    expect(getLastTurnAssistantMessages([a, b])).toEqual([a, b]);
+  });
+
+  it('returns an empty array when the last message is from the user', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+    ];
+
+    expect(getLastTurnAssistantMessages(messages)).toEqual([]);
+  });
+});
+
+describe('isAggregateFileChangesRedundant', () => {
+  it('is redundant when the aggregate file set equals the last turn file set', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([]),
+      makeUserMessage(),
+      makeAssistantMessage([
+        makeEditBlock('tool-1', 'src/a.ts'),
+        makeEditBlock('tool-2', 'src/b.ts'),
+      ]),
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(true);
+  });
+
+  it('is redundant when prior turns touched the same files as the last turn', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-2', 'src/a.ts')]),
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(true);
+  });
+
+  it('unions changes across multiple assistant messages in the last turn', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-2', 'src/a.ts')]),
+      makeAssistantMessage([makeEditBlock('tool-3', 'src/b.ts')]),
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(true);
+  });
+
+  it('is not redundant when a prior turn touched an extra file', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/extra.ts')]),
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-2', 'src/a.ts')]),
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(false);
+  });
+
+  it('does not affect per-turn extraction for the last assistant message', () => {
+    const lastAssistant = makeAssistantMessage([makeEditBlock('tool-2', 'src/a.ts')]);
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+      lastAssistant,
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(true);
+
+    const perTurn = getFileChangesFromMessage(lastAssistant);
+    expect(perTurn.totalFiles).toBe(1);
+    expect(perTurn.changes[0].filePath).toBe('src/a.ts');
   });
 });

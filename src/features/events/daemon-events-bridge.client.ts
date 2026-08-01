@@ -208,6 +208,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 
 const logger = createLogger('DaemonEventsBridge');
 
@@ -974,12 +975,22 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
     typeof data.workspaceId === 'string' && data.workspaceId.length > 0
       ? data.workspaceId
       : workspaceId;
+  // Prefer the payload's own timestamp, falling back to the event envelope's.
+  // An empty/whitespace payload timestamp is treated as missing so the
+  // envelope timestamp can still be used instead of dropping it.
+  const rawTimestamp =
+    typeof data.timestamp === 'string' && data.timestamp.trim().length > 0
+      ? data.timestamp
+      : event.timestamp;
+  const timestamp =
+    typeof rawTimestamp === 'string' && rawTimestamp.trim().length > 0 ? rawTimestamp : undefined;
   void showAgentAttentionToast({
     workspaceId: targetWorkspaceId,
     agentId,
     agentName,
     kind,
     reason,
+    timestamp,
   });
 }
 
@@ -1406,6 +1417,20 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   // PTY stream ended — drop the streaming decoder so a later run starts fresh.
   if (rest.status !== 'running') scriptOutputDecoders.delete(`${workspaceId}:${scriptId}`);
   appStore.dispatch(updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>));
+}
+
+/** Remove an exited PTY from the transient terminal strip and release any live adapter. */
+function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const terminalId = data?.terminalId;
+  if (typeof terminalId !== 'string' || terminalId.length === 0) return;
+
+  appStore.dispatch(removeTerminal(workspaceId, terminalId));
+  void import('$features/terminal/terminal-manager.svelte')
+    .then(({ terminalManager }) => terminalManager.disposeExitedTerminal(terminalId))
+    .catch((error: unknown) => {
+      logger.warn('Failed to release exited terminal adapter', { terminalId, error });
+    });
 }
 
 /**
@@ -2040,6 +2065,10 @@ function handleNotification(method: string, params: unknown): void {
     handleScriptStateEvent(event, workspaceId);
     // fall through to the lifecycle dispatch below
   }
+  if (type === 'terminal:exit') {
+    handleTerminalExitEvent(event, workspaceId);
+    // fall through so the activity timeline records the exit
+  }
   if (type === 'agent:failed') {
     handleAgentFailedStream(event, workspaceId);
     // fall through to the lifecycle dispatch below
@@ -2153,6 +2182,7 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   'note:*',
   'comment:*',
   'script:*',
+  'terminal:*',
   'settings:changed',
   'workspace:tokenUsage-changed',
   // `workspace:context-changed` (§5.1 / §6.5) — chat-context attachment

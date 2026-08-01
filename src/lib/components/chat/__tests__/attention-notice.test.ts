@@ -6,6 +6,7 @@ import { render, screen } from '@testing-library/svelte';
 import { getAttentionNotice } from '../attention-notice';
 import DiscussionRequestNotice from '../DiscussionRequestNotice.svelte';
 import BlockerReportNotice from '../BlockerReportNotice.svelte';
+import TurnFailureNotice from '../TurnFailureNotice.svelte';
 import type { AgentMessage } from '$shared/types';
 
 // Wire shape (PROTOCOL §7 / agent attention requests): system-role message,
@@ -28,6 +29,11 @@ describe('getAttentionNotice', () => {
   it('detects a blocker-report system message', () => {
     const notice = getAttentionNotice(systemMessage('blocker-report', 'Docker daemon is down'));
     expect(notice).toEqual({ kind: 'blocker-report', reason: 'Docker daemon is down' });
+  });
+
+  it('detects a turn-failure system message', () => {
+    const notice = getAttentionNotice(systemMessage('turn-failure', 'Provider stream aborted'));
+    expect(notice).toEqual({ kind: 'turn-failure', reason: 'Provider stream aborted' });
   });
 
   it('returns null for interruption system messages', () => {
@@ -78,6 +84,33 @@ describe('DiscussionRequestNotice', () => {
     });
 
     const notice = container.querySelector('.discussion-request-notice');
+    expect(notice?.className).toContain('custom-test-class');
+  });
+});
+
+describe('TurnFailureNotice', () => {
+  it('renders the title and reason with alert semantics', () => {
+    render(TurnFailureNotice, { props: { reason: 'Provider stream aborted' } });
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeTruthy();
+    expect(alert.getAttribute('aria-live')).toBe('polite');
+    expect(screen.getByText(/Turn failed/i)).toBeTruthy();
+    expect(screen.getByText('Provider stream aborted')).toBeTruthy();
+  });
+
+  it('renders the title alone when no reason is provided', () => {
+    render(TurnFailureNotice);
+
+    expect(screen.getByText(/Turn failed/i)).toBeTruthy();
+  });
+
+  it('applies custom class when provided', () => {
+    const { container } = render(TurnFailureNotice, {
+      props: { reason: 'r', class: 'custom-test-class' },
+    });
+
+    const notice = container.querySelector('.turn-failure-notice');
     expect(notice?.className).toContain('custom-test-class');
   });
 });

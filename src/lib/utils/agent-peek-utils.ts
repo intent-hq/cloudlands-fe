@@ -32,6 +32,14 @@ export interface AgentPeekData {
   digest?: string;
   /** ID of the parent agent that created this agent */
   parentAgentId?: string;
+  /**
+   * Role of the session's newest user/assistant message: the wire
+   * `lastMessageRole` (AgentLite, PROTOCOL §5.5) when present, else derived
+   * from the loaded transcript (system/error rows are transparent).
+   * Undefined when neither source is available (older daemon, empty
+   * transcript) so consumers keep their existing behavior.
+   */
+  lastMessageRole?: 'user' | 'assistant';
 }
 
 /**
@@ -45,6 +53,22 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
   let lastResponse = '';
   let lastToolUse: ToolUseBlock | undefined;
   let digest: string | undefined;
+  let lastMessageRole: 'user' | 'assistant' | undefined =
+    agent.lastMessageRole === 'user' || agent.lastMessageRole === 'assistant'
+      ? agent.lastMessageRole
+      : undefined;
+
+  // Transcript-derived fallback for loaded sessions when the wire field is
+  // absent (older daemon): role of the newest user/assistant message.
+  if (!lastMessageRole && agent.messages && agent.messages.length > 0) {
+    for (let i = agent.messages.length - 1; i >= 0; i--) {
+      const role = agent.messages[i].role;
+      if (role === 'user' || role === 'assistant') {
+        lastMessageRole = role;
+        break;
+      }
+    }
+  }
 
   if (agent.messages && agent.messages.length > 0) {
     // Find the last user message
@@ -102,6 +126,7 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
     completionReport,
     digest,
     parentAgentId,
+    lastMessageRole,
   };
 }
 

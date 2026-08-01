@@ -14,6 +14,7 @@
   selectSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { store as appStore } from '$store/renderer/store';
 
@@ -87,6 +88,15 @@
   <!-- Name -->
   <div class="text-center max-w-[80px]">
     <p class="text-ui font-medium text-foreground truncate">{node.name}</p>
+    {#if $attentionRequest$?.timestamp}
+      <RelativeTime
+        date={$attentionRequest$.timestamp}
+        compact
+        class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
+          ? 'text-red-500'
+          : 'text-amber-500'}"
+      />
+    {/if}
     <!-- {#if specialist}
       <div class="flex items-center justify-center gap-0.5 mt-0.5">
         <SpecialistToolIcon {specialist} size={8} muted />

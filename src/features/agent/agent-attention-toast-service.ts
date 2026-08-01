@@ -43,6 +43,8 @@ export interface AgentAttentionRequest {
   agentName: string;
   kind: 'discussion' | 'blocker';
   reason: string;
+  /** ISO timestamp when the request was raised (event envelope timestamp). */
+  timestamp?: string;
 }
 
 /** Stable toast id per agent (in-place sonner updates on re-raise). */
@@ -111,7 +113,7 @@ export async function switchToAttentionAgent(workspaceId: string, agentId: strin
  */
 export async function showAgentAttentionToast(request: AgentAttentionRequest): Promise<void> {
   const [toast, AgentAttentionToast] = await Promise.all([getToast(), getToastComponent()]);
-  const { workspaceId, agentId, agentName, kind, reason } = request;
+  const { workspaceId, agentId, agentName, kind, reason, timestamp } = request;
   const title =
     kind === 'blocker'
       ? m.agent_attentionToast_blocker_title({ name: agentName })
@@ -122,6 +124,7 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
       title,
       reason: truncate(reason, REASON_MAX_CHARS),
       kind,
+      timestamp,
       onSwitchTo: () => void switchToAttentionAgent(workspaceId, agentId),
       onClose: () => void dismissAgentAttentionToast(agentId),
     },

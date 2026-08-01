@@ -257,6 +257,7 @@ type CanonicalAgentSessionUpdates = {
   isProcessing?: boolean;
   isResponding?: boolean;
   stopReason?: string | null;
+  stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
   lastAgentResponse?: string;
   processQueueHint?: AgentSession['processQueueHint'];
@@ -291,6 +292,10 @@ function canonicalSessionUpdates(
   // agent:status-changed arrives without a stopReason field.
   if (Object.prototype.hasOwnProperty.call(fields, 'stopReason')) {
     updates.stopReason = fields.stopReason;
+  }
+  // Same key-exists guard for the companion timestamp.
+  if (Object.prototype.hasOwnProperty.call(fields, 'stopReasonTimestamp')) {
+    updates.stopReasonTimestamp = fields.stopReasonTimestamp;
   }
   // sessionCorrupted is omitted-when-false on the wire (monorepo#940): apply
   // it when present, and clear any stale flag on a status transition that
@@ -361,6 +366,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isProcessing: data.isProcessing ?? false,
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.finishReason ?? null,
+        stopReasonTimestamp: data.stopReasonTimestamp ?? null,
       },
     ];
   }
@@ -376,6 +382,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isProcessing: data.isProcessing ?? false,
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.error ?? null,
+        stopReasonTimestamp: data.stopReasonTimestamp ?? null,
       },
     ];
   }
@@ -391,6 +398,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isProcessing: data.isProcessing ?? false,
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.finishReason ?? null,
+        stopReasonTimestamp: data.stopReasonTimestamp ?? null,
       },
     ];
   }
@@ -484,6 +492,9 @@ type SessionComparisonSnapshot = Pick<
   | 'isWaitingOnTool'
   | 'isWaitingForOtherAgents'
   | 'digest'
+  | 'lastMessageRole'
+  | 'lastUserMessage'
+  | 'lastAgentResponse'
   | 'backendSessionId'
   | 'acpSessionId'
   | 'createdAt'
@@ -495,6 +506,7 @@ type SessionComparisonSnapshot = Pick<
   | 'activationState'
   | 'isActive'
   | 'stopReason'
+  | 'stopReasonTimestamp'
   | 'sessionCorrupted'
 > & {
   messageCount: number;
@@ -503,11 +515,18 @@ type SessionComparisonSnapshot = Pick<
   attentionRequestKind: string | undefined;
   attentionRequestReason: string | undefined;
   attentionRequestTimestamp: string | undefined;
+  completionReport: string | undefined;
+  taskNoteId: string | undefined;
+  dismissedQuestionsMessageId: string | undefined;
+  sandboxId: string | undefined;
+  sandboxPath: string | undefined;
+  sandboxBranch: string | undefined;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
   const messages = session.messages;
   const attentionRequest = getAgentAttentionRequest(session);
+  const metadata = session.metadata;
   return {
     status: session.status,
     name: session.name,
@@ -518,6 +537,12 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     isWaitingOnTool: session.isWaitingOnTool,
     isWaitingForOtherAgents: session.isWaitingForOtherAgents,
     digest: session.digest,
+    // Freshness-wins preview fields (AgentLite, PROTOCOL §5.5) — an upsert
+    // whose only change is these render-relevant fields must not be
+    // swallowed as a no-op.
+    lastMessageRole: session.lastMessageRole,
+    lastUserMessage: session.lastUserMessage,
+    lastAgentResponse: session.lastAgentResponse,
     backendSessionId: session.backendSessionId,
     acpSessionId: session.acpSessionId,
     createdAt: session.createdAt,
@@ -529,12 +554,32 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     activationState: session.activationState,
     isActive: session.isActive,
     stopReason: session.stopReason,
+    stopReasonTimestamp: session.stopReasonTimestamp,
     sessionCorrupted: session.sessionCorrupted,
     // Derived via the shared helper so metadata-carried AgentLite attention
     // fields register as changes too, not just the top-level projection.
     attentionRequestKind: attentionRequest?.kind,
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,
+    // Mutable render-relevant metadata scalars (monorepo#1231) — an upsert
+    // whose only change is one of these must not be swallowed as a no-op:
+    // completionReport feeds AgentCard's effectiveCompletionReport preview,
+    // dismissedQuestionsMessageId gates the questions wizard, taskNoteId can
+    // change on post-creation task assignment.
+    completionReport:
+      typeof metadata?.completionReport === 'string' ? metadata.completionReport : undefined,
+    taskNoteId: typeof metadata?.taskNoteId === 'string' ? metadata.taskNoteId : undefined,
+    dismissedQuestionsMessageId:
+      typeof metadata?.dismissedQuestionsMessageId === 'string'
+        ? metadata.dismissedQuestionsMessageId
+        : undefined,
+    // Sandbox fields settle onto the session AFTER creation (async CoW
+    // provisioning, settle_provisioned_sandbox) and gate the reveal-sandbox
+    // affordance — the settling re-hydration must not be swallowed either.
+    sandboxId: typeof metadata?.sandboxId === 'string' ? metadata.sandboxId : undefined,
+    sandboxPath: typeof metadata?.sandboxPath === 'string' ? metadata.sandboxPath : undefined,
+    sandboxBranch:
+      typeof metadata?.sandboxBranch === 'string' ? metadata.sandboxBranch : undefined,
     messageCount: messages.length,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
     // The daemon can append trailing blocks to an already-stored message
@@ -626,6 +671,13 @@ function applySessionUpsert(
       !Object.prototype.hasOwnProperty.call(session, 'stopReason')
     ) {
       finalSession.stopReason = existing.stopReason;
+    }
+    // Same guard for the companion timestamp.
+    if (
+      existing.stopReasonTimestamp !== undefined &&
+      !Object.prototype.hasOwnProperty.call(session, 'stopReasonTimestamp')
+    ) {
+      finalSession.stopReasonTimestamp = existing.stopReasonTimestamp;
     }
   }
 

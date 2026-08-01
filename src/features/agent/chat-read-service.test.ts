@@ -467,6 +467,69 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(streamed.contentBlocks?.[0]).toMatchObject({ type: "text", text: "Working" });
   });
 
+  // Regression (monorepo#1160): a daemon crash mid-turn leaves a renderer-
+  // local stream-owned partial in the store that the daemon never persisted.
+  // On the next hydrate the fresh session reports IDLE (no turnInFlight /
+  // isResponding / isStreaming), so preservation must not apply — otherwise
+  // the ghost row survives every rehydrate forever.
+  it("drops a stale stream-owned ghost when the fresh session reports no turn in flight", async () => {
+    const agentId = "agent-stale-ghost-idle";
+    const userTurn: AgentMessage = {
+      id: "gu1",
+      role: "user",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "hi" }],
+    };
+    const ghostPartial = {
+      id: "ga1",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:00.500Z",
+      isStreaming: true,
+      contentBlocks: [{ type: "text", id: "ga1:0", text: "Working" }],
+    } as unknown as AgentMessage;
+
+    // Seed the store as a pre-crash snapshot did: in-flight session with the
+    // synthetic stream-owned assistant message.
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...makeSession({
+            id: agentId,
+            status: AgentStatus.Active,
+            isResponding: true,
+            isStreaming: true,
+          }),
+          messages: [userTurn, ghostPartial],
+        },
+      ]),
+    );
+
+    // Post-restart daemon state (PROTOCOL §5.5 AgentLite): the session is
+    // idle and the persisted transcript never contains the partial row.
+    agentsApi.get.mockResolvedValue(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isStreaming: false,
+      }) as never,
+    );
+    agentsApi.getConversation.mockResolvedValue({
+      messages: [userTurn],
+      truncated: false,
+      totalMessages: 1,
+      nextToken: null,
+    } as never);
+
+    await loadChatTranscript(agentId);
+
+    // The ghost partial is evicted — only the persisted row remains. (Runtime
+    // flag convergence on upsert is slice behavior owned elsewhere; this test
+    // covers the message-preservation gate only.)
+    const after = selectAgentMessages.select(appStore.state, agentId);
+    expect(after.map((m) => m.id)).toEqual(["gu1"]);
+  });
+
   it("does not resurrect a finalized turn: fetched persisted row with the same id wins over the stale streaming copy", async () => {
     // If the turn finalized between the snapshot and the read completing, the
     // persisted read already carries the final row under the SAME message id.
