@@ -150,4 +150,61 @@ describe('getAgentPeekData', () => {
     expect(data).not.toHaveProperty('isActive');
     expect(data?.status).toBe(AgentStatus.Active);
   });
+
+  describe('lastMessageRole (wire field + transcript-derived fallback)', () => {
+    function makeUserMessage(text: string): AgentMessage {
+      return {
+        id: 'u1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text } as any],
+        timestamp: new Date().toISOString(),
+      } as AgentMessage;
+    }
+
+    it('passes the wire lastMessageRole through verbatim', () => {
+      const session = { ...makeSession([]), lastMessageRole: 'user' as const };
+      expect(getAgentPeekData(session)?.lastMessageRole).toBe('user');
+    });
+
+    it('prefers the wire field over the transcript when both are present', () => {
+      // Mid-turn the daemon overlays "assistant" once streamed text is
+      // derivable, even while the loaded transcript still ends on the user.
+      const session = {
+        ...makeSession([makeUserMessage('newest is mine')]),
+        lastMessageRole: 'assistant' as const,
+      };
+      expect(getAgentPeekData(session)?.lastMessageRole).toBe('assistant');
+    });
+
+    it('derives user from a loaded transcript when the wire field is absent', () => {
+      const session = makeSession([
+        makeAssistantMessage([{ type: 'text', text: 'previous answer' }]),
+        makeUserMessage('follow-up question'),
+      ]);
+      expect(getAgentPeekData(session)?.lastMessageRole).toBe('user');
+    });
+
+    it('derives assistant when the newest transcript message is the reply', () => {
+      const session = makeSession([
+        makeUserMessage('question'),
+        makeAssistantMessage([{ type: 'text', text: 'answer' }]),
+      ]);
+      expect(getAgentPeekData(session)?.lastMessageRole).toBe('assistant');
+    });
+
+    it('treats trailing system/error rows as transparent', () => {
+      const systemMessage = {
+        id: 's1',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: 'housekeeping' } as any],
+        timestamp: new Date().toISOString(),
+      } as AgentMessage;
+      const session = makeSession([makeUserMessage('newest real message'), systemMessage]);
+      expect(getAgentPeekData(session)?.lastMessageRole).toBe('user');
+    });
+
+    it('is undefined with no wire field and no transcript (older daemon)', () => {
+      expect(getAgentPeekData(makeSession([]))?.lastMessageRole).toBeUndefined();
+    });
+  });
 });
