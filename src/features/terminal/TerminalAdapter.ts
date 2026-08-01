@@ -1845,7 +1845,7 @@ export class TerminalAdapter {
   /**
    * Dispose of the terminal
    */
-  dispose(): void {
+  dispose(options: { killPty?: boolean } = {}): void {
     if (this.isDisposed || this.stateMachine.isDisposed()) {
       return;
     }
@@ -1942,11 +1942,13 @@ export class TerminalAdapter {
     });
     this.eventListeners = [];
 
-    // Close PTY connection via `terminal.kill` (PROTOCOL §5.13); the daemon
-    // emits `terminal:exit` once the PTY is reaped.
-    this.terminals.kill(this.terminalId).catch((error) => {
-      logger.error('Error killing PTY connection:', error);
-    });
+    if (options.killPty !== false) {
+      // Close PTY connection via `terminal.kill` (PROTOCOL §5.13); the daemon
+      // emits `terminal:exit` once the PTY is reaped.
+      this.terminals.kill(this.terminalId).catch((error) => {
+        logger.error('Error killing PTY connection:', error);
+      });
+    }
 
     // Dispose addons first (before disposing xterm)
     try {
