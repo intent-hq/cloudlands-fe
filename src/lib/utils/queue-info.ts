@@ -39,6 +39,13 @@ export function getQueueInfo(metadata: unknown): QueueInfo | null {
  * <duration> before delivery.` Deliberately does NOT match the #576
  * stale-redrive note ("[SYSTEM NOTE] This message was queued before you
  * completed…"), which has a distinct prefix and must stay visible.
+ *
+ * Daemon invariant (annotate_dequeue_wait, agent_manager.rs): if the content
+ * already contains the note prefix, the daemon skips BOTH the note and the
+ * `queueInfo` stamp. So whenever `queueInfo` is present (the only case this
+ * strip runs), the single occurrence of this pattern in the content is the
+ * daemon's own appended note — user text mimicking the note suppresses the
+ * stamp and is never stripped.
  */
 const DEQUEUE_WAIT_NOTE_RE =
   /\n*\[SYSTEM NOTE\] This message was queued at [^\n]+ and waited [^\n]+ before delivery\.(?=\n|$)/;
