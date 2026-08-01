@@ -1698,6 +1698,7 @@
   "chat_chatMessage_viewAttachedImage_ariaLabel": "첨부 이미지 {number}/{total} 전체 크기로 보기",
   "chat_chatPanel_agentFailedToStart_error": "에이전트를 시작하지 못했습니다",
   "chat_chatPanel_agentSpawnFailed_error": "에이전트 생성 실패",
+  "chat_chatPanel_fileChangesAggregate_suffix": "지금까지의 대화에서",
   "chat_chatPanel_nothingToRetry_toast": "다시 시도할 항목 없음 — 오류가 지워졌습니다. 메시지를 보내 새 턴을 시작하세요.",
   "chat_contextApi_readFileFailed_error": "파일을 읽지 못했습니다",
   "chat_contextPicker_active_badge": "활성",

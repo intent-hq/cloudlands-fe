@@ -161,6 +161,7 @@
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
+  import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import Button from '../ui/button/button.svelte';
@@ -1522,6 +1523,13 @@
     const turns = groupIntoTurns(lastGroup.messages);
     return turns[turns.length - 1] ?? null;
   });
+
+  // Hide the aggregate file-changes row when it merely duplicates the last
+  // turn's per-turn row (same set of changed file paths)
+  const showAggregateFileChangesSummary = $derived(
+    $agentMessages$.filter((message) => message.role === 'assistant').length > 1 &&
+      !isAggregateFileChangesRedundant($agentMessages$),
+  );
 
   const showEndOfListStreamingStatus = $derived(
     shouldShowEndOfListStreamingStatus({
@@ -3683,12 +3691,12 @@
           </div>
         {/if}
       {/if}
-      <!-- Aggregate File Changes Summary (show if more than one assistant message, updates during streaming) -->
-      {#if $agentMessages$.filter((m) => m.role === 'assistant').length > 1}
+      <!-- Aggregate File Changes Summary (show if more than one assistant message and it isn't redundant with the last turn's row, updates during streaming) -->
+      {#if showAggregateFileChangesSummary}
         <div class="w-full">
           <ChatFileChangesSummary
             messages={$agentMessages$}
-            suffix="in conversation"
+            suffix={m.chat_chatPanel_fileChangesAggregate_suffix()}
             isAggregate={true}
             isStreaming={$agentSessionIsStreaming$}
             {agentId}

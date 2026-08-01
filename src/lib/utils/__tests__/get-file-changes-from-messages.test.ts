@@ -3,6 +3,8 @@ import {
   getFileChangesFromMessage,
   getFileChangesFromMessages,
   getFileChangesFromMessageMemoKey,
+  getLastTurnAssistantMessages,
+  isAggregateFileChangesRedundant,
 } from '../get-file-changes-from-messages';
 import type { AgentMessage } from '$shared/types';
 
@@ -11,6 +13,22 @@ function makeAssistantMessage(blocks: any[]): AgentMessage {
     role: 'assistant',
     contentBlocks: blocks,
   } as AgentMessage;
+}
+
+function makeUserMessage(): AgentMessage {
+  return {
+    role: 'user',
+    contentBlocks: [{ type: 'text', text: 'do something' }],
+  } as AgentMessage;
+}
+
+function makeEditBlock(id: string, path: string): any {
+  return {
+    type: 'tool_use',
+    id,
+    name: 'str_replace_editor',
+    input: { command: 'str_replace', path, old_str: 'old', new_str: 'new' },
+  };
 }
 
 describe('getFileChangesFromMessage', () => {
@@ -662,5 +680,104 @@ describe('getFileChangesFromMessage', () => {
       expect(result.changes[0].filePath).toBe('src/from-tool-name.ts');
       expect(result.changes[0].toolName).toBe('save_file');
     });
+  });
+});
+
+describe('getLastTurnAssistantMessages', () => {
+  it('returns the trailing assistant messages after the last user message', () => {
+    const lastTurnA = makeAssistantMessage([makeEditBlock('tool-3', 'src/c.ts')]);
+    const lastTurnB = makeAssistantMessage([makeEditBlock('tool-4', 'src/d.ts')]);
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+      lastTurnA,
+      lastTurnB,
+    ];
+
+    expect(getLastTurnAssistantMessages(messages)).toEqual([lastTurnA, lastTurnB]);
+  });
+
+  it('returns all assistant messages when there is no user message', () => {
+    const a = makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]);
+    const b = makeAssistantMessage([makeEditBlock('tool-2', 'src/b.ts')]);
+
+    expect(getLastTurnAssistantMessages([a, b])).toEqual([a, b]);
+  });
+
+  it('returns an empty array when the last message is from the user', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+    ];
+
+    expect(getLastTurnAssistantMessages(messages)).toEqual([]);
+  });
+});
+
+describe('isAggregateFileChangesRedundant', () => {
+  it('is redundant when the aggregate file set equals the last turn file set', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([]),
+      makeUserMessage(),
+      makeAssistantMessage([
+        makeEditBlock('tool-1', 'src/a.ts'),
+        makeEditBlock('tool-2', 'src/b.ts'),
+      ]),
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(true);
+  });
+
+  it('is redundant when prior turns touched the same files as the last turn', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-2', 'src/a.ts')]),
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(true);
+  });
+
+  it('unions changes across multiple assistant messages in the last turn', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-2', 'src/a.ts')]),
+      makeAssistantMessage([makeEditBlock('tool-3', 'src/b.ts')]),
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(true);
+  });
+
+  it('is not redundant when a prior turn touched an extra file', () => {
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/extra.ts')]),
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-2', 'src/a.ts')]),
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(false);
+  });
+
+  it('does not affect per-turn extraction for the last assistant message', () => {
+    const lastAssistant = makeAssistantMessage([makeEditBlock('tool-2', 'src/a.ts')]);
+    const messages = [
+      makeUserMessage(),
+      makeAssistantMessage([makeEditBlock('tool-1', 'src/a.ts')]),
+      makeUserMessage(),
+      lastAssistant,
+    ];
+
+    expect(isAggregateFileChangesRedundant(messages)).toBe(true);
+
+    const perTurn = getFileChangesFromMessage(lastAssistant);
+    expect(perTurn.totalFiles).toBe(1);
+    expect(perTurn.changes[0].filePath).toBe('src/a.ts');
   });
 });

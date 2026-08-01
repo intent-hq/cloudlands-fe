@@ -1698,6 +1698,7 @@
   "chat_chatMessage_viewAttachedImage_ariaLabel": "添付画像 {number} / {total} をフルサイズで表示",
   "chat_chatPanel_agentFailedToStart_error": "エージェントを起動できませんでした",
   "chat_chatPanel_agentSpawnFailed_error": "エージェントの生成に失敗しました",
+  "chat_chatPanel_fileChangesAggregate_suffix": "これまでの会話で",
   "chat_chatPanel_nothingToRetry_toast": "再試行するものはありません — エラーをクリアしました。メッセージを送信して新しいターンを開始してください。",
   "chat_contextApi_readFileFailed_error": "ファイルを読み取れませんでした",
   "chat_contextPicker_active_badge": "アクティブ",

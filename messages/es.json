@@ -1698,6 +1698,7 @@
   "chat_chatMessage_viewAttachedImage_ariaLabel": "Ver imagen adjunta {number} de {total} a tamaño completo",
   "chat_chatPanel_agentFailedToStart_error": "El agente no pudo iniciarse",
   "chat_chatPanel_agentSpawnFailed_error": "Error al generar el agente",
+  "chat_chatPanel_fileChangesAggregate_suffix": "en la conversación hasta ahora",
   "chat_chatPanel_nothingToRetry_toast": "Nada que reintentar: error borrado. Envíe un mensaje para iniciar un turno nuevo.",
   "chat_contextApi_readFileFailed_error": "Error al leer el archivo",
   "chat_contextPicker_active_badge": "Activo",
