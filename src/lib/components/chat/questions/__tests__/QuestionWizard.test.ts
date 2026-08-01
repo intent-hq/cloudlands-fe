@@ -195,6 +195,66 @@ describe('QuestionWizard', () => {
     expect(answers[0]).toMatchObject({ selectedLabels: [], freeText: 'Redis', skipped: false });
   });
 
+  it('single-select: typing in the Other input clears the option selection', async () => {
+    const { container } = setup([LAST]);
+    await fireEvent.click(screen.getByText('Migrate silently'));
+    expect(container.querySelector('.border-primary.bg-primary\\/10')).toBeTruthy();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'R' } });
+    expect(container.querySelector('.border-primary.bg-primary\\/10')).toBeNull();
+    const send = screen.getByRole('button', { name: /send/i });
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('single-select: option buttons are disabled while Other text is present and clicks are no-ops', async () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Redis' } });
+    const option = screen.getByText('OS keychain').closest('button') as HTMLButtonElement;
+    expect(option.disabled).toBe(true);
+    await fireEvent.click(option);
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+    expect(option.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('single-select: clearing the Other input re-enables the option buttons', async () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Redis' } });
+    const option = screen.getByText('OS keychain').closest('button') as HTMLButtonElement;
+    expect(option.disabled).toBe(true);
+    await fireEvent.input(input, { target: { value: '' } });
+    expect(option.disabled).toBe(false);
+    await fireEvent.click(option);
+    expect(screen.getByText('2 of 3')).toBeTruthy();
+  });
+
+  it('single-select: option buttons stay disabled when returning via Back with Other text', async () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Redis' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByText('2 of 3')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: /back/i }));
+    const option = screen.getByText('OS keychain').closest('button') as HTMLButtonElement;
+    expect(option.disabled).toBe(true);
+  });
+
+  it('multi-select: options and Other text coexist; buttons never disabled by text', async () => {
+    const { onComplete } = setup([MULTI]);
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+    await fireEvent.input(input, { target: { value: 'Also the API' } });
+    const option = screen.getByText('Desktop app').closest('button') as HTMLButtonElement;
+    expect(option.disabled).toBe(false);
+    await fireEvent.click(option);
+    expect(option.getAttribute('aria-pressed')).toBe('true');
+    await fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    expect(onComplete.mock.calls[0][0][0]).toMatchObject({
+      selectedLabels: ['Desktop app'],
+      freeText: 'Also the API',
+    });
+  });
+
   it('Ignore requests collapse; collapsed renders the banner that re-expands on click', async () => {
     const { onToggleCollapsed, rerender } = setup();
     await fireEvent.click(screen.getByRole('button', { name: /ignore/i }));
