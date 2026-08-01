@@ -24,6 +24,10 @@ import {
   isStreamingMessage,
   hasToolCalls,
 } from '../guards';
+import {
+  isWorkspaceDisplayStatus,
+  WORKSPACE_DISPLAY_STATUS_VALUES,
+} from '../../types';
 import type { AgentMessage } from '../agent-message';
 
 describe('Type Guards', () => {
@@ -209,6 +213,23 @@ describe('Type Guards', () => {
 
       const noTools = { ...message, toolCalls: [] };
       expect(hasToolCalls(noTools)).toBe(false);
+    });
+  });
+
+  describe('isWorkspaceDisplayStatus', () => {
+    it('accepts every canonical wire value, including needs_attention', () => {
+      for (const value of WORKSPACE_DISPLAY_STATUS_VALUES) {
+        expect(isWorkspaceDisplayStatus(value)).toBe(true);
+      }
+      expect(isWorkspaceDisplayStatus('needs_attention')).toBe(true);
+    });
+
+    it('rejects unknown or non-string values', () => {
+      expect(isWorkspaceDisplayStatus('something_new')).toBe(false);
+      expect(isWorkspaceDisplayStatus('')).toBe(false);
+      expect(isWorkspaceDisplayStatus(undefined)).toBe(false);
+      expect(isWorkspaceDisplayStatus(null)).toBe(false);
+      expect(isWorkspaceDisplayStatus(42)).toBe(false);
     });
   });
 });

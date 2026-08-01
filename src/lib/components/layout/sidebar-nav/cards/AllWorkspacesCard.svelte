@@ -154,6 +154,7 @@
   });
 
   const statusLabels: Record<WorkspaceDisplayStatus, () => string> = {
+    needs_attention: () => m.layout_allCard_statusNeedsAttention_label(),
     idle: () => m.layout_allCard_statusIdle_label(),
     not_started: () => m.layout_allCard_statusNoChanges_label(),
     in_progress: () => m.layout_allCard_statusInProgress_label(),
@@ -164,6 +165,7 @@
   };
 
   const statusOrder: WorkspaceDisplayStatus[] = [
+    'needs_attention',
     'idle',
     'in_progress',
     'pr_ready',

@@ -278,6 +278,35 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
     });
   });
 
+  it("passes a needs_attention snapshot through normalization verbatim", async () => {
+    // Step-0 attention rollup (PROTOCOL §5.1): `needs_attention` outranks
+    // every other displayStatus, including `in_progress`. The list snapshot
+    // must surface it verbatim — the renderer maps derive the needs-attention
+    // state from this entity value, with no local re-derivation.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          title: "Attention ws",
+          branch: "intent/attention",
+          status: "Active",
+          displayStatus: "needs_attention",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(workspaces[0]).toMatchObject({
+      id: "33333333-3333-4333-8333-333333333333",
+      displayStatus: "needs_attention",
+    });
+  });
+
   it("leaves displayStatus undefined when an older daemon omits the field", async () => {
     mockedRequest.mockResolvedValueOnce({
       workspaces: [

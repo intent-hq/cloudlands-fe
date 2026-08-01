@@ -218,6 +218,7 @@ export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
  *  (intent-hq/intentd#600). Single source of truth — the union type, the runtime
  *  guard, and every consumer set derive from this array. */
 export const WORKSPACE_DISPLAY_STATUS_VALUES = [
+  'needs_attention',
   'not_started',
   'in_progress',
   'idle',
