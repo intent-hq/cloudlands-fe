@@ -23,13 +23,7 @@ jobs:
     # Non-ephemeral self-hosted runner: all scratch files live under
     # RUNNER_TEMP (wiped by the runner between jobs) instead of /tmp, so a
     # previous run's assets can never leak into this promotion (#553).
-    #
-    # TEMPORARY (tinybox outage, 2026-08-01): pinned to ubuntu-latest while
-    # the tinybox host is offline — a [self-hosted, Linux, X64] job can never
-    # start. The steps below are GH-hosted-safe (RUNNER_TEMP exists, all
-    # preflight tools incl. GNU sort -V are preinstalled). Revert to
-    # [self-hosted, Linux, X64] when tinybox is back.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
 
     steps:
