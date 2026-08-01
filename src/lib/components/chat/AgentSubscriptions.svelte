@@ -365,6 +365,9 @@
             type="button"
             class="shrink-0 flex items-center gap-1.5 cursor-pointer hover:text-muted-foreground transition-colors"
             data-testid="one-shot-collapse-toggle"
+            aria-label={oneShotCollapsed
+              ? m.chat_agentSubscriptions_expandWatches_ariaLabel()
+              : m.chat_agentSubscriptions_collapseWatches_ariaLabel()}
             onclick={toggleOneShotCollapsed}
           >
             <Fa icon={oneShotCollapsed ? faChevronRight : faChevronDown} class="w-2.5! h-2.5!" />
@@ -402,7 +405,7 @@
               {/each}
               {#if oneShotWatchedIds.length > 5}
                 <span class="text-ui text-subtle pl-2">
-                  +{oneShotWatchedIds.length - 5}
+                  +{formatInteger(oneShotWatchedIds.length - 5)}
                 </span>
               {/if}
             </div>
