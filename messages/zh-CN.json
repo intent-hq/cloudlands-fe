@@ -1539,6 +1539,7 @@
   "chat_turnFailureNotice_title_label": "回合失败",
   "chat_msgAttribution_openAgent_title": "打开智能体 {name}",
   "chat_msgAttribution_sentMessage_after": "发送了一条消息",
+  "chat_queuedNotice_label": "{time} 加入队列 · 等待 {duration} 后送达",
   "chat_shared_agentName_fallback": "智能体",
   "chat_shared_context_fallback": "上下文",
   "chat_shared_moreAgents_label": "还有 {count} 个智能体",

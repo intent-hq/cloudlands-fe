@@ -1539,6 +1539,7 @@
   "chat_turnFailureNotice_title_label": "턴 실패",
   "chat_msgAttribution_openAgent_title": "에이전트 {name} 열기",
   "chat_msgAttribution_sentMessage_after": "이(가) 메시지를 보냈습니다",
+  "chat_queuedNotice_label": "{time}에 대기열에 추가됨 · 전달까지 {duration} 대기",
   "chat_shared_agentName_fallback": "에이전트",
   "chat_shared_context_fallback": "컨텍스트",
   "chat_shared_moreAgents_label": "에이전트 {count}개 더",

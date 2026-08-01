@@ -121,6 +121,7 @@
     serializeDraftAttachments,
   } from './chat-draft-attachments';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
+  import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
@@ -226,7 +227,12 @@
    * Extracts context reference labels and cleans up raw @context[...] patterns.
    */
   function formatMessageForStickyHeader(message: AgentMessage): string {
-    const rawText = extractAllContent(message);
+    // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the sticky header the
+    // same way the message body does when structured queueInfo is present.
+    const allContent = extractAllContent(message);
+    const rawText = getQueueInfo(message.metadata)
+      ? stripDequeueWaitNote(allContent)
+      : allContent;
 
     // Get context references from metadata
     const contextRefs = message.metadata?.contextReferences as
