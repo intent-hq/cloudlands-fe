@@ -41,7 +41,7 @@
   >
     <div class="flex flex-col gap-1 px-3 py-1.5 text-sm">
       <span
-        class="flex items-center gap-2 whitespace-nowrap {$attentionRequest$.kind === 'blocker'
+        class="flex items-center gap-2 {$attentionRequest$.kind === 'blocker'
           ? 'text-red-500'
           : 'text-amber-500'}"
       >
