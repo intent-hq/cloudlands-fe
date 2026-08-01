@@ -1499,7 +1499,7 @@
   "chat_agentSubscriptions_stopAll_tooltip": "모든 에이전트 중지",
   "chat_agentSubscriptions_stopGroup_tooltip": "이 그룹의 모든 에이전트 중지",
   "chat_agentSubscriptions_waitingForAgents_many": "에이전트 {count}개 대기 중",
-  "chat_agentSubscriptions_waitingForAgents_one": "에이전트 {count}개 대기 중",
+  "chat_agentSubscriptions_waitingForAgents_one": "에이전트 대기 중",
   "chat_agentSubscriptions_waitingForAll_label": "모두 대기 중",
   "chat_agentSubscriptions_wokenByCount_many": "에이전트가 이벤트 {count}개로 깨어났습니다:",
   "chat_agentSubscriptions_wokenByCount_one": "에이전트가 이벤트 {count}개로 깨어났습니다:",

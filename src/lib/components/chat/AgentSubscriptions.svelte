@@ -2,50 +2,51 @@
   /**
    * AgentSubscriptions Component
    *
-   * Footer for what an agent is currently waiting on: one-shot watch rows on
-   * top (individual AgentCards with per-row actions, no group chrome),
-   * followed by one collapsible DelegationGroupSection per `after_all`
-   * delegation group. Also shows a brief "Woken up" indicator when an agent
-   * is woken by a subscription.
+   * Footer for what an agent is currently waiting on: a collapsible one-shot
+   * watch section on top (a "Waiting for…" header above individual AgentCards
+   * with per-row actions), followed by one collapsible DelegationGroupSection
+   * per `after_all` delegation group. Also shows a brief "Woken up" indicator
+   * when an agent is woken by a subscription.
    *
    * All subscription data comes from Redux selectors (populated by the
    * agent-subscription-ui read middleware). No IPC listeners, polling, or
    * timers in this component.
    */
-  import {
-  fade,
-  slide,
-} from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import { flip } from 'svelte/animate';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import {
-  faBell,
-  faXmark,
-  faStop,
-  faCircleCheck,
-} from '@fortawesome/free-solid-svg-icons';
+    faBell,
+    faChevronDown,
+    faChevronRight,
+    faHourglass,
+    faXmark,
+    faStop,
+    faCircleCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import DelegationGroupSection from './DelegationGroupSection.svelte';
+  import InlineAgentAvatar from './InlineAgentAvatar.svelte';
   import { isGroupDeliveryPending } from './delegation-ordering';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
   import {
-  selectAgentSubscriptions,
-  selectDelegationGroups,
-  selectWokenUpInfo,
-  selectCompletionStatus,
-  selectWaitingState,
-} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
+    selectAgentSubscriptions,
+    selectDelegationGroups,
+    selectWokenUpInfo,
+    selectCompletionStatus,
+    selectWaitingState,
+  } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
   import {
-  cancelAgentSubscriptionsRequested,
-  requestSubscriptionFetch,
-} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+    cancelAgentSubscriptionsRequested,
+    requestSubscriptionFetch,
+  } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
   import { stopAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
   import { store as appStore } from '$store/renderer/store';
@@ -150,6 +151,13 @@
 
   const isCompleted = $derived($waitingState$ === 'completed');
 
+  // Collapse state for the one-shot watch section (header chevron)
+  let oneShotCollapsed: boolean = $state(false);
+
+  function toggleOneShotCollapsed() {
+    oneShotCollapsed = !oneShotCollapsed;
+  }
+
   const showSubscriptionRow = $derived.by(() => {
     // Show row during the 'completed' transitional state
     if (isCompleted) return true;
@@ -190,8 +198,7 @@
     if (!workspaceId || !agentId) return;
     const watch = $subs$.find(
       (sub) =>
-        sub.delegationGroup?.awaitMode !== 'all' &&
-        (sub.actorIds || []).includes(watchedAgentId),
+        sub.delegationGroup?.awaitMode !== 'all' && (sub.actorIds || []).includes(watchedAgentId),
     );
     if (!watch) {
       // Refetch race: the watch already fired/was removed between render and
@@ -347,68 +354,128 @@
 
     <!-- One-shot watch rows: individual agent cards, no group chrome -->
     {#if oneShotWatchedIds.length > 0}
-      <div
-        class="flex flex-col gap-0.5 w-full pl-4.5 pr-2"
-        data-testid="one-shot-watches"
-        transition:slide={{ duration: 150 }}
-      >
-        {#each oneShotWatchedIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
-          <div
-            class="w-full"
-            animate:flip={{ duration: 200 }}
-            transition:slide={{ axis: 'y', duration: 200 }}
+      <div class="w-full" data-testid="one-shot-watches" transition:slide={{ duration: 150 }}>
+        <!-- Section header: waiting label, collapse toggle, avatar strip when collapsed -->
+        <div
+          class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle"
+          data-testid="one-shot-header"
+        >
+          <!-- Collapse/expand toggle -->
+          <button
+            type="button"
+            class="shrink-0 flex items-center gap-1.5 cursor-pointer hover:text-muted-foreground transition-colors"
+            data-testid="one-shot-collapse-toggle"
+            onclick={toggleOneShotCollapsed}
           >
-            {#snippet oneShotActions()}
-              {#if !isCompleted}
-                <!-- span[role=button]: AgentCard's row is itself a <button>, so
-                     nested real buttons would be invalid HTML -->
-                <span
-                  role="button"
-                  tabindex="0"
-                  aria-label={m.chat_agentSubscriptions_stopAgent_tooltip()}
-                  title={m.chat_agentSubscriptions_stopAgent_tooltip()}
-                  class="inline-flex items-center justify-center w-5 h-5 rounded text-ghost hover:text-muted-foreground/70 cursor-pointer"
-                  data-testid="one-shot-stop"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    void stopWatchedAgent(watchedAgentId);
-                  }}
-                  onkeydown={(e) =>
-                    handleActionKeydown(e, () => void stopWatchedAgent(watchedAgentId))}
-                >
-                  <Fa icon={faStop} class="w-2.5! h-2.5!" />
-                </span>
-                <span
-                  role="button"
-                  tabindex="0"
-                  aria-label={m.chat_agentSubscriptions_cancelWatch_tooltip()}
-                  title={m.chat_agentSubscriptions_cancelWatch_tooltip()}
-                  class="inline-flex items-center justify-center w-5 h-5 rounded text-ghost hover:text-muted-foreground/70 cursor-pointer"
-                  data-testid="one-shot-cancel"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    void cancelWatch(watchedAgentId);
-                  }}
-                  onkeydown={(e) =>
-                    handleActionKeydown(e, () => void cancelWatch(watchedAgentId))}
-                >
-                  <Fa icon={faXmark} class="w-2.5! h-2.5!" />
+            <Fa icon={oneShotCollapsed ? faChevronRight : faChevronDown} class="w-2.5! h-2.5!" />
+          </button>
+
+          <!-- Waiting label (count only when watching multiple agents) -->
+          <button
+            type="button"
+            class="shrink-0 flex items-center gap-2 whitespace-nowrap cursor-pointer hover:text-muted-foreground transition-colors"
+            onclick={toggleOneShotCollapsed}
+          >
+            <Fa icon={faHourglass} size="13" />
+            {oneShotWatchedIds.length === 1
+              ? m.chat_agentSubscriptions_waitingForAgents_one()
+              : m.chat_agentSubscriptions_waitingForAgents_many({
+                  count: formatInteger(oneShotWatchedIds.length),
+                })}
+          </button>
+
+          <!-- Inline agent avatars when collapsed -->
+          {#if oneShotCollapsed}
+            <div
+              class="flex items-center -space-x-1.5"
+              data-testid="one-shot-avatar-strip"
+              transition:fade={{ duration: 150 }}
+            >
+              {#each oneShotWatchedIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
+                <div animate:flip={{ duration: 200 }}>
+                  <InlineAgentAvatar
+                    agentId={watchedAgentId}
+                    workspace={resolvedWorkspace}
+                    isCompleted={completedAgentIdSet.has(watchedAgentId)}
+                  />
+                </div>
+              {/each}
+              {#if oneShotWatchedIds.length > 5}
+                <span class="text-ui text-subtle pl-2">
+                  +{oneShotWatchedIds.length - 5}
                 </span>
               {/if}
-            {/snippet}
-            <AgentCard
-              agentId={watchedAgentId}
-              workspace={resolvedWorkspace}
-              isCompleted={completedAgentIdSet.has(watchedAgentId)}
-              headerActions={oneShotActions}
-            />
-          </div>
-        {/each}
-        {#if oneShotWatchedIds.length > 5}
-          <div class="text-ui text-subtle text-center py-1">
-            {m.chat_shared_moreAgents_label({
-              count: formatInteger(oneShotWatchedIds.length - 5),
-            })}
+            </div>
+          {/if}
+
+          <div class="flex-1"></div>
+        </div>
+
+        <!-- Watch rows with per-row actions - shown when expanded -->
+        {#if !oneShotCollapsed}
+          <div
+            class="flex flex-col gap-0.5 w-full pl-4.5 pr-2"
+            transition:slide={{ duration: 150 }}
+          >
+            {#each oneShotWatchedIds.slice(0, 5) as watchedAgentId (watchedAgentId)}
+              <div
+                class="w-full"
+                animate:flip={{ duration: 200 }}
+                transition:slide={{ axis: 'y', duration: 200 }}
+              >
+                {#snippet oneShotActions()}
+                  {#if !isCompleted}
+                    <!-- span[role=button]: AgentCard's row is itself a <button>, so
+                     nested real buttons would be invalid HTML -->
+                    <span
+                      role="button"
+                      tabindex="0"
+                      aria-label={m.chat_agentSubscriptions_stopAgent_tooltip()}
+                      title={m.chat_agentSubscriptions_stopAgent_tooltip()}
+                      class="inline-flex items-center justify-center w-5 h-5 rounded text-ghost hover:text-muted-foreground/70 cursor-pointer"
+                      data-testid="one-shot-stop"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        void stopWatchedAgent(watchedAgentId);
+                      }}
+                      onkeydown={(e) =>
+                        handleActionKeydown(e, () => void stopWatchedAgent(watchedAgentId))}
+                    >
+                      <Fa icon={faStop} class="w-2.5! h-2.5!" />
+                    </span>
+                    <span
+                      role="button"
+                      tabindex="0"
+                      aria-label={m.chat_agentSubscriptions_cancelWatch_tooltip()}
+                      title={m.chat_agentSubscriptions_cancelWatch_tooltip()}
+                      class="inline-flex items-center justify-center w-5 h-5 rounded text-ghost hover:text-muted-foreground/70 cursor-pointer"
+                      data-testid="one-shot-cancel"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        void cancelWatch(watchedAgentId);
+                      }}
+                      onkeydown={(e) =>
+                        handleActionKeydown(e, () => void cancelWatch(watchedAgentId))}
+                    >
+                      <Fa icon={faXmark} class="w-2.5! h-2.5!" />
+                    </span>
+                  {/if}
+                {/snippet}
+                <AgentCard
+                  agentId={watchedAgentId}
+                  workspace={resolvedWorkspace}
+                  isCompleted={completedAgentIdSet.has(watchedAgentId)}
+                  headerActions={oneShotActions}
+                />
+              </div>
+            {/each}
+            {#if oneShotWatchedIds.length > 5}
+              <div class="text-ui text-subtle text-center py-1">
+                {m.chat_shared_moreAgents_label({
+                  count: formatInteger(oneShotWatchedIds.length - 5),
+                })}
+              </div>
+            {/if}
           </div>
         {/if}
       </div>

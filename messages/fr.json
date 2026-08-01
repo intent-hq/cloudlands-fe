@@ -1499,7 +1499,7 @@
   "chat_agentSubscriptions_stopAll_tooltip": "Arrêter tous les agents",
   "chat_agentSubscriptions_stopGroup_tooltip": "Arrêter tous les agents de ce groupe",
   "chat_agentSubscriptions_waitingForAgents_many": "En attente de {count} agents",
-  "chat_agentSubscriptions_waitingForAgents_one": "En attente de {count} agent",
+  "chat_agentSubscriptions_waitingForAgents_one": "En attente de l'agent",
   "chat_agentSubscriptions_waitingForAll_label": "Attendre tous",
   "chat_agentSubscriptions_wokenByCount_many": "L'agent a été réveillé par {count} événements :",
   "chat_agentSubscriptions_wokenByCount_one": "L'agent a été réveillé par {count} événement :",
