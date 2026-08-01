@@ -177,6 +177,23 @@ describe('AgentCard user-message-newest preview (freshness wins)', () => {
     expect(screen.queryByText(/stale answer/)).toBeNull();
   });
 
+  it('strips multiple leading bracketed prefixes from the user line', async () => {
+    seedSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      messages: [],
+      lastUserMessage: '[Currently viewing: foo.ts] [panel: chat] the actual question',
+      lastMessageRole: 'user',
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('the actual question');
+    expect(preview.textContent).not.toContain('Currently viewing');
+    expect(preview.textContent).not.toContain('panel: chat');
+  });
+
   it('previews the user first line via the transcript-derived fallback when the wire field is absent', async () => {
     seedSession({
       status: AgentStatus.Idle,

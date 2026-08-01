@@ -388,7 +388,7 @@
   // filter out [Currently viewing: ...] prefixes and @context[...] mentions (raw base64/pipe format)
   function stripUserMessagePrefixes(text: string): string {
     return text
-      .replace(/^\[.*?\]\s*/g, '')
+      .replace(/^(\[.*?\]\s*)+/, '')
       .replace(/@context\[[^\]]*\]/g, '')
       .trim();
   }
