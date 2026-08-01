@@ -12,7 +12,8 @@
  *
  * Wire mapping (`{ subscriptions, delegationGroups, agentStatuses }`):
  * - subscriptions map field-for-field onto the slice `Subscription` shape (the
- *   wire payload is a superset carrying `agentName`/`workspaceId`/`oneShot`).
+ *   wire payload is a superset carrying `agentName`/`workspaceId`; unknown
+ *   extra fields are ignored, tolerating daemon/FE version skew).
  * - `DelegationGroupStatus.agentStatuses` has no per-group wire field; it is
  *   derived (safe derivation, not fabrication) by filtering the top-level
  *   `agentStatuses` map to the group's `expectedAgentIds`.

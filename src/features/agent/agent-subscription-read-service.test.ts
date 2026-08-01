@@ -50,7 +50,6 @@ function wireResult() {
         agentName: "Coordinator",
         workspaceId: WS,
         createdAt: "2026-01-01T00:00:00.000Z",
-        oneShot: true,
         actorIds: [CHILD_A],
         eventTypes: ["agent:idle", "agent:failed", "agent:deleted"],
         delegationGroup: { groupId: "grp-1", awaitMode: "all" as const, expectedAgentIds: [CHILD_A, CHILD_B] },
