@@ -278,6 +278,31 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
     });
   });
 
+  it("passes the 'idle' wire value through normalization (intentd#793)", async () => {
+    // intentd#793 folds live agent activity into the derivation: a quiet
+    // task-stage rollup reaches the wire as `idle`, consumed verbatim.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          title: "Quiet ws",
+          branch: "intent/quiet",
+          status: "Active",
+          displayStatus: "idle",
+          activity: "idle",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          updatedAt: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(workspaces[0]?.displayStatus).toBe("idle");
+  });
+
   it("leaves displayStatus undefined when an older daemon omits the field", async () => {
     mockedRequest.mockResolvedValueOnce({
       workspaces: [

@@ -84,11 +84,38 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
   it('prefers BE displayStatus over the local merged-PR derivation (original bug)', async () => {
     // Locally this workspace looks merged (prStatus Merged), but the daemon
     // says the current cycle is in_progress (merged PR + open tasks). It must
-    // NOT group under PR Merged; not running, so the idle layer demotes
-    // in_progress to Idle.
+    // NOT group under PR Merged; the BE value renders verbatim (intentd#793 —
+    // the daemon owns the idle/in_progress split), so no local demotion.
     const ws = makeWorkspace('ws-be-inprog', 'Merged PR but open tasks', {
       prStatus: PullRequestStatus.Merged,
       displayStatus: 'in_progress',
+    });
+
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          appStore.dispatch(resetWorkspaceState());
+          appStore.dispatch(setWorkspaceEntity(ws));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+          appStore.dispatch(setAllSpacesViewMode('status'));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => {
+      const headers = getGroupHeaders();
+      expect(headers).toContain('In Progress');
+      expect(headers).not.toContain('PR Merged');
+    });
+  });
+
+  it('groups under Idle when the BE says idle (intentd#793)', async () => {
+    // The daemon demoted a quiet task-stage rollup to idle; the FE renders
+    // it verbatim even though the local derivation would say PR Merged.
+    const ws = makeWorkspace('ws-be-idle', 'Quiet workspace', {
+      prStatus: PullRequestStatus.Merged,
+      displayStatus: 'idle',
     });
 
     render(AllWorkspacesCardHarness, {
@@ -239,8 +266,20 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
 
     await waitFor(() => {
       const headers = getGroupHeaders();
-      expect(headers).toContain('Idle');
+      expect(headers).toContain('In Progress');
       expect(headers).not.toContain('PR Merged');
+    });
+
+    appStore.dispatch(
+      bulkUpdateWorkspaceEntities([
+        updateWorkspaceEntity('ws-be-live', { displayStatus: 'idle' }),
+      ]),
+    );
+
+    await waitFor(() => {
+      const headers = getGroupHeaders();
+      expect(headers).toContain('Idle');
+      expect(headers).not.toContain('In Progress');
     });
   });
 });

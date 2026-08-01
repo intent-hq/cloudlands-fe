@@ -143,6 +143,11 @@ vi.mock('electron', () => ({
     getFocusedWindow: vi.fn(() => null),
     fromId: vi.fn(() => null),
   },
+  screen: {
+    getPrimaryDisplay: vi.fn(() => ({
+      workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+    })),
+  },
   Notification: class {
     static isSupported() {
       return mockNotificationIsSupported.value;
@@ -180,6 +185,21 @@ vi.mock('../../workspace/main/workspace.service', () => ({
   workspaceService: {
     getWorkspace: vi.fn(() => Promise.resolve({ ok: true, data: { title: 'Test Workspace' } })),
   },
+}));
+
+// Dynamically imported by the notification-click fallback (no regular window
+// live): opens a fresh app window on the workspace route.
+const { createWindowForSessionMock, getMainWindowMock } = vi.hoisted(() => ({
+  createWindowForSessionMock: vi.fn(),
+  getMainWindowMock: vi.fn(() => null),
+}));
+
+vi.mock('../../../main/window', () => ({
+  createWindowForSession: createWindowForSessionMock,
+}));
+
+vi.mock('../../../main/state', () => ({
+  getMainWindow: getMainWindowMock,
 }));
 
 /** Let queued microtasks (promise chains) settle. */
@@ -774,16 +794,22 @@ describe('NotificationService showNotification click behavior', () => {
     );
   });
 
-  it('does nothing when mainWindow is destroyed', () => {
+  it('opens a fresh window instead of focusing when mainWindow is destroyed', async () => {
     const mockWindow = createMockWindow(false);
     // Override isDestroyed to return true
     mockWindow.isDestroyed = () => true;
 
     triggerNotificationClick('workspace-1', mockWindow);
+    await flush();
 
     expect(mockFocus).not.toHaveBeenCalled();
     expect(mockRestore).not.toHaveBeenCalled();
     expect(mockWebContentsSend).not.toHaveBeenCalled();
+    // The click falls back to opening a new app window on the workspace route.
+    expect(createWindowForSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ route: '/workspace/workspace-1' }),
+      true,
+    );
   });
 
   it('does not send IPC when webContents is destroyed', () => {
@@ -913,6 +939,134 @@ describe('NotificationService showNotification click behavior', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     }
+  });
+});
+
+describe('NotificationService click-target selection excludes the HUD window', () => {
+  function buildIdleEvent(): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId: 'workspace-1',
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId: 'agent-self',
+        agentName: 'Self Agent',
+        isBackground: false,
+      },
+    } as AgentIdleEvent;
+  }
+
+  function makeWindow(id: number, url: string) {
+    return {
+      id,
+      webContents: {
+        send: vi.fn(),
+        isDestroyed: () => false,
+        getURL: () => url,
+      },
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => false,
+      isDestroyed: () => false,
+    };
+  }
+
+  const HUD_URL = 'http://127.0.0.1:5190/hud';
+  const MAIN_URL = 'http://127.0.0.1:5190/';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
+  });
+
+  it('never picks the HUD window even when it has the workspace open and is focused — the main window gets the navigate', async () => {
+    const hudWindow = makeWindow(1, HUD_URL);
+    const regularWindow = makeWindow(2, MAIN_URL);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([hudWindow.id]);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => ((id === 1 ? hudWindow : id === 2 ? regularWindow : null) as never),
+    );
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(hudWindow as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([hudWindow, regularWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(1);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(regularWindow.focus).toHaveBeenCalled();
+    expect(regularWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+      workspaceId: 'workspace-1',
+    });
+    expect(hudWindow.focus).not.toHaveBeenCalled();
+    expect(hudWindow.webContents.send).not.toHaveBeenCalledWith(
+      'notification:navigate',
+      expect.anything(),
+    );
+  });
+
+  it('prefers a non-HUD workspace window over the focused window', async () => {
+    const hudWindow = makeWindow(1, HUD_URL);
+    const workspaceWindow = makeWindow(2, `http://127.0.0.1:5190/workspace/workspace-1`);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([hudWindow.id, workspaceWindow.id]);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => ((id === 1 ? hudWindow : id === 2 ? workspaceWindow : null) as never),
+    );
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(hudWindow as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([hudWindow, workspaceWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(1);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(workspaceWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+      workspaceId: 'workspace-1',
+    });
+    expect(hudWindow.webContents.send).not.toHaveBeenCalledWith(
+      'notification:navigate',
+      expect.anything(),
+    );
+  });
+
+  it('opens a fresh main window when the HUD is the only live window (never navigates the HUD)', async () => {
+    const hudWindow = makeWindow(1, HUD_URL);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([hudWindow.id]);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => ((id === 1 ? hudWindow : null) as never),
+    );
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(hudWindow as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([hudWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(1);
+    mockNotificationInstances[0].handlers['click']();
+    await flush();
+
+    expect(hudWindow.focus).not.toHaveBeenCalled();
+    expect(hudWindow.webContents.send).not.toHaveBeenCalledWith(
+      'notification:navigate',
+      expect.anything(),
+    );
+    expect(createWindowForSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ route: '/workspace/workspace-1' }),
+      true,
+    );
   });
 });
 

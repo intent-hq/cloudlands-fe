@@ -17,7 +17,7 @@ function wireEvent(type: string, data: Record<string, unknown>): WorkspaceEvent 
 }
 
 describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
-  it("maps agent:started to an info row carrying the agent name", () => {
+  it("maps agent:started to an info row carrying agent identity out-of-band", () => {
     const entry = mapEventToFeedEntry(
       wireEvent("agent:started", { agentId: "agent-1", agentName: "Implementor" }),
     );
@@ -27,15 +27,26 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
       colorClass: "info",
       source: WS_ID,
       kind: "agent:started",
-      text: "Implementor",
+      text: "",
+      agentId: "agent-1",
+      agentName: "Implementor",
     });
   });
 
-  it("maps agent:failed { agentId, error, turnId? } to an err row", () => {
+  it("never leaks the raw agent UUID into text when agentName is absent", () => {
+    const entry = mapEventToFeedEntry(
+      wireEvent("agent:started", { agentId: "22222222-2222-4222-8222-222222222222" }),
+    );
+    expect(entry?.text).toBe("");
+    expect(entry?.agentId).toBe("22222222-2222-4222-8222-222222222222");
+    expect(entry?.agentName).toBeUndefined();
+  });
+
+  it("maps agent:failed { agentId, error, turnId? } to an err row without the id", () => {
     const entry = mapEventToFeedEntry(
       wireEvent("agent:failed", { agentId: "agent-1", error: "spawn failed", turnId: "t-1" }),
     );
-    expect(entry).toMatchObject({ colorClass: "err", text: "agent-1: spawn failed" });
+    expect(entry).toMatchObject({ colorClass: "err", text: "spawn failed", agentId: "agent-1" });
   });
 
   it("colors agent:status-changed by target status", () => {
@@ -46,7 +57,7 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
         status: "failed",
       }),
     );
-    expect(failed).toMatchObject({ colorClass: "err", text: "agent-1 → failed" });
+    expect(failed).toMatchObject({ colorClass: "err", text: "failed", agentId: "agent-1" });
 
     const waiting = mapEventToFeedEntry(
       wireEvent("agent:status-changed", { agentId: "agent-1", status: "waiting" }),

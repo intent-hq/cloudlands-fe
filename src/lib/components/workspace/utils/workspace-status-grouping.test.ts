@@ -3,7 +3,10 @@ import { getWorkspaceGroupingStatus, isWorkspaceRunning } from './workspace-stat
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 
-function makeWorkspace(activity?: Workspace['activity']): Workspace {
+function makeWorkspace(
+  activity?: Workspace['activity'],
+  displayStatus?: Workspace['displayStatus'],
+): Workspace {
   return {
     id: 'ws-1',
     title: 'Test Workspace',
@@ -13,6 +16,7 @@ function makeWorkspace(activity?: Workspace['activity']): Workspace {
     conversationInfo: [],
     status: WorkspaceStatus.Active,
     activity,
+    displayStatus,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   };
@@ -83,7 +87,34 @@ describe('getWorkspaceGroupingStatus', () => {
     });
   });
 
-  describe('not-running workspaces (activity === idle AND no streaming agents)', () => {
+  describe('BE-sent displayStatus is consumed verbatim (intentd#793 — daemon owns the idle split)', () => {
+    it('returns idle when the BE says idle', () => {
+      const ws = makeWorkspace('idle', 'idle');
+      expect(getWorkspaceGroupingStatus(ws, 'idle', [])).toBe('idle');
+    });
+
+    it('returns in_progress when the BE says in_progress, even with no local agent rows', () => {
+      const ws = makeWorkspace('idle', 'in_progress');
+      expect(getWorkspaceGroupingStatus(ws, 'in_progress', [])).toBe('in_progress');
+    });
+
+    it('returns not_started verbatim when the BE sends it', () => {
+      const ws = makeWorkspace('idle', 'not_started');
+      expect(getWorkspaceGroupingStatus(ws, 'not_started', [])).toBe('not_started');
+    });
+
+    it('a running workspace still overrides a BE-sent idle to in_progress', () => {
+      const ws = makeWorkspace('agent_running', 'idle');
+      expect(getWorkspaceGroupingStatus(ws, 'idle', [])).toBe('in_progress');
+    });
+
+    it('streaming agents still override a BE-sent idle to in_progress', () => {
+      const ws = makeWorkspace('idle', 'idle');
+      expect(getWorkspaceGroupingStatus(ws, 'idle', ['agent-1'])).toBe('in_progress');
+    });
+  });
+
+  describe('not-running workspaces without a BE displayStatus (local-derivation fallback)', () => {
     it('returns complete when idle with base status complete', () => {
       const ws = makeWorkspace('idle');
       expect(getWorkspaceGroupingStatus(ws, 'complete', [])).toBe('complete');

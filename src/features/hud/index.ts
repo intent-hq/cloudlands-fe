@@ -6,3 +6,8 @@
  */
 export { startHudSubscription, HUD_REPLACE_GROUP } from './hud-subscription';
 export { mapEventToFeedEntry, HUD_FEED_EVENT_TYPES } from './hud-feed-mapper';
+export {
+  mapEventToTakeoverTrigger,
+  HUD_TAKEOVER_EVENT_TYPES,
+  HUD_TAKEOVER_TRIGGER_KINDS,
+} from './takeover/hud-takeover-triggers';

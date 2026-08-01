@@ -10,12 +10,24 @@
  *    `subscriptionId` (§6.3 fan-out dedupe, mirroring the daemon-events
  *    bridge), maps them through `mapEventToFeedEntry`, and folds the
  *    attention/displayStatus families into their live override maps;
+ *  - hydrates the agent list (`agent.list`, §5.5) for EVERY HUD-visible
+ *    workspace exactly once via `hydrateAgentsRequested` — the AgentLite
+ *    projection carries the persisted `lastAgentResponse` that feeds the
+ *    per-agent activity line on the cards, and without this only sessions
+ *    hydrated in THIS window (or touched by a live status event) have one.
+ *    The lifecycle-read-service coalesces per workspace and the requests run
+ *    in parallel; freshness comes from the daemon-events-bridge, which
+ *    re-dispatches the same action on `agent:status-changed`/`agent:idle`
+ *    (no polling here);
  *  - fetches the 24h `stats.getUsage` rollup (§5.36) and `system.status`
- *    (§5.7) once, and re-issues subscribe + refetches after a backend
+ *    (§5.7) once, polls the per-minute `stats.getRateHistory` (§5.39) every
+ *    HUD_RATE_HISTORY_POLL_MS for the TOK/MIN chart, and re-issues subscribe
+ *    + refetches (including re-hydrating all agent lists) after a backend
  *    reconnect (RESUB-1).
  *
- * The disposer unsubscribes best-effort, removes both listeners, and
- * dispatches `hudDeactivated` (clearing the feed — no persistence).
+ * The disposer unsubscribes best-effort, removes both listeners, stops the
+ * rate-history poll, and dispatches `hudDeactivated` (clearing the feed — no
+ * persistence).
  */
 import {
   backendRequest,
@@ -25,27 +37,62 @@ import {
   onBackendReconnected,
 } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
-import { isWorkspaceDisplayStatus } from '$shared/types';
+import { getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { isWorkspaceDisplayStatus, WorkspaceStatus } from '$shared/types';
+import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   hudActivated,
   hudAttentionChanged,
   hudDeactivated,
   hudDisplayStatusChanged,
   hudFeedEntryReceived,
+  hudQuestionCaptured,
+  hudRate5sBackfilled,
+  hudRate5sTokensObserved,
+  hudRateHistoryFailed,
+  hudRateHistoryLoaded,
   hudSystemStatusReceived,
   hudUsageFailed,
   hudUsageLoaded,
+  type HudRateHistorySample,
   type HudRateSample,
   type HudUsageTotals,
 } from '$store/renderer/slices/hud/hud-slice';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { HUD_FEED_EVENT_TYPES, mapEventToFeedEntry } from './hud-feed-mapper';
+import { extractQuestionsFromStreamEnd } from './hud-question-capture';
+import { emitTakeoverTrigger } from './takeover/hud-takeover-bus';
+import {
+  HUD_TAKEOVER_EVENT_TYPES,
+  mapEventToTakeoverTrigger,
+} from './takeover/hud-takeover-triggers';
 
 const logger = createLogger('HudSubscription');
 
 /** §6.1 replaceGroup key — one HUD subscription per connection, ever. */
 export const HUD_REPLACE_GROUP = 'hud-feed';
+
+/**
+ * Event types the HUD subscription requests: the feed families plus the
+ * takeover-only families (e.g. `agent:stream:end`, whose §7.1 question
+ * trailingBlocks drive the question takeover and the attention-row question
+ * capture but never render in the feed) plus `workspace:tokenUsage-changed`
+ * (§6.5), whose totals deltas feed the live 5s TOK/S buckets.
+ */
+export const HUD_SUBSCRIBE_EVENT_TYPES = [
+  ...new Set<string>([
+    ...HUD_FEED_EVENT_TYPES,
+    ...HUD_TAKEOVER_EVENT_TYPES,
+    'workspace:tokenUsage-changed',
+  ]),
+];
+
+/** TOK/MIN chart poll cadence — new minute buckets land at most once a minute. */
+export const HUD_RATE_HISTORY_POLL_MS = 15_000;
+
+/** Trailing minute samples for the TOK/MIN chart (mock renders 40 bars). */
+export const HUD_RATE_HISTORY_LIMIT = 40;
 
 function sumTotals(totals: HudUsageTotals): number {
   return (
@@ -88,6 +135,29 @@ async function loadUsage(): Promise<void> {
   }
 }
 
+/** Fetch the per-minute rate history (§5.39) and fold it into the slice. */
+async function loadRateHistory(): Promise<void> {
+  try {
+    const result = await backendRequest<{
+      samples?: Array<{ bucketUtc: string } & HudUsageTotals>;
+    }>('stats.getRateHistory', { limit: HUD_RATE_HISTORY_LIMIT });
+    const samples = result?.samples;
+    if (!Array.isArray(samples)) {
+      throw new Error('stats.getRateHistory result is missing `samples` (PROTOCOL §5.39)');
+    }
+    const mapped: HudRateHistorySample[] = samples.map((sample) => ({
+      bucketUtc: sample.bucketUtc,
+      tokens: sumTotals(sample),
+    }));
+    appStore.dispatch(hudRateHistoryLoaded({ samples: mapped, fetchedAtMs: Date.now() }));
+    // One-shot TOK/S chart backfill: minute samples split across their 5s
+    // slots (the reducer ignores repeats once backfilled).
+    appStore.dispatch(hudRate5sBackfilled(mapped, Date.now()));
+  } catch (error) {
+    appStore.dispatch(hudRateHistoryFailed(error instanceof Error ? error.message : String(error)));
+  }
+}
+
 /** Fetch `system.status` (§5.7) and fold the online/uptime snapshot. */
 async function loadSystemStatus(): Promise<void> {
   try {
@@ -114,15 +184,88 @@ async function loadSystemStatus(): Promise<void> {
   }
 }
 
+/**
+ * Workspaces whose agent list this HUD session already requested — one
+ * `agent.list` hydration per workspace per session (no polling). Cleared on
+ * `startHudSubscription()` and on reconnect so a daemon restart re-converges.
+ * Ongoing freshness is event-driven: the daemon-events-bridge re-dispatches
+ * `hydrateAgentsRequested` on `agent:status-changed`/`agent:idle`.
+ */
+const hydratedAgentWorkspaceIds = new Set<string>();
+
+/**
+ * Request the agent list for every HUD-visible (non-archived, non-deleted)
+ * workspace not yet hydrated this session. The AgentLite projection (§5.5)
+ * carries the persisted `lastAgentResponse`, which `bulkUpsertSessions`
+ * folds into the session slice — that is what the card rows render as the
+ * per-agent activity line. Dispatches fan out in parallel; the
+ * lifecycle-read-service coalesces concurrent fetches per workspace.
+ */
+function hydrateVisibleWorkspaceAgents(): void {
+  const workspaces = appStore.state.workspace?.workspaces;
+  for (const workspace of workspaces ? getItems(workspaces) : []) {
+    if (
+      workspace.status === WorkspaceStatus.Archived ||
+      workspace.status === WorkspaceStatus.Deleted
+    ) {
+      continue;
+    }
+    const workspaceId = String(workspace.id);
+    if (hydratedAgentWorkspaceIds.has(workspaceId)) continue;
+    hydratedAgentWorkspaceIds.add(workspaceId);
+    appStore.dispatch(hydrateAgentsRequested(workspaceId));
+  }
+}
+
+/**
+ * Last-seen summed token total per workspace — the baseline the live TOK/S
+ * deltas are computed against (`workspace:tokenUsage-changed`, §6.5). Cleared
+ * on every `startHudSubscription()`; a first-seen workspace only records the
+ * baseline (no delta — the rollup is cumulative since before open).
+ */
+const lastTokenTotalsByWorkspaceId = new Map<string, number>();
+
+/** Fold a `workspace:tokenUsage-changed` push into a live 5s bucket delta. */
+function handleTokenUsageChanged(workspaceId: string, data: Record<string, unknown>): void {
+  const tokenUsage = data.tokenUsage;
+  if (!workspaceId || !tokenUsage || typeof tokenUsage !== 'object') return;
+  const totals = (tokenUsage as { totals?: HudUsageTotals }).totals;
+  if (!totals || typeof totals !== 'object') return;
+  const total = sumTotals(totals);
+  if (!Number.isFinite(total)) return;
+  const previous = lastTokenTotalsByWorkspaceId.get(workspaceId);
+  lastTokenTotalsByWorkspaceId.set(workspaceId, total);
+  if (previous === undefined) return;
+  const delta = total - previous;
+  if (delta > 0) appStore.dispatch(hudRate5sTokensObserved(delta, Date.now()));
+}
+
 function handleEvent(event: WorkspaceEvent): void {
   const workspaceId = typeof event.workspaceId === 'string' ? event.workspaceId : '';
   const data =
     event.data && typeof event.data === 'object' ? (event.data as Record<string, unknown>) : {};
   const type = event.type as string;
+  if (type === 'agent:stream:end') {
+    // §7.1 question capture — the takeover trigger for the same event still
+    // fans out below.
+    for (const question of extractQuestionsFromStreamEnd(event)) {
+      appStore.dispatch(hudQuestionCaptured(question));
+    }
+  }
+  if (type === 'workspace:tokenUsage-changed') {
+    handleTokenUsageChanged(workspaceId, data);
+    return;
+  }
   if (type === 'workspace:attention-changed') {
     const attention = data.attention;
     if (workspaceId && typeof attention === 'string') {
-      appStore.dispatch(hudAttentionChanged(workspaceId, attention));
+      // Raise time = the event's wire timestamp (drives the elapsed timer);
+      // fall back to the arrival clock for envelopes missing one.
+      const raisedAtTs =
+        typeof event.timestamp === 'string' && event.timestamp.length > 0
+          ? event.timestamp
+          : new Date().toISOString();
+      appStore.dispatch(hudAttentionChanged(workspaceId, attention, raisedAtTs));
     }
   } else if (type === 'workspace:displayStatus-changed') {
     const displayStatus = data.displayStatus;
@@ -132,6 +275,37 @@ function handleEvent(event: WorkspaceEvent): void {
   }
   const entry = mapEventToFeedEntry(event);
   if (entry) appStore.dispatch(hudFeedEntryReceived(entry));
+  // Notable events also fan out to the takeover overlay's queue (the bus is
+  // a no-op until the overlay registers its listener). The name resolver
+  // backfills agent display names off the live session slice so a banner
+  // never renders a raw agent UUID.
+  const trigger = mapEventToTakeoverTrigger(event, resolveAgentDisplayName);
+  if (trigger) emitTakeoverTrigger(trigger);
+}
+
+/**
+ * One-time agent-name read off `appStore.state` (no selector imports): the
+ * live session slice first, then the workspace entities' `agentSummary`
+ * agents (the HUD renders all workspaces, most without hydrated sessions).
+ */
+function resolveAgentDisplayName(agentId: string): string | undefined {
+  const state = appStore.state as {
+    agentSessions?: { byAgentId?: Record<string, { name?: unknown }> };
+  };
+  const sessionName = state.agentSessions?.byAgentId?.[agentId]?.name;
+  if (typeof sessionName === 'string' && sessionName.length > 0) return sessionName;
+  const workspaces = appStore.state.workspace?.workspaces;
+  for (const workspace of workspaces ? getItems(workspaces) : []) {
+    const summary = (workspace as { agentSummary?: { agents?: unknown } }).agentSummary;
+    if (!summary || !Array.isArray(summary.agents)) continue;
+    for (const agent of summary.agents) {
+      const candidate = agent as { id?: unknown; name?: unknown };
+      if (candidate?.id === agentId && typeof candidate.name === 'string' && candidate.name) {
+        return candidate.name;
+      }
+    }
+  }
+  return undefined;
 }
 
 function extractEvent(params: unknown): WorkspaceEvent | null {
@@ -156,6 +330,8 @@ export function startHudSubscription(): () => void {
   let disposed = false;
   let subscriptionId: string | undefined;
 
+  lastTokenTotalsByWorkspaceId.clear();
+  hydratedAgentWorkspaceIds.clear();
   appStore.dispatch(hudActivated());
 
   async function subscribe(): Promise<void> {
@@ -164,7 +340,7 @@ export function startHudSubscription(): () => void {
     subscriptionId = undefined;
     try {
       const result = await backendSubscribe<{ subscriptionId?: string }>({
-        eventTypes: [...HUD_FEED_EVENT_TYPES],
+        eventTypes: [...HUD_SUBSCRIBE_EVENT_TYPES],
         replaceGroup: HUD_REPLACE_GROUP,
       });
       if (disposed) {
@@ -194,22 +370,51 @@ export function startHudSubscription(): () => void {
   });
 
   // RESUB-1: the daemon's subscription registry is empty after a restart —
-  // replay the subscribe and refresh the coarse rollups.
+  // replay the subscribe and refresh the coarse rollups plus every visible
+  // workspace's agent list (events missed during the outage may have changed
+  // `lastAgentResponse`/status).
   const removeReconnectListener = onBackendReconnected(() => {
     void subscribe();
     void loadUsage();
+    void loadRateHistory();
     void loadSystemStatus();
+    hydratedAgentWorkspaceIds.clear();
+    hydrateVisibleWorkspaceAgents();
   });
 
   void subscribe();
   void loadUsage();
+  void loadRateHistory();
   void loadSystemStatus();
+  hydrateVisibleWorkspaceAgents();
+
+  // The workspace list hydrates asynchronously (and can grow later) — re-run
+  // the once-per-workspace hydration pass whenever the list reference moves.
+  // The Set guard makes the pass idempotent (never a re-fetch), and the
+  // microtask defers the dispatch out of the store's notification loop.
+  let lastWorkspaces = appStore.state.workspace?.workspaces;
+  const removeStoreListener = appStore.getReadableState().subscribe((state) => {
+    const workspaces = state.workspace?.workspaces;
+    if (workspaces === lastWorkspaces) return;
+    lastWorkspaces = workspaces;
+    queueMicrotask(() => {
+      if (!disposed) hydrateVisibleWorkspaceAgents();
+    });
+  });
+
+  // TOK/MIN chart poll — minute buckets only move once a minute, but a short
+  // cadence keeps the newest bucket's in-progress accumulation fresh.
+  const rateHistoryTimer = setInterval(() => {
+    void loadRateHistory();
+  }, HUD_RATE_HISTORY_POLL_MS);
 
   return () => {
     if (disposed) return;
     disposed = true;
+    clearInterval(rateHistoryTimer);
     removeNotificationListener();
     removeReconnectListener();
+    removeStoreListener();
     if (subscriptionId) {
       void backendUnsubscribe(subscriptionId).catch(() => {});
       subscriptionId = undefined;

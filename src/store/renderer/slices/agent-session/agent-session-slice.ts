@@ -496,6 +496,7 @@ type SessionComparisonSnapshot = Pick<
   | 'isActive'
   | 'stopReason'
   | 'sessionCorrupted'
+  | 'lastAgentResponse'
 > & {
   messageCount: number;
   lastMessageId: AgentMessage['id'] | undefined;
@@ -530,6 +531,10 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     isActive: session.isActive,
     stopReason: session.stopReason,
     sessionCorrupted: session.sessionCorrupted,
+    // AgentLite hydration carries the persisted last-response summary (§5.5)
+    // — without it here, a refetch whose only change is a fresh
+    // `lastAgentResponse` would be swallowed as a no-op (HUD card lines).
+    lastAgentResponse: session.lastAgentResponse,
     // Derived via the shared helper so metadata-carried AgentLite attention
     // fields register as changes too, not just the top-level projection.
     attentionRequestKind: attentionRequest?.kind,
@@ -626,6 +631,16 @@ function applySessionUpsert(
       !Object.prototype.hasOwnProperty.call(session, 'stopReason')
     ) {
       finalSession.stopReason = existing.stopReason;
+    }
+
+    // Same guard for the last-response summary: a live `agent:status-changed`
+    // (`lastResponseSummary`) can be fresher than a snapshot that omits the
+    // field — only an incoming session that carries the key may replace it.
+    if (
+      existing.lastAgentResponse !== undefined &&
+      !Object.prototype.hasOwnProperty.call(session, 'lastAgentResponse')
+    ) {
+      finalSession.lastAgentResponse = existing.lastAgentResponse;
     }
   }
 

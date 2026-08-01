@@ -216,10 +216,14 @@ export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
 
 /** Canonical wire values for the BE-owned current-cycle `workspace.displayStatus`
  *  (intent-hq/intentd#600). Single source of truth — the union type, the runtime
- *  guard, and every consumer set derive from this array. */
+ *  guard, and every consumer set derive from this array. `idle` (intentd#793)
+ *  folds live agent activity into the daemon-side derivation: a running agent
+ *  promotes to `in_progress`, and without one the task-stage rollups
+ *  (`in_progress`/`not_started`) demote to `idle`. */
 export const WORKSPACE_DISPLAY_STATUS_VALUES = [
   'not_started',
   'in_progress',
+  'idle',
   'complete',
   'pr_ready',
   'pr_open',
@@ -545,6 +549,11 @@ export interface WorkspaceAgentInfo {
   lastActivity?: string;
   isStreaming?: boolean;
   isResponding?: boolean;
+  /**
+   * Delegating/spawning agent's id (PROTOCOL §5.1, v2.9 additive) — omitted
+   * for root agents, so clients can rebuild the delegation tree.
+   */
+  parentAgentId?: string;
 }
 
 /**

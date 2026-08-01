@@ -1,4 +1,4 @@
-import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
+import { isWorkspaceDisplayStatus, type Workspace, type WorkspaceDisplayStatus } from '$shared/types';
 
 /**
  * Display status for a workspace (BE-owned or derived from PR/task state).
@@ -9,9 +9,10 @@ import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
 export type { WorkspaceDisplayStatus } from '$shared/types';
 
 /**
- * Grouping status for sidebar status view — extends WorkspaceDisplayStatus with 'idle'.
- * Workspaces with in_progress or not_started base status that have no active agents
- * are demoted to 'idle'.
+ * Grouping status for sidebar status view. `idle` is a first-class wire value
+ * since intentd#793 (the daemon folds live agent activity into the
+ * `displayStatus` derivation), so this is now an alias of the wire union —
+ * kept for its many existing importers.
  */
 export type GroupingStatus = WorkspaceDisplayStatus | 'idle';
 
@@ -33,12 +34,16 @@ export function isWorkspaceRunning(
  * (activity === 'agent_running' || streaming agents > 0) are UNCONDITIONALLY
  * grouped under 'in_progress', overriding every base status including pr_merged.
  *
- * Not-running workspaces follow the existing grouping rules:
+ * Not-running workspaces with a BE-sent `workspace.displayStatus` render it
+ * VERBATIM (intentd#793 — the daemon already folds agent activity into the
+ * derivation, so `idle` and `in_progress` are authoritative). The local
+ * demotion only applies on the fallback path (older daemon, `displayStatus`
+ * absent or unknown, so `baseStatus` is the local PR/task derivation):
  * - PR states and 'complete' keep their status (never demoted to idle)
  * - 'in_progress' or 'not_started' with zero active agents → 'idle'
  *
  * @param workspace - The workspace to group
- * @param baseStatus - The base display status (from PR/task state)
+ * @param baseStatus - The base display status (BE-sent, else local PR/task derivation)
  * @param streamingAgentIds - Array of streaming agent IDs for this workspace
  * @returns The grouping status for sidebar display
  */
@@ -50,12 +55,19 @@ export function getWorkspaceGroupingStatus(
   const running = isWorkspaceRunning(workspace, streamingAgentIds);
 
   // Running workspaces ALWAYS go to in_progress, unconditionally overriding
-  // every base status (in_progress, not_started, complete, pr_open, pr_ready, pr_merged)
+  // every base status (idle, in_progress, not_started, complete, pr_open, pr_ready, pr_merged)
   if (running) {
     return 'in_progress';
   }
 
-  // Not running: PR states and complete always keep their status, never go to idle
+  // BE-sent displayStatus is consumed verbatim: the daemon owns the idle /
+  // in_progress split since intentd#793, so the FE never re-demotes it.
+  if (isWorkspaceDisplayStatus(workspace.displayStatus)) {
+    return baseStatus;
+  }
+
+  // Local-derivation fallback (older daemon): PR states and complete always
+  // keep their status, never go to idle
   if (
     baseStatus === 'pr_merged' ||
     baseStatus === 'pr_open' ||

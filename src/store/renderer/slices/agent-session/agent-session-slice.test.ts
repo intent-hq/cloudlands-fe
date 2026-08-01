@@ -836,6 +836,29 @@ describe('agent-session-slice reducer', () => {
       );
     });
 
+    it('folds an AgentLite hydration lastAgentResponse in and never lets a snapshot without the field clobber it', () => {
+      // Hydration upsert (agent.list AgentLite, §5.5) carries the persisted
+      // summary — a refetch whose ONLY change is a fresh lastAgentResponse
+      // must not be swallowed by the equivalence no-op guard.
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { lastAgentResponse: 'Wired the release fetch' })),
+      );
+      expect(state.byAgentId['a1'].lastAgentResponse).toBe('Wired the release fetch');
+
+      // A later snapshot that omits the field keeps the known value.
+      state = agentSessionReducer(state, upsertSession(makeSession('a1')));
+      expect(state.byAgentId['a1'].lastAgentResponse).toBe('Wired the release fetch');
+
+      // But a snapshot that carries the key replaces it.
+      state = agentSessionReducer(
+        state,
+        upsertSession(makeSession('a1', 'ws-1', { lastAgentResponse: 'All gates green' })),
+      );
+      expect(state.byAgentId['a1'].lastAgentResponse).toBe('All gates green');
+    });
+
     it('maps agent:session-stats-changed into session.stats without touching lifecycle fields', () => {
       let state = agentSessionReducer(
         initialState,

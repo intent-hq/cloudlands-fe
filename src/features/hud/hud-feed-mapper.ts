@@ -12,7 +12,7 @@ import type {
   HudFeedEntry,
 } from '$store/renderer/slices/hud/hud-slice';
 
-/** Event types the HUD subscribes to (PROTOCOL §6.1 exact + wildcard mix). */
+/** Event types the HUD feed renders (PROTOCOL §6.1 exact + wildcard mix). */
 export const HUD_FEED_EVENT_TYPES = [
   'agent:started',
   'agent:completed',
@@ -61,20 +61,24 @@ function colorFor(type: string, data: Record<string, unknown>): HudFeedColorClas
   return 'info';
 }
 
-/** Wire-derived detail text per event family. */
+/**
+ * Wire-derived detail text per event family. Agent identity is deliberately
+ * NOT part of the text: raw agent UUIDs must never render, so agent rows
+ * carry `agentId`/`agentName` separately and the selector joins the display
+ * name (omitting it when unresolvable).
+ */
 function textFor(type: string, data: Record<string, unknown>): string {
   switch (type) {
     case 'agent:started':
     case 'agent:created':
     case 'agent:deleted':
-      return str(data.agentName) ?? str(data.agentId) ?? '';
     case 'agent:completed':
     case 'agent:idle':
-      return str(data.agentName) ?? str(data.agentId) ?? '';
+      return '';
     case 'agent:failed':
-      return [str(data.agentId), str(data.error)].filter(Boolean).join(': ');
+      return str(data.error) ?? '';
     case 'agent:status-changed':
-      return [str(data.agentId), str(data.status)].filter(Boolean).join(' → ');
+      return str(data.status) ?? '';
     case 'task:status-changed':
       return [str(data.noteTitle) ?? str(data.noteId), str(data.newStatus)]
         .filter(Boolean)
@@ -112,7 +116,7 @@ export function mapEventToFeedEntry(event: WorkspaceEvent): HudFeedEntry | null 
   if (!id || !ts || !workspaceId) return null;
   const data =
     event.data && typeof event.data === 'object' ? (event.data as Record<string, unknown>) : {};
-  return {
+  const entry: HudFeedEntry = {
     id,
     ts,
     colorClass: colorFor(type, data),
@@ -120,4 +124,11 @@ export function mapEventToFeedEntry(event: WorkspaceEvent): HudFeedEntry | null 
     kind: type,
     text: textFor(type, data),
   };
+  if (type.startsWith('agent:')) {
+    const agentId = str(data.agentId);
+    const agentName = str(data.agentName);
+    if (agentId) entry.agentId = agentId;
+    if (agentName) entry.agentName = agentName;
+  }
+  return entry;
 }
