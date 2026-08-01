@@ -6,8 +6,19 @@ Intent releases are published to GitHub Releases on the public `intent-hq/cloudl
 
 Intent uses a channel-based update model:
 
-- **`beta`** — Rolling release tag for beta testing; auto-updater pulls from `https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml`
-- **`stable`** — Rolling release tag for general availability; auto-updater pulls from `https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml`
+- **`beta`** — Rolling release tag for beta testing; auto-updater pulls from `https://github.com/intent-hq/cloudlands-releases/releases/download/beta/`
+- **`stable`** — Rolling release tag for general availability; auto-updater pulls from `https://github.com/intent-hq/cloudlands-releases/releases/download/stable/`
+
+Each channel carries **four auto-updater feed files**, one per platform/arch:
+
+| Feed file                | Platform      |
+| ------------------------ | ------------- |
+| `latest-mac.yml`         | macOS (arm64) |
+| `latest.yml`             | Windows (x64) |
+| `latest-linux.yml`       | Linux (x64)   |
+| `latest-linux-arm64.yml` | Linux (arm64) |
+
+electron-updater's generic provider points at the channel download URL and requests the feed file for the running platform/arch automatically.
 
 Each release also creates an immutable versioned release (`v{version}`) for archival and rollback.
 
@@ -54,7 +65,7 @@ version number by hand.
   `fix(sidecar): bump intentd pin to 0.4.2`) so a new pinned daemon triggers at
   least a patch release. A plain `chore:` pin bump would not produce a release.
 - **Plain versions only** — no prerelease suffixes (`-beta.N`). Beta vs. stable
-  remains a *promotion* distinction on `cloudlands-releases`, not a version
+  remains a _promotion_ distinction on `cloudlands-releases`, not a version
   distinction.
 
 **Why a GitHub Release on `cloudlands-fe` too?** Creating the tag via a GitHub
@@ -79,6 +90,7 @@ from the release tags normally.
 Release workflows require the following secrets configured on `intent-hq/cloudlands-fe`:
 
 **macOS signing + notarization:**
+
 - `CLOUDLANDS_MACOS_CERTIFICATE` — base64-encoded p12 certificate
 - `CLOUDLANDS_MACOS_CERTIFICATE_PWD` — certificate password
 - `CLOUDLANDS_KEYCHAIN_PASSWORD` — temporary keychain password
@@ -87,8 +99,12 @@ Release workflows require the following secrets configured on `intent-hq/cloudla
 - `CLOUDLANDS_APPLE_TEAM_ID` — 10-character team ID
 
 **Repository access:**
+
 - `RELEASE_PAT` — Personal access token with `repo` scope on `cloudlands-fe` + `cloudlands-releases` (also used by release-please, which needs contents + pull-requests + issues write; `repo` scope covers all three)
 - `INTENTD_READ_PAT` — Personal access token with read-only access to `intent-hq/intentd` (used to download the pinned intentd release assets while the repo is private)
+
+Windows builds require no signing secrets — they ship **unsigned** (see
+[Platform builds and runners](#platform-builds-and-runners)).
 
 ## Beta Release Workflow
 
@@ -97,43 +113,35 @@ The beta release workflow is defined in `.github/workflows/release-beta.yml`.
 **Trigger:** Push of a `v*.*.*` tag (created by release-please when its Release PR is merged). A `workflow_dispatch` fallback is available to (re)build an **existing** tag.
 
 **Input (workflow_dispatch fallback only):**
+
 - `tag` — existing tag to (re)build (e.g., `v2.1.0`)
 
 **What it does:**
-1. Resolves the release tag (from the tag push, or the dispatch input) and validates its format (supports prerelease suffixes like `v1.2.3-beta.1`)
-2. Configures git token (RELEASE_PAT with repo scope for cross-repo operations)
-3. Checks out the release tag
-4. Verifies the tag matches the `package.json` version at that commit (guards against tags not created by release-please)
-5. Fails if a `v{version}` release already exists on `intent-hq/cloudlands-releases` (duplicate-release protection)
-6. Sets up pnpm and Node.js 22 with pnpm cache
-7. Installs frontend dependencies with pnpm
-8. Validates `INTENTD_READ_PAT` is configured
-9. Reads the pinned intentd version from `intentd.version`
-10. Fetches the pinned intentd release asset via `scripts/fetch-sidecar.cjs` (sha256-verified, staged at `resources/sidecar/intentd`); fails fast if the pinned release or its assets don't exist on `intent-hq/intentd`
-11. Imports macOS code signing certificate into a temporary keychain
-12. Builds and packages the macOS app (`.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`)
-13. Signs and notarizes the app via `scripts/notarize.js` afterSign hook (the staged sidecar is signed by the `scripts/sign-sidecar.js` afterPack hook)
-14. Generates release notes from the fe commit range; the intentd section lists the intentd commit delta from the previous release's pin (recovered from the previous release's `release-manifest.json` asset) — falling back to a pin-only reference when the previous pin can't be recovered, or to the pin line + compare link without a commit list when the intentd compare API is unavailable
-15. Publishes artifacts to `intent-hq/cloudlands-releases`:
-    - Creates immutable versioned release: `v{version}`
-    - Updates rolling `beta` release tag (clobbers existing assets)
-16. Posts workflow summary with download URLs
+
+1. A resolve/validate job resolves the release tag (from the tag push, or the dispatch input), validates its format (supports prerelease suffixes like `v1.2.3-beta.1`), verifies the tag matches the `package.json` version at that commit (guards against tags not created by release-please), and fails if a `v{version}` release already exists on `intent-hq/cloudlands-releases` (duplicate-release protection)
+2. **Per-platform build jobs** run in parallel (see [Platform builds and runners](#platform-builds-and-runners) for runners and artifacts). Each job checks out the release tag, sets up pnpm and Node.js 22, installs frontend dependencies, reads the pinned intentd version from `intentd.version`, fetches the pinned intentd sidecar for its platform/arch via `scripts/fetch-sidecar.cjs` (sha256-verified, staged at `resources/sidecar/`; fails fast if the pinned release or its assets don't exist on `intent-hq/intentd`), then builds and packages the app. The macOS job additionally imports the code signing certificate into a temporary keychain and signs + notarizes the app via the `scripts/notarize.js` afterSign hook (the staged sidecar is signed by the `scripts/sign-sidecar.js` afterPack hook); Windows and Linux artifacts are unsigned
+3. A **publish job** runs only after **every** build job succeeds — any platform build failure fails the whole release; there is no partial publish. It generates release notes from the fe commit range (the intentd section lists the intentd commit delta from the previous release's pin, recovered from the previous release's `release-manifest.json` asset — falling back to a pin-only reference when the previous pin can't be recovered, or to the pin line + compare link without a commit list when the intentd compare API is unavailable) and publishes all platforms' artifacts to `intent-hq/cloudlands-releases`:
+   - Creates immutable versioned release: `v{version}`
+   - Updates rolling `beta` release tag (clobbers existing assets)
+4. Posts workflow summary with download URLs
 
 The workflow no longer bumps `package.json`, creates tags, or opens version-bump PRs — release-please owns versioning and tagging (no tags are pushed to `intent-hq/intentd` — it releases on its own cycle).
 
 **Output:**
+
 - Versioned release on `cloudlands-releases`: `https://github.com/intent-hq/cloudlands-releases/releases/tag/v{version}`
 - Rolling beta channel: `https://github.com/intent-hq/cloudlands-releases/releases/tag/beta`
-- Auto-updater feed: `https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml`
+- Auto-updater feeds: `https://github.com/intent-hq/cloudlands-releases/releases/download/beta/` (`latest-mac.yml`, `latest.yml`, `latest-linux.yml`, `latest-linux-arm64.yml`)
 
 ## Promote-to-Stable Workflow
 
 **Workflow:** `.github/workflows/release-stable.yml` (manual `workflow_dispatch` with a `version` input)
 
 The promote-to-stable workflow:
+
 1. Validates the version and verifies the versioned release exists on `intent-hq/cloudlands-releases`
 2. Reads the previous stable version from the stable channel's `latest-mac.yml` (tolerates a first promotion)
-3. Copies all artifacts from the versioned release to the `stable` rolling release tag (`latest-mac.yml` last for an atomic feed switch), then deletes superseded assets and verifies the feed `sha512`
+3. Copies all artifacts from the versioned release to the `stable` rolling release tag — all feed files (`latest-mac.yml`, `latest.yml`, `latest-linux.yml`, `latest-linux-arm64.yml`) are uploaded **last** for an atomic feed switch — then deletes superseded assets and verifies each promoted feed's `sha512`. Promoting an older mac-only release still works: missing platform feeds produce warnings, not failures
 4. Builds aggregated release notes for the range `(prevStable, VERSION]`: a leading summary section (promoted version, previous stable, and a consolidated intentd pin delta recovered from the releases' `release-manifest.json` files and rendered from the intentd compare API via `scripts/generate-stable-summary.mjs`), followed by each version's release body
 5. Updates the `stable` release body with the aggregated notes
 
@@ -147,11 +155,23 @@ _(Not yet implemented — planned as a separate workflow)_
 
 The rollback workflow will restore a previous versioned release to a channel's rolling tag.
 
-## Windows and Linux Builds
+## Platform Builds and Runners
 
-_(Not yet implemented — planned as separate platform matrix jobs in the release workflow)_
+Each release ships four platform builds, produced by parallel jobs in `release-beta.yml`:
 
-Windows and Linux builds will follow the same GitHub Releases model but ship unsigned (no Windows Authenticode cert available).
+| Platform      | Runner                                                     | Artifacts                                           | Feed file                |
+| ------------- | ---------------------------------------------------------- | --------------------------------------------------- | ------------------------ |
+| macOS (arm64) | `macos-14` (GitHub-hosted)                                 | `.dmg`, `.zip` (+ blockmaps)                        | `latest-mac.yml`         |
+| Windows (x64) | self-hosted `5090pc` (`[self-hosted, Windows, X64]`)       | NSIS installer `.exe`, portable `.exe` (+ blockmap) | `latest.yml`             |
+| Linux (x64)   | `ubuntu-latest` (GitHub-hosted)                            | AppImage, `.deb`                                    | `latest-linux.yml`       |
+| Linux (arm64) | self-hosted `comfy` (`[self-hosted, Linux, ARM64, comfy]`) | AppImage, `.deb`                                    | `latest-linux-arm64.yml` |
+
+Notes:
+
+- **Self-hosted runner dependency**: the Windows job requires the `5090pc` runner and the Linux arm64 job requires the `comfy` runner to be online; a release run queues (and eventually fails) if they are unavailable. macOS and Linux x64 use GitHub-hosted runners.
+- **Windows builds are unsigned** (first iteration). The `scripts/windows-sign.cjs` sign hook silently skips signing when `INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING` is unset; DigiCert integrated signing in releases is a follow-up. Expect SmartScreen warnings on install.
+- **Linux packages are unsigned** (standard for AppImage/deb distributed outside a package repository). Snap is not built or published.
+- macOS remains signed + notarized as before.
 
 ## Manual Local Build (Development / Testing)
 
@@ -167,11 +187,14 @@ pnpm run build
 INTENTD_BIN="$(pwd)/resources/sidecar/intentd" pnpm run dist:mac
 ```
 
+On Windows or Linux, use `pnpm run dist:win` or `pnpm run dist:linux` instead
+(the staged sidecar binary is `intentd.exe` on Windows).
+
 To build against a locally built intentd instead, point `INTENTD_BIN` at your
 `cargo build --release` output (or omit it in the monorepo, where
 `scripts/copy-sidecar.cjs` defaults to `packages/intentd/target/release`).
 
-The packaged `.dmg` and `.zip` will be in `dist-electron/`.
+The packaged artifacts (`.dmg`/`.zip`, `.exe`, AppImage/`.deb`) will be in `dist-electron/`.
 
 **Note:** Local builds will not be signed or notarized unless you configure the signing environment variables locally (`CLOUDLANDS_APPLE_ID`, `CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD`, `CLOUDLANDS_APPLE_TEAM_ID`, or legacy `APPLE_*` equivalents).
 
