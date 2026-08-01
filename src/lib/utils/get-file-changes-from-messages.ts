@@ -343,6 +343,40 @@ export function getFileChangesFromMessages(messages: AgentMessage[]): ChatFileCh
 }
 
 /**
+ * Get the assistant messages of the final conversation turn — the trailing
+ * assistant messages after the last user message (all assistant messages when
+ * no user message exists).
+ */
+export function getLastTurnAssistantMessages(messages: AgentMessage[]): AgentMessage[] {
+  const lastTurn: AgentMessage[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role === 'user') break;
+    if (message.role === 'assistant') lastTurn.unshift(message);
+  }
+  return lastTurn;
+}
+
+/**
+ * Check whether the aggregate file-changes summary duplicates the last turn's
+ * summary — i.e. the set of changed file paths across the whole conversation
+ * is exactly the set changed in the final turn, so the per-turn
+ * "N files changed" row already conveys it.
+ */
+export function isAggregateFileChangesRedundant(messages: AgentMessage[]): boolean {
+  const aggregatePaths = getFileChangesFromMessages(messages).changes.map((c) => c.filePath);
+  const lastTurnPaths = new Set(
+    getFileChangesFromMessages(getLastTurnAssistantMessages(messages)).changes.map(
+      (c) => c.filePath,
+    ),
+  );
+  return (
+    aggregatePaths.length === lastTurnPaths.size &&
+    aggregatePaths.every((path) => lastTurnPaths.has(path))
+  );
+}
+
+/**
  * Known note IDs that should be filtered out from file change tracking.
  * These are workspace notes, not files in the codebase.
  */

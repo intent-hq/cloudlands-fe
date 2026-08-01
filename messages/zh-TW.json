@@ -1698,6 +1698,7 @@
   "chat_chatMessage_viewAttachedImage_ariaLabel": "檢視附加圖片原圖（第 {number} 張，共 {total} 張）",
   "chat_chatPanel_agentFailedToStart_error": "智慧體啟動失敗",
   "chat_chatPanel_agentSpawnFailed_error": "智慧體建立失敗",
+  "chat_chatPanel_fileChangesAggregate_suffix": "迄今為止的對話中",
   "chat_chatPanel_nothingToRetry_toast": "沒有可重試的內容——錯誤已清除。傳送訊息以開始新一輪對話。",
   "chat_contextApi_readFileFailed_error": "讀取檔案失敗",
   "chat_contextPicker_active_badge": "活躍",

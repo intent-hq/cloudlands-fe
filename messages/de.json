@@ -1698,6 +1698,7 @@
   "chat_chatMessage_viewAttachedImage_ariaLabel": "Angehängtes Bild {number} von {total} in voller Größe anzeigen",
   "chat_chatPanel_agentFailedToStart_error": "Agent konnte nicht gestartet werden",
   "chat_chatPanel_agentSpawnFailed_error": "Agent-Start fehlgeschlagen",
+  "chat_chatPanel_fileChangesAggregate_suffix": "in der bisherigen Unterhaltung",
   "chat_chatPanel_nothingToRetry_toast": "Nichts zu wiederholen — Fehler gelöscht. Senden Sie eine Nachricht, um eine neue Runde zu starten.",
   "chat_contextApi_readFileFailed_error": "Datei konnte nicht gelesen werden",
   "chat_contextPicker_active_badge": "Aktiv",
