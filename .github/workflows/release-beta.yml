@@ -126,7 +126,8 @@ jobs:
   # dist-electron release assets as a workflow artifact for the publish job.
   build-macos:
     needs: resolve
-    runs-on: macos-14
+    # Revert to macos-14 (GitHub-hosted) if m1mac is unavailable.
+    runs-on: [self-hosted, macOS, ARM64, m1mac]
     timeout-minutes: 90
 
     steps:
@@ -145,8 +146,9 @@ jobs:
           dest: ~/setup-pnpm-${{ runner.name }}
 
       - name: Setup Node.js
-        # No cache: 'pnpm' — dropped in #553 for the self-hosted runner;
-        # a cold pnpm install per release is acceptable on hosted runners.
+        # No cache: 'pnpm' — persistent pnpm store on the non-ephemeral
+        # self-hosted runner makes the GH Actions cache redundant (same as
+        # the intent-pr.yml jobs).
         uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -172,13 +174,12 @@ jobs:
           INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
         run: node scripts/fetch-sidecar.cjs
 
-      # Signing never touches the login keychain: the certificate goes into
-      # a throwaway keychain under RUNNER_TEMP, the pre-existing user search
-      # list is captured and the temp keychain prepended to it (rather than
-      # replacing the list outright), and the always() cleanup step at the
-      # end of the job deletes the keychain and restores the captured list
-      # exactly. Hardening from the self-hosted-runner era (#553), kept as
-      # defense-in-depth on ephemeral hosted runners.
+      # The runner is non-ephemeral, so signing must never touch the login
+      # keychain: the certificate goes into a throwaway keychain under
+      # RUNNER_TEMP, the pre-existing user search list is captured and the
+      # temp keychain prepended to it (rather than replacing the list
+      # outright), and the always() cleanup step at the end of the job
+      # deletes the keychain and restores the captured list exactly (#553).
       - name: Import code signing certificate
         env:
           MACOS_CERTIFICATE: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
@@ -186,8 +187,8 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.CLOUDLANDS_KEYCHAIN_PASSWORD }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          # Idempotency: drop any stale keychain left by a crashed run
-          # before creating a fresh one
+          # Idempotency on the non-ephemeral runner: drop any stale keychain
+          # left by a crashed run before creating a fresh one
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -204,6 +205,12 @@ jobs:
           KEYCHAINS=()
           while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
           security list-keychains -d user -s "$KEYCHAIN_PATH" "${KEYCHAINS[@]}"
+
+      # The self-hosted runner is non-ephemeral; drop build output left by a
+      # previous run so the artifact upload can't pick up stale files (same
+      # as the Windows and Linux arm64 jobs).
+      - name: Clean previous build output
+        run: rm -rf dist-electron
 
       # Compile the Paraglide i18n catalog before dist:mac so the npm `prebuild`
       # type-check can resolve $shared/paraglide/messages.js on a clean checkout
@@ -250,9 +257,10 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-      # Always delete the temporary signing keychain, restore the pre-job
-      # keychain search list, and shred the decoded certificate so no signing
-      # material outlives the job (runs on failure and cancellation too).
+      # The self-hosted runner is non-ephemeral: always delete the temporary
+      # signing keychain, restore the pre-job keychain search list, and shred
+      # the decoded certificate so no signing material outlives the job (runs
+      # on failure and cancellation too).
       - name: Clean up signing keychain
         if: always()
         run: |
