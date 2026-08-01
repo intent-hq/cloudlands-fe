@@ -32,6 +32,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 import StreamingStatus from '../StreamingStatus.svelte';
 import {
   formatDuration,
+  formatElapsed,
   computeCompletedEvents,
   deriveErrorDisplay,
   shouldAppendStreamingEvent,
@@ -250,6 +251,30 @@ describe('StreamingStatus utilities', () => {
       expect(formatDuration(3600000)).toBe('1h 0m 0s');
       expect(formatDuration(3661000)).toBe('1h 1m 1s');
       expect(formatDuration(7322000)).toBe('2h 2m 2s');
+    });
+  });
+
+  describe('formatElapsed', () => {
+    it('clamps sub-second values to 1s (never "0s" or "0.Xs")', () => {
+      expect(formatElapsed(0)).toBe('1s');
+      expect(formatElapsed(100)).toBe('1s');
+      expect(formatElapsed(400)).toBe('1s');
+      expect(formatElapsed(999)).toBe('1s');
+    });
+
+    it('rounds to the nearest whole second (never a decimal)', () => {
+      expect(formatElapsed(1400)).toBe('1s');
+      expect(formatElapsed(1500)).toBe('2s');
+      expect(formatElapsed(2300)).toBe('2s');
+      expect(formatElapsed(5700)).toBe('6s');
+      expect(formatElapsed(9999)).toBe('10s');
+    });
+
+    it('passes through to m/h formatting above 60s', () => {
+      expect(formatElapsed(59400)).toBe('59s');
+      expect(formatElapsed(60000)).toBe('1m 0s');
+      expect(formatElapsed(90499)).toBe('1m 30s');
+      expect(formatElapsed(3661000)).toBe('1h 1m 1s');
     });
   });
 

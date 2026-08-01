@@ -18,7 +18,7 @@
   import { cn } from '$lib/utils/cn';
   import { Spinner } from '$lib/components/ui/indicators';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import { deriveErrorDisplay, formatDuration } from './streaming-status-utils';
+  import { deriveErrorDisplay, formatDuration, formatElapsed } from './streaming-status-utils';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -176,7 +176,7 @@
   let elapsedTime = $derived.by(() => {
     if (!latestEvent) return '';
     const elapsed = nowMs - latestEvent.timestamp;
-    return `${formatDuration(elapsed)} ago`;
+    return m.chat_streamingStatus_elapsedAgo_label({ duration: formatElapsed(elapsed) });
   });
 
   // Completed events with their durations
