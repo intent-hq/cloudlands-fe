@@ -400,13 +400,21 @@ jobs:
           - arch: x64
             runner: ubuntu-latest
             intentd_target: x86_64-unknown-linux-musl
+            targets: AppImage:x64 deb:x64
           # arm64 builds natively on the self-hosted arm64 Linux runner. If it
           # is unavailable, fall back to cross-building by switching `runner`
           # to ubuntu-latest — INTENTD_TARGET is set explicitly below, so the
           # staged intentd matches the package arch regardless of the host.
+          #
+          # TEMPORARY: arm64 ships AppImage-only. electron-builder's bundled
+          # fpm (fpm-1.17.0-ruby-3.4.3-linux-arm64v8) fails to spawn on the
+          # self-hosted runner (ERR_ELECTRON_BUILDER_CANNOT_EXECUTE, exit code
+          # null), killing the deb target. Restore deb:arm64 once the runner
+          # is fixed. Refs intent-hq/monorepo#1286.
           - arch: arm64
             runner: [self-hosted, Linux, ARM64, comfy]
             intentd_target: aarch64-unknown-linux-musl
+            targets: AppImage:arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
 
@@ -466,14 +474,16 @@ jobs:
       # electron-builder.yml's per-target arch lists, so each matrix job built
       # BOTH arches — and the cross-arch package embedded this job's (wrong
       # -arch) staged sidecar. CLI targets fully override the config's target
-      # list. The maintainer override backfills the deb Maintainer field for
-      # dispatch rebuilds of tags whose checked-out package.json author still
-      # lacks an email (fixed on main; both were first exercised by the
-      # v2.12.0 rebuild, run 30714120208, intent-hq/monorepo#1282).
+      # list; the per-arch list lives in matrix.targets (arm64 is temporarily
+      # AppImage-only, see the matrix comment). The maintainer override
+      # backfills the deb Maintainer field for dispatch rebuilds of tags whose
+      # checked-out package.json author still lacks an email (fixed on main;
+      # both were first exercised by the v2.12.0 rebuild, run 30714120208,
+      # intent-hq/monorepo#1282).
       - name: Build and package Linux app
         run: >
           pnpm run dist:linux
-          AppImage:${{ matrix.arch }} deb:${{ matrix.arch }}
+          ${{ matrix.targets }}
           -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
