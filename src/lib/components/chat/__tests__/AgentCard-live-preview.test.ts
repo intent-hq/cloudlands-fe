@@ -20,6 +20,7 @@ import {
   removeSession,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { streamActivityReceived } from '$store/renderer/slices/chat-state/chat-state-slice';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
@@ -74,6 +75,7 @@ describe('AgentCard live preview precedence', () => {
       isStreaming: true,
       messages: [assistantMessage('stale persisted text from last turn')],
     });
+    appStore.dispatch(streamActivityReceived(agentId, true));
     appStore.dispatch(
       updateSession(agentId, { lastAgentResponse: 'fresh mid-turn activity text' }),
     );
@@ -130,6 +132,169 @@ describe('AgentCard live preview precedence', () => {
     render(AgentCard, { props: { agentId } });
 
     expect(await screen.findByText('Parser rewrite in progress')).toBeTruthy();
+    expect(screen.queryByTestId('agent-card-preview')).toBeNull();
+  });
+});
+
+describe('AgentCard user-message-newest preview (freshness wins)', () => {
+  beforeEach(() => {
+    appStore.init();
+    agentId = `agent-preview-${++testAgentSeq}`;
+  });
+
+  afterEach(() => {
+    appStore.dispatch(removeSession(agentId));
+  });
+
+  function userMessage(text: string): AgentMessage {
+    return {
+      id: `user-msg-${testAgentSeq}`,
+      role: 'user',
+      contentBlocks: [{ type: 'text', text }],
+      // Well outside the reducer's near-simultaneous user-reply reorder
+      // window so the seeded [assistant, user] ordering is preserved.
+      timestamp: '2026-07-01T00:10:00.000Z',
+    } as AgentMessage;
+  }
+
+  it('previews the first line of the wire lastUserMessage on a PROTOCOL-shaped AgentLite (beats stale response + completion report)', async () => {
+    // agent.list/agent.get projection: no transcript, wire-only preview
+    // fields (PROTOCOL §5.5 AgentLite with the additive lastMessageRole).
+    seedSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      messages: [],
+      lastUserMessage: 'follow-up question first line\nsecond line detail',
+      lastMessageRole: 'user',
+      lastAgentResponse: 'stale answer from the finished turn',
+      metadata: { completionReport: 'old completion report' } as AgentSession['metadata'],
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('follow-up question first line');
+    expect(preview.textContent).not.toContain('second line detail');
+    expect(screen.queryByText('old completion report')).toBeNull();
+    expect(screen.queryByText(/stale answer/)).toBeNull();
+  });
+
+  it('strips multiple leading bracketed prefixes from the user line', async () => {
+    seedSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      messages: [],
+      lastUserMessage: '[Currently viewing: foo.ts] [panel: chat] the actual question',
+      lastMessageRole: 'user',
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('the actual question');
+    expect(preview.textContent).not.toContain('Currently viewing');
+    expect(preview.textContent).not.toContain('panel: chat');
+  });
+
+  it('previews the user first line via the transcript-derived fallback when the wire field is absent', async () => {
+    seedSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      messages: [
+        assistantMessage('previous assistant answer'),
+        userMessage('new user question\nwith a second line'),
+      ],
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('new user question');
+    expect(preview.textContent).not.toContain('with a second line');
+    expect(preview.textContent).not.toContain('previous assistant answer');
+  });
+
+  it('keeps the user first line mid-turn while no streamed text exists yet (beats a leftover digest)', async () => {
+    seedSession({
+      isStreaming: true,
+      messages: [],
+      lastUserMessage: 'just sent this',
+      lastMessageRole: 'user',
+    });
+    appStore.dispatch(updateSession(agentId, { digest: 'digest from a previous turn' }));
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('just sent this');
+    expect(screen.queryByText('digest from a previous turn')).toBeNull();
+  });
+
+  it('resumes the live preview once streamed text lands (push-applied lastAgentResponse)', async () => {
+    seedSession({
+      isStreaming: true,
+      messages: [],
+      lastUserMessage: 'just sent this',
+      lastMessageRole: 'user',
+    });
+    // Text-bearing activity ping: flips the per-turn receivedFirstChunk flag
+    // and push-applies the fresh response text.
+    appStore.dispatch(streamActivityReceived(agentId, true));
+    appStore.dispatch(updateSession(agentId, { lastAgentResponse: 'streaming text now' }));
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('streaming text now');
+    expect(preview.textContent).not.toContain('just sent this');
+  });
+
+  it('keeps the user first line on turn 2 despite a leftover previous-turn lastAgentResponse', async () => {
+    // Regression: nothing clears the session's push-applied lastAgentResponse
+    // at turn start, so pre-first-token the per-turn receivedFirstChunk flag
+    // (reset by agent:stream:end) is what distinguishes leftover text from
+    // text streamed this turn.
+    seedSession({
+      isStreaming: true,
+      messages: [],
+      lastUserMessage: 'second turn question',
+      lastMessageRole: 'user',
+      lastAgentResponse: 'final text from turn one',
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('second turn question');
+    expect(preview.textContent).not.toContain('final text from turn one');
+  });
+
+  it('resumes the agent-side preview once the assistant reply lands (lastMessageRole flips)', async () => {
+    seedSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      messages: [userMessage('the question'), assistantMessage('the final answer')],
+      lastMessageRole: 'assistant',
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('the final answer');
+    expect(preview.textContent).not.toContain('the question');
+  });
+
+  it('leaves an AgentLite-only session without lastMessageRole unchanged (older daemon: no preview)', async () => {
+    seedSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      messages: [],
+      lastUserMessage: 'wire-only user text',
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    await screen.findByText('Watched Agent');
     expect(screen.queryByTestId('agent-card-preview')).toBeNull();
   });
 });
