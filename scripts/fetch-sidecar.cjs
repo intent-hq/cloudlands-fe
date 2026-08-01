@@ -70,11 +70,22 @@ async function downloadAsset(asset) {
   return Buffer.from(await res.arrayBuffer());
 }
 
+// Run tar from the archive's own directory with relative paths: GNU tar (e.g.
+// Git Bash's tar on Windows runners) parses the drive letter in an absolute
+// `C:\...` path as a remote host ("Cannot connect to C: resolve failed",
+// intent-hq/monorepo#1282), and bsdtar has no --force-local to opt out.
+function execTar(archivePath, args) {
+  return execFileSync('tar', args, {
+    encoding: 'utf8',
+    cwd: path.dirname(archivePath),
+  });
+}
+
 function listArchiveEntries(archivePath) {
   const output =
     archivePath.endsWith('.zip') && process.platform !== 'win32'
       ? execFileSync('unzip', ['-Z1', archivePath], { encoding: 'utf8' })
-      : execFileSync('tar', ['-tf', archivePath], { encoding: 'utf8' });
+      : execTar(archivePath, ['-tf', path.basename(archivePath)]);
   return output
     .split('\n')
     .map((line) => line.trim())
@@ -88,7 +99,7 @@ function assertNoLinkEntries(lib, archivePath) {
   const output =
     archivePath.endsWith('.zip') && process.platform !== 'win32'
       ? execFileSync('unzip', ['-Z', archivePath], { encoding: 'utf8' })
-      : execFileSync('tar', ['-tvf', archivePath], { encoding: 'utf8' });
+      : execTar(archivePath, ['-tvf', path.basename(archivePath)]);
   if (output.split('\n').some((line) => lib.isLinkListingLine(line))) {
     throw new Error(
       `Refusing to extract ${path.basename(archivePath)}: archive contains symlink/hardlink entries`,
@@ -110,7 +121,13 @@ function extractArchive(lib, archivePath, extractDir) {
     execFileSync('unzip', ['-o', '-q', archivePath, '-d', extractDir]);
   } else {
     // System tar handles .tar.xz/.tar.gz everywhere; bsdtar on Windows also unpacks .zip.
-    execFileSync('tar', ['-xf', archivePath, '-C', extractDir]);
+    // extractDir is a sibling of the archive, so it is relative from tar's cwd too.
+    execTar(archivePath, [
+      '-xf',
+      path.basename(archivePath),
+      '-C',
+      path.relative(path.dirname(archivePath), extractDir),
+    ]);
   }
 }
 

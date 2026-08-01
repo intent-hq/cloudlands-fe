@@ -332,11 +332,18 @@ jobs:
 
       # Downloads the pinned intentd release asset, verifies its sha256, and
       # stages the binary at resources/sidecar/intentd.exe.
+      # PATH prefix: the runner's PATH resolves GNU tar (Git Bash), which parses
+      # the drive letter in `tar -tf C:\...` as a remote host ("Cannot connect
+      # to C: resolve failed", intent-hq/monorepo#1282). Prefer the System32
+      # bsdtar, which handles Windows paths and .zip natively. Scoped to this
+      # step so bash keeps resolving to Git Bash (see PATH workaround above).
+      # Also load-bearing for workflow_dispatch rebuilds of tags whose checked
+      # -out fetch-sidecar.cjs predates the relative-path tar fix.
       - name: Fetch pinned intentd sidecar
         shell: bash
         env:
           INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
-        run: node scripts/fetch-sidecar.cjs
+        run: PATH="/c/Windows/System32:$PATH" node scripts/fetch-sidecar.cjs
 
       # The self-hosted runner is non-ephemeral; drop build output left by a
       # previous run so the artifact upload can't pick up stale files.
@@ -457,6 +464,11 @@ jobs:
         run: pnpm run dist:linux --${{ matrix.arch }}
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
+          # Sourcemap generation multiplies rollup's peak heap past the 8192
+          # cap (same OOM as monorepo#1074; both Linux legs died at ~7.6 GB in
+          # the v2.12.0 run, monorepo#1282). Nothing consumes the 'hidden'
+          # production maps in release builds, so skip them like CI build-web.
+          INTENT_DISABLE_SOURCEMAPS: '1'
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
