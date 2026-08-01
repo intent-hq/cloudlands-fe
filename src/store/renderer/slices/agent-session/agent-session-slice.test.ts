@@ -414,6 +414,91 @@ describe('agent-session-slice reducer', () => {
       expect(next).not.toBe(state);
       expect(next.byAgentId['a1'].metadata?.attentionRequestKind).toBe('discussion');
     });
+
+    // Regression (monorepo#1231): an upsert whose only change is
+    // metadata.completionReport must not be swallowed by the no-op guard —
+    // AgentCard's effectiveCompletionReport preview renders directly off it.
+    it('applies an upsert when only metadata.completionReport changes on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: { completionReport: 'Done — tests pass, PR ready.' } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.completionReport).toBe(
+        'Done — tests pass, PR ready.',
+      );
+    });
+
+    it('applies an upsert when only metadata.dismissedQuestionsMessageId changes (cross-window reconcile)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: { dismissedQuestionsMessageId: 'msg-q1' } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.dismissedQuestionsMessageId).toBe('msg-q1');
+    });
+
+    it('applies an upsert when only metadata.taskNoteId changes (post-creation task assignment)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: { taskNoteId: 'note-42' } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.taskNoteId).toBe('note-42');
+    });
+
+    it('applies an upsert when only the sandbox metadata fields settle (async CoW provisioning)', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            metadata: {
+              sandboxId: 'sbx-1',
+              sandboxPath: '/sandboxes/sbx-1',
+              sandboxBranch: 'agent/sbx-1',
+            } as any,
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].metadata?.sandboxPath).toBe('/sandboxes/sbx-1');
+    });
   });
 
   describe('removeSession', () => {
