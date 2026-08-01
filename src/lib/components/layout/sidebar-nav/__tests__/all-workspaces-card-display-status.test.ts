@@ -177,6 +177,65 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
   });
 
+  it('renders a BE-sent needs_attention verbatim under the Needs Attention group', async () => {
+    // intent-hq/intentd#825: the daemon raises needs_attention when a top-level
+    // agent is waiting on the user; the FE renders it as-is.
+    const ws = makeWorkspace('ws-be-attention', 'Agent waiting on user', {
+      displayStatus: 'needs_attention',
+    });
+
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          appStore.dispatch(resetWorkspaceState());
+          appStore.dispatch(setWorkspaceEntity(ws));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+          appStore.dispatch(setAllSpacesViewMode('status'));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => {
+      const headers = getGroupHeaders();
+      expect(headers).toContain('Needs Attention');
+      expect(headers).not.toContain('No Code Changes');
+    });
+  });
+
+  it('orders the Needs Attention group first (step-0 precedence)', async () => {
+    // needs_attention overrides everything daemon-side, so the group leads the
+    // Status view ordering ahead of idle/in_progress/PR groups.
+    const attention = makeWorkspace('ws-order-attention', 'Waiting on user', {
+      displayStatus: 'needs_attention',
+    });
+    const idle = makeWorkspace('ws-order-idle', 'Idle cycle', {
+      displayStatus: 'idle',
+    });
+    const inProgress = makeWorkspace('ws-order-inprog', 'Running cycle', {
+      displayStatus: 'in_progress',
+    });
+
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          appStore.dispatch(resetWorkspaceState());
+          appStore.dispatch(setWorkspaceEntity(idle));
+          appStore.dispatch(setWorkspaceEntity(inProgress));
+          appStore.dispatch(setWorkspaceEntity(attention));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+          appStore.dispatch(setAllSpacesViewMode('status'));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => {
+      const headers = getGroupHeaders();
+      expect(headers).toEqual(['Needs Attention', 'Idle', 'In Progress']);
+    });
+  });
+
   it('defaults an unknown wire displayStatus to not_started (forward compat)', async () => {
     // A future daemon that adds a new wire value must not make the workspace
     // vanish from the Status view — the guard treats the unknown value as
