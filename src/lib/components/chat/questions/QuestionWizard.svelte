@@ -78,6 +78,10 @@
   const nextDisabled = $derived(
     (isMulti || isLast) && draft.sel.length === 0 && !draft.text.trim(),
   );
+  // Single-select answers are mutually exclusive with the free-form Other
+  // input: any raw text disables the option buttons (multi-select allows
+  // options + free text together).
+  const optionsLocked = $derived(!isMulti && draft.text.length > 0);
 
   // Motion: snappy 150ms step transitions, none under prefers-reduced-motion.
   const stepDuration =
@@ -107,6 +111,7 @@
   }
 
   function selectOption(oi: number) {
+    if (optionsLocked) return;
     if (isMulti) {
       draft.sel = draft.sel.includes(oi)
         ? draft.sel.filter((x) => x !== oi)
@@ -247,9 +252,12 @@
               <button
                 type="button"
                 aria-pressed={selected}
-                class="flex items-start gap-2.5 rounded-(--radius) px-2.5 py-2 cursor-pointer text-left font-[inherit] {selected
-                  ? 'border border-primary bg-primary/10'
-                  : 'border border-transparent bg-background shadow-xs dark:border-border/60 dark:bg-background/40 hover:border-primary hover:bg-primary/6'}"
+                disabled={optionsLocked}
+                class="flex items-start gap-2.5 rounded-(--radius) px-2.5 py-2 text-left font-[inherit] {selected
+                  ? 'border border-primary bg-primary/10 cursor-pointer'
+                  : optionsLocked
+                    ? 'border border-transparent bg-background shadow-xs dark:border-border/60 dark:bg-background/40 opacity-50 cursor-default'
+                    : 'border border-transparent bg-background shadow-xs dark:border-border/60 dark:bg-background/40 cursor-pointer hover:border-primary hover:bg-primary/6'}"
                 onclick={() => selectOption(oi)}
               >
                 {#if isMulti}
@@ -285,7 +293,10 @@
                  .tiptap-editor: 1rem / 1.5 with the inherited app font stack) -->
             <input
               bind:value={draft.text}
-              oninput={() => (draft.skipped = false)}
+              oninput={() => {
+                draft.skipped = false;
+                if (!isMulti && draft.text.length > 0) draft.sel = [];
+              }}
               onkeydown={handleKeydown}
               aria-label={m.chat_questionWizard_ownAnswer_ariaLabel()}
               placeholder={m.chat_questionWizard_ownAnswer_placeholder()}
