@@ -31,11 +31,15 @@
  * its full-list upsert would clobber the snapshot-delivered in-flight
  * assistant message with a list that cannot contain it. So the hydrate keeps
  * any stream-owned message (`isStreaming: true`) already in the store whose
- * id is absent from the fetched pages. A turn that FINALIZED during the read
- * is not covered by that guard (the persisted row is no longer stream-owned),
- * so the subscription re-asserts its last reconciled transcript on this
- * module's `transcriptHydrationSettled` dispatch — a fetch whose pages
- * predate the finalize cannot silently drop the finalized row.
+ * id is absent from the fetched pages — but ONLY while the freshly fetched
+ * session reports a turn in flight. When the daemon says the agent is idle,
+ * a store-resident stream-owned row the fetched pages lack is a renderer-
+ * local ghost the daemon never persisted (e.g. a daemon crash mid-turn) and
+ * is dropped. A turn that FINALIZED during the read is not covered by that
+ * guard (the persisted row is no longer stream-owned), so the subscription
+ * re-asserts its last reconciled transcript on this module's
+ * `transcriptHydrationSettled` dispatch — a fetch whose pages predate the
+ * finalize cannot silently drop the finalized row.
  *
  * READ-ONLY: this module never invokes an agent mutation (no create/send/stop).
  *
@@ -54,7 +58,7 @@
  * mid-initialization through the middleware chain).
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
-import type { AgentMessage } from "$shared/types";
+import type { AgentMessage, AgentSession } from "$shared/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
@@ -80,14 +84,31 @@ const inFlight = new Map<string, Promise<void>>();
  * fetched pages was delivered by the standing chat.subscribe snapshot/deltas
  * (the daemon's live-turn slot, never persisted mid-turn) and must survive
  * this full-list hydrate. Fetched rows win on id collision — a finalized
- * turn persists under the same message id. State is read directly off
- * `appStore.state` (dependency-light per src/store AGENTS.md — no selector
- * imports in middleware-adjacent services).
+ * turn persists under the same message id.
+ *
+ * Preservation is gated on the FRESH session reporting a turn in flight
+ * (`turnInFlight` / `isResponding` / `isStreaming` — the same derivation as
+ * live-chat-client's snapshot overlay). If the daemon says the agent is
+ * idle, a stream-owned store row absent from the persisted pages is a stale
+ * renderer-local ghost (e.g. the daemon crashed mid-turn and never persisted
+ * the partial) — the fetched list is returned as-is so the ghost is evicted.
+ * `turnInFlight` is a PROTOCOL §5.5 additive AgentLite field not declared on
+ * the TS type, so it is read defensively off the raw session.
+ *
+ * State is read directly off `appStore.state` (dependency-light per
+ * src/store AGENTS.md — no selector imports in middleware-adjacent
+ * services).
  */
 function withPreservedStreamOwnedMessages(
   agentId: string,
   fetched: AgentMessage[],
+  session: AgentSession,
 ): AgentMessage[] {
+  const turnInFlight =
+    (session as { turnInFlight?: unknown }).turnInFlight === true ||
+    session.isResponding === true ||
+    session.isStreaming === true;
+  if (!turnInFlight) return fetched;
   const state = appStore.state as {
     agentSessions?: { byAgentId: Record<string, { messages?: AgentMessage[] }> };
   };
@@ -189,12 +210,21 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // wholesale would blank the already-streamed text until the next
       // delta. A turn that finalized during the read persists under the
       // SAME id, so the fetched (final) copy wins and nothing stale stays.
+      // Preservation only applies while the fresh session reports a turn in
+      // flight: on an idle session such a row is a renderer-local ghost the
+      // daemon never persisted (daemon crash mid-turn) and is dropped.
       //
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is
       // because the daemon snapshot actually reports a turn is in-flight;
-      // any orphan/stale healing belongs in the daemon, not the renderer.
-      const mergedMessages = withPreservedStreamOwnedMessages(agentId, allMessages);
+      // orphan/stale healing belongs in the daemon — the ONE exception is
+      // the ghost eviction above, which concerns a renderer-local row the
+      // daemon never saw and therefore can never heal.
+      const mergedMessages = withPreservedStreamOwnedMessages(
+        agentId,
+        allMessages,
+        session,
+      );
       const sessionWithMessages = { ...session, messages: mergedMessages };
       appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
       appStore.dispatch(upsertSession(sessionWithMessages));
