@@ -196,6 +196,9 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
+          # Per-runner-instance dest: concurrent tinybox slots share $HOME and
+          # race on the default ~/setup-pnpm (monorepo#1239).
+          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
         # cache: 'pnpm' only on the burst path — ephemeral GH-hosted runners
         # start cold, while tinybox's persistent pnpm store makes the GH
@@ -300,6 +303,8 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
+          # Per-runner-instance dest (see checks).
+          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
         # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
@@ -340,6 +345,8 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
+          # Per-runner-instance dest (see checks).
+          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
         # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
