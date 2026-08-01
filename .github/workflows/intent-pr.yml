@@ -20,7 +20,14 @@ env:
   # queued behind them. Bursted jobs don't carry the self-hosted+Linux
   # labels and stop counting toward the depth, so the system naturally falls
   # back to tinybox as it frees up.
-  LINUX_BURST_THRESHOLD: 8
+  #
+  # TEMPORARY (tinybox outage, 2026-08-01): the tinybox host is offline, so
+  # anything routed to [self-hosted, Linux, X64] queues forever. -1 forces
+  # every routed job onto the GH-hosted burst runner (depth >= 0 is always
+  # > -1, even when the queue probe errors and counts 0). Restore to 8 when
+  # tinybox is back (together with the matching JS fallback in the route
+  # job and the release-stable.yml runs-on).
+  LINUX_BURST_THRESHOLD: -1
 
 jobs:
   # Decides where the heavy jobs (checks / build-web / test) run: the local
@@ -63,7 +70,9 @@ jobs:
             // (documented OOM history, monorepo#1074), and 32 GB clears its
             // 16 GB Node heap cap comfortably.
             const burst = ["gh-linux-8x"];
-            const threshold = parseInt(process.env.THRESHOLD || "8", 10);
+            // TEMPORARY (tinybox outage, 2026-08-01): fallback matches the
+            // forced -1 threshold above; restore to "8" with the env value.
+            const threshold = parseInt(process.env.THRESHOLD || "-1", 10);
             // Count self-hosted Linux jobs that are queued or running in
             // queued/in-progress runs: a running job occupies a tinybox
             // slot just as much as a queued one. GH-hosted jobs —
