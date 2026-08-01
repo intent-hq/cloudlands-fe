@@ -323,6 +323,50 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].attentionRequestTimestamp).toBe('2026-07-30T10:00:00Z');
     });
 
+    // Preview fields (AgentLite, PROTOCOL §5.5): an upsert whose only change
+    // is lastMessageRole/lastUserMessage/lastAgentResponse must not be
+    // swallowed by the no-op guard — the AgentCard preview renders directly
+    // off them.
+    it('applies an upsert when only lastMessageRole/lastUserMessage change on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            lastMessageRole: 'user',
+            lastUserMessage: 'Please also handle the empty-list case',
+          }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].lastMessageRole).toBe('user');
+      expect(next.byAgentId['a1'].lastUserMessage).toBe(
+        'Please also handle the empty-list case',
+      );
+    });
+
+    it('applies an upsert when only lastAgentResponse changes on an otherwise-equivalent session', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { lastAgentResponse: 'Working on it…' })),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', { lastAgentResponse: 'Done — tests pass.' }),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].lastAgentResponse).toBe('Done — tests pass.');
+    });
+
     it('retires the attention request when the daemon clears the fields', () => {
       const state = agentSessionReducer(
         initialState,
