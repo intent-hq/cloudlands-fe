@@ -30,7 +30,10 @@ vi.mock("$lib/client", () => ({
 
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
-import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  chatSendStarted,
+  initializeChatRequested,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
   selectAgentMessages,
@@ -488,8 +491,9 @@ describe("chatReadService (fake seam, real store)", () => {
       contentBlocks: [{ type: "text", id: "ga1:0", text: "Working" }],
     } as unknown as AgentMessage;
 
-    // Seed the store as a pre-crash snapshot did: in-flight session with the
-    // synthetic stream-owned assistant message.
+    // Seed the store as a pre-crash snapshot did: in-flight session (the
+    // crash-orphaned both-true pair) with the synthetic stream-owned
+    // assistant message.
     appStore.dispatch(
       bulkUpsertSessions([
         {
@@ -497,6 +501,7 @@ describe("chatReadService (fake seam, real store)", () => {
             id: agentId,
             status: AgentStatus.Active,
             isResponding: true,
+            isProcessing: true,
             isStreaming: true,
           }),
           messages: [userTurn, ghostPartial],
@@ -511,6 +516,7 @@ describe("chatReadService (fake seam, real store)", () => {
         id: agentId,
         status: AgentStatus.Idle,
         isResponding: false,
+        isProcessing: false,
         isStreaming: false,
       }) as never,
     );
@@ -523,11 +529,52 @@ describe("chatReadService (fake seam, real store)", () => {
 
     await loadChatTranscript(agentId);
 
-    // The ghost partial is evicted — only the persisted row remains. (Runtime
-    // flag convergence on upsert is slice behavior owned elsewhere; this test
-    // covers the message-preservation gate only.)
+    // The ghost partial is evicted — only the persisted row remains.
     const after = selectAgentMessages.select(appStore.state, agentId);
     expect(after.map((m) => m.id)).toEqual(["gu1"]);
+
+    // Runtime-flag convergence (monorepo#1250): the pre-fetch crash-orphaned
+    // pair meets an authoritatively idle snapshot, so the explicit-false
+    // flags win over the upsert pair-guard and the responding indicator dies.
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.isStreaming).toBe(false);
+    expect(stored?.isProcessing).toBe(false);
+    expect(stored?.isResponding).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+  });
+
+  // Designed race (monorepo#1250 non-goal): a turn that starts WHILE the
+  // transcript read is in flight must keep its runtime flags — the idle
+  // snapshot the read fetched predates the send and is stale for these
+  // ephemeral flags. Only a pair that predates the fetch may be cleared.
+  it("preserves a turn started during the read (chatSendStarted racing the fetch)", async () => {
+    const agentId = "agent-race-send-during-read";
+    let resolveGet!: (value: unknown) => void;
+    agentsApi.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGet = resolve;
+      }) as never,
+    );
+    agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
+
+    const load = loadChatTranscript(agentId);
+    // The send begins while agent.get is in flight: the pair is set now.
+    appStore.dispatch(chatSendStarted(agentId, WS));
+    // The fetched snapshot predates the send, so it reports idle.
+    resolveGet(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isProcessing: false,
+        isStreaming: false,
+      }),
+    );
+    await load;
+
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.isStreaming).toBe(true);
+    expect(stored?.isProcessing).toBe(true);
   });
 
   it("does not resurrect a finalized turn: fetched persisted row with the same id wins over the stale streaming copy", async () => {
