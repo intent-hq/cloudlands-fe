@@ -103,7 +103,7 @@ describe('getAgentStopReasonTimestamp', () => {
     ).toBe('2026-07-30T10:00:00Z');
   });
 
-  it('falls back to AgentLite metadata', () => {
+  it('defensively falls back to a metadata-nested field (not part of the documented wire contract)', () => {
     expect(
       getAgentStopReasonTimestamp({
         metadata: { stopReasonTimestamp: '2026-07-30T11:00:00Z' },

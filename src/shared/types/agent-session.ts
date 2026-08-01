@@ -261,9 +261,9 @@ export interface AgentSession {
 
   /**
    * ISO timestamp of when the latest terminal stop/failure occurred.
-   * Accompanies `stopReason`; exposed top-level on the full session projection
-   * and under `metadata` on `AgentLite` (agent.list / agent.get). Rendered
-   * verbatim — used for "failed X ago" displays.
+   * Accompanies `stopReason`; exposed top-level on both the full session
+   * projection and `AgentLite` (agent.list / agent.get) per PROTOCOL §5.5.
+   * Rendered verbatim — used for "failed X ago" displays.
    */
   stopReasonTimestamp?: string | null;
 

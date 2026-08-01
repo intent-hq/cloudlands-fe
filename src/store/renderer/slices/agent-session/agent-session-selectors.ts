@@ -9,7 +9,6 @@ import { AgentActivationState, getAgentProvider } from "$shared/types/agent-sess
 import { getContentBlockText } from "$shared/utils/content-block-helpers";
 import {
   getAgentAttentionRequest,
-  getAgentStopReasonTimestamp,
   type AgentAttentionRequest,
 } from "$shared/utils/agent-attention";
 import type { StoredAgentSession } from "./agent-session-types";
@@ -369,20 +368,6 @@ export const selectAgentAttentionRequest = store.createSelector(
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return null;
     return getAgentAttentionRequest(stored);
-  },
-);
-
-/**
- * ISO timestamp of the latest terminal stop/failure for an agent, or null
- * when unknown. Read verbatim from the daemon session fields — top-level on
- * the full projection, under `metadata` on `AgentLite`. Used for
- * "failed X ago" displays on error surfaces.
- */
-export const selectAgentStopReasonTimestamp = store.createSelector(
-  (state, agentId: string): string | null => {
-    const stored = state.agentSessions?.byAgentId[agentId];
-    if (!stored) return null;
-    return getAgentStopReasonTimestamp(stored);
   },
 );
 

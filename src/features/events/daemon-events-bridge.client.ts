@@ -975,9 +975,14 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
       ? data.workspaceId
       : workspaceId;
   // Prefer the payload's own timestamp, falling back to the event envelope's.
-  const rawTimestamp = typeof data.timestamp === 'string' ? data.timestamp : event.timestamp;
+  // An empty/whitespace payload timestamp is treated as missing so the
+  // envelope timestamp can still be used instead of dropping it.
+  const rawTimestamp =
+    typeof data.timestamp === 'string' && data.timestamp.trim().length > 0
+      ? data.timestamp
+      : event.timestamp;
   const timestamp =
-    typeof rawTimestamp === 'string' && rawTimestamp.length > 0 ? rawTimestamp : undefined;
+    typeof rawTimestamp === 'string' && rawTimestamp.trim().length > 0 ? rawTimestamp : undefined;
   void showAgentAttentionToast({
     workspaceId: targetWorkspaceId,
     agentId,

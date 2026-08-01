@@ -2908,6 +2908,26 @@ describe('daemonEventsBridge (attention flow — agent:attention-requested → s
     });
   });
 
+  it('falls back to the envelope timestamp when the payload timestamp is an empty/whitespace string', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'discussion',
+        reason: 'Need a decision on the API shape',
+        timestamp: '   ',
+      }),
+    );
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ timestamp: '2026-01-02T00:00:00.000Z' }),
+    );
+  });
+
   it('falls back to the envelope workspaceId when the payload omits it', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

@@ -67,9 +67,12 @@ export interface AgentStopTimestampFieldsLike {
 
 /**
  * Derive the ISO timestamp of the latest terminal stop/failure for a session,
- * or null when unknown. Reads the top-level field first (full `AgentSession`
- * projection), falling back to `metadata` (the `AgentLite` list/get
- * projection). Used for "failed X ago" displays.
+ * or null when unknown. Per PROTOCOL §5.5, `stopReasonTimestamp` is
+ * top-level on BOTH the full `AgentSession` projection and `AgentLite` —
+ * unlike the attention-request trio above, there is no `metadata`-nested
+ * copy. The `metadata` read below is defensive-only (harmless if a future
+ * projection nests it there) and not part of the documented contract. Used
+ * for "failed X ago" displays.
  */
 export function getAgentStopReasonTimestamp(
   session?: AgentStopTimestampFieldsLike | null,
