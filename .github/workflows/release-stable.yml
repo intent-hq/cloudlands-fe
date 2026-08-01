@@ -18,17 +18,17 @@ concurrency:
 
 jobs:
   promote-to-stable:
-    # Non-ephemeral self-hosted runner: all scratch files live under
-    # RUNNER_TEMP (wiped by the runner between jobs) instead of /tmp, so a
-    # previous run's assets can never leak into this promotion.
-    runs-on: [self-hosted, Linux, X64]
+    # All scratch files live under RUNNER_TEMP instead of /tmp so a
+    # previous run's assets can never leak into this promotion (kept from
+    # the self-hosted-runner era, #553, as defense-in-depth).
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      # Fail fast if the self-hosted runner is missing a CLI tool the
-      # promotion needs (all preinstalled on ubuntu-latest, not guaranteed
-      # here) — a mid-promotion failure after assets were already uploaded
-      # to the stable channel is much worse than an early abort.
+      # Fail fast if the runner is missing a CLI tool the promotion needs
+      # (all preinstalled on ubuntu-latest) — a mid-promotion failure after
+      # assets were already uploaded to the stable channel is much worse
+      # than an early abort.
       - name: Preflight required tools
         run: |
           MISSING=""
