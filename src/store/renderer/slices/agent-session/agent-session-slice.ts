@@ -484,6 +484,9 @@ type SessionComparisonSnapshot = Pick<
   | 'isWaitingOnTool'
   | 'isWaitingForOtherAgents'
   | 'digest'
+  | 'lastMessageRole'
+  | 'lastUserMessage'
+  | 'lastAgentResponse'
   | 'backendSessionId'
   | 'acpSessionId'
   | 'createdAt'
@@ -518,6 +521,12 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     isWaitingOnTool: session.isWaitingOnTool,
     isWaitingForOtherAgents: session.isWaitingForOtherAgents,
     digest: session.digest,
+    // Freshness-wins preview fields (AgentLite, PROTOCOL §5.5) — an upsert
+    // whose only change is these render-relevant fields must not be
+    // swallowed as a no-op.
+    lastMessageRole: session.lastMessageRole,
+    lastUserMessage: session.lastUserMessage,
+    lastAgentResponse: session.lastAgentResponse,
     backendSessionId: session.backendSessionId,
     acpSessionId: session.acpSessionId,
     createdAt: session.createdAt,
