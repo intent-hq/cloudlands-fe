@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: read
+  # Needed by the notifier step's `gh pr view` calls (GH_TOKEN=github.token)
+  pull-requests: read
 
 # Never cancel a release in progress
 concurrency:
@@ -471,6 +473,48 @@ jobs:
         run: |
           gh release edit stable --repo intent-hq/cloudlands-releases --notes-file "$RUNNER_TEMP/aggregated-notes.md"
           echo "✓ Stable release notes updated"
+
+      # Comments on the intent-hq/monorepo issues fixed in the promoted range
+      # (previous stable, promoted tag]. Fail-soft: skips with a warning when
+      # MONOREPO_ISSUES_TOKEN is absent, on a first promotion (no previous
+      # stable to anchor the range), or when the tag checkout failed — and
+      # never blocks the promotion (continue-on-error). The marker check inside
+      # the script makes re-promotions no-ops (no duplicate comments).
+      - name: Notify fixed monorepo issues
+        continue-on-error: true
+        env:
+          ISSUES_GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
+          IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
+          BUNDLED_INTENTD: ${{ steps.intentd_pins.outputs.head }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout_tag.outcome }}
+        run: |
+          if [ -z "$ISSUES_GH_TOKEN" ]; then
+            echo "::warning::MONOREPO_ISSUES_TOKEN secret is not set; skipping issue notifications"
+            exit 0
+          fi
+          if [ "$IS_FIRST" = "true" ]; then
+            echo "::warning::First stable promotion (no previous stable); skipping issue notifications"
+            exit 0
+          fi
+          # The notifier script and the git range both come from the tag checkout
+          if [ "$CHECKOUT_OUTCOME" != "success" ]; then
+            echo "::warning::Checkout of promoted tag failed (outcome: $CHECKOUT_OUTCOME); skipping issue notifications"
+            exit 0
+          fi
+          # The checkout is shallow (fetch-depth 1); the notifier needs the
+          # commit range and both tags to walk it
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --quiet --unshallow --tags origin
+          else
+            git fetch --quiet --tags origin
+          fi
+          # Bundled intentd version from the promoted release's manifest
+          # (resolved fail-soft earlier); empty just omits the mention
+          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" stable \
+            "v${PREV_STABLE}" "v${VERSION}" "${BUNDLED_INTENTD}"
 
       - name: Post summary
         env:
