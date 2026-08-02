@@ -211,6 +211,20 @@ describe('WorkspaceProgressCard checkout-mode pill', () => {
     expect(repoButton.contains(pill)).toBe(false);
   });
 
+  it('renders a "·" separator immediately before the pill (full mode)', async () => {
+    await renderProgressCard({ checkoutMode: 'cow' });
+
+    const pill = screen.getByText('CoW');
+    expect(pill.previousElementSibling?.textContent).toBe('·');
+  });
+
+  it('renders a "·" separator immediately before the pill (compact mode)', async () => {
+    await renderProgressCard({ checkoutMode: 'cow' }, { compact: true });
+
+    const pill = screen.getByText('CoW');
+    expect(pill.previousElementSibling?.textContent).toBe('·');
+  });
+
   it('renders "Worktree" when checkoutMode is worktree (full mode)', async () => {
     await renderProgressCard({ checkoutMode: 'worktree' });
 
