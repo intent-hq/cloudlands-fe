@@ -2694,7 +2694,7 @@
   "onboarding_promptStep_branchOff_label": "建立分支",
   "onboarding_promptStep_setupEnvWith_before": "設定環境，使用",
   "onboarding_promptStep_setupEnvWith_after": "指令碼",
-  "onboarding_promptStep_detectingSetupScript_label": "正在偵測安裝指令碼…",
+  "onboarding_promptStep_usingModel_before": "使用",
   "onboarding_promptStep_usePrBranch_before": "使用 PR 分支",
   "onboarding_promptStep_createWorkspace_label": "建立工作區",
   "onboarding_requirementsStep_gitMacos_note": "將安裝 Apple 的命令列工具，其中包含 git。",

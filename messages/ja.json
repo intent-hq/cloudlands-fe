@@ -2694,7 +2694,7 @@
   "onboarding_promptStep_branchOff_label": "分岐",
   "onboarding_promptStep_setupEnvWith_before": "環境のセットアップに",
   "onboarding_promptStep_setupEnvWith_after": "スクリプトを使用",
-  "onboarding_promptStep_detectingSetupScript_label": "セットアップスクリプトを検出中…",
+  "onboarding_promptStep_usingModel_before": "使用:",
   "onboarding_promptStep_usePrBranch_before": "PR ブランチを使用",
   "onboarding_promptStep_createWorkspace_label": "ワークスペースを作成",
   "onboarding_requirementsStep_gitMacos_note": "git を含む Apple のコマンドラインツールをインストールします。",

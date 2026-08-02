@@ -208,8 +208,16 @@ async function resolveDynamicProviderModel(
  * Given the current Redux state, resolve the model, provider, and behavior
  * prompt for the initial onboarding "Coordinator" agent. Returns a provider
  * that is guaranteed to be available + authenticated on the user's machine.
+ *
+ * `userSelectedModel` is an explicit pick from the onboarding prompt-step
+ * model picker: it wins outright (provider follows the compound id, bare ids
+ * belong to the default provider) under the same user-explicit gate as a
+ * provider-card click — relaxed auth, never silently switched away from.
  */
-export async function resolveOnboardingModel(state: StoreState): Promise<ResolvedModelConfig> {
+export async function resolveOnboardingModel(
+  state: StoreState,
+  userSelectedModel?: string,
+): Promise<ResolvedModelConfig> {
   const activeProvider = selectActiveProviderId.select(state);
   const defaultProviderId = selectCatalogDefaultProviderId.select(state);
   const specialist = selectSpecialists.select(state).find((s) => s.id === specialistId);
@@ -217,6 +225,28 @@ export async function resolveOnboardingModel(state: StoreState): Promise<Resolve
   const specialistOverride = selectUserOverrides.select(state).modelOverrides[specialistId];
 
   const availability = await getProviderAvailability();
+
+  if (userSelectedModel) {
+    const pickedProvider = getProviderForModel(userSelectedModel, defaultProviderId);
+    const pickedStatus = getProviderStatus(availability, pickedProvider);
+    if (!isProviderUserExplicitUsable(pickedStatus)) {
+      throw new Error(
+        m.onboarding_resolveModel_providerUnavailable_error({ provider: pickedProvider }),
+      );
+    }
+    logger.info('Using user-selected onboarding model', {
+      model: userSelectedModel,
+      provider: pickedProvider,
+      authenticated: pickedStatus?.authenticated,
+    });
+    return {
+      provider: pickedProvider,
+      model: userSelectedModel,
+      behaviorPrompt,
+      specialistId,
+    };
+  }
+
   const usable = getUsableProviderIds(availability);
 
   const overrideProvider = specialistOverride
