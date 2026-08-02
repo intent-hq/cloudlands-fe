@@ -44,11 +44,11 @@ function callsitesIn(node: ts.Node): CallSite[] {
   return out;
 }
 
-function findGracefulShutdown(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
+function findNamedFunction(sf: ts.SourceFile, name: string): ts.FunctionLikeDeclaration {
   let found: ts.FunctionLikeDeclaration | undefined;
   const visit = (n: ts.Node) => {
     if (found) return;
-    if (ts.isFunctionDeclaration(n) && n.name?.text === 'gracefulShutdown' && n.body) {
+    if (ts.isFunctionDeclaration(n) && n.name?.text === name && n.body) {
       found = n;
       return;
     }
@@ -56,7 +56,7 @@ function findGracefulShutdown(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
       for (const decl of n.declarationList.declarations) {
         if (
           ts.isIdentifier(decl.name) &&
-          decl.name.text === 'gracefulShutdown' &&
+          decl.name.text === name &&
           decl.initializer &&
           (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))
         ) {
@@ -68,8 +68,44 @@ function findGracefulShutdown(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
     ts.forEachChild(n, visit);
   };
   visit(sf);
-  if (!found) throw new Error('gracefulShutdown function not found in src/main/index.ts');
+  if (!found) throw new Error(`${name} function not found in src/main/index.ts`);
   return found;
+}
+
+function findGracefulShutdown(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
+  return findNamedFunction(sf, 'gracefulShutdown');
+}
+
+// The cleanup chain was extracted into performGracefulShutdown() so that
+// gracefulShutdown() can bound it with the runWithHardExitTimeout watchdog
+// (intent-hq/monorepo#1300). Body-level assertions run against the extracted
+// function; findShutdownCleanupBody() first proves gracefulShutdown() still
+// delegates there, so the checks cover code that is actually reachable from
+// gracefulShutdown().
+function findShutdownCleanupBody(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
+  const gs = findGracefulShutdown(sf);
+  let watchdogCall: ts.CallExpression | undefined;
+  const visit = (n: ts.Node) => {
+    if (watchdogCall) return;
+    if (ts.isCallExpression(n) && n.expression.getText() === 'runWithHardExitTimeout') {
+      watchdogCall = n;
+      return;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(gs.body!);
+  if (!watchdogCall) {
+    throw new Error(
+      'gracefulShutdown must bound its cleanup chain via runWithHardExitTimeout (intent-hq/monorepo#1300)',
+    );
+  }
+  const [runArg] = watchdogCall.arguments;
+  if (!runArg || runArg.getText() !== 'performGracefulShutdown') {
+    throw new Error(
+      'gracefulShutdown must pass performGracefulShutdown to runWithHardExitTimeout so the cleanup chain stays reachable',
+    );
+  }
+  return findNamedFunction(sf, 'performGracefulShutdown');
 }
 
 function findWindowAllClosedHandler(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
@@ -104,8 +140,10 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // main-process agent handlers. Adding either back would resurrect the FE
     // agent backend.
     const sf = parseIndex();
-    const gs = findGracefulShutdown(sf);
-    const calls = callsitesIn(gs.body!);
+    const calls = [
+      ...callsitesIn(findGracefulShutdown(sf).body!),
+      ...callsitesIn(findShutdownCleanupBody(sf).body!),
+    ];
     expect(calls.some((c) => c.text === 'agentBackendHandler.persistShutdownState')).toBe(false);
     expect(calls.some((c) => c.text === 'shutdownUnifiedBackend')).toBe(false);
   });
@@ -209,10 +247,12 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // process no longer force-exits via app.exit() after teardown.
     // `cleanupNoteTerminals` was retired in D6 alongside `notes-primitives.ipc.ts`;
     // the MCP hub `cleanupMCP` step was retired in G3 alongside the FE MCP hub
-    // (the daemon owns MCP process lifecycle now).
+    // (the daemon owns MCP process lifecycle now). The cleanup chain now lives
+    // in performGracefulShutdown(); findShutdownCleanupBody() proves it is
+    // still reachable from gracefulShutdown() via runWithHardExitTimeout.
     const sf = parseIndex();
-    const gs = findGracefulShutdown(sf);
-    const calls = callsitesIn(gs.body!);
+    const cleanup = findShutdownCleanupBody(sf);
+    const calls = callsitesIn(cleanup.body!);
     const required = [
       'cleanupTerminals',
       'disposeAllScriptProcessManagers',
@@ -222,7 +262,7 @@ describe('gracefulShutdown call ordering (AST)', () => {
     for (const name of required) {
       expect(
         calls.some((c) => c.text === name),
-        `gracefulShutdown must still call ${name}() — removing it would regress the non-macOS window-all-closed cleanup path that now delegates here`,
+        `gracefulShutdown (via performGracefulShutdown) must still call ${name}() — removing it would regress the non-macOS window-all-closed cleanup path that now delegates here`,
       ).toBe(true);
     }
   });
@@ -296,9 +336,11 @@ describe('external-daemon-aware quit flow (AST)', () => {
   it('gracefulShutdown never calls stopIntentdSidecar in external mode (no-kill guard)', () => {
     // External daemons are not ours to stop: the shutdown path must branch on
     // getConnectionMode() and only reach stopIntentdSidecar() (SIGTERM →
-    // SIGKILL escalation) on the non-external side of that branch.
+    // SIGKILL escalation) on the non-external side of that branch. The branch
+    // lives in performGracefulShutdown(); findShutdownCleanupBody() proves it
+    // is still reachable from gracefulShutdown() via runWithHardExitTimeout.
     const sf = parseIndex();
-    const gs = findGracefulShutdown(sf);
+    const gs = findShutdownCleanupBody(sf);
 
     let branch: ts.IfStatement | undefined;
     const findBranch = (n: ts.Node) => {
