@@ -42,6 +42,8 @@
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
   import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
+  import HookWakeAttributionHeader from './HookWakeAttributionHeader.svelte';
+  import { getHookWakeAttribution, stripHookWakePrefix } from '$lib/utils/hook-wake-attribution';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -235,6 +237,24 @@
   // (metadata-first, null when absent/malformed so old transcripts keep
   // rendering the raw [SYSTEM NOTE] unchanged).
   let queueInfo = $derived(role === 'user' ? getQueueInfo(message?.metadata) : null);
+
+  // Background-hook wake attribution (PROTOCOL §5.40): the daemon tags the
+  // row's `metadata` AND the persisted text block's `messageMetadata` with
+  // `{ type: 'hook_wake', hookId, hookName, reason }` — check both so older
+  // rows missing one surface still render the chip.
+  let hookWakeAttribution = $derived.by(() => {
+    if (role !== 'user') return null;
+    const fromRow = getHookWakeAttribution(message?.metadata);
+    if (fromRow) return fromRow;
+    const blocks = Array.isArray(message?.contentBlocks) ? message.contentBlocks : [];
+    for (const block of blocks) {
+      if (block.type === 'text') {
+        const fromBlock = getHookWakeAttribution(block.messageMetadata);
+        if (fromBlock) return fromBlock;
+      }
+    }
+    return null;
+  });
 
   // Local state
   let messageElement: HTMLDivElement;
@@ -668,7 +688,11 @@
 
   // Parse context and get clean text for user messages
   const parsedMessage = $derived.by(() => {
-    const rawText = extractTextFromMessage();
+    // Display-only strip of the daemon's literal `[Background hook "…"]`
+    // prefix on wake rows — the attribution chip already names the hook.
+    const rawText = hookWakeAttribution
+      ? stripHookWakePrefix(extractTextFromMessage())
+      : extractTextFromMessage();
     if (role === 'user') {
       // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the displayed body
       // when structured queueInfo metadata renders it as a chip instead.
@@ -979,10 +1003,13 @@
         <!-- Full expanded version - uses negative margin to overlap the sticky header in ChatPanel -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 {onEditSubmit && !agentAttribution
+          class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 {onEditSubmit &&
+          !agentAttribution &&
+          !hookWakeAttribution
             ? 'cursor-pointer'
             : 'cursor-default'} overflow-hidden z-20"
-          ondblclick={() => onEditSubmit && !agentAttribution && handleStartEdit()}
+          ondblclick={() =>
+            onEditSubmit && !agentAttribution && !hookWakeAttribution && handleStartEdit()}
         >
           <!-- Actions -->
           <div
@@ -1004,6 +1031,9 @@
           <!-- Sender attribution header for agent-to-agent messages -->
           {#if agentAttribution}
             <AgentMessageAttributionHeader attribution={agentAttribution} class="mb-1.5" />
+          {:else if hookWakeAttribution}
+            <!-- Background-hook wake attribution header (PROTOCOL §5.40) -->
+            <HookWakeAttributionHeader attribution={hookWakeAttribution} class="mb-1.5" />
           {/if}
 
           <!-- Queued-delivery notice for messages drained from the pending queue -->
@@ -1014,11 +1044,12 @@
           <!-- Message content - line-clamp-6 -->
           <div
             class="leading-normal text-subtle select-text line-clamp-6 {onEditSubmit &&
-            !agentAttribution
+            !agentAttribution &&
+            !hookWakeAttribution
               ? 'cursor-pointer'
               : 'cursor-text'}"
             onclick={(e) => {
-              if (onEditSubmit && !agentAttribution) {
+              if (onEditSubmit && !agentAttribution && !hookWakeAttribution) {
                 e.preventDefault();
                 e.stopPropagation();
                 handleStartEdit();

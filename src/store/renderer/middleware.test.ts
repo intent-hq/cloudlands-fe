@@ -53,6 +53,7 @@ const mocks = vi.hoisted(() => {
   const directoryPickerReadMiddleware = createPassthroughMiddleware();
   const legacyImportMiddleware = createPassthroughMiddleware();
   const statsReadMiddleware = createPassthroughMiddleware();
+  const backgroundHooksMiddleware = createPassthroughMiddleware();
   const lifecycleReadMiddleware = createPassthroughMiddleware();
   const lifecycleIpcReadMiddleware = createPassthroughMiddleware();
   const uiLayoutPersistenceMiddleware = createPassthroughMiddleware();
@@ -127,6 +128,7 @@ const mocks = vi.hoisted(() => {
     createDirectoryPickerReadMiddleware: vi.fn(() => directoryPickerReadMiddleware),
     createLegacyImportMiddleware: vi.fn(() => legacyImportMiddleware),
     createStatsReadMiddleware: vi.fn(() => statsReadMiddleware),
+    createBackgroundHooksMiddleware: vi.fn(() => backgroundHooksMiddleware),
     createLifecycleReadMiddleware: vi.fn(() => lifecycleReadMiddleware),
     createLifecycleIpcReadMiddleware: vi.fn(() => lifecycleIpcReadMiddleware),
     createUiLayoutPersistenceMiddleware: vi.fn(() => uiLayoutPersistenceMiddleware),
@@ -203,6 +205,7 @@ const mocks = vi.hoisted(() => {
     directoryPickerReadMiddleware,
     legacyImportMiddleware,
     statsReadMiddleware,
+    backgroundHooksMiddleware,
     lifecycleReadMiddleware,
     lifecycleIpcReadMiddleware,
     uiLayoutPersistenceMiddleware,
@@ -343,6 +346,9 @@ vi.mock("$features/settings/legacy-import-service", () => ({
 }));
 vi.mock("$features/stats/stats-read-service", () => ({
   createStatsReadMiddleware: mocks.createStatsReadMiddleware,
+}));
+vi.mock("$features/hooks/background-hooks-read-service", () => ({
+  createBackgroundHooksMiddleware: mocks.createBackgroundHooksMiddleware,
 }));
 vi.mock("./middlewares/lifecycle-read-service", () => ({
   createLifecycleReadMiddleware: mocks.createLifecycleReadMiddleware,
@@ -518,6 +524,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
@@ -597,6 +604,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
@@ -676,6 +684,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
@@ -756,6 +765,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
@@ -853,6 +863,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.legacyImportMiddleware,
       mocks.statsReadMiddleware,
+      mocks.backgroundHooksMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
