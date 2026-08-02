@@ -108,6 +108,7 @@ import { Logger } from '../shared/logger';
 import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
+import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { setupWebviewSecurity } from './webview-security';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
 
@@ -355,6 +356,11 @@ process.on('SIGINT', async () => {
   await gracefulShutdown();
 });
 
+// Hard deadline for the gracefulShutdown() cleanup chain
+// (intent-hq/monorepo#1300). 10s sits comfortably above the sidecar's own
+// 5s SIGTERM→SIGKILL escalation inside stopIntentdSidecar().
+const GRACEFUL_SHUTDOWN_HARD_EXIT_MS = 10_000;
+
 async function gracefulShutdown() {
   // Prevent multiple shutdown attempts
   if (isShuttingDown) {
@@ -362,6 +368,23 @@ async function gracefulShutdown() {
   }
   isShuttingDown = true;
 
+  // Bound the cleanup chain with a hard-exit watchdog: if a cleanup step
+  // stalls and app.exit(0) is never reached, force-exit so SIGTERM/SIGINT
+  // always terminate the process.
+  await runWithHardExitTimeout(
+    performGracefulShutdown,
+    () => {
+      logger.warn(
+        // i18n-ignore (developer log message)
+        `Graceful shutdown did not complete within the ${GRACEFUL_SHUTDOWN_HARD_EXIT_MS}ms hard-exit timeout — forcing exit`,
+      );
+      app.exit(1);
+    },
+    GRACEFUL_SHUTDOWN_HARD_EXIT_MS,
+  );
+}
+
+async function performGracefulShutdown() {
   try {
     // Cleanup terminals gracefully - this properly cleans up PTY processes
     // to prevent Napi::Error crashes during shutdown

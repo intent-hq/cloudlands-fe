@@ -13,7 +13,9 @@ import type { FileContentEntry } from '$store/renderer/slices/files/files-types'
 // setupScript in monorepo PR #270), and treat an empty list as a no-op.
 // detect() MUST diff manifest candidates against the live script.list before
 // upserting through `script.create` (scriptId upsert) so repeat clicks don't
-// duplicate rows.
+// duplicate rows, and MUST NOT send the upsert when the target script's
+// runtime status is `running` — the daemon-side upsert tears down the live
+// PTY group (§5.8).
 const {
   scriptsList,
   scriptsCreate,
@@ -64,6 +66,7 @@ function seedManifests(byPath: Record<string, string>): void {
   });
 }
 
+/** §5.8 `script.list` entry: camelCase definition + merged `runtime` block. */
 function liveScript(overrides: Partial<ScriptWithState> = {}): ScriptWithState {
   return {
     id: 'script-1',
@@ -73,7 +76,7 @@ function liveScript(overrides: Partial<ScriptWithState> = {}): ScriptWithState {
     mode: 'service',
     source: 'user',
     createdAt: '2026-01-01T00:00:00.000Z',
-    state: { status: 'idle' },
+    runtime: { status: 'idle', restartCount: 0 },
     ...overrides,
   } as ScriptWithState;
 }
@@ -272,6 +275,42 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
       }),
     );
     expect(result).toMatchObject({ added: 0, removed: 0, packageManager: 'pnpm' });
+    expect(result).not.toHaveProperty('skippedRunning');
+  });
+
+  it('never sends the script.create upsert when the target script is running — skips and reports it', async () => {
+    // Same changed-command diff as the upsert case above, but the existing
+    // auto-detected row is `running` per the daemon (§5.8 runtime block). The
+    // scriptId upsert would tear down the live PTY group daemon-side, so no
+    // script.create may go out on the wire; the script is reported back in
+    // `skippedRunning` instead.
+    seedManifests({
+      'pnpm-lock.yaml': '',
+      'package.json': JSON.stringify({ scripts: { dev: 'vite' } }),
+    });
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+    ]);
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      detected: 1,
+      added: 0,
+      removed: 0,
+      skippedRunning: ['dev'],
+    });
   });
 
   it('removes stale auto-detected scripts whose name no longer appears in any manifest', async () => {

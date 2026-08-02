@@ -52,6 +52,7 @@ import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspa
 import { createDirectoryPickerReadMiddleware } from "$features/onboarding/directory-picker-read-service";
 import { createLegacyImportMiddleware } from "$features/settings/legacy-import-service";
 import { createStatsReadMiddleware } from "$features/stats/stats-read-service";
+import { createBackgroundHooksMiddleware } from "$features/hooks/background-hooks-read-service";
 import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
 import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
@@ -322,6 +323,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // result back to the `stats` slice — keeping the wire call out of the
     // Svelte component (per the `intent/no-component-async-data-fetch` rule).
     createStatsReadMiddleware(),
+    // Give the BackgroundHooksRow chip row a real live-read handler so
+    // `backgroundHooksSubscribeRequested` opens the workspace's `hook:*`
+    // events.subscribe + `hook.list` seed and run/cancel triggers forward to
+    // `hook.runNow` / `hook.cancel` (PROTOCOL §5.40) — keeping the wire calls
+    // out of the Svelte component (per the `intent/no-component-async-data-fetch`
+    // rule).
+    createBackgroundHooksMiddleware(),
     // Give the (post-saga) ui-layout persistence triggers real handlers so panel
     // sizes / group layouts / collapsed state read on mount and persist on change
     // across sessions via localStorage again.

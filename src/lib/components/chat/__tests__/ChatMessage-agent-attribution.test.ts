@@ -245,3 +245,68 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(screen.queryByText('hello from another agent')).toBeNull();
   });
 });
+
+describe('ChatMessage hook wake attribution', () => {
+  const hookWakeMetadata = {
+    type: 'hook_wake',
+    hookId: 'hook-1',
+    hookName: 'ci-watch',
+    reason: 'dispatched',
+  };
+
+  function hookWakeMessage(opts: { rowMetadata?: boolean; blockMetadata?: boolean }): AgentMessage {
+    return {
+      id: 'msg-1',
+      role: 'user',
+      contentBlocks: [
+        {
+          type: 'text',
+          text: '[Background hook "ci-watch"] CI is red',
+          ...(opts.blockMetadata ? { messageMetadata: hookWakeMetadata } : {}),
+        },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+      ...(opts.rowMetadata ? { metadata: hookWakeMetadata } : {}),
+    };
+  }
+
+  it('renders the hook wake header and strips the prefix (row-level metadata)', () => {
+    render(ChatMessage, { props: { message: hookWakeMessage({ rowMetadata: true }) } });
+
+    const header = screen.getByTestId('hook-wake-attribution');
+    expect(header).toBeTruthy();
+    expect(screen.getByText('ci-watch')).toBeTruthy();
+    expect(screen.getByText('woke the agent')).toBeTruthy();
+    expect(screen.getByText('CI is red')).toBeTruthy();
+    expect(screen.queryByText(/\[Background hook/)).toBeNull();
+  });
+
+  it('detects hook wake from block-level messageMetadata', () => {
+    render(ChatMessage, { props: { message: hookWakeMessage({ blockMetadata: true }) } });
+
+    expect(screen.getByTestId('hook-wake-attribution')).toBeTruthy();
+    expect(screen.getByText('CI is red')).toBeTruthy();
+    expect(screen.queryByText(/\[Background hook/)).toBeNull();
+  });
+
+  it('renders untagged prefixed text unchanged (no metadata, no strip)', () => {
+    render(ChatMessage, {
+      props: { message: hookWakeMessage({}) },
+    });
+
+    expect(screen.queryByTestId('hook-wake-attribution')).toBeNull();
+    expect(screen.getByText('[Background hook "ci-watch"] CI is red')).toBeTruthy();
+  });
+
+  it('does not enter edit mode when clicking a hook wake message body', async () => {
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, {
+      props: { message: hookWakeMessage({ rowMetadata: true }), onEditSubmit },
+    });
+
+    await fireEvent.click(screen.getByText('CI is red'));
+
+    expect(screen.getByText('CI is red')).toBeTruthy();
+    expect(screen.getByTestId('hook-wake-attribution')).toBeTruthy();
+  });
+});

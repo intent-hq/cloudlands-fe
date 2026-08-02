@@ -97,6 +97,7 @@
   import {
   selectChatError,
   selectChatLastChunkTime,
+  selectChatLiveStreamPhase,
   selectChatModelUnavailable,
   selectChatReceivedFirstChunk,
   selectChatStatusEvents,
@@ -132,6 +133,7 @@
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
   import StreamingStatus from './StreamingStatus.svelte';
+  import LiveStreamPhaseIndicator from './LiveStreamPhaseIndicator.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefChatEmptyState from './ChiefChatEmptyState.svelte';
 
@@ -166,6 +168,7 @@
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
+  import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -339,6 +342,7 @@
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
+  const chatLiveStreamPhase$ = selectChatLiveStreamPhase(agentIdStore);
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
@@ -2097,6 +2101,132 @@
     };
   });
 
+  // --- Deep-open at a message (openMessage helper, $lib/utils/open-message) ---
+  // The helper hydrates the store (seek page when needed) and hands the DOM
+  // work off via 'chat:open-message' on a retry ladder; this panel force-renders
+  // the target's turn through LazyTurn, scrolls to it with a brief flash, and
+  // highlights the query terms via the CSS Custom Highlight API (cleared on the
+  // next user interaction or a short timeout — no persistent markup).
+  let deepOpenTurnKey = $state<string | null>(null);
+  const handledOpenMessageRequestIds = new Set<string>();
+  let clearDeepOpenHighlight: (() => void) | null = null;
+  const DEEP_OPEN_HIGHLIGHT_NAME = 'deep-open-match';
+  const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
+
+  // Collect ranges for every case-insensitive occurrence of each query token
+  // inside the message element (same text-node walk as the search highlighter,
+  // scoped to one message).
+  function collectDeepOpenRanges(messageEl: HTMLElement, query: string): Range[] {
+    const tokens = Array.from(new Set(query.toLowerCase().split(/\s+/).filter(Boolean)));
+    if (tokens.length === 0) return [];
+    const walker = document.createTreeWalker(messageEl, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        const parent = (n as Text).parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        const tag = parent.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA' || tag === 'INPUT') {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const textNodes: Text[] = [];
+    const nodeStarts: number[] = [];
+    const parts: string[] = [];
+    let cursor = 0;
+    let node: Text | null;
+    while ((node = walker.nextNode() as Text | null)) {
+      const text = node.textContent ?? '';
+      textNodes.push(node);
+      nodeStarts.push(cursor);
+      parts.push(text);
+      cursor += text.length;
+    }
+    if (cursor === 0) return [];
+    const lowerFullText = parts.join('').toLowerCase();
+    const ranges: Range[] = [];
+    for (const token of tokens) {
+      let pos = 0;
+      let hit: number;
+      while ((hit = lowerFullText.indexOf(token, pos)) !== -1) {
+        const range = createRangeForSpan(textNodes, nodeStarts, hit, hit + token.length);
+        if (range) ranges.push(range);
+        pos = hit + token.length;
+      }
+    }
+    return ranges;
+  }
+
+  function applyDeepOpenQueryHighlight(messageEl: HTMLElement, query: string) {
+    if (!CSS.highlights) return;
+    clearDeepOpenHighlight?.();
+    const ranges = collectDeepOpenRanges(messageEl, query);
+    if (ranges.length === 0) return;
+    CSS.highlights.set(DEEP_OPEN_HIGHLIGHT_NAME, new Highlight(...ranges));
+    const clear = () => {
+      CSS.highlights?.delete(DEEP_OPEN_HIGHLIGHT_NAME);
+      window.removeEventListener('pointerdown', clear, true);
+      window.removeEventListener('keydown', clear, true);
+      window.removeEventListener('wheel', clear, true);
+      clearTimeout(timer);
+      clearDeepOpenHighlight = null;
+    };
+    const timer = setTimeout(clear, DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS);
+    // Capture phase: any interaction anywhere (click, keypress, manual scroll)
+    // clears the transient highlight. The programmatic smooth scroll fires no
+    // wheel events, so it never self-clears.
+    window.addEventListener('pointerdown', clear, true);
+    window.addEventListener('keydown', clear, true);
+    window.addEventListener('wheel', clear, true);
+    clearDeepOpenHighlight = clear;
+  }
+
+  async function handleOpenMessage(event: Event) {
+    const detail = (event as CustomEvent).detail as
+      | { agentId: string; messageId: string; query?: string; requestId: string }
+      | undefined;
+    if (!detail || detail.agentId !== agentId) return;
+    // The helper dispatches on a retry ladder (the panel may still be
+    // mounting); dedup so a successfully handled request runs exactly once.
+    if (handledOpenMessageRequestIds.has(detail.requestId)) return;
+
+    // Force-render the target's turn through the LazyTurn virtualization and
+    // drop follow so streaming growth doesn't yank the viewport back down.
+    deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
+    shouldFollowBottom = false;
+    await tick();
+    requestAnimationFrame(() => {
+      const targetElement = scrollContainer?.querySelector(
+        `[data-message-id="${CSS.escape(detail.messageId)}"]`,
+      ) as HTMLElement | null;
+      if (!targetElement) {
+        // Not rendered yet — leave the requestId unhandled so a later retry
+        // from the dispatch ladder can try again.
+        logger.warn('[ChatPanel] Deep-open target not rendered yet', {
+          messageId: detail.messageId,
+        });
+        return;
+      }
+      handledOpenMessageRequestIds.add(detail.requestId);
+      smoothScrollTo(targetElement, 'center');
+      targetElement.classList.add('message-highlight-flash');
+      setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
+      if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
+    });
+  }
+
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+
+    const listener = (event: Event) => void handleOpenMessage(event);
+    window.addEventListener('chat:open-message', listener);
+
+    return () => {
+      window.removeEventListener('chat:open-message', listener);
+      clearDeepOpenHighlight?.();
+    };
+  });
+
   // Listen for panel:focus-content events (from panel keyboard navigation)
   $effect(() => {
     if (typeof window === 'undefined') return;
@@ -3451,7 +3581,8 @@
                     scrollRoot={scrollContainer}
                     forceVisible={isTurnForceVisible(turnKey) ||
                       ($agentSessionIsStreaming$ && isLastTurnInConversation) ||
-                      visibleSearchTurnKeys.has(turnKey)}
+                      visibleSearchTurnKeys.has(turnKey) ||
+                      deepOpenTurnKey === turnKey}
                   >
                     {#snippet children()}
                       <!-- Event wakeup banner - shown when agent is woken by a subscription -->
@@ -3582,6 +3713,15 @@
                         {/if}
                       {/each}
 
+                      <!-- Live-hydration phase line: between the last user message and the Thinking row (500ms grace, pre-live phases only) -->
+                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0}
+                        <LiveStreamPhaseIndicator
+                          phase={$chatLiveStreamPhase$}
+                          turnInFlight={$agentIsResponding$ || $agentSessionIsStreaming$}
+                          seed={agentId}
+                          class="mb-2"
+                        />
+                      {/if}
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
                       {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ }, )}
                         <div class="mb-8">
@@ -3690,6 +3830,12 @@
               {/each}
             {/each}
             {#if showEndOfListStreamingStatus}
+              <LiveStreamPhaseIndicator
+                phase={$chatLiveStreamPhase$}
+                turnInFlight={$agentIsResponding$ || $agentSessionIsStreaming$}
+                seed={agentId}
+                class="mb-2"
+              />
               <div class="mb-16">
                 <StreamingStatus
                   isStreaming={$agentSessionIsStreaming$}
@@ -3817,6 +3963,12 @@
       onsendnow={handleSendQueuedMessageNow}
       ondone={() => inputComponent?.focus?.()}
     />
+  {/if}
+
+  <!-- Background hooks (PROTOCOL §5.40): faint chip row above the input,
+       visible only while the active agent has scheduled/running hooks. -->
+  {#if workspace?.id && agentId}
+    <BackgroundHooksRow workspaceId={workspace.id} {agentId} />
   {/if}
 
   <!-- Message Input with Aurora Background -->
@@ -3948,5 +4100,11 @@
   ::highlight(current-search-result) {
     background-color: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
+  }
+
+  /* Transient query-term highlight for deep-open navigation (openMessage) */
+  ::highlight(deep-open-match) {
+    background-color: hsl(var(--primary) / 0.35);
+    color: inherit;
   }
 </style>

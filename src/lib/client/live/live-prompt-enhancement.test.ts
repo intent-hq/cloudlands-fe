@@ -17,7 +17,11 @@ vi.mock("./backend-transport", () => ({
 }));
 
 import { backendRequest } from "./backend-transport";
-import { enhancePrompt, generateLayout } from "./live-prompt-enhancement";
+import {
+  enhancePrompt,
+  generateLayout,
+  EnhancePromptUnavailableError,
+} from "./live-prompt-enhancement";
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -87,5 +91,39 @@ describe("live prompt-enhancement seam (fake transport)", () => {
     await expect(generateLayout("layout instruction")).rejects.toThrow(
       "enhancement timed out after 30000ms",
     );
+  });
+
+  it("enhancePrompt throws EnhancePromptUnavailableError on the §5.31 { available: false } gate", async () => {
+    // Canonical gated payload from the daemon's provider-neutrality gate
+    // (wss_agent_enhance_prompt_unavailable_when_provider_not_auggie).
+    const reason = "enhance-prompt requires auggie as the active provider";
+    mockedRequest.mockResolvedValueOnce({ available: false, reason });
+
+    const pending = enhancePrompt("ship it");
+    await expect(pending).rejects.toBeInstanceOf(EnhancePromptUnavailableError);
+    await pending.catch((error: EnhancePromptUnavailableError) => {
+      expect(error.reason).toBe(reason);
+      expect(error.message).toBe(reason);
+    });
+    expect(mockedRequest).toHaveBeenCalledWith("agent.enhancePrompt", {
+      prompt: "ship it",
+      mode: "enhance",
+    });
+  });
+
+  it("generateLayout throws EnhancePromptUnavailableError on the §5.31 { available: false } gate", async () => {
+    const reason = "enhance-prompt requires auggie as the active provider";
+    mockedRequest.mockResolvedValueOnce({ available: false, reason });
+
+    const pending = generateLayout("layout instruction", { workspaceId: "ws-abc" });
+    await expect(pending).rejects.toBeInstanceOf(EnhancePromptUnavailableError);
+    await pending.catch((error: EnhancePromptUnavailableError) => {
+      expect(error.reason).toBe(reason);
+    });
+    expect(mockedRequest).toHaveBeenCalledWith("agent.enhancePrompt", {
+      prompt: "layout instruction",
+      mode: "layout",
+      workspaceId: "ws-abc",
+    });
   });
 });

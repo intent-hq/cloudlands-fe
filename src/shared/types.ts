@@ -307,6 +307,24 @@ export interface Workspace {
   cowSupported?: boolean;
   /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation/direct, remote, …). */
   checkoutMode?: 'cow' | 'worktree';
+  /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until the daemon's first computation completes. */
+  diskUsage?: WorkspaceDiskUsage;
+}
+
+/**
+ * Physical disk usage aggregate for a workspace directory (PROTOCOL §5.1).
+ * Bytes are physical/allocated (hard links deduped; CoW-shared extents
+ * excluded best-effort).
+ */
+export interface WorkspaceDiskUsage {
+  /** Physical bytes for the whole workspace folder. */
+  bytes: number;
+  /** Files occupying physical space. */
+  fileCount: number;
+  /** RFC-3339 timestamp of the computation. */
+  computedAt: string;
+  /** Per-top-level-directory breakdown. */
+  breakdown: Array<{ name: string; bytes: number; fileCount: number }>;
 }
 
 /**

@@ -76,7 +76,11 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
-  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
+  import {
+    enhancePrompt,
+    EnhancePromptUnavailableError,
+    isEnhancePromptAvailable,
+  } from '$lib/client/live/live-prompt-enhancement';
   import Fa from 'svelte-fa';
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
 
@@ -1041,6 +1045,9 @@
       }
     }, 200);
   });
+
+  // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
+  const enhanceAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
 
   // Enhance prompt state
   let isEnhancing = $state(false);
@@ -2345,6 +2352,7 @@
   }
 
   async function handleEnhancePrompt() {
+    if (!enhanceAvailable) return;
     if (!initialPrompt.trim() || isEnhancing) return;
 
     isEnhancing = true;
@@ -2363,9 +2371,11 @@
       if (currentRequestId === cancelledRequestId) return;
       logger.error('Failed to enhance prompt:', error);
       toast.error(
-        error instanceof Error && error.message
-          ? m.workspace_compactInitializer_enhanceFailedWithMessage_error({ message: error.message })
-          : m.workspace_compactInitializer_enhanceFailed_error(),
+        error instanceof EnhancePromptUnavailableError
+          ? m.workspace_compactInitializer_enhanceUnavailable_error()
+          : error instanceof Error && error.message
+            ? m.workspace_compactInitializer_enhanceFailedWithMessage_error({ message: error.message })
+            : m.workspace_compactInitializer_enhanceFailed_error(),
       );
     } finally {
       if (currentRequestId !== cancelledRequestId) {
@@ -2496,24 +2506,26 @@
           repositoryName={githubRepoInfo?.repo}
         />
 
-        <!-- Enhance prompt button -->
-        <div class="absolute top-2 right-9">
-          <Button
-            type="button"
-            onclick={isEnhancing ? handleCancelEnhance : handleEnhancePrompt}
-            size="icon-xs"
-            variant="ghost-light"
-            disabled={!initialPrompt.trim() && !isEnhancing}
-            tooltip={isEnhancing ? m.workspace_compactInitializer_stopEnhancing_tooltip() : m.workspace_compactInitializer_enhancePrompt_tooltip()}
-            tooltipSide="top"
-          >
-            {#if isEnhancing}
-              <Fa icon={faStop} size="xs" class="text-destructive-foreground" />
-            {:else}
-              <Fa icon={faMagicWandSparkles} size="xs" />
-            {/if}
-          </Button>
-        </div>
+        <!-- Enhance prompt button (§5.31 auggie-only gate) -->
+        {#if enhanceAvailable}
+          <div class="absolute top-2 right-9">
+            <Button
+              type="button"
+              onclick={isEnhancing ? handleCancelEnhance : handleEnhancePrompt}
+              size="icon-xs"
+              variant="ghost-light"
+              disabled={!initialPrompt.trim() && !isEnhancing}
+              tooltip={isEnhancing ? m.workspace_compactInitializer_stopEnhancing_tooltip() : m.workspace_compactInitializer_enhancePrompt_tooltip()}
+              tooltipSide="top"
+            >
+              {#if isEnhancing}
+                <Fa icon={faStop} size="xs" class="text-destructive-foreground" />
+              {:else}
+                <Fa icon={faMagicWandSparkles} size="xs" />
+              {/if}
+            </Button>
+          </div>
+        {/if}
 
         <!-- File upload button -->
         <Button

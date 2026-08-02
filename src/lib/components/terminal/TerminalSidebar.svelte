@@ -363,6 +363,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       } else {
         toast.info(m.terminal_sidebar_noScriptsLocally_info());
       }
+      const skippedRunning = result.skippedRunning ?? [];
+      if (skippedRunning.length > 0) {
+        toast.warning(
+          skippedRunning.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
+            : m.scripts_detect_skippedRunning_many({
+                count: skippedRunning.length,
+                names: skippedRunning.join(', '),
+              }),
+        );
+      }
       logger.info('Local detection complete', {
         totalScripts: selectScriptEntries.select(appStore.state).length,
         detectedCount,

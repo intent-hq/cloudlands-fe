@@ -21,6 +21,32 @@ describe('formatNumber / formatInteger', () => {
   });
 });
 
+describe('formatBytesBinary', () => {
+  it('formats binary base-1024 sizes with 3 significant digits', () => {
+    expect(en.formatBytesBinary(0)).toBe('0B');
+    expect(en.formatBytesBinary(512)).toBe('512B');
+    expect(en.formatBytesBinary(1024)).toBe('1Ki');
+    expect(en.formatBytesBinary(1536)).toBe('1.5Ki');
+    expect(en.formatBytesBinary(1_048_576)).toBe('1Mi');
+    expect(en.formatBytesBinary(2_330_000_000)).toBe('2.17Gi');
+    expect(en.formatBytesBinary(5_500_000_000_000)).toBe('5Ti');
+  });
+
+  it('caps at Ti for very large values (3072 Ti → 3 significant digits, no grouping)', () => {
+    expect(en.formatBytesBinary(2 ** 50 * 3)).toBe('3070Ti');
+  });
+
+  it('uses the locale decimal separator', () => {
+    expect(de.formatBytesBinary(2_330_000_000)).toBe('2,17Gi');
+  });
+
+  it('returns empty string for invalid input', () => {
+    expect(en.formatBytesBinary(Number.NaN)).toBe('');
+    expect(en.formatBytesBinary(-1)).toBe('');
+    expect(en.formatBytesBinary(Number.POSITIVE_INFINITY)).toBe('');
+  });
+});
+
 describe('formatRelativeTime', () => {
   it('formats en long style across units', () => {
     expect(en.formatRelativeTime(new Date(NOW.getTime() - 5_000), { now: NOW })).toBe('now');

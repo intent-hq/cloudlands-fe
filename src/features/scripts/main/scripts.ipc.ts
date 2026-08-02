@@ -40,9 +40,6 @@ import type { OutputLine } from './script-output-buffer';
 
 const logger = new Logger('ScriptsIPC');
 
-/** Track workspaces that have already triggered auto-start to avoid duplicates */
-const autoStartTriggered = new Set<string>();
-
 // ============================================================================
 // Validation Schemas
 // ============================================================================
@@ -228,27 +225,6 @@ async function getOrCreateManager(workspaceId: string) {
       }),
     );
   });
-
-  // Trigger auto-start for this workspace (once per workspace)
-  if (!autoStartTriggered.has(workspaceId)) {
-    autoStartTriggered.add(workspaceId);
-    const mgr = manager;
-    setTimeout(async () => {
-      try {
-        const scripts = await readScripts(workspaceId);
-        const autoStartScripts = scripts.filter((s) => s.autoStart && s.mode === 'service');
-        for (const script of autoStartScripts) {
-          logger.info(`[Scripts] Auto-starting "${script.name}"`, {
-            scriptId: script.id,
-            workspaceId,
-          });
-          mgr.start(script);
-        }
-      } catch (error) {
-        logger.error('[Scripts] Failed to auto-start scripts:', error as Error);
-      }
-    }, 2000);
-  }
 
   return manager;
 }

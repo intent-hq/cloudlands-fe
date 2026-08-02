@@ -69,7 +69,12 @@
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { generateLayout } from '$lib/client/live/live-prompt-enhancement';
+  import {
+    generateLayout,
+    EnhancePromptUnavailableError,
+    isEnhancePromptAvailable,
+  } from '$lib/client/live/live-prompt-enhancement';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -85,6 +90,7 @@
 
   const logger = createLogger('PanelLayoutHeader');
   const fastModel$ = selectModelForType('fast');
+  const activeProviderId$ = selectActiveProviderId();
 
   interface Props {
     /** Whether back navigation is available */
@@ -113,6 +119,9 @@
     onApplyPreset,
     onApplyContentPreset,
   }: Props = $props();
+
+  // §5.31 gate — AI layout generation is auggie-only; unset active provider defaults to auggie
+  const aiLayoutAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
 
   // AI prompt state
   let promptValue = $state('');
@@ -200,6 +209,7 @@
 
   // Handle AI layout suggestion
   async function handleGenerateLayout() {
+    if (!aiLayoutAvailable) return;
     if (!promptValue.trim() || isGenerating) return;
 
     isGenerating = true;
@@ -234,9 +244,11 @@
     } catch (error) {
       logger.error('Layout generation failed', error);
       toast.error(
-        error instanceof Error && error.message
-          ? m.layout_layoutControls_generationFailedWithMessage_error({ message: error.message })
-          : m.layout_layoutControls_generationFailed_error(),
+        error instanceof EnhancePromptUnavailableError
+          ? m.layout_layoutControls_generationUnavailable_error()
+          : error instanceof Error && error.message
+            ? m.layout_layoutControls_generationFailedWithMessage_error({ message: error.message })
+            : m.layout_layoutControls_generationFailed_error(),
       );
     } finally {
       isGenerating = false;
@@ -576,24 +588,26 @@ Only respond with the <layout> tag and valid JSON inside it.`;
     {/if}
   </div>
 
-  <!-- AI Layout prompt toggle -->
-  <Tooltip content={m.layout_layoutHeader_aiSuggestion_tooltip()} side="bottom" delayDuration={300}>
-    <button
-      class={cn(
-        'p-1.5 rounded transition-colors',
-        showPrompt
-          ? 'bg-primary/10 text-primary'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted',
-      )}
-      onclick={togglePrompt}
-      aria-label={m.layout_layoutHeader_configureWithAi_ariaLabel()}
-    >
-      <Fa icon={faWandMagicSparkles} size="sm" />
-    </button>
-  </Tooltip>
+  <!-- AI Layout prompt toggle (§5.31 auggie-only gate) -->
+  {#if aiLayoutAvailable}
+    <Tooltip content={m.layout_layoutHeader_aiSuggestion_tooltip()} side="bottom" delayDuration={300}>
+      <button
+        class={cn(
+          'p-1.5 rounded transition-colors',
+          showPrompt
+            ? 'bg-primary/10 text-primary'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted',
+        )}
+        onclick={togglePrompt}
+        aria-label={m.layout_layoutHeader_configureWithAi_ariaLabel()}
+      >
+        <Fa icon={faWandMagicSparkles} size="sm" />
+      </button>
+    </Tooltip>
+  {/if}
 
   <!-- AI Prompt input (expanded) -->
-  {#if showPrompt}
+  {#if aiLayoutAvailable && showPrompt}
     <div class="flex items-center gap-1 ml-1" transition:slide={{ duration: 150, axis: 'x' }}>
       <input
         bind:this={promptInputRef}
