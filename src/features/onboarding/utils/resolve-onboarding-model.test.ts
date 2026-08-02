@@ -433,5 +433,80 @@ describe('resolveOnboardingModel', () => {
       await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/'pi'/);
     });
   });
+
+  describe('user-selected model override (onboarding prompt-step picker)', () => {
+    it('returns the picked compound model with its provider, bypassing all other resolution', async () => {
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: true },
+      });
+      mockState.activeProviderId = 'auggie';
+
+      const result = await resolveOnboardingModel(fakeState, 'pi:anthropic/claude-opus-4.7');
+
+      expect(result.provider).toBe('pi');
+      expect(result.model).toBe('pi:anthropic/claude-opus-4.7');
+      expect(result.specialistId).toBe('spec-writer');
+      expect(result.behaviorPrompt).toBe('coordinator-prompt');
+    });
+
+    it('attributes a bare model id to the default provider', async () => {
+      setAvailability({ auggie: { available: true, authenticated: true } });
+      mockState.activeProviderId = 'auggie';
+
+      const result = await resolveOnboardingModel(fakeState, 'sonnet4.5');
+
+      expect(result.provider).toBe('auggie');
+      expect(result.model).toBe('sonnet4.5');
+    });
+
+    it('wins over a specialist model override', async () => {
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        opencode: { available: true, authenticated: true },
+      });
+      mockState.activeProviderId = 'auggie';
+      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'opencode:x' } };
+
+      const result = await resolveOnboardingModel(fakeState, 'opus4.7');
+
+      expect(result.provider).toBe('auggie');
+      expect(result.model).toBe('opus4.7');
+    });
+
+    it('honors the pick under the relaxed auth gate (authenticated=undefined)', async () => {
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        opencode: { available: true, authenticated: undefined },
+      });
+      mockState.activeProviderId = 'auggie';
+
+      const result = await resolveOnboardingModel(fakeState, 'opencode:anthropic/claude-4');
+
+      expect(result.provider).toBe('opencode');
+      expect(result.model).toBe('opencode:anthropic/claude-4');
+    });
+
+    it("throws when the picked model's provider is not installed (no silent switch)", async () => {
+      setAvailability({ auggie: { available: true, authenticated: true } });
+      mockState.activeProviderId = 'auggie';
+
+      await expect(
+        resolveOnboardingModel(fakeState, 'pi:anthropic/claude-opus-4.7'),
+      ).rejects.toThrow(/'pi'/);
+    });
+
+    it("throws when the picked model's provider is explicitly not authenticated", async () => {
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: false },
+      });
+      mockState.activeProviderId = 'auggie';
+
+      await expect(
+        resolveOnboardingModel(fakeState, 'pi:anthropic/claude-opus-4.7'),
+      ).rejects.toThrow(/'pi'/);
+    });
+  });
 });
 

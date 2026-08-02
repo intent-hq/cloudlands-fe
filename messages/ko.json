@@ -2691,7 +2691,7 @@
   "onboarding_promptStep_branchOff_label": "분기",
   "onboarding_promptStep_setupEnvWith_before": "환경 설정에",
   "onboarding_promptStep_setupEnvWith_after": "스크립트 사용",
-  "onboarding_promptStep_detectingSetupScript_label": "설정 스크립트 감지 중…",
+  "onboarding_promptStep_usingModel_before": "사용:",
   "onboarding_promptStep_usePrBranch_before": "PR 브랜치 사용",
   "onboarding_promptStep_createWorkspace_label": "작업 공간 만들기",
   "onboarding_requirementsStep_gitMacos_note": "git이 포함된 Apple 명령줄 도구를 설치합니다.",

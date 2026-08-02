@@ -2691,7 +2691,7 @@
   "onboarding_promptStep_branchOff_label": "Branch off",
   "onboarding_promptStep_setupEnvWith_before": "Set up environment with",
   "onboarding_promptStep_setupEnvWith_after": "script",
-  "onboarding_promptStep_detectingSetupScript_label": "Detecting setup script…",
+  "onboarding_promptStep_usingModel_before": "Using",
   "onboarding_promptStep_usePrBranch_before": "Use PR branch",
   "onboarding_promptStep_createWorkspace_label": "Create workspace",
   "onboarding_requirementsStep_gitMacos_note": "Installs Apple's command-line tools, which include git.",

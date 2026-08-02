@@ -2691,7 +2691,7 @@
   "onboarding_promptStep_branchOff_label": "Abzweigen",
   "onboarding_promptStep_setupEnvWith_before": "Umgebung einrichten mit",
   "onboarding_promptStep_setupEnvWith_after": "Skript",
-  "onboarding_promptStep_detectingSetupScript_label": "Setup-Skript wird erkannt…",
+  "onboarding_promptStep_usingModel_before": "Verwendet",
   "onboarding_promptStep_usePrBranch_before": "PR-Branch verwenden",
   "onboarding_promptStep_createWorkspace_label": "Arbeitsbereich erstellen",
   "onboarding_requirementsStep_gitMacos_note": "Installiert Apples Befehlszeilen-Tools, die git enthalten.",

@@ -2691,7 +2691,7 @@
   "onboarding_promptStep_branchOff_label": "Créer une branche",
   "onboarding_promptStep_setupEnvWith_before": "Configurer l'environnement avec",
   "onboarding_promptStep_setupEnvWith_after": "script",
-  "onboarding_promptStep_detectingSetupScript_label": "Détection du script de configuration…",
+  "onboarding_promptStep_usingModel_before": "Avec",
   "onboarding_promptStep_usePrBranch_before": "Utiliser la branche de la PR",
   "onboarding_promptStep_createWorkspace_label": "Créer un espace de travail",
   "onboarding_requirementsStep_gitMacos_note": "Installe les outils en ligne de commande d'Apple, qui incluent git.",
