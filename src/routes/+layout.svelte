@@ -39,6 +39,8 @@
     selectPaletteQuery,
   } from '$store/renderer/slices/palette/palette-selectors';
   import SpacesSwitcherOverlay from '$features/workspace/SpacesSwitcherOverlay.svelte';
+  import RadialPromptPickerOverlay from '$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte';
+  import EncoderCycleHud from '$features/hardware-console/encoder/EncoderCycleHud.svelte';
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
@@ -1050,6 +1052,12 @@
 
   <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
   <SpacesSwitcherOverlay />
+
+  <!-- Joystick Radial Prompt Picker Overlay (hardware console joystick deflection) -->
+  <RadialPromptPickerOverlay />
+
+  <!-- Encoder Cycling HUD (hardware console encoder rotation) -->
+  <EncoderCycleHud />
 
   <!-- Usage Stats Overlay (sidebar Stats button) -->
   <StatsOverlay />

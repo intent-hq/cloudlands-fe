@@ -101,7 +101,7 @@ setTimeout(() => {
 
 // Now import everything else
 import type { BrowserWindow as BrowserWindowType } from 'electron';
-import { dialog, protocol } from 'electron';
+import { dialog, protocol, session } from 'electron';
 import * as fs from 'fs';
 
 import { Logger } from '../shared/logger';
@@ -110,6 +110,7 @@ import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapp
 import { initializeWarningSuppression } from './utils/suppress-warnings';
 import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { setupWebviewSecurity } from './webview-security';
+import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
 
 // No custom protocol needed - we'll use file:// protocol
@@ -499,6 +500,10 @@ app.whenReady().then(async () => {
 
   // SECURITY: Setup webview security handlers early, before any windows are created
   setupWebviewSecurity();
+
+  // WebHID handlers for the hardware console (silent grant for supported
+  // Work Louder devices) — must be registered before any windows exist.
+  setupHardwareConsoleMain(session.defaultSession);
 
   // Keep window sessions file up-to-date so it's always available on quit/crash.
   // This debounced saver fires on window move/resize/navigate to ensure the sessions
