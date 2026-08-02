@@ -90,6 +90,20 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
 }));
 
+vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
+  selectHardwareConsoleKeyPins: { select: vi.fn(() => [null, null, null, null, null, null]) },
+  selectHardwareConsoleKeySlots: { select: vi.fn(() => [null, null, null, null, null, null]) },
+  selectWorkspacePinnedKeySlot: { select: vi.fn(() => null) },
+  selectWorkspaceResolvedKeySlot: Object.assign(
+    () => mocks.readable(() => null),
+    { select: vi.fn(() => null) },
+  ),
+}));
+
+vi.mock('$features/hardware-console/device/connection-status', () => ({
+  microConnectedReadable: () => mocks.readable(() => false),
+}));
+
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: { select: vi.fn(() => false) },
   selectAgentIsWaiting: { select: vi.fn(() => false) },

@@ -13,6 +13,10 @@
     onClick: () => void;
     dividerBefore?: boolean;
     variant?: 'default' | 'destructive';
+    /** Marks the item as active/selected (renders a check indicator). */
+    checked?: boolean;
+    /** Child items expanded inline on click; `onClick` is ignored when set. */
+    submenu?: MenuAction[];
   }
 </script>
 
@@ -42,6 +46,9 @@
   import {
   faBoxArchive,
   faBoxOpen,
+  faCheck,
+  faChevronDown,
+  faChevronRight,
   faCode,
   faFile,
   faFolder,
@@ -619,6 +626,18 @@
       onClose?.();
     }
   }
+
+  // Inline-expanded submenu (label-keyed); one open at a time.
+  let openSubmenuLabel: string | null = $state(null);
+
+  function handleActionClick(action: MenuAction) {
+    if (action.submenu) {
+      openSubmenuLabel = openSubmenuLabel === action.label ? null : action.label;
+      return;
+    }
+    action.onClick();
+    onClose?.();
+  }
 </script>
 
 <div class="w-full overflow-hidden">
@@ -730,10 +749,7 @@
       {/if}
       <Button
         variant="ghost"
-        onclick={() => {
-          action.onClick();
-          onClose?.();
-        }}
+        onclick={() => handleActionClick(action)}
         class="pl-3.75! gap-2.25! w-full min-w-0 justify-start {action.variant === 'destructive'
           ? 'hover:bg-destructive hover:text-destructive-foreground'
           : ''}"
@@ -745,7 +761,32 @@
           <Fa icon={action.icon} size="12" class="mr-1.5 opacity-50" />
         {/if}
         <span class="truncate min-w-0" title={action.label}>{action.label}</span>
+        {#if action.submenu}
+          <Fa
+            icon={openSubmenuLabel === action.label ? faChevronDown : faChevronRight}
+            size="12"
+            class="ml-auto opacity-50"
+          />
+        {/if}
       </Button>
+      {#if action.submenu && openSubmenuLabel === action.label}
+        {#each action.submenu as subaction (`sub-${subaction.label}`)}
+          <Button
+            variant="ghost"
+            onclick={() => {
+              subaction.onClick();
+              onClose?.();
+            }}
+            class="pl-8! gap-2.25! w-full min-w-0 justify-start"
+            size="sm"
+          >
+            <span class="truncate min-w-0" title={subaction.label}>{subaction.label}</span>
+            {#if subaction.checked}
+              <Fa icon={faCheck} size="12" class="ml-auto opacity-50" />
+            {/if}
+          </Button>
+        {/each}
+      {/if}
     {/each}
   {/if}
 

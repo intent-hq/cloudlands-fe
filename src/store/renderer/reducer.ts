@@ -55,6 +55,7 @@ import { agentFollowReducer } from "./slices/agent-follow/agent-follow-slice";
 import { gitReducer } from "./slices/git/git-slice";
 import { fileTrackingReducer } from "./slices/changes/changes-slice";
 import { agentLockReducer } from "./slices/agent-lock/agent-lock-slice";
+import { hardwareConsoleReducer } from "./slices/hardware-console/hardware-console-slice";
 import { panelLayoutReducer } from "./slices/panel-layout/panel-layout-slice";
 import { streamingConfigReducer } from "./slices/streaming-config/streaming-config-slice";
 import { unreadTrackingReducer } from "./slices/unread-tracking/unread-tracking-slice";
@@ -140,6 +141,7 @@ export const reducers = {
   git: gitReducer,
   changes: fileTrackingReducer,
   agentLock: agentLockReducer,
+  hardwareConsole: hardwareConsoleReducer,
   panelLayout: panelLayoutReducer,
   streamingConfig: streamingConfigReducer,
   unreadTracking: unreadTrackingReducer,
