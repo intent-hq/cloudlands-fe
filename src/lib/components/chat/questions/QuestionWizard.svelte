@@ -4,8 +4,9 @@
   the pending questions one at a time; choose-one advances on selection,
   multi-select keeps a Next button, Enter in the free-form field advances,
   Skip clears + advances, Back returns with the previous answer pre-selected.
-  Ignore collapses the well to a compact re-expandable banner (transient —
-  the host owns the collapse flag; nothing is persisted). Dismiss hands off
+  Hide collapses the well to a compact re-expandable banner (transient —
+  the host owns the collapse flag; nothing is persisted). Dismiss is a
+  destructive action gated behind a confirmation dialog; confirming hands off
   to `onDismiss` — the host calls `agent.dismissQuestions`, which persists
   the dismissal (survives reload) and releases the question hold. On the last
   question Send hands the full answers array to `onComplete`. Single-question
@@ -33,6 +34,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
+  import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -60,6 +62,8 @@
   }
 
   let idx = $state(0);
+  // Dismiss is destructive and persistent — gate it behind a confirm dialog.
+  let confirmingDismiss = $state(false);
   // Intentional initial capture: the host remounts the wizard ({#key} on the
   // question-bearing message id) whenever a different question set pends.
   // svelte-ignore state_referenced_locally
@@ -153,8 +157,8 @@
   data-question-wizard
 >
   {#if collapsed}
-    <!-- Ignore-collapsed banner: click to re-expand; Dismiss is a sibling
-         button (not nested — invalid HTML) that persists the dismissal. -->
+    <!-- Hide-collapsed banner: click to re-expand; Dismiss is a sibling
+         button (not nested — invalid HTML) that opens the confirm dialog. -->
     <div class="flex w-full items-center rounded-lg">
       <button
         type="button"
@@ -173,9 +177,9 @@
       {#if onDismiss}
         <button
           type="button"
-          class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-3 py-2.25 rounded-r-lg hover:text-foreground"
+          class="border-none bg-transparent text-xs text-destructive cursor-pointer font-[inherit] px-3 py-2.25 rounded-r-lg hover:bg-destructive/10"
           title={m.chat_questionWizard_dismiss_tooltip()}
-          onclick={onDismiss}
+          onclick={() => (confirmingDismiss = true)}
         >
           {m.chat_questionWizard_dismiss_label()}
         </button>
@@ -215,17 +219,17 @@
         <button
           type="button"
           class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
-          title={m.chat_questionWizard_ignore_tooltip()}
+          title={m.chat_questionWizard_hide_tooltip()}
           onclick={() => onToggleCollapsed?.(true)}
         >
-          {m.chat_questionWizard_ignore_label()}
+          {m.chat_questionWizard_hide_label()}
         </button>
         {#if onDismiss}
           <button
             type="button"
-            class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
+            class="border-none bg-transparent text-xs text-destructive cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:bg-destructive/10"
             title={m.chat_questionWizard_dismiss_tooltip()}
-            onclick={onDismiss}
+            onclick={() => (confirmingDismiss = true)}
           >
             {m.chat_questionWizard_dismiss_label()}
           </button>
@@ -346,3 +350,12 @@
     {/key}
   {/if}
 </div>
+
+<DismissQuestionsConfirmDialog
+  open={confirmingDismiss}
+  onConfirm={() => {
+    confirmingDismiss = false;
+    onDismiss?.();
+  }}
+  onCancel={() => (confirmingDismiss = false)}
+/>
