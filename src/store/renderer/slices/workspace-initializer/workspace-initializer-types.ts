@@ -81,6 +81,10 @@ export interface WorkspaceInitializerOnboardingFormState {
   setupScript?: string;
   setupScriptName?: string;
   isCustomSetupScript?: boolean;
+  /** User-picked model for the initial Coordinator agent (step 3 picker). */
+  selectedModel?: string;
+  /** Whether the user explicitly overrode the model (vs the auto-resolved default). */
+  modelWasOverridden?: boolean;
   step?: OnboardingStep;
 }
 

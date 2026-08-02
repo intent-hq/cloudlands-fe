@@ -33,6 +33,18 @@ const mocks = vi.hoisted(() => {
       vi.fn<(owner: string, repo: string, ref?: string) => Promise<string | null>>(),
     lastUsedSelect: vi.fn(),
     getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
+    workspaceCreate: vi.fn<(params: Record<string, unknown>) => Promise<unknown>>(),
+    // Default implementation survives vi.clearAllMocks(); model-pick tests
+    // override per-call behavior with mockImplementation.
+    resolveModel: vi.fn(async (_state: unknown, _userSelectedModel?: string) => ({
+      provider: 'auggie',
+      model: 'model',
+      behaviorPrompt: undefined,
+      specialistId: 'spec-writer',
+    })),
+    // Mutable workspace-initializer state for the model-pick tests
+    initializerHydrated: false,
+    persistedOnboardingFormState: null as Record<string, unknown> | null,
   };
 });
 
@@ -51,7 +63,10 @@ vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
+  selectWorkspaceInitializerHydrated: () => mocks.readable(() => mocks.initializerHydrated),
+  selectWorkspaceInitializerOnboardingFormState: {
+    select: () => mocks.persistedOnboardingFormState,
+  },
 }));
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
@@ -95,7 +110,7 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
-  resolveOnboardingModel: vi.fn(async () => ({ provider: 'auggie', model: 'model' })),
+  resolveOnboardingModel: mocks.resolveModel,
 }));
 
 vi.mock('$features/onboarding/utils/parse-context-references', () => ({
@@ -112,7 +127,7 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { create: vi.fn(), update: vi.fn() },
+  workspaceClient: { create: mocks.workspaceCreate, update: vi.fn() },
 }));
 
 vi.mock('$features/onboarding/steps/OnboardingPromptStep.svelte', async () => ({
@@ -242,6 +257,8 @@ describe('onboarding repo-config setup script detection', () => {
     expect(textOf(result, 'is-custom-setup-script')).toBe('false');
     // Cached script is forwarded so SetupScriptModal renders the list entry.
     expect(textOf(result, 'repo-config-script')).toBe('echo repo-config');
+    // Unedited repo-config default applies silently — no disclosure row.
+    expect(textOf(result, 'hide-setup-script-control')).toBe('true');
   });
 
   it('falls back to the last-used script when the repo has no config', async () => {
@@ -256,6 +273,10 @@ describe('onboarding repo-config setup script detection', () => {
     });
     expect(textOf(result, 'setup-script')).toBe('echo saved');
     expect(textOf(result, 'repo-config-script')).toBe('');
+    // No repo config — the disclosure row stays visible.
+    await waitFor(() => {
+      expect(textOf(result, 'hide-setup-script-control')).toBe('false');
+    });
   });
 
   it('falls back to the generic template when neither repo config nor last-used exists', async () => {
@@ -283,8 +304,8 @@ describe('onboarding repo-config setup script detection', () => {
     expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner', 'repo', 'release-1.x');
     expect(textOf(result, 'setup-script')).toBe('echo gh-config');
     expect(textOf(result, 'repo-config-script')).toBe('echo gh-config');
-    // Probe resolved — spinner is gone.
-    expect(textOf(result, 'is-repo-config-loading')).toBe('false');
+    // Repo-config default applied silently — the control stays hidden.
+    expect(textOf(result, 'hide-setup-script-control')).toBe('true');
   });
 
   it('omits ref for a GitHub selection without a branch yet', async () => {
@@ -296,7 +317,7 @@ describe('onboarding repo-config setup script detection', () => {
     });
   });
 
-  it('shows the loading state while the GitHub probe is in flight, then degrades silently on no config', async () => {
+  it('hides the setup-script control while the GitHub probe is in flight, then shows it on no config', async () => {
     const probe = deferred<string | null>();
     mocks.fetchGitHubRepoConfig.mockReturnValue(probe.promise);
 
@@ -304,17 +325,68 @@ describe('onboarding repo-config setup script detection', () => {
     selectGitHubRepo();
 
     await waitFor(() => {
-      expect(textOf(result, 'is-repo-config-loading')).toBe('true');
+      expect(textOf(result, 'hide-setup-script-control')).toBe('true');
     });
 
     probe.resolve(null);
     await waitFor(() => {
-      expect(textOf(result, 'is-repo-config-loading')).toBe('false');
+      expect(textOf(result, 'hide-setup-script-control')).toBe('false');
     });
     // No config → current default behavior (generic template), no repo-config entry.
     const generic = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic')!;
     expect(textOf(result, 'setup-script-name')).toBe(generic.name);
     expect(textOf(result, 'repo-config-script')).toBe('');
+  });
+
+  it('shows the setup-script control again once the repo-config script is edited', async () => {
+    mocks.fetchRepoConfig.mockResolvedValue('echo repo-config');
+
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script')).toBe('echo repo-config');
+    });
+    expect(textOf(result, 'hide-setup-script-control')).toBe('true');
+
+    // Only the unedited repo-config default is silent — a customized script
+    // must surface the disclosure row.
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: { setSetupScript: (value: string) => void };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setSetupScript('echo repo-config && echo edited');
+    await waitFor(() => {
+      expect(textOf(result, 'hide-setup-script-control')).toBe('false');
+    });
+  });
+
+  it('sends the silently-applied repo-config script as setupScript on workspace.create', async () => {
+    mocks.fetchRepoConfig.mockResolvedValue('echo repo-config');
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    await waitFor(() => {
+      expect(textOf(result, 'setup-script')).toBe('echo repo-config');
+    });
+    expect(textOf(result, 'hide-setup-script-control')).toBe('true');
+
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalled());
+    expect(mocks.workspaceCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ setupScript: 'echo repo-config' }),
+    );
   });
 
   it('does not probe remote selections', async () => {
@@ -620,5 +692,162 @@ describe('onboarding remote-URL probe race (cloudlands-fe#443)', () => {
     // The suffix must persist (no blank/flicker) and the probe must not re-run.
     expect(textOf(result, 'github-repo-info')).toContain('owner-a/repo-a');
     expect(mocks.getRemoteUrl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('onboarding model picker (initial Coordinator agent)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    mocks.lastUsedSelect.mockReturnValue(undefined);
+    mocks.fetchRepoConfig.mockResolvedValue(null);
+    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
+    mocks.getRemoteUrl.mockResolvedValue({ success: false });
+    // clearAllMocks keeps implementations — pin the default explicitly so a
+    // per-test mockImplementation never leaks into the next test.
+    mocks.resolveModel.mockImplementation(async () => ({
+      provider: 'auggie',
+      model: 'model',
+      behaviorPrompt: undefined,
+      specialistId: 'spec-writer',
+    }));
+    mocks.initializerHydrated = false;
+    mocks.persistedOnboardingFormState = null;
+  });
+
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+    mocks.initializerHydrated = false;
+    mocks.persistedOnboardingFormState = null;
+  });
+
+  const captured = () =>
+    (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onModelChange: (model: string) => void;
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+
+  const dispatchedActions = () =>
+    mocks.dispatch.mock.calls.map(([action]) => action as { type: string; payload?: unknown[] });
+
+  it('dispatches the global selectModel trigger when the user picks a model', async () => {
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+
+    captured().onModelChange('pi:anthropic/claude-opus-4.7');
+    await waitFor(() => {
+      expect(textOf(result, 'selected-model')).toBe('pi:anthropic/claude-opus-4.7');
+    });
+    expect(textOf(result, 'model-was-overridden')).toBe('true');
+
+    const selectModelAction = dispatchedActions().find((a) => a.type === 'model/selectModel');
+    expect(selectModelAction).toBeDefined();
+    expect(selectModelAction?.payload).toEqual(['pi:anthropic/claude-opus-4.7']);
+  });
+
+  it('persists the pick in the debounced onboarding form state', async () => {
+    mocks.initializerHydrated = true;
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().onModelChange('pi:anthropic/claude-opus-4.7');
+
+    await waitFor(() => {
+      const persistActions = dispatchedActions().filter(
+        (a) => a.type === 'workspaceInitializer/debounceOnboardingFormState',
+      );
+      const last = persistActions[persistActions.length - 1];
+      const formState = last?.payload?.[0] as Record<string, unknown> | undefined;
+      expect(formState?.selectedModel).toBe('pi:anthropic/claude-opus-4.7');
+      expect(formState?.modelWasOverridden).toBe(true);
+    });
+  });
+
+  it('restores a persisted mid-onboarding pick after hydration', async () => {
+    mocks.initializerHydrated = true;
+    mocks.persistedOnboardingFormState = {
+      projectSelection: null,
+      selectedModel: 'pi:anthropic/claude-opus-4.7',
+      modelWasOverridden: true,
+      step: 'configuring',
+    };
+
+    const result = renderPage();
+
+    await waitFor(() => {
+      expect(textOf(result, 'selected-model')).toBe('pi:anthropic/claude-opus-4.7');
+    });
+    expect(textOf(result, 'model-was-overridden')).toBe('true');
+  });
+
+  it('threads the pick through resolveOnboardingModel into workspace.create initialAgent', async () => {
+    const PICKED = 'pi:anthropic/claude-opus-4.7';
+    mocks.resolveModel.mockImplementation(async (_state, userSelectedModel) => ({
+      provider: userSelectedModel ? 'pi' : 'auggie',
+      model: userSelectedModel ?? 'opus4.7',
+      behaviorPrompt: 'coordinator-prompt',
+      specialistId: 'spec-writer',
+    }));
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().onModelChange(PICKED);
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    expect(mocks.resolveModel).toHaveBeenCalledWith(expect.anything(), PICKED);
+    const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
+      initialAgent: { model: string; provider: string; specialist: string };
+    };
+    expect(createRequest.initialAgent.model).toBe(PICKED);
+    expect(createRequest.initialAgent.provider).toBe('pi');
+    expect(createRequest.initialAgent.specialist).toBe('spec-writer');
+  });
+
+  it('resolves without an override when the user never picked a model', async () => {
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+    expect(mocks.resolveModel).toHaveBeenCalledWith(expect.anything(), undefined);
+    const createRequest = mocks.workspaceCreate.mock.calls[0][0] as {
+      initialAgent: { model: string; provider: string };
+    };
+    expect(createRequest.initialAgent.model).toBe('model');
+    expect(createRequest.initialAgent.provider).toBe('auggie');
   });
 });
