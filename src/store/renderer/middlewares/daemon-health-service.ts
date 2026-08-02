@@ -74,7 +74,7 @@ async function pollStatus(): Promise<void> {
   try {
     const result = await backendRequest<SystemStatusWirePayload>('system.status');
     if (generation !== pollGeneration) return;
-    appStore.dispatch(systemStatusSuccess(result));
+    appStore.dispatch(systemStatusSuccess(result, new Date().toISOString()));
   } catch (_error) {
     if (generation !== pollGeneration) return;
     // Poll failure — heartbeat/health-check failure while connected, or connection already down.
