@@ -8,7 +8,6 @@
  * - Delegation group trackers
  * - Delivery health stats
  * - Deleted agent tracking
- * - One-shot subscription tracking
  */
 
 import { createAction } from "$lib/store-shim/utils/store/create-action";
@@ -129,11 +128,6 @@ export const appendDelegationGroupEvent = createAction<
 
 export const markDelegationDelivered = createAction<[wsId: string, groupId: string]>(
   "agentSubscriptions/markDelegationDelivered"
-);
-
-// --- One-shot tracking ---
-export const markOneShotFired = createAction<[wsId: string, subscriptionId: string]>(
-  "agentSubscriptions/markOneShotFired"
 );
 
 // --- Delivery stats ---
@@ -327,7 +321,6 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
     return setWorkspaceState(state, wsId, {
       ...ws,
       subscriptions: rest,
-      firedOneShotSubscriptions: ws.firedOneShotSubscriptions.filter(id => id !== subscriptionId),
     });
   })
   .with(removeAllSubscriptions, (state, { payload: [wsId, agentId] }) => {
@@ -460,15 +453,6 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
         ...ws.delegationGroups,
         [groupId]: { ...tracker, delivered: true },
       },
-    });
-  })
-  // --- One-shot tracking ---
-  .with(markOneShotFired, (state, { payload: [wsId, subscriptionId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    if (ws.firedOneShotSubscriptions.includes(subscriptionId)) return state;
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      firedOneShotSubscriptions: [...ws.firedOneShotSubscriptions, subscriptionId],
     });
   })
   // --- Delivery stats ---

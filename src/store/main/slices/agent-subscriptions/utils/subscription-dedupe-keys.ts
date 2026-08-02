@@ -8,10 +8,6 @@ export function buildWorkspaceScopedGroupKey(workspaceId: string, groupId: strin
   return [workspaceId, groupId].join(KEY_SEPARATOR);
 }
 
-export function buildOneShotProcessingKey(workspaceId: string, subscriptionId: string): string {
-  return buildWorkspaceScopedSubscriptionKey(workspaceId, subscriptionId);
-}
-
 export function buildSweepCatchUpSeenKey(
   workspaceId: string,
   subscriptionId: string,

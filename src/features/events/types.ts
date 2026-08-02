@@ -563,7 +563,7 @@ export interface AgentUnsubscribedEvent extends WorkspaceEventBase {
     agentName: string;
     subscriptionId: string;
     /** Reason for unsubscription */
-    reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete';
+    reason?: 'manual-unsubscribe' | 'delegation-complete';
     /** Group ID if this was a delegation group subscription */
     groupId?: string;
   };
@@ -1386,7 +1386,7 @@ export interface AgentUnsubscribedPayload {
   workspaceId?: string;
   subscriptionId: string;
   /** Reason for unsubscription */
-  reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete';
+  reason?: 'manual-unsubscribe' | 'delegation-complete';
   /** Group ID if this was a delegation group subscription */
   groupId?: string;
 }

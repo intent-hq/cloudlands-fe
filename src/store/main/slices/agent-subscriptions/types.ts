@@ -35,7 +35,6 @@ export interface AgentEventFilter {
   batchMaxEvents?: number;
   priority?: "high" | "normal" | "low";
   delegationGroup?: DelegationGroup;
-  oneShot?: boolean;
 }
 
 /** Serializable agent subscription */
@@ -54,7 +53,6 @@ export interface QueuedEventRecord {
   queuedAt: string;
   priority: "high" | "normal" | "low";
   subscriptionId?: string;
-  oneShot?: boolean;
 }
 
 /** Serializable delegation group tracker */
@@ -92,8 +90,6 @@ export interface WorkspaceSubscriptionState {
   agentStatuses: Record<string, AgentStatus>;
   /** Delegation group trackers: groupId → tracker */
   delegationGroups: Record<string, DelegationGroupTrackerRecord>;
-  /** IDs of oneShot subscriptions that have already fired */
-  firedOneShotSubscriptions: string[];
   /** Delivery health statistics */
   deliveryStats: DeliveryStats;
   /** Recently deleted agents: agentId → deletedAt timestamp (ms) */
@@ -121,7 +117,6 @@ export const emptyWorkspaceSubscriptionState: WorkspaceSubscriptionState = {
   agentQueues: {},
   agentStatuses: {},
   delegationGroups: {},
-  firedOneShotSubscriptions: [],
   deliveryStats: { ...emptyDeliveryStats },
   deletedAgents: {},
 };

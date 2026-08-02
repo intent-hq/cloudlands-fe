@@ -139,17 +139,6 @@ export const selectIsDelegationGroupComplete = createMainSelector(
 );
 
 // ---------------------------------------------------------------------------
-// One-shot guards
-// ---------------------------------------------------------------------------
-
-export const selectIsOneShotFired = createMainSelector(
-  (state, wsId: string, subscriptionId: string): boolean => {
-    const ws = selectWorkspaceSubscriptionState.select(state, wsId);
-    return ws.firedOneShotSubscriptions.includes(subscriptionId);
-  },
-);
-
-// ---------------------------------------------------------------------------
 // Deleted agents
 // ---------------------------------------------------------------------------
 
@@ -204,7 +193,6 @@ export interface SubscriptionsSignature {
   agentStatuses: Record<string, AgentStatus>;
   deliveryStats: DeliveryStats;
   deletedAgents: Record<string, number>;
-  firedOneShotSubscriptions: string[];
 }
 
 export const selectSubscriptionsSignature = createMainSelector(
@@ -225,7 +213,6 @@ export const selectSubscriptionsSignature = createMainSelector(
       agentStatuses: ws.agentStatuses,
       deliveryStats: ws.deliveryStats,
       deletedAgents: ws.deletedAgents,
-      firedOneShotSubscriptions: ws.firedOneShotSubscriptions,
     };
   },
 );
