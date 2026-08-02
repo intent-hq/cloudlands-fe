@@ -1754,6 +1754,7 @@
   "chat_modelPicker_noModelsForProvider_toast": "{provider}에서 사용 가능한 모델이 없습니다",
   "chat_modelPicker_noModels_label": "사용 가능한 모델 없음",
   "chat_modelPicker_pickAnother_description": "계속하려면 다른 모델을 선택하세요.",
+  "chat_modelPicker_providerDefault_label": "제공자 기본값",
   "chat_modelPicker_refreshGroup_title": "{group} 모델 새로 고침",
   "chat_modelPicker_retry_label": "다시 시도",
   "chat_modelPicker_runLoginHint_label": "터미널에서 \"{command}\"를 실행하세요.",

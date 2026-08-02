@@ -18,7 +18,6 @@ import type { WorkspaceId as BrandedWorkspaceId } from '$shared/types/branded-id
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { generateAgentNameFromText } from '$lib/utils/agent-name-generator';
-import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import {
   addMessage,
   setAgentStreaming,
@@ -28,10 +27,7 @@ import { selectTopLevelContextItems } from '$store/renderer/slices/context/conte
 import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 
 import { isModelValidForProvider, splitCompoundModelId } from '$shared/utils/compound-model-id';
-import {
-  selectCatalogDefaultProviderId,
-  selectProviderModelTiers,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -327,36 +323,18 @@ export class UnifiedAgentFactory {
         }
       }
 
-      // Step 6.6: Resolve model with provider-aware default
-      // If no model provided, use the provider's default 'balanced' tier model.
-      // Only resolve for providers with known tier mappings — providers with dynamic
-      // model lists (e.g. opencode) would produce invalid compound IDs.
+      // Step 6.6: Model is daemon-resolved (single resolver, PROTOCOL §5.11).
+      // Pass the caller's explicit model through untouched; when absent, omit
+      // it from `agent.create` so the daemon applies its resolved default
+      // (specialist frontmatter > settings chain > provider CLI default). No
+      // client-side tier/DEFAULT_AGENT_MODEL synthesis.
       let resolvedModel = normalized.model;
-      const providerTiers =
-        provider && !isBackend
-          ? selectProviderModelTiers.select(appStore.state, provider)
-          : undefined;
-      if (!resolvedModel && provider && providerTiers) {
-        const baseModel = providerTiers.balanced;
-        const defaultProviderId = selectCatalogDefaultProviderId.select(appStore.state);
-        // Prefix with provider ID for non-default providers (matches model store behavior)
-        resolvedModel = provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
-        logger.debug('Using provider-aware default model', {
-          provider,
-          baseModel,
-          resolvedModel,
-        });
-      }
-      // Final fallback to DEFAULT_AGENT_MODEL (only for backend or when no provider)
-      if (!resolvedModel) {
-        resolvedModel = DEFAULT_AGENT_MODEL;
-      }
 
       // Step 6.8: Safety-net — reject cross-provider compound model IDs.
-      // If the resolved model is a compound ID whose provider prefix doesn't match
-      // the target provider, log a warning and re-resolve to the provider's default.
-      // This catches edge cases where an LLM-supplied or inherited model slips through
-      // earlier validation (e.g., "codex:opencode/big-pickle").
+      // If the supplied model is a compound ID whose provider prefix doesn't
+      // match the target provider (e.g., "codex:opencode/big-pickle"), log a
+      // warning and drop it so the daemon resolves the target provider's own
+      // default instead of a cross-provider model leaking through.
       if (resolvedModel && provider && resolvedModel.includes(':')) {
         const defaultProviderId = isBackend
           ? ''
@@ -368,13 +346,7 @@ export class UnifiedAgentFactory {
             modelProvider,
             expectedProvider: provider,
           });
-          if (providerTiers) {
-            const baseModel = providerTiers.balanced;
-            resolvedModel = provider !== defaultProviderId ? `${provider}:${baseModel}` : baseModel;
-            logger.debug('Re-resolved model to provider default', { resolvedModel });
-          }
-          // If provider has no tier mappings (e.g., opencode), keep resolvedModel as-is.
-          // We cannot safely guess a model for dynamic-model providers.
+          resolvedModel = undefined;
         }
       }
 

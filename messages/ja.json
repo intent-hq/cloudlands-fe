@@ -1754,6 +1754,7 @@
   "chat_modelPicker_noModelsForProvider_toast": "{provider} で利用可能なモデルはありません",
   "chat_modelPicker_noModels_label": "利用可能なモデルはありません",
   "chat_modelPicker_pickAnother_description": "続行するには別のモデルを選択してください。",
+  "chat_modelPicker_providerDefault_label": "プロバイダーのデフォルト",
   "chat_modelPicker_refreshGroup_title": "{group} のモデルを更新",
   "chat_modelPicker_retry_label": "再試行",
   "chat_modelPicker_runLoginHint_label": "ターミナルで「{command}」を実行してください。",

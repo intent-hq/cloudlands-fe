@@ -1754,6 +1754,7 @@
   "chat_modelPicker_noModelsForProvider_toast": "Keine Modelle für {provider} verfügbar",
   "chat_modelPicker_noModels_label": "Keine Modelle verfügbar",
   "chat_modelPicker_pickAnother_description": "Wählen Sie ein anderes Modell, um fortzufahren.",
+  "chat_modelPicker_providerDefault_label": "Anbieterstandard",
   "chat_modelPicker_refreshGroup_title": "{group}-Modelle aktualisieren",
   "chat_modelPicker_retry_label": "Erneut versuchen",
   "chat_modelPicker_runLoginHint_label": "Führen Sie \"{command}\" in einem Terminal aus.",

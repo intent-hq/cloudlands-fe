@@ -20,7 +20,6 @@ import {
 import {
   selectEffectiveBehaviorPrompt,
   selectEffectiveCodingAgent,
-  selectEffectiveModel,
   selectGetFileSpecialist,
   selectSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
@@ -87,7 +86,9 @@ function buildCurrentSpecialistPayload(
     description: current.description,
     codingAgent:
       fileSpec?.codingAgent ?? current.codingAgent ?? selectEffectiveCodingAgent.select(state, id),
-    model: fileSpec?.model ?? current.defaultModel ?? selectEffectiveModel.select(state, id),
+    // Explicit frontmatter model only — the daemon's resolvedModel preview
+    // must never be baked into the file (it would pin a floating default).
+    model: fileSpec?.model || current.defaultModel,
     modelTier: fileSpec?.modelTier ?? current.defaultModelTier,
     roleReminder: fileSpec?.roleReminder ?? current.roleReminder,
     behaviorPrompt: fileSpec?.behaviorPrompt ?? selectEffectiveBehaviorPrompt.select(state, id),
@@ -158,8 +159,12 @@ export async function applySpecialistProposalWork(
     return { reverse };
   }
 
+  // Fallback when the proposal carries no model: the explicit frontmatter
+  // model only (empty ⇒ the file stays model-less and the daemon resolves the
+  // default) — never the daemon's resolvedModel preview, which would bake a
+  // floating default into the file as a pin.
   const fallbackModel = current
-    ? selectEffectiveModel.select(state, current.id)
+    ? (current.defaultModel ?? '')
     : selectSelectedModel.select(state);
   const model = stringField(proposal, detail, 'model', fallbackModel).trim();
   const { providerId } = selectParsedCompoundModelId.select(state, model);

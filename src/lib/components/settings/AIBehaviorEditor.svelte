@@ -270,11 +270,10 @@
         );
       }
     } else {
-      // Built-in or legacy — export to user file with the change applied
-      const effectiveModel = selectEffectiveModel.select(
-        appStore.state,
-        currentSpecialist.id,
-      );
+      // Built-in or legacy — export to user file with the change applied.
+      // Only an explicit frontmatter model is kept: baking the daemon's
+      // resolved preview into the file would turn a floating default into a
+      // pin (model resolution is daemon-owned, PROTOCOL §5.11).
       const effectiveCodingAgent = selectEffectiveCodingAgent.select(
         appStore.state,
         currentSpecialist.id,
@@ -285,7 +284,7 @@
           name: currentSpecialist.name,
           description: currentSpecialist.description,
           codingAgent: effectiveCodingAgent,
-          model: effectiveModel,
+          model: currentSpecialist.defaultModel,
           modelTier: currentSpecialist.defaultModelTier,
           roleReminder: currentSpecialist.roleReminder,
           behaviorPrompt: prompt,
@@ -307,7 +306,9 @@
         name: trimmed,
         description: currentSpecialist.description,
         codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
-        model: selectEffectiveModel.select(appStore.state, currentSpecialist.id),
+        // Explicit frontmatter model only — never bake the daemon's resolved
+        // preview into the file (it would pin a floating default).
+        model: currentSpecialist.defaultModel,
         modelTier: currentSpecialist.defaultModelTier,
         roleReminder: currentSpecialist.roleReminder,
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
@@ -329,7 +330,9 @@
         name: currentSpecialist.name,
         description: trimmed || currentSpecialist.description,
         codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
-        model: selectEffectiveModel.select(appStore.state, currentSpecialist.id),
+        // Explicit frontmatter model only — never bake the daemon's resolved
+        // preview into the file (it would pin a floating default).
+        model: currentSpecialist.defaultModel,
         modelTier: currentSpecialist.defaultModelTier,
         roleReminder: currentSpecialist.roleReminder,
         behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
@@ -550,6 +553,7 @@
           selectedModel={specialistModelValue}
           onModelChange={handleSpecialistModelChange}
           showDefaultOption={false}
+          defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           size="sm"
           variant="default"
         />

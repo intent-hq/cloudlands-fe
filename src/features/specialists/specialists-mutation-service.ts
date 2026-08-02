@@ -101,6 +101,8 @@ function toBundledSpecialist(def: SpecialistDef): (typeof SPECIALISTS)[number] {
     source: 'bundled' as const,
     defaultAgentType: def.agentType,
     hidden: def.hidden,
+    resolvedModel: def.resolvedModel,
+    resolvedProvider: def.resolvedProvider,
   };
 }
 
@@ -118,6 +120,8 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     filePath: def.path ?? '',
     source: def.source as SpecialistFileScope,
     hidden: def.hidden,
+    resolvedModel: def.resolvedModel,
+    resolvedProvider: def.resolvedProvider,
   };
 }
 

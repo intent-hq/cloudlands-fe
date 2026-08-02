@@ -145,6 +145,9 @@
     portal?: boolean;
     triggerClass?: string;
     defaultModelId?: string;
+    // Trigger label when no explicit model and no defaultModelId resolve
+    // (e.g. "Provider default" for daemon-resolved specialist previews).
+    defaultModelLabel?: string;
     showDefaultOption?: boolean;
     // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
@@ -173,6 +176,7 @@
     portal = true,
     triggerClass = '',
     defaultModelId,
+    defaultModelLabel,
     showDefaultOption = false,
     updateGlobalStore = false,
     updateGlobalDefault = false,
@@ -558,12 +562,12 @@
     if (hasExplicitModel) {
       return localModel
         ? (getModelLabel(localModel) ?? parseCompoundModelId(localModel).modelId)
-        : m.chat_modelPicker_defaultModel_label();
+        : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
     }
 
     return defaultModelId
       ? (getModelLabel(defaultModelId) ?? m.chat_modelPicker_defaultModel_label())
-      : m.chat_modelPicker_defaultModel_label();
+      : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
   });
 
   const triggerProviderId = $derived.by(() => {
