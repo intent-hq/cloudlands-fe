@@ -3959,6 +3959,7 @@
   "layout_commandPalette_terminals_group": "Terminaux",
   "layout_commandPalette_browser_group": "Navigateur",
   "layout_commandPalette_files_group": "Fichiers",
+  "layout_commandPalette_messages_group": "Messages de chat",
   "layout_commandPalette_otherSpaces_group": "Autres espaces",
   "settings_backgroundAgents_commit_label": "Message de commit",
   "settings_backgroundAgents_commit_description": "Génère des messages de commit git à partir des modifications indexées",
