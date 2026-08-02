@@ -367,7 +367,8 @@ describe('daemonHealthReducer', () => {
         },
       };
       const state = { ...initialState, polling: true };
-      const next = daemonHealthReducer(state, systemStatusSuccess(payload));
+      const receivedAt = '2026-08-01T12:34:56.789Z';
+      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt));
 
       expect(next.polling).toBe(false);
       expect(next.stats).toEqual({
@@ -385,8 +386,7 @@ describe('daemonHealthReducer', () => {
         arch: 'aarch64',
         transport: undefined,
       });
-      expect(next.lastUpdated).toBeTruthy();
-      expect(typeof next.lastUpdated).toBe('string');
+      expect(next.lastUpdated).toBe(receivedAt);
       expect(next.hostLocality).toBe('local');
     });
 
@@ -409,7 +409,8 @@ describe('daemonHealthReducer', () => {
         },
       };
       const state = { ...initialState, polling: true };
-      const next = daemonHealthReducer(state, systemStatusSuccess(payload));
+      const receivedAt = '2026-08-01T00:00:00.000Z';
+      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt));
 
       expect(next.polling).toBe(false);
       expect(next.stats).toEqual({
@@ -428,6 +429,7 @@ describe('daemonHealthReducer', () => {
         transport: undefined,
       });
       expect(next.hostLocality).toBe('remote');
+      expect(next.lastUpdated).toBe(receivedAt);
     });
 
     it('preserves the last-known hostLocality when the payload omits it (older daemon)', () => {
@@ -441,7 +443,10 @@ describe('daemonHealthReducer', () => {
         host: { os: 'macos', arch: 'aarch64', hasDisplay: true },
       } as unknown as SystemStatusWirePayload;
       const state = { ...initialState, hostLocality: 'local' as const };
-      const next = daemonHealthReducer(state, systemStatusSuccess(payload));
+      const next = daemonHealthReducer(
+        state,
+        systemStatusSuccess(payload, '2026-08-01T00:00:00.000Z'),
+      );
 
       expect(next.hostLocality).toBe('local');
     });

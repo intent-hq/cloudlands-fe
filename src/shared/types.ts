@@ -221,6 +221,7 @@ export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
  *  promotes to `in_progress`, and without one the task-stage rollups
  *  (`in_progress`/`not_started`) demote to `idle`. */
 export const WORKSPACE_DISPLAY_STATUS_VALUES = [
+  'needs_attention',
   'not_started',
   'in_progress',
   'idle',

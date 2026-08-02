@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -28,9 +28,9 @@
     "start": "electron .",
     "dist": "npm run build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && electron-builder",
     "dist:mac": "npm run build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && electron-builder --mac",
-    "dist:win": "npm run build && node scripts/copy-sidecar.cjs && electron-builder --win",
-    "dist:linux": "npm run build && node scripts/copy-sidecar.cjs && electron-builder --linux",
-    "dist:all": "npm run build && node scripts/copy-sidecar.cjs && electron-builder -mwl",
+    "dist:win": "npm run build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && electron-builder --win",
+    "dist:linux": "npm run build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && electron-builder --linux",
+    "dist:all": "npm run build && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && electron-builder -mwl",
     "version:set": "node scripts/set-version.cjs",
     "version:patch": "npm version patch --no-git-tag-version",
     "version:minor": "npm version minor --no-git-tag-version",
@@ -170,7 +170,7 @@
     "sveltekit",
     "intent"
   ],
-  "author": "Intent Contributors",
+  "author": "Intent HQ <intent-hq@users.noreply.github.com>",
   "license": "Apache-2.0",
   "devDependencies": {
     "@electron/notarize": "^2.5.0",

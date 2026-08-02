@@ -18,7 +18,6 @@ import {
   markDelegationAgentCompleted,
   markDelegationAgentDeleted,
   markDelegationDelivered,
-  markOneShotFired,
   recordDeliverySuccess,
   recordDeliveryFailure,
   recordDeliveryTimeout,
@@ -188,13 +187,11 @@ describe("agentSubscriptionsReducer", () => {
   });
 
   describe("removeSubscription", () => {
-    it("removes a subscription and cleans up firedOneShot", () => {
+    it("removes a subscription", () => {
       const sub = makeSub();
       let state = reduce(addSubscription(WS, sub));
-      state = reduce(markOneShotFired(WS, "sub-1"), state);
       state = reduce(removeSubscription(WS, "sub-1"), state);
       expect(state.byWorkspaceId[WS]?.subscriptions["sub-1"]).toBeUndefined();
-      expect(state.byWorkspaceId[WS]?.firedOneShotSubscriptions).not.toContain("sub-1");
     });
 
     it("returns same state if subscription does not exist", () => {
@@ -351,19 +348,6 @@ describe("agentSubscriptionsReducer", () => {
     });
   });
 
-  describe("markOneShotFired", () => {
-    it("adds subscription ID to fired list", () => {
-      const next = reduce(markOneShotFired(WS, "sub-1"));
-      expect(next.byWorkspaceId[WS]?.firedOneShotSubscriptions).toContain("sub-1");
-    });
-
-    it("is idempotent", () => {
-      const state = reduce(markOneShotFired(WS, "sub-1"));
-      const next = reduce(markOneShotFired(WS, "sub-1"), state);
-      expect(next).toBe(state);
-    });
-  });
-
   describe("delivery stats", () => {
     it("recordDeliverySuccess increments totals and successes", () => {
       const next = reduce(recordDeliverySuccess(WS));
@@ -415,70 +399,66 @@ describe("agentSubscriptionsReducer", () => {
     });
   });
 
-  describe("multi-round oneShot lifecycle (reducer integration)", () => {
+  // The daemon contract is uniformly deliver-once: every ungrouped watch fires
+  // exactly one completion wake and is removed daemon-side, announced via
+  // agent:subscriptions-changed snapshots. The reducer mirrors those snapshots
+  // with plain addSubscription/removeSubscription — no client-side fired-ID
+  // bookkeeping.
+  describe("multi-round watch lifecycle (reducer integration)", () => {
     const COORDINATOR = "agent-coordinator";
     const AGENT_B = "agent-implementor";
     const AGENT_C = "agent-verifier";
 
-    it("second oneShot subscription is visible after first is fired and removed", () => {
-      // Step 1: Create sub-1 (oneShot, coordinator watching agent-B)
+    it("second watch is visible after first is removed", () => {
+      // Round 1: coordinator watches agent-B
       const sub1 = makeSub({
         id: "sub-1",
         agentId: COORDINATOR,
-        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_B], oneShot: true },
+        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_B] },
       });
       let state = reduce(addSubscription(WS, sub1));
       expect(Object.keys(state.byWorkspaceId[WS]!.subscriptions)).toEqual(["sub-1"]);
 
-      // Step 2: Fire sub-1 (markOneShotFired + removeSubscription)
-      state = reduce(markOneShotFired(WS, "sub-1"), state);
-      expect(state.byWorkspaceId[WS]!.firedOneShotSubscriptions).toContain("sub-1");
+      // Daemon retires the watch at agent-B's completion; snapshot drops it
       state = reduce(removeSubscription(WS, "sub-1"), state);
       expect(state.byWorkspaceId[WS]!.subscriptions["sub-1"]).toBeUndefined();
-      expect(state.byWorkspaceId[WS]!.firedOneShotSubscriptions).not.toContain("sub-1");
 
-      // Step 3: Create sub-2 (oneShot, coordinator watching agent-C)
+      // Round 2: coordinator watches agent-C
       const sub2 = makeSub({
         id: "sub-2",
         agentId: COORDINATOR,
-        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_C], oneShot: true },
+        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_C] },
       });
       state = reduce(addSubscription(WS, sub2), state);
 
-      // Step 4: Verify sub-2 is visible and not interfered with by sub-1's cleanup
+      // sub-2 is visible and not interfered with by sub-1's removal
       const ws = state.byWorkspaceId[WS]!;
       expect(Object.keys(ws.subscriptions)).toEqual(["sub-2"]);
       expect(ws.subscriptions["sub-2"]).toEqual(sub2);
-      expect(ws.firedOneShotSubscriptions).not.toContain("sub-2");
-      expect(ws.firedOneShotSubscriptions).toHaveLength(0);
     });
 
-    it("enqueued events for coordinator survive across oneShot rounds", () => {
-      // Step 1: Create sub-1 and enqueue event for coordinator
+    it("enqueued events for coordinator survive across watch rounds", () => {
+      // Round 1: coordinator watches agent-B; enqueue B's idle event
       const sub1 = makeSub({
         id: "sub-1",
         agentId: COORDINATOR,
-        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_B], oneShot: true },
+        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_B] },
       });
       let state = reduce(addSubscription(WS, sub1));
 
-      // Enqueue B's idle event for coordinator
       state = reduce(enqueueEvent(WS, COORDINATOR, makeQueuedEvent({
         event: { type: "agent:idle", timestamp: "t1", workspaceId: WS, actor: { type: "agent", id: AGENT_B } } as any,
       })), state);
 
-      // Fire + remove sub-1
-      state = reduce(markOneShotFired(WS, "sub-1"), state);
+      // Watch retired at completion; queue cleared by delivery
       state = reduce(removeSubscription(WS, "sub-1"), state);
-
-      // Clear queue (simulating delivery)
       state = reduce(clearAgentQueue(WS, COORDINATOR), state);
 
-      // Step 2: Create sub-2 and enqueue C's event
+      // Round 2: coordinator watches agent-C; enqueue C's event
       const sub2 = makeSub({
         id: "sub-2",
         agentId: COORDINATOR,
-        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_C], oneShot: true },
+        filter: { eventTypes: ["agent:idle"], actorIds: [AGENT_C] },
       });
       state = reduce(addSubscription(WS, sub2), state);
 
@@ -491,8 +471,7 @@ describe("agentSubscriptionsReducer", () => {
       expect(queue).toHaveLength(1);
       expect((queue![0].event as any).actor.id).toBe(AGENT_C);
 
-      // Fire + remove sub-2
-      state = reduce(markOneShotFired(WS, "sub-2"), state);
+      // Watch retired at completion
       state = reduce(removeSubscription(WS, "sub-2"), state);
 
       // Queue should still have C's event (delivery happens separately)

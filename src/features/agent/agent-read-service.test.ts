@@ -207,6 +207,73 @@ describe("agentReadService (fake seam, real store)", () => {
     expect(stored[0].role).toBe("user");
   });
 
+  // Regression (monorepo#1250): a daemon crash mid-turn leaves the store with
+  // the both-true isStreaming/isProcessing pair that no stream-end event will
+  // ever clear. When this authoritative refetch returns an idle session, the
+  // explicit-false flags must win over the upsert pair-guard.
+  it("clears a crash-orphaned runtime-flag pair when the refetched session is idle", async () => {
+    const agentId = "agent-stale-pair-clear";
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({
+          id: agentId,
+          status: AgentStatus.Active,
+          isResponding: true,
+          isProcessing: true,
+          isStreaming: true,
+        }),
+      ]),
+    );
+
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isProcessing: false,
+        isStreaming: false,
+      }) as never,
+    );
+    await ensureAgentSession(agentId);
+
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.isStreaming).toBe(false);
+    expect(stored?.isProcessing).toBe(false);
+    expect(stored?.isResponding).toBe(false);
+  });
+
+  // Companion (monorepo#1250 non-goal): when the daemon reports the turn
+  // still in flight, the pre-existing pair is genuinely live and survives.
+  it("keeps the runtime-flag pair when the refetched session reports the turn in flight", async () => {
+    const agentId = "agent-live-pair-keep";
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({
+          id: agentId,
+          status: AgentStatus.Active,
+          isResponding: true,
+          isProcessing: true,
+          isStreaming: true,
+        }),
+      ]),
+    );
+
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Active,
+        isResponding: true,
+        isProcessing: true,
+        isStreaming: true,
+      }) as never,
+    );
+    await ensureAgentSession(agentId);
+
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.isStreaming).toBe(true);
+    expect(stored?.isProcessing).toBe(true);
+  });
+
   // Regression: ensureAgentSession must preserve existing messages even when
   // the existing messages array exists but is empty (e.g., during the window
   // between session creation and transcript hydration), because agent.get

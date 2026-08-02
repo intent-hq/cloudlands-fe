@@ -4,6 +4,33 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.12.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.11.0...v2.12.0) (2026-08-01)
+
+
+### 🚀 Features
+
+* add waiting-for header to one-shot watch rows in agent subscription footer ([#596](https://github.com/intent-hq/cloudlands-fe/issues/596)) ([8424349](https://github.com/intent-hq/cloudlands-fe/commit/84243493384df90baa89a71dbadf2aedab4e39d1))
+* add Windows and Linux release builds ([#599](https://github.com/intent-hq/cloudlands-fe/issues/599)) ([3c7695f](https://github.com/intent-hq/cloudlands-fe/commit/3c7695ff5b132abbea0f6fc74af80ec135410bf8))
+* add Workspace API output settings section ([#604](https://github.com/intent-hq/cloudlands-fe/issues/604)) ([3a28850](https://github.com/intent-hq/cloudlands-fe/commit/3a28850295edd5e218305b7a570d0436355df6e6))
+* notify fixed monorepo issues on beta release and stable promotion ([#598](https://github.com/intent-hq/cloudlands-fe/issues/598)) ([6e705dc](https://github.com/intent-hq/cloudlands-fe/commit/6e705dc6640eb82075e671d99a1964985fbedabd))
+* render dequeue-wait chip from queueInfo message metadata ([#611](https://github.com/intent-hq/cloudlands-fe/issues/611)) ([2991023](https://github.com/intent-hq/cloudlands-fe/commit/299102369319bf835b5738cd6950fc7ae9ec11a2))
+* render needs_attention workspace displayStatus ([#610](https://github.com/intent-hq/cloudlands-fe/issues/610)) ([932ba09](https://github.com/intent-hq/cloudlands-fe/commit/932ba09a18de070168dfdb9a873bf335e8860a62))
+* suppress redundant aggregate file-changes row in chat ([#592](https://github.com/intent-hq/cloudlands-fe/issues/592)) ([475c376](https://github.com/intent-hq/cloudlands-fe/commit/475c376edacb3636984cadc48983aacffd7f206a))
+* turn-failure notice card and live attention timestamps ([#593](https://github.com/intent-hq/cloudlands-fe/issues/593)) ([246fcb6](https://github.com/intent-hq/cloudlands-fe/commit/246fcb6bd0679821ac605a222abba0a5569dfe89))
+
+
+### 🐛 Bug Fixes
+
+* bump bundled intentd sidecar to 0.2.16 ([#612](https://github.com/intent-hq/cloudlands-fe/issues/612)) ([fcc27af](https://github.com/intent-hq/cloudlands-fe/commit/fcc27af4d45939aba47b32d2283eac78959f584a))
+* clear stale runtime flags on authoritative-idle hydration (intent-hq/monorepo[#1250](https://github.com/intent-hq/cloudlands-fe/issues/1250)) ([#606](https://github.com/intent-hq/cloudlands-fe/issues/606)) ([4b91486](https://github.com/intent-hq/cloudlands-fe/commit/4b9148664c0b430ebe85b34825f8281c4114ab12))
+* enforce option/Other exclusivity for single-select Q&A questions ([#602](https://github.com/intent-hq/cloudlands-fe/issues/602)) ([544c8c8](https://github.com/intent-hq/cloudlands-fe/commit/544c8c89795187356fb5ce4eebf69b89cb5b3a53))
+* evict stale stream-owned ghost messages on hydrate (intent-hq/monorepo[#1160](https://github.com/intent-hq/cloudlands-fe/issues/1160)) ([#600](https://github.com/intent-hq/cloudlands-fe/issues/600)) ([02077b1](https://github.com/intent-hq/cloudlands-fe/commit/02077b191919d6f846baff0fac6f3c2ef2bf643b))
+* exclude non-file tool calls from conversation file changes (monorepo[#1245](https://github.com/intent-hq/cloudlands-fe/issues/1245)) ([#601](https://github.com/intent-hq/cloudlands-fe/issues/601)) ([42e551b](https://github.com/intent-hq/cloudlands-fe/commit/42e551b01b6181d742b74b8c3aa54cca0a74c4c3))
+* include completionReport and mutable metadata fields in session no-op guard snapshot (intent-hq/monorepo[#1231](https://github.com/intent-hq/cloudlands-fe/issues/1231)) ([#594](https://github.com/intent-hq/cloudlands-fe/issues/594)) ([7f04c17](https://github.com/intent-hq/cloudlands-fe/commit/7f04c17b724d5d84ee070104fb848a0325e2d5da))
+* remove Quake terminal tabs on terminal:exit ([#551](https://github.com/intent-hq/cloudlands-fe/issues/551)) ([67b8a4b](https://github.com/intent-hq/cloudlands-fe/commit/67b8a4b33ba1aec0fdc2898484ebd17b8c29341a))
+* round live elapsed 'ago' timer to whole seconds ([#603](https://github.com/intent-hq/cloudlands-fe/issues/603)) ([237825f](https://github.com/intent-hq/cloudlands-fe/commit/237825f40774e20e52359a0a6343ae1ea3f35cfe))
+* stack attention request banner header above reason ([cf93299](https://github.com/intent-hq/cloudlands-fe/commit/cf93299d5af0b29b4f29929d128fddcde5959ae6))
+
 ## [2.11.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.10.2...v2.11.0) (2026-08-01)
 
 

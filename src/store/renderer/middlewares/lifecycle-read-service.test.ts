@@ -614,6 +614,51 @@ describe("lifecycleReadService (hydrateAgentsRequested → agents.list convergen
     }
   });
 
+  // Regression (monorepo#1250): a daemon crash mid-turn leaves crash-orphaned
+  // both-true isStreaming/isProcessing pairs that no stream-end event will
+  // ever clear. On rehydrate, agents the fresh list reports IDLE get the
+  // stale pair cleared, while agents the list reports still in flight keep
+  // theirs — the bulk upsert is partitioned per agent.
+  it("clears crash-orphaned runtime flags for idle agents and keeps live ones on rehydrate", async () => {
+    const ws = "ws-agents-stale-flags";
+    const staleId = "agent-stale-flags";
+    const liveId = "agent-live-flags";
+    const inFlightFlags = {
+      status: AgentStatus.Active,
+      isResponding: true,
+      isProcessing: true,
+      isStreaming: true,
+    } as Partial<AgentSession>;
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeAgent(staleId, ws, inFlightFlags),
+        makeAgent(liveId, ws, inFlightFlags),
+      ]),
+    );
+
+    // Post-restart daemon list: staleId's turn died with the daemon (idle,
+    // explicit-false flags); liveId's turn genuinely resumed.
+    agentsApi.list.mockResolvedValueOnce([
+      makeAgent(staleId, ws, {
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isProcessing: false,
+        isStreaming: false,
+      }),
+      makeAgent(liveId, ws, inFlightFlags),
+    ] as never);
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    await flush();
+
+    const stale = appStore.state.agentSessions.byAgentId[staleId];
+    expect(stale?.isStreaming).toBe(false);
+    expect(stale?.isProcessing).toBe(false);
+    expect(stale?.isResponding).toBe(false);
+    const live = appStore.state.agentSessions.byAgentId[liveId];
+    expect(live?.isStreaming).toBe(true);
+    expect(live?.isProcessing).toBe(true);
+  });
+
   // Regression (LEAK-1 review #2): a purge landing while an `agents:{wsId}`
   // fetch is in flight must neither coalesce away the follow-up rehydrate nor
   // let the stale pre-purge response resurrect the purged agents.

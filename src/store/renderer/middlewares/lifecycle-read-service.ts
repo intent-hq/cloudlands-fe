@@ -99,6 +99,10 @@ import {
 import { getAgentLineStats } from "$features/line-changes/line-changes.client";
 import { isAgentDeletionPending } from "$features/agent/utils/pending-agent-deletions";
 import {
+  STALE_RUNTIME_FLAG_CLEAR_OPTIONS,
+  staleRuntimeFlagClearUpsertOptions,
+} from "$features/agent/utils/stale-runtime-flag-clear";
+import {
   bulkUpsertSessions,
   upsertSession,
 } from "../slices/agent-session/agent-session-slice";
@@ -419,6 +423,17 @@ function refreshAgentLineStats(agentId: string, forceRefresh: boolean): void {
 function hydrateWorkspaceAgents(wsId: string): void {
   const generation = agentsHydrationGeneration.get(wsId) ?? 0;
   coalesce(`agents:${wsId}`, async () => {
+    // Capture BEFORE the fetch (monorepo#1250): agents whose both-true
+    // runtime-flag pair already exists when this read begins are either
+    // genuinely live (the fresh snapshot reports the turn in flight) or a
+    // stale leftover from a daemon crash mid-turn (the snapshot reports
+    // idle). A pair set DURING the fetch (chatSendStarted racing this read)
+    // keeps the slice pair-guard's default preservation semantics.
+    const sessionsBefore = appStore.state.agentSessions?.byAgentId ?? {};
+    const hadInFlightPairBeforeFetch = (agentId: string): boolean => {
+      const stored = sessionsBefore[agentId];
+      return stored?.isStreaming === true && stored?.isProcessing === true;
+    };
     const listed = await appClient.agents.list(wsId);
     if ((agentsHydrationGeneration.get(wsId) ?? 0) !== generation) return;
     const fetched = listed.filter((agent) => !isAgentDeletionPending(String(agent.id)));
@@ -431,7 +446,22 @@ function hydrateWorkspaceAgents(wsId: string): void {
         : agent;
     });
     appStore.dispatch(setAgents(wsId, agents));
-    appStore.dispatch(bulkUpsertSessions(agents));
+    // Stale-pair convergence (monorepo#1250): bulk-upsert options apply to
+    // the whole batch, so partition — agents whose pre-fetch stale pair meets
+    // an authoritatively idle snapshot get the clear options; everything else
+    // keeps the default pair-guard preservation semantics.
+    const staleClearAgents = agents.filter(
+      (agent) =>
+        staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch(String(agent.id)), agent) !==
+        undefined,
+    );
+    const defaultAgents = agents.filter((agent) => !staleClearAgents.includes(agent));
+    if (defaultAgents.length > 0) {
+      appStore.dispatch(bulkUpsertSessions(defaultAgents));
+    }
+    if (staleClearAgents.length > 0) {
+      appStore.dispatch(bulkUpsertSessions(staleClearAgents, STALE_RUNTIME_FLAG_CLEAR_OPTIONS));
+    }
     for (const agent of agents) {
       appStore.dispatch(upsertSession(agent));
     }

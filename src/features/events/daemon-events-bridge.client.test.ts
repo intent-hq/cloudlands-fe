@@ -4821,13 +4821,36 @@ describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slic
     const handler = capturedHandlers[0]!;
     const { WORKSPACE_DISPLAY_STATUS_VALUES } = await import('$shared/types');
 
-    // The canonical wire list — includes 'idle' (intentd#793).
+    // The canonical wire list — includes 'idle' (intentd#793) and the
+    // step-0 'needs_attention' rollup (intentd#825).
     expect(WORKSPACE_DISPLAY_STATUS_VALUES).toContain('idle');
+    expect(WORKSPACE_DISPLAY_STATUS_VALUES).toContain('needs_attention');
     for (const value of WORKSPACE_DISPLAY_STATUS_VALUES) {
       handler(displayStatusChangedNotification(value));
       const ws = await readWorkspace();
       expect(ws.displayStatus).toBe(value);
     }
+  });
+
+  it('applies an in_progress → needs_attention transition (no drop, no stale status)', async () => {
+    // Step-0 attention rollup (PROTOCOL §5.1/§6.5): the daemon pushes
+    // `workspace:displayStatus-changed` with `needs_attention` when a
+    // top-level agent raises an attention request or asks structured
+    // questions — it outranks the `agent_running → in_progress` promotion.
+    // Before `needs_attention` joined WORKSPACE_DISPLAY_STATUS_VALUES the
+    // guard dropped the transition and the entity kept showing the stale
+    // `in_progress` until the next snapshot; this locks in the live path.
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(displayStatusChangedNotification('in_progress'));
+    let ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('in_progress');
+
+    handler(displayStatusChangedNotification('needs_attention'));
+    ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('needs_attention');
   });
 
   it('is a no-op when the displayStatus value is not a wire value', async () => {
@@ -4840,6 +4863,12 @@ describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slic
     expect(ws.displayStatus).toBe('in_progress');
 
     handler(displayStatusChangedNotification('InProgress'));
+    ws = await readWorkspace();
+    expect(ws.displayStatus).toBe('in_progress');
+
+    // A genuinely unknown future wire value keeps the guard's documented
+    // contract: dropped/absent, never merged onto the entity.
+    handler(displayStatusChangedNotification('some_future_status'));
     ws = await readWorkspace();
     expect(ws.displayStatus).toBe('in_progress');
   });
