@@ -381,6 +381,8 @@ function handleStreamActivityEvent(event: WorkspaceEvent): void {
   // until the next turn starts.
   if (previewTurnMessageIdByAgent.get(agentId) !== messageId) {
     previewTurnMessageIdByAgent.set(agentId, messageId);
+    // The updateAgentDigest reducer keys on agentId and ignores the wsId
+    // element, so '' here is a placeholder, not a guess a consumer relies on.
     appStore.dispatch(updateAgentDigest(workspaceIdOf(event) ?? '', agentId, null));
   }
   applyStreamPreviewFields(agentId, lastAgentResponse, digest);
@@ -1897,6 +1899,10 @@ function handleNotification(method: string, params: unknown): void {
     const data = (event as { data?: Record<string, unknown> }).data;
     if (typeof data?.agentId === 'string') {
       removeAgentFailure(data.agentId);
+      // Tie off the per-agent turn-tracking entry (kept alive across
+      // agent:stream:end for the straggler-ping case) so the map stays
+      // bounded by live agents.
+      previewTurnMessageIdByAgent.delete(data.agentId);
     }
   }
 

@@ -823,6 +823,39 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(readSession()?.digest).toBe('Final digest');
   });
 
+  it('agent:deleted evicts the per-agent turn-tracking entry (map stays bounded)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'turn one text',
+      }),
+    );
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        digest: 'Final digest',
+      }),
+    );
+    handler(notification('agent:deleted', { agentId: AGENT }));
+
+    // After eviction the entry is gone: a ping reusing the SAME messageId is
+    // treated as a fresh turn and clears the digest (versus the straggler
+    // test above, where the retained entry preserves it).
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'post-delete ping',
+      }),
+    );
+    expect(readSession()?.digest).toBeUndefined();
+  });
+
   it("a digest carried on the new turn's first ping survives the turn-boundary clear", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

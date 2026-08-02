@@ -497,8 +497,9 @@
   // Show completion report if available - priority order:
   // 0. Live session digest while responding (push-applied from
   //    `agent:stream:activity` and cleared at each turn's first ping by the
-  //    events bridge, monorepo#1327 — so mid-turn it is THIS turn's digest,
-  //    never a previous turn's leftover)
+  //    events bridge, monorepo#1327 — so mid-turn it is this turn's digest,
+  //    modulo the sub-second window before that first ping lands, during
+  //    which the previous turn's digest may briefly linger)
   // 1. Digest from <agent_digest> tag (most concise, agent-provided summary)
   // 2. Completion report from report_to_parent tool (prop from event data)
   // 3. Completion report from agent metadata
