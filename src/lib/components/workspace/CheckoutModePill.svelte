@@ -24,10 +24,12 @@
 
   let { checkoutMode, workspace, class: className = '' }: Props = $props();
 
+  // When a workspace is provided, its checkoutMode is authoritative so the
+  // label always matches the workspace whose diskUsage the tooltip shows.
+  const mode = $derived(workspace ? workspace.checkoutMode : checkoutMode);
+
   // i18n-ignore (CoW / Worktree are technical terms)
-  const label = $derived(
-    checkoutMode === 'cow' ? 'CoW' : checkoutMode === 'worktree' ? 'Worktree' : null,
-  );
+  const label = $derived(mode === 'cow' ? 'CoW' : mode === 'worktree' ? 'Worktree' : null);
 
   const diskUsage = $derived(workspace?.diskUsage);
   const formattedSize = $derived(diskUsage ? formatBytesBinary(diskUsage.bytes) : '');

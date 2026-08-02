@@ -908,7 +908,7 @@
         {#if $workspace?.checkoutMode}
           <span class="mx-1">·</span>
         {/if}
-        <CheckoutModePill checkoutMode={$workspace?.checkoutMode} workspace={$workspace} />
+        <CheckoutModePill workspace={$workspace} />
         {#if $workspace?.branch}
           <span class="mx-1">·</span>
           <span>{$workspace.branch}</span>
@@ -1081,7 +1081,7 @@
         {#if $workspace?.checkoutMode}
           <span class="mx-1">·</span>
         {/if}
-        <CheckoutModePill checkoutMode={$workspace?.checkoutMode} workspace={$workspace} />
+        <CheckoutModePill workspace={$workspace} />
       </div>
     </div>
 

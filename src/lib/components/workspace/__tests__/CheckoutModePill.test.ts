@@ -79,17 +79,26 @@ describe('CheckoutModePill', () => {
   });
 
   it('uses the plain checkout-mode title when diskUsage is absent', async () => {
-    await renderPill({ checkoutMode: 'cow', workspace: baseWorkspace });
+    await renderPill({ workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace });
 
     const pill = screen.getByText('CoW');
     expect(pill.getAttribute('title')).toBe('Checkout mode: CoW');
     expect(screen.queryByTestId('tooltip-content')).toBeNull();
   });
 
+  it("derives the label from the workspace's checkoutMode, ignoring a mismatched prop", async () => {
+    await renderPill({
+      checkoutMode: 'worktree',
+      workspace: { ...baseWorkspace, checkoutMode: 'cow', diskUsage } as Workspace,
+    });
+
+    expect(screen.getByText('CoW')).toBeTruthy();
+    expect(screen.queryByText('Worktree')).toBeNull();
+  });
+
   it('shows the disk-usage tooltip with the checkout-mode heading when diskUsage is present', async () => {
     await renderPill({
-      checkoutMode: 'cow',
-      workspace: { ...baseWorkspace, diskUsage } as Workspace,
+      workspace: { ...baseWorkspace, checkoutMode: 'cow', diskUsage } as Workspace,
     });
 
     const pill = screen.getByText('CoW');
@@ -109,8 +118,7 @@ describe('CheckoutModePill', () => {
 
   it('renders the notes as separate flush-left paragraphs (no pre-wrap indentation)', async () => {
     await renderPill({
-      checkoutMode: 'worktree',
-      workspace: { ...baseWorkspace, diskUsage } as Workspace,
+      workspace: { ...baseWorkspace, checkoutMode: 'worktree', diskUsage } as Workspace,
     });
 
     const tooltip = screen.getByTestId('tooltip-content');
@@ -124,8 +132,8 @@ describe('CheckoutModePill', () => {
   });
 
   it('runs the shrink action for the workspace when the shrink link is clicked', async () => {
-    const workspace = { ...baseWorkspace, diskUsage } as Workspace;
-    await renderPill({ checkoutMode: 'cow', workspace });
+    const workspace = { ...baseWorkspace, checkoutMode: 'cow', diskUsage } as Workspace;
+    await renderPill({ workspace });
 
     const link = screen.getByRole('button', { name: 'Try to shrink this workspace' });
     await fireEvent.click(link);

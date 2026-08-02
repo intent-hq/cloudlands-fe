@@ -1,5 +1,6 @@
 /**
- * "Try to shrink this workspace" action for the disk-usage pill tooltip.
+ * "Try to shrink this workspace" action for the disk-usage tooltip on the
+ * checkout-mode pill.
  *
  * Creates an idle implementor-specialist chat agent (no initial message — the
  * agent does NOT start working), persists the canned shrink prompt as the
@@ -60,8 +61,8 @@ export async function runShrinkWorkspaceAction(workspace: Workspace): Promise<vo
       model,
       provider,
       behaviorPrompt,
-      source: 'disk-usage-pill',
-      metadata: { specialist: 'implementor', source: 'disk-usage-pill' },
+      source: 'shrink-workspace',
+      metadata: { specialist: 'implementor', source: 'shrink-workspace' },
     });
     appStore.dispatch(launchAction);
     const session = await launchAction.promise;

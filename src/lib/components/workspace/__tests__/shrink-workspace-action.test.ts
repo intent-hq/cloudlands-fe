@@ -77,7 +77,7 @@ describe('runShrinkWorkspaceAction', () => {
     expect(config.behaviorPrompt).toBe('implementor behavior');
     expect(config.model).toBe('model-smart');
     expect(config.provider).toBe('auggie');
-    expect(config.metadata).toEqual({ specialist: 'implementor', source: 'disk-usage-pill' });
+    expect(config.metadata).toEqual({ specialist: 'implementor', source: 'shrink-workspace' });
 
     expect(mocks.draftsSet).toHaveBeenCalledOnce();
     expect(mocks.draftsSet).toHaveBeenCalledWith('ws-1', 'agent-1', SHRINK_WORKSPACE_PROMPT);
