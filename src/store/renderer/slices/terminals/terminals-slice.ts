@@ -357,8 +357,9 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
       // transient (daemon restart re-registration, PTY spawn still in
       // flight around a workspace switch) — replacing state here would
       // drop the tabs and force the panel closed (monorepo#1330).
-      // Preserve them; genuinely-gone terminals converge via
-      // `terminal:exit` events and the next non-empty hydration.
+      // Preserve them; genuinely-gone terminals converge via the
+      // heartbeat/auto-reconnect path and the next non-empty hydration
+      // (PTYs lost to a daemon restart emit no `terminal:exit` event).
       if (getWs(state, wsId).terminals.ids.length > 0) return state;
 
       // Don't restore isOpen when there are no terminals — the panel
