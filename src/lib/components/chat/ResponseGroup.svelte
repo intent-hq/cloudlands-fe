@@ -227,10 +227,14 @@
     >
       <Fa icon={faRectangleList} size={12} class="text-ghost" />
     </div>
-    <span class="font-semibold text-foreground shrink-0">{name}</span>
-    {#if textSnippet}
-      <span class="text-sm text-subtle truncate min-w-0">{textSnippet}</span>
-    {/if}
+    <!-- Name and snippet share one line box so their text baselines coincide;
+         a flex sibling with `truncate` (overflow: hidden) would synthesize its
+         baseline from the box edge and sit visibly raised. -->
+    <span class="min-w-0 truncate">
+      <span class="font-semibold text-foreground">{name}</span>{#if textSnippet}<span
+          class="text-sm text-subtle ml-2.5">{textSnippet}</span
+        >{/if}
+    </span>
     <div class="flex items-center gap-1.5 ml-auto shrink-0 opacity-40">
       {#each stats.icons.slice(0, 5) as icon, i (icon)}
         <span class="icon-animate-in" style="animation-delay: {i * 50}ms">
