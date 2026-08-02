@@ -15,7 +15,6 @@ logs/
 # Generated files
 *.min.js
 *.min.css
-messages/en-XA.json
 
 # Documentation archives
 docs-archive-*/
