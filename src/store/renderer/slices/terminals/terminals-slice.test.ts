@@ -596,6 +596,34 @@ describe("terminalsReducer", () => {
     });
   });
 
+  // Regression (intent-hq/monorepo#1330): switching workspaces re-dispatches
+  // loadWorkspaceTerminals from mount hydration. When the daemon returns a
+  // transient empty terminal.list (restart race, PTY not yet spawned), the
+  // reducer REPLACES the workspace state wholesale — live tabs vanish and
+  // isOpen is forced to false. An empty hydration result over existing live
+  // tabs must preserve them.
+  describe("transient empty hydration over live tabs (monorepo#1330)", () => {
+    it("must not clobber existing live tabs when an empty list lands", () => {
+      const stateWith: TerminalOverlayState = {
+        ...initialState,
+        workspaces: { [WS]: {
+          isOpen: true,
+          activeTerminalId: "pty-42",
+          terminals: col([{ id: "pty-42", name: "Terminal" }]),
+          terminalsLoaded: true,
+          isLoadingTerminals: false,
+          recentlyCreatedTerminals: [],
+        }},
+      };
+
+      const state = terminalsReducer(stateWith, loadWorkspaceTerminals(WS, [], null));
+
+      expect(terms(state).map((t) => t.id)).toEqual(["pty-42"]);
+      expect(getWs(state).activeTerminalId).toBe("pty-42");
+      expect(getWs(state).isOpen).toBe(true);
+    });
+  });
+
   describe("setTerminalsList", () => {
     it("should replace terminal list preserving custom names", () => {
       const stateWith: TerminalOverlayState = {

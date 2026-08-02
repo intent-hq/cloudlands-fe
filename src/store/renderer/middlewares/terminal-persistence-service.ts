@@ -272,6 +272,23 @@ const WORKSPACE_STATE_PERSIST_ACTIONS = new Set<string>([
 ]);
 
 /**
+ * GAP-5 guard: an empty-list `loadWorkspaceTerminals` is a transient
+ * hydration (monorepo#1330) — the reducer preserves existing live tabs, and
+ * the empty-over-empty pass forces isOpen=false in memory only. It must never
+ * durably overwrite a saved open state, so the persist block skips it
+ * explicitly rather than relying on the savedState-undefined re-dispatch
+ * exiting before the block runs.
+ */
+function isEmptyTerminalsHydration(action: {
+  type: string;
+  payload?: unknown;
+}): boolean {
+  if (action.type !== loadWorkspaceTerminals.type) return false;
+  const terminals = (action.payload as [string, unknown[], ...unknown[]])[1];
+  return Array.isArray(terminals) && terminals.length === 0;
+}
+
+/**
  * Middleware restoring terminal persistence behaviors from the deleted
  * terminals/sagas/persistence-saga.ts and workspace-init-saga.ts.
  * Hydration runs once at factory time; persistence runs after each mutating
@@ -342,8 +359,12 @@ export function createTerminalPersistenceMiddleware(): StoreMiddleware {
         removeTerminalMetadataFromStorage(termId, wsId);
       }
 
-      // GAP 5: Persist per-workspace overlay state
-      if (WORKSPACE_STATE_PERSIST_ACTIONS.has(action.type)) {
+      // GAP 5: Persist per-workspace overlay state (except transient
+      // empty-list hydrations — see isEmptyTerminalsHydration)
+      if (
+        WORKSPACE_STATE_PERSIST_ACTIONS.has(action.type) &&
+        !isEmptyTerminalsHydration(action)
+      ) {
         const wsId = (action.payload as [string, ...unknown[]])[0];
         if (!wsId) return result;
         const state = api.getState() as StoreState;
