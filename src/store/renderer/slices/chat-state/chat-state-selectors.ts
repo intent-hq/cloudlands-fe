@@ -5,6 +5,7 @@ import type {
   ChatAgentState,
   StatusEvent,
   LastAttemptedMessage,
+  LiveStreamPhase,
   ModelUnavailableInfo,
   TranscriptHydrationStatus,
 } from './chat-state-types';
@@ -118,6 +119,15 @@ export const selectChatStateOrDefault = store.createSelector(
 export const selectTranscriptHydration = store.createSelector(
   (state, agentId: string): TranscriptHydrationStatus | undefined =>
     getAgentChatState(state, agentId).transcriptHydration,
+);
+
+/**
+ * Select the standing `chat.subscribe` lifecycle phase for the agent, or
+ * null when no subscription is open. Drives the pre-live hydration indicator.
+ */
+export const selectChatLiveStreamPhase = store.createSelector(
+  (state, agentId: string): LiveStreamPhase | null =>
+    getAgentChatState(state, agentId).liveStreamPhase ?? null,
 );
 
 
