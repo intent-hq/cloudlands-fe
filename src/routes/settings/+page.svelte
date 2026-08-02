@@ -234,6 +234,7 @@
     'git-workspace': 'setup',
     'utility-default-model': 'setup',
     notifications: 'setup',
+    'websocket-api': 'general',
   };
 
   onMount(() => {
@@ -449,14 +450,6 @@
           <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
         </div>
 
-        <!-- WebSocket API -->
-        <div id="websocket-api" class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            {m.settings_section_websocketApi()}
-          </h2>
-          <WebSocketApiSettings />
-        </div>
-
         <!-- Workspace API Output -->
         <div id="workspace-api" class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
@@ -608,6 +601,14 @@
               <LanguageSettings />
             </section>
           </div>
+        </div>
+
+        <!-- WebSocket API -->
+        <div id="websocket-api" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            {m.settings_section_websocketApi()}
+          </h2>
+          <WebSocketApiSettings />
         </div>
 
         <!-- Updates -->
