@@ -4,6 +4,7 @@
     faArrowUpRightFromSquare,
     faBoxArchive,
     faCheck,
+    faKeyboard,
     faThumbtack,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
@@ -21,7 +22,10 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import type {
+    SidebarMenuEntry,
+    SidebarMenuItem,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     incrementContextMenuOpen,
     decrementContextMenuOpen,
@@ -45,6 +49,17 @@
     requestArchiveWorkspace,
     requestDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import {
+    markKeySlotUnassigned,
+    pinWorkspaceToKey,
+  } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+  import {
+    selectWorkspacePinnedKeySlot,
+    selectWorkspaceResolvedKeySlot,
+  } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+  import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
+  import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
   import { cn } from '$lib/utils';
   import { isPRMergeable as checkPRMergeable, getPRTooltipContent } from '$lib/utils/pr-status';
@@ -138,6 +153,11 @@
     workspaceIdStore.set(workspace?.id ?? '');
   });
   const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
+
+  // Micro-key slot badge/menus: only while a micro is connected (manager
+  // status connected — not mere presence).
+  const microConnected$ = microConnectedReadable();
+  const workspaceKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
 
   // Load canonical tasks for progress display (no-op once initialized).
   $effect(() => {
@@ -285,6 +305,40 @@
       });
     }
 
+    if ($microConnected$) {
+      const pinnedSlot = selectWorkspacePinnedKeySlot.select(appStore.state, workspace.id);
+      const resolvedSlot = selectWorkspaceResolvedKeySlot.select(appStore.state, workspace.id);
+      const assignSubmenu: SidebarMenuItem[] = [];
+      for (let slot = 0; slot < AGENT_KEY_COUNT; slot += 1) {
+        assignSubmenu.push({
+          id: `assign-micro-key-${slot + 1}`,
+          label: m.workspace_card_assignMicroKeyNumber_label({ number: formatInteger(slot + 1) }),
+          checked: pinnedSlot === slot,
+          onClick: () => {
+            appStore.dispatch(pinWorkspaceToKey(slot, workspace.id));
+            closeContextMenu();
+          },
+        });
+      }
+      if (resolvedSlot !== null) {
+        assignSubmenu.push({
+          id: 'unassign-micro-key',
+          label: m.workspace_card_unassignMicroKey_label(),
+          onClick: () => {
+            appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
+            closeContextMenu();
+          },
+        });
+      }
+      items.push({
+        id: 'assign-micro-key',
+        label: m.workspace_card_assignMicroKey_label(),
+        icon: faKeyboard,
+        onClick: () => {},
+        submenu: assignSubmenu,
+      });
+    }
+
     items.push({
       id: 'archive',
       label: m.workspace_card_archive_label(),
@@ -404,7 +458,10 @@
     onmouseleave={handleMouseLeave}
     style:anchor-name="--workspace-list-{workspace.id}"
   >
-    <div class="flex items-center shrink-0 mt-[3px]">
+    <div class="flex items-center gap-1.5 shrink-0 mt-[3px]">
+      {#if $microConnected$ && $workspaceKeySlot$ !== null}
+        <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+      {/if}
       <div class="shrink-0 relative">
         <WorkspacePhaseIndicator
           phase={workspacePhaseInfo?.phase ?? 'planning'}

@@ -7,6 +7,10 @@ export interface SidebarMenuItem {
   onClick: () => void;
   disabled?: boolean;
   destructive?: boolean;
+  /** Marks the item as active/selected (renders a check indicator). */
+  checked?: boolean;
+  /** Child items rendered in a flyout submenu; `onClick` is ignored when set. */
+  submenu?: SidebarMenuItem[];
 }
 
 export interface SidebarMenuSeparator {

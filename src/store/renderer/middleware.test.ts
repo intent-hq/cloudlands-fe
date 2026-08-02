@@ -24,6 +24,14 @@ const mocks = vi.hoisted(() => {
   const permissionResponseMiddleware = createPassthroughMiddleware();
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
   const agentFailureToastMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleConnectionToastMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleIntegrationToggleMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleKeyPinPersistenceMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleKeySwitchMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleLedStatusMiddleware = createPassthroughMiddleware();
+  const hardwareConsolePromptPickerMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleActionKeyMiddleware = createPassthroughMiddleware();
+  const hardwareConsoleEncoderMiddleware = createPassthroughMiddleware();
   const daemonHealthMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
   const modelSelectionPersistenceMiddleware = createPassthroughMiddleware();
@@ -97,6 +105,22 @@ const mocks = vi.hoisted(() => {
     createPermissionResponseMiddleware: vi.fn(() => permissionResponseMiddleware),
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
     createAgentFailureToastMiddleware: vi.fn(() => agentFailureToastMiddleware),
+    createHardwareConsoleConnectionToastMiddleware: vi.fn(
+      () => hardwareConsoleConnectionToastMiddleware,
+    ),
+    createHardwareConsoleIntegrationToggleMiddleware: vi.fn(
+      () => hardwareConsoleIntegrationToggleMiddleware,
+    ),
+    createHardwareConsoleKeyPinPersistenceMiddleware: vi.fn(
+      () => hardwareConsoleKeyPinPersistenceMiddleware,
+    ),
+    createHardwareConsoleKeySwitchMiddleware: vi.fn(() => hardwareConsoleKeySwitchMiddleware),
+    createHardwareConsoleLedStatusMiddleware: vi.fn(() => hardwareConsoleLedStatusMiddleware),
+    createHardwareConsolePromptPickerMiddleware: vi.fn(
+      () => hardwareConsolePromptPickerMiddleware,
+    ),
+    createHardwareConsoleActionKeyMiddleware: vi.fn(() => hardwareConsoleActionKeyMiddleware),
+    createHardwareConsoleEncoderMiddleware: vi.fn(() => hardwareConsoleEncoderMiddleware),
     createDaemonHealthMiddleware: vi.fn(() => daemonHealthMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
     createModelSelectionPersistenceMiddleware: vi.fn(() => modelSelectionPersistenceMiddleware),
@@ -176,6 +200,14 @@ const mocks = vi.hoisted(() => {
     permissionResponseMiddleware,
     daemonEventsBridgeMiddleware,
     agentFailureToastMiddleware,
+    hardwareConsoleConnectionToastMiddleware,
+    hardwareConsoleIntegrationToggleMiddleware,
+    hardwareConsoleKeyPinPersistenceMiddleware,
+    hardwareConsoleKeySwitchMiddleware,
+    hardwareConsoleLedStatusMiddleware,
+    hardwareConsolePromptPickerMiddleware,
+    hardwareConsoleActionKeyMiddleware,
+    hardwareConsoleEncoderMiddleware,
     daemonHealthMiddleware,
     settingsHydrationMiddleware,
     modelSelectionPersistenceMiddleware,
@@ -257,6 +289,33 @@ vi.mock("$features/events/daemon-events-bridge.client", () => ({
 }));
 vi.mock("$features/agent/agent-failure-toast-service", () => ({
   createAgentFailureToastMiddleware: mocks.createAgentFailureToastMiddleware,
+}));
+vi.mock("$features/hardware-console/connection-toast-service", () => ({
+  createHardwareConsoleConnectionToastMiddleware:
+    mocks.createHardwareConsoleConnectionToastMiddleware,
+}));
+vi.mock("$features/hardware-console/integration-toggle-service", () => ({
+  createHardwareConsoleIntegrationToggleMiddleware:
+    mocks.createHardwareConsoleIntegrationToggleMiddleware,
+}));
+vi.mock("$features/hardware-console/assignment/key-pin-persistence-service", () => ({
+  createHardwareConsoleKeyPinPersistenceMiddleware:
+    mocks.createHardwareConsoleKeyPinPersistenceMiddleware,
+}));
+vi.mock("$features/hardware-console/assignment/key-switch-service", () => ({
+  createHardwareConsoleKeySwitchMiddleware: mocks.createHardwareConsoleKeySwitchMiddleware,
+}));
+vi.mock("$features/hardware-console/led/led-status-service", () => ({
+  createHardwareConsoleLedStatusMiddleware: mocks.createHardwareConsoleLedStatusMiddleware,
+}));
+vi.mock("$features/hardware-console/prompt-picker/prompt-picker-service", () => ({
+  createHardwareConsolePromptPickerMiddleware: mocks.createHardwareConsolePromptPickerMiddleware,
+}));
+vi.mock("$features/hardware-console/actions/action-key-service", () => ({
+  createHardwareConsoleActionKeyMiddleware: mocks.createHardwareConsoleActionKeyMiddleware,
+}));
+vi.mock("$features/hardware-console/encoder/encoder-service", () => ({
+  createHardwareConsoleEncoderMiddleware: mocks.createHardwareConsoleEncoderMiddleware,
 }));
 vi.mock("./middlewares/daemon-health-service", () => ({
   createDaemonHealthMiddleware: mocks.createDaemonHealthMiddleware,
@@ -493,6 +552,14 @@ describe("store middleware Redux logging gating", () => {
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
@@ -573,6 +640,14 @@ describe("store middleware Redux logging gating", () => {
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
@@ -653,6 +728,14 @@ describe("store middleware Redux logging gating", () => {
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
@@ -734,6 +817,14 @@ describe("store middleware Redux logging gating", () => {
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
@@ -832,6 +923,14 @@ describe("store middleware Redux logging gating", () => {
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.agentFailureToastMiddleware,
+      mocks.hardwareConsoleConnectionToastMiddleware,
+      mocks.hardwareConsoleIntegrationToggleMiddleware,
+      mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+      mocks.hardwareConsoleKeySwitchMiddleware,
+      mocks.hardwareConsoleLedStatusMiddleware,
+      mocks.hardwareConsolePromptPickerMiddleware,
+      mocks.hardwareConsoleActionKeyMiddleware,
+      mocks.hardwareConsoleEncoderMiddleware,
       mocks.daemonHealthMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,

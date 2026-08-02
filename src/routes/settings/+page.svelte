@@ -3,13 +3,13 @@
 
   import { page } from '$app/state';
   import {
-  selectIsReadyToInstall,
-  selectAutoUpdateStatus,
-} from '$store/renderer/slices/auto-update/auto-update-selectors';
+    selectIsReadyToInstall,
+    selectAutoUpdateStatus,
+  } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
-  installUpdate,
-  simulateSetState,
-} from '$store/renderer/slices/auto-update/auto-update-slice';
+    installUpdate,
+    simulateSetState,
+  } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { autoUpdateClient } from '$features/auto-update/auto-update.client';
   import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
@@ -26,6 +26,7 @@
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
+  import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
   import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
@@ -41,32 +42,36 @@
   const workspaces = selectWorkspaceItems();
 
   import {
-  resetNotificationSettings,
-  setAgentFontStyle,
-  setBetaUpdatesEnabled,
-  setCodeFontFamily,
-  setNoteFontStyle,
-  type AgentFontStyle,
-} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+    resetNotificationSettings,
+    setAgentFontStyle,
+    setBetaUpdatesEnabled,
+    setCodeFontFamily,
+    setNoteFontStyle,
+    type AgentFontStyle,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
-  selectAgentFontStyle,
-  selectBetaUpdatesEnabled,
-  selectCodeFontFamily,
-  selectCodeFontFamilyCSS,
-  selectCodeFontFamilyLabel,
-  selectCodeFontOptions,
-  selectIsNoteMonospace,
-  selectNoteFontStyle,
-} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+    selectAgentFontStyle,
+    selectBetaUpdatesEnabled,
+    selectCodeFontFamily,
+    selectCodeFontFamilyCSS,
+    selectCodeFontFamilyLabel,
+    selectCodeFontOptions,
+    selectIsNoteMonospace,
+    selectNoteFontStyle,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import { Select } from '$lib/components/ui/select';
   import { m } from '$shared/paraglide/messages.js';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import { getNavigatorHid } from '$features/hardware-console/device/platform';
+  import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
+  import { getHardwareConsoleManager } from '$features/hardware-console/instance';
   import {
-  getSettingsPreviousPath,
-  navigateBackFromSettings,
-} from '$lib/utils/workspace-navigation';
+    getSettingsPreviousPath,
+    navigateBackFromSettings,
+  } from '$lib/utils/workspace-navigation';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -170,6 +175,18 @@
   const isDevMode = import.meta.env.DEV;
   const isMac = isMacPlatform();
 
+  // Hardware section: hidden where WebHID is missing entirely. In Electron
+  // (silent grants, so getDevices() reflects physical presence) it is further
+  // gated on device presence — keyed off presence rather than the manager's
+  // connected status so toggling the integration off (manager.stop()) keeps
+  // the section visible. Web builds always show it so the user can grant a
+  // device via the Connect button.
+  const webHidAvailable = getNavigatorHid() !== null;
+  let hardwareDevicePresent = $state(false);
+  const showHardwareSection = $derived(
+    webHidAvailable && (!isElectronPlatform() || hardwareDevicePresent),
+  );
+
   // Get back label - show workspace title if coming from a workspace
   const backLabel = $derived.by(() => {
     const prevPath = getSettingsPreviousPath();
@@ -244,6 +261,15 @@
 
     // Handle hash-based navigation on initial load
     handleHashNavigation();
+  });
+
+  // Track supported-device presence for the Hardware section gate.
+  onMount(() => {
+    if (!webHidAvailable) return;
+    return watchSupportedDevicePresence(
+      getHardwareConsoleManager(),
+      (present) => (hardwareDevicePresent = present),
+    );
   });
 
   // Listen for hash changes while already on the settings page
@@ -784,6 +810,16 @@
                 </div>
               </section>
             </div>
+          </div>
+        {/if}
+
+        <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
+        {#if showHardwareSection}
+          <div id="hardware" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_hardware()}
+            </h2>
+            <HardwareConsoleSettings />
           </div>
         {/if}
       {/if}

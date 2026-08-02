@@ -23,6 +23,14 @@ import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge.client";
 import { createAgentFailureToastMiddleware } from "$features/agent/agent-failure-toast-service";
+import { createHardwareConsoleConnectionToastMiddleware } from "$features/hardware-console/connection-toast-service";
+import { createHardwareConsoleIntegrationToggleMiddleware } from "$features/hardware-console/integration-toggle-service";
+import { createHardwareConsoleKeyPinPersistenceMiddleware } from "$features/hardware-console/assignment/key-pin-persistence-service";
+import { createHardwareConsoleKeySwitchMiddleware } from "$features/hardware-console/assignment/key-switch-service";
+import { createHardwareConsoleLedStatusMiddleware } from "$features/hardware-console/led/led-status-service";
+import { createHardwareConsolePromptPickerMiddleware } from "$features/hardware-console/prompt-picker/prompt-picker-service";
+import { createHardwareConsoleActionKeyMiddleware } from "$features/hardware-console/actions/action-key-service";
+import { createHardwareConsoleEncoderMiddleware } from "$features/hardware-console/encoder/encoder-service";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
 import { createBackgroundAgentSettingsPersistenceMiddleware } from "$features/settings/background-agent-settings-persistence-service";
@@ -167,6 +175,46 @@ function buildMiddleware(): StoreMiddleware[] {
     // a Retry All action that redrives each failed agent via `agent.retry`.
     // Toasts update in place per group and auto-dismiss when a group empties.
     createAgentFailureToastMiddleware(),
+    // Start the shared hardware-console manager (WebHID; no-op where WebHID
+    // is unavailable) and surface connect/disconnect toasts with firmware,
+    // battery, transport, and Codex-mode readiness for supported devices.
+    createHardwareConsoleConnectionToastMiddleware(),
+    // Hydrate the hardware-console integration enable/disable flag from the
+    // shared `hardwareConsole.state` daemon settings bag, persist toggle
+    // changes (read-modify-write so sibling fields survive), and stop/start
+    // the shared manager to match the flag.
+    createHardwareConsoleIntegrationToggleMiddleware(),
+    // Hydrate the hardware-console agent-key pins from the shared
+    // `hardwareConsole.state` daemon settings bag and persist pin changes
+    // (read-modify-write so sibling fields in the bag survive).
+    createHardwareConsoleKeyPinPersistenceMiddleware(),
+    // Wire agent-key presses to workspace switching: first press navigates
+    // to the resolved workspace and lands on the first agent tab requiring
+    // attention (falling back to the current/first open tab); subsequent
+    // presses cycle through that workspace's open tabs in order.
+    createHardwareConsoleKeySwitchMiddleware(),
+    // Drive the device LEDs from store state: per-key v.oai.thstatus frames
+    // for the 6 assigned workspaces plus the v.oai.rgbcfg ambient state
+    // (breath while running, blink-amber on attention, dark when idle);
+    // frames replay on reconnect.
+    createHardwareConsoleLedStatusMiddleware(),
+    // Joystick radial prompt picker: track composer submissions in the
+    // prompt-usage tracker (persisted in the shared hardwareConsole.state
+    // bag, read-modify-write) and open a radial overlay of the top-N prompts
+    // on joystick deflection; release inserts the highlighted prompt at the
+    // cursor of the focused text input (never auto-sends).
+    createHardwareConsolePromptPickerMiddleware(),
+    // Wire action-key presses (ACT06-ACT12) to the mapped v1 actions
+    // (cycle agents, stop agent, see spec, toggle sidebar tabs, new agent,
+    // new workspace, ...); unavailable actions no-op with a subtle toast
+    // hint. The mapping hydrates from the shared hardwareConsole.state bag
+    // and persists changes (read-modify-write so sibling fields survive).
+    createHardwareConsoleActionKeyMiddleware(),
+    // Encoder behaviors: rotate cycles the active workspace by activity
+    // (one step per detent, direction honored, clamped at the list ends,
+    // small HUD while rotating); click opens the All-workspaces sidebar
+    // panel, then cycles its view mode Recent → Repo → Status.
+    createHardwareConsoleEncoderMiddleware(),
     // Poll system.status periodically (~10s) and listen to backend:status
     // connection events to derive tri-state daemon health (healthy/degraded/down)
     // plus stats payload for the health indicator UI.

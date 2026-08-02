@@ -5,10 +5,12 @@
   import { Button } from '$lib/components/ui/button';
   import {
   faEllipsisV,
+  faKeyboard,
   faTableColumns,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
+  import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
     type MenuAction,
@@ -25,8 +27,19 @@
 
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import {
+    markKeySlotUnassigned,
+    pinWorkspaceToKey,
+  } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+  import {
+    selectWorkspacePinnedKeySlot,
+    selectWorkspaceResolvedKeySlot,
+  } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+  import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
 
   interface Props {
@@ -314,6 +327,47 @@
     },
   });
 
+  // Micro-key assignment submenu: only while a micro is connected (manager
+  // status connected — not mere presence).
+  const microConnected$ = microConnectedReadable();
+  const workspaceIdStore = writable('');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId || workspace?.id || '');
+  });
+  const pinnedKeySlot$ = selectWorkspacePinnedKeySlot(workspaceIdStore);
+  const resolvedKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
+
+  const microKeyAction: MenuAction | null = $derived.by(() => {
+    const targetWorkspaceId = workspaceId || workspace?.id || '';
+    if (!$microConnected$ || !targetWorkspaceId) return null;
+    const submenu: MenuAction[] = [];
+    for (let slot = 0; slot < AGENT_KEY_COUNT; slot += 1) {
+      submenu.push({
+        label: m.workspace_card_assignMicroKeyNumber_label({ number: formatInteger(slot + 1) }),
+        checked: $pinnedKeySlot$ === slot,
+        onClick: () => {
+          appStore.dispatch(pinWorkspaceToKey(slot, targetWorkspaceId));
+        },
+      });
+    }
+    const resolvedSlot = $resolvedKeySlot$;
+    if (resolvedSlot !== null) {
+      submenu.push({
+        label: m.workspace_card_unassignMicroKey_label(),
+        onClick: () => {
+          appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
+        },
+      });
+    }
+    return {
+      label: m.workspace_card_assignMicroKey_label(),
+      icon: faKeyboard,
+      dividerBefore: true,
+      onClick: () => {},
+      submenu,
+    };
+  });
+
   function handleClose() {
     dropdownOpen = false;
   }
@@ -508,7 +562,7 @@
           onClose={handleClose}
           showDeleteOption={true}
           showFileNameCopy={false}
-          additionalActions={[sidebarSideAction]}
+          additionalActions={microKeyAction ? [microKeyAction, sidebarSideAction] : [sidebarSideAction]}
         />
       </div>
     {/snippet}
