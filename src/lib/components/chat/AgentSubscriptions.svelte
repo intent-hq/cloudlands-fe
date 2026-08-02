@@ -108,7 +108,10 @@
     return Array.from(ids);
   });
 
-  // Agent IDs from one-shot watches (non-delegation subscriptions). The
+  // Agent IDs from one-shot watches (non-delegation subscriptions). "One-shot"
+  // here is UI vocabulary for the daemon's uniform deliver-once lifecycle on
+  // ungrouped watches — there is no client-side oneShot flag or fired-ID
+  // tracking; removal is driven entirely by daemon subscription snapshots. The
   // daemon guarantees watch uniqueness per (parent, target, event), so no
   // client-side dedup beyond the Set here.
   const oneShotWatchedIds = $derived.by(() => {
