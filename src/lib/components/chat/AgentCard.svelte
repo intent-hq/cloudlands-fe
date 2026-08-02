@@ -496,18 +496,27 @@
 
   // Show completion report if available - priority order:
   // 0. Live session digest while responding (push-applied from
-  //    `agent:stream:activity`, fresher than the transcript-derived one)
+  //    `agent:stream:activity` and cleared at each turn's first ping by the
+  //    events bridge, monorepo#1327 — so mid-turn it is this turn's digest,
+  //    modulo the sub-second window before that first ping lands, during
+  //    which the previous turn's digest may briefly linger)
   // 1. Digest from <agent_digest> tag (most concise, agent-provided summary)
   // 2. Completion report from report_to_parent tool (prop from event data)
   // 3. Completion report from agent metadata
   // 4. lastResponseSummary (fallback from event data)
-  const effectiveCompletionReport = $derived(
-    ($agentIsResponding$ ? $agent$?.digest : undefined) ||
-      agentData?.digest ||
-      completionReport ||
-      agentData?.completionReport ||
-      lastResponseSummary,
-  );
+  // While this turn has live text (liveResponseLine, gated on the per-turn
+  // `receivedFirstChunk` flag), sources 1-4 are previous-turn summaries and
+  // must not outrank it (monorepo#1327): the derivation yields undefined so
+  // the render chain falls through to the live text. They remain the
+  // fallback for idle agents between turns.
+  const effectiveCompletionReport = $derived.by(() => {
+    const liveDigest = $agentIsResponding$ ? $agent$?.digest : undefined;
+    if (liveDigest) return liveDigest;
+    if (liveResponseLine) return undefined;
+    return (
+      agentData?.digest || completionReport || agentData?.completionReport || lastResponseSummary
+    );
+  });
 
   // Handle click - navigate to agent
   function handleClick(event: MouseEvent) {
@@ -627,7 +636,9 @@
         </div>
 
         <!-- Message preview - attention request takes precedence, then the newest
-             user message (freshness wins), then completion report, then last response -->
+             user message (freshness wins), then completion report (suppressed in
+             favor of this-turn live text while a turn streams, monorepo#1327),
+             then last response -->
         {#if !hidePreview}
           {#if attentionRequest}
             <div class="mt-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
