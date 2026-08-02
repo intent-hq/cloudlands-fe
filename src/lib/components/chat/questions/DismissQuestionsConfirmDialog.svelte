@@ -61,7 +61,7 @@
       >
         <div class="px-6 py-4 border-b border-border flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <div class="text-destructive">
+            <div class="text-destructive-foreground">
               <Fa icon={faExclamationTriangle} size="lg" />
             </div>
             <h2 id="dismiss-questions-dialog-title" class="text-lg font-semibold">
