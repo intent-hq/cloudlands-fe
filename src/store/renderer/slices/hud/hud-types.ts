@@ -56,13 +56,14 @@ export function isWaitingWireStatus(status: string): boolean {
 }
 
 /**
- * Mock-faithful workspace-card state keys: the seven BE-owned
+ * Mock-faithful workspace-card state keys: the BE-owned
  * `workspace.displayStatus` wire values (`idle` is a wire value since
- * intentd#793, and doubles as the fallback for rows without a displayStatus)
- * plus the HUD-derived attention states (`wait` when a top-level
- * non-background agent needs input or the live attention flag is raised,
- * `blocked` when a top-level non-background agent has a pending blocker
- * attention request, `failed` when a card agent is in the failed bucket).
+ * intentd#793, and doubles as the fallback for rows without a displayStatus;
+ * the step-0 `needs_attention` rollup, intentd#825, renders as `wait`) plus
+ * the HUD attention refinements (`wait` also when the live attention flag is
+ * raised, `blocked` when a top-level non-background agent's pending request
+ * is specifically a blocker, `failed` when a card agent is in the failed
+ * bucket).
  */
 export const HUD_CARD_STATE_KEYS = [
   'in_progress',

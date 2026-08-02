@@ -237,12 +237,38 @@ describe('selectHudAttnCount', () => {
     expect(selectHudAttnCount.select(state)).toBe(0);
   });
 
-  it('counts one for a top-level pending discussion (card shows NEEDS INPUT)', () => {
+  it('counts one for a top-level pending discussion', () => {
     const state = attnState({
       root: { status: 'active', attentionRequestKind: 'discussion', messages: [] },
     });
-    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('wait');
     expect(selectHudAttnCount.select(state)).toBe(1);
+  });
+
+  it('counts a wire needs_attention rollup once when no per-agent signal covers it', () => {
+    // The daemon's step-0 rollup (intentd#825) can raise needs_attention from
+    // a question hold the FE never captured — the counter must still blink.
+    const base = mockState([makeWorkspace('ws-1', { displayStatus: 'needs_attention' })]);
+    expect(selectHudAttnCount.select(base)).toBe(1);
+    // With a counted top-level agent signal the rollup adds nothing (no double count).
+    const covered = {
+      ...mockState([
+        makeWorkspace('ws-1', {
+          displayStatus: 'needs_attention',
+          agentSummary: {
+            count: 1,
+            agentIds: ['root'],
+            agents: [{ id: 'root', name: 'Coordinator', status: 'active' }],
+          } as Workspace['agentSummary'],
+        }),
+      ]),
+      agentSessions: {
+        byAgentId: {
+          root: { status: 'active', attentionRequestKind: 'discussion', messages: [] },
+        },
+        agentIdsByWorkspace: {},
+      },
+    } as StoreState;
+    expect(selectHudAttnCount.select(covered)).toBe(1);
   });
 
   it('drops the count when the pending attention request is cleared', () => {
@@ -929,11 +955,21 @@ describe('selectHudWorkspaceCards', () => {
     expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('blocked');
   });
 
-  it('top-level discussion attention request turns the card wait (needs input)', () => {
-    const state = gatedState({
+  it('a wire needs_attention displayStatus renders the card as wait (BE rollup)', () => {
+    // intentd#825: the daemon derives needs_attention from top-level
+    // non-background agent attention/questions — the card consumes it
+    // verbatim; a discussion request alone no longer flips the banner
+    // locally (the daemon pushes the rollup transition instead).
+    const state = mockState([makeWorkspace('ws-1', { displayStatus: 'needs_attention' })]);
+    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('wait');
+    // Without the rollup, a top-level discussion no longer flips the card —
+    // the agent row still shows needs-attention (agent presentation is FE-side).
+    const discussionOnly = gatedState({
       root: { status: 'active', attentionRequestKind: 'discussion', messages: [] },
     });
-    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('wait');
+    const card = selectHudWorkspaceCards.select(discussionOnly)[0];
+    expect(card.stateKey).toBe('in_progress');
+    expect(card.agents.find((agent) => agent.id === 'root')?.bucket).toBe('needs-attention');
   });
 
   it('child-agent blocker does not flip the workspace to blocked', () => {
@@ -983,7 +1019,9 @@ describe('selectHudWorkspaceCards', () => {
     expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('in_progress');
   });
 
-  it('a captured question on a waiting top-level agent turns the card wait', () => {
+  it('a captured question marks the agent row needs-attention, not the card banner', () => {
+    // The workspace banner is BE-owned (intentd#825 pushes needs_attention);
+    // the per-agent presentation stays FE-side.
     const question: HudCapturedQuestion = {
       workspaceId: 'ws-1',
       agentId: 'root',
@@ -992,19 +1030,25 @@ describe('selectHudWorkspaceCards', () => {
       ts: '2026-07-30T12:00:00Z',
     };
     const waiting = gatedState({ root: { status: 'waiting', messages: [] } }, [question]);
-    expect(selectHudWorkspaceCards.select(waiting)[0].stateKey).toBe('wait');
+    const card = selectHudWorkspaceCards.select(waiting)[0];
+    expect(card.stateKey).toBe('in_progress');
+    expect(card.agents.find((agent) => agent.id === 'root')?.bucket).toBe('needs-attention');
 
-    // Same question on a waiting CHILD agent: gated off the workspace banner.
+    // Same question on a waiting CHILD agent: its own row shows the state.
     const childQuestion: HudCapturedQuestion = { ...question, agentId: 'child' };
     const childWaiting = gatedState({ child: { status: 'waiting', messages: [] } }, [
       childQuestion,
     ]);
-    expect(selectHudWorkspaceCards.select(childWaiting)[0].stateKey).toBe('in_progress');
+    const childCard = selectHudWorkspaceCards.select(childWaiting)[0];
+    expect(childCard.stateKey).toBe('in_progress');
+    expect(childCard.agents.find((agent) => agent.id === 'child')?.bucket).toBe(
+      'needs-attention',
+    );
   });
 
-  it('a dismissed question stops flipping the card to wait (stale NEEDS INPUT fix)', () => {
+  it('a dismissed question stops pending on the agent row and the ATTN count', () => {
     // The captured question trails message msg-42; the waiting top-level agent
-    // shows NEEDS INPUT until the dismissal marker arrives in session metadata.
+    // shows NEEDS ATTENTION until the dismissal marker arrives in metadata.
     const question: HudCapturedQuestion = {
       workspaceId: 'ws-1',
       agentId: 'root',
@@ -1014,13 +1058,12 @@ describe('selectHudWorkspaceCards', () => {
       ts: '2026-07-30T12:00:00Z',
     };
     const pending = gatedState({ root: { status: 'waiting', messages: [] } }, [question]);
-    expect(selectHudWorkspaceCards.select(pending)[0].stateKey).toBe('wait');
     expect(selectHudWorkspaceCards.select(pending)[0].agents[0].hasQuestion).toBe(true);
     expect(selectHudAttnCount.select(pending)).toBe(1);
 
     // agent.dismissQuestions persisted dismissedQuestionsMessageId === msg-42
-    // (PROTOCOL §5.5): the question is no longer pending, the card returns to
-    // the BE displayStatus (in_progress), and the ATTN count drops.
+    // (PROTOCOL §5.5): the question is no longer pending and the ATTN count
+    // drops (the daemon retires its needs_attention rollup on the same path).
     const dismissed = gatedState(
       {
         root: {
@@ -1031,7 +1074,6 @@ describe('selectHudWorkspaceCards', () => {
       },
       [question],
     );
-    expect(selectHudWorkspaceCards.select(dismissed)[0].stateKey).toBe('in_progress');
     expect(selectHudWorkspaceCards.select(dismissed)[0].agents[0].hasQuestion).toBe(false);
     expect(selectHudAttnCount.select(dismissed)).toBe(0);
 
@@ -1047,7 +1089,8 @@ describe('selectHudWorkspaceCards', () => {
       },
       [newer],
     );
-    expect(selectHudWorkspaceCards.select(reraised)[0].stateKey).toBe('wait');
+    expect(selectHudWorkspaceCards.select(reraised)[0].agents[0].hasQuestion).toBe(true);
+    expect(selectHudAttnCount.select(reraised)).toBe(1);
   });
 
   it('live agent-session state wins over a stale summary status (running shows rows)', () => {

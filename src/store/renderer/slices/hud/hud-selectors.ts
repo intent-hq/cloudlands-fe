@@ -379,22 +379,25 @@ export interface HudWorkspaceCard {
 const ZERO_TASKS = { total: 0, completed: 0, inProgress: 0 };
 
 /**
- * Card state key precedence: a failed live agent wins, then `blocked` /
- * `wait` from the pending attention signals, then the BE-owned
- * `workspace.displayStatus` rendered VERBATIM (cloudlands-fe#578 — the
- * daemon owns the derivation including the agent-running promotion and the
- * idle demotion, intentd#793). Unknown or absent wire values default to
- * `not_started` so the card never vanishes (same convention as
- * `AllWorkspacesCard`); there is no local promotion or demotion.
+ * Card state key precedence: a failed live agent wins, then `blocked`, then
+ * `wait`, then the BE-owned `workspace.displayStatus` rendered VERBATIM
+ * (cloudlands-fe#578 — the daemon owns the derivation including the
+ * agent-running promotion, the idle demotion (intentd#793), and the step-0
+ * `needs_attention` rollup (intentd#825: a top-level, non-background,
+ * non-deleted agent with a pending attention request or pending questions —
+ * the same gating the HUD previously derived locally)). Unknown or absent
+ * wire values default to `not_started` so the card never vanishes (same
+ * convention as `AllWorkspacesCard`); there is no local promotion or
+ * demotion.
  *
- * The agent-driven states are gated on TOP-LEVEL (delegation-tree root),
- * NON-BACKGROUND agents only — a child or background agent raising a blocker
- * / discussion / question never flips the workspace banner (its row and the
- * attention feed still show it). `blocked` (red) = a pending `blocker`
- * attention request (§5.5); `wait` (NEEDS INPUT, orange) = a pending
- * `discussion` request or an outstanding §7.1 question. The workspace-level
- * live attention flag (`workspace:attention-changed`) keeps raising `wait` —
- * it is a workspace signal, not an agent one.
+ * The wire `needs_attention` renders as `wait` (NEEDS ATTENTION, yellow).
+ * Two FE refinements the single wire value cannot express remain, both from
+ * live session signals: `blocked` (red) when a TOP-LEVEL NON-BACKGROUND
+ * agent's pending request is specifically a `blocker` (§5.5 — the daemon
+ * folds blockers into `needs_attention`), and `failed` for a failed live
+ * agent. The workspace-level live attention flag
+ * (`workspace:attention-changed`) keeps raising `wait` — it is a separate
+ * workspace signal, not part of the displayStatus rollup.
  */
 function cardStateKey(
   workspace: Workspace,
@@ -404,15 +407,11 @@ function cardStateKey(
   if (agents.some((agent) => agent.bucket === 'failed')) return 'failed';
   const gated = agents.filter((agent) => agent.topLevel && !agent.isBackground);
   if (gated.some((agent) => agent.attentionKind === 'blocker')) return 'blocked';
-  if (
-    attention ||
-    gated.some((agent) => agent.attentionKind === 'discussion' || agent.hasQuestion)
-  ) {
-    return 'wait';
-  }
-  return isWorkspaceDisplayStatus(workspace.displayStatus)
+  const displayStatus = isWorkspaceDisplayStatus(workspace.displayStatus)
     ? workspace.displayStatus
     : 'not_started';
+  if (displayStatus === 'needs_attention' || attention) return 'wait';
+  return displayStatus;
 }
 
 const LIVE_BUCKETS: ReadonlySet<HudAgentStateBucket> = new Set([
@@ -630,18 +629,22 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
  * counter always agrees with the cards. An agent counts when it would raise
  * its card's banner — `failed` bucket (ungated, like `cardStateKey`), or a
  * TOP-LEVEL NON-BACKGROUND agent with a pending attention request /
- * outstanding question (the same gating as `cardStateKey`; delegated
- * (`parentAgentId`, §5.1 v2.9 — the parentage signal main's #573 uses to
- * skip toasts) and background agents never count). Each raised
- * workspace-level attention flag adds one (it renders NEEDS INPUT with no
- * raising agent). Pending requests clear only on user-origin deliveries
- * (`attentionRequestCleared`, §5.5), so a cleared request drops out live —
- * no stale entries linger.
+ * outstanding question (the daemon's step-0 `needs_attention` gating,
+ * intentd#825, mirrored per-agent; delegated (`parentAgentId`, §5.1 v2.9 —
+ * the parentage signal main's #573 uses to skip toasts) and background
+ * agents never count). Each raised workspace-level attention flag adds one
+ * (it renders NEEDS ATTENTION with no raising agent), as does a wire
+ * `needs_attention` displayStatus no per-agent signal already covered (the
+ * daemon rollup is authoritative — e.g. a question hold the FE never
+ * captured must still blink). Pending requests clear only on user-origin
+ * deliveries (`attentionRequestCleared`, §5.5), so a cleared request drops
+ * out live — no stale entries linger.
  */
 export const selectHudAttnCount = store.createSelector((state): number => {
   const flags = state.hud.attentionByWorkspaceId;
   let count = 0;
   for (const workspace of selectHudWorkspaces.select(state)) {
+    let agentCounted = false;
     for (const agent of cardAgentsOf(workspace, state)) {
       if (
         agent.bucket === 'failed' ||
@@ -650,9 +653,12 @@ export const selectHudAttnCount = store.createSelector((state): number => {
           (agent.attentionKind !== null || agent.hasQuestion))
       ) {
         count += 1;
+        agentCounted = true;
       }
     }
-    if (flags[String(workspace.id)]) count += 1;
+    const flagged = Boolean(flags[String(workspace.id)]);
+    if (flagged) count += 1;
+    if (workspace.displayStatus === 'needs_attention' && !agentCounted && !flagged) count += 1;
   }
   return count;
 });
