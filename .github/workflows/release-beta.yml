@@ -226,7 +226,7 @@ jobs:
           # even with sourcemaps disabled (monorepo#1340); same bundle here.
           # Assumes the self-hosted m1mac runner has enough RAM for a 12288
           # heap plus node overhead (>=16 GB unified memory; this leg passed
-          # at 12288 in the v2.13.0 rebuild, run 30764745052). Drop to 8192
+          # at 12288 in the v2.13.0 rebuild, run 30764745052). Drop to 10240
           # like the hosted Linux x64 leg if the OS ever kills the build.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
@@ -379,8 +379,8 @@ jobs:
           # even with sourcemaps disabled (monorepo#1340); same bundle here.
           # Assumes the self-hosted Windows runner has enough RAM for a 12288
           # heap plus node overhead (this leg passed at 12288 in the v2.13.0
-          # rebuild, run 30764745052). Drop to 8192 like the hosted Linux x64
-          # leg if the OS ever kills the build.
+          # rebuild, run 30764745052). Drop to 10240 like the hosted Linux
+          # x64 leg if the OS ever kills the build.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -422,15 +422,17 @@ jobs:
       matrix:
         include:
           # node_heap: per-arch --max-old-space-size (MB). ubuntu-latest has
-          # 16 GB total; a 12288 heap plus node/vite overhead trips the OS OOM
-          # killer, which shut the hosted runner down twice in the v2.13.0
-          # rebuild (run 30764745052, monorepo#1340). 8192 always passed on
-          # this leg with the sourcemap gate.
+          # 16 GB total. Measured boundary in the v2.13.0 rebuilds
+          # (monorepo#1340): 8192 JS-heap-OOMs (run 30767000964, after passing
+          # at 8192 earlier the same day — the bundle sits right at the
+          # limit), and 12288 plus node/vite overhead trips the OS OOM killer
+          # (run 30764745052). 10240 leaves ~5.5 GB for the OS and other
+          # processes.
           - arch: x64
             runner: ubuntu-latest
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
-            node_heap: 8192
+            node_heap: 10240
           # arm64 builds natively on the self-hosted arm64 Linux runner. If it
           # is unavailable, fall back to cross-building by switching `runner`
           # to ubuntu-latest — INTENTD_TARGET is set explicitly below, so the
@@ -521,9 +523,9 @@ jobs:
           ${{ matrix.targets }}
           -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
         env:
-          # Per-arch heap cap — see the matrix node_heap comments: 8192 on the
-          # 16 GB hosted x64 runner (12288 trips the OS OOM killer), 12288 on
-          # the self-hosted arm64 runner (monorepo#1340).
+          # Per-arch heap cap — see the matrix node_heap comments: 10240 on
+          # the 16 GB hosted x64 runner (8192 JS-OOMs, 12288 trips the OS OOM
+          # killer), 12288 on the self-hosted arm64 runner (monorepo#1340).
           NODE_OPTIONS: '--max-old-space-size=${{ matrix.node_heap }}'
           # Sourcemap generation multiplies rollup's peak heap past the
           # cap (same OOM as monorepo#1074; both Linux legs died at ~7.6 GB in
