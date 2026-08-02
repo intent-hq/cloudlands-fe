@@ -1392,6 +1392,21 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].digest).toBe('summary');
       expect(updateAgentDigest.type).toBe('workspaceAgents/updateAgentDigest');
     });
+
+    it('clears the digest with null (stored as undefined)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, updateAgentDigest('ws-1', 'a1', 'summary'));
+      state = agentSessionReducer(state, updateAgentDigest('ws-1', 'a1', null));
+      expect(state.byAgentId['a1'].digest).toBeUndefined();
+    });
+
+    it('is a no-op when clearing an already-absent digest (undefined vs null)', () => {
+      // The bridge's turn-boundary clear fires once per turn even for
+      // sessions with no digest; that must not produce a new state object.
+      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      const next = agentSessionReducer(state, updateAgentDigest('ws-1', 'a1', null));
+      expect(next).toBe(state);
+    });
   });
 
   describe('renameSession', () => {
