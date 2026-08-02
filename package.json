@@ -7,8 +7,7 @@
   "scripts": {
     "generate:ipc-channels": "tsx scripts/inline-ipc-channels.ts",
     "generate:build-config": "node scripts/generate-build-config.cjs",
-    "generate:i18n": "node scripts/generate-pseudo-locale.mjs && paraglide-js compile --project ./project.inlang --outdir ./src/shared/paraglide",
-    "generate:pseudo-locale": "node scripts/generate-pseudo-locale.mjs",
+    "generate:i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/shared/paraglide",
     "dev": "node --max-old-space-size=4096 scripts/dev-launcher.mjs",
     "dev:cdp": "node scripts/dev-launcher.mjs --cdp",
     "dev:base": "npm run generate:build-config && npm run generate:ipc-channels && npm run generate:i18n && concurrently \"npm run build:main\" \"npm run build:preload\" && concurrently \"npm run dev:renderer\" \"npm run dev:electron\"",

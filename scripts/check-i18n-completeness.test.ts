@@ -143,19 +143,6 @@ describe('i18n catalog completeness gate', () => {
     );
   });
 
-  it('exempts the generated pseudo-locale (registered but gitignored)', () => {
-    withFixture(
-      {
-        'project.inlang/settings.json': SETTINGS(['en', 'en-XA']),
-        'messages/en.json': JSON.stringify({ a_label: 'Hello' }),
-      },
-      (dir) => {
-        const result = runCheck(dir);
-        expect(result.exitCode).toBe(0);
-      },
-    );
-  });
-
   it('passes against the real repository catalogs', () => {
     const result = runCheck(repoRoot);
     expect(result.output).toContain('passed');
