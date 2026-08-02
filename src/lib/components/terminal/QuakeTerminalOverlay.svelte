@@ -180,6 +180,17 @@
       } else {
         toast.success(summary);
       }
+      const skippedRunning = result.skippedRunning ?? [];
+      if (skippedRunning.length > 0) {
+        toast.warning(
+          skippedRunning.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
+            : m.scripts_detect_skippedRunning_many({
+                count: skippedRunning.length,
+                names: skippedRunning.join(', '),
+              }),
+        );
+      }
     } finally {
       isDetectingScripts = false;
     }

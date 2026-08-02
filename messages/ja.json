@@ -4687,6 +4687,8 @@
   "diffs_service_stopTrackingFailed_error": "エージェント実行のトラッキングを停止できませんでした",
   "scripts_client_statusFailed_error": "スクリプトのステータスを読み取れませんでした",
   "scripts_client_notFound_error": "スクリプトが見つかりません: {scriptId}",
+  "scripts_detect_skippedRunning_one": "「{name}」は実行中のため、検出された変更は適用されませんでした。停止してから再度検出を実行してください。",
+  "scripts_detect_skippedRunning_many": "実行中のスクリプト {count} 件（{names}）は検出された変更で更新されませんでした。停止してから再度検出を実行してください。",
   "context_types_addNote_description": "新しいノートを追加",
   "context_types_linkLinear_description": "Linear Issue をリンク",
   "context_types_linkGithub_description": "GitHub Issue をリンク",
