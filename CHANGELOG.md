@@ -4,6 +4,36 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.13.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.12.0...v2.13.0) (2026-08-02)
+
+
+### 🚀 Features
+
+* background hooks row above chat input ([#626](https://github.com/intent-hq/cloudlands-fe/issues/626)) ([f132b68](https://github.com/intent-hq/cloudlands-fe/commit/f132b68b3c3b73d8befb033135bcd699b7e038e6))
+* confirm before dismissing agent questions, rename Ignore to Hide ([#639](https://github.com/intent-hq/cloudlands-fe/issues/639)) ([10cffa6](https://github.com/intent-hq/cloudlands-fe/commit/10cffa6234ba91faa0c93c27c1ec439b3d7539d1))
+* consume daemon-resolved model fields, drop client-side model resolution ([#633](https://github.com/intent-hq/cloudlands-fe/issues/633)) ([4ab9fdf](https://github.com/intent-hq/cloudlands-fe/commit/4ab9fdfb520a2db008166256270afdd9525c58b4))
+* gate enhance prompt and AI layout on the auggie provider ([#624](https://github.com/intent-hq/cloudlands-fe/issues/624)) ([19c606f](https://github.com/intent-hq/cloudlands-fe/commit/19c606f1716f3437d817b0053a7bfb146e03d266))
+* move WebSocket API section to General settings tab ([#635](https://github.com/intent-hq/cloudlands-fe/issues/635)) ([105e299](https://github.com/intent-hq/cloudlands-fe/commit/105e299462697958f08473b7a3beea01cccede98))
+* onboarding model selector + silent repo-config setup script default ([#623](https://github.com/intent-hq/cloudlands-fe/issues/623)) ([7a39e69](https://github.com/intent-hq/cloudlands-fe/commit/7a39e69867ea18d7ad4a36b6c5e284b7d0c22b75))
+* show workspace disk usage in the workspace card subtitle ([#627](https://github.com/intent-hq/cloudlands-fe/issues/627)) ([bdc8d97](https://github.com/intent-hq/cloudlands-fe/commit/bdc8d97aef6710e20dd96ffda86817b96e461cc8))
+* staged live-stream hydration phase indicator in chat panel ([#632](https://github.com/intent-hq/cloudlands-fe/issues/632)) ([1767abc](https://github.com/intent-hq/cloudlands-fe/commit/1767abcd0cc1353ce3bd2a0bea4d0b99c315dd45))
+* transcript search in the command palette with deep-open to message ([#622](https://github.com/intent-hq/cloudlands-fe/issues/622)) ([f0c6d0a](https://github.com/intent-hq/cloudlands-fe/commit/f0c6d0a31fa2ac20d055f4e1868cfb92a1885d56))
+* Work Louder Creator Micro 2 / Codex Micro hardware console ([#642](https://github.com/intent-hq/cloudlands-fe/issues/642)) ([21e5a07](https://github.com/intent-hq/cloudlands-fe/commit/21e5a07c2592fc374887161c9caa145e07ae0967))
+
+
+### 🐛 Bug Fixes
+
+* align response group header preview snippet to the name baseline ([#638](https://github.com/intent-hq/cloudlands-fe/issues/638)) ([c9c4c46](https://github.com/intent-hq/cloudlands-fe/commit/c9c4c4654ee4f3894bad40fa81b07fba26309486))
+* disk-usage pill font size, tooltip indentation, and subtitle separator ([#628](https://github.com/intent-hq/cloudlands-fe/issues/628)) ([4d344f9](https://github.com/intent-hq/cloudlands-fe/commit/4d344f94b2ab4502529e932f6a0e295a985e3428))
+* guard detect-flow upsert against killing a running script ([#630](https://github.com/intent-hq/cloudlands-fe/issues/630)) ([07e9a1f](https://github.com/intent-hq/cloudlands-fe/commit/07e9a1fa9a1cc5d93f1b69c6f726ab3fc78a65ff))
+* keep last/streaming response group semi-open on collapse ([#637](https://github.com/intent-hq/cloudlands-fe/issues/637)) ([dd5e68e](https://github.com/intent-hq/cloudlands-fe/commit/dd5e68efb9736309d03034ae68e0b9e0c28006a8))
+* let this-turn live text outrank stale previous-turn digest in AgentCard preview ([#636](https://github.com/intent-hq/cloudlands-fe/issues/636)) ([49d19af](https://github.com/intent-hq/cloudlands-fe/commit/49d19af746ded9d3998889e247d8b5ef37404f25))
+* **main:** bound gracefulShutdown with a 10s hard-exit watchdog ([#625](https://github.com/intent-hq/cloudlands-fe/issues/625)) ([758fe6f](https://github.com/intent-hq/cloudlands-fe/commit/758fe6f8caecfe27c58c03e1314d0272de2ade9b))
+* move lastUpdated timestamp into systemStatusSuccess action payload ([#618](https://github.com/intent-hq/cloudlands-fe/issues/618)) ([808d6df](https://github.com/intent-hq/cloudlands-fe/commit/808d6df16fb9ca8c237ef98fcf624fbefd26a198))
+* preserve terminals and scripts across workspace switches ([#640](https://github.com/intent-hq/cloudlands-fe/issues/640)) ([ec1f2f0](https://github.com/intent-hq/cloudlands-fe/commit/ec1f2f048548b6ecc3a5f9357552c8a48f5422c4))
+* raise backend:status IPC listener cap to 15 in preload ([#631](https://github.com/intent-hq/cloudlands-fe/issues/631)) ([74b0f85](https://github.com/intent-hq/cloudlands-fe/commit/74b0f859f62e7da67db0bd2d0a2493da2316c9ca))
+* use readable destructive token for Q&A dismiss controls ([#641](https://github.com/intent-hq/cloudlands-fe/issues/641)) ([0d56fe3](https://github.com/intent-hq/cloudlands-fe/commit/0d56fe3f49b8977b0ce3a8398a945723d4a071b9))
+
 ## [2.12.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.11.0...v2.12.0) (2026-08-01)
 
 
