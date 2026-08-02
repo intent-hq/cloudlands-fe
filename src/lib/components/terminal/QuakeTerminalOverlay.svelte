@@ -72,7 +72,6 @@
   import {
   refreshScripts,
   initializeScripts,
-  disposeScripts,
   removeScript,
 } from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
@@ -402,14 +401,15 @@
   // Effects
   // ============================================================================
 
-  // Initialize scripts store at overlay level (persists across panel open/close)
+  // Initialize scripts store at overlay level. Scripts state is intentionally
+  // NOT disposed on unmount or workspace switch: it is workspace-keyed in the
+  // store and must survive overlay remounts, mirroring terminals
+  // (intent-hq/monorepo#1330). Lifecycle hydration reconciles it on the next
+  // workspaceMounted.
   $effect(() => {
     if (isRealWorkspace && workspaceId) {
       untrack(() => appStore.dispatch(initializeScripts(workspaceId)));
     }
-    return () => {
-      if (isRealWorkspace && workspaceId) appStore.dispatch(disposeScripts(workspaceId));
-    };
   });
 
   // Update CSS custom property for layout bottom padding
