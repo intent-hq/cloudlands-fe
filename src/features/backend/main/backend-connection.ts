@@ -36,6 +36,7 @@ import { createRequire } from 'node:module';
 import type { RawData, WebSocket as WsWebSocket } from 'ws';
 
 import { shouldSpawnSidecar } from './intentd-spawn-policy';
+import { defaultWindowsSocketPath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 
 // The `ws` package is CJS and the vitest suite aliases the ESM import to a
 // browser-safe stub (see `vitest.config.ts`); `createRequire` sidesteps both.
@@ -67,16 +68,30 @@ export interface ResolveBackendConfigOptions {
    * WebSocket default (`ws://127.0.0.1:5181/ws`).
    */
   isDev?: boolean;
+  /** Platform override for tests; defaults to `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 /**
- * Default dev UDS path for the running intentd daemon.
+ * Default local connect target for the running intentd daemon.
  *
  * Honors `INTENTD_DATA_DIR` (socket = `$INTENTD_DATA_DIR/intentd.sock`) so the
- * FE connects to the same socket the sidecar spawned intentd with.
+ * FE connects to the same socket the sidecar spawned intentd with. On win32
+ * the daemon serves a named pipe derived from the socket path, so this
+ * returns the pipe name (see `intentd-pipe-name.ts` for the contract); the
+ * no-data-dir default mirrors the daemon's `%APPDATA%\intentd\data`.
  */
-export function defaultSocketPath(env: NodeJS.ProcessEnv = process.env): string {
+export function defaultSocketPath(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
   const dataDir = env.INTENTD_DATA_DIR?.trim();
+  if (platform === 'win32') {
+    const socketPath = dataDir
+      ? path.win32.join(dataDir, 'intentd.sock')
+      : defaultWindowsSocketPath(env);
+    return windowsPipeName(socketPath);
+  }
   if (dataDir) {
     return path.join(dataDir, 'intentd.sock');
   }
@@ -92,9 +107,12 @@ export function resolveBackendConfig(
   env: NodeJS.ProcessEnv = process.env,
   opts: ResolveBackendConfigOptions = {},
 ): BackendConnectionConfig {
+  const platform = opts.platform ?? process.platform;
   const socketOverride = env.INTENTD_SOCKET?.trim();
   if (socketOverride) {
-    return { transport: 'uds', socketPath: socketOverride };
+    // On win32 a `.sock` override maps to its derived named pipe; explicit
+    // pipe paths (`\\.\pipe\…`) pass through unchanged.
+    return { transport: 'uds', socketPath: toLocalEndpoint(socketOverride, platform) };
   }
   const wsUrl = env.INTENTD_WS_URL?.trim();
   if (wsUrl) {
@@ -117,11 +135,11 @@ export function resolveBackendConfig(
     // spawn-policy in lockstep (see the pinning test in
     // `backend-connection.test.ts`).
     if (shouldSpawnSidecar(env, /* isPackaged */ false).shouldSpawn) {
-      return { transport: 'uds', socketPath: defaultSocketPath(env) };
+      return { transport: 'uds', socketPath: defaultSocketPath(env, platform) };
     }
     return { transport: 'ws', wsUrl: DEFAULT_DEV_WS_URL };
   }
-  return { transport: 'uds', socketPath: defaultSocketPath(env) };
+  return { transport: 'uds', socketPath: defaultSocketPath(env, platform) };
 }
 
 /**
