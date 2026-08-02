@@ -171,6 +171,10 @@ vi.mock('../FlameGraph.svelte', async () => ({
 vi.mock('svelte-fa', async () => ({
   default: (await import('./mocks/Fa.svelte')).default,
 }));
+vi.mock('$lib/components/workspace/shrink-workspace-action', () => ({
+  runShrinkWorkspaceAction: vi.fn(),
+  SHRINK_WORKSPACE_PROMPT: '',
+}));
 
 async function renderProgressCard(
   overrides: Partial<Workspace> = {},
@@ -180,6 +184,7 @@ async function renderProgressCard(
     ...mocks.workspaceEntity,
     status: WorkspaceStatusEnum.Active,
     checkoutMode: undefined,
+    diskUsage: undefined,
     ...overrides,
   } as Workspace;
   const WorkspaceProgressCard = (await import('../WorkspaceProgressCard.svelte')).default;
@@ -235,5 +240,39 @@ describe('WorkspaceProgressCard checkout-mode pill', () => {
 
     expect(screen.queryByText('CoW')).toBeNull();
     expect(screen.queryByText('Worktree')).toBeNull();
+  });
+});
+
+describe('WorkspaceProgressCard disk-usage size', () => {
+  const diskUsage = {
+    bytes: 2_330_000_000,
+    fileCount: 10,
+    computedAt: '2026-08-01T12:00:00Z',
+    breakdown: [{ name: 'repo', bytes: 2_330_000_000, fileCount: 10 }],
+  };
+
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    mocks.update.mockReset();
+    mocks.notes.length = 0;
+    mocks.update.mockImplementation(async () => ({ ok: true, data: mocks.workspaceEntity }));
+  });
+
+  it('renders the formatted size in the subtitle (full mode)', async () => {
+    await renderProgressCard({ checkoutMode: 'cow', diskUsage });
+
+    expect(screen.getByText('2.17Gi')).toBeTruthy();
+  });
+
+  it('renders the formatted size in the subtitle (compact mode)', async () => {
+    await renderProgressCard({ checkoutMode: 'cow', diskUsage }, { compact: true });
+
+    expect(screen.getByText('2.17Gi')).toBeTruthy();
+  });
+
+  it('renders no size when diskUsage is absent', async () => {
+    await renderProgressCard({ checkoutMode: 'cow' });
+
+    expect(screen.queryByText('2.17Gi')).toBeNull();
   });
 });
