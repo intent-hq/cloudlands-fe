@@ -320,4 +320,35 @@ describe("terminalPersistenceService — workspace state persistence", () => {
     };
     expect(lastCall.payload[2]).toBe(explicitState);
   });
+
+  // Invariant pin (intent-hq/monorepo#1330 investigation): loadWorkspaceTerminals
+  // is in WORKSPACE_STATE_PERSIST_ACTIONS and the reducer forces isOpen=false on
+  // an empty list, so an empty hydration COULD durably overwrite a persisted
+  // { isOpen: true }. Today that is prevented only by an accident of control
+  // flow: the interceptor's `return next(...)` for the savedState-undefined
+  // path (the only path lifecycle-read-service/seeder use) exits before the
+  // GAP-5 persist block runs. This test pins that invariant so a refactor of
+  // the interceptor cannot silently make the in-memory clobber durable.
+  it("does not durably persist isOpen=false when a transient empty list clobbers a saved open state (monorepo#1330)", () => {
+    safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, {
+      "ws-1": { isOpen: true, activeTerminalId: "pty-1" },
+    });
+
+    const api = createFakeApi();
+    const middleware = createTerminalPersistenceMiddleware()(api);
+    const next = vi.fn((action) => {
+      api.dispatch(action);
+      return action;
+    });
+    const dispatch = middleware(next);
+
+    // Mount hydration lands with a transient empty list (savedState omitted,
+    // exactly as lifecycle-read-service dispatches it).
+    dispatch(loadWorkspaceTerminals("ws-1", []));
+
+    const stored = safeLocalStorage.getJSON(
+      WORKSPACE_STATE_STORAGE_KEY
+    ) as Record<string, PersistedWorkspaceState>;
+    expect(stored["ws-1"]).toMatchObject({ isOpen: true });
+  });
 });
