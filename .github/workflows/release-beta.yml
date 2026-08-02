@@ -224,6 +224,10 @@ jobs:
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here.
+          # Assumes the self-hosted m1mac runner has enough RAM for a 12288
+          # heap plus node overhead (>=16 GB unified memory; this leg passed
+          # at 12288 in the v2.13.0 rebuild, run 30764745052). Drop to 8192
+          # like the hosted Linux x64 leg if the OS ever kills the build.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -373,6 +377,10 @@ jobs:
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here.
+          # Assumes the self-hosted Windows runner has enough RAM for a 12288
+          # heap plus node overhead (this leg passed at 12288 in the v2.13.0
+          # rebuild, run 30764745052). Drop to 8192 like the hosted Linux x64
+          # leg if the OS ever kills the build.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -413,10 +421,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # node_heap: per-arch --max-old-space-size (MB). ubuntu-latest has
+          # 16 GB total; a 12288 heap plus node/vite overhead trips the OS OOM
+          # killer, which shut the hosted runner down twice in the v2.13.0
+          # rebuild (run 30764745052, monorepo#1340). 8192 always passed on
+          # this leg with the sourcemap gate.
           - arch: x64
             runner: ubuntu-latest
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
+            node_heap: 8192
           # arm64 builds natively on the self-hosted arm64 Linux runner. If it
           # is unavailable, fall back to cross-building by switching `runner`
           # to ubuntu-latest — INTENTD_TARGET is set explicitly below, so the
@@ -427,10 +441,15 @@ jobs:
           # self-hosted runner (ERR_ELECTRON_BUILDER_CANNOT_EXECUTE, exit code
           # null), killing the deb target. Restore deb:arm64 once the runner
           # is fixed. Refs intent-hq/monorepo#1286.
+          # node_heap: the arm64 leg OOM'd at the old 8192 cap in the v2.13.0
+          # run even with sourcemaps disabled — committed heap hit ~8.2 GB
+          # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
+          # the self-hosted runner has the RAM for 12288.
           - arch: arm64
             runner: [self-hosted, Linux, ARM64, comfy]
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64
+            node_heap: 12288
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
 
@@ -502,11 +521,10 @@ jobs:
           ${{ matrix.targets }}
           -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
         env:
-          # 12288: the arm64 leg OOM'd at the old 8192 cap in the v2.13.0 run
-          # even with sourcemaps disabled — committed heap hit ~8.2 GB
-          # ("Ineffective mark-compacts near heap limit", monorepo#1340) —
-          # so bundle growth alone now needs more headroom.
-          NODE_OPTIONS: '--max-old-space-size=12288'
+          # Per-arch heap cap — see the matrix node_heap comments: 8192 on the
+          # 16 GB hosted x64 runner (12288 trips the OS OOM killer), 12288 on
+          # the self-hosted arm64 runner (monorepo#1340).
+          NODE_OPTIONS: '--max-old-space-size=${{ matrix.node_heap }}'
           # Sourcemap generation multiplies rollup's peak heap past the
           # cap (same OOM as monorepo#1074; both Linux legs died at ~7.6 GB in
           # the v2.12.0 run, monorepo#1282). Nothing consumes the 'hidden'
