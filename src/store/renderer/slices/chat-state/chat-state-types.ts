@@ -74,6 +74,19 @@ export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
 export type TranscriptHydrationStatus = 'loading' | 'settled';
 
 /**
+ * Lifecycle phase of the agent's standing `chat.subscribe` stream, mirrored
+ * from the live client's observational phase reports (see ChatLiveStreamPhase
+ * in app-client.ts). Drives the pre-live hydration indicator in ChatPanel.
+ * `null`/absent means no standing subscription is open for the agent.
+ */
+export type LiveStreamPhase =
+  | 'connecting'
+  | 'awaiting-snapshot'
+  | 'live'
+  | 'resyncing'
+  | 'delayed';
+
+/**
  * Serializable per-agent chat state stored in Redux.
  * Serializable per-agent chat state without non-serializable fields
  * (those stay in the saga).
@@ -115,6 +128,12 @@ export interface ChatAgentState {
    * shows only when settled with zero messages.
    */
   transcriptHydration?: TranscriptHydrationStatus;
+  /**
+   * Current standing `chat.subscribe` lifecycle phase for this agent, or
+   * null when no subscription is open (teardown resets it). Written by
+   * chat-subscribe-service from the live client's onPhase reports.
+   */
+  liveStreamPhase: LiveStreamPhase | null;
 }
 
 /**

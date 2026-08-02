@@ -97,6 +97,7 @@
   import {
   selectChatError,
   selectChatLastChunkTime,
+  selectChatLiveStreamPhase,
   selectChatModelUnavailable,
   selectChatReceivedFirstChunk,
   selectChatStatusEvents,
@@ -132,6 +133,7 @@
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
   import StreamingStatus from './StreamingStatus.svelte';
+  import LiveStreamPhaseIndicator from './LiveStreamPhaseIndicator.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefChatEmptyState from './ChiefChatEmptyState.svelte';
 
@@ -340,6 +342,7 @@
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
+  const chatLiveStreamPhase$ = selectChatLiveStreamPhase(agentIdStore);
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
@@ -3710,6 +3713,15 @@
                         {/if}
                       {/each}
 
+                      <!-- Live-hydration phase line: between the last user message and the Thinking row (500ms grace, pre-live phases only) -->
+                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0}
+                        <LiveStreamPhaseIndicator
+                          phase={$chatLiveStreamPhase$}
+                          turnInFlight={$agentIsResponding$ || $agentSessionIsStreaming$}
+                          seed={agentId}
+                          class="mb-2"
+                        />
+                      {/if}
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
                       {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ }, )}
                         <div class="mb-8">
@@ -3818,6 +3830,12 @@
               {/each}
             {/each}
             {#if showEndOfListStreamingStatus}
+              <LiveStreamPhaseIndicator
+                phase={$chatLiveStreamPhase$}
+                turnInFlight={$agentIsResponding$ || $agentSessionIsStreaming$}
+                seed={agentId}
+                class="mb-2"
+              />
               <div class="mb-16">
                 <StreamingStatus
                   isStreaming={$agentSessionIsStreaming$}

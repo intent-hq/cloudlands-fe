@@ -622,6 +622,22 @@ export interface ChatTranscript {
   isStreaming: boolean;
 }
 
+/**
+ * Lifecycle phase of a standing `chat.subscribe` stream (Track B only — no
+ * daemon-internal stages, no history-paging progress). Drives the per-agent
+ * live-hydration indicator: `connecting` (subscribe sent, ack pending),
+ * `awaiting-snapshot` (ack received, seq-0 snapshot pending), `live`
+ * (snapshot applied — indicator hidden), `resyncing` (sequence gap, recovery
+ * resnapshot in flight), `delayed` (subscribe failed or the seq-0 snapshot
+ * timed out, retry pending).
+ */
+export type ChatLiveStreamPhase =
+  | "connecting"
+  | "awaiting-snapshot"
+  | "live"
+  | "resyncing"
+  | "delayed";
+
 export interface ChatClient {
   /**
    * One-shot seq-0 snapshot from the `chat.subscribe` channel (PROTOCOL §7.1).
@@ -642,8 +658,14 @@ export interface ChatClient {
    * Self-healing: a sequence gap resnapshots via a fresh registration, a
    * transport reconnect re-registers, and pushes racing the subscribe reply
    * are buffered pre-ack. Returns the disposer (sends `chat.unsubscribe`).
+   * Optional `onPhase` observes the stream's lifecycle phase transitions
+   * (deduped; purely observational — it never alters subscription behavior).
    */
-  subscribe(agentId: string, handler: (transcript: ChatTranscript) => void): Unsubscribe;
+  subscribe(
+    agentId: string,
+    handler: (transcript: ChatTranscript) => void,
+    onPhase?: (phase: ChatLiveStreamPhase) => void,
+  ): Unsubscribe;
 }
 
 /** Parameters for `terminal.create` (PROTOCOL §5.13). `command` omitted ⇒ default shell. */

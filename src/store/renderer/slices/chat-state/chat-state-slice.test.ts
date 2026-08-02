@@ -33,6 +33,7 @@ import {
   chatQueuedRetryRecordParked,
   chatQueuedRetryRecordUpdated,
   chatQueuedRetryRecordsCleared,
+  chatLiveStreamPhaseChanged,
 } from './chat-state-slice';
 import {
   removeQueuedMessageFromAgentQueue,
@@ -43,6 +44,7 @@ import {
   selectChatAgentState,
   selectChatError,
   selectChatLastMessageTime,
+  selectChatLiveStreamPhase,
   selectTranscriptHydration,
 } from './chat-state-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -1061,6 +1063,44 @@ describe('chatState selectors', () => {
 
   it('selectTranscriptHydration returns undefined by default', () => {
     expect(selectTranscriptHydration.select(asStoreState(initialState), AGENT)).toBeUndefined();
+  });
+
+  // Live stream phase tests
+  it('selectChatLiveStreamPhase returns null by default', () => {
+    expect(selectChatLiveStreamPhase.select(asStoreState(initialState), AGENT)).toBeNull();
+  });
+
+  it('chatLiveStreamPhaseChanged stores each phase and stamps agentId', () => {
+    let state = chatStateReducer(initialState, chatLiveStreamPhaseChanged(AGENT, 'connecting'));
+    expect(selectChatLiveStreamPhase.select(asStoreState(state), AGENT)).toBe('connecting');
+    expect(selectChatAgentState.select(asStoreState(state), AGENT).agentId).toBe(AGENT);
+
+    state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, 'awaiting-snapshot'));
+    expect(selectChatLiveStreamPhase.select(asStoreState(state), AGENT)).toBe('awaiting-snapshot');
+
+    state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, 'live'));
+    expect(selectChatLiveStreamPhase.select(asStoreState(state), AGENT)).toBe('live');
+
+    state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, 'resyncing'));
+    expect(selectChatLiveStreamPhase.select(asStoreState(state), AGENT)).toBe('resyncing');
+
+    state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, 'delayed'));
+    expect(selectChatLiveStreamPhase.select(asStoreState(state), AGENT)).toBe('delayed');
+  });
+
+  it('chatLiveStreamPhaseChanged(null) resets the phase (teardown)', () => {
+    const withPhase = chatStateReducer(
+      initialState,
+      chatLiveStreamPhaseChanged(AGENT, 'connecting'),
+    );
+    const reset = chatStateReducer(withPhase, chatLiveStreamPhaseChanged(AGENT, null));
+    expect(selectChatLiveStreamPhase.select(asStoreState(reset), AGENT)).toBeNull();
+  });
+
+  it('chatLiveStreamPhaseChanged(null) never materializes an entry for an unopened chat', () => {
+    const state = chatStateReducer(initialState, chatLiveStreamPhaseChanged(AGENT, null));
+    expect(state.byAgentId[AGENT]).toBeUndefined();
+    expect(state).toBe(initialState);
   });
 
 });
