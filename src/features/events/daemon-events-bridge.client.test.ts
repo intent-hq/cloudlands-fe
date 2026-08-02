@@ -753,6 +753,100 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → s
     expect(readAssistantMessages()).toHaveLength(0);
   });
 
+  // monorepo#1327: nothing used to clear `session.digest` at a turn boundary,
+  // so the previous turn's summary outranked the new turn's live text in the
+  // AgentCard preview for the whole turn. The first activity ping of a new
+  // messageId (a new turn) now clears the stale digest.
+  it("a new turn's first activity ping clears the previous turn's digest (monorepo#1327)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'turn one text',
+      }),
+    );
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'turn one final text',
+        digest: 'Turn one summary',
+      }),
+    );
+    expect(readSession()?.digest).toBe('Turn one summary');
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: 'msg_assistant_2',
+        lastAgentResponse: 'turn two streaming text',
+      }),
+    );
+
+    expect(readSession()?.digest).toBeUndefined();
+    expect(readSession()?.lastAgentResponse).toBe('turn two streaming text');
+  });
+
+  it('a straggler same-turn ping after agent:stream:end does not wipe the final digest', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'mid-turn text',
+      }),
+    );
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        digest: 'Final digest',
+      }),
+    );
+    expect(readSession()?.digest).toBe('Final digest');
+
+    // At-least-once delivery: a late duplicate ping for the SAME turn must
+    // not look like a new turn and clear the terminal digest.
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'straggler duplicate',
+      }),
+    );
+
+    expect(readSession()?.digest).toBe('Final digest');
+  });
+
+  it("a digest carried on the new turn's first ping survives the turn-boundary clear", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        digest: 'Turn one summary',
+      }),
+    );
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: 'msg_assistant_2',
+        lastAgentResponse: 'turn two text with a digest',
+        digest: 'Turn two summary',
+      }),
+    );
+
+    expect(readSession()?.digest).toBe('Turn two summary');
+  });
+
   it('agent:stream:end clears the busy flags and agent:idle clears the spinner', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

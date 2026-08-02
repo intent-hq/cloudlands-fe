@@ -148,6 +148,7 @@ import {
   renameSession,
   setProcessQueueHint,
   clearProcessQueueHint,
+  updateAgentDigest,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
@@ -243,6 +244,18 @@ const toolStatusByAgent = new Map<string, Map<string, string>>();
  * `statusEvents`/`receivedFirstChunk` and restart the Thinking elapsed timer.
  */
 const wakeTurnMessageIdByAgent = new Map<string, string>();
+
+/**
+ * Per-agent turn tracking for the push-applied preview digest: the last
+ * `agent:stream:activity` messageId seen. When a ping arrives for a NEW
+ * messageId (a new turn), the previous turn's `session.digest` is cleared
+ * before the ping's own fields apply, so a stale summary can't outrank this
+ * turn's live text in the AgentCard preview (monorepo#1327). Unlike the maps
+ * above, entries deliberately survive `agent:stream:end`: a straggler
+ * same-turn ping delivered after the terminal event must not look like a new
+ * turn and wipe the final digest that `agent:stream:end` just applied.
+ */
+const previewTurnMessageIdByAgent = new Map<string, string>();
 let installed = false;
 let cleanup: (() => void) | null = null;
 /**
@@ -361,6 +374,15 @@ function handleStreamActivityEvent(event: WorkspaceEvent): void {
   // into the text-streaming path without a preview actually applying.
   const hasResponseText = lastAgentResponse !== undefined && lastAgentResponse.trim().length > 0;
   appStore.dispatch(streamActivityReceived(agentId, hasResponseText));
+  // First ping of a new turn (fresh messageId): drop the previous turn's
+  // digest so it can't masquerade as this turn's summary (monorepo#1327). A
+  // digest carried on this very ping is re-applied right below; idle agents
+  // keep their last digest as the preview fallback because no ping arrives
+  // until the next turn starts.
+  if (previewTurnMessageIdByAgent.get(agentId) !== messageId) {
+    previewTurnMessageIdByAgent.set(agentId, messageId);
+    appStore.dispatch(updateAgentDigest(workspaceIdOf(event) ?? '', agentId, null));
+  }
   applyStreamPreviewFields(agentId, lastAgentResponse, digest);
 }
 
@@ -2350,6 +2372,7 @@ export function __resetDaemonEventsBridgeForTests(): void {
   ownSubscriptionId = undefined;
   toolStatusByAgent.clear();
   wakeTurnMessageIdByAgent.clear();
+  previewTurnMessageIdByAgent.clear();
   // Clear all pending debounce timers so tests start from a clean slate
   for (const timer of changesRefreshTimersByWorkspace.values()) {
     clearTimeout(timer);
