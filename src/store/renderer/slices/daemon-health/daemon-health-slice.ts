@@ -84,11 +84,12 @@ export const pollSystemStatus = createAction(
 );
 
 /**
- * system.status poll succeeded.
+ * system.status poll succeeded. `receivedAt` is the dispatch-time ISO
+ * timestamp — stamped by the caller so the reducer stays deterministic.
  */
-export const systemStatusSuccess = createAction<[payload: SystemStatusWirePayload]>(
-  'daemonHealth/systemStatusSuccess',
-);
+export const systemStatusSuccess = createAction<
+  [payload: SystemStatusWirePayload, receivedAt: string]
+>('daemonHealth/systemStatusSuccess');
 
 /**
  * system.status poll failed.
@@ -246,7 +247,7 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
   .with(pollSystemStatus, (state) => {
     return { ...state, polling: true };
   })
-  .with(systemStatusSuccess, (state, { payload: [wirePayload] }) => {
+  .with(systemStatusSuccess, (state, { payload: [wirePayload, receivedAt] }) => {
     // Extract stats payload, treating new fields as optional.
     const stats: DaemonHealthStats = {
       clients: wirePayload.clients,
@@ -270,7 +271,7 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
       // Daemon-reported locality (§5.14) — authoritative for host-shell
       // gating; falls back to the transport heuristic before the first poll.
       hostLocality: wirePayload.host.locality ?? state.hostLocality,
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: receivedAt,
     };
   })
   .with(systemStatusFailure, (state) => {
