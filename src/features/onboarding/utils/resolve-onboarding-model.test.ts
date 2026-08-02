@@ -180,36 +180,28 @@ describe('resolveOnboardingModel', () => {
     ];
   });
 
-  it('returns auggie opus4.7 when only auggie is installed and authenticated', async () => {
+  it('returns auggie with no model (daemon resolves the default) when only auggie is installed and authenticated', async () => {
     setAvailability({ auggie: { available: true, authenticated: true } });
     mockState.activeProviderId = 'auggie';
 
     const result = await resolveOnboardingModel(fakeState);
 
     expect(result.provider).toBe('auggie');
-    expect(result.model).toBe('opus4.7');
+    expect(result.model).toBeUndefined();
     expect(result.specialistId).toBe('spec-writer');
   });
 
-  it('returns opencode with dynamic model when only opencode is installed and active', async () => {
+  it('returns opencode with no model when only opencode is installed and active', async () => {
     setAvailability({ opencode: { available: true, authenticated: true } });
     mockState.activeProviderId = 'opencode';
-    mockState.modelsByProvider = {
-      opencode: [
-        { value: 'opencode:foo', label: 'Foo' },
-        { value: 'opencode:bar', label: 'Bar' },
-      ],
-    };
 
     const result = await resolveOnboardingModel(fakeState);
 
     expect(result.provider).toBe('opencode');
-    expect(result.model).toBe('opencode:foo');
-    expect(result.model).not.toBe('opus4.7');
-    expect(result.model.startsWith('auggie:')).toBe(false);
+    expect(result.model).toBeUndefined();
   });
 
-  it('returns compound claude-code:default when claude-code is active alongside opencode', async () => {
+  it('returns claude-code with no model when claude-code is active alongside opencode', async () => {
     setAvailability({
       claudeCode: { available: true, authenticated: true },
       opencode: { available: true, authenticated: true },
@@ -219,7 +211,7 @@ describe('resolveOnboardingModel', () => {
     const result = await resolveOnboardingModel(fakeState);
 
     expect(result.provider).toBe('claude-code');
-    expect(result.model).toBe('claude-code:default');
+    expect(result.model).toBeUndefined();
   });
 
   it('throws when user-explicit active provider is stale and not installed', async () => {
@@ -239,7 +231,7 @@ describe('resolveOnboardingModel', () => {
     const result = await resolveOnboardingModel(fakeState);
 
     expect(result.provider).toBe('auggie');
-    expect(result.model).toBe('opus4.7');
+    expect(result.model).toBeUndefined();
   });
 
   it('throws when user-explicit opencode is installed but explicitly not authenticated', async () => {
@@ -255,7 +247,7 @@ describe('resolveOnboardingModel', () => {
     await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/opencode/);
   });
 
-  it('honors user-explicit opencode when authenticated=undefined and resolves a model dynamically', async () => {
+  it('honors user-explicit opencode when authenticated=undefined (no model — daemon resolves)', async () => {
     // Finding A mitigation: `checkOpenCodeReady` probe was inconclusive
     // (10s timeout on a slow machine), but the CLI is installed and the
     // user explicitly clicked the opencode card — trust their selection.
@@ -264,29 +256,11 @@ describe('resolveOnboardingModel', () => {
       opencode: { available: true, authenticated: undefined },
     });
     mockState.activeProviderId = 'opencode';
-    mockState.modelsByProvider = {
-      opencode: [
-        { value: 'opencode:anthropic/claude-4', label: 'Claude 4' },
-      ],
-    };
 
     const result = await resolveOnboardingModel(fakeState);
 
     expect(result.provider).toBe('opencode');
-    expect(result.model).toBe('opencode:anthropic/claude-4');
-  });
-
-  it('throws when user-explicit opencode is auggie-unavailable and returns no models (empty list)', async () => {
-    // Finding B: if the opencode IPC fetch returns an empty list, we must
-    // not fall through to an empty model string (main-side would then
-    // synthesize an invalid `{ provider: 'opencode', model: 'opus4.7' }`).
-    setAvailability({
-      opencode: { available: true, authenticated: true },
-    });
-    mockState.activeProviderId = 'opencode';
-    mockState.modelsByProvider = { opencode: [] };
-
-    await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/opencode/);
+    expect(result.model).toBeUndefined();
   });
 
   it('throws when user-explicit opencode is not installed even though auggie is usable', async () => {
@@ -300,7 +274,7 @@ describe('resolveOnboardingModel', () => {
     await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/opencode/);
   });
 
-  describe('user-selected Pi model (provider propagation regression)', () => {
+  describe('user-selected Pi provider (provider propagation regression)', () => {
     const PI_MODEL = 'pi:anthropic/claude-opus-4.7';
 
     // Mirrors the real Coordinator file specialist that pins auggie/fable-5.
@@ -317,7 +291,7 @@ describe('resolveOnboardingModel', () => {
       ];
     };
 
-    it('routes to pi with the stored pi model when the user explicitly picked pi', async () => {
+    it('routes to pi with no model (daemon resolves) when the user explicitly picked pi', async () => {
       pinnedCoordinator();
       setAvailability({
         auggie: { available: true, authenticated: true },
@@ -325,19 +299,13 @@ describe('resolveOnboardingModel', () => {
       });
       mockState.activeProviderId = 'pi';
       mockState.selectedModelByProvider = { pi: PI_MODEL };
-      mockState.modelsByProvider = {
-        pi: [
-          { value: PI_MODEL, label: 'Claude Opus 4.7' },
-          { value: 'pi:anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
-        ],
-      };
 
       const result = await resolveOnboardingModel(fakeState);
 
       expect(result.provider).toBe('pi');
-      expect(result.model).toBe(PI_MODEL);
-      expect(result.model).not.toBe('fable-5');
-      expect(result.model.startsWith('auggie:')).toBe(false);
+      // The specialist frontmatter pin (auggie/fable-5) must not leak onto
+      // pi; the daemon's provider-guarded resolver handles it.
+      expect(result.model).toBeUndefined();
     });
 
     it('honors user-explicit pi under the relaxed auth gate (authenticated=undefined)', async () => {
@@ -347,55 +315,14 @@ describe('resolveOnboardingModel', () => {
         pi: { available: true, authenticated: undefined },
       });
       mockState.activeProviderId = 'pi';
-      mockState.selectedModelByProvider = { pi: PI_MODEL };
-      mockState.availableModels = [{ value: PI_MODEL, label: 'Claude Opus 4.7' }];
 
       const result = await resolveOnboardingModel(fakeState);
 
       expect(result.provider).toBe('pi');
-      expect(result.model).toBe(PI_MODEL);
+      expect(result.model).toBeUndefined();
     });
 
-    it('resolves the stored pi model even when availableModels still holds the previous provider catalog', async () => {
-      // Realistic renderer state right after the persistence middleware flips
-      // the provider: the flat `availableModels` list was loaded at boot for
-      // the then-active provider (auggie) and the reload has not resolved
-      // yet. The resolver must not match UI_MODEL_PREFERENCE against the
-      // stale auggie catalog and return 'opus4.7' for provider 'pi'.
-      pinnedCoordinator();
-      setAvailability({
-        auggie: { available: true, authenticated: true },
-        pi: { available: true, authenticated: true },
-      });
-      mockState.activeProviderId = 'pi';
-      mockState.selectedModelByProvider = { pi: PI_MODEL };
-      mockState.availableModels = [
-        { value: 'opus4.7', label: 'Opus 4.7' },
-        { value: 'sonnet4.5', label: 'Sonnet 4.5' },
-      ];
-      mockState.modelsByProvider = { pi: [{ value: PI_MODEL, label: 'Claude Opus 4.7' }] };
-
-      const result = await resolveOnboardingModel(fakeState);
-
-      expect(result.provider).toBe('pi');
-      expect(result.model).toBe(PI_MODEL);
-      expect(result.model).not.toBe('opus4.7');
-    });
-
-    it('falls back to the stored pi model when the models.list fetch returns empty', async () => {
-      pinnedCoordinator();
-      setAvailability({ pi: { available: true, authenticated: true } });
-      mockState.activeProviderId = 'pi';
-      mockState.selectedModelByProvider = { pi: PI_MODEL };
-      mockState.modelsByProvider = { pi: [] };
-
-      const result = await resolveOnboardingModel(fakeState);
-
-      expect(result.provider).toBe('pi');
-      expect(result.model).toBe(PI_MODEL);
-    });
-
-    it('keeps the specialist pin (auggie/fable-5) when the user made no explicit provider change', async () => {
+    it('routes to auggie with no model when the user made no explicit provider change', async () => {
       pinnedCoordinator();
       setAvailability({
         auggie: { available: true, authenticated: true },
@@ -409,14 +336,14 @@ describe('resolveOnboardingModel', () => {
       const result = await resolveOnboardingModel(fakeState);
 
       expect(result.provider).toBe('auggie');
-      expect(result.model).toBe('fable-5');
+      // The daemon resolves the specialist frontmatter pin (fable-5) itself.
+      expect(result.model).toBeUndefined();
     });
 
     it('throws when user-explicit pi is not installed (no silent auggie fallback)', async () => {
       pinnedCoordinator();
       setAvailability({ auggie: { available: true, authenticated: true } });
       mockState.activeProviderId = 'pi';
-      mockState.selectedModelByProvider = { pi: PI_MODEL };
 
       await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/'pi'/);
     });
@@ -428,9 +355,36 @@ describe('resolveOnboardingModel', () => {
         pi: { available: true, authenticated: false },
       });
       mockState.activeProviderId = 'pi';
-      mockState.selectedModelByProvider = { pi: PI_MODEL };
 
       await expect(resolveOnboardingModel(fakeState)).rejects.toThrow(/'pi'/);
+    });
+  });
+
+  describe('specialist user model override (explicit pick)', () => {
+    it('submits the override when it belongs to the resolved provider', async () => {
+      setAvailability({ auggie: { available: true, authenticated: true } });
+      mockState.activeProviderId = 'auggie';
+      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'sonnet4.5' } };
+
+      const result = await resolveOnboardingModel(fakeState);
+
+      expect(result.provider).toBe('auggie');
+      expect(result.model).toBe('sonnet4.5');
+    });
+
+    it('drops a cross-provider override instead of leaking it', async () => {
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        claudeCode: { available: true, authenticated: true },
+      });
+      // User explicitly selected claude-code; the stale override belongs to auggie.
+      mockState.activeProviderId = 'claude-code';
+      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'fable-5' } };
+
+      const result = await resolveOnboardingModel(fakeState);
+
+      expect(result.provider).toBe('claude-code');
+      expect(result.model).toBeUndefined();
     });
   });
 

@@ -6,15 +6,10 @@
   selectSpecialists,
   selectCustomSpecialistsLoaded,
   selectFileSpecialistsLoaded,
-  selectEffectiveModel,
-  selectEffectiveCodingAgent,
   filterPickableSpecialists,
 } from '$store/renderer/slices/specialists/specialists-selectors';
 
-  import {
-  selectSelectedModel,
-  selectAvailableModels,
-} from '$store/renderer/slices/model/model-selectors';
+  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
   import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
@@ -31,14 +26,12 @@
   import {
   selectCatalogDefaultProviderId,
   selectProviderCatalogEntries,
-  selectProviderModelTiers,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { resolveEffectiveModelForSpecialist } from '$lib/utils/effective-model-resolution';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
-  import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('InitialAgentPicker');
@@ -53,7 +46,6 @@
   const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const activeProviderId$ = selectActiveProviderId();
-  const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
 
   interface Props {
@@ -223,28 +215,57 @@
     }
   });
 
-  // Helper to resolve the effective model for a given specialist.
-  // Delegates to the shared resolveEffectiveModelForSpecialist utility (also used
-  // by the CompactWorkspaceInitializer submit path) so the displayed model always
-  // matches the model the created agent gets. When the form's selectedProvider
-  // matches the specialist's effective coding agent from Redux, the Redux-resolved
-  // model wins (mirrors Settings > Agents exactly); when the user has changed the
-  // provider within this form, it falls back to local tier resolution.
+  // Daemon-resolved default-model previews per provider context (PROTOCOL
+  // §5.11): `specialist.list` with the form's selected provider returns
+  // additive `resolvedModel`/`resolvedProvider` fields computed by the same
+  // resolver a no-model create uses, so the picker displays exactly what the
+  // daemon would pin. Absent resolvedModel means "Provider default". The
+  // store's specialist view carries the daemon-default-provider context, so
+  // it serves as the fallback until the per-provider fetch lands.
+  let resolvedModelsByProvider = $state<Record<string, Record<string, string | undefined>>>({});
+
+  // Bumped on every store specialist-view refresh; in-flight fetches from an
+  // older generation are dropped so they can't overwrite fresher previews.
+  let previewsGeneration = 0;
+
+  // Invalidate cached previews whenever the store's specialist view refreshes
+  // (daemon `specialists:changed` → list subscription refetch), so the
+  // resolvedModel preview tracks specialist/settings changes while the picker
+  // stays mounted. The fetch effect below then refetches on demand.
+  $effect(() => {
+    void $specialists$;
+    previewsGeneration += 1;
+    resolvedModelsByProvider = {};
+  });
+
+  $effect(() => {
+    const provider = selectedProvider;
+    if (!provider || provider in resolvedModelsByProvider) return;
+    const generation = previewsGeneration;
+    void (async () => {
+      try {
+        const defs = await appClient.specialists.list(provider);
+        if (generation !== previewsGeneration || defs.length === 0) return;
+        const byId: Record<string, string | undefined> = {};
+        for (const def of defs) byId[def.id] = def.resolvedModel;
+        resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: byId };
+      } catch (error) {
+        logger.debug('Failed to fetch resolved-model previews:', { provider, error });
+      }
+    })();
+  });
+
+  // Helper to resolve the displayed default model for a given specialist:
+  // the daemon-computed `resolvedModel` preview in the form's provider
+  // context (undefined ⇒ provider CLI default, rendered "Provider default").
+  // With no specialist (General), show the global store selection — it
+  // mirrors the daemon's `model.providerDefaults`/`model.default` settings
+  // that the resolver applies for a specialist-less create.
   function resolveEffectiveModel(specialist: string | null): string | undefined {
-    const state = appStore.state;
-    return resolveEffectiveModelForSpecialist({
-      specialistId: specialist,
-      selectedProvider,
-      availableModelValues: $availableModels$.map((m) => m.value),
-      defaultProviderId: $defaultProviderId$,
-      selectedProviderTiers: selectProviderModelTiers.select(state, selectedProvider),
-      globalSelectedModel: $selectedModel$,
-      effectiveCodingAgent: specialist
-        ? selectEffectiveCodingAgent.select(state, specialist)
-        : undefined,
-      effectiveModel: specialist ? selectEffectiveModel.select(state, specialist) : undefined,
-      specialistInfo: specialist ? $specialists$.find((s) => s.id === specialist) : undefined,
-    });
+    if (!specialist) return $selectedModel$;
+    const providerView = resolvedModelsByProvider[selectedProvider];
+    if (providerView) return providerView[specialist];
+    return $specialists$.find((s) => s.id === specialist)?.resolvedModel;
   }
 
   // Effective model for the team mode card (based on actual selectedSpecialist)
@@ -257,15 +278,14 @@
   // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
   // the form may still have a saved selectedModel (e.g., "opus4.6") marked as overridden
   // from a previous session when that was the default. This runs reactively (not onMount)
-  // so it waits until file specialists, available models, and the parent's persisted form
-  // state are all loaded — comparing before then is meaningless — and re-runs if hydration
+  // so it waits until file specialists and the parent's persisted form state are
+  // loaded — comparing before then is meaningless — and re-runs if hydration
   // re-applies a stale override after mount. A persisted "override" that matches the
   // current specialist default is not a real override; one that differs is stale. Either
-  // way it is cleared so the current specialist default drives the picker. Overrides the
-  // user made in this session are never cleared.
+  // way it is cleared so the daemon-resolved default drives the picker (and a no-model
+  // create). Overrides the user made in this session are never cleared.
   $effect(() => {
-    const dataReady =
-      $fileSpecialistsLoaded$ && $availableModels$.length > 0 && $initializerHydrated$;
+    const dataReady = $fileSpecialistsLoaded$ && $initializerHydrated$;
     if (!dataReady || modelOverriddenThisSession) return;
     // Degenerate persisted state: overridden flag set with no model. Normalize
     // so the invariant `modelWasOverridden ⇒ selectedModel set` holds.
@@ -276,16 +296,10 @@
       return;
     }
     if (modelWasOverridden && selectedModel) {
-      const currentDefault = isTeamMode ? teamModeModel : singleAgentModel;
-      if (currentDefault) {
-        logger.debug('Clearing stale persisted model override:', {
-          selectedModel,
-          currentDefault,
-        });
-        selectedModel = undefined;
-        modelWasOverridden = false;
-        onModelChange?.(undefined);
-      }
+      logger.debug('Clearing stale persisted model override:', { selectedModel });
+      selectedModel = undefined;
+      modelWasOverridden = false;
+      onModelChange?.(undefined);
     }
   });
 
@@ -461,6 +475,7 @@
           triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
           showManageLink={true}
           defaultModelId={teamModeModel}
+          defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           silentFallback
         />
       {/key}
@@ -598,6 +613,7 @@
           triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
           showManageLink={true}
           defaultModelId={singleAgentModel}
+          defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           silentFallback
         />
       {/key}

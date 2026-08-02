@@ -42,6 +42,13 @@ export interface FileSpecialist {
   source: SpecialistFileScope;
   /** When true, excluded from picker surfaces (Settings still shows it). */
   hidden?: boolean;
+  /**
+   * Daemon-computed default-model preview (`specialist.list` resolvedModel/
+   * resolvedProvider, PROTOCOL §5.11). Absent when resolution yields the
+   * provider CLI default ("Provider default").
+   */
+  resolvedModel?: string;
+  resolvedProvider?: string;
 }
 
 export interface FileSpecialistWritePayload {
