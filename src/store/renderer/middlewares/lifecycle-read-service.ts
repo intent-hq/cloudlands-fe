@@ -477,11 +477,14 @@ function hydrateWorkspaceAgents(wsId: string): void {
 
 /**
  * Hydrate a workspace's terminals on mount, mirroring the boot
- * `terminals-scripts-seeder` terminal section. A successful fetch (including
- * an authoritative empty list) dispatches `loadWorkspaceTerminals` to converge
- * the store; a failed fetch is swallowed by the coalesce wrapper and leaves
- * prior tab state intact, so transient errors during workspace switches do NOT
- * clobber live terminals (STAB-24).
+ * `terminals-scripts-seeder` terminal section. A successful non-empty fetch
+ * dispatches `loadWorkspaceTerminals` to converge the store; an empty list
+ * over existing live tabs is treated as transient by the reducer and
+ * preserved (monorepo#1330) — genuinely-gone terminals converge via the
+ * heartbeat/auto-reconnect path and the next non-empty hydration. A failed
+ * fetch is swallowed by the coalesce wrapper and leaves prior tab state
+ * intact, so transient errors during workspace switches do NOT clobber live
+ * terminals (STAB-24).
  */
 function hydrateWorkspaceTerminals(wsId: string): void {
   coalesce(`terminals:${wsId}`, async () => {

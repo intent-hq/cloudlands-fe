@@ -473,7 +473,12 @@ export function registerTerminalHandlers() {
                   error: error instanceof Error ? error.message : String(error),
                 });
               }
-              return { success: true, terminalId: providedId, reconnected: true };
+              // Return the registry's LOCAL id (canonical key) rather than
+              // echoing providedId: `terminal:data`/`terminal:exit` events are
+              // emitted under the local id, so a caller reattaching with the
+              // daemon id must learn the id events arrive under. Identical to
+              // providedId on the local-id path — no behavior change there.
+              return { success: true, terminalId: existing.id, reconnected: true };
             }
           }
         }

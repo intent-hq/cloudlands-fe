@@ -321,14 +321,13 @@ describe("terminalPersistenceService — workspace state persistence", () => {
     expect(lastCall.payload[2]).toBe(explicitState);
   });
 
-  // Invariant pin (intent-hq/monorepo#1330 investigation): loadWorkspaceTerminals
-  // is in WORKSPACE_STATE_PERSIST_ACTIONS and the reducer forces isOpen=false on
-  // an empty list, so an empty hydration COULD durably overwrite a persisted
-  // { isOpen: true }. Today that is prevented only by an accident of control
-  // flow: the interceptor's `return next(...)` for the savedState-undefined
-  // path (the only path lifecycle-read-service/seeder use) exits before the
-  // GAP-5 persist block runs. This test pins that invariant so a refactor of
-  // the interceptor cannot silently make the in-memory clobber durable.
+  // Invariant (intent-hq/monorepo#1330): loadWorkspaceTerminals is in
+  // WORKSPACE_STATE_PERSIST_ACTIONS and the reducer forces isOpen=false on an
+  // empty-over-empty pass, so an empty hydration COULD durably overwrite a
+  // persisted { isOpen: true }. The GAP-5 persist block skips empty-list
+  // loadWorkspaceTerminals explicitly (isEmptyTerminalsHydration), so the
+  // guarantee is structural — it does not depend on the savedState-undefined
+  // re-dispatch exiting before the persist block.
   it("does not durably persist isOpen=false when a transient empty list clobbers a saved open state (monorepo#1330)", () => {
     safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, {
       "ws-1": { isOpen: true, activeTerminalId: "pty-1" },
@@ -345,6 +344,31 @@ describe("terminalPersistenceService — workspace state persistence", () => {
     // Mount hydration lands with a transient empty list (savedState omitted,
     // exactly as lifecycle-read-service dispatches it).
     dispatch(loadWorkspaceTerminals("ws-1", []));
+
+    const stored = safeLocalStorage.getJSON(
+      WORKSPACE_STATE_STORAGE_KEY
+    ) as Record<string, PersistedWorkspaceState>;
+    expect(stored["ws-1"]).toMatchObject({ isOpen: true });
+  });
+
+  // Same invariant via the interceptor's fall-through path: with savedState
+  // explicitly provided the loadWorkspaceTerminals action reaches the GAP-5
+  // persist block, so only the explicit empty-hydration guard protects the
+  // saved open state here.
+  it("skips the GAP-5 persist for an empty-list hydration even when savedState is provided", () => {
+    safeLocalStorage.setJSON(WORKSPACE_STATE_STORAGE_KEY, {
+      "ws-1": { isOpen: true, activeTerminalId: "pty-1" },
+    });
+
+    const api = createFakeApi();
+    const middleware = createTerminalPersistenceMiddleware()(api);
+    const next = vi.fn((action) => {
+      api.dispatch(action);
+      return action;
+    });
+    const dispatch = middleware(next);
+
+    dispatch(loadWorkspaceTerminals("ws-1", [], null));
 
     const stored = safeLocalStorage.getJSON(
       WORKSPACE_STATE_STORAGE_KEY

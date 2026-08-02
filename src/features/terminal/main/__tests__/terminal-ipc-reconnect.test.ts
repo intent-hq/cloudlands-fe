@@ -105,7 +105,14 @@ describe('terminal.ipc PROFESSIONAL_CREATE reconnect (monorepo#1330)', () => {
     // BUG: registry.getTerminal('daemon-pty-1') misses (registry keys by local
     // id; byDaemonId is only consulted for event routing), so a second PTY is
     // spawned — the "fresh session, no scrollback" symptom.
-    expect(result).toMatchObject({ success: true, reconnected: true });
+    // The reattach must also return the registry's LOCAL id — the canonical
+    // key `terminal:data`/`terminal:exit` events are emitted under — so a
+    // caller filtering the event stream by the returned id sees the events.
+    expect(result).toMatchObject({
+      success: true,
+      terminalId: 'terminal-local-1',
+      reconnected: true,
+    });
     expect(countCreateCalls()).toBe(1);
   });
 });
