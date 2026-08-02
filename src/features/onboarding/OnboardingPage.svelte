@@ -14,7 +14,12 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
-  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
+  import {
+    enhancePrompt,
+    EnhancePromptUnavailableError,
+    isEnhancePromptAvailable,
+  } from '$lib/client/live/live-prompt-enhancement';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { v4 as uuidv4 } from 'uuid';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -286,6 +291,10 @@
   let onboardingInputValue = $state(getInitialOnboardingPrompt());
   let promptStepRef: OnboardingPromptStep | null = $state(null);
   let isOnboardingEnhancing = $state(false);
+
+  // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
+  const activeProviderId$ = selectActiveProviderId();
+  const enhancePromptAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
 
   /** Get the RichTextarea from the prompt step sub-component. */
   function getOnboardingRichTextarea(): RichTextarea | null {
@@ -669,6 +678,7 @@
   }
 
   async function handleOnboardingEnhancePrompt() {
+    if (!enhancePromptAvailable) return;
     if (!onboardingInputValue.trim() || isOnboardingEnhancing) return;
     isOnboardingEnhancing = true;
     try {
@@ -680,9 +690,11 @@
     } catch (error) {
       logger.error('Failed to enhance prompt', error);
       toast.error(
-        error instanceof Error && error.message
-          ? m.onboarding_page_enhanceFailedWithMessage_error({ message: error.message })
-          : m.onboarding_page_enhanceFailed_error(),
+        error instanceof EnhancePromptUnavailableError
+          ? m.onboarding_page_enhanceUnavailable_error()
+          : error instanceof Error && error.message
+            ? m.onboarding_page_enhanceFailedWithMessage_error({ message: error.message })
+            : m.onboarding_page_enhanceFailed_error(),
       );
     } finally {
       isOnboardingEnhancing = false;
@@ -1234,6 +1246,7 @@
                           bind:focusedSuggestionIndex
                           onSubmit={handleOnboardingSubmit}
                           onEnhancePrompt={handleOnboardingEnhancePrompt}
+                          {enhancePromptAvailable}
                           onContentChange={handleOnboardingContentChange}
                           onFocus={handleOnboardingFocus}
                           onKeydown={handleOnboardingKeydown}
