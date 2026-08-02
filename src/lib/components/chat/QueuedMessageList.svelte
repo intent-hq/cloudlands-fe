@@ -16,6 +16,7 @@
   faPaperPlane,
   faRotateRight,
   faBell,
+  faBolt,
   faCircleQuestion,
 } from '@fortawesome/free-solid-svg-icons';
   import {
@@ -27,6 +28,7 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
+  import { getHookWakeAttribution, stripHookWakePrefix } from '$lib/utils/hook-wake-attribution';
   import { summarizeEventWake } from './event-wake-summary';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -242,15 +244,29 @@
   }
 
   /**
+   * Background-hook wake attribution for a queued entry
+   * (`messageMetadata.type === 'hook_wake'`, PROTOCOL §5.40). Returns null
+   * when absent/malformed so the entry renders as a normal queued message.
+   */
+  function queuedHookWakeAttribution(message: QueuedMessage) {
+    return getHookWakeAttribution(message.messageMetadata);
+  }
+
+  /**
    * Exposed function for parent components to programmatically start editing
    * the last queued message (e.g., when user presses Up arrow in chat input).
-   * Skips system event-notification wakes and agent-to-agent messages
-   * (not user-editable).
+   * Skips system event-notification wakes, agent-to-agent messages, and
+   * hook wakes (not user-editable).
    * Returns true if editing was started, false if no messages to edit.
    */
   export function editLastMessage(): boolean {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (isEventNotification(messages[i]) || queuedAgentAttribution(messages[i])) continue;
+      if (
+        isEventNotification(messages[i]) ||
+        queuedAgentAttribution(messages[i]) ||
+        queuedHookWakeAttribution(messages[i])
+      )
+        continue;
       startEdit(messages[i]);
       editStartedProgrammatically = true;
       return true;
@@ -317,6 +333,7 @@
       <div class="space-y-px">
         {#each messages as message (message.id)}
           {@const agentAttr = queuedAgentAttribution(message)}
+          {@const hookWakeAttr = queuedHookWakeAttribution(message)}
           <div
             class="group flex items-start gap-2 px-2.5 py-1 text-subtle text-sm grid {message.editing ? 'opacity-60' : ''}"
             transition:fly={{ y: 10, duration: 200 }}
@@ -437,6 +454,58 @@
                 >
                   <span class="text-foreground font-medium">{agentAttr.displayName}</span>
                   <span class="text-xs opacity-70"> — {message.content}</span>
+                </div>
+                {#if !disabled}
+                  <div
+                    class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      class="-my-1"
+                      onclick={() => onsendnow?.(message.id)}
+                      tooltip={m.chat_queuedMessages_sendNow_tooltip()}
+                    >
+                      <Fa icon={faPaperPlane} class="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      class="-my-1"
+                      onclick={() => handleRemove(message.id)}
+                      tooltip={m.chat_queuedMessages_remove_tooltip()}
+                    >
+                      <Fa icon={faTrash} class="w-3 h-3" />
+                    </Button>
+                  </div>
+                {/if}
+              </div>
+            {:else if hookWakeAttr}
+              <!-- Background-hook wake: compact attribution row, no edit -->
+              <div class="col-span-full row-span-full flex flex-1 min-w-0 items-center gap-2">
+                {#if message.requeuedAfterFailure}
+                  <div
+                    class="flex items-center gap-1 text-warning text-xs shrink-0"
+                    title={m.chat_queuedMessages_failedWillRetry_label()}
+                  >
+                    <div aria-hidden="true">
+                      <Fa icon={faRotateRight} class="w-3 h-3" />
+                    </div>
+                    <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
+                  </div>
+                {/if}
+                <div aria-hidden="true" class="shrink-0" data-testid="queued-hook-wake-icon">
+                  <Fa icon={faBolt} class="w-3 h-3" />
+                </div>
+                <div
+                  class="flex-1 min-w-0 truncate"
+                  transition:slide={{ axis: 'y', duration: 200 }}
+                  title={message.content}
+                >
+                  <span class="text-foreground font-medium">{hookWakeAttr.displayName}</span>
+                  <span class="text-xs opacity-70">
+                    — {stripHookWakePrefix(message.content)}</span
+                  >
                 </div>
                 {#if !disabled}
                   <div

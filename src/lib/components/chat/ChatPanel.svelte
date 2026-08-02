@@ -166,6 +166,7 @@
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
+  import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -3944,6 +3945,12 @@
       onsendnow={handleSendQueuedMessageNow}
       ondone={() => inputComponent?.focus?.()}
     />
+  {/if}
+
+  <!-- Background hooks (PROTOCOL §5.40): faint chip row above the input,
+       visible only while the active agent has scheduled/running hooks. -->
+  {#if workspace?.id && agentId}
+    <BackgroundHooksRow workspaceId={workspace.id} {agentId} />
   {/if}
 
   <!-- Message Input with Aurora Background -->
