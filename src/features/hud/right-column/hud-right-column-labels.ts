@@ -58,7 +58,7 @@ export function feedKindLabel(kind: string): string {
 export function attentionKindLabel(item: HudAttentionItem): string {
   switch (item.kind) {
     case 'agent_waiting':
-      return m.hud_attention_kindNeedsInput_label();
+      return m.hud_attention_kindNeedsAttention_label();
     case 'agent_failed':
       return m.hud_attention_kindFailed_label();
     case 'workspace_attention':

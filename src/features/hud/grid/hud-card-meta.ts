@@ -60,7 +60,7 @@ export function agentBucketColor(bucket: HudAgentStateBucket): string {
   switch (bucket) {
     case 'running':
       return 'hsl(var(--primary))';
-    case 'waiting':
+    case 'needs-attention':
       return 'hsl(var(--warning))';
     case 'failed':
       return 'hsl(var(--destructive-foreground))';

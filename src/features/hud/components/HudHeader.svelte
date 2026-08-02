@@ -4,7 +4,10 @@
    * FLEET OPS repo filter + status filter menus, centered live clock, fleet
    * stat counters (RUN / ATTN / REVIEW / IDLE / FAILED; ATTN and FAILED blink
    * via hudblink only when their count is > 0 — zero renders static/dimmed
-   * like the other counters), and the theme toggle. No token counter — the
+   * like the other counters). ATTN uses the card-gated attention count
+   * (`selectHudAttnCount`) so it blinks exactly when a card shows NEEDS
+   * INPUT / BLOCKED / FAILED — never for delegated or background agents.
+   * No token counter — the
    * TOK/S chart lives in the right column per the mock. The full-screen
    * toggle slot keeps the existing enter/exit control.
    *
@@ -18,7 +21,10 @@
   import Logo from '$lib/components/Logo.svelte';
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';
-  import { selectHudAgentStateCounts } from '$store/renderer/slices/hud/hud-selectors';
+  import {
+    selectHudAgentStateCounts,
+    selectHudAttnCount,
+  } from '$store/renderer/slices/hud/hud-selectors';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import { formatHudClock } from '../utils/hud-format';
@@ -27,13 +33,14 @@
   let { nowMs, controls }: { nowMs: number; controls?: Snippet } = $props();
 
   const agentCounts$ = selectHudAgentStateCounts();
+  const attnCount$ = selectHudAttnCount();
   const isDark$ = selectIsDarkTheme();
 
   const clockText = $derived(formatHudClock(nowMs));
 
   const stats = $derived({
     run: $agentCounts$.running,
-    attn: $agentCounts$.waiting + $agentCounts$.failed,
+    attn: $attnCount$,
     rev: $agentCounts$.done,
     idle: $agentCounts$.idle,
     fail: $agentCounts$.failed,

@@ -11,6 +11,10 @@
     count: number;
     /** CSS color value for the filled bar segment. */
     color: string;
+    /** Blink the row (label + count) to draw attention; reduced-motion safe. */
+    blink?: boolean;
+    /** Optional test hook for the row. */
+    testId?: string;
   }
 
   let { bars, total }: { bars: HudStateBar[]; total: number } = $props();
@@ -23,8 +27,10 @@
 
 <div class="hud-state-bars">
   {#each bars as bar (bar.label)}
-    <div class="hud-state-bar-row">
-      <span class="hud-state-bar-label">{bar.label}</span>
+    <div class="hud-state-bar-row" class:hud-state-bar-blink={bar.blink} data-testid={bar.testId}>
+      <span class="hud-state-bar-label" style:color={bar.blink ? bar.color : undefined}>
+        {bar.label}
+      </span>
       <div class="hud-state-bar-track">
         <div
           class="hud-state-bar-fill"
@@ -71,5 +77,17 @@
   .hud-state-bar-count {
     min-width: 18px;
     text-align: right;
+  }
+  /* Attention blink (mock hudblink): only the flagged row's label + count
+     pulse, the track stays steady. Gated by the caller (blink at non-zero). */
+  .hud-state-bar-blink .hud-state-bar-label,
+  .hud-state-bar-blink .hud-state-bar-count {
+    animation: hudblink 1.6s step-end infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hud-state-bar-blink .hud-state-bar-label,
+    .hud-state-bar-blink .hud-state-bar-count {
+      animation: none;
+    }
   }
 </style>

@@ -17,18 +17,25 @@ import {
   WORKSPACE_DISPLAY_STATUS_VALUES,
   WorkspaceStatus,
   isWorkspaceDisplayStatus,
+  type NoteId,
   type WorkspaceDisplayStatus,
   type Workspace,
   type WorkspaceAgentInfo,
   type WorkspaceId,
 } from '$shared/types';
+import type { TaskAgentAssociation } from '../task-agent-associations/task-agent-associations-types';
 import type { HudAgentStateBucket, HudCardStateKey } from './hud-types';
-import { HUD_AGENT_STATE_BUCKETS, toHudAgentStateBucket } from './hud-types';
+import {
+  HUD_AGENT_STATE_BUCKETS,
+  isWaitingWireStatus,
+  toHudAgentStateBucket,
+} from './hud-types';
 import {
   selectAgentIsResponding,
   selectAgentIsWaiting,
 } from '../agent-session/agent-session-selectors';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 
 export const selectHudActive = store.createSelector((state) => state.hud.active);
 
@@ -116,8 +123,8 @@ function agentInfosOf(workspace: Workspace): WorkspaceAgentInfo[] {
 
 /**
  * AGENTS panel state bars: bucketed counts across all HUD workspaces, using
- * the same live-session-first bucketing as the card agent rows
- * (`liveAgentBucket`) so the header RUN/IDLE counters agree with the grid.
+ * the same attention-aware bucketing as the card agent rows
+ * (`agentBucketOf`) so the header RUN/IDLE counters agree with the grid.
  */
 export const selectHudAgentStateCounts = store.createSelector(
   (state): Record<HudAgentStateBucket, number> => {
@@ -126,7 +133,7 @@ export const selectHudAgentStateCounts = store.createSelector(
     ) as Record<HudAgentStateBucket, number>;
     for (const workspace of selectHudWorkspaces.select(state)) {
       for (const agent of agentInfosOf(workspace)) {
-        counts[liveAgentBucket(state, agent.id, agent.status)] += 1;
+        counts[agentBucketOf(state, agent).bucket] += 1;
       }
     }
     return counts;
@@ -236,11 +243,12 @@ function sinceMs(item: HudAttentionItem): number {
 }
 
 /**
- * ATTENTION panel rows, newest first: agents in the waiting/failed buckets
- * (from `agentSummary.agents`, PROTOCOL §5.1) plus workspaces whose live
- * `workspace:attention-changed` flag is raised (the FE `Workspace` entity
- * carries no `attention` field — the hud slice mirrors the event stream).
- * Rows for workspaces no longer in the list are dropped.
+ * ATTENTION panel rows, newest first: agents in the needs-attention/failed
+ * buckets (from `agentSummary.agents`, PROTOCOL §5.1, via the attention-aware
+ * `agentBucketOf`) plus workspaces whose live `workspace:attention-changed`
+ * flag is raised (the FE `Workspace` entity carries no `attention` field —
+ * the hud slice mirrors the event stream). Rows for workspaces no longer in
+ * the list are dropped.
  */
 export const selectHudAttentionItems = store.createSelector((state): HudAttentionItem[] => {
   const flags = state.hud.attentionByWorkspaceId;
@@ -249,14 +257,14 @@ export const selectHudAttentionItems = store.createSelector((state): HudAttentio
   for (const workspace of selectHudWorkspaces.select(state)) {
     const workspaceId = String(workspace.id);
     for (const agent of agentInfosOf(workspace)) {
-      const bucket = toHudAgentStateBucket(agent.status);
-      if (bucket !== 'waiting' && bucket !== 'failed') continue;
-      // Question text: the agent's captured §7.1 question block, waiting rows only.
-      const question = bucket === 'waiting' ? questions[agent.id] : undefined;
+      const { bucket, hasQuestion } = agentBucketOf(state, agent);
+      if (bucket !== 'needs-attention' && bucket !== 'failed') continue;
+      // Question text: the agent's outstanding §7.1 question block, attention rows only.
+      const question = hasQuestion ? questions[agent.id] : undefined;
       items.push({
         workspaceId,
         workspaceTitle: workspace.title,
-        kind: bucket === 'waiting' ? 'agent_waiting' : 'agent_failed',
+        kind: bucket === 'needs-attention' ? 'agent_waiting' : 'agent_failed',
         agentName: agent.name,
         message: question?.question ?? null,
         sinceTs: agent.lastActivity ?? null,
@@ -341,7 +349,7 @@ export interface HudCardAgent {
   attentionKind: 'discussion' | 'blocker' | null;
   /**
    * A §7.1 captured question is outstanding: the hud slice holds one for the
-   * agent and the agent is not running/done (waiting or idle bucket).
+   * agent and the agent is waiting on it (dismissal marker honored).
    */
   hasQuestion: boolean;
 }
@@ -364,7 +372,7 @@ export interface HudWorkspaceCard {
   tasks: { total: number; completed: number; inProgress: number };
   /** Sum of the four token counters from the workspace usage rollup. */
   tokens: number;
-  /** Live agents only (running / waiting / failed buckets), wire order. */
+  /** Live agents only (running / needs-attention / failed buckets), wire order. */
   agents: HudCardAgent[];
 }
 
@@ -407,7 +415,11 @@ function cardStateKey(
     : 'not_started';
 }
 
-const LIVE_BUCKETS: ReadonlySet<HudAgentStateBucket> = new Set(['running', 'waiting', 'failed']);
+const LIVE_BUCKETS: ReadonlySet<HudAgentStateBucket> = new Set([
+  'running',
+  'needs-attention',
+  'failed',
+]);
 
 /**
  * Depth-first delegation-tree order over the summary agents: roots in wire
@@ -451,23 +463,56 @@ function orderAgentTree(
   return ordered;
 }
 
+/** Attention-aware bucket + predicates for one summary agent. */
+interface HudAgentBucketInfo {
+  bucket: HudAgentStateBucket;
+  attentionKind: 'discussion' | 'blocker' | null;
+  hasQuestion: boolean;
+}
+
 /**
- * State bucket for a card agent: the live agent-session slice wins when it
+ * State bucket for an agent: the live agent-session slice wins when it
  * tracks the agent (the daemon-events-bridge folds `agent:status-changed`
  * live, while the workspace entity's `agentSummary` only refreshes with the
  * next workspace snapshot), else the summary's wire status. Waiting is
- * checked before responding, mirroring `WorkspaceAgentsList`.
+ * checked before responding, mirroring `WorkspaceAgentsList`, and a
+ * merely-waiting agent buckets as `idle` — `needs-attention` is reserved for
+ * a pending attention request (blocker/discussion, §5.5) or an outstanding
+ * §7.1 question (dismissal marker honored), mirroring main's `avatar-state`
+ * precedence (failed > attention > running > idle).
  */
-function liveAgentBucket(
-  state: StoreState,
-  agentId: string,
-  summaryStatus: string,
-): HudAgentStateBucket {
-  const session = state.agentSessions?.byAgentId[agentId];
-  if (!session) return toHudAgentStateBucket(summaryStatus);
-  if (selectAgentIsWaiting.select(state, agentId)) return 'waiting';
-  if (selectAgentIsResponding.select(state, agentId)) return 'running';
-  return toHudAgentStateBucket(typeof session.status === 'string' ? session.status : summaryStatus);
+function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBucketInfo {
+  const session = state.agentSessions?.byAgentId[info.id];
+  const metadata = (session?.metadata ?? {}) as Record<string, unknown>;
+  const attentionKind = session ? (getAgentAttentionRequest(session)?.kind ?? null) : null;
+  // Waiting check: the canonical selector (PascalCase `Waiting` status /
+  // `isWaitingOnTool` / waiting-for-other-agents) plus the lowercase wire
+  // status the summary and `agent:status-changed` events carry.
+  const waiting = session
+    ? selectAgentIsWaiting.select(state, info.id) ||
+      (typeof session.status === 'string' && isWaitingWireStatus(session.status))
+    : isWaitingWireStatus(info.status);
+  // A captured §7.1 question is outstanding while the agent is waiting —
+  // once it runs again or finishes the question is answered/moot. A question
+  // the user dismissed (its message id === metadata.dismissedQuestionsMessageId,
+  // §5.5) no longer pends — the same predicate the chat wizard gate uses.
+  const question = state.hud.questionsByAgentId[info.id];
+  const hasQuestion =
+    waiting && !!question && !isQuestionMessageDismissed(metadata, question.messageId);
+  let base: HudAgentStateBucket;
+  if (!session) base = toHudAgentStateBucket(info.status);
+  else if (waiting) base = 'idle';
+  else if (selectAgentIsResponding.select(state, info.id)) base = 'running';
+  else {
+    base = toHudAgentStateBucket(typeof session.status === 'string' ? session.status : info.status);
+  }
+  const bucket =
+    base === 'failed'
+      ? 'failed'
+      : attentionKind !== null || hasQuestion
+        ? 'needs-attention'
+        : base;
+  return { bucket, attentionKind, hasQuestion };
 }
 
 /**
@@ -489,11 +534,10 @@ function isTopLevelAgent(
 
 /** Tree-ordered card agent rows for a workspace (prefixes empty until kept). */
 function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
-  const questions = state.hud.questionsByAgentId;
   return orderAgentTree(agentInfosOf(workspace)).map(({ info, depth, parentAgentId }) => {
     const session = state.agentSessions?.byAgentId[info.id];
     const metadata = (session?.metadata ?? {}) as Record<string, unknown>;
-    const bucket = liveAgentBucket(state, info.id, info.status);
+    const { bucket, attentionKind, hasQuestion } = agentBucketOf(state, info);
     return {
       id: info.id,
       name: info.name,
@@ -505,20 +549,17 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
       treePrefix: '',
       topLevel: isTopLevelAgent(info, metadata),
       isBackground: session?.isBackground === true || metadata.isBackground === true,
-      attentionKind: session ? (getAgentAttentionRequest(session)?.kind ?? null) : null,
-      // A captured §7.1 question is outstanding while the agent is in the
-      // waiting bucket (same pairing as the ATTENTION panel rows) — once it
-      // runs again or finishes the question is answered/moot.
-      hasQuestion: bucket === 'waiting' && !!questions[info.id],
+      attentionKind,
+      hasQuestion,
     };
   });
 }
 
 /**
  * The mock's card-row filter (~lines 972–984): keep live agents
- * (running/waiting/failed) plus idle ancestors that still have a live agent
- * below them in the tree, then assign the connector glyphs over the kept
- * list (`├─`/`└─`, `│ ` rail at depth ≥ 2; roots have none).
+ * (running/needs-attention/failed) plus idle ancestors that still have a
+ * live agent below them in the tree, then assign the connector glyphs over
+ * the kept list (`├─`/`└─`, `│ ` rail at depth ≥ 2; roots have none).
  */
 function keepLiveWithAncestors(agents: HudCardAgent[]): HudCardAgent[] {
   const kept = agents.filter((agent, index) => {
@@ -583,6 +624,39 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
   });
 });
 
+/**
+ * Header ATTN counter (mock `stats.attn` — per-agent wait + fail): counts
+ * exactly what renders an attention state on the grid, so the blinking
+ * counter always agrees with the cards. An agent counts when it would raise
+ * its card's banner — `failed` bucket (ungated, like `cardStateKey`), or a
+ * TOP-LEVEL NON-BACKGROUND agent with a pending attention request /
+ * outstanding question (the same gating as `cardStateKey`; delegated
+ * (`parentAgentId`, §5.1 v2.9 — the parentage signal main's #573 uses to
+ * skip toasts) and background agents never count). Each raised
+ * workspace-level attention flag adds one (it renders NEEDS INPUT with no
+ * raising agent). Pending requests clear only on user-origin deliveries
+ * (`attentionRequestCleared`, §5.5), so a cleared request drops out live —
+ * no stale entries linger.
+ */
+export const selectHudAttnCount = store.createSelector((state): number => {
+  const flags = state.hud.attentionByWorkspaceId;
+  let count = 0;
+  for (const workspace of selectHudWorkspaces.select(state)) {
+    for (const agent of cardAgentsOf(workspace, state)) {
+      if (
+        agent.bucket === 'failed' ||
+        (agent.topLevel &&
+          !agent.isBackground &&
+          (agent.attentionKind !== null || agent.hasQuestion))
+      ) {
+        count += 1;
+      }
+    }
+    if (flags[String(workspace.id)]) count += 1;
+  }
+  return count;
+});
+
 /** One task cell on the takeover map (order index drives spiral placement). */
 export interface HudTakeoverTask {
   id: string;
@@ -592,6 +666,14 @@ export interface HudTakeoverTask {
   status: string;
   /** Live agents linked to this task note (wire names; i18n-exempt). */
   agents: HudCardAgent[];
+  /**
+   * Body text for COMPLETE cells (agent/wire content; i18n-exempt): the
+   * completing agent's final progress report (`completionReport` persisted by
+   * `agent.reportToParent` on the linked agent's session metadata, §5.5),
+   * falling back to the task note's content when no report exists. Null on
+   * non-complete tasks and when neither source has text.
+   */
+  report: string | null;
 }
 
 /** View-model for the takeover overlay (one workspace, joined rollups). */
@@ -605,10 +687,35 @@ export interface HudTakeoverView {
   stats: { total: number; completed: number; inProgress: number };
   /** Display-ordered non-cancelled tasks for the map (wire order §5.4). */
   tasks: HudTakeoverTask[];
-  /** Live agents (running/waiting/failed) with their activity lines. */
+  /** Live agents (running/needs-attention/failed) with their activity lines. */
   activeAgents: HudCardAgent[];
   /** Everyone else on the workspace roster. */
   idleAgents: HudCardAgent[];
+}
+
+/**
+ * COMPLETE-cell body text: the newest linked agent's persisted
+ * `completionReport` (session `metadata`, `agent.reportToParent` §5.5) when
+ * any linked session carries one, else the task note's own content (the task
+ * id IS its note id, §5.4) — both served verbatim; null when neither has text.
+ */
+function completeTaskReport(
+  state: StoreState,
+  workspaceId: string,
+  taskId: string,
+  links: TaskAgentAssociation[],
+): string | null {
+  const newestFirst = links.slice().sort((a, b) => b.createdAt - a.createdAt);
+  for (const link of newestFirst) {
+    const metadata = state.agentSessions?.byAgentId[link.agentId]?.metadata as
+      | Record<string, unknown>
+      | undefined;
+    const report = metadata?.completionReport;
+    if (typeof report === 'string' && report.trim().length > 0) return report;
+  }
+  const notes = state.workspaceNotes?.byWorkspaceId[workspaceId]?.notes;
+  const content = notes ? getItem(notes, taskId as NoteId)?.content : undefined;
+  return typeof content === 'string' && content.trim().length > 0 ? content : null;
 }
 
 /**
@@ -632,14 +739,21 @@ export const selectHudTakeoverView = store.createSelector(
     const tasks: HudTakeoverTask[] = taskState
       ? getItems(taskState.tasks)
           .filter((task) => task.status !== 'cancelled')
-          .map((task) => ({
-            id: task.id,
-            title: task.title,
-            status: task.status,
-            agents: Object.values(linksByNoteId[task.id] ?? {})
-              .map((link) => agentById.get(link.agentId))
-              .filter((agent): agent is HudCardAgent => !!agent),
-          }))
+          .map((task) => {
+            const links = Object.values(linksByNoteId[task.id] ?? {});
+            return {
+              id: task.id,
+              title: task.title,
+              status: task.status,
+              agents: links
+                .map((link) => agentById.get(link.agentId))
+                .filter((agent): agent is HudCardAgent => !!agent),
+              report:
+                task.status === 'complete'
+                  ? completeTaskReport(state, workspaceId, task.id, links)
+                  : null,
+            };
+          })
       : [];
     return {
       workspaceId,
@@ -649,10 +763,7 @@ export const selectHudTakeoverView = store.createSelector(
       stats: card.tasks,
       tasks,
       activeAgents: card.agents,
-      idleAgents: allAgents.filter(
-        (agent) =>
-          agent.bucket !== 'running' && agent.bucket !== 'waiting' && agent.bucket !== 'failed',
-      ),
+      idleAgents: allAgents.filter((agent) => !LIVE_BUCKETS.has(agent.bucket)),
     };
   },
 );

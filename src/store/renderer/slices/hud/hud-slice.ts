@@ -122,6 +122,13 @@ export interface HudRate5sState {
 export interface HudCapturedQuestion {
   workspaceId: string;
   agentId: string;
+  /**
+   * Assistant message id the §7.1 question blocks trailed (`agent:stream:end`
+   * `messageId`; PROTOCOL §6.5). Keys the dismissal check: a question whose
+   * id equals `metadata.dismissedQuestionsMessageId` is no longer pending.
+   * Undefined when the event carried no messageId (question still pends).
+   */
+  messageId?: string;
   /** Question header (agent content; i18n-exempt). */
   header: string;
   /** Question text (agent content; i18n-exempt). */

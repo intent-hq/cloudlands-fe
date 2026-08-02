@@ -24,6 +24,9 @@ export function extractQuestionsFromStreamEnd(event: WorkspaceEvent): HudCapture
   const agentId = str(data.agentId);
   if (!workspaceId || !agentId || !Array.isArray(data.trailingBlocks)) return [];
   const ts = str(event.timestamp) ?? '';
+  // §7.1 trailingBlocks imply messageId is present (PROTOCOL §6.5), so it
+  // keys the dismissal check; undefined only in bare test wiring.
+  const messageId = str(data.messageId);
   const questions: HudCapturedQuestion[] = [];
   for (const block of data.trailingBlocks) {
     if (!block || typeof block !== 'object') continue;
@@ -41,7 +44,7 @@ export function extractQuestionsFromStreamEnd(event: WorkspaceEvent): HudCapture
     const header = str((payload as { header?: unknown }).header);
     const question = str((payload as { question?: unknown }).question);
     if (!header || !question) continue;
-    questions.push({ workspaceId, agentId, header, question, ts });
+    questions.push({ workspaceId, agentId, messageId, header, question, ts });
   }
   return questions;
 }

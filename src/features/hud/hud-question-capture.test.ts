@@ -49,6 +49,7 @@ describe('extractQuestionsFromStreamEnd (PROTOCOL §7 / §7.1)', () => {
       {
         workspaceId: WS_ID,
         agentId: 'agent-1',
+        messageId: 'msg-1',
         header: 'Auth method',
         question: 'Which authentication method should the new endpoint use?',
         ts: '2026-07-30T12:00:00.000Z',

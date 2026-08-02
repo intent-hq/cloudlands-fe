@@ -4,13 +4,16 @@
    * banner (pulse on in_progress / blink on attention), title + repo line,
    * task segment bar, live-agent rows with elapsed timers and swapping
    * activity lines, attention strip, and the TOK / PR footer. Clicking
-   * dispatches the takeover-overlay request into the hud slice.
+   * dispatches the takeover-overlay request into the hud slice. During the
+   * takeover pre-roll the card flashes its outline 3 times (mock `ovPend` →
+   * `wsflash .3s step-end 3`) before the overlay zooms out of it.
    */
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { hudTakeoverRequested } from '$store/renderer/slices/hud/hud-slice';
   import type { HudWorkspaceCard } from '$store/renderer/slices/hud/hud-selectors';
   import { formatHudTimer } from '../utils/hud-format';
+  import { takeoverBlinkTarget } from '../takeover/hud-takeover-bus';
   import {
     agentBucketColor,
     cardStateColor,
@@ -22,6 +25,7 @@
   let { card, nowMs }: { card: HudWorkspaceCard; nowMs: number } = $props();
 
   const color = $derived(cardStateColor(card.stateKey));
+  const blinking = $derived($takeoverBlinkTarget === card.workspaceId);
   const isFailed = $derived(card.stateKey === 'failed');
   const isAttention = $derived(
     card.stateKey === 'wait' || card.stateKey === 'blocked' || isFailed,
@@ -57,6 +61,7 @@
 
 <button
   class="hud-ws-card"
+  class:hud-ws-card-flash={blinking}
   data-testid="hud-ws-card"
   data-workspace-id={card.workspaceId}
   onclick={handleClick}
@@ -112,7 +117,7 @@
             <span
               class="hud-ws-card-agent-dot"
               class:hud-anim-pulse={agent.bucket === 'running'}
-              class:hud-anim-blink={agent.bucket === 'waiting'}
+              class:hud-anim-blink={agent.bucket === 'needs-attention'}
               style:background={agentColor}
             ></span>
             <span class="hud-ws-card-agent-name">{agent.name}</span>
@@ -354,9 +359,23 @@
   .hud-anim-blink {
     animation: hudblink 1.6s step-end infinite;
   }
+  /* Takeover pre-roll flash (mock `wsflash .3s step-end 3`). */
+  .hud-ws-card-flash {
+    animation: hudwsflash 0.3s step-end 3;
+  }
+  @keyframes hudwsflash {
+    0%,
+    100% {
+      outline-color: transparent;
+    }
+    50% {
+      outline-color: hsl(var(--primary));
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .hud-anim-pulse,
-    .hud-anim-blink {
+    .hud-anim-blink,
+    .hud-ws-card-flash {
       animation: none;
     }
   }

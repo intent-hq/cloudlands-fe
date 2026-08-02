@@ -1,11 +1,23 @@
 /**
  * Fleet HUD shared types — the agent state buckets rendered by the AGENTS
- * panel state bars (mock: running / waiting / done / failed / idle) and the
+ * panel state bars (running / needs-attention / done / failed / idle) and the
  * card state keys rendered by the workspace grid.
  */
 
-/** Mock-faithful agent state buckets for the AGENTS panel. */
-export const HUD_AGENT_STATE_BUCKETS = ['running', 'waiting', 'done', 'failed', 'idle'] as const;
+/**
+ * Agent state buckets for the AGENTS panel. `needs-attention` is derived at
+ * the selector level (pending attention request / outstanding question —
+ * never from the wire status alone); a merely-waiting agent buckets as
+ * `idle`, mirroring main's agent-state display (`WorkspaceAgentsList` /
+ * `avatar-state`: waiting without attention is not a call to action).
+ */
+export const HUD_AGENT_STATE_BUCKETS = [
+  'running',
+  'needs-attention',
+  'done',
+  'failed',
+  'idle',
+] as const;
 
 export type HudAgentStateBucket = (typeof HUD_AGENT_STATE_BUCKETS)[number];
 
@@ -14,7 +26,9 @@ export type HudAgentStateBucket = (typeof HUD_AGENT_STATE_BUCKETS)[number];
  * same strings as `agent.list`) into a HUD state bar. The wire carries both
  * current lowercase values (`active`, `idle`, `error`, …) and legacy
  * PascalCase ones (`Waiting`, `Completed`, `Processing`); compare
- * case-insensitively. Unknown statuses fall back to `idle`.
+ * case-insensitively. Waiting/pending and unknown statuses fall back to
+ * `idle` — `needs-attention` only comes from the selector-level attention
+ * predicates, never the raw status.
  */
 export function toHudAgentStateBucket(status: string): HudAgentStateBucket {
   switch (status.toLowerCase()) {
@@ -22,9 +36,6 @@ export function toHudAgentStateBucket(status: string): HudAgentStateBucket {
     case 'processing':
     case 'responding':
       return 'running';
-    case 'pending':
-    case 'waiting':
-      return 'waiting';
     case 'completed':
       return 'done';
     case 'error':
@@ -33,6 +44,15 @@ export function toHudAgentStateBucket(status: string): HudAgentStateBucket {
     default:
       return 'idle';
   }
+}
+
+/**
+ * Wire-status waiting check (`pending` / `Waiting`): the raw signal the
+ * outstanding-question pairing uses when no live session tracks the agent.
+ */
+export function isWaitingWireStatus(status: string): boolean {
+  const lower = status.toLowerCase();
+  return lower === 'pending' || lower === 'waiting';
 }
 
 /**

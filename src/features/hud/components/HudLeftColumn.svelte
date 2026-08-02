@@ -7,6 +7,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     selectHudAgentStateCounts,
+    selectHudAttnCount,
     selectHudWorkspaceStateBars,
   } from '$store/renderer/slices/hud/hud-selectors';
   import HudPanel from './HudPanel.svelte';
@@ -18,17 +19,22 @@
 
   const agentCounts$ = selectHudAgentStateCounts();
   const workspaceBars$ = selectHudWorkspaceStateBars();
+  // Blink the WORKSPACES-BY-STATE attention row yellow while any workspace
+  // needs input — gated on the SAME card-derived count the header ATTN
+  // counter uses (top-level, non-background; no blink at zero).
+  const attnCount$ = selectHudAttnCount();
 
   const agentTotal = $derived(
     $agentCounts$.running +
-      $agentCounts$.waiting +
+      $agentCounts$['needs-attention'] +
       $agentCounts$.done +
       $agentCounts$.failed +
       $agentCounts$.idle,
   );
 
-  // Mock palette: RUNNING primary, WAITING warning, DONE ring,
-  // FAILED destructive, IDLE ghost.
+  // Mock palette: RUNNING primary, NEEDS ATTENTION warning (blinking while
+  // non-zero, like the workspace attention bar), DONE ring, FAILED
+  // destructive, IDLE ghost.
   const agentBars = $derived([
     {
       label: m.hud_agentState_running_label(),
@@ -36,9 +42,11 @@
       color: 'hsl(var(--primary))',
     },
     {
-      label: m.hud_agentState_waiting_label(),
-      count: $agentCounts$.waiting,
+      label: m.hud_agentState_needsAttention_label(),
+      count: $agentCounts$['needs-attention'],
       color: 'hsl(var(--warning))',
+      blink: $agentCounts$['needs-attention'] > 0,
+      testId: 'hud-agent-bar-needs-attention',
     },
     { label: m.hud_agentState_done_label(), count: $agentCounts$.done, color: 'hsl(var(--ring))' },
     {
@@ -73,6 +81,8 @@
       label: m.hud_workspaceState_attention_label(),
       count: $workspaceBars$.attention,
       color: 'hsl(var(--warning))',
+      blink: $attnCount$ > 0,
+      testId: 'hud-workspace-bar-attention',
     },
     {
       label: m.hud_workspaceState_idle_label(),

@@ -283,9 +283,20 @@
     height: 13px;
     border: 1px solid hsl(var(--border));
     flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font:
+      700 9px 'JetBrains Mono',
+      monospace;
+    color: hsl(var(--card));
   }
   .hud-header-menu-check-on {
     background: hsl(var(--foreground));
+  }
+  /* Mock's ✓ glyph (CSS content; i18n-exempt glyph). */
+  .hud-header-menu-check-on::after {
+    content: '✓';
   }
   .hud-header-menu-swatch {
     width: 7px;

@@ -133,6 +133,13 @@
     background: hsl(var(--app-background));
     color: hsl(var(--foreground));
     font-family: Inter, system-ui, sans-serif;
+    /* Mock's NEEDS INPUT / attention color: the design-system YELLOW warning
+       token (raw H S% L% triple so `hsl(var(--warning))` stays valid under an
+       explicit theme class). The app-wide `--warning` is an orange amber; the
+       HUD subtree inherits this override so the wait banner/border/label, the
+       WORKSPACES-BY-STATE attention bar, the header ATTN counter, and the
+       ATTENTION panel all render the mock's yellow. Blocked/failed keep red. */
+    --warning: 48 96% 53%;
   }
   .hud-dot-grid {
     position: absolute;
