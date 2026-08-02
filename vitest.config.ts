@@ -4,12 +4,6 @@ import path from 'path';
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
   const { paraglideVitePlugin } = await import('@inlang/paraglide-js');
-  const { writePseudoCatalog } = await import('./scripts/pseudo-locale-lib.mjs');
-
-  // The pseudo-locale catalog (messages/en-XA.json) is registered in
-  // project.inlang but gitignored — regenerate it before the Paraglide
-  // plugin compiles the project.
-  writePseudoCatalog(__dirname);
 
   return {
     plugins: [
