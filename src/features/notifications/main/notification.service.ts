@@ -595,21 +595,36 @@ export class NotificationService {
           app.show();
         }
 
-        if (!mainWindow || mainWindow.isDestroyed()) {
-          // No regular window is live (e.g. only the HUD pop-out is open):
-          // open a fresh app window directly on the workspace route rather
-          // than navigating the HUD (simplest correct behavior — no IPC
-          // races against a still-loading renderer).
+        // Re-validate at click time: the window picked at show time may
+        // have closed or navigated to /hud while the notification sat in
+        // the notification center — selection always goes through the
+        // picker, so a HUD window can never be the click target.
+        let target = mainWindow;
+        if (!target || target.isDestroyed() || isHudWindow(target)) {
+          const workspaceWindows = workspaceId
+            ? getWindowIdsForWorkspace(workspaceId)
+                .map((id) => BrowserWindow.fromId(id))
+                .filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
+            : [];
+          target = pickNotificationClickTarget(workspaceWindows);
+        }
+
+        if (!target || target.isDestroyed()) {
+          // No regular window is live (e.g. only the HUD pop-out is open,
+          // or no windows at all): open a fresh app window directly on the
+          // workspace route rather than navigating the HUD (simplest
+          // correct behavior — no IPC races against a still-loading
+          // renderer).
           this.openWindowForNotificationClick(workspaceId);
           return;
         }
 
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
+        if (target.isMinimized()) {
+          target.restore();
         }
-        mainWindow.show();
-        mainWindow.focus();
-        if (workspaceId && !mainWindow.webContents.isDestroyed()) {
+        target.show();
+        target.focus();
+        if (workspaceId && !target.webContents.isDestroyed()) {
           // Chief completions route to the sidebar Assistant panel (the
           // chief workspace page is hidden); everything else keeps the
           // bare `{ workspaceId }` payload.
@@ -617,7 +632,7 @@ export class NotificationService {
             workspaceId === CHIEF_WORKSPACE_ID
               ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
               : { workspaceId };
-          mainWindow.webContents.send('notification:navigate', payload);
+          target.webContents.send('notification:navigate', payload);
         }
       });
 
