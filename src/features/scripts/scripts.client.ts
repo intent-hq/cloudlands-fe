@@ -171,7 +171,10 @@ export const scriptsClient = {
    *  - creates any candidate whose name isn't already registered,
    *  - upserts the existing auto-detected row (reusing its id via
    *    `script.create({ scriptId })`, §5.8) when its command / mode / category
-   *    changed,
+   *    changed — UNLESS that row is currently `running`: the daemon upsert
+   *    tears down the live PTY group, so the upsert is skipped and the
+   *    script's name is reported back in `skippedRunning` for the caller to
+   *    surface,
    *  - removes auto-detected rows whose name is no longer produced by any
    *    manifest,
    *  - never touches user-created scripts, even when a manifest exposes the
@@ -186,6 +189,7 @@ export const scriptsClient = {
     detected?: number;
     added?: number;
     removed?: number;
+    skippedRunning?: string[];
     packageManager?: PackageManager;
     error?: string;
   }> {
@@ -207,6 +211,7 @@ export const scriptsClient = {
       }
 
       const detectedNames = new Set<string>();
+      const skippedRunning: string[] = [];
       let added = 0;
 
       for (const candidate of candidates) {
@@ -234,6 +239,17 @@ export const scriptsClient = {
           existingAuto.category !== candidate.category ||
           existingAuto.mode !== candidate.mode
         ) {
+          // The §5.8 scriptId upsert tears down the script's live PTY group
+          // daemon-side — never issue it against a running script. Skip and
+          // let the caller surface it so the user can stop + re-detect.
+          if (existingAuto.runtime?.status === 'running') {
+            skippedRunning.push(candidate.name);
+            logger.info('Skipping script.create upsert for running script', {
+              name: candidate.name,
+              scriptId: existingAuto.id,
+            });
+            continue;
+          }
           const upsertResult = await appClient.scripts.create(workspaceId, {
             scriptId: existingAuto.id,
             name: candidate.name,
@@ -275,6 +291,7 @@ export const scriptsClient = {
         detected: candidates.length,
         added,
         removed,
+        ...(skippedRunning.length > 0 ? { skippedRunning } : {}),
         packageManager,
       };
     } catch (error) {

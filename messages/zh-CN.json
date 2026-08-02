@@ -4670,6 +4670,8 @@
   "diffs_service_stopTrackingFailed_error": "停止跟踪智能体执行失败",
   "scripts_client_statusFailed_error": "读取脚本状态失败",
   "scripts_client_notFound_error": "未找到脚本：{scriptId}",
+  "scripts_detect_skippedRunning_one": "“{name}”正在运行 — 检测到的更改未应用。请先停止它，然后重新运行检测以更新。",
+  "scripts_detect_skippedRunning_many": "{count} 个正在运行的脚本（{names}）未应用检测到的更改。请先停止它们，然后重新运行检测。",
   "context_types_addNote_description": "添加新笔记",
   "context_types_linkLinear_description": "关联 Linear 议题",
   "context_types_linkGithub_description": "关联 GitHub 议题",
