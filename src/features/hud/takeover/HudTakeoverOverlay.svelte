@@ -1,17 +1,14 @@
 <script lang="ts">
   /**
    * HUD takeover overlay (mock lines 239-358) — the full-screen event
-   * spotlight: wipe-in choreography (backdrop → fill → edges → corners →
-   * rulers → content), typewriter banner (`bannerin`), infinite task-map
-   * canvas (192px pitch, spec cell at 0,0, changed cell ring-blink +
-   * pan-to-cell when far), WHAT CHANGED list, ACTIVE/IDLE agent rosters,
-   * RETURN countdown and DISMISS. Sequenced by the pure takeover queue:
-   * bursts enqueue, duplicates coalesce, DISMISS skips to the next entry.
-   * A manual card-click opens a VIEWER entry (queue `isViewer`): the same
-   * map/agents/changes content WITHOUT the event banners or the RETURN
-   * countdown — it stays open until DISMISS. Under reduced motion every
-   * animation is skipped (content renders immediately) but timing/queue
-   * behavior is unchanged.
+   * spotlight: card pre-roll blink + FLIP zoom out of the source card
+   * (mock `ovPend`/`ovFrom`), wipe-in choreography, typewriter banner,
+   * task-map canvas, WHAT CHANGED list, agent rosters, RETURN countdown and
+   * DISMISS (the close collapses back into the card). Sequenced by the pure
+   * takeover queue: bursts enqueue, duplicates coalesce, DISMISS skips
+   * ahead. A manual card-click opens a VIEWER entry (queue `isViewer`) with
+   * the same blink/zoom but no banners/countdown — open until DISMISS.
+   * Reduced motion skips every animation (no blink, instant open).
    */
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
@@ -30,23 +27,22 @@
   import { onTakeoverTrigger } from './hud-takeover-bus';
   import {
     activeTakeoverTrigger,
-    createHudTakeoverQueue,
-    dismissTakeover,
-    enqueueTakeover,
-    nextTakeoverDeadline,
-    requestImmediateTakeover,
     takeoverCountdownSeconds,
-    tickTakeoverQueue,
-    type HudTakeoverQueueState,
     type HudTakeoverTrigger,
   } from './hud-takeover-queue';
+  import { createTakeoverController } from './hud-takeover-controller.svelte';
+  import { takeoverFrameStyle } from './hud-takeover-frame';
   import {
-    canvasBounds,
+    bannerDelay,
+    bannerOutDelay,
+    cellLeft,
     cellNeedsPan,
-    HUD_TAKEOVER_CELL_PX,
-    HUD_TAKEOVER_PITCH_PX,
+    cellTop,
+    emptyCellCoords,
     spiralCoords,
+    takeoverPanBounds,
   } from './hud-takeover-layout';
+  import { createTakeoverMapDrag } from './hud-takeover-drag.svelte';
   import {
     agentBucketLabel,
     takeoverKindColor,
@@ -57,29 +53,13 @@
 
   let { nowMs }: { nowMs: number } = $props();
 
-  // ── Queue (component-local; the pure utility owns all transitions) ──
-  let queue = $state<HudTakeoverQueueState>(createHudTakeoverQueue());
-  let phaseTimer: ReturnType<typeof setTimeout> | undefined;
-
+  // ── Queue + blink/zoom wiring (controller owns timers and $effects) ──
   const reducedMotion = watchReducedMotion();
-
-  function applyQueue(next: HudTakeoverQueueState) {
-    queue = next;
-    clearTimeout(phaseTimer);
-    const deadline = nextTakeoverDeadline(next);
-    if (deadline !== null) {
-      phaseTimer = setTimeout(() => {
-        applyQueue(tickTakeoverQueue(queue, Date.now()));
-      }, Math.max(0, deadline - Date.now()));
-    }
-  }
-
-  function handleTrigger(trigger: HudTakeoverTrigger) {
-    applyQueue(enqueueTakeover(tickTakeoverQueue(queue, Date.now()), trigger, Date.now()));
-  }
+  const controller = createTakeoverController(() => reducedMotion.current);
+  const queue = $derived(controller.queue);
 
   function handleDismiss() {
-    applyQueue(dismissTakeover(queue, Date.now()));
+    controller.dismiss();
   }
 
   // Manual card-click requests arrive via the hud slice; consume + clear.
@@ -88,26 +68,21 @@
     const workspaceId = $takeoverRequest$;
     if (!workspaceId) return;
     appStore.dispatch(hudTakeoverRequestCleared());
-    applyQueue(
-      requestImmediateTakeover(
-        tickTakeoverQueue(queue, Date.now()),
-        {
-          workspaceId,
-          kind: 'manual',
-          detail: '',
-          raisedAtMs: Date.now(),
-          changedTaskId: null,
-        },
-        Date.now(),
-      ),
-    );
+    controller.openViewer({
+      workspaceId,
+      kind: 'manual',
+      detail: '',
+      raisedAtMs: Date.now(),
+      changedTaskId: null,
+    });
   });
 
   onMount(() => {
-    const unsubscribe = onTakeoverTrigger(handleTrigger);
+    const unsubscribe = onTakeoverTrigger((trigger) => controller.enqueue(trigger));
     return () => {
       unsubscribe();
-      clearTimeout(phaseTimer);
+      controller.destroy();
+      drag.destroy();
       reducedMotion.cleanup();
     };
   });
@@ -119,8 +94,7 @@
   });
   const view$ = selectHudTakeoverView(activeWorkspaceIdStore);
 
-  // Refresh the map's rollups when a takeover opens (idempotent triggers;
-  // the daemon-events bridge keeps them fresh afterwards).
+  // Refresh the map's rollups on open (idempotent; the events bridge keeps them fresh).
   $effect(() => {
     const workspaceId = queue.active?.workspaceId;
     if (!workspaceId) return;
@@ -129,9 +103,15 @@
   });
 
   // ── Derived choreography state ──
-  const visible = $derived(queue.phase !== 'idle' && $view$ !== null);
+  // The pre-roll blink shows only the card flash — the overlay stays hidden.
+  const visible = $derived(
+    queue.phase !== 'idle' && queue.phase !== 'blinking' && $view$ !== null,
+  );
   const closing = $derived(queue.phase === 'closing');
   const motion = $derived(!reducedMotion.current);
+  const frameStyle = $derived(
+    takeoverFrameStyle(controller.frameFrom, { closing, zoom: controller.zoom, motion }),
+  );
   const isViewer = $derived(queue.active?.isViewer === true);
   const primaryTrigger = $derived(activeTakeoverTrigger(queue));
   const countdown = $derived(takeoverCountdownSeconds(queue, nowMs));
@@ -152,38 +132,17 @@
   });
 
   /** Empty dashed cells filling the canvas ring around the occupied grid. */
-  const emptyCells = $derived.by(() => {
-    const { minX, maxX, minY, maxY } = canvasBounds(mapCells.map((cell) => cell.coord));
-    const occupied = new Set(mapCells.map((cell) => `${cell.coord.x},${cell.coord.y}`));
-    occupied.add('0,0');
-    const empties: { x: number; y: number }[] = [];
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        if (!occupied.has(`${x},${y}`)) empties.push({ x, y });
-      }
-    }
-    return empties;
-  });
+  const emptyCells = $derived(emptyCellCoords(mapCells.map((cell) => cell.coord)));
 
-  // Pan to the changed cell when it sits outside the base viewport (mock:
-  // 2s after open). Reduced motion pans immediately without transition.
-  let pan = $state({ x: 0, y: 0 });
-  let panTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    const workspaceId = queue.active?.workspaceId;
-    const coord = changedCoord;
-    clearTimeout(panTimer);
-    pan = { x: 0, y: 0 };
-    if (!workspaceId || !coord || !cellNeedsPan(coord)) return;
-    if (!motion) {
-      pan = { x: coord.x, y: coord.y };
-      return;
-    }
-    panTimer = setTimeout(() => {
-      pan = { x: coord.x, y: coord.y };
-    }, 2000);
-  });
+  // Map camera: manual drag-to-pan + the auto-pan to a far changed cell
+  // (mock: 2s after open; reduced motion pans immediately, drags stay live).
+  const panBounds = $derived(takeoverPanBounds(mapCells.map((cell) => cell.coord)));
+  const drag = createTakeoverMapDrag(() => panBounds);
   const needsPan = $derived(changedCoord !== null && cellNeedsPan(changedCoord));
+  $effect(() => {
+    const workspaceId = queue.active?.workspaceId ?? '';
+    drag.syncAutoPan(workspaceId, needsPan ? changedCoord : null, motion ? 2000 : 0);
+  });
 
   /** Spec-progress segments (mock `taskSegs`): done → inProgress → rest. */
   const specSegments = $derived.by(() => {
@@ -199,13 +158,6 @@
     });
   });
 
-  function cellLeft(x: number): string {
-    return `${x * HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX / 2}px`;
-  }
-  function cellTop(y: number): string {
-    return `${y * HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX / 2}px`;
-  }
-
   /** Localized WHAT CHANGED line for a trigger (labels off `kind`). */
   function changeLine(trigger: HudTakeoverTrigger): string {
     return trigger.detail
@@ -220,10 +172,6 @@
     return formatHudTimer((nowMs - startedMs) / 1000);
   }
 
-  /** Banner delay per mock: 3.5s when panning, 1.0s otherwise, +0.3s each. */
-  function bannerDelay(index: number): string {
-    return ((needsPan ? 3.5 : 1.0) + index * 0.3).toFixed(1);
-  }
 </script>
 
 {#if visible && $view$}
@@ -235,7 +183,12 @@
     data-testid="hud-takeover-overlay"
   >
     <div class="ov-backdrop"></div>
-    <div class="ov-frame">
+    <div
+      class="ov-frame"
+      style:transform={frameStyle.transform}
+      style:transition={frameStyle.transition}
+      data-testid="hud-takeover-frame"
+    >
       <div class="ov-fill"></div>
       <div class="ov-edge-h ov-edge-top"></div>
       <div class="ov-edge-h ov-edge-bottom"></div>
@@ -290,16 +243,24 @@
           <div class="ov-map-col">
             <div class="ov-status-row">
               <span class="ov-status-tag">{m.hud_takeover_status_label()}</span>
-              <span class="ov-status-text">
+              <span
+                class="ov-status-text"
+                class:ov-status-hint={motion && primaryTrigger?.kind === 'status_update'}
+              >
                 {view.statusMessage ?? m.hud_card_idleNoAgents_label()}
               </span>
             </div>
             <div class="ov-map-outer">
-              <div class="ov-map-clip">
+              <div
+                class="ov-map-clip"
+                class:ov-map-dragging={drag.dragging}
+                data-testid="hud-takeover-map"
+                {@attach drag.attach}
+              >
                 <div
                   class="ov-map-pan"
-                  style:transform={`translate(${-pan.x * HUD_TAKEOVER_PITCH_PX}px, ${-pan.y * HUD_TAKEOVER_PITCH_PX}px)`}
-                  class:ov-map-pan-animate={motion && (pan.x !== 0 || pan.y !== 0)}
+                  style:transform={`translate(${-drag.pan.x}px, ${-drag.pan.y}px)`}
+                  class:ov-map-pan-animate={motion && drag.animate}
                 >
                   <!-- Spec cell anchored at (0,0) -->
                   <div class="ov-cell ov-cell-spec" style:left={cellLeft(0)} style:top={cellTop(0)}>
@@ -349,12 +310,20 @@
                         <span class="ov-cell-state" style:color={meta.color}>{meta.label}</span>
                       </div>
                       <div class="ov-cell-title">{task.title}</div>
+                      {#if task.status === 'complete' && task.report}
+                        <!-- Agent completion report / task note content (wire content; i18n-exempt) -->
+                        <div class="ov-cell-report" data-testid="hud-takeover-cell-report">
+                          {task.report}
+                        </div>
+                      {/if}
                       <div class="ov-cell-agents">
                         {#each task.agents as agent (agent.id)}
                           <span class="ov-cell-agent">
                             <span
                               class="ov-cell-agent-dot"
                               class:ov-anim-pulse={motion && agent.bucket === 'running'}
+                              class:ov-anim-blink={motion &&
+                                (agent.bucket === 'needs-attention' || agent.bucket === 'failed')}
                               style:background={agentBucketColor(agent.bucket)}
                             ></span>
                             {agent.name}
@@ -369,15 +338,15 @@
                 </div>
               </div>
 
-              <!-- Banners: one per accumulated trigger, typewriter wipe.
-                   A manual VIEWER renders no event-banner treatment. -->
+              <!-- Banners: one per trigger, typewriter wipe; VIEWER renders none. -->
               {#if queue.active && !isViewer}
                 <div class="ov-banners">
                   {#each queue.active.triggers as banner, i (`${banner.kind}-${banner.raisedAtMs}-${i}`)}
                     {@const color = takeoverKindColor(banner.kind)}
                     <div
                       class="ov-banner"
-                      style:animation-delay={motion ? `${bannerDelay(i)}s` : '0s'}
+                      style:--banner-in-delay={motion ? `${bannerDelay(needsPan, i)}s` : '0s'}
+                      style:--banner-out-delay={motion ? `${bannerOutDelay(needsPan, i)}s` : '0s'}
                       data-testid="hud-takeover-banner"
                     >
                       <span
@@ -388,19 +357,32 @@
                       >
                         {takeoverKindLabel(banner.kind)}
                       </span>
-                      {#if banner.detail}
-                        <!-- Question banners carry full sentence text (§7.1
-                             question payload): wrap instead of clipping. -->
-                        <div
-                          class="ov-banner-big"
-                          class:ov-banner-big-wrap={banner.kind === 'question_asked'}
-                          style:color
-                          style:--banner-color={color}
-                        >
-                          {banner.detail}
+                      {#if banner.kind === 'status_update'}
+                        <!-- Status updates: workspace-name headline, then the
+                             status text subtitle (wire content; i18n-exempt). -->
+                        <div class="ov-banner-big" style:color style:--banner-color={color}>
+                          {view.title}
                         </div>
+                        {#if banner.detail}
+                          <div class="ov-banner-status" data-testid="hud-takeover-banner-status">
+                            {banner.detail}
+                          </div>
+                        {/if}
+                      {:else}
+                        {#if banner.detail}
+                          <!-- Question banners carry full sentence text (§7.1
+                               question payload): wrap instead of clipping. -->
+                          <div
+                            class="ov-banner-big"
+                            class:ov-banner-big-wrap={banner.kind === 'question_asked'}
+                            style:color
+                            style:--banner-color={color}
+                          >
+                            {banner.detail}
+                          </div>
+                        {/if}
+                        <div class="ov-banner-sub">{view.repoRef}</div>
                       {/if}
-                      <div class="ov-banner-sub">{view.repoRef}</div>
                     </div>
                   {/each}
                 </div>
@@ -440,7 +422,7 @@
                       <span
                         class="ov-agent-dot"
                         class:ov-anim-pulse={motion && agent.bucket === 'running'}
-                        class:ov-anim-blink={motion && agent.bucket === 'waiting'}
+                        class:ov-anim-blink={motion && agent.bucket === 'needs-attention'}
                         style:background={agentBucketColor(agent.bucket)}
                       ></span>
                       <span class="ov-agent-name">{agent.name}</span>
@@ -568,6 +550,15 @@
   @keyframes ovringblink {
     50% {
       outline-color: transparent;
+    }
+  }
+  /* Mock hudhintW: warning-tinted background flash on the STATUS line. */
+  @keyframes ovhintw {
+    0% {
+      background: hsl(var(--warning) / 0.18);
+    }
+    100% {
+      background: transparent;
     }
   }
 
@@ -820,6 +811,12 @@
     -webkit-user-select: text;
     cursor: text;
   }
+  /* Mock statusAnim (statusChanged): warning hint flash + 2 blinks. */
+  .ov-status-hint {
+    animation:
+      ovhintw 2.5s ease-out both,
+      hudblink 1.6s step-end 2;
+  }
   .ov-map-outer {
     position: relative;
     flex: 1;
@@ -830,6 +827,13 @@
     position: relative;
     height: 100%;
     overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+  }
+  .ov-map-dragging {
+    cursor: grabbing;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .ov-map-pan {
     position: absolute;
@@ -931,6 +935,19 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
+  .ov-cell-report {
+    /* Mock ghost body text: 8.5px mono at foreground/0.3. */
+    font:
+      500 8.5px 'JetBrains Mono',
+      monospace;
+    line-height: 1.5;
+    color: hsl(var(--foreground) / 0.3);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 8;
+    white-space: pre-line;
+  }
   .ov-cell-agents {
     margin-top: auto;
     display: flex;
@@ -971,7 +988,10 @@
     border-bottom: 1px solid hsl(var(--border) / 0.8);
     background: hsl(var(--app-background) / 0.88);
     padding: 14px 22px;
-    animation: bannerin 1.1s steps(22) both;
+    /* Mock: typewriter wipe in, then auto fade-out while the map stays up. */
+    animation:
+      bannerin 1.1s steps(22) var(--banner-in-delay, 0s) both,
+      ovfO 0.45s ease var(--banner-out-delay, 5.2s) both;
   }
   .ov-banner-chip {
     display: inline-block;
@@ -1010,6 +1030,16 @@
     letter-spacing: 0.18em;
     color: hsl(var(--text-subtle));
     text-transform: uppercase;
+  }
+  .ov-banner-status {
+    margin-top: 8px;
+    font: 500 14px 'JetBrains Mono', monospace;
+    line-height: 1.4;
+    color: hsl(var(--text-subtle));
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
   }
 
   /* ── Side column ── */
@@ -1135,7 +1165,8 @@
   .ov-no-motion .ov-ruler,
   .ov-no-motion .ov-content,
   .ov-no-motion .ov-cell,
-  .ov-no-motion .ov-banner {
+  .ov-no-motion .ov-banner,
+  .ov-no-motion .ov-status-hint {
     animation: none;
   }
   .ov-no-motion .ov-map-pan {
@@ -1151,6 +1182,7 @@
     .ov-content,
     .ov-cell,
     .ov-banner,
+    .ov-status-hint,
     .ov-anim-pulse,
     .ov-anim-blink {
       animation: none;

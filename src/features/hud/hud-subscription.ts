@@ -63,6 +63,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { HUD_FEED_EVENT_TYPES, mapEventToFeedEntry } from './hud-feed-mapper';
 import { extractQuestionsFromStreamEnd } from './hud-question-capture';
 import { emitTakeoverTrigger } from './takeover/hud-takeover-bus';
+import type { HudTakeoverTrigger } from './takeover/hud-takeover-queue';
 import {
   HUD_TAKEOVER_EVENT_TYPES,
   mapEventToTakeoverTrigger,
@@ -75,10 +76,12 @@ export const HUD_REPLACE_GROUP = 'hud-feed';
 
 /**
  * Event types the HUD subscription requests: the feed families plus the
- * takeover-only families (e.g. `agent:stream:end`, whose §7.1 question
+ * takeover-only families (`agent:stream:end`, whose §7.1 question
  * trailingBlocks drive the question takeover and the attention-row question
- * capture but never render in the feed) plus `workspace:tokenUsage-changed`
- * (§6.5), whose totals deltas feed the live 5s TOK/S buckets.
+ * capture, and `workspace:updated`, whose statusMessage delta drives the
+ * STATUS UPDATE takeover — neither renders in the feed) plus
+ * `workspace:tokenUsage-changed` (§6.5), whose totals deltas feed the live
+ * 5s TOK/S buckets.
  */
 export const HUD_SUBSCRIBE_EVENT_TYPES = [
   ...new Set<string>([
@@ -240,6 +243,21 @@ function handleTokenUsageChanged(workspaceId: string, data: Record<string, unkno
   if (delta > 0) appStore.dispatch(hudRate5sTokensObserved(delta, Date.now()));
 }
 
+/**
+ * Last STATUS UPDATE takeover text per workspace — dedupes no-op
+ * `workspace:updated` statusMessage re-emits (the same text never re-takes
+ * over the screen). Cleared on every `startHudSubscription()`.
+ */
+const lastStatusUpdateTextByWorkspaceId = new Map<string, string>();
+
+/** Whether a status_update trigger repeats the workspace's last shown text. */
+function isDuplicateStatusUpdate(trigger: HudTakeoverTrigger): boolean {
+  if (trigger.kind !== 'status_update') return false;
+  const previous = lastStatusUpdateTextByWorkspaceId.get(trigger.workspaceId);
+  lastStatusUpdateTextByWorkspaceId.set(trigger.workspaceId, trigger.detail);
+  return previous === trigger.detail;
+}
+
 function handleEvent(event: WorkspaceEvent): void {
   const workspaceId = typeof event.workspaceId === 'string' ? event.workspaceId : '';
   const data =
@@ -280,7 +298,7 @@ function handleEvent(event: WorkspaceEvent): void {
   // backfills agent display names off the live session slice so a banner
   // never renders a raw agent UUID.
   const trigger = mapEventToTakeoverTrigger(event, resolveAgentDisplayName);
-  if (trigger) emitTakeoverTrigger(trigger);
+  if (trigger && !isDuplicateStatusUpdate(trigger)) emitTakeoverTrigger(trigger);
 }
 
 /**
@@ -331,6 +349,7 @@ export function startHudSubscription(): () => void {
   let subscriptionId: string | undefined;
 
   lastTokenTotalsByWorkspaceId.clear();
+  lastStatusUpdateTextByWorkspaceId.clear();
   hydratedAgentWorkspaceIds.clear();
   appStore.dispatch(hudActivated());
 

@@ -283,6 +283,7 @@ describe('HUD subscription (mock backend, real store)', () => {
     expect(appStore.state.hud.questionsByAgentId['agent-1']).toEqual({
       workspaceId: WS_ID,
       agentId: 'agent-1',
+      messageId: 'msg-1',
       header: 'Auth method',
       question: 'Which auth flow?',
       ts: '2026-07-30T12:00:00.000Z',
@@ -458,6 +459,77 @@ describe('HUD subscription (mock backend, real store)', () => {
       await flush();
 
       expect(received.map((t) => t.detail)).toEqual(['Implementor', '']);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('fires the STATUS UPDATE takeover only on statusMessage text changes, never on displayStatus', async () => {
+    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const received: Array<{ kind?: string; detail?: string }> = [];
+    const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
+    try {
+      scriptHappyBackend(backend);
+      stop = startHudSubscription();
+      await flush();
+
+      // displayStatus transition (e.g. → in_progress): cards/counters update
+      // live but NO takeover is enqueued.
+      backend.pushEvent({
+        type: 'workspace:displayStatus-changed',
+        workspaceId: WS_ID,
+        id: 'evt-ds-1',
+        subscriptionId: SUB_ID,
+        data: { workspaceId: WS_ID, displayStatus: 'in_progress' },
+      });
+      // statusMessage text change (workspace:updated changes delta, §6.5):
+      // fires the status_update takeover with the new text.
+      backend.pushEvent({
+        type: 'workspace:updated',
+        workspaceId: WS_ID,
+        id: 'evt-su-1',
+        subscriptionId: SUB_ID,
+        timestamp: '2026-07-30T12:00:00.000Z',
+        data: { workspaceId: WS_ID, changes: { statusMessage: 'PR #123 open, waiting on CI.' } },
+      });
+      // Same-text re-emit → deduped, no second takeover.
+      backend.pushEvent({
+        type: 'workspace:updated',
+        workspaceId: WS_ID,
+        id: 'evt-su-2',
+        subscriptionId: SUB_ID,
+        data: { workspaceId: WS_ID, changes: { statusMessage: 'PR #123 open, waiting on CI.' } },
+      });
+      // Cleared/empty message → no takeover.
+      backend.pushEvent({
+        type: 'workspace:updated',
+        workspaceId: WS_ID,
+        id: 'evt-su-3',
+        subscriptionId: SUB_ID,
+        data: { workspaceId: WS_ID, changes: { statusMessage: '' } },
+      });
+      // New text → fires again.
+      backend.pushEvent({
+        type: 'workspace:updated',
+        workspaceId: WS_ID,
+        id: 'evt-su-4',
+        subscriptionId: SUB_ID,
+        data: { workspaceId: WS_ID, changes: { statusMessage: 'Ready to review and merge.' } },
+      });
+      await flush();
+
+      expect(received).toEqual([
+        expect.objectContaining({
+          workspaceId: WS_ID,
+          kind: 'status_update',
+          detail: 'PR #123 open, waiting on CI.',
+        }),
+        expect.objectContaining({
+          workspaceId: WS_ID,
+          kind: 'status_update',
+          detail: 'Ready to review and merge.',
+        }),
+      ]);
     } finally {
       unsubscribe();
     }

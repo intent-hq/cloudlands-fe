@@ -41,14 +41,17 @@ function questionBlock(question: string, header = 'Auth method') {
 }
 
 describe('hud-takeover-triggers', () => {
-  it('every takeover event type except agent:stream:end is also a feed type', () => {
+  it('every takeover event type except the takeover-only families is also a feed type', () => {
+    const takeoverOnly = ['agent:stream:end', 'workspace:updated'];
     for (const type of HUD_TAKEOVER_EVENT_TYPES) {
-      if (type === 'agent:stream:end') continue;
+      if (takeoverOnly.includes(type)) continue;
       expect(HUD_FEED_EVENT_TYPES as readonly string[]).toContain(type);
     }
-    // agent:stream:end is takeover-only: its §7.1 question trailingBlocks
-    // drive the question takeover but never render in the feed.
-    expect(HUD_FEED_EVENT_TYPES as readonly string[]).not.toContain('agent:stream:end');
+    // agent:stream:end (§7.1 question trailingBlocks) and workspace:updated
+    // (statusMessage delta) are takeover-only: they never render in the feed.
+    for (const type of takeoverOnly) {
+      expect(HUD_FEED_EVENT_TYPES as readonly string[]).not.toContain(type);
+    }
   });
 
   it('maps task completion with title and changed task id', () => {
@@ -124,12 +127,36 @@ describe('hud-takeover-triggers', () => {
     ).toBeNull();
   });
 
-  it('maps displayStatus transitions', () => {
+  it('maps a workspace:updated statusMessage change and nothing else', () => {
+    expect(
+      mapEventToTakeoverTrigger(
+        event('workspace:updated', {
+          changes: { statusMessage: 'Implementing the toggle; 8 tasks to go.' },
+        }),
+      ),
+    ).toMatchObject({ kind: 'status_update', detail: 'Implementing the toggle; 8 tasks to go.' });
+    // Cleared/empty message → no takeover.
+    expect(
+      mapEventToTakeoverTrigger(event('workspace:updated', { changes: { statusMessage: '' } })),
+    ).toBeNull();
+    // Other workspace:updated deltas (no statusMessage key) → no takeover.
+    expect(
+      mapEventToTakeoverTrigger(event('workspace:updated', { changes: { title: 'Renamed' } })),
+    ).toBeNull();
+    expect(mapEventToTakeoverTrigger(event('workspace:updated'))).toBeNull();
+  });
+
+  it('does NOT fire a status_update on displayStatus transitions', () => {
+    expect(
+      mapEventToTakeoverTrigger(
+        event('workspace:displayStatus-changed', { displayStatus: 'in_progress' }),
+      ),
+    ).toBeNull();
     expect(
       mapEventToTakeoverTrigger(
         event('workspace:displayStatus-changed', { displayStatus: 'pr_open' }),
       ),
-    ).toMatchObject({ kind: 'status_update', detail: 'pr_open' });
+    ).toBeNull();
   });
 
   it('surfaces the §7.1 question text from agent:stream:end trailingBlocks', () => {
@@ -184,7 +211,7 @@ describe('hud-takeover-triggers', () => {
         'agent:stream:end',
         'task:status-changed',
         'workspace:attention-changed',
-        'workspace:displayStatus-changed',
+        'workspace:updated',
       ].sort(),
     );
   });

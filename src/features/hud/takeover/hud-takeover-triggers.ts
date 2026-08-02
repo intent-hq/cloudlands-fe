@@ -6,7 +6,10 @@
  * delegated (created) / started, agent failed, question asked (attention
  * raised OR the turn-terminal `agent:stream:end` carrying §7.1 question
  * trailingBlocks — the only place the question TEXT travels live), and
- * workspace displayStatus transitions. All other events return null.
+ * workspace STATUS MESSAGE text changes (`workspace:updated` whose §6.5
+ * `changes` delta carries a non-empty `statusMessage`). displayStatus
+ * transitions deliberately do NOT take over — they keep updating cards and
+ * counters live via the feed families. All other events return null.
  * `detail` is composed from wire identifiers (task titles, agent names,
  * question text) — wire content, i18n-exempt; the overlay localizes labels
  * off `kind`. Agent names never render as raw `agent-{uuid}` ids: the
@@ -28,7 +31,7 @@ export const HUD_TAKEOVER_TRIGGER_KINDS: Readonly<Record<string, HudTakeoverKind
   'agent:failed': 'agent_failed',
   'workspace:attention-changed': 'question_asked',
   'agent:stream:end': 'question_asked',
-  'workspace:displayStatus-changed': 'status_update',
+  'workspace:updated': 'status_update',
 };
 
 /** Event types that can open a takeover (keys of the trigger-kind const). */
@@ -80,8 +83,10 @@ function firstTrailingQuestion(data: Record<string, unknown>) {
  *  - `workspace:attention-changed` only fires while raising (not "none");
  *  - `agent:stream:end` only fires when its trailingBlocks carry a §7.1
  *    question resource block (the trigger surfaces the question text);
- *  - `agent:failed` / `agent:created` / `agent:started` /
- *    `workspace:displayStatus-changed` always fire.
+ *  - `workspace:updated` only fires when its `changes` delta carries a
+ *    non-empty `statusMessage` (cleared/empty messages and other field
+ *    updates never take over); the caller dedupes same-text repeats;
+ *  - `agent:failed` / `agent:created` / `agent:started` always fire.
  */
 export function mapEventToTakeoverTrigger(
   event: WorkspaceEvent,
@@ -125,9 +130,16 @@ export function mapEventToTakeoverTrigger(
       detail = question.question;
       break;
     }
-    case 'workspace:displayStatus-changed':
-      detail = str(data.displayStatus) ?? '';
+    case 'workspace:updated': {
+      const changes =
+        data.changes && typeof data.changes === 'object'
+          ? (data.changes as Record<string, unknown>)
+          : {};
+      const statusMessage = str(changes.statusMessage);
+      if (!statusMessage) return null;
+      detail = statusMessage;
       break;
+    }
   }
 
   const raisedAtMs =

@@ -4,6 +4,7 @@ import {
   createHudTakeoverQueue,
   dismissTakeover,
   enqueueTakeover,
+  HUD_TAKEOVER_BLINK_MS,
   HUD_TAKEOVER_CLOSE_MS,
   HUD_TAKEOVER_DWELL_MS,
   HUD_TAKEOVER_MAX_PENDING,
@@ -11,12 +12,15 @@ import {
   HUD_TAKEOVER_OPEN_MS,
   nextTakeoverDeadline,
   requestImmediateTakeover,
+  skipTakeoverBlink,
   takeoverCountdownSeconds,
   tickTakeoverQueue,
   type HudTakeoverTrigger,
 } from './hud-takeover-queue';
 
 const T0 = 1_000_000;
+/** Most flow tests skip the pre-roll blink (covered by its own tests). */
+const NO_BLINK = { blink: false };
 
 function trigger(workspaceId: string, overrides: Partial<HudTakeoverTrigger> = {}): HudTakeoverTrigger {
   return {
@@ -37,15 +41,56 @@ describe('hud-takeover-queue', () => {
     expect(nextTakeoverDeadline(state)).toBeNull();
   });
 
-  it('opens immediately from idle', () => {
+  it('opens with the card pre-roll blink from idle by default', () => {
     const state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    expect(state.phase).toBe('blinking');
+    expect(state.active?.workspaceId).toBe('ws-1');
+    expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_BLINK_MS);
+  });
+
+  it('the blink elapses into the opening phase on tick', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_BLINK_MS);
+    expect(state.phase).toBe('opening');
+    expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_BLINK_MS + HUD_TAKEOVER_OPEN_MS);
+  });
+
+  it('opens immediately from idle with blink disabled (reduced motion)', () => {
+    const state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     expect(state.phase).toBe('opening');
     expect(state.active?.workspaceId).toBe('ws-1');
     expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_OPEN_MS);
   });
 
-  it('plays the full open → dwell → close cycle on tick', () => {
+  it('skipTakeoverBlink bails a missing-card blink straight into opening', () => {
+    const state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    const skipped = skipTakeoverBlink(state, T0 + 10);
+    expect(skipped.phase).toBe('opening');
+    expect(skipped.phaseEndsAtMs).toBe(T0 + 10 + HUD_TAKEOVER_OPEN_MS);
+    // No-op outside the blinking phase.
+    expect(skipTakeoverBlink(skipped, T0 + 20)).toBe(skipped);
+  });
+
+  it('coalesces a duplicate workspace into the blinking display', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), T0 + 100);
+    expect(state.phase).toBe('blinking');
+    expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_BLINK_MS);
+    expect(state.active?.triggers).toHaveLength(2);
+  });
+
+  it('the next pending entry opens with its own pre-roll blink', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+    state = enqueueTakeover(state, trigger('ws-2'), T0 + 10, NO_BLINK);
+    const closeEnd = T0 + HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MS + HUD_TAKEOVER_CLOSE_MS;
+    state = tickTakeoverQueue(state, closeEnd);
+    expect(state.phase).toBe('blinking');
+    expect(state.active?.workspaceId).toBe('ws-2');
+    expect(state.phaseEndsAtMs).toBe(closeEnd + HUD_TAKEOVER_BLINK_MS);
+  });
+
+  it('plays the full open → dwell → close cycle on tick', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     expect(state.phase).toBe('dwelling');
     expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MS);
@@ -57,14 +102,14 @@ describe('hud-takeover-queue', () => {
   });
 
   it('queues a second workspace and opens it after the first closes', () => {
-    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
-    state = enqueueTakeover(state, trigger('ws-2'), T0 + 100);
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+    state = enqueueTakeover(state, trigger('ws-2'), T0 + 100, NO_BLINK);
     expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2']);
     // ws-1 must stay active through its full cycle.
-    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS + 10);
+    state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS + 10, NO_BLINK);
     expect(state.active?.workspaceId).toBe('ws-1');
     const closeEnd = T0 + HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MS + HUD_TAKEOVER_CLOSE_MS;
-    state = tickTakeoverQueue(state, closeEnd);
+    state = tickTakeoverQueue(state, closeEnd, NO_BLINK);
     expect(state.phase).toBe('opening');
     expect(state.active?.workspaceId).toBe('ws-2');
     expect(state.pending).toEqual([]);
@@ -80,7 +125,7 @@ describe('hud-takeover-queue', () => {
   });
 
   it('coalesces a duplicate workspace into the dwelling display and restarts the dwell', () => {
-    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     const later = T0 + HUD_TAKEOVER_OPEN_MS + 3000;
     state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_started', detail: 'Verifier' }), later);
@@ -92,7 +137,7 @@ describe('hud-takeover-queue', () => {
   });
 
   it('coalesces into the opening display without restarting the open', () => {
-    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = enqueueTakeover(state, trigger('ws-1', { kind: 'agent_failed' }), T0 + 200);
     expect(state.phase).toBe('opening');
     expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_OPEN_MS);
@@ -116,14 +161,14 @@ describe('hud-takeover-queue', () => {
   });
 
   it('DISMISS skips the dwell and the next entry opens after the close', () => {
-    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
-    state = enqueueTakeover(state, trigger('ws-2'), T0 + 10);
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+    state = enqueueTakeover(state, trigger('ws-2'), T0 + 10, NO_BLINK);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     const dismissAt = T0 + HUD_TAKEOVER_OPEN_MS + 1000;
     state = dismissTakeover(state, dismissAt);
     expect(state.phase).toBe('closing');
     expect(state.phaseEndsAtMs).toBe(dismissAt + HUD_TAKEOVER_CLOSE_MS);
-    state = tickTakeoverQueue(state, dismissAt + HUD_TAKEOVER_CLOSE_MS);
+    state = tickTakeoverQueue(state, dismissAt + HUD_TAKEOVER_CLOSE_MS, NO_BLINK);
     expect(state.phase).toBe('opening');
     expect(state.active?.workspaceId).toBe('ws-2');
   });
@@ -159,7 +204,7 @@ describe('hud-takeover-queue', () => {
   });
 
   it('reports the RETURN countdown only while dwelling', () => {
-    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     expect(takeoverCountdownSeconds(state, T0)).toBe(0);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     expect(takeoverCountdownSeconds(state, T0 + HUD_TAKEOVER_OPEN_MS)).toBe(
@@ -171,37 +216,61 @@ describe('hud-takeover-queue', () => {
   });
 
   it('does not tick past a deadline that has not elapsed', () => {
-    const state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    const state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     const same = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS - 1);
     expect(same).toBe(state);
   });
 
-  it('manual open from idle starts immediately as a viewer', () => {
+  it('manual open from idle plays the pre-roll blink too (mock openManual)', () => {
     const state = requestImmediateTakeover(
       createHudTakeoverQueue(),
       trigger('ws-1', { kind: 'manual' }),
       T0,
+    );
+    expect(state.phase).toBe('blinking');
+    expect(state.active?.workspaceId).toBe('ws-1');
+    expect(state.active?.isViewer).toBe(true);
+    expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_BLINK_MS);
+  });
+
+  it('manual open from idle starts immediately as a viewer with blink disabled', () => {
+    const state = requestImmediateTakeover(
+      createHudTakeoverQueue(),
+      trigger('ws-1', { kind: 'manual' }),
+      T0,
+      NO_BLINK,
     );
     expect(state.phase).toBe('opening');
     expect(state.active?.workspaceId).toBe('ws-1');
     expect(state.active?.isViewer).toBe(true);
   });
 
-  it('manual open jumps the queue: closes the current display and opens next', () => {
+  it('manual open during another workspace blink swaps the pre-roll to the viewer', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
-    state = enqueueTakeover(state, trigger('ws-2'), T0 + 10);
+    expect(state.phase).toBe('blinking');
+    state = requestImmediateTakeover(state, trigger('ws-2', { kind: 'manual' }), T0 + 100);
+    expect(state.phase).toBe('blinking');
+    expect(state.active?.workspaceId).toBe('ws-2');
+    expect(state.active?.isViewer).toBe(true);
+    // The never-displayed ws-1 entry waits at the front of pending.
+    expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-1']);
+  });
+
+  it('manual open jumps the queue: closes the current display and opens next', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+    state = enqueueTakeover(state, trigger('ws-2'), T0 + 10, NO_BLINK);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     const at = T0 + HUD_TAKEOVER_OPEN_MS + 500;
-    state = requestImmediateTakeover(state, trigger('ws-3', { kind: 'manual' }), at);
+    state = requestImmediateTakeover(state, trigger('ws-3', { kind: 'manual' }), at, NO_BLINK);
     expect(state.phase).toBe('closing');
     expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-3', 'ws-2']);
-    state = tickTakeoverQueue(state, at + HUD_TAKEOVER_CLOSE_MS);
+    state = tickTakeoverQueue(state, at + HUD_TAKEOVER_CLOSE_MS, NO_BLINK);
     expect(state.active?.workspaceId).toBe('ws-3');
     expect(state.active?.isViewer).toBe(true);
   });
 
   it('manual open of the active event display converts it to a viewer (countdown stops)', () => {
-    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     const at = T0 + HUD_TAKEOVER_OPEN_MS + 500;
     state = requestImmediateTakeover(state, trigger('ws-1', { kind: 'manual' }), at);
@@ -212,11 +281,21 @@ describe('hud-takeover-queue', () => {
     expect(takeoverCountdownSeconds(state, at)).toBe(0);
   });
 
+  it('manual open of the blinking workspace converts the entry without restarting', () => {
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
+    expect(state.phase).toBe('blinking');
+    state = requestImmediateTakeover(state, trigger('ws-1', { kind: 'manual' }), T0 + 100);
+    expect(state.phase).toBe('blinking');
+    expect(state.active?.isViewer).toBe(true);
+    expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_BLINK_MS);
+  });
+
   it('manual open of the already-open viewer is a no-op', () => {
     let state = requestImmediateTakeover(
       createHudTakeoverQueue(),
       trigger('ws-1', { kind: 'manual' }),
       T0,
+      NO_BLINK,
     );
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     const again = requestImmediateTakeover(state, trigger('ws-1', { kind: 'manual' }), T0 + 5000);
@@ -224,8 +303,8 @@ describe('hud-takeover-queue', () => {
   });
 
   it('manual open dedupes an existing pending entry for that workspace', () => {
-    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0);
-    state = enqueueTakeover(state, trigger('ws-2'), T0 + 10);
+    let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
+    state = enqueueTakeover(state, trigger('ws-2'), T0 + 10, NO_BLINK);
     state = requestImmediateTakeover(state, trigger('ws-2', { kind: 'manual' }), T0 + 20);
     expect(state.pending.map((e) => e.workspaceId)).toEqual(['ws-2']);
     expect(state.pending[0].isViewer).toBe(true);
@@ -237,6 +316,7 @@ describe('hud-takeover-queue', () => {
       createHudTakeoverQueue(),
       trigger('ws-1', { kind: 'manual' }),
       T0,
+      NO_BLINK,
     );
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     expect(state.phase).toBe('dwelling');
@@ -253,13 +333,14 @@ describe('hud-takeover-queue', () => {
       createHudTakeoverQueue(),
       trigger('ws-1', { kind: 'manual' }),
       T0,
+      NO_BLINK,
     );
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
-    state = enqueueTakeover(state, trigger('ws-2'), T0 + 2000);
+    state = enqueueTakeover(state, trigger('ws-2'), T0 + 2000, NO_BLINK);
     const dismissAt = T0 + 60_000;
     state = dismissTakeover(state, dismissAt);
     expect(state.phase).toBe('closing');
-    state = tickTakeoverQueue(state, dismissAt + HUD_TAKEOVER_CLOSE_MS);
+    state = tickTakeoverQueue(state, dismissAt + HUD_TAKEOVER_CLOSE_MS, NO_BLINK);
     expect(state.phase).toBe('opening');
     expect(state.active?.workspaceId).toBe('ws-2');
     expect(state.active?.isViewer).toBe(false);
@@ -270,6 +351,7 @@ describe('hud-takeover-queue', () => {
       createHudTakeoverQueue(),
       trigger('ws-1', { kind: 'manual' }),
       T0,
+      NO_BLINK,
     );
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     // Same workspace AND a different workspace: both wait in pending.

@@ -120,8 +120,8 @@ export function agentBucketLabel(bucket: HudAgentStateBucket): string {
   switch (bucket) {
     case 'running':
       return m.hud_agentState_running_label();
-    case 'waiting':
-      return m.hud_agentState_waiting_label();
+    case 'needs-attention':
+      return m.hud_agentState_needsAttention_label();
     case 'done':
       return m.hud_agentState_done_label();
     case 'failed':
