@@ -91,6 +91,7 @@ vi.mock('$lib/client', () => ({
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
   enhancePrompt: vi.fn(async (p: string) => ({ enhanced: p })),
+  isEnhancePromptAvailable: vi.fn(() => true),
 }));
 
 // Keep the real parseGitHubUrl (the shared probe helper depends on it);

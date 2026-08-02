@@ -87,6 +87,7 @@ vi.mock('$lib/client', () => ({
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
   enhancePrompt: vi.fn(async (p: string) => ({ enhanced: p })),
+  isEnhancePromptAvailable: vi.fn(() => true),
 }));
 
 vi.mock('svelte-sonner', () => ({
