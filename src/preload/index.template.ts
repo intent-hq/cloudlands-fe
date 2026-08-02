@@ -689,6 +689,13 @@ const electronAPI = {
       ipcRenderer.setMaxListeners(50); // Higher limit for dynamic channels
     }
 
+    // backend:status legitimately accumulates ~12 listeners (one reconnect-replay
+    // subscription per backend client), so raise the cap to at least 15 without
+    // lowering a higher cap already in effect (dynamic channels set 50)
+    if (channel === 'backend:status') {
+      ipcRenderer.setMaxListeners(Math.max(ipcRenderer.getMaxListeners(), 15));
+    }
+
     // Use generated allowed channels (includes dynamic patterns)
     if (isChannelAllowed(channel)) {
       // Create a wrapper function that matches the IPC renderer signature
