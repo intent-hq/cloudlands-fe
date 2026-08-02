@@ -1854,6 +1854,7 @@
   "chat_backgroundHooks_hover_delay_label": "延迟：{seconds}秒",
   "chat_backgroundHooks_hover_nextRun_label": "下次运行：{time}",
   "chat_hookWakeAttribution_wokeAgent_after": "唤醒了智能体",
+  "chat_hookWakeAttribution_fallbackName_label": "钩子",
   "chat_regularAgentWelcome_generalDescription_label": "此智能体拥有完整的工作区上下文。可以问我任何关于你代码的问题，或告诉我你想做什么。",
   "chat_shared_general_fallback": "通用",
   "chat_shared_noSpecializedBehavior_label": "无专门行为",

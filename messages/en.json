@@ -1854,6 +1854,7 @@
   "chat_backgroundHooks_hover_delay_label": "Delay: {seconds}s",
   "chat_backgroundHooks_hover_nextRun_label": "Next run: {time}",
   "chat_hookWakeAttribution_wokeAgent_after": "woke the agent",
+  "chat_hookWakeAttribution_fallbackName_label": "Hook",
   "chat_regularAgentWelcome_generalDescription_label": "This agent has full workspace context. Ask me anything about your code or what you'd like to work on.",
   "chat_shared_general_fallback": "General",
   "chat_shared_noSpecializedBehavior_label": "No specialized behavior",

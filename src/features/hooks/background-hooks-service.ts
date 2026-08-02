@@ -155,6 +155,9 @@ export function subscribeBackgroundHooks(
   let hooks: BackgroundHook[] = [];
   let refetchInFlight = false;
   let refetchQueued = false;
+  // Guards against a late-resolving subscribe from a previous registration
+  // (e.g. rapid reconnect flaps) overwriting the current subscriptionId.
+  let registerEpoch = 0;
 
   const emit = () => {
     if (!disposed) handler(hooks);
@@ -186,18 +189,25 @@ export function subscribeBackgroundHooks(
   };
 
   const register = () => {
+    const epoch = ++registerEpoch;
     backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ['hook:*'], workspaceId })
       .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+        const acked = result?.subscriptionId;
+        if (disposed || epoch !== registerEpoch) {
+          // Stale registration (disposed or superseded by a reconnect) —
+          // drop the ack and release its server-side subscription.
+          if (acked) void backendUnsubscribe(acked);
+          return;
+        }
+        subscriptionId = acked;
         // Seed AFTER the subscribe ack so no event falls between the
         // snapshot and the subscription window.
-        if (!disposed) refetch();
+        refetch();
       })
       .catch((error) => {
         logger.warn('events.subscribe (hook:*) failed', { workspaceId, error });
         // Without a subscription still serve the one-shot snapshot.
-        refetch();
+        if (!disposed && epoch === registerEpoch) refetch();
       });
   };
 

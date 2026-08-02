@@ -87,12 +87,12 @@
 
   function handleRunNow(hook: BackgroundHook, close: () => void) {
     close();
-    appStore.dispatch(runBackgroundHookRequested(workspaceId, hook.hookId));
+    appStore.dispatch(runBackgroundHookRequested(hook.workspaceId, hook.hookId));
   }
 
   function handleCancel(hook: BackgroundHook, close: () => void) {
     close();
-    appStore.dispatch(cancelBackgroundHookRequested(workspaceId, hook.hookId));
+    appStore.dispatch(cancelBackgroundHookRequested(hook.workspaceId, hook.hookId));
   }
 
   /** Max characters of hook code shown in the hover card. */

@@ -1854,6 +1854,7 @@
   "chat_backgroundHooks_hover_delay_label": "遅延: {seconds}秒",
   "chat_backgroundHooks_hover_nextRun_label": "次回実行: {time}",
   "chat_hookWakeAttribution_wokeAgent_after": "がエージェントを起こしました",
+  "chat_hookWakeAttribution_fallbackName_label": "フック",
   "chat_regularAgentWelcome_generalDescription_label": "このエージェントはワークスペースの完全なコンテキストを持っています。コードや取り組みたいことについて何でも質問してください。",
   "chat_shared_general_fallback": "一般",
   "chat_shared_noSpecializedBehavior_label": "専門的な動作なし",

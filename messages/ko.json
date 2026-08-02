@@ -1854,6 +1854,7 @@
   "chat_backgroundHooks_hover_delay_label": "지연: {seconds}초",
   "chat_backgroundHooks_hover_nextRun_label": "다음 실행: {time}",
   "chat_hookWakeAttribution_wokeAgent_after": "이(가) 에이전트를 깨웠습니다",
+  "chat_hookWakeAttribution_fallbackName_label": "훅",
   "chat_regularAgentWelcome_generalDescription_label": "이 에이전트는 작업 공간의 전체 컨텍스트를 갖고 있습니다. 코드나 작업하고 싶은 내용에 대해 무엇이든 물어보세요.",
   "chat_shared_general_fallback": "일반",
   "chat_shared_noSpecializedBehavior_label": "특화된 동작 없음",

@@ -9,10 +9,12 @@
  * metadata returns `null` so the message renders exactly as before.
  */
 
+import { m } from '$shared/paraglide/messages.js';
+
 export interface HookWakeAttribution {
   /** Hook id (may be empty when the daemon omitted it). */
   hookId: string;
-  /** Display name for the hook ("Hook" fallback, truncated to ~20 chars). */
+  /** Display name for the hook (localized fallback, truncated to ~20 chars). */
   displayName: string;
 }
 
@@ -29,7 +31,7 @@ export function getHookWakeAttribution(metadata: unknown): HookWakeAttribution |
 
   const hookId = typeof md.hookId === 'string' ? md.hookId.trim() : '';
   const rawName = typeof md.hookName === 'string' ? md.hookName.trim() : '';
-  const name = rawName || 'Hook';
+  const name = rawName || m.chat_hookWakeAttribution_fallbackName_label();
   const displayName =
     name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 1) + '…' : name;
 
