@@ -210,8 +210,16 @@ class DaemonTerminalRegistry {
    */
   private reconnectDisposer: (() => void) | undefined;
 
+  /**
+   * Resolve by local id, falling back to the daemon id. Renderer hydration
+   * (`terminal.list`) rekeys tabs to daemon ids, so reconnect/write/kill
+   * calls can arrive with either id space (monorepo#1330).
+   */
   getTerminal(id: string): DaemonTerminal | undefined {
-    return this.terminals.get(id);
+    const direct = this.terminals.get(id);
+    if (direct) return direct;
+    const localId = this.byDaemonId.get(id);
+    return localId !== undefined ? this.terminals.get(localId) : undefined;
   }
   getWorkspaceTerminals(workspaceId: string): DaemonTerminal[] {
     return Array.from(this.terminals.values()).filter(
@@ -224,7 +232,7 @@ class DaemonTerminalRegistry {
     void this.ensureSubscription();
   }
   async dispose(id: string): Promise<boolean> {
-    const terminal = this.terminals.get(id);
+    const terminal = this.getTerminal(id);
     if (!terminal) return false;
     if (terminal.isAlive) {
       try {
@@ -240,7 +248,7 @@ class DaemonTerminalRegistry {
     }
     terminal.markDisposed();
     this.byDaemonId.delete(terminal.daemonTerminalId);
-    this.terminals.delete(id);
+    this.terminals.delete(terminal.id);
     return true;
   }
   async disposeAll(): Promise<void> {
@@ -465,7 +473,12 @@ export function registerTerminalHandlers() {
                   error: error instanceof Error ? error.message : String(error),
                 });
               }
-              return { success: true, terminalId: providedId, reconnected: true };
+              // Return the registry's LOCAL id (canonical key) rather than
+              // echoing providedId: `terminal:data`/`terminal:exit` events are
+              // emitted under the local id, so a caller reattaching with the
+              // daemon id must learn the id events arrive under. Identical to
+              // providedId on the local-id path — no behavior change there.
+              return { success: true, terminalId: existing.id, reconnected: true };
             }
           }
         }

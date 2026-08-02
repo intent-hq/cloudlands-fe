@@ -123,7 +123,13 @@ export const appendScriptOutput =
 export const setScriptOutput =
   createAction<[wsId: string, scriptId: string, chunks: ScriptOutputChunk[]]>('scripts/setOutput');
 
-/** Dispose workspace scripts state */
+/**
+ * Dispose workspace scripts state. No production dispatcher today: scripts
+ * state is intentionally retained for the session across workspace switches
+ * and overlay unmounts (monorepo#1330), matching terminals. Kept for
+ * test-harness state resets (mirroring `setScriptOutput` above); wire it into
+ * a `workspaceDeleted` purge if scripts ever need clearing on delete.
+ */
 export const disposeScripts = createAction<[wsId: string]>('scripts/dispose');
 
 // ============================================================================

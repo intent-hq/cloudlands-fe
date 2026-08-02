@@ -353,6 +353,15 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
 
       wsState = { terminals: collection, isOpen, activeTerminalId: activeId, terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] };
     } else {
+      // An empty successful list over existing live tabs is treated as
+      // transient (daemon restart re-registration, PTY spawn still in
+      // flight around a workspace switch) — replacing state here would
+      // drop the tabs and force the panel closed (monorepo#1330).
+      // Preserve them; genuinely-gone terminals converge via the
+      // heartbeat/auto-reconnect path and the next non-empty hydration
+      // (PTYs lost to a daemon restart emit no `terminal:exit` event).
+      if (getWs(state, wsId).terminals.ids.length > 0) return state;
+
       // Don't restore isOpen when there are no terminals — the panel
       // requires activeTerminalId to render, so isOpen:true with no
       // terminals creates a stuck state where the toggle appears broken
