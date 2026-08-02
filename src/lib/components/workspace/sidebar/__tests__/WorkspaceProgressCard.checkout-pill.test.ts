@@ -257,7 +257,7 @@ describe('WorkspaceProgressCard checkout-mode pill', () => {
   });
 });
 
-describe('WorkspaceProgressCard disk-usage size', () => {
+describe('WorkspaceProgressCard disk-usage tooltip on pill', () => {
   const diskUsage = {
     bytes: 2_330_000_000,
     fileCount: 10,
@@ -272,21 +272,24 @@ describe('WorkspaceProgressCard disk-usage size', () => {
     mocks.update.mockImplementation(async () => ({ ok: true, data: mocks.workspaceEntity }));
   });
 
-  it('renders the formatted size in the subtitle (full mode)', async () => {
+  it('renders no visible size text in the subtitle (full mode)', async () => {
     await renderProgressCard({ checkoutMode: 'cow', diskUsage });
 
-    expect(screen.getByText('2.17Gi')).toBeTruthy();
+    expect(screen.getByText('CoW')).toBeTruthy();
+    expect(screen.queryByText('2.17Gi')).toBeNull();
   });
 
-  it('renders the formatted size in the subtitle (compact mode)', async () => {
+  it('renders no visible size text in the subtitle (compact mode)', async () => {
     await renderProgressCard({ checkoutMode: 'cow', diskUsage }, { compact: true });
 
-    expect(screen.getByText('2.17Gi')).toBeTruthy();
+    expect(screen.getByText('CoW')).toBeTruthy();
+    expect(screen.queryByText('2.17Gi')).toBeNull();
   });
 
-  it('renders no size when diskUsage is absent', async () => {
-    await renderProgressCard({ checkoutMode: 'cow' });
+  it('keeps the "·" separator before the pill when diskUsage is present', async () => {
+    await renderProgressCard({ checkoutMode: 'cow', diskUsage });
 
-    expect(screen.queryByText('2.17Gi')).toBeNull();
+    const pill = screen.getByText('CoW');
+    expect(pill.previousElementSibling?.textContent).toBe('·');
   });
 });
