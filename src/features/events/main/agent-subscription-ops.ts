@@ -197,7 +197,7 @@ export function agentSubscribeToGroup(
 export function agentUnsubscribe(
   workspaceId: string,
   subscriptionId: string,
-  reason?: 'manual-unsubscribe' | 'oneshot-fired' | 'delegation-complete',
+  reason?: 'manual-unsubscribe' | 'delegation-complete',
   groupId?: string,
 ): boolean {
   const ws = selectWorkspaceSubscriptionState.select(getMainState(), workspaceId);
