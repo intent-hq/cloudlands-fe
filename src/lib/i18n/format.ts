@@ -15,6 +15,7 @@ import { getActiveLocale } from './locale';
 export const {
   formatNumber,
   formatInteger,
+  formatBytesBinary,
   formatRelativeTime,
   formatCompactRelativeTime,
   formatTime,

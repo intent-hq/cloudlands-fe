@@ -157,6 +157,27 @@ export function createFormatters(getLocale: () => string) {
     return numberFormat(getLocale(), { maximumFractionDigits: 0 }).format(value);
   }
 
+  /**
+   * Binary (base-1024) byte size with `B/Ki/Mi/Gi/Ti` suffix, 3 significant
+   * digits (e.g. 2330000000 → "2.17Gi"). Invalid input → "".
+   */
+  function formatBytesBinary(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes < 0) return '';
+    // i18n-ignore (binary unit suffixes are technical notation)
+    const units = ['B', 'Ki', 'Mi', 'Gi', 'Ti'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex++;
+    }
+    const formatted = numberFormat(getLocale(), {
+      maximumSignificantDigits: 3,
+      useGrouping: false,
+    }).format(value);
+    return `${formatted}${units[unitIndex]}`;
+  }
+
   /** Relative time in the natural unit: "now", "5 minutes ago", "yesterday", "in 2 days". */
   function formatRelativeTime(input: DateInput, options?: RelativeTimeOptions): string {
     const date = toDate(input);
@@ -293,6 +314,7 @@ export function createFormatters(getLocale: () => string) {
   return {
     formatNumber,
     formatInteger,
+    formatBytesBinary,
     formatRelativeTime,
     formatCompactRelativeTime,
     formatTime,

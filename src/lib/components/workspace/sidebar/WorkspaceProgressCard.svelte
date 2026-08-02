@@ -24,6 +24,7 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import TaskStatusIndicator from '$lib/components/workspace/TaskStatusIndicator.svelte';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
+  import WorkspaceDiskUsagePill from '$lib/components/workspace/WorkspaceDiskUsagePill.svelte';
   import TaskAgentStatus from '$lib/components/tiptap/TaskAgentStatus.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
@@ -906,6 +907,7 @@
           </button>
         </Tooltip>
         <CheckoutModePill checkoutMode={$workspace?.checkoutMode} />
+        <WorkspaceDiskUsagePill workspace={$workspace} />
         {#if $workspace?.branch}
           <span class="mx-1">·</span>
           <span>{$workspace.branch}</span>
@@ -1076,6 +1078,7 @@
           </button>
         </Tooltip>
         <CheckoutModePill checkoutMode={$workspace?.checkoutMode} />
+        <WorkspaceDiskUsagePill workspace={$workspace} />
       </div>
     </div>
 
