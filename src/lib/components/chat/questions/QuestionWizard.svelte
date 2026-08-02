@@ -177,7 +177,7 @@
       {#if onDismiss}
         <button
           type="button"
-          class="border-none bg-transparent text-xs text-destructive cursor-pointer font-[inherit] px-3 py-2.25 rounded-r-lg hover:bg-destructive/10"
+          class="border-none bg-transparent text-xs text-destructive-foreground cursor-pointer font-[inherit] px-3 py-2.25 rounded-r-lg hover:bg-destructive"
           title={m.chat_questionWizard_dismiss_tooltip()}
           onclick={() => (confirmingDismiss = true)}
         >
@@ -227,7 +227,7 @@
         {#if onDismiss}
           <button
             type="button"
-            class="border-none bg-transparent text-xs text-destructive cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:bg-destructive/10"
+            class="border-none bg-transparent text-xs text-destructive-foreground cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:bg-destructive"
             title={m.chat_questionWizard_dismiss_tooltip()}
             onclick={() => (confirmingDismiss = true)}
           >
