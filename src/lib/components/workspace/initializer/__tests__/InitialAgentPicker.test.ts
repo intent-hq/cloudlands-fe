@@ -279,6 +279,35 @@ describe('InitialAgentPicker stale model override clearing', () => {
     });
   });
 
+  it('invalidates cached per-provider previews when the store specialist view refreshes', async () => {
+    mocks.fileSpecialistsLoaded$.set(true);
+
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
+      },
+    });
+
+    await waitFor(() => expect(teamPickerDefault()).toBe('fable-5'));
+    expect(mocks.specialistsList).toHaveBeenCalledTimes(1);
+
+    // Specialist defaults change on disk: the daemon emits specialists:changed
+    // and the list subscription refreshes the store view. The cached
+    // per-provider preview must be dropped and refetched.
+    mocks.specialistsList.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'sonnet-4.6' },
+      ]),
+    );
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'sonnet-4.6' },
+    ]);
+
+    await waitFor(() => expect(teamPickerDefault()).toBe('sonnet-4.6'));
+    expect(mocks.specialistsList).toHaveBeenCalledTimes(2);
+  });
+
   it('falls back to the store resolvedModel until the per-provider fetch lands', async () => {
     // Per-provider fetch never resolves — the store view (daemon default
     // provider context) must drive the preview.

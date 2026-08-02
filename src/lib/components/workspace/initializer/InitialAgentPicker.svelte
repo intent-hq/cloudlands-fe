@@ -224,13 +224,28 @@
   // it serves as the fallback until the per-provider fetch lands.
   let resolvedModelsByProvider = $state<Record<string, Record<string, string | undefined>>>({});
 
+  // Bumped on every store specialist-view refresh; in-flight fetches from an
+  // older generation are dropped so they can't overwrite fresher previews.
+  let previewsGeneration = 0;
+
+  // Invalidate cached previews whenever the store's specialist view refreshes
+  // (daemon `specialists:changed` → list subscription refetch), so the
+  // resolvedModel preview tracks specialist/settings changes while the picker
+  // stays mounted. The fetch effect below then refetches on demand.
+  $effect(() => {
+    void $specialists$;
+    previewsGeneration += 1;
+    resolvedModelsByProvider = {};
+  });
+
   $effect(() => {
     const provider = selectedProvider;
     if (!provider || provider in resolvedModelsByProvider) return;
+    const generation = previewsGeneration;
     void (async () => {
       try {
         const defs = await appClient.specialists.list(provider);
-        if (defs.length === 0) return;
+        if (generation !== previewsGeneration || defs.length === 0) return;
         const byId: Record<string, string | undefined> = {};
         for (const def of defs) byId[def.id] = def.resolvedModel;
         resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: byId };
