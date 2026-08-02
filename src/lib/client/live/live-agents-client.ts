@@ -103,28 +103,36 @@ export class LiveAgentsClient implements AgentsClient {
   // (oldest→newest within the page). The daemon clamps `limit` to `[1,200]` —
   // `pageToken` walks backward to older pages, and `nextToken` is `null` once
   // the oldest message has been returned. The chat-read-service loops on
-  // `nextToken` to assemble the full transcript. `messages` is returned raw;
-  // the agent-session reducer normalizes/sorts/dedups/prunes on ingest.
+  // `nextToken` to assemble the full transcript. `aroundMessageId` (§5.5 seek,
+  // additive) takes precedence over any token daemon-side and resolves to the
+  // page containing that message; seek pages carry `prevToken` (forward cursor
+  // toward the live tail — normalized to null on legacy backward pages, which
+  // never include the key). `messages` is returned raw; the agent-session
+  // reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
     limit = 200,
     pageToken?: string,
+    aroundMessageId?: string,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
     totalMessages: number;
     nextToken: string | null;
+    prevToken: string | null;
   }> {
     const params: Record<string, unknown> = { agentId, limit };
     if (pageToken !== undefined) params.nextToken = pageToken;
+    if (aroundMessageId !== undefined) params.aroundMessageId = aroundMessageId;
     const result = await backendRequest<{
       messages?: unknown[];
       truncated?: boolean;
       totalMessages?: number;
       nextToken?: unknown;
+      prevToken?: unknown;
     }>("agent.getConversation", params);
     if (!result || typeof result !== "object") {
-      return { messages: [], truncated: false, totalMessages: 0, nextToken: null };
+      return { messages: [], truncated: false, totalMessages: 0, nextToken: null, prevToken: null };
     }
     const messages = Array.isArray(result.messages) ? (result.messages as AgentMessage[]) : [];
     return {
@@ -132,6 +140,7 @@ export class LiveAgentsClient implements AgentsClient {
       truncated: Boolean(result.truncated),
       totalMessages: typeof result.totalMessages === "number" ? result.totalMessages : 0,
       nextToken: typeof result.nextToken === "string" ? result.nextToken : null,
+      prevToken: typeof result.prevToken === "string" ? result.prevToken : null,
     };
   }
 

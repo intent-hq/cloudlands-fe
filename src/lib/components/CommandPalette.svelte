@@ -29,6 +29,8 @@
   faPlay,
 } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
+  import { openMessage } from '$lib/utils/open-message';
+  import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -52,8 +54,8 @@
   import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
+  type PaletteFilter,
   type WorkspaceObject,
-  type WorkspaceObjectType,
   FILTER_PREFIXES,
   fuzzyScore,
   formatRelativeTime,
@@ -124,7 +126,7 @@
   const paletteFileMru$ = selectPaletteFileMru();
   let inputRef: HTMLInputElement | undefined = $state(undefined);
   let isLoadingFiles = $state(false);
-  let activeFilter: WorkspaceObjectType | 'workspace' | null = $state(null); // Filter by type
+  let activeFilter: PaletteFilter | null = $state(null); // Filter by type
 
   // Derived: parse search query for filter prefix (uses extracted pure function)
   let parsedQuery = $derived(parseQueryFilter(searchQuery));
@@ -505,9 +507,37 @@
     };
   });
 
+  // Transcript search state (search.messages, PROTOCOL §5.15); the debounced
+  // query flow lives in $lib/utils/palette-transcript-search.
+  let groupMessages: any[] = $state([]);
+  let isLoadingMessages = $state(false);
+  const transcriptQuery = createTranscriptQuery(({ items, loading }) => {
+    untrack(() => {
+      if (items !== undefined) groupMessages = items;
+      isLoadingMessages = loading;
+    });
+  });
+
+  // Keep transcript group in sync with current query.
+  $effect(() => {
+    const term = parsedQuery.searchTerm;
+    const wsId = workspaceId;
+    const wsItems = $workspaceItems || [];
+
+    // Skip in Go to Line mode and when there is no search term to match
+    if ((searchQuery || '').trimStart().startsWith(':') || !term) {
+      transcriptQuery.clear();
+      return;
+    }
+
+    transcriptQuery.query(term, wsId, wsItems);
+
+    return () => transcriptQuery.cancel();
+  });
+
   // computeResults is now imported from command-palette-results.
   // This wrapper bridges component state to the pure function's input interface.
-  function buildResults(q: string, files: any[]) {
+  function buildResults(q: string, files: any[], messages: any[]) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
       .sort(compareWorkspaceActivityDisplayTimeDesc)
@@ -538,6 +568,7 @@
       files,
       commands,
       workspaceItems: wsItems,
+      messages,
     });
   }
 
@@ -566,6 +597,7 @@
       return;
     }
     const files = groupFiles;
+    const messages = groupMessages;
     // Track activeFilter to trigger recomputation when it changes
     activeFilter;
 
@@ -584,7 +616,7 @@
       searchDebounceTimer = null;
       resultComputeRaf = requestAnimationFrame(() => {
         resultComputeRaf = null;
-        const flat = buildResults(q, files);
+        const flat = buildResults(q, files, messages);
         // Use untrack for all state updates to avoid effect loops
         untrack(() => {
           searchResults = flat;
@@ -725,9 +757,20 @@
 
     // Handle workspace objects
     if (item.type) {
-      appStore.dispatch(recordPaletteMruItem(item.type, item.id, Date.now()));
+      // Transcript rows are not MRU-tracked ('message' is not a PaletteMruEntryType)
+      if (item.type !== 'message') {
+        appStore.dispatch(recordPaletteMruItem(item.type, item.id, Date.now()));
+      }
 
       switch (item.type) {
+        case 'message':
+          void openMessage({
+            workspaceId: item.workspaceId,
+            agentId: item.agentId,
+            messageId: item.messageId,
+            query: parsedQuery.searchTerm || undefined,
+          });
+          break;
         case 'agent':
           if (workspaceId) {
             appStore.dispatch(
@@ -966,7 +1009,7 @@
           </div>
         </div>
         <!-- Results -->
-      {:else if searchResults.length > 0 || isLoadingFiles}
+      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages}
         <div class="max-h-[480px] overflow-y-auto py-1">
           {#each searchResults as item, index (item._idx !== undefined ? item._idx : `fallback-${index}`)}
             {#if item._borderAbove}
@@ -1063,6 +1106,16 @@
                     <span class="text-[14px] font-medium text-foreground truncate"
                       >{item.label}</span
                     >
+                    {#if item.type === 'message' && item.workspaceName}
+                      <span class="text-xs text-subtle truncate">
+                        <span aria-hidden="true">·</span>
+                        {item.workspaceName}
+                        {#if item.repoLabel}
+                          <span aria-hidden="true">·</span>
+                          {item.repoLabel}
+                        {/if}
+                      </span>
+                    {/if}
                     {#if item._time}
                       <span class="text-ui text-subtle flex-none ml-auto">{item._time}</span>
                     {/if}
@@ -1097,8 +1150,8 @@
             {/if}
           {/each}
 
-          <!-- Loading skeletons for files -->
-          {#if isLoadingFiles && workspaceId}
+          <!-- Loading skeletons for files/transcripts -->
+          {#if (isLoadingFiles && workspaceId) || isLoadingMessages}
             {#each [0, 1, 2] as i}
               <div class="w-full px-3 h-[32px] flex items-center gap-3">
                 <Skeleton class="w-4 h-4 rounded flex-none" />
@@ -1107,7 +1160,7 @@
             {/each}
           {/if}
         </div>
-      {:else if searchQuery && !isLoadingFiles}
+      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages}
         <div class="px-3 py-6 text-center">
           <p class="text-[13px] text-subtle">{m.lib_commandPalette_noResults_message({ query: searchQuery })}</p>
         </div>

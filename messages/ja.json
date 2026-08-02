@@ -3959,6 +3959,7 @@
   "layout_commandPalette_terminals_group": "ターミナル",
   "layout_commandPalette_browser_group": "ブラウザー",
   "layout_commandPalette_files_group": "ファイル",
+  "layout_commandPalette_messages_group": "チャットメッセージ",
   "layout_commandPalette_otherSpaces_group": "その他のスペース",
   "settings_backgroundAgents_commit_label": "コミットメッセージ",
   "settings_backgroundAgents_commit_description": "ステージ済みの変更から Git コミットメッセージを生成",

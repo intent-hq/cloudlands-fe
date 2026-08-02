@@ -12,6 +12,7 @@ import {
   formatRelativeTime,
   parseQueryFilter,
   buildNoteBreadcrumbs,
+  buildMessageTitleSegments,
   buildRecentItems,
   type WorkspaceObject,
 } from "./command-palette-utils";
@@ -72,6 +73,7 @@ describe("parseQueryFilter", () => {
     expect(parseQueryFilter("/path").filter).toBe("file");
     expect(parseQueryFilter("*ws").filter).toBe("workspace");
     expect(parseQueryFilter("^url").filter).toBe("browser");
+    expect(parseQueryFilter("?hello").filter).toBe("message");
   });
 });
 
@@ -147,6 +149,44 @@ describe("buildRecentItems", () => {
     ]);
 
     expect(recent.map((item) => item.id)).toEqual(["a1", "a2", "a3"]);
+  });
+});
+
+// ── buildMessageTitleSegments ──────────────────────────────────────────────
+
+describe("buildMessageTitleSegments", () => {
+  it("returns no segments for an unknown workspace", () => {
+    expect(buildMessageTitleSegments(undefined)).toEqual({});
+  });
+
+  it("returns workspace title and owner/repo when fully populated", () => {
+    expect(
+      buildMessageTitleSegments({
+        id: "ws-1",
+        title: "Repo overview",
+        repositoryOwner: "panghy",
+        repositoryName: "chinese-fonts",
+      }),
+    ).toEqual({ workspaceName: "Repo overview", repoLabel: "panghy/chinese-fonts" });
+  });
+
+  it("returns just the repo name when the owner is missing", () => {
+    expect(
+      buildMessageTitleSegments({ id: "ws-1", title: "Local space", repositoryName: "tools" }),
+    ).toEqual({ workspaceName: "Local space", repoLabel: "tools" });
+  });
+
+  it("omits the repo label when the repository name is missing", () => {
+    expect(
+      buildMessageTitleSegments({ id: "ws-1", title: "No repo", repositoryOwner: "panghy" }),
+    ).toEqual({ workspaceName: "No repo", repoLabel: undefined });
+  });
+
+  it("falls back to the workspace id when the title is empty", () => {
+    expect(buildMessageTitleSegments({ id: "ws-1", title: "" })).toEqual({
+      workspaceName: "ws-1",
+      repoLabel: undefined,
+    });
   });
 });
 
