@@ -1762,6 +1762,7 @@
   "chat_modelPicker_noModelsForProvider_toast": "{provider} 没有可用的模型",
   "chat_modelPicker_noModels_label": "没有可用的模型",
   "chat_modelPicker_pickAnother_description": "选择其他模型以继续。",
+  "chat_modelPicker_providerDefault_label": "提供方默认",
   "chat_modelPicker_refreshGroup_title": "刷新 {group} 模型",
   "chat_modelPicker_retry_label": "重试",
   "chat_modelPicker_runLoginHint_label": "在终端中运行 \"{command}\"。",

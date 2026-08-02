@@ -78,8 +78,18 @@ describe("LiveSpecialistsClient (fake transport)", () => {
 
     const defs = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith("specialist.list");
+    expect(mockedRequest).toHaveBeenCalledWith("specialist.list", undefined);
     expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
+  });
+
+  it("list passes the optional provider as the resolution context (resolvedModel preview)", async () => {
+    mockedRequest.mockResolvedValueOnce({ specialists: [COORDINATOR_DEF] });
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list("claude-code");
+
+    expect(mockedRequest).toHaveBeenCalledWith("specialist.list", { provider: "claude-code" });
+    expect(defs).toEqual([COORDINATOR_DEF]);
   });
 
   it("list folds a malformed result (no specialists array) to an empty list", async () => {
@@ -133,8 +143,8 @@ describe("LiveSpecialistsClient (fake transport)", () => {
       notify?.({ method: "specialists:changed", params: { workspaceId: "ws-1" } });
       await vi.advanceTimersByTimeAsync(100);
 
-      // Refetch is the global specialist.list (no workspaceId).
-      expect(mockedRequest).toHaveBeenLastCalledWith("specialist.list");
+      // Refetch is the global specialist.list (no workspaceId, no provider).
+      expect(mockedRequest).toHaveBeenLastCalledWith("specialist.list", undefined);
       expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]);
       unsubscribe();
     });
@@ -312,7 +322,7 @@ describe("LiveSpecialistsClient (fake transport)", () => {
         expect(mockedSubscribe).toHaveBeenLastCalledWith({ eventTypes: ["specialists:changed"] });
         await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]));
         expect(mockedRequest).toHaveBeenCalledTimes(1);
-        expect(mockedRequest).toHaveBeenCalledWith("specialist.list");
+        expect(mockedRequest).toHaveBeenCalledWith("specialist.list", undefined);
 
         // The refreshed id is released on dispose.
         unsubscribe();

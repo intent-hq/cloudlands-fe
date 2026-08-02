@@ -1399,11 +1399,25 @@ export interface SpecialistDef {
   source: "project" | "user" | "bundled";
   isCustomized?: boolean;
   path?: string;
+  /**
+   * Daemon-computed default-model preview (additive, PROTOCOL §5.11): the
+   * model a no-model `agent.create` with this specialist would pin, resolved
+   * by the daemon's single creation-time resolver in the request's `provider`
+   * context. Both fields are omitted when resolution yields the provider CLI
+   * default (clients render "Provider default").
+   */
+  resolvedModel?: string;
+  resolvedProvider?: string;
 }
 
 export interface SpecialistsClient {
-  /** Merged bundled + user + project definitions (`specialist.list`, PROTOCOL §5.11). */
-  list(): Promise<SpecialistDef[]>;
+  /**
+   * Merged bundled + user + project definitions (`specialist.list`, PROTOCOL
+   * §5.11). The optional `provider` supplies the resolution context for the
+   * `resolvedModel`/`resolvedProvider` preview fields (defaults to the
+   * daemon's default provider; unknown provider → -32602).
+   */
+  list(provider?: string): Promise<SpecialistDef[]>;
   subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe;
   /**
    * Create a new specialist definition (`specialist.create`, PROTOCOL §5.11).

@@ -46,10 +46,6 @@
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
-  import {
-  selectSelectedModel,
-  selectAvailableModels,
-} from '$store/renderer/slices/model/model-selectors';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
   setWorkspaceEntity,
@@ -60,8 +56,6 @@
   import {
   selectSpecialists,
   selectEffectiveBehaviorPrompt,
-  selectEffectiveModel,
-  selectEffectiveCodingAgent,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -107,16 +101,9 @@
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import {
-    selectCatalogDefaultProviderId,
-    selectProviderModelTiers,
-  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { parseCompoundModelId } from '$shared/utils/compound-model-id';
-  import {
-    dropCrossProviderFallbackModel,
-    resolveSubmitModel,
-    resolveSubmitProvider,
-  } from '$lib/utils/effective-model-resolution';
+  import { resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
@@ -127,8 +114,6 @@
   restoreNewWorkspaceDraft,
 } from './initializer/new-workspace-draft';
 
-  const availableModels$ = selectAvailableModels();
-  const selectedModel$ = selectSelectedModel();
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectCatalogDefaultProviderId();
   const logger = createLogger('CompactWorkspaceInitializer');
@@ -1756,81 +1741,19 @@
         );
       }
 
-      // Resolve the model for the selected specialist + provider so the agent is created
-      // with the correct compound model ID (e.g., 'codex:gpt-5.3-codex').
-      // Uses the same shared effective-model resolution the InitialAgentPicker displays,
-      // so the created agent gets exactly the model shown in the picker. An explicit
-      // user override (modelWasOverridden) always wins.
-      // Without this, model would be undefined and the backend falls back to DEFAULT_AGENT_MODEL
-      // (an auggie model), which breaks provider inheritance when the coordinator delegates.
-      const reduxState = appStore.state;
-      let resolvedModel = resolveSubmitModel({
-        modelWasOverridden,
-        overriddenModel: selectedModel,
-        specialistId: selectedSpecialist,
-        selectedProvider,
-        availableModelValues: $availableModels$.map((m) => m.value),
-        defaultProviderId: $defaultProviderId$,
-        selectedProviderTiers: selectProviderModelTiers.select(reduxState, selectedProvider),
-        globalSelectedModel: $selectedModel$,
-        effectiveCodingAgent: selectedSpecialist
-          ? selectEffectiveCodingAgent.select(reduxState, selectedSpecialist)
-          : undefined,
-        effectiveModel: selectedSpecialist
-          ? selectEffectiveModel.select(reduxState, selectedSpecialist)
-          : undefined,
-        specialistInfo: selectedSpecialist
-          ? selectSpecialists.select(reduxState).find((s) => s.id === selectedSpecialist)
-          : undefined,
-      });
-      // No specialist selected (General/blank agent) and user didn't override the model:
-      // fall back to the global store selection when models haven't loaded yet.
-      if (!resolvedModel && !modelWasOverridden && !selectedSpecialist) {
-        resolvedModel = $selectedModel$;
-      }
+      // Model resolution is daemon-owned (single resolver, PROTOCOL §5.11):
+      // submit `model` ONLY when the user explicitly picked one in this form.
+      // With no explicit pick the daemon applies its own resolved default at
+      // creation time (the same value the picker previews via
+      // `resolvedModel`), so no client-side tier/preference fallback runs.
+      const resolvedModel =
+        modelWasOverridden && selectedModel ? selectedModel : undefined;
 
-      // Validate resolvedModel against available models. Tier-mapped model IDs
-      // (e.g., 'opencode:anthropic/claude-opus-4-5') may not match actual model IDs
-      // returned by the provider CLI, causing a visible flash in the ModelPicker.
-      // Fall back to the model store's validated selected model if the resolved model
-      // doesn't exist in the available list.
-      // Only validate when the form's selectedProvider matches the model store's loaded
-      // provider (active-provider Redux slice) — otherwise the available models are for a
-      // different provider and we can't meaningfully validate.
-      const storeProvider = $activeProviderId$;
-      if (resolvedModel && $availableModels$.length > 0 && selectedProvider === storeProvider) {
-        const availableModelValues = $availableModels$.map((m) => m.value);
-        if (!availableModelValues.includes(resolvedModel)) {
-          logger.warn('Tier-resolved model not in available list, using store default', {
-            resolvedModel,
-            fallback: $selectedModel$,
-            selectedProvider,
-            availableCount: availableModelValues.length,
-          });
-          resolvedModel = $selectedModel$;
-        }
-      }
-
-      // Guard the non-overridden fallback: when the resolved model belongs to
-      // a different provider than the form's selection (e.g. the selected
-      // provider's models haven't loaded and the fallback came from the
-      // default provider's store selection), drop the model so the daemon
-      // uses the selected provider's own default instead of the fallback
-      // silently flipping the submitted provider. Explicit user overrides
-      // (modelWasOverridden) may legitimately cross providers and are kept.
-      if (!modelWasOverridden) {
-        resolvedModel = dropCrossProviderFallbackModel(
-          resolvedModel,
-          selectedProvider,
-          $defaultProviderId$,
-        );
-      }
-
-      // Derive the submitted provider from the final resolved model so intent
-      // and daemon spawn can never diverge: the daemon's resolve_provider_id
-      // gives a compound model prefix precedence over the provider field, and
-      // a bare model id resolves to the default provider. When no model
-      // resolves, keep the form's selected provider.
+      // Derive the submitted provider from the explicit model (if any) so
+      // intent and daemon spawn can never diverge: the daemon's
+      // resolve_provider_id gives a compound model prefix precedence over the
+      // provider field, and a bare model id resolves to the default provider.
+      // With no explicit model, keep the form's selected provider.
       const submitProvider = resolveSubmitProvider(
         resolvedModel,
         selectedProvider,

@@ -81,12 +81,11 @@ const logger = createLogger('AgentCreationService');
  * middleware-chain construction.
  */
 async function loadCreationDeps() {
-  const [factoryMod, wsSel, waSel, modelSel, provSel, specSel, notesSel, catalogSel] =
+  const [factoryMod, wsSel, waSel, provSel, specSel, notesSel, catalogSel] =
     await Promise.all([
       import('$features/agent/services/agent-factory'),
       import('$store/renderer/slices/workspace/workspace-selectors'),
       import('$store/renderer/slices/workspace-agents/workspace-agents-selectors'),
-      import('$store/renderer/slices/model/model-selectors'),
       import('$store/renderer/slices/provider-settings/provider-settings-selectors'),
       import('$store/renderer/slices/specialists/specialists-selectors'),
       import('$store/renderer/slices/workspace-notes/workspace-notes-selectors'),
@@ -96,15 +95,12 @@ async function loadCreationDeps() {
     agentFactory: factoryMod.agentFactory,
     selectWorkspaceById: wsSel.selectWorkspaceById,
     selectAllWorkspaceAgents: waSel.selectAllWorkspaceAgents,
-    selectSelectedModel: modelSel.selectSelectedModel,
     selectActiveProviderId: provSel.selectActiveProviderId,
     selectSpecialists: specSel.selectSpecialists,
     selectEffectiveCodingAgent: specSel.selectEffectiveCodingAgent,
-    selectEffectiveModel: specSel.selectEffectiveModel,
     selectEffectiveBehaviorPrompt: specSel.selectEffectiveBehaviorPrompt,
     selectNoteById: notesSel.selectNoteById,
     selectCatalogDefaultProviderId: catalogSel.selectCatalogDefaultProviderId,
-    selectDefaultModelForProviderTier: catalogSel.selectDefaultModelForProviderTier,
   };
 }
 type CreationDeps = Awaited<ReturnType<typeof loadCreationDeps>>;
@@ -177,22 +173,19 @@ async function handleCreateAgentRequested(wsId: string, agentType?: string): Pro
   if (!workspace) return;
 
   const agents = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
-  const model = deps.selectSelectedModel.select(appStore.state);
-  const globalProvider = deps.selectActiveProviderId.select(appStore.state);
+  const provider = deps.selectActiveProviderId.select(appStore.state);
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
   const agentName = generateSpecialistAgentName('Agent', existingNames);
-  const provider = model.includes(':')
-    ? (splitCompoundModelId(model).providerId || globalProvider)
-    : globalProvider;
 
   try {
+    // No explicit user pick here — omit `model` so the daemon applies its
+    // resolved default for the provider (settings chain > CLI default).
     const result = await deps.agentFactory.createAgent(workspace, {
       name: agentName,
       // Generated placeholder ("Agent N") — keep the session self-renameable.
       nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
-      model,
       provider,
       agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
       source: 'keyboard-shortcut',
@@ -218,13 +211,9 @@ async function handleCreateAgentWithSpecialist(
   if (!workspace) return;
 
   const agents = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
-  let model = deps.selectSelectedModel.select(appStore.state);
-  const globalProvider = deps.selectActiveProviderId.select(appStore.state);
+  let provider = deps.selectActiveProviderId.select(appStore.state);
 
   const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
-  let provider = model.includes(':')
-    ? (splitCompoundModelId(model).providerId || globalProvider)
-    : globalProvider;
   let behaviorPrompt: string | undefined;
   let specialistBaseName = 'Agent';
   if (specialistId) {
@@ -234,19 +223,20 @@ async function handleCreateAgentWithSpecialist(
     if (specialist) {
       specialistBaseName = specialist.name;
       provider = deps.selectEffectiveCodingAgent.select(appStore.state, specialistId);
-      model = deps.selectEffectiveModel.select(appStore.state, specialistId);
       behaviorPrompt = deps.selectEffectiveBehaviorPrompt.select(appStore.state, specialistId);
     }
   }
   const agentName = generateSpecialistAgentName(specialistBaseName, existingNames);
 
   try {
+    // No explicit user pick — omit `model`; the daemon's resolver applies the
+    // specialist frontmatter model / settings chain / provider CLI default
+    // (the same resolution the `resolvedModel` preview shows).
     const result = await deps.agentFactory.createAgent(workspace, {
       name: agentName,
       // Generated placeholder ("<Specialist> N") — keep the session self-renameable.
       nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
-      model,
       provider,
       agentType: createAgentTypeId('chat'),
       behaviorPrompt,
@@ -289,7 +279,6 @@ async function handleRunAgentForNote(
 
   const initialMessage = buildTaskAgentInitialMessage(note);
 
-  let implementorModel = deps.selectEffectiveModel.select(appStore.state, 'implementor');
   let implementorBehaviorPrompt = deps.selectEffectiveBehaviorPrompt.select(
     appStore.state,
     'implementor',
@@ -298,31 +287,21 @@ async function handleRunAgentForNote(
     const implementorSpec = SPECIALISTS.find((s) => s.id === 'implementor');
     if (implementorSpec) {
       implementorBehaviorPrompt = implementorSpec.defaultBehaviorPrompt;
-      if (!implementorModel) {
-        const activeProvider = deps.selectActiveProviderId.select(appStore.state);
-        const tierModel = implementorSpec.defaultModelTier
-          ? deps.selectDefaultModelForProviderTier.select(
-              appStore.state,
-              activeProvider,
-              implementorSpec.defaultModelTier,
-            )
-          : undefined;
-        implementorModel = tierModel ?? implementorSpec.defaultModel ?? '';
-      }
     }
   }
 
   const provider = getWorkspaceInitialAgentProvider(wsId, deps);
-  const fallbackModel = deps.selectSelectedModel.select(appStore.state);
 
   try {
+    // No explicit user pick — omit `model` so the daemon resolves the
+    // implementor specialist's default (frontmatter model > settings chain >
+    // provider CLI default) for the target provider.
     const result = await deps.agentFactory.createAgent(workspace, {
       name: noteTitle || m.agent_creation_taskAgent_name(),
       // Derived from the note title, not user-typed for the agent — leave it
       // self-renameable.
       nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
-      model: implementorModel || fallbackModel,
       provider,
       agentType: createAgentTypeId('task-loop'),
       behaviorPrompt: implementorBehaviorPrompt,
@@ -453,10 +432,12 @@ async function handleCreateAgentFromConfig(
 
 /**
  * `agentSessionLaunchAgentRequested`: async trigger dispatched by ChiefCard
- * (new thread + auto-start) and other launch sites. Resolves the workspace's
- * default model + provider (mirroring the reference saga), then delegates to
- * `createAgentFromConfigRequested` and settles the launch promise with the
- * created session (or a cleaned error message on failure).
+ * (new thread + auto-start) and other launch sites. Resolves the provider
+ * (from the caller's explicit model when present, else the active provider),
+ * then delegates to `createAgentFromConfigRequested` and settles the launch
+ * promise with the created session (or a cleaned error message on failure).
+ * An absent `config.model` stays absent: the daemon applies its resolved
+ * default at creation time.
  */
 async function handleLaunchAgent(
   action: ReturnType<typeof agentSessionLaunchAgentRequested>,
@@ -466,11 +447,11 @@ async function handleLaunchAgent(
     const deps = await loadCreationDeps();
     // No client-minted agent id: the daemon assigns the id on `agent.create`
     // and the factory adopts it from the response.
-    const model = config.model ?? deps.selectSelectedModel.select(appStore.state);
+    const model = config.model;
     const activeProvider = deps.selectActiveProviderId.select(appStore.state);
     const provider =
       config.provider ??
-      (model.includes(':')
+      (model?.includes(':')
         ? (splitCompoundModelId(model).providerId || activeProvider)
         : activeProvider);
 

@@ -40,10 +40,7 @@ import { createCollection } from "$lib/store-shim/utils/collections/collection-u
 import { initialState } from "./specialists-slice";
 import type { StoreState } from "../../types";
 import { SPECIALISTS } from "$lib/constants/specialists";
-import {
-  MOCK_PROVIDER_CATALOG,
-  seedProviderCatalog,
-} from "../../../../test/fixtures/provider-catalog.fixture";
+import { seedProviderCatalog } from "../../../../test/fixtures/provider-catalog.fixture";
 import { store as appStore } from "$store/renderer/store";
 import { dispatchSpecialistList } from "../../../../features/specialists/specialists-mutation-service";
 import type { SpecialistDef } from "$lib/client/app-client";
@@ -405,10 +402,8 @@ describe("specialists selectors", () => {
       );
     });
 
-    it("still resolves tier-only specialists via the catalog tier tables", () => {
+    it("surfaces the daemon resolvedModel preview for tier-only specialists (no client tier resolution)", () => {
       seedProviderCatalog(appStore);
-      const auggieTiers = MOCK_PROVIDER_CATALOG.providers.find((p) => p.id === "auggie")!
-        .modelTiers!;
       const tierOnlyDef: SpecialistDef = {
         id: "tier-only-custom",
         name: "Tier Only",
@@ -417,19 +412,34 @@ describe("specialists selectors", () => {
         behaviorPrompt: "prompt",
         source: "user",
         path: "/Users/test/.intent/specialists/tier-only-custom.md",
+        resolvedModel: "opus4.7",
+        resolvedProvider: "auggie",
       };
       dispatchSpecialistList([tierOnlyDef]);
 
-      // Active provider is the default (auggie), so the tier resolves to a
-      // bare model ID without a provider prefix.
+      // The wire's daemon-computed preview is surfaced verbatim — the client
+      // never resolves the tier against the catalog tables itself.
       expect(selectEffectiveModel.select(appStore.state, "tier-only-custom")).toBe(
-        auggieTiers.smart,
+        "opus4.7",
       );
-      // Bundled specialists carrying only a tier (e.g. verifier: smart) also
-      // resolve via the tier mapping.
-      expect(selectEffectiveModel.select(appStore.state, "verifier")).toBe(
-        auggieTiers.smart,
-      );
+    });
+
+    it("returns empty string (provider CLI default) when resolvedModel is omitted from the wire", () => {
+      seedProviderCatalog(appStore);
+      const cliDefaultDef: SpecialistDef = {
+        id: "cli-default-custom",
+        name: "CLI Default",
+        description: "custom specialist without a resolvable model",
+        modelTier: "smart",
+        behaviorPrompt: "prompt",
+        source: "user",
+        path: "/Users/test/.intent/specialists/cli-default-custom.md",
+      };
+      dispatchSpecialistList([cliDefaultDef]);
+
+      // Omitted resolvedModel means the daemon resolution fell through to the
+      // provider CLI default; consumers render "Provider default".
+      expect(selectEffectiveModel.select(appStore.state, "cli-default-custom")).toBe("");
     });
   });
 });

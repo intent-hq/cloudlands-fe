@@ -64,6 +64,14 @@ export interface Specialist {
    * (it remains visible on Settings → AI Behavior for editing).
    */
   hidden?: boolean;
+  /**
+   * Daemon-computed default-model preview (`specialist.list` resolvedModel/
+   * resolvedProvider, PROTOCOL §5.11): the model a no-model create with this
+   * specialist would pin, in the daemon's default-provider context. Absent
+   * when resolution yields the provider CLI default ("Provider default").
+   */
+  resolvedModel?: string;
+  resolvedProvider?: string;
 }
 
 export const SPECIALISTS: Specialist[] = [

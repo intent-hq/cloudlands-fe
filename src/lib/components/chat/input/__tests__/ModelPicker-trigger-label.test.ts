@@ -332,6 +332,39 @@ describe('ModelPicker trigger label regressions', () => {
     expect(screen.getByRole('button').textContent ?? '').toContain('Auggie Butler');
   });
 
+  it('prefers defaultModelLabel when defaultModelId cannot be resolved to a label', () => {
+    availableModels$.set([]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:not-loaded-yet',
+        defaultModelLabel: 'Provider default',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('Provider default');
+    expect(text).not.toContain('Default model');
+  });
+
+  it('falls back to the bare model id for an unresolvable defaultModelId without defaultModelLabel', () => {
+    availableModels$.set([]);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:not-loaded-yet',
+        isLocked: true,
+      },
+    });
+
+    const text = screen.getByRole('button').textContent ?? '';
+    expect(text).toContain('not-loaded-yet');
+    expect(text).not.toContain('Default model');
+  });
+
   it('derives the trigger icon from a bare defaultModelId (default provider) instead of the active provider', () => {
     activeProviderId$.set('anthropic');
 

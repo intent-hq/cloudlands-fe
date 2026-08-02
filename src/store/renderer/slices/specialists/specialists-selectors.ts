@@ -9,10 +9,6 @@ import {
   GITHUB_DEPENDENT_SPECIALIST_IDS,
   type Specialist,
 } from "$lib/constants/specialists";
-import {
-  selectCatalogDefaultProviderId,
-  selectDefaultModelForProviderTier,
-} from "../provider-catalog/provider-catalog-selectors";
 import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
 import type { FileSpecialist, SpecialistOverrides } from "./specialists-slice";
 import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-selectors";
@@ -85,18 +81,19 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
     for (const file of fileSpecialists) {
         if (!seen.has(file.id) && selectIsSpecialistVisible.select(state, file.id)) {
             seen.add(file.id);
-            const effectiveTier = file.modelTier || (!file.model ? 'balanced' : undefined);
             result.push({
                 id: file.id,
                 name: file.name,
                 description: file.description,
                 codingAgent: file.codingAgent,
                 defaultModel: file.model || undefined,
-                defaultModelTier: effectiveTier,
+                defaultModelTier: file.modelTier,
                 defaultBehaviorPrompt: file.behaviorPrompt,
                 roleReminder: file.roleReminder,
                 source: file.source,
                 hidden: file.hidden,
+                resolvedModel: file.resolvedModel,
+                resolvedProvider: file.resolvedProvider,
             });
         }
     }
@@ -166,32 +163,22 @@ export const selectSpecialistById = store.createSelector((state, specialistId: s
 export const selectSpecialistName = store.createSelector((state, specialistId: string): string | null => {
     return selectSpecialistById.select(state, specialistId)?.name ?? null;
 });
-/** Get the effective model for a specialist (file override → bundled default → tier resolution) */
+/** Get the effective model for a specialist (file override → daemon-resolved preview) */
 export const selectEffectiveModel = store.createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     if (!specialist)
         return '';
-    // Wave 2: File specialists already have the correct model baked in.
-    // No need to check userOverrides — they're deprecated.
-    // Explicit model wins over tier resolution, mirroring the daemon's
-    // model-first precedence (resolve_model, PROTOCOL §5.11).
+    // Explicit frontmatter model wins, mirroring the daemon's model-first
+    // precedence (resolve_model, PROTOCOL §5.11). Otherwise surface the
+    // daemon-computed `resolvedModel` preview from the wire — no client-side
+    // tier/preference resolution. Empty string means "provider CLI default".
     if (specialist.defaultModel) {
         return specialist.defaultModel;
     }
-    // Resolve the model tier to an actual model ID for the active provider
-    if (specialist.defaultModelTier) {
-        const providerId = selectEffectiveCodingAgent.select(state, specialistId);
-        const baseModel = selectDefaultModelForProviderTier.select(
-            state, providerId, specialist.defaultModelTier);
-        if (baseModel) {
-            const defaultProviderId = selectCatalogDefaultProviderId.select(state);
-            return providerId !== defaultProviderId ? `${providerId}:${baseModel}` : baseModel;
-        }
-        // Provider has no tier mapping (or catalog not hydrated) — fall through
-    }
-    return specialist.defaultModel ?? '';
+    return specialist.resolvedModel ?? '';
 });
+
 /** Get the effective behavior prompt for a specialist (file override → bundled default) */
 export const selectEffectiveBehaviorPrompt = store.createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
