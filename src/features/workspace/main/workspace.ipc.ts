@@ -20,7 +20,6 @@ import { execFileAsync } from '../../../shared/git/git-env';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
-import { readScripts } from '../../scripts/main/scripts-persistence';
 import {
   initRepoRegistry,
   getAllRepos,
@@ -367,8 +366,10 @@ export function setupWorkspaceIPC(): void {
   // Open workspace
   //
   // ⚠️  IMPORTANT: This handler has side effects beyond just "opening" the workspace:
-  // it warms caches and starts scripts services. File-change monitoring is owned
-  // by the daemon; the FE-side change-detection stack has been removed.
+  // it warms caches. File-change monitoring is owned by the daemon; the FE-side
+  // change-detection stack has been removed. Script autoStart is owned by the
+  // daemon (`script.*`, PROTOCOL §5.8) — the legacy FE-side autoStart trigger
+  // has been removed.
   //
   // The backend is IDEMPOTENT, so it's safe to call this multiple times for the
   // same workspace.
@@ -399,8 +400,8 @@ export function setupWorkspaceIPC(): void {
           // agent-writes cache to warm here.
 
           // PERFORMANCE OPTIMIZATION: Start all background initialization without blocking
-          // The workspace is usable immediately - caches and scripts initialize
-          // in the background and will be ready by the time the user needs them.
+          // The workspace is usable immediately - caches initialize in the
+          // background and will be ready by the time the user needs them.
 
           // Metadata watcher retired alongside the workspace disk-read path;
           // workspace metadata is served by the daemon (`workspace.get`).
@@ -423,49 +424,7 @@ export function setupWorkspaceIPC(): void {
                 }
               })();
 
-              // Initialize workspace scripts: clean stale PIDs and start autoStart services
-              const scriptsInitPromise = (async () => {
-                try {
-                  const { getScriptProcessManager } =
-                    await import('../../scripts/main/script-process-manager');
-                  const scriptsWorkspacePath = workspace.worktreePath || workspace.repositoryPath;
-                  if (!scriptsWorkspacePath) return;
-
-                  const scriptsMetadataPath = WorkspaceConfig.paths.metadata(id);
-                  const manager = getScriptProcessManager(
-                    id,
-                    scriptsWorkspacePath,
-                    scriptsMetadataPath,
-                  );
-
-                  // Clean up stale PIDs from previous sessions
-                  manager.cleanupStalePids();
-
-                  // Load scripts and start autoStart services
-                  const scripts = await readScripts(id);
-                  const autoStartScripts = scripts.filter(
-                    (s) => s.autoStart && s.mode === 'service',
-                  );
-
-                  if (autoStartScripts.length > 0) {
-                    logger.info('[WorkspaceIPC] Starting autoStart scripts', {
-                      workspaceId: id,
-                      count: autoStartScripts.length,
-                      names: autoStartScripts.map((s) => s.name),
-                    });
-                    for (const script of autoStartScripts) {
-                      manager.start(script);
-                    }
-                  }
-                } catch (error) {
-                  logger.warn('[WorkspaceIPC] Failed to initialize scripts', error as Error, {
-                    workspaceId: id,
-                  });
-                }
-              })();
-
-              // Wait for ALL to complete in parallel
-              await Promise.all([cacheWarmingPromise, scriptsInitPromise]);
+              await cacheWarmingPromise;
 
               logger.info('[WorkspaceIPC] Background initialization complete', {
                 workspaceId: id,

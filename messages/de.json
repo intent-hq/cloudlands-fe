@@ -4687,6 +4687,8 @@
   "diffs_service_stopTrackingFailed_error": "Verfolgung der Agenten-Ausführung konnte nicht gestoppt werden",
   "scripts_client_statusFailed_error": "Skript-Status konnte nicht gelesen werden",
   "scripts_client_notFound_error": "Skript nicht gefunden: {scriptId}",
+  "scripts_detect_skippedRunning_one": "„{name}“ läuft gerade — erkannte Änderungen wurden nicht übernommen. Stoppen Sie das Skript und führen Sie die Erkennung erneut aus.",
+  "scripts_detect_skippedRunning_many": "{count} laufende Skripte ({names}) wurden nicht mit erkannten Änderungen aktualisiert. Stoppen Sie sie und führen Sie die Erkennung erneut aus.",
   "context_types_addNote_description": "Neue Notiz hinzufügen",
   "context_types_linkLinear_description": "Linear-Issue verknüpfen",
   "context_types_linkGithub_description": "GitHub-Issue verknüpfen",
