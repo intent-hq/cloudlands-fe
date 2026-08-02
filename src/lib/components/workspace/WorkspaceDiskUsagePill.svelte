@@ -37,7 +37,7 @@
     class="min-w-0"
   >
     {#snippet content()}
-      <div class="flex flex-col gap-1.5 text-left">
+      <div class="flex flex-col gap-1.5 text-left whitespace-normal">
         <div class="font-medium">
           {m.workspace_diskUsagePill_totalSize_label({ size: formattedSize })}
           <span class="text-subtle">
@@ -48,9 +48,9 @@
                 })}
           </span>
         </div>
-        <div class="text-xs text-subtle">
-          {m.workspace_diskUsagePill_physicalNote_label()}
-          {m.workspace_diskUsagePill_scopeNote_label()}
+        <div class="flex flex-col gap-0.5 text-xs text-subtle">
+          <p class="m-0">{m.workspace_diskUsagePill_physicalNote_label()}</p>
+          <p class="m-0">{m.workspace_diskUsagePill_scopeNote_label()}</p>
         </div>
         {#if diskUsage.breakdown.length > 0}
           <ul class="flex flex-col gap-0.5 text-xs">
@@ -71,7 +71,7 @@
         </button>
       </div>
     {/snippet}
-    <span class="inline-flex items-center shrink-0 text-subtle {className}">
+    <span class="inline-flex items-baseline shrink-0 text-sm text-subtle {className}">
       <span class="mx-1">·</span>{formattedSize}
     </span>
   </Tooltip>

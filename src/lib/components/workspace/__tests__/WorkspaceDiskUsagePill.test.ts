@@ -61,6 +61,20 @@ describe('WorkspaceDiskUsagePill', () => {
     expect(screen.getByText('2.17Gi')).toBeTruthy();
   });
 
+  it('renders the two notes as separate flush-left paragraphs (no pre-wrap indentation)', async () => {
+    await renderPill({ ...baseWorkspace, diskUsage } as Workspace);
+
+    const tooltip = screen.getByTestId('tooltip-content');
+    const paragraphs = Array.from(tooltip.querySelectorAll('p'));
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[0].textContent).toMatch(/^\S/);
+    expect(paragraphs[1].textContent).toMatch(/^\S/);
+    expect(paragraphs[1].textContent).toContain('whole workspace directory');
+    // The tooltip shell applies whitespace-pre-wrap; the body must reset it so
+    // source-formatting newlines never render as literal indentation.
+    expect(tooltip.querySelector('.whitespace-normal')).toBeTruthy();
+  });
+
   it('renders nothing when diskUsage is absent', async () => {
     const { container } = await renderPill(baseWorkspace);
 
