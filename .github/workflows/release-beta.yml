@@ -222,7 +222,15 @@ jobs:
       - name: Build and package macOS app
         run: pnpm run dist:mac
         env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
+          # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
+          # even with sourcemaps disabled (monorepo#1340); same bundle here.
+          NODE_OPTIONS: '--max-old-space-size=12288'
+          # Sourcemap generation multiplies rollup's peak heap past the cap
+          # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
+          # leg only, and this leg OOM'd in the v2.13.0 run (monorepo#1340).
+          # Nothing consumes the 'hidden' production maps in release builds,
+          # so skip them like CI build-web.
+          INTENT_DISABLE_SOURCEMAPS: '1'
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
@@ -363,7 +371,15 @@ jobs:
       - name: Build and package Windows app
         shell: powershell
         env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
+          # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
+          # even with sourcemaps disabled (monorepo#1340); same bundle here.
+          NODE_OPTIONS: '--max-old-space-size=12288'
+          # Sourcemap generation multiplies rollup's peak heap past the cap
+          # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
+          # leg only, and this leg OOM'd in the v2.13.0 run (monorepo#1340).
+          # Nothing consumes the 'hidden' production maps in release builds,
+          # so skip them like CI build-web.
+          INTENT_DISABLE_SOURCEMAPS: '1'
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}\resources\sidecar\intentd.exe
@@ -486,8 +502,12 @@ jobs:
           ${{ matrix.targets }}
           -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
         env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
-          # Sourcemap generation multiplies rollup's peak heap past the 8192
+          # 12288: the arm64 leg OOM'd at the old 8192 cap in the v2.13.0 run
+          # even with sourcemaps disabled — committed heap hit ~8.2 GB
+          # ("Ineffective mark-compacts near heap limit", monorepo#1340) —
+          # so bundle growth alone now needs more headroom.
+          NODE_OPTIONS: '--max-old-space-size=12288'
+          # Sourcemap generation multiplies rollup's peak heap past the
           # cap (same OOM as monorepo#1074; both Linux legs died at ~7.6 GB in
           # the v2.12.0 run, monorepo#1282). Nothing consumes the 'hidden'
           # production maps in release builds, so skip them like CI build-web.
