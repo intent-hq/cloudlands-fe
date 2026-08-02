@@ -55,6 +55,7 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/features/onboarding/messages/ProviderCard.svelte',
   'src/features/onboarding/messages/ProjectPickerMessage.svelte',
   'src/features/onboarding/OnboardingPage.svelte',
+  'src/features/onboarding/steps/OnboardingPromptStep.svelte',
   'src/features/onboarding/steps/WorkspaceCreationError.svelte',
   'src/features/workspace/SpacesSwitcherOverlay.svelte',
   'src/lib/components/AuggieSetupGate.svelte',

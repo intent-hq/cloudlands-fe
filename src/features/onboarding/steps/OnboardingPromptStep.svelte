@@ -30,29 +30,17 @@
   import WorkspaceCreationError from '$features/onboarding/steps/WorkspaceCreationError.svelte';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
-  import {
-  selectSpecialists,
-  selectEffectiveModel,
-  selectEffectiveCodingAgent,
-} from '$store/renderer/slices/specialists/specialists-selectors';
-  import {
-  selectSelectedModel,
-  selectAvailableModels,
-} from '$store/renderer/slices/model/model-selectors';
-  import {
-  selectCatalogDefaultProviderId,
-  selectProviderModelTiers,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { resolveEffectiveModelForSpecialist } from '$lib/utils/effective-model-resolution';
-  import { store as appStore } from '$store/renderer/store';
+  import { appClient } from '$lib/client';
+  import { createLogger } from '$lib/utils/client-logger';
 
   const COORDINATOR_SPECIALIST_ID = 'spec-writer';
 
+  const logger = createLogger('OnboardingPromptStep');
   const defaultProviderId$ = selectCatalogDefaultProviderId();
   const activeProviderId$ = selectActiveProviderId();
-  const availableModels$ = selectAvailableModels();
-  const globalSelectedModel$ = selectSelectedModel();
   const specialists$ = selectSpecialists();
 
   interface Props {
@@ -161,23 +149,49 @@
   let onboardingFileInput: HTMLInputElement | null = $state(null);
   let richTextareaWrapper: HTMLDivElement | null = $state(null);
 
-  // Effective default model for the Coordinator (spec-writer) — resolved
-  // synchronously via the same shared utility InitialAgentPicker uses, so the
-  // picker displays the model resolveOnboardingModel() would pick by default.
+  // Daemon-resolved default-model preview for the Coordinator (PROTOCOL
+  // §5.11): `specialist.list` with the onboarding provider context returns
+  // additive `resolvedModel` fields computed by the same resolver a no-model
+  // create uses, so the picker displays exactly what the daemon would pin.
+  // Absent resolvedModel means "Provider default". The store's specialist
+  // view (daemon-default-provider context) is the fallback until the
+  // per-provider fetch lands. Mirrors InitialAgentPicker.
+  const onboardingProvider = $derived($activeProviderId$ || $defaultProviderId$);
+  let resolvedModelsByProvider = $state<Record<string, Record<string, string | undefined>>>({});
+
+  // Bumped on every store specialist-view refresh; in-flight fetches from an
+  // older generation are dropped so they can't overwrite fresher previews.
+  let previewsGeneration = 0;
+
+  // Invalidate cached previews whenever the store's specialist view refreshes
+  // (daemon `specialists:changed` → list subscription refetch).
+  $effect(() => {
+    void $specialists$;
+    previewsGeneration += 1;
+    resolvedModelsByProvider = {};
+  });
+
+  $effect(() => {
+    const provider = onboardingProvider;
+    if (!provider || provider in resolvedModelsByProvider) return;
+    const generation = previewsGeneration;
+    void (async () => {
+      try {
+        const defs = await appClient.specialists.list(provider);
+        if (generation !== previewsGeneration || defs.length === 0) return;
+        const byId: Record<string, string | undefined> = {};
+        for (const def of defs) byId[def.id] = def.resolvedModel;
+        resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: byId };
+      } catch (error) {
+        logger.debug('Failed to fetch resolved-model previews:', { provider, error });
+      }
+    })();
+  });
+
   const coordinatorDefaultModel = $derived.by(() => {
-    const state = appStore.state;
-    const provider = $activeProviderId$ || $defaultProviderId$;
-    return resolveEffectiveModelForSpecialist({
-      specialistId: COORDINATOR_SPECIALIST_ID,
-      selectedProvider: provider,
-      availableModelValues: $availableModels$.map((model) => model.value),
-      defaultProviderId: $defaultProviderId$,
-      selectedProviderTiers: selectProviderModelTiers.select(state, provider),
-      globalSelectedModel: $globalSelectedModel$,
-      effectiveCodingAgent: selectEffectiveCodingAgent.select(state, COORDINATOR_SPECIALIST_ID),
-      effectiveModel: selectEffectiveModel.select(state, COORDINATOR_SPECIALIST_ID),
-      specialistInfo: $specialists$.find((s) => s.id === COORDINATOR_SPECIALIST_ID),
-    });
+    const providerView = resolvedModelsByProvider[onboardingProvider];
+    if (providerView) return providerView[COORDINATOR_SPECIALIST_ID];
+    return $specialists$.find((s) => s.id === COORDINATOR_SPECIALIST_ID)?.resolvedModel;
   });
 
   // Expose the RichTextarea ref so the parent can call methods on it
@@ -557,6 +571,7 @@
             size="xs"
             triggerClass="pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30 text-sm"
             defaultModelId={coordinatorDefaultModel}
+            defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
             silentFallback
           />
         {/key}
