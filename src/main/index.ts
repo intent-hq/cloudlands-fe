@@ -1262,7 +1262,8 @@ app.whenReady().then(async () => {
   startupMetrics.start('criticalIPC');
 
   // Initialize specialists service BEFORE workspace IPC - this is critical!
-  // The workspace creation flow calls resolveSpecialistForAgent() which needs the store initialized.
+  // The instruction service calls formatSpecialistsForPrompt(), which needs the
+  // specialist file cache initialized.
   await initSpecialistsService();
 
   // Initialize app settings service for branch prefix and other settings

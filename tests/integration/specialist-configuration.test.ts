@@ -27,7 +27,7 @@ import {
 import {
   initSpecialistsService,
   refreshSpecialistsFromFiles,
-  resolveSpecialistForAgent,
+  getEffectiveSpecialist,
 } from '../../src/features/agent/main/specialists.service';
 
 const { mockSettingsData } = vi.hoisted(() => ({
@@ -329,14 +329,12 @@ describe('Specialist Configuration', () => {
 
     // Lazy-import so mocks are applied before the module loads
     let getAllEffectiveSpecialists: typeof import('../../src/features/agent/main/specialists.service').getAllEffectiveSpecialists;
-    let resolveSpecialistForAgent: typeof import('../../src/features/agent/main/specialists.service').resolveSpecialistForAgent;
     let initSpecialistsService: typeof import('../../src/features/agent/main/specialists.service').initSpecialistsService;
     let refreshGitHubAuthStatus: typeof import('../../src/features/agent/main/specialists.service').refreshGitHubAuthStatus;
 
     beforeAll(async () => {
       const mod = await import('../../src/features/agent/main/specialists.service');
       getAllEffectiveSpecialists = mod.getAllEffectiveSpecialists;
-      resolveSpecialistForAgent = mod.resolveSpecialistForAgent;
       initSpecialistsService = mod.initSpecialistsService;
       refreshGitHubAuthStatus = mod.refreshGitHubAuthStatus;
       await initSpecialistsService();
@@ -373,49 +371,19 @@ describe('Specialist Configuration', () => {
       expect(ids).toContain('pr-reviewer');
     });
 
-    it('resolveSpecialistForAgent returns null for pr-shepherd when GitHub not authenticated', async () => {
-      mockIsAuthenticated.mockResolvedValue(false);
-      await refreshGitHubAuthStatus();
-
-      const result = resolveSpecialistForAgent('pr-shepherd');
-      expect(result).toBeNull();
-    });
-
-    it('resolveSpecialistForAgent returns config for pr-shepherd when GitHub is authenticated', async () => {
-      mockIsAuthenticated.mockResolvedValue(true);
-      await refreshGitHubAuthStatus();
-
-      const result = resolveSpecialistForAgent('pr-shepherd');
-      expect(result).not.toBeNull();
-      expect(result!.specialistId).toBe('pr-shepherd');
-    });
-
-    it('resolveSpecialistForAgent returns null for pr-reviewer when GitHub not authenticated', async () => {
-      mockIsAuthenticated.mockResolvedValue(false);
-      await refreshGitHubAuthStatus();
-
-      const result = resolveSpecialistForAgent('pr-reviewer');
-      expect(result).toBeNull();
-    });
-
-    it('non-GitHub specialists are unaffected by GitHub auth status', async () => {
-      mockIsAuthenticated.mockResolvedValue(false);
-      await refreshGitHubAuthStatus();
-
-      const result = resolveSpecialistForAgent('implementor');
-      expect(result).not.toBeNull();
-      expect(result!.specialistId).toBe('implementor');
-    });
   });
 
-  describe('resolveSpecialistForAgent coding agent resolution', () => {
+  describe('getEffectiveSpecialist coding agent resolution', () => {
+    // Tier→model resolution is daemon-owned: the main process passes the
+    // frontmatter model/modelTier through verbatim ('' when no model).
     it('falls back to the caller coding agent for built-in specialists without an explicit codingAgent', () => {
-      const resolved = resolveSpecialistForAgent('implementor', 'codex');
+      const resolved = getEffectiveSpecialist('implementor', 'codex');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
       expect(resolved?.modelTier).toBe('smart');
-      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'smart'));
+      // No tier→model synthesis in the main process
+      expect(resolved?.model).toBe('');
     });
 
     it('uses an explicit file specialist codingAgent when present', async () => {
@@ -429,12 +397,12 @@ describe('Specialist Configuration', () => {
       });
       await refreshSpecialistsFromFiles();
 
-      const resolved = resolveSpecialistForAgent('file-specialist', 'auggie');
+      const resolved = getEffectiveSpecialist('file-specialist', 'auggie');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
       expect(resolved?.modelTier).toBe('fast');
-      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'fast'));
+      expect(resolved?.model).toBe('');
     });
 
     // Wave 2: Legacy custom specialists from electron-store are no longer resolved.
@@ -450,7 +418,7 @@ describe('Specialist Configuration', () => {
         },
       ];
 
-      const resolved = resolveSpecialistForAgent('legacy-custom', 'codex');
+      const resolved = getEffectiveSpecialist('legacy-custom', 'codex');
       // Legacy custom specialists are no longer loaded from electron-store
       expect(resolved).toBeNull();
     });
@@ -464,19 +432,18 @@ describe('Specialist Configuration', () => {
         },
       };
 
-      const resolved = resolveSpecialistForAgent('implementor', 'auggie');
+      const resolved = getEffectiveSpecialist('implementor', 'auggie');
 
       expect(resolved).not.toBeNull();
       // Override from electron-store is no longer applied
       expect(resolved?.codingAgent).toBe('auggie');
       expect(resolved?.modelTier).toBe('smart');
-      expect(resolved?.model).toBe(getDefaultModelForProvider('auggie', 'smart'));
+      expect(resolved?.model).toBe('');
     });
 
-    // Regression (monorepo#944): model-first precedence — an explicit model in
-    // the file wins even when modelTier is also declared; tier-only files still
-    // resolve via provider-aware tier resolution.
-    it('resolves to the explicit model when a file declares BOTH model and modelTier', async () => {
+    // Regression (monorepo#944): the explicit model in the file is passed
+    // through verbatim, even when modelTier is also declared.
+    it('keeps the explicit model when a file declares BOTH model and modelTier', async () => {
       const dir = await ensureSpecialistsDirectory();
       const content = [
         '---',
@@ -492,16 +459,15 @@ describe('Specialist Configuration', () => {
       await fs.writeFile(path.join(dir, 'both-fields.md'), content, 'utf-8');
       await refreshSpecialistsFromFiles();
 
-      const resolved = resolveSpecialistForAgent('both-fields', 'auggie');
+      const resolved = getEffectiveSpecialist('both-fields', 'auggie');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.model).toBe('sonnet4.5');
-      expect(resolved?.model).not.toBe(getDefaultModelForProvider('auggie', 'smart'));
       // The declared tier is still surfaced on the output field
       expect(resolved?.modelTier).toBe('smart');
     });
 
-    it('still tier-resolves when a file declares only modelTier', async () => {
+    it('does NOT tier-resolve when a file declares only modelTier (daemon-owned)', async () => {
       await writeSpecialistFile({
         id: 'tier-only',
         name: 'Tier Only',
@@ -512,10 +478,10 @@ describe('Specialist Configuration', () => {
       });
       await refreshSpecialistsFromFiles();
 
-      const resolved = resolveSpecialistForAgent('tier-only', 'auggie');
+      const resolved = getEffectiveSpecialist('tier-only', 'auggie');
 
       expect(resolved).not.toBeNull();
-      expect(resolved?.model).toBe(getDefaultModelForProvider('auggie', 'fast'));
+      expect(resolved?.model).toBe('');
       expect(resolved?.modelTier).toBe('fast');
     });
 
@@ -557,12 +523,12 @@ describe('Specialist Configuration', () => {
       });
       await refreshSpecialistsFromFiles();
 
-      const resolved = resolveSpecialistForAgent('implementor', 'auggie');
+      const resolved = getEffectiveSpecialist('implementor', 'auggie');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
       expect(resolved?.modelTier).toBe('smart');
-      expect(resolved?.model).toBe(getDefaultModelForProvider('codex', 'smart'));
+      expect(resolved?.model).toBe('');
     });
   });
 });

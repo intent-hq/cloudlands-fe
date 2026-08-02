@@ -19,15 +19,8 @@ import {
   getSpecialistById,
   GITHUB_DEPENDENT_SPECIALIST_IDS,
 } from '$lib/constants/specialists';
-import {
-  getModelTierFromCatalog,
-  type ProviderModelTier as ModelTier,
-} from '$shared/provider-catalog';
-import {
-  getCachedDefaultProviderId,
-  getCachedProviderCatalog,
-  getCachedProviderCatalogEntry,
-} from '../../../main/utils/provider-catalog-accessor';
+import { type ProviderModelTier as ModelTier } from '$shared/provider-catalog';
+import { getCachedDefaultProviderId } from '../../../main/utils/provider-catalog-accessor';
 import {
   loadSpecialistFiles,
   loadProjectSpecialistFiles,
@@ -67,12 +60,15 @@ export interface EffectiveSpecialist {
   description: string;
   /** ACP provider / runtime backend for this specialist after fallback resolution. */
   codingAgent: string;
+  /**
+   * Explicit frontmatter model, verbatim ('' when the file declares none).
+   * Tier→model resolution is daemon-owned; the main process never synthesizes
+   * a model from a tier.
+   */
   model: string;
   /**
-   * The capability tier for this specialist's model.
-   * When present, consumers should resolve the model from this tier for their
-   * active provider, rather than using the pre-resolved `model` field directly.
-   * This ensures the model is always valid for the active provider.
+   * Explicit frontmatter capability tier, verbatim. Used for provider-agnostic
+   * display (e.g. the prompt table) — never resolved to a concrete model here.
    */
   modelTier?: ModelTier;
   behaviorPrompt: string;
@@ -267,24 +263,8 @@ function resolveSpecialistCodingAgent(
   // Last resort is the daemon registry's default. Before catalog hydration
   // this degrades to '' (unknown) rather than baking in a provider id —
   // callers always pass the active provider as fallbackCodingAgent in
-  // practice, and tier lookups on '' safely resolve to undefined.
+  // practice.
   return explicitCodingAgent || fallbackCodingAgent || getCachedDefaultProviderId() || '';
-}
-
-/**
- * Reverse-map a model id to a capability tier via the cached catalog rows.
- * Returns undefined before catalog hydration (callers then keep the explicit
- * model / tier from the file, same as an unknown model today).
- */
-function getModelTierFromModel(modelId: string, preferredProviderId?: string): ModelTier | undefined {
-  const catalog = getCachedProviderCatalog();
-  if (!catalog) return undefined;
-  return getModelTierFromCatalog(catalog.providers, modelId, preferredProviderId);
-}
-
-/** The static tier table for a provider from the cached catalog, if any. */
-function getProviderTiers(providerId: string): Record<ModelTier, string> | undefined {
-  return getCachedProviderCatalogEntry(providerId)?.modelTiers;
 }
 
 /**
@@ -310,36 +290,13 @@ export function getEffectiveSpecialist(
   // The cache already merges them with the correct priority.
   const fileSpecialist = findFileSpecialistSync(specialistId, workspacePath);
   if (fileSpecialist) {
-    const codingAgent = resolveSpecialistCodingAgent(
-      fileSpecialist.frontmatter.codingAgent,
-      providerId,
-    );
-    const hasExplicitModel = !!fileSpecialist.frontmatter.model;
-    const hasExplicitTier = !!fileSpecialist.frontmatter.modelTier;
-    let resolvedModel = fileSpecialist.frontmatter.model || '';
-
-    const tier: ModelTier | undefined =
-      fileSpecialist.frontmatter.modelTier ||
-      (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined);
-
-    // Model-first precedence: an explicit model wins; tier-based provider-aware
-    // resolution only applies when the file does not declare a model.
-    if (!hasExplicitModel) {
-      if (tier) {
-        const tiers = getProviderTiers(codingAgent);
-        if (tiers) {
-          resolvedModel = tiers[tier];
-        }
-      }
-    }
-
     return {
       id: fileSpecialist.id,
       name: fileSpecialist.frontmatter.name,
       description: fileSpecialist.frontmatter.description,
-      codingAgent,
-      model: resolvedModel,
-      modelTier: hasExplicitTier ? tier : undefined,
+      codingAgent: resolveSpecialistCodingAgent(fileSpecialist.frontmatter.codingAgent, providerId),
+      model: fileSpecialist.frontmatter.model || '',
+      modelTier: fileSpecialist.frontmatter.modelTier,
       behaviorPrompt: fileSpecialist.behaviorPrompt,
       isCustomized: fileSpecialist.source !== 'bundled',
       roleReminder: fileSpecialist.frontmatter.roleReminder,
@@ -352,26 +309,13 @@ export function getEffectiveSpecialist(
     logger.warn(
       `Using hardcoded fallback for specialist "${specialistId}" — file-based loading may have failed`,
     );
-    const codingAgent = resolveSpecialistCodingAgent(hardcoded.codingAgent, providerId);
-    const hardcodedTier: ModelTier | undefined =
-      hardcoded.defaultModelTier ||
-      (hardcoded.defaultModel
-        ? getModelTierFromModel(hardcoded.defaultModel, codingAgent)
-        : undefined);
-    let resolvedModel = hardcoded.defaultModel || '';
-    if (hardcoded.defaultModelTier && hardcodedTier) {
-      const tiers = getProviderTiers(codingAgent);
-      if (tiers) {
-        resolvedModel = tiers[hardcodedTier];
-      }
-    }
     return {
       id: hardcoded.id,
       name: hardcoded.name,
       description: hardcoded.description,
-      codingAgent,
-      model: resolvedModel,
-      modelTier: hardcoded.defaultModelTier ? hardcodedTier : undefined,
+      codingAgent: resolveSpecialistCodingAgent(hardcoded.codingAgent, providerId),
+      model: hardcoded.defaultModel || '',
+      modelTier: hardcoded.defaultModelTier,
       behaviorPrompt: hardcoded.defaultBehaviorPrompt,
       isCustomized: false,
       roleReminder: hardcoded.roleReminder,
@@ -398,33 +342,13 @@ export function getAllEffectiveSpecialists(
     (file) => {
       seenIds.add(file.id);
 
-      const codingAgent = resolveSpecialistCodingAgent(file.frontmatter.codingAgent, providerId);
-      const hasExplicitModel = !!file.frontmatter.model;
-      const hasExplicitTier = !!file.frontmatter.modelTier;
-      let resolvedModel = file.frontmatter.model || '';
-
-      const tier: ModelTier | undefined =
-        file.frontmatter.modelTier ||
-        (resolvedModel ? getModelTierFromModel(resolvedModel, codingAgent) : undefined);
-
-      // Model-first precedence: an explicit model wins; tier-based provider-aware
-      // resolution only applies when the file does not declare a model.
-      if (!hasExplicitModel) {
-        if (tier) {
-          const tiers = getProviderTiers(codingAgent);
-          if (tiers) {
-            resolvedModel = tiers[tier];
-          }
-        }
-      }
-
       return {
         id: file.id,
         name: file.frontmatter.name,
         description: file.frontmatter.description,
-        codingAgent,
-        model: resolvedModel,
-        modelTier: hasExplicitTier ? tier : undefined,
+        codingAgent: resolveSpecialistCodingAgent(file.frontmatter.codingAgent, providerId),
+        model: file.frontmatter.model || '',
+        modelTier: file.frontmatter.modelTier,
         behaviorPrompt: file.behaviorPrompt,
         isCustomized: file.source !== 'bundled',
         roleReminder: file.frontmatter.roleReminder,
@@ -435,30 +359,17 @@ export function getAllEffectiveSpecialists(
   // Last resort fallback: include any hardcoded SPECIALISTS not already covered
   const hardcodedFallback: EffectiveSpecialist[] = SPECIALISTS.filter(
     (s) => !seenIds.has(s.id),
-  ).map((s) => {
-    const codingAgent = resolveSpecialistCodingAgent(s.codingAgent, providerId);
-    const hardcodedTier: ModelTier | undefined =
-      s.defaultModelTier ||
-      (s.defaultModel ? getModelTierFromModel(s.defaultModel, codingAgent) : undefined);
-    let resolvedModel = s.defaultModel || '';
-    if (s.defaultModelTier && hardcodedTier) {
-      const tiers = getProviderTiers(codingAgent);
-      if (tiers) {
-        resolvedModel = tiers[hardcodedTier];
-      }
-    }
-    return {
-      id: s.id,
-      name: s.name,
-      description: s.description,
-      codingAgent,
-      model: resolvedModel,
-      modelTier: s.defaultModelTier ? hardcodedTier : undefined,
-      behaviorPrompt: s.defaultBehaviorPrompt,
-      isCustomized: false,
-      roleReminder: s.roleReminder,
-    };
-  });
+  ).map((s) => ({
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    codingAgent: resolveSpecialistCodingAgent(s.codingAgent, providerId),
+    model: s.defaultModel || '',
+    modelTier: s.defaultModelTier,
+    behaviorPrompt: s.defaultBehaviorPrompt,
+    isCustomized: false,
+    roleReminder: s.roleReminder,
+  }));
 
   if (hardcodedFallback.length > 0) {
     logger.warn(
@@ -533,109 +444,6 @@ export function getRoleReminder(specialist: EffectiveSpecialist): string {
 
   // Auto-generate from behavior prompt
   return autoGenerateRoleReminder(specialist.behaviorPrompt);
-}
-
-/**
- * Fully resolved specialist configuration for agent creation.
- * This is the single source of truth — all code paths that need specialist
- * config should use resolveSpecialistForAgent() to get this object.
- *
- * Adding a new specialist field? Add it here and in resolveSpecialistForAgent().
- * All callers automatically get the new field.
- */
-export interface ResolvedSpecialistConfig {
-  /** The specialist ID (e.g., 'spec-writer', 'implementor') */
-  specialistId: string;
-  /** Display name (e.g., 'Coordinator', 'Implementor') */
-  specialistName: string;
-  /** ACP provider / runtime backend for this specialist after fallback resolution. */
-  codingAgent: string;
-  /** Resolved model ID (modelTier resolved to concrete model for the provider) */
-  model: string;
-  /**
-   * The capability tier for this specialist's model.
-   * When present, consumers should resolve the model from this tier for their
-   * active provider, rather than using the pre-resolved `model` field directly.
-   * This ensures the model is always valid for the active provider.
-   */
-  modelTier?: ModelTier;
-  /** The specialist's behavior prompt (full markdown instructions) */
-  behaviorPrompt: string;
-  /** Critical constraints reminder (explicit or auto-generated from behaviorPrompt) */
-  roleReminder: string;
-  /**
-   * Default agent type for agents created with this specialist.
-   * Controls which instruction set (agent loop) the agent uses.
-   * If not set, callers should default to 'task-loop'.
-   */
-  defaultAgentType?: string;
-}
-
-/**
- * Central specialist resolver — the ONLY function that should be used to get
- * a complete specialist configuration for agent creation.
- *
- * This replaces the pattern of calling getEffectiveSpecialist() + getRoleReminder()
- * separately and manually assembling the results. By centralizing here, adding a
- * new specialist field is a one-place change instead of updating 5+ code paths.
- *
- * @param specialistId - The specialist ID to resolve
- * @param providerId - Optional fallback coding agent when a specialist does not specify one.
- * @returns Complete specialist config, or null if specialist not found
- */
-export function resolveSpecialistForAgent(
-  specialistId: string,
-  providerId?: string,
-  workspacePath?: string,
-): ResolvedSpecialistConfig | null {
-  // Gate GitHub-dependent specialists behind GitHub auth
-  if (GITHUB_DEPENDENT_SPECIALIST_IDS.has(specialistId) && !isGitHubAuthenticated) {
-    logger.info('resolveSpecialistForAgent: specialist requires GitHub auth', { specialistId });
-    return null;
-  }
-
-  const specialist = getEffectiveSpecialist(specialistId, providerId, workspacePath);
-  if (!specialist) {
-    logger.warn('resolveSpecialistForAgent: specialist not found', {
-      specialistId,
-      fileCacheSize: getCachedFileSpecialists(workspacePath).length,
-      fileCacheIds: getCachedFileSpecialists(workspacePath).map((s) => s.id),
-      workspacePath,
-    });
-    return null;
-  }
-
-  const roleReminder = getRoleReminder(specialist);
-
-  logger.info('resolveSpecialistForAgent: resolved', {
-    specialistId,
-    specialistName: specialist.name,
-    codingAgent: specialist.codingAgent,
-    hasBehaviorPrompt: !!specialist.behaviorPrompt,
-    behaviorPromptLength: specialist.behaviorPrompt?.length || 0,
-    hasRoleReminder: !!roleReminder,
-    isCustomized: specialist.isCustomized,
-    source: getCachedFileSpecialists(workspacePath).find((s) => s.id === specialistId)
-      ? 'file-cache'
-      : 'hardcoded-fallback',
-    workspacePath,
-  });
-
-  // Resolve defaultAgentType from file frontmatter or hardcoded specialist
-  const fileSpec = getCachedFileSpecialists(workspacePath).find((s) => s.id === specialistId);
-  const defaultAgentType =
-    fileSpec?.frontmatter.agentType || getSpecialistById(specialistId)?.defaultAgentType;
-
-  return {
-    specialistId: specialist.id,
-    specialistName: specialist.name,
-    codingAgent: specialist.codingAgent,
-    model: specialist.model,
-    modelTier: specialist.modelTier,
-    behaviorPrompt: specialist.behaviorPrompt,
-    roleReminder,
-    defaultAgentType,
-  };
 }
 
 /**
