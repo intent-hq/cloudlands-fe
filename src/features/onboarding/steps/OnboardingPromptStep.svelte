@@ -65,6 +65,8 @@
     // Handlers
     onSubmit: () => void;
     onEnhancePrompt: () => void;
+    /** §5.31 gate — enhance button hidden when the active provider is not auggie */
+    enhancePromptAvailable?: boolean;
 
     onContentChange: () => void;
     onFocus: () => void;
@@ -100,6 +102,7 @@
     focusedSuggestionIndex = $bindable(),
     onSubmit,
     onEnhancePrompt,
+    enhancePromptAvailable = true,
 
     onContentChange,
     onFocus,
@@ -332,22 +335,24 @@
           />
 
           <div class="absolute top-2 right-2.5 flex items-center">
-            <Button
-              type="button"
-              onclick={onEnhancePrompt}
-              size="icon-xs"
-              variant="ghost-light"
-              disabled={!onboardingInputValue.trim() && !isOnboardingEnhancing}
-              tooltip={m.onboarding_promptStep_enhancePrompt_tooltip()}
-            >
-              {#if isOnboardingEnhancing}
-                <div class="animate-spin">
-                  <Fa icon={faArrowsRotate} size="xs" />
-                </div>
-              {:else}
-                <Fa icon={faMagicWandSparkles} size="xs" />
-              {/if}
-            </Button>
+            {#if enhancePromptAvailable}
+              <Button
+                type="button"
+                onclick={onEnhancePrompt}
+                size="icon-xs"
+                variant="ghost-light"
+                disabled={!onboardingInputValue.trim() && !isOnboardingEnhancing}
+                tooltip={m.onboarding_promptStep_enhancePrompt_tooltip()}
+              >
+                {#if isOnboardingEnhancing}
+                  <div class="animate-spin">
+                    <Fa icon={faArrowsRotate} size="xs" />
+                  </div>
+                {:else}
+                  <Fa icon={faMagicWandSparkles} size="xs" />
+                {/if}
+              </Button>
+            {/if}
 
             <Button
               type="button"

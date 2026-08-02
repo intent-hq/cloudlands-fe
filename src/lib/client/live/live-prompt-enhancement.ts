@@ -20,6 +20,47 @@ export interface EnhancePromptResult {
   mode: "enhance" | "layout";
 }
 
+/**
+ * §5.31 provider-neutrality gate result: with a non-auggie active provider the
+ * daemon returns `{ available: false, reason }` instead of an enhancement.
+ */
+interface EnhancePromptUnavailable {
+  available: false;
+  reason: string;
+}
+
+/**
+ * Typed, catchable error for the §5.31 `{ available: false, reason }` gate —
+ * thrown so callers surface the unavailable case (localized toast) instead of
+ * assigning `undefined` into an input field.
+ */
+export class EnhancePromptUnavailableError extends Error {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super(reason);
+    this.name = "EnhancePromptUnavailableError";
+    this.reason = reason;
+  }
+}
+
+function isUnavailable(
+  result: EnhancePromptResult | EnhancePromptUnavailable,
+): result is EnhancePromptUnavailable {
+  return "available" in result && result.available === false;
+}
+
+/**
+ * FE mirror of the §5.31 provider gate: `agent.enhancePrompt` is auggie-only,
+ * and the daemon treats an unset `providers.active` setting as auggie — so an
+ * empty/null active provider keeps the affordance visible.
+ */
+export function isEnhancePromptAvailable(
+  activeProviderId: string | null | undefined,
+): boolean {
+  return !activeProviderId || activeProviderId === "auggie";
+}
+
 export interface EnhancePromptOptions {
   /** Optional auggie model id (`--model`); omitted → CLI default. */
   model?: string;
@@ -45,10 +86,14 @@ export async function enhancePrompt(
   prompt: string,
   options: EnhancePromptOptions = {},
 ): Promise<EnhancePromptResult> {
-  return backendRequest<EnhancePromptResult>(
+  const result = await backendRequest<EnhancePromptResult | EnhancePromptUnavailable>(
     "agent.enhancePrompt",
     buildParams(prompt, "enhance", options),
   );
+  if (isUnavailable(result)) {
+    throw new EnhancePromptUnavailableError(result.reason);
+  }
+  return result;
 }
 
 /** Run a layout-generation instruction verbatim (`mode: "layout"` — full cleaned reply). */
@@ -56,8 +101,12 @@ export async function generateLayout(
   prompt: string,
   options: EnhancePromptOptions = {},
 ): Promise<EnhancePromptResult> {
-  return backendRequest<EnhancePromptResult>(
+  const result = await backendRequest<EnhancePromptResult | EnhancePromptUnavailable>(
     "agent.enhancePrompt",
     buildParams(prompt, "layout", options),
   );
+  if (isUnavailable(result)) {
+    throw new EnhancePromptUnavailableError(result.reason);
+  }
+  return result;
 }
