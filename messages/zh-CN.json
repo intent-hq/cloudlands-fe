@@ -3959,6 +3959,7 @@
   "layout_commandPalette_terminals_group": "终端",
   "layout_commandPalette_browser_group": "浏览器",
   "layout_commandPalette_files_group": "文件",
+  "layout_commandPalette_messages_group": "聊天消息",
   "layout_commandPalette_otherSpaces_group": "其他空间",
   "settings_backgroundAgents_commit_label": "提交信息",
   "settings_backgroundAgents_commit_description": "根据已暂存的更改生成 Git 提交信息",

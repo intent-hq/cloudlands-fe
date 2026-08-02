@@ -3959,6 +3959,7 @@
   "layout_commandPalette_terminals_group": "終端",
   "layout_commandPalette_browser_group": "瀏覽器",
   "layout_commandPalette_files_group": "檔案",
+  "layout_commandPalette_messages_group": "聊天訊息",
   "layout_commandPalette_otherSpaces_group": "其他空間",
   "settings_backgroundAgents_commit_label": "提交資訊",
   "settings_backgroundAgents_commit_description": "根據已暫存的更改產生 Git 提交資訊",

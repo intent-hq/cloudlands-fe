@@ -26,9 +26,13 @@ export interface WorkspaceObject {
 
 export type MRUEntry = PaletteMruEntry;
 
+/** All palette filter targets: workspace object types plus the palette-only
+ * `workspace` and `message` (chat transcript) sections. */
+export type PaletteFilter = WorkspaceObjectType | "workspace" | "message";
+
 // ── Filter prefix mapping ──────────────────────────────────────────────────
 
-export const FILTER_PREFIXES: Record<string, WorkspaceObjectType | "workspace"> = {
+export const FILTER_PREFIXES: Record<string, PaletteFilter> = {
   "@": "agent",
   "#": "note",
   ">": "terminal",
@@ -36,6 +40,7 @@ export const FILTER_PREFIXES: Record<string, WorkspaceObjectType | "workspace"> 
   "/": "file",
   "*": "workspace",
   "^": "browser",
+  "?": "message",
 };
 
 // ── Pure functions ─────────────────────────────────────────────────────────
@@ -100,7 +105,7 @@ export function formatRelativeTime(dateStr: Date | string | undefined): string {
 
 /** Parse a search query for filter prefix. */
 export function parseQueryFilter(query: string): {
-  filter: WorkspaceObjectType | "workspace" | null;
+  filter: PaletteFilter | null;
   searchTerm: string;
 } {
   const trimmed = query.trim();
@@ -115,6 +120,28 @@ export function parseQueryFilter(query: string): {
   }
 
   return { filter: null, searchTerm: trimmed };
+}
+
+/**
+ * Resolve the secondary title-line segments for a chat-message palette row:
+ * the owning workspace's title and its "owner/repo" label. An unknown
+ * workspace yields no segments; a repository without an owner yields just the
+ * repo name.
+ */
+export function buildMessageTitleSegments(
+  workspace:
+    | { id: string; title?: string; repositoryOwner?: string; repositoryName?: string }
+    | undefined,
+): { workspaceName?: string; repoLabel?: string } {
+  if (!workspace) return {};
+  return {
+    workspaceName: workspace.title || workspace.id,
+    repoLabel: workspace.repositoryName
+      ? workspace.repositoryOwner
+        ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+        : workspace.repositoryName
+      : undefined,
+  };
 }
 
 // ── MRU helpers ────────────────────────────────────────────────────────────

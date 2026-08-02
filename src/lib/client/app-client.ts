@@ -374,16 +374,25 @@ export interface AgentsClient {
    * the newest slice. `nextToken` is opaque and walks backward to older pages
    * (`null` once the oldest message has been returned). Callers that want the
    * full transcript must page until `nextToken` is null.
+   *
+   * Seek (§5.5 `aroundMessageId`, additive): when given, it takes precedence
+   * over any token and resolves to the page CONTAINING that message (an
+   * unknown id is rejected daemon-side with -32602). Seek pages additionally
+   * carry `prevToken` — an opaque FORWARD cursor toward the live tail (pass
+   * it back as the `pageToken` input to fetch the next newer page); it is
+   * normalized to `null` on legacy backward pages, which never carry the key.
    */
   getConversation(
     agentId: string,
     limit?: number,
     pageToken?: string,
+    aroundMessageId?: string,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
     totalMessages: number;
     nextToken: string | null;
+    prevToken: string | null;
   }>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the

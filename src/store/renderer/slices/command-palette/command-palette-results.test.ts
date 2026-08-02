@@ -126,5 +126,35 @@ describe("computeResults", () => {
     const indices = results.map((r: any) => r._idx);
     expect(new Set(indices).size).toBe(indices.length);
   });
+
+  it("appends transcript matches as their own group when searching", () => {
+    const messages = [
+      { id: "ag-1:msg-1", type: "message", label: "Agent 1", description: "hello world", icon },
+    ];
+    const results = computeResults(makeInput({ query: "hello", messages }));
+    const groupLabel = results.find((r: any) => r._groupLabel === "Chat messages");
+    expect(groupLabel).toBeDefined();
+    const messageItems = results.filter((r: any) => r.type === "message");
+    expect(messageItems.length).toBe(1);
+    expect(messageItems[0].description).toBe("hello world");
+  });
+
+  it("shows only transcript matches when message filter is active", () => {
+    const agents = [makeAgent("a1", "Hello Agent")];
+    const messages = [
+      { id: "ag-1:msg-1", type: "message", label: "Agent 1", description: "hello world", icon },
+    ];
+    const results = computeResults(
+      makeInput({ query: "hello", agents, messages, activeFilter: "message" }),
+    );
+    expect(results.filter((r: any) => r.type === "agent").length).toBe(0);
+    expect(results.filter((r: any) => r.type === "message").length).toBe(1);
+  });
+
+  it("omits transcript group when there are no matches", () => {
+    const results = computeResults(makeInput({ query: "hello", messages: [] }));
+    const groupLabel = results.find((r: any) => r._groupLabel === "Chat messages");
+    expect(groupLabel).toBeUndefined();
+  });
 });
 

@@ -3959,6 +3959,7 @@
   "layout_commandPalette_terminals_group": "터미널",
   "layout_commandPalette_browser_group": "브라우저",
   "layout_commandPalette_files_group": "파일",
+  "layout_commandPalette_messages_group": "채팅 메시지",
   "layout_commandPalette_otherSpaces_group": "기타 스페이스",
   "settings_backgroundAgents_commit_label": "커밋 메시지",
   "settings_backgroundAgents_commit_description": "스테이징된 변경 사항에서 git 커밋 메시지를 생성합니다",

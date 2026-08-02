@@ -3959,6 +3959,7 @@
   "layout_commandPalette_terminals_group": "Terminals",
   "layout_commandPalette_browser_group": "Browser",
   "layout_commandPalette_files_group": "Dateien",
+  "layout_commandPalette_messages_group": "Chat-Nachrichten",
   "layout_commandPalette_otherSpaces_group": "Andere Spaces",
   "settings_backgroundAgents_commit_label": "Commit-Nachricht",
   "settings_backgroundAgents_commit_description": "Generiert Git-Commit-Nachrichten aus bereitgestellten Änderungen",

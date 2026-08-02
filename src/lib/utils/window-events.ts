@@ -3,6 +3,7 @@ type KnownWindowEventName =
   | 'agent:scroll-to-turn'
   | 'app:deep-link-create'
   | 'chat:enhance-prompt'
+  | 'chat:open-message'
   | 'chat:open-model-picker'
   | 'chat:resend-message'
   | 'diff-editor:file-saved'
