@@ -4658,6 +4658,7 @@
   "mcp_oauth_registerFailed_error": "注册 OAuth 客户端失败。请手动配置身份验证请求头。",
   "notifications_web_permissionNotGranted_error": "未授予通知权限",
   "notifications_web_unknown_error": "未知错误",
+  "notifications_toast_open_label": "打开",
   "workspace_ops_space_fallback": "空间",
   "workspace_ops_archiveFailed_error": "归档空间失败",
   "workspace_ops_archived_toast": "已归档空间 {title}",

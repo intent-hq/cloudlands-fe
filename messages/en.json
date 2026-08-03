@@ -4659,6 +4659,7 @@
   "mcp_oauth_registerFailed_error": "Failed to register OAuth client. Please configure authentication headers manually.",
   "notifications_web_permissionNotGranted_error": "Notification permission was not granted",
   "notifications_web_unknown_error": "Unknown error",
+  "notifications_toast_open_label": "Open",
   "workspace_ops_space_fallback": "space",
   "workspace_ops_archiveFailed_error": "Failed to archive space",
   "workspace_ops_archived_toast": "Archived space {title}",

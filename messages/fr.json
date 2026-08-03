@@ -4658,6 +4658,7 @@
   "mcp_oauth_registerFailed_error": "Impossible d'enregistrer le client OAuth. Veuillez configurer les en-têtes d'authentification manuellement.",
   "notifications_web_permissionNotGranted_error": "L'autorisation de notification n'a pas été accordée",
   "notifications_web_unknown_error": "Erreur inconnue",
+  "notifications_toast_open_label": "Ouvrir",
   "workspace_ops_space_fallback": "espace",
   "workspace_ops_archiveFailed_error": "Impossible d'archiver l'espace",
   "workspace_ops_archived_toast": "Espace {title} archivé",

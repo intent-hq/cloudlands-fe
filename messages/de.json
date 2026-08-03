@@ -4658,6 +4658,7 @@
   "mcp_oauth_registerFailed_error": "OAuth-Client konnte nicht registriert werden. Bitte konfigurieren Sie die Authentifizierungs-Header manuell.",
   "notifications_web_permissionNotGranted_error": "Benachrichtigungsberechtigung wurde nicht erteilt",
   "notifications_web_unknown_error": "Unbekannter Fehler",
+  "notifications_toast_open_label": "Öffnen",
   "workspace_ops_space_fallback": "Space",
   "workspace_ops_archiveFailed_error": "Space konnte nicht archiviert werden",
   "workspace_ops_archived_toast": "Space {title} archiviert",

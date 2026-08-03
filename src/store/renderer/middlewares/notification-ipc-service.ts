@@ -11,7 +11,11 @@
  * listeners for the two preload-allowed channels:
  *   - `notification:show` → play the notification sound, honoring the sound
  *     settings (`soundEnabled` off = no sound; `soundOnlyWhenUnfocused` on +
- *     document focused = no sound; else play at `volume`).
+ *     document focused = no sound; else play at `volume`). When the payload
+ *     carries a `navigateTarget` (main suppressed the OS banner because the
+ *     app was frontmost — electron#51885: foreground banner clicks never
+ *     fire), also show a clickable in-app toast that routes through the same
+ *     `handleNotificationNavigate` as a native notification click.
  *   - `notification:navigate` → `goto(/workspace/{workspaceId})`, guarding
  *     null/missing payloads. Chief-of-staff payloads (`chief: true` or the
  *     chief virtual workspace id) open the sidebar Assistant panel and select
@@ -24,18 +28,56 @@
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
 import { isElectron } from "$lib/electron-bridge";
-import { handleNotificationNavigate } from "$features/notifications/notification-navigation";
+import {
+  handleNotificationNavigate,
+  type NotificationNavigatePayload,
+} from "$features/notifications/notification-navigation";
 import { playNotificationSoundPerSettings } from "$features/notifications/notification-sound-gate";
+import { m } from "$shared/paraglide/messages.js";
 
 /** Payload of `notification:show` (see notification.service.ts in main). */
 interface NotificationShowEvent {
   title?: string;
   body?: string;
   timestamp?: string;
+  /**
+   * Present only when the main process suppressed the OS banner because the
+   * app was frontmost (electron#51885) — the renderer shows a clickable
+   * in-app toast instead. Absent for sound-only and banner-accompanying
+   * events.
+   */
+  navigateTarget?: NotificationNavigatePayload;
 }
 
-async function handleNotificationShow(_data?: NotificationShowEvent): Promise<void> {
+async function handleNotificationShow(data?: NotificationShowEvent): Promise<void> {
   await playNotificationSoundPerSettings();
+  if (data?.navigateTarget) {
+    await showNavigateToast(data, data.navigateTarget);
+  }
+}
+
+/**
+ * In-app replacement for the suppressed frontmost OS banner: a toast with the
+ * notification title/body whose "Open" action routes through the shared
+ * `handleNotificationNavigate` (same routing as `notification:navigate`,
+ * including the chief → Assistant panel case) and dismisses.
+ */
+async function showNavigateToast(
+  data: NotificationShowEvent,
+  navigateTarget: NotificationNavigatePayload,
+): Promise<void> {
+  try {
+    const { toast } = await import("svelte-sonner");
+    toast(data.title ?? data.body ?? "", {
+      description: data.title ? data.body : undefined,
+      action: {
+        label: m.notifications_toast_open_label(),
+        onClick: () => void handleNotificationNavigate(navigateTarget),
+      },
+    });
+  } catch {
+    // Toast not available - not critical
+  }
 }
 
 export function createNotificationIpcMiddleware(): StoreMiddleware {

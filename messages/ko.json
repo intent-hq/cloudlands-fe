@@ -4658,6 +4658,7 @@
   "mcp_oauth_registerFailed_error": "OAuth 클라이언트를 등록하지 못했습니다. 인증 헤더를 수동으로 구성하세요.",
   "notifications_web_permissionNotGranted_error": "알림 권한이 부여되지 않았습니다",
   "notifications_web_unknown_error": "알 수 없는 오류",
+  "notifications_toast_open_label": "열기",
   "workspace_ops_space_fallback": "스페이스",
   "workspace_ops_archiveFailed_error": "스페이스를 보관하지 못했습니다",
   "workspace_ops_archived_toast": "스페이스 {title} 보관됨",
