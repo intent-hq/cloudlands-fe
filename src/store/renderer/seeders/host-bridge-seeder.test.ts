@@ -845,7 +845,48 @@ describe("misc-ui-events-seeder window:open-new bridge", () => {
     vi.clearAllMocks();
   });
 
-  it("opens the route as a new browsing context off the current origin", async () => {
+  let stashedElectronApi: unknown;
+  const removeElectronApi = () => {
+    stashedElectronApi = (window as any).electronAPI;
+    delete (window as any).electronAPI;
+  };
+  const restoreElectronApi = () => {
+    (window as any).electronAPI = stashedElectronApi;
+  };
+
+  it("forwards the sidebar HUD button's invoke to the real preload bridge (main-process singleton funnel), NOT window.open", async () => {
+    // Regression: the sidebar HUD button invokes window:open-new with
+    // { route: '/hud' }. Bridging that to window.open bypassed the
+    // createAppWindow HUD-singleton funnel in system.ipc.ts (the popup went
+    // through webview-security's setWindowOpenHandler instead), so every
+    // click spawned a fresh HUD window.
+    const bridgeInvoke = vi.fn().mockResolvedValue({ success: true, windowId: 7 });
+    stashedElectronApi = (window as any).electronAPI;
+    (window as any).electronAPI = { invoke: bridgeInvoke };
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+    const response = await mockInvoke("window:open-new", { route: "/hud" });
+
+    expect(bridgeInvoke).toHaveBeenCalledWith("window:open-new", { route: "/hud" });
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(response).toEqual({ success: true, windowId: 7 });
+    openSpy.mockRestore();
+    restoreElectronApi();
+  });
+
+  it("re-throws a bridge {success:false} envelope so the callers' catch-fallback navigation runs", async () => {
+    const bridgeInvoke = vi.fn().mockResolvedValue({ success: false, error: "boom" });
+    stashedElectronApi = (window as any).electronAPI;
+    (window as any).electronAPI = { invoke: bridgeInvoke };
+
+    await expect(mockInvoke("window:open-new", { route: "/workspace/new" })).rejects.toThrow(
+      "boom",
+    );
+    restoreElectronApi();
+  });
+
+  it("opens the route as a new browsing context off the current origin when no preload bridge exists", async () => {
+    removeElectronApi();
     const fakeWindow = { opener: {} } as unknown as Window;
     const openSpy = vi.spyOn(window, "open").mockReturnValue(fakeWindow);
 
@@ -858,14 +899,29 @@ describe("misc-ui-events-seeder window:open-new bridge", () => {
     expect(fakeWindow.opener).toBeNull();
     expect(response).toEqual({ success: true });
     openSpy.mockRestore();
+    restoreElectronApi();
+  });
+
+  it("uses a NAMED target for /hud in the no-bridge fallback so repeated opens reuse one browsing context", async () => {
+    removeElectronApi();
+    const fakeWindow = { opener: {} } as unknown as Window;
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(fakeWindow);
+
+    await mockInvoke("window:open-new", { route: "/hud" });
+
+    expect(openSpy).toHaveBeenCalledWith(`${window.location.origin}/hud`, "intent-hud");
+    openSpy.mockRestore();
+    restoreElectronApi();
   });
 
   it("throws when the open is blocked so the callers' catch-fallback navigation runs", async () => {
+    removeElectronApi();
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
 
     await expect(mockInvoke("window:open-new", { route: "/workspace/new" })).rejects.toThrow(
       "Opening a new window is not available in this build",
     );
     openSpy.mockRestore();
+    restoreElectronApi();
   });
 });

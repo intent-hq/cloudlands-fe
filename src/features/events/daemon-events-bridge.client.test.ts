@@ -4946,16 +4946,13 @@ describe('daemonEventsBridge (workspace:displayStatus-changed → workspace slic
     await seedWorkspace();
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const { WORKSPACE_DISPLAY_STATUS_VALUES } = await import('$shared/types');
 
-    for (const value of [
-      'not_started',
-      'in_progress',
-      'complete',
-      'pr_ready',
-      'pr_open',
-      'pr_merged',
-      'needs_attention',
-    ]) {
+    // The canonical wire list — includes 'idle' (intentd#793) and the
+    // step-0 'needs_attention' rollup (intentd#825).
+    expect(WORKSPACE_DISPLAY_STATUS_VALUES).toContain('idle');
+    expect(WORKSPACE_DISPLAY_STATUS_VALUES).toContain('needs_attention');
+    for (const value of WORKSPACE_DISPLAY_STATUS_VALUES) {
       handler(displayStatusChangedNotification(value));
       const ws = await readWorkspace();
       expect(ws.displayStatus).toBe(value);

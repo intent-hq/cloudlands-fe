@@ -1,6 +1,7 @@
 import type { AgentMessage } from '$shared/types';
 import type { StoreState } from '$store/renderer/types';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 import { derivePendingQuestions, type PendingQuestionSet } from './pending-questions';
 
 /**
@@ -26,7 +27,6 @@ export function deriveWizardPendingQuestions(
   const pending = derivePendingQuestions(messages, isTurnActive, showingPendingUserMessage);
   if (!pending) return null;
   const session = state.agentSessions?.byAgentId[agentId];
-  const dismissedId = session?.metadata?.dismissedQuestionsMessageId;
-  if (typeof dismissedId === 'string' && dismissedId === pending.messageId) return null;
+  if (isQuestionMessageDismissed(session?.metadata, pending.messageId)) return null;
   return pending;
 }

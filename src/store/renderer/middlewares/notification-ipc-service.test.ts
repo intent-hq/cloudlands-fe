@@ -281,6 +281,20 @@ describe('createNotificationIpcMiddleware', () => {
       await expect(navigateHandler({ workspaceId: 'ws-123' })).resolves.toBeUndefined();
     });
 
+    it('no-ops in the HUD window so a stray navigate IPC cannot hijack the /hud route', async () => {
+      window.history.pushState({}, '', '/hud');
+      try {
+        const { navigateHandler } = setupMiddleware();
+
+        await navigateHandler({ workspaceId: 'ws-123' });
+
+        expect(goto).not.toHaveBeenCalled();
+        expect(mockAppStore.dispatch).not.toHaveBeenCalled();
+      } finally {
+        window.history.pushState({}, '', '/');
+      }
+    });
+
     describe('chief-of-staff payloads', () => {
       it('opens the Assistant panel and selects the thread instead of navigating', async () => {
         const { navigateHandler } = setupMiddleware();

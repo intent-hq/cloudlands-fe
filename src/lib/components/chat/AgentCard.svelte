@@ -29,7 +29,7 @@
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-  import { getLastMeaningfulLine } from '$lib/utils/text-utils';
+  import { getLastMeaningfulLine, stripUserMessagePrefixes } from '$lib/utils/text-utils';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
@@ -389,13 +389,8 @@
 
   // Extract display data
   const displayName = $derived(agentData?.name || agentName || m.chat_shared_agentName_fallback());
-  // filter out [Currently viewing: ...] prefixes and @context[...] mentions (raw base64/pipe format)
-  function stripUserMessagePrefixes(text: string): string {
-    return text
-      .replace(/^(\[.*?\]\s*)+/, '')
-      .replace(/@context\[[^\]]*\]/g, '')
-      .trim();
-  }
+  // filter out [Currently viewing: ...] prefixes and @context[...] mentions
+  // (raw base64/pipe format) — shared with the HUD card line derivation.
   const lastUserMsg = $derived(stripUserMessagePrefixes(agentData?.lastUserMessage ?? ''));
   // Pending attention request (discussion/blocker) from the daemon session
   // fields; null when none is pending (retired on agent:updated clear).
