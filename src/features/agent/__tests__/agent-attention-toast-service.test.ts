@@ -39,6 +39,7 @@ vi.mock('$lib/components/ui/toast/AgentAttentionToast.svelte', () => ({
 
 vi.mock('$lib/utils/navigation.client', () => ({
   navigateToRoute: navigateToRouteMock,
+  isHudWindowRenderer: () => false,
 }));
 
 vi.mock('$store/renderer/store', async () => {
