@@ -6823,6 +6823,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
 
   vi.mock('$lib/utils/navigation.client', () => ({
     navigateToRoute: navigateToRouteSpy,
+    isHudWindowRenderer: () => false,
   }));
 
   beforeAll(() => appStore.init());

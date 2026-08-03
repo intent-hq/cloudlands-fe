@@ -39,6 +39,7 @@ vi.mock("$lib/electron-bridge", () => ({
 
 vi.mock("$lib/utils/navigation.client", () => ({
   navigateToRoute: mockNavigateToRoute,
+  isHudWindowRenderer: () => false,
 }));
 
 vi.mock("svelte-sonner", () => ({

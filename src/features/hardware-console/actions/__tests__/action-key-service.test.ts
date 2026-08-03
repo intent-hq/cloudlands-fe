@@ -53,6 +53,7 @@ vi.mock('$lib/client', () => ({
 
 vi.mock('$lib/utils/navigation.client', () => ({
   navigateToRoute: vi.fn(() => Promise.resolve()),
+  isHudWindowRenderer: () => false,
 }));
 
 vi.mock('$lib/utils/window-events', () => ({
