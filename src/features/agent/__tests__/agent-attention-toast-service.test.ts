@@ -8,11 +8,20 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { toastCustomMock, toastDismissMock, navigateToRouteMock, dispatchMock } = vi.hoisted(() => ({
+const {
+  toastCustomMock,
+  toastDismissMock,
+  navigateToRouteMock,
+  dispatchMock,
+  microStatusMock,
+  resolvedKeySlotSelectMock,
+} = vi.hoisted(() => ({
   toastCustomMock: vi.fn(),
   toastDismissMock: vi.fn(),
   navigateToRouteMock: vi.fn(() => Promise.resolve()),
   dispatchMock: vi.fn(),
+  microStatusMock: { value: 'disconnected' },
+  resolvedKeySlotSelectMock: vi.fn((_state: unknown, _workspaceId: string): number | null => null),
 }));
 
 vi.mock('svelte-sonner', () => ({
@@ -39,6 +48,17 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ dispatch: dispatchMock });
 });
 
+// Seams of the connected key-slot resolver (badge gating): manager status +
+// the resolved-slot selector, so the real gate logic in
+// resolveConnectedWorkspaceKeySlot is exercised.
+vi.mock('$features/hardware-console/instance', () => ({
+  getHardwareConsoleManager: () => ({ status: microStatusMock.value }),
+}));
+
+vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
+  selectWorkspaceResolvedKeySlot: { select: resolvedKeySlotSelectMock },
+}));
+
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import {
   agentAttentionToastId,
@@ -64,6 +84,8 @@ function lastCustomCall(): {
 describe('agent-attention-toast-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    microStatusMock.value = 'disconnected';
+    resolvedKeySlotSelectMock.mockImplementation(() => null);
   });
 
   afterEach(() => {
@@ -102,6 +124,58 @@ describe('agent-attention-toast-service', () => {
     expect(call.componentProps.title).toBe('Verifier reports a blocker');
     expect(call.componentProps.kind).toBe('blocker');
     expect(call.class).toBe('!border-destructive/50');
+  });
+
+  describe('micro key-slot badge', () => {
+    const request = {
+      workspaceId: WS,
+      agentId: AGENT,
+      agentName: 'Implementor',
+      kind: 'discussion' as const,
+      reason: 'Need a decision',
+    };
+
+    it('carries the resolved key slot when the micro is connected and the workspace holds a slot', async () => {
+      microStatusMock.value = 'connected';
+      resolvedKeySlotSelectMock.mockImplementation(() => 2);
+
+      await showAgentAttentionToast(request);
+
+      expect(resolvedKeySlotSelectMock).toHaveBeenCalledWith(expect.anything(), WS);
+      expect(lastCustomCall().componentProps.keySlot).toBe(2);
+    });
+
+    it('carries no key slot when the micro is disconnected, even if the workspace holds one', async () => {
+      microStatusMock.value = 'disconnected';
+      resolvedKeySlotSelectMock.mockImplementation(() => 2);
+
+      await showAgentAttentionToast(request);
+
+      expect(resolvedKeySlotSelectMock).not.toHaveBeenCalled();
+      expect(lastCustomCall().componentProps.keySlot).toBeNull();
+    });
+
+    it('carries no key slot when connected but the workspace holds no slot', async () => {
+      microStatusMock.value = 'connected';
+      resolvedKeySlotSelectMock.mockImplementation(() => null);
+
+      await showAgentAttentionToast(request);
+
+      expect(lastCustomCall().componentProps.keySlot).toBeNull();
+    });
+
+    it('still shows the toast (badge-less) when slot resolution throws', async () => {
+      microStatusMock.value = 'connected';
+      resolvedKeySlotSelectMock.mockImplementation(() => {
+        throw new Error('resolver boom');
+      });
+
+      await showAgentAttentionToast(request);
+
+      const call = lastCustomCall();
+      expect(call.componentProps.title).toBe('Implementor requests a discussion');
+      expect(call.componentProps.keySlot).toBeNull();
+    });
   });
 
   it('re-raised requests update the same toast in place (stable id, no stacking)', async () => {

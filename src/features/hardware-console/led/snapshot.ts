@@ -94,6 +94,15 @@ const COMPLETE_DISPLAY_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Work-in-progress gate shared by the key derivation and the ambient scan:
+ * live agent activity, or the daemon-derived `in_progress` displayStatus
+ * (which folds in active background hooks — intentd#856).
+ */
+function isWorkspaceRunning(workspace: Workspace): boolean {
+  return workspace.activity === 'agent_running' || workspace.displayStatus === 'in_progress';
+}
+
+/**
  * Per-key state for one assigned workspace (spec agent-key LED palette).
  * Precedence: failed > attention > running > complete > idle.
  */
@@ -103,7 +112,7 @@ export function deriveAgentKeyLedState(
 ): AgentKeyLedState {
   if (agents.some(hasFailed)) return 'failed';
   if (agents.some(needsAttention)) return 'attention';
-  if (workspace.activity === 'agent_running') return 'running';
+  if (isWorkspaceRunning(workspace)) return 'running';
   if (workspace.displayStatus && COMPLETE_DISPLAY_STATUSES.has(workspace.displayStatus)) {
     return 'complete';
   }
@@ -139,7 +148,7 @@ export function buildHardwareLedSnapshot(state: LedSnapshotState): HardwareLedSn
       ambient = 'attention';
       break;
     }
-    if (workspace.activity === 'agent_running') ambient = 'breath';
+    if (isWorkspaceRunning(workspace)) ambient = 'breath';
   }
 
   return { keys, ambient };

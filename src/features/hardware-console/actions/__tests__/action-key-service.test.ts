@@ -116,14 +116,14 @@ describe('handleActionKeyPress', () => {
     );
   });
 
-  it('no-ops with the no-agents hint when no agents exist anywhere', () => {
-    // Slot 5 (ACT11) = cycle-workspace-agents; no agents anywhere → unavailable.
+  it('no-ops with the no-attention-agents hint when no agents need attention', () => {
+    // Slot 5 (ACT11) = cycle-attention-agents; nothing needing attention → unavailable.
     const showUnavailableHint = vi.fn();
     const result = handleActionKeyPress('ACT11', { showUnavailableHint });
     expect(result).toBeNull();
     expect(showUnavailableHint).toHaveBeenCalledTimes(1);
     expect(showUnavailableHint).toHaveBeenCalledWith(
-      m.hardwareConsole_actionKey_noAgents_message(),
+      m.hardwareConsole_actionKey_noAttentionAgents_message(),
     );
     expect(dispatched).toHaveLength(0);
   });
@@ -206,14 +206,14 @@ describe('handleActionKeyPress', () => {
     expect(handleActionKeyPress('ACT11', {}, 'codex-micro')).toBe('new-workspace');
   });
 
-  it('no-ops with the no-attention-agents hint on the default ACT12 slot', () => {
-    // CM2 slot 6 (ACT12, Settings row 4 key 3) = cycle-attention-agents;
-    // nothing needing attention → specific toast.
+  it('no-ops with the no-unread-agents hint on the default ACT12 slot', () => {
+    // CM2 slot 6 (ACT12, Settings row 4 key 3) = cycle-unread-agents;
+    // nothing unread → specific toast.
     const showUnavailableHint = vi.fn();
     const result = handleActionKeyPress('ACT12', { showUnavailableHint });
     expect(result).toBeNull();
     expect(showUnavailableHint).toHaveBeenCalledWith(
-      m.hardwareConsole_actionKey_noAttentionAgents_message(),
+      m.hardwareConsole_actionKey_noUnreadAgents_message(),
     );
     expect(dispatched).toHaveLength(0);
   });
@@ -250,6 +250,33 @@ describe('handleActionKeyPress', () => {
     expect(showUnavailableHint).toHaveBeenCalledWith(
       m.hardwareConsole_actionKey_noOtherInProgressAgents_message(),
     );
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it('a successful cycle press shows the action HUD with the action label', () => {
+    // Codex slot 4 (ACT10) = cycle-unread-agents.
+    mockState.workspaceAgents.byWorkspaceId = {
+      'ws-1': { agentIds: ['a-1'], foregroundAgentIds: ['a-1'], activeAgentId: null },
+    };
+    mockState.agentSessions.byAgentId = {
+      'a-1': { id: 'a-1', status: 'Completed', messages: [] } as never,
+    };
+    mockState.unreadTracking = { unreadAgentIds: ['a-1'] };
+    const result = handleActionKeyPress('ACT10', {}, 'codex-micro');
+    expect(result).toBe('cycle-unread-agents');
+    expect(dispatched).toContainEqual(
+      expect.objectContaining({
+        type: 'hardwareConsole/actionHudShown',
+        payload: [m.hardwareConsole_actionKey_cycleUnreadAgents_label()],
+      }),
+    );
+  });
+
+  it('does not show the action HUD on unavailable cycle presses', () => {
+    // Slot 5 (ACT11) = cycle-workspace-agents; no agents anywhere → hint only.
+    const showUnavailableHint = vi.fn();
+    expect(handleActionKeyPress('ACT11', { showUnavailableHint })).toBeNull();
+    expect(showUnavailableHint).toHaveBeenCalledTimes(1);
     expect(dispatched).toHaveLength(0);
   });
 });
@@ -305,6 +332,39 @@ describe('composer focus', () => {
       });
       vi.advanceTimersByTime(COMPOSER_FOCUS_DELAYS_MS[COMPOSER_FOCUS_DELAYS_MS.length - 1]);
       expect(dispatchWindowEvent).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('action HUD inactivity timer', () => {
+  it('hides the HUD after the timeout; rapid shows re-arm it', async () => {
+    vi.useFakeTimers();
+    try {
+      (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+        path: 'hardwareConsole.state',
+        value: {},
+      });
+      const { ACTION_HUD_HIDE_MS, createHardwareConsoleActionKeyMiddleware } = await import(
+        '../action-key-service'
+      );
+      const middleware = createHardwareConsoleActionKeyMiddleware();
+      const invoke = middleware({} as never)(vi.fn((action) => action));
+      const hudHiddenDispatches = () =>
+        dispatched.filter((action) => action.type === 'hardwareConsole/actionHudHidden');
+
+      invoke({ type: 'hardwareConsole/actionHudShown', payload: ['Cycle idle agents'] });
+      vi.advanceTimersByTime(ACTION_HUD_HIDE_MS - 1);
+      expect(hudHiddenDispatches()).toHaveLength(0);
+
+      // A rapid second press re-arms the timer.
+      invoke({ type: 'hardwareConsole/actionHudShown', payload: ['Cycle idle agents'] });
+      vi.advanceTimersByTime(ACTION_HUD_HIDE_MS - 1);
+      expect(hudHiddenDispatches()).toHaveLength(0);
+
+      vi.advanceTimersByTime(1);
+      expect(hudHiddenDispatches()).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -401,19 +461,35 @@ describe('persistence key on the daemon bag', () => {
     });
   });
 
-  it('migrates a persisted CM2 mapping equal to the old defaults and writes it back', async () => {
-    const legacyDefaults = [
-      'new-workspace',
-      'new-agent',
-      'see-spec',
-      'switch-window-layouts',
-      'cycle-in-progress-agents',
-      'cycle-workspace-agents',
-      'cycle-unread-agents',
-    ];
+  it.each([
+    [
+      'oldest (pre-attention) defaults',
+      [
+        'new-workspace',
+        'new-agent',
+        'see-spec',
+        'switch-window-layouts',
+        'cycle-in-progress-agents',
+        'cycle-workspace-agents',
+        'cycle-unread-agents',
+      ],
+    ],
+    [
+      'previous (cycle-workspace) defaults',
+      [
+        'new-workspace',
+        'new-agent',
+        'see-spec',
+        'switch-window-layouts',
+        'cycle-in-progress-agents',
+        'cycle-workspace-agents',
+        'cycle-attention-agents',
+      ],
+    ],
+  ])('migrates a persisted CM2 mapping equal to the %s and writes it back', async (_label, priorDefaults) => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       path: 'hardwareConsole.state',
-      value: { actionMappingByModel: { 'creator-micro-2': legacyDefaults } },
+      value: { actionMappingByModel: { 'creator-micro-2': priorDefaults } },
     });
     const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
     const middleware = createHardwareConsoleActionKeyMiddleware();
@@ -491,7 +567,7 @@ describe('persistence key on the daemon bag', () => {
   it('hydrates cycleScopeByFamily with defaults filling missing families', async () => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       path: 'hardwareConsole.state',
-      value: { cycleScopeByFamily: { 'cycle-in-progress-agents': 'top-level' } },
+      value: { cycleScopeByFamily: { 'cycle-in-progress-agents': 'all' } },
     });
     const { createHardwareConsoleActionKeyMiddleware } = await import('../action-key-service');
     const middleware = createHardwareConsoleActionKeyMiddleware();
@@ -504,8 +580,8 @@ describe('persistence key on the daemon bag', () => {
           type: 'hardwareConsole/hydrateCycleScopes',
           payload: [
             {
-              'cycle-in-progress-agents': 'top-level',
-              'cycle-attention-agents': 'all',
+              'cycle-in-progress-agents': 'all',
+              'cycle-attention-agents': 'top-level',
               'cycle-idle-agents': 'top-level',
               'cycle-failed-agents': 'all',
             },

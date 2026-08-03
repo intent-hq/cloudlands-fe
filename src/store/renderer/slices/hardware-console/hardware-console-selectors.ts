@@ -75,3 +75,8 @@ export const selectHardwareConsoleRadialPrompt = store.createSelector(
 export const selectEncoderHudWorkspaceId = store.createSelector(
   (state) => state.hardwareConsole.encoderHudWorkspaceId,
 );
+
+/** Label of the last-fired cycle action key shown by the action HUD; `null` = HUD hidden. */
+export const selectActionHudLabel = store.createSelector(
+  (state) => state.hardwareConsole.actionHudLabel,
+);
