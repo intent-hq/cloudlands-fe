@@ -150,7 +150,7 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
-  it('dedupes repeated down status signals while preserving meaningful transitions and extras', async () => {
+  it('backs off repeated disconnected churn with exponential timing', async () => {
     const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
     invoke.mockImplementation((channel: string) => {
       if (channel === BACKEND.GET_STATUS)
@@ -160,24 +160,22 @@ describe('daemonHealthSaga', () => {
     const { dispatched, task } = startHealthSaga();
     await settle();
 
-    statusHandler!({ status: 'disconnected', transport, reason: 'ECONNREFUSED' });
-    statusHandler!({ status: 'connecting', transport });
     statusHandler!({ status: 'disconnected', transport });
-    statusHandler!({
-      status: 'disconnected',
-      transport,
-      sidecarGaveUp: true,
-      reason: 'restart limit',
-    });
-    statusHandler!({
-      status: 'disconnected',
-      transport,
-      sidecarGaveUp: true,
-      reason: 'restart limit',
-    });
-    statusHandler!({ status: 'connected', transport });
-    statusHandler!({ status: 'connected', reconnected: true, transport });
-    statusHandler!({ status: 'disconnected', transport, reason: 'lost' });
+    statusHandler!({ status: 'disconnected', transport });
+    await settle();
+    expect(statusActions(dispatched)).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(statusActions(dispatched)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+    expect(statusActions(dispatched)).toHaveLength(2);
+
+    statusHandler!({ status: 'disconnected', transport });
+    await settle();
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(statusActions(dispatched)).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
     await settle();
 
     expect(statusActions(dispatched)).toEqual([
@@ -187,11 +185,90 @@ describe('daemonHealthSaga', () => {
         reason: undefined,
       }),
       connectionStatusChanged('disconnected', transport, {
-        sidecarGaveUp: true,
+        sidecarGaveUp: undefined,
         sidecarStartupFailed: undefined,
-        reason: 'restart limit',
+        reason: undefined,
+      }),
+      connectionStatusChanged('disconnected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('cancels and resets disconnected backoff on meaningful status changes', async () => {
+    const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
+    const newTransport = { mode: 'external-uds' as const, target: '/tmp/intentd-next.sock' };
+    invoke.mockImplementation((channel: string) => {
+      if (channel === BACKEND.GET_STATUS)
+        return Promise.resolve({ status: 'disconnected', transport });
+      return Promise.resolve(undefined);
+    });
+    const { dispatched, task } = startHealthSaga();
+    await settle();
+
+    statusHandler!({ status: 'disconnected', transport });
+    await settle();
+    await vi.advanceTimersByTimeAsync(500);
+    statusHandler!({ status: 'connected', transport });
+    statusHandler!({ status: 'connected', reconnected: true, transport });
+    statusHandler!({ status: 'connecting', transport });
+    await settle();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(statusActions(dispatched)).toEqual([
+      connectionStatusChanged('disconnected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
       }),
       connectionStatusChanged('connected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+      connectionStatusChanged('connected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+      connectionStatusChanged('connecting', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+    ]);
+
+    statusHandler!({ status: 'disconnected', transport, reason: 'lost' });
+    statusHandler!({ status: 'disconnected', transport: newTransport });
+    statusHandler!({
+      status: 'disconnected',
+      transport: newTransport,
+      sidecarGaveUp: true,
+      reason: 'restart limit',
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(statusActions(dispatched)).toEqual([
+      connectionStatusChanged('disconnected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+      connectionStatusChanged('connected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+      connectionStatusChanged('connected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+      connectionStatusChanged('connecting', transport, {
         sidecarGaveUp: undefined,
         sidecarStartupFailed: undefined,
         reason: undefined,
@@ -200,6 +277,16 @@ describe('daemonHealthSaga', () => {
         sidecarGaveUp: undefined,
         sidecarStartupFailed: undefined,
         reason: 'lost',
+      }),
+      connectionStatusChanged('disconnected', newTransport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+      connectionStatusChanged('disconnected', newTransport, {
+        sidecarGaveUp: true,
+        sidecarStartupFailed: undefined,
+        reason: 'restart limit',
       }),
     ]);
     task.cancel();

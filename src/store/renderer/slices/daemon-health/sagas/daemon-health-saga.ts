@@ -1,7 +1,8 @@
-import { END, buffers, type EventChannel } from 'redux-saga';
+import { END, buffers, type EventChannel, type Task } from 'redux-saga';
 import {
   actionChannel,
   call,
+  cancel,
   delay,
   fork,
   put,
@@ -42,6 +43,8 @@ import type {
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 const POLL_INTERVAL_MS = 10_000;
+const INITIAL_DISCONNECTED_BACKOFF_MS = 1_000;
+const MAX_DISCONNECTED_BACKOFF_MS = 5_000;
 
 interface BackendStatusPayload {
   status: string;
@@ -97,12 +100,11 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
   });
 }
 
-interface StatusSignal {
-  status: string;
-  transport: string;
-  sidecarGaveUp: boolean;
-  sidecarStartupFailed: boolean;
-  reason: string | null;
+interface DisconnectedBackoffState {
+  lastDispatchedSignature: string | null;
+  nextDelayMs: number;
+  pendingPayload: BackendStatusPayload | null;
+  pendingTask: Task | null;
 }
 
 function transportSignature(transport: BackendTransportInfo | undefined): string {
@@ -115,37 +117,78 @@ function transportSignature(transport: BackendTransportInfo | undefined): string
   ].join('\u0000');
 }
 
-function statusBucket(status: string): string {
-  return status === 'connecting' || status === 'disconnected' ? 'down' : status;
-}
-
-function statusSignal(payload: BackendStatusPayload, snapshot: boolean): StatusSignal {
-  const sidecarGaveUp = payload.sidecarGaveUp === true;
-  const sidecarStartupFailed = payload.sidecarStartupFailed === true;
-  const reason =
-    sidecarGaveUp || sidecarStartupFailed
-      ? ((snapshot
-          ? (payload as BackendStatusSnapshot).sidecarStartupFailedReason
-          : payload.reason) ?? null)
-      : null;
+function createDisconnectedBackoffState(): DisconnectedBackoffState {
   return {
-    status: statusBucket(payload.status),
-    transport: transportSignature(payload.transport),
-    sidecarGaveUp,
-    sidecarStartupFailed,
-    reason,
+    lastDispatchedSignature: null,
+    nextDelayMs: INITIAL_DISCONNECTED_BACKOFF_MS,
+    pendingPayload: null,
+    pendingTask: null,
   };
 }
 
-function sameStatusSignal(a: StatusSignal | null, b: StatusSignal): boolean {
+function disconnectedSignature(payload: BackendStatusPayload, snapshot: boolean): string {
+  return [
+    transportSignature(payload.transport),
+    snapshot
+      ? ((payload as BackendStatusSnapshot).sidecarStartupFailedReason ?? '')
+      : (payload.reason ?? ''),
+  ].join('\u0000');
+}
+
+function resetDisconnectedBackoff(state: DisconnectedBackoffState) {
+  state.lastDispatchedSignature = null;
+  state.nextDelayMs = INITIAL_DISCONNECTED_BACKOFF_MS;
+}
+
+function recordStatusDispatch(
+  state: DisconnectedBackoffState,
+  payload: BackendStatusPayload,
+  snapshot: boolean,
+) {
+  if (payload.status !== 'disconnected') {
+    resetDisconnectedBackoff(state);
+    return;
+  }
+  const signature = disconnectedSignature(payload, snapshot);
+  if (state.lastDispatchedSignature !== signature) {
+    state.nextDelayMs = INITIAL_DISCONNECTED_BACKOFF_MS;
+  }
+  state.lastDispatchedSignature = signature;
+}
+
+function shouldBackoffDisconnected(state: DisconnectedBackoffState, payload: BackendStatusPayload) {
   return (
-    !!a &&
-    a.status === b.status &&
-    a.transport === b.transport &&
-    a.sidecarGaveUp === b.sidecarGaveUp &&
-    a.sidecarStartupFailed === b.sidecarStartupFailed &&
-    a.reason === b.reason
+    payload.status === 'disconnected' &&
+    payload.sidecarGaveUp !== true &&
+    payload.sidecarStartupFailed !== true &&
+    state.lastDispatchedSignature === disconnectedSignature(payload, false)
   );
+}
+
+function* cancelPendingDisconnected(state: DisconnectedBackoffState) {
+  if (state.pendingTask) {
+    yield* cancel(state.pendingTask);
+    state.pendingTask = null;
+  }
+  state.pendingPayload = null;
+}
+
+function* flushPendingDisconnected(state: DisconnectedBackoffState) {
+  const delayMs = state.nextDelayMs;
+  yield* delay(delayMs);
+  const payload = state.pendingPayload;
+  state.pendingPayload = null;
+  state.pendingTask = null;
+  if (!payload) return;
+  yield* put(statusAction(payload, false));
+  state.lastDispatchedSignature = disconnectedSignature(payload, false);
+  state.nextDelayMs = Math.min(delayMs * 2, MAX_DISCONNECTED_BACKOFF_MS);
+}
+
+function* backoffDisconnected(state: DisconnectedBackoffState, payload: BackendStatusPayload) {
+  state.pendingPayload = payload;
+  if (state.pendingTask) return;
+  state.pendingTask = yield* fork(flushPendingDisconnected, state);
 }
 
 function* maybeNotifyVersionMismatch(
@@ -167,15 +210,14 @@ export function* daemonStatusSaga() {
     },
   );
   let versionMismatchNotified = false;
-  let lastStatusSignal: StatusSignal | null = null;
+  const disconnectedBackoff = createDisconnectedBackoffState();
   try {
     // The channel is installed before GET_STATUS so a push racing the snapshot
     // is buffered and applied after the older boot snapshot.
     try {
       const snapshot = yield* call(invokeGetBackendStatus);
-      const signal = statusSignal(snapshot, true);
       yield* put(statusAction(snapshot, true));
-      lastStatusSignal = signal;
+      recordStatusDispatch(disconnectedBackoff, snapshot, true);
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
         snapshot.transport,
@@ -188,10 +230,12 @@ export function* daemonStatusSaga() {
     while (true) {
       const payload: BackendStatusPayload = yield* take(channel);
       if (payload === (END as unknown as BackendStatusPayload)) break;
-      const signal = statusSignal(payload, false);
-      if (!sameStatusSignal(lastStatusSignal, signal)) {
+      if (shouldBackoffDisconnected(disconnectedBackoff, payload)) {
+        yield* backoffDisconnected(disconnectedBackoff, payload);
+      } else {
+        yield* cancelPendingDisconnected(disconnectedBackoff);
         yield* put(statusAction(payload, false));
-        lastStatusSignal = signal;
+        recordStatusDispatch(disconnectedBackoff, payload, false);
       }
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
@@ -200,6 +244,7 @@ export function* daemonStatusSaga() {
       );
     }
   } finally {
+    yield* cancelPendingDisconnected(disconnectedBackoff);
     channel.close();
   }
 }
