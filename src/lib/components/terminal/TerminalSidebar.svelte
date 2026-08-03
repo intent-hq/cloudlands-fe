@@ -778,8 +778,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         .update(workspaceId, editingScriptId, { name: editingScriptName.trim() })
         .then((result) => {
           if (!result.success && result.error) toast.warning(result.error);
-          appStore.dispatch(refreshScripts(workspaceId));
-        });
+        })
+        .catch((error) => logger.error('Script update failed', error))
+        .finally(() => appStore.dispatch(refreshScripts(workspaceId)));
     }
     editingScriptId = null;
     editingScriptName = '';
