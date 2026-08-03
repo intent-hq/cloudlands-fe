@@ -19,6 +19,7 @@ import {
   normalizeDateValue,
   replaceAgentMessageByIdWithDedup,
 } from '$shared/utils/message-dedup';
+import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -253,13 +254,40 @@ type CanonicalAgentSessionUpdates = {
   isProcessing?: boolean;
   isResponding?: boolean;
   stopReason?: string | null;
+  stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
   lastAgentResponse?: string;
   processQueueHint?: AgentSession['processQueueHint'];
+  isWaitingForOtherAgents?: boolean;
+  waitingForAgentIds?: string[];
+  liveTurnOpen?: boolean;
 };
+
+/** Wire statuses that mean a turn is running (lowercase IPC + PascalCase enum). */
+const RUNNING_STATUSES: ReadonlySet<string> = new Set([
+  'active',
+  'Active',
+  'processing',
+  'Processing',
+  'responding',
+  'Responding',
+]);
+
+/** Wire statuses that mean the turn/session ended (lowercase IPC + PascalCase enum). */
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  'idle',
+  'Idle',
+  'completed',
+  'Completed',
+  'failed',
+  'error',
+  'deleted',
+]);
 
 type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
   lastResponseSummary?: unknown;
+  isWaitingForOtherAgents?: unknown;
+  waitingForAgentIds?: unknown;
 };
 
 function canonicalSessionUpdates(
@@ -288,6 +316,9 @@ function canonicalSessionUpdates(
   if (Object.prototype.hasOwnProperty.call(fields, 'stopReason')) {
     updates.stopReason = fields.stopReason;
   }
+  if (Object.prototype.hasOwnProperty.call(fields, 'stopReasonTimestamp')) {
+    updates.stopReasonTimestamp = fields.stopReasonTimestamp;
+  }
   // sessionCorrupted is omitted-when-false on the wire (monorepo#940): apply
   // it when present, and clear any stale flag on a status transition that
   // arrives without it (e.g. after agent.retry recreates the provider session).
@@ -300,19 +331,27 @@ function canonicalSessionUpdates(
     updates.lastAgentResponse = fields.lastResponseSummary;
   }
 
+  if (typeof fields.isWaitingForOtherAgents === 'boolean') {
+    updates.isWaitingForOtherAgents = fields.isWaitingForOtherAgents;
+  }
+  if (Array.isArray(fields.waitingForAgentIds)) {
+    updates.waitingForAgentIds = fields.waitingForAgentIds.filter(
+      (id): id is string => typeof id === 'string',
+    );
+  }
+
+  const isRunningTransition =
+    fields.isActive === true &&
+    typeof fields.status === 'string' &&
+    RUNNING_STATUSES.has(fields.status);
+  if (isRunningTransition && typeof fields.isWaitingForOtherAgents !== 'boolean') {
+    updates.isWaitingForOtherAgents = false;
+    if (!Array.isArray(fields.waitingForAgentIds)) updates.waitingForAgentIds = [];
+  }
+  if (isRunningTransition) updates.liveTurnOpen = true;
+
   // When the status indicates a terminal/idle state, default streaming flags
   // to false unless the caller explicitly provided them.
-  // Compare against both AgentStatus enum values (PascalCase) and lowercase
-  // variants from IPC events — no runtime .toLowerCase() transformation.
-  const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
-    'idle',
-    'Idle',
-    'completed',
-    'Completed',
-    'failed',
-    'error',
-    'deleted',
-  ]);
   if (
     fields.isActive === false ||
     (typeof fields.status === 'string' && TERMINAL_STATUSES.has(fields.status))
@@ -320,6 +359,7 @@ function canonicalSessionUpdates(
     updates.isStreaming = fields.isStreaming ?? false;
     updates.isProcessing = fields.isProcessing ?? false;
     updates.isResponding = fields.isResponding ?? false;
+    updates.liveTurnOpen = false;
   }
 
   // Defensively clear processQueueHint when agent transitions to normal running state
@@ -357,6 +397,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isProcessing: data.isProcessing ?? false,
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.finishReason ?? null,
+        stopReasonTimestamp: data.stopReasonTimestamp ?? null,
       },
     ];
   }
@@ -372,6 +413,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isProcessing: data.isProcessing ?? false,
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.error ?? null,
+        stopReasonTimestamp: data.stopReasonTimestamp ?? null,
       },
     ];
   }
@@ -387,10 +429,14 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         isProcessing: data.isProcessing ?? false,
         isResponding: data.isResponding ?? false,
         stopReason: data.stopReason ?? data.finishReason ?? null,
+        stopReasonTimestamp: data.stopReasonTimestamp ?? null,
       },
     ];
   }
   if (event.type === 'agent:status-changed' || event.type === 'agent:session-updated') {
+    return [agentId, data];
+  }
+  if (event.type === 'agent:subscriptions-changed') {
     return [agentId, data];
   }
   return null;
@@ -480,6 +526,9 @@ type SessionComparisonSnapshot = Pick<
   | 'isWaitingOnTool'
   | 'isWaitingForOtherAgents'
   | 'digest'
+  | 'lastMessageRole'
+  | 'lastUserMessage'
+  | 'lastAgentResponse'
   | 'backendSessionId'
   | 'acpSessionId'
   | 'createdAt'
@@ -491,21 +540,30 @@ type SessionComparisonSnapshot = Pick<
   | 'activationState'
   | 'isActive'
   | 'stopReason'
+  | 'stopReasonTimestamp'
   | 'sessionCorrupted'
-  | 'attentionRequestKind'
-  | 'attentionRequestReason'
-  | 'attentionRequestTimestamp'
 > & {
   messageCount: number;
   lastMessageId: AgentMessage['id'] | undefined;
   lastMessageBlockCount: number;
-  metadataAttentionRequestKind: NonNullable<StoredAgentSession['metadata']>['attentionRequestKind'];
-  metadataAttentionRequestReason: NonNullable<StoredAgentSession['metadata']>['attentionRequestReason'];
-  metadataAttentionRequestTimestamp: NonNullable<StoredAgentSession['metadata']>['attentionRequestTimestamp'];
+  attentionRequestKind: string | undefined;
+  attentionRequestReason: string | undefined;
+  attentionRequestTimestamp: string | undefined;
+  completionReport: string | undefined;
+  taskNoteId: string | undefined;
+  dismissedQuestionsMessageId: string | undefined;
+  sandboxId: string | undefined;
+  sandboxPath: string | undefined;
+  sandboxBranch: string | undefined;
+  waitingForAgentIdsKey: string | undefined;
+  turnInFlight: boolean | undefined;
+  liveTurnOpen: boolean | undefined;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
   const messages = session.messages;
+  const attentionRequest = getAgentAttentionRequest(session);
+  const metadata = session.metadata;
   return {
     status: session.status,
     name: session.name,
@@ -516,6 +574,9 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     isWaitingOnTool: session.isWaitingOnTool,
     isWaitingForOtherAgents: session.isWaitingForOtherAgents,
     digest: session.digest,
+    lastMessageRole: session.lastMessageRole,
+    lastUserMessage: session.lastUserMessage,
+    lastAgentResponse: session.lastAgentResponse,
     backendSessionId: session.backendSessionId,
     acpSessionId: session.acpSessionId,
     createdAt: session.createdAt,
@@ -527,10 +588,28 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     activationState: session.activationState,
     isActive: session.isActive,
     stopReason: session.stopReason,
+    stopReasonTimestamp: session.stopReasonTimestamp,
     sessionCorrupted: session.sessionCorrupted,
-    attentionRequestKind: session.attentionRequestKind,
-    attentionRequestReason: session.attentionRequestReason,
-    attentionRequestTimestamp: session.attentionRequestTimestamp,
+    attentionRequestKind: attentionRequest?.kind,
+    attentionRequestReason: attentionRequest?.reason,
+    attentionRequestTimestamp: attentionRequest?.timestamp,
+    completionReport:
+      typeof metadata?.completionReport === 'string' ? metadata.completionReport : undefined,
+    taskNoteId: typeof metadata?.taskNoteId === 'string' ? metadata.taskNoteId : undefined,
+    dismissedQuestionsMessageId:
+      typeof metadata?.dismissedQuestionsMessageId === 'string'
+        ? metadata.dismissedQuestionsMessageId
+        : undefined,
+    sandboxId: typeof metadata?.sandboxId === 'string' ? metadata.sandboxId : undefined,
+    sandboxPath: typeof metadata?.sandboxPath === 'string' ? metadata.sandboxPath : undefined,
+    sandboxBranch:
+      typeof metadata?.sandboxBranch === 'string' ? metadata.sandboxBranch : undefined,
+    waitingForAgentIdsKey: Array.isArray(session.waitingForAgentIds)
+      ? session.waitingForAgentIds.join(',')
+      : undefined,
+    turnInFlight:
+      (session as { turnInFlight?: unknown }).turnInFlight === true ? true : undefined,
+    liveTurnOpen: session.liveTurnOpen === true ? true : undefined,
     messageCount: messages.length,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
     // The daemon can append trailing blocks to an already-stored message
@@ -539,9 +618,6 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     // count so re-hydration is not swallowed as a no-op.
     lastMessageBlockCount:
       messages.length === 0 ? 0 : (messages[messages.length - 1]?.contentBlocks?.length ?? 0),
-    metadataAttentionRequestKind: session.metadata?.attentionRequestKind,
-    metadataAttentionRequestReason: session.metadata?.attentionRequestReason,
-    metadataAttentionRequestTimestamp: session.metadata?.attentionRequestTimestamp,
   };
 }
 
@@ -625,6 +701,24 @@ function applySessionUpsert(
       !Object.prototype.hasOwnProperty.call(session, 'stopReason')
     ) {
       finalSession.stopReason = existing.stopReason;
+    }
+    if (
+      existing.stopReasonTimestamp !== undefined &&
+      !Object.prototype.hasOwnProperty.call(session, 'stopReasonTimestamp')
+    ) {
+      finalSession.stopReasonTimestamp = existing.stopReasonTimestamp;
+    }
+    if (
+      existing.lastAgentResponse !== undefined &&
+      !Object.prototype.hasOwnProperty.call(session, 'lastAgentResponse')
+    ) {
+      finalSession.lastAgentResponse = existing.lastAgentResponse;
+    }
+    if (existing.liveTurnOpen === true && finalSession.liveTurnOpen === undefined) {
+      const incomingClosed =
+        session.isActive === false ||
+        (typeof session.status === 'string' && TERMINAL_STATUSES.has(session.status));
+      if (!incomingClosed) finalSession.liveTurnOpen = true;
     }
   }
 
@@ -977,8 +1071,9 @@ agentSessionReducer.with(setAgentStreaming, (state, { payload: [agentId, isStrea
 });
 agentSessionReducer.with(updateAgentDigest, (state, { payload: [, agentId, digest] }) => {
   const session = getSession(state, agentId);
-  if (!session || session.digest === digest) return state;
-  return setSession(state, agentId, { ...session, digest: digest ?? undefined });
+  const nextDigest = digest ?? undefined;
+  if (!session || session.digest === nextDigest) return state;
+  return setSession(state, agentId, { ...session, digest: nextDigest });
 });
 agentSessionReducer.with(renameAgent, (state, { payload: [, agentId, name] }) => {
   const session = getSession(state, agentId);

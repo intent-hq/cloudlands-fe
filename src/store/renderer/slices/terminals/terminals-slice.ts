@@ -54,6 +54,13 @@ export interface WorkspaceTerminalState {
   terminalsLoaded: boolean;
   isLoadingTerminals: boolean;
   recentlyCreatedTerminals: string[];
+  /**
+   * Daemon boot id from the last `terminal.list` snapshot (PROTOCOL §5.13
+   * envelope). Lets the reducer tell a same-boot authoritative empty list
+   * (converge to zero tabs) from a post-restart empty (preserve tabs — the
+   * PTYs respawn via auto-reconnect). `null` until a boot id is seen.
+   */
+  daemonBootId: string | null;
 }
 
 /** Persisted subset of workspace state (terminals are loaded from terminalManager) */
@@ -78,6 +85,7 @@ export const emptyWorkspaceState: WorkspaceTerminalState = {
   terminalsLoaded: false,
   isLoadingTerminals: false,
   recentlyCreatedTerminals: [],
+  daemonBootId: null,
 };
 
 const initialState: TerminalOverlayState = {
@@ -137,11 +145,17 @@ export const saveTerminalMetadata = createAction<[
   createdAt: string,
 ]>("terminals/saveTerminalMetadata");
 
-/** Load workspace terminals data (dispatched by sagas after loading from storage) */
+/**
+ * Load workspace terminals data (dispatched by the hydration paths after a
+ * `terminal.list` fetch). `daemonBootId` is the envelope's boot id (PROTOCOL
+ * §5.13); omitted for legacy bare-array responses, which the reducer treats
+ * as carrying no boot metadata (empty lists then preserve existing tabs).
+ */
 export const loadWorkspaceTerminals = createAction<[
   wsId: string,
   terminals: TerminalTab[],
   savedState?: PersistedWorkspaceState | null,
+  daemonBootId?: string,
 ]>("terminals/loadWorkspaceTerminals");
 
 /** Hydrate height from localStorage (dispatched by init saga) */
@@ -333,8 +347,10 @@ terminalsReducer.with(saveTerminalMetadata, (state, { payload: [wsId, termId, ti
 
     return setWs(state, wsId, { ...ws, terminals });
   });
-terminalsReducer.with(loadWorkspaceTerminals, (state, { payload: [wsId, terminals, savedState] }) => {
+terminalsReducer.with(loadWorkspaceTerminals, (state, { payload: [wsId, terminals, savedState, daemonBootId] }) => {
     const collection = createCollection<TerminalTab, "id">("id", terminals);
+    const prior = getWs(state, wsId);
+    const nextBootId = daemonBootId ?? prior.daemonBootId;
     let wsState: WorkspaceTerminalState;
 
     if (terminals.length > 0) {
@@ -351,7 +367,34 @@ terminalsReducer.with(loadWorkspaceTerminals, (state, { payload: [wsId, terminal
         activeId = collection.ids[0];
       }
 
-      wsState = { terminals: collection, isOpen, activeTerminalId: activeId, terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] };
+      wsState = { terminals: collection, isOpen, activeTerminalId: activeId, terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [], daemonBootId: nextBootId };
+    } else if (prior.terminals.ids.length > 0) {
+      const sameBootAuthoritativeEmpty =
+        daemonBootId !== undefined &&
+        prior.daemonBootId !== null &&
+        daemonBootId === prior.daemonBootId;
+
+      if (!sameBootAuthoritativeEmpty) {
+        if (nextBootId === prior.daemonBootId) return state;
+        return setWs(state, wsId, { ...prior, daemonBootId: nextBootId });
+      }
+
+      const kept = prior.terminals.ids
+        .filter((id) => prior.recentlyCreatedTerminals.includes(id))
+        .map((id) => getItem(prior.terminals, id))
+        .filter((tab): tab is TerminalTab => tab !== undefined);
+      const keptCollection = createCollection<TerminalTab, "id">("id", kept);
+      const activeId =
+        prior.activeTerminalId && getItem(keptCollection, prior.activeTerminalId)
+          ? prior.activeTerminalId
+          : keptCollection.ids[0] ?? null;
+      wsState = {
+        ...prior,
+        terminals: keptCollection,
+        activeTerminalId: activeId,
+        isOpen: keptCollection.ids.length > 0 ? prior.isOpen : false,
+        daemonBootId: nextBootId,
+      };
     } else {
       // Don't restore isOpen when there are no terminals — the panel
       // requires activeTerminalId to render, so isOpen:true with no
@@ -365,6 +408,7 @@ terminalsReducer.with(loadWorkspaceTerminals, (state, { payload: [wsId, terminal
         terminalsLoaded: false,
         isLoadingTerminals: false,
         recentlyCreatedTerminals: [],
+        daemonBootId: nextBootId,
       };
     }
 
