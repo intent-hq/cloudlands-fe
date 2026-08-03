@@ -1656,6 +1656,89 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Image-only sends: empty text + non-empty imageBlocks must reach the wire
+  // (the daemon accepts an empty content string when attachments are present,
+  // PROTOCOL §5.5); empty text with NO attachments stays blocked.
+  // -------------------------------------------------------------------------
+
+  it("image-only send (empty text + imageBlocks) dispatches the lifecycle send with empty content and the attachments", async () => {
+    appStore.dispatch(
+      sendMessage(AGENT, { wsId: WS, text: "", imageBlocks: IMAGE_BLOCKS }),
+    );
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [agentIdArg, contentArg, workspaceArg, optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { imageBlocks?: unknown },
+    ];
+    expect(agentIdArg).toBe(AGENT);
+    expect(contentArg).toBe("");
+    expect(workspaceArg.id).toBe(WS);
+    expect(optionsArg.imageBlocks).toEqual(IMAGE_BLOCKS);
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.streamingStartTime).toBeGreaterThan(0);
+  });
+
+  it("image-only send records lastAttemptedMessage with empty text and the attachments so Try again can resend it", async () => {
+    appStore.dispatch(
+      sendMessage(AGENT, { wsId: WS, text: "", imageBlocks: IMAGE_BLOCKS }),
+    );
+    await flush();
+    await flush();
+
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.lastAttemptedMessage).toEqual({
+      text: "",
+      options: { imageBlocks: IMAGE_BLOCKS },
+    });
+
+    // The recorded image-only attempt is retryable — the empty-text guard
+    // must not treat it as "nothing to retry".
+    lifecycleSendMessage.mockClear();
+    appStore.dispatch(streamEnded(AGENT));
+    seedSession({ isStreaming: false, isResponding: false, status: AgentStatus.Idle });
+    const action = agentSessionRetryLastMessageRequested(AGENT, WS);
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [, contentArg, , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { imageBlocks?: unknown },
+    ];
+    expect(contentArg).toBe("");
+    expect(optionsArg.imageBlocks).toEqual(IMAGE_BLOCKS);
+  });
+
+  it("empty text with NO imageBlocks is still dropped (no wire call, no state change)", async () => {
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "" }));
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "", imageBlocks: [] }));
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).not.toHaveBeenCalled();
+  });
+
+  it("image-only send while the agent is responding routes through agents.queue with empty content and imageBlocks (§5.5)", async () => {
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+
+    appStore.dispatch(
+      sendMessage(AGENT, { wsId: WS, text: "", imageBlocks: IMAGE_BLOCKS }),
+    );
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
+    expect(agentsQueue).toHaveBeenCalledWith(AGENT, "", { imageBlocks: IMAGE_BLOCKS });
+  });
+
   it("#965: retry without recorded attachments still sends with imageBlocks undefined", async () => {
     appStore.dispatch(
       chatLastAttemptedMessageSet(AGENT, {
