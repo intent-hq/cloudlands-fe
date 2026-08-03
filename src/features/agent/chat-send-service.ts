@@ -500,7 +500,11 @@ async function dispatchRetryLastMessage(
     };
   };
   const lastAttempted = state.chatState?.byAgentId[agentId]?.lastAttemptedMessage;
-  if (!lastAttempted || lastAttempted.text.trim().length === 0) {
+  if (
+    !lastAttempted ||
+    (lastAttempted.text.trim().length === 0 &&
+      (lastAttempted.options?.imageBlocks?.length ?? 0) === 0)
+  ) {
     logger.warn("Retry requested but no lastAttemptedMessage is recorded", { agentId, wsId });
     try {
       const { toast } = await import("svelte-sonner");
@@ -554,7 +558,11 @@ async function dispatchRetryWithModel(
     };
   };
   const lastAttempted = state.chatState?.byAgentId[agentId]?.lastAttemptedMessage;
-  if (!lastAttempted || lastAttempted.text.trim().length === 0) {
+  if (
+    !lastAttempted ||
+    (lastAttempted.text.trim().length === 0 &&
+      (lastAttempted.options?.imageBlocks?.length ?? 0) === 0)
+  ) {
     logger.warn("Retry-with-model requested but no lastAttemptedMessage is recorded", {
       agentId,
       wsId,
@@ -670,7 +678,15 @@ export function createChatSendMiddleware(): StoreMiddleware {
           // no window where the entry is removed but never sent (or sent but
           // re-delivered on drain).
           void dispatchSendQueuedNow(agentIdStr, wsIdStr, queuedMessageId);
-        } else if (typeof inner.text === 'string' && inner.text.length > 0) {
+        } else if (
+          typeof inner.text === 'string' &&
+          // Image-only sends (empty text + attachments) must not be dropped
+          // (monorepo image-only send fix): the daemon accepts an empty
+          // content string when imageBlocks are present. Empty text with NO
+          // attachments stays blocked.
+          (inner.text.length > 0 ||
+            (Array.isArray(inner.imageBlocks) && inner.imageBlocks.length > 0))
+        ) {
           const textStr = inner.text;
           const forceSubmit = inner.forceSubmit === true;
           const workspaceContextStr = inner.workspaceContextStr;
