@@ -272,12 +272,13 @@ const WORKSPACE_STATE_PERSIST_ACTIONS = new Set<string>([
 ]);
 
 /**
- * GAP-5 guard: an empty-list `loadWorkspaceTerminals` is a transient
- * hydration (monorepo#1330) — the reducer preserves existing live tabs, and
- * the empty-over-empty pass forces isOpen=false in memory only. It must never
- * durably overwrite a saved open state, so the persist block skips it
- * explicitly rather than relying on the savedState-undefined re-dispatch
- * exiting before the block runs.
+ * GAP-5 guard: an empty-list `loadWorkspaceTerminals` never durably
+ * overwrites a saved open state. Restart/legacy/unknown-boot empties are
+ * transient (monorepo#1330) — the reducer preserves existing live tabs and
+ * only forces isOpen=false in memory on the empty-over-empty pass. Even a
+ * same-boot authoritative empty (converge-to-zero, monorepo#1334) skips the
+ * persist: the in-memory close is enough, and keeping the saved open state
+ * lets the panel restore when terminals reappear.
  */
 function isEmptyTerminalsHydration(action: {
   type: string;
@@ -304,18 +305,19 @@ export function createTerminalPersistenceMiddleware(): StoreMiddleware {
       // Intercept loadWorkspaceTerminals to restore saved state from localStorage
       // (lifecycle-read-service dispatches it without savedState)
       if (action?.type === loadWorkspaceTerminals.type) {
-        const [wsId, terminals, savedState] = action.payload as [
+        const [wsId, terminals, savedState, daemonBootId] = action.payload as [
           string,
           unknown[],
-          PersistedWorkspaceState | null | undefined
+          PersistedWorkspaceState | null | undefined,
+          string | undefined
         ];
         // If savedState is not already provided, load it from localStorage
         if (savedState === undefined) {
           const loadedState = loadWorkspaceState(wsId);
-          // Re-dispatch with the loaded state
+          // Re-dispatch with the loaded state, keeping the envelope's boot id
           return next({
             ...action,
-            payload: [wsId, terminals, loadedState],
+            payload: [wsId, terminals, loadedState, daemonBootId],
           });
         }
       }

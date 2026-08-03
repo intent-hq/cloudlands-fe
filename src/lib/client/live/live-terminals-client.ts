@@ -19,6 +19,7 @@ import type {
   SubscriptionHandler,
   TerminalCreateParams,
   TerminalEventHandlers,
+  TerminalListResult,
   TerminalsClient,
   Unsubscribe,
 } from "../app-client";
@@ -100,21 +101,30 @@ function extractSubscriptionId(params: unknown): string | undefined {
 }
 
 export class LiveTerminalsClient implements TerminalsClient {
-  async list(workspaceId: string): Promise<TerminalTab[]> {
-    const result = await backendRequest<{ terminals?: unknown[] } | unknown[]>("terminal.list", {
-      workspaceId,
-    });
-    const raw = Array.isArray(result)
+  async list(workspaceId: string): Promise<TerminalListResult> {
+    const result = await backendRequest<
+      { terminals?: unknown[]; daemonBootId?: unknown } | unknown[]
+    >("terminal.list", { workspaceId });
+    // Envelope shape (PROTOCOL §5.13): { terminals, daemonBootId }. A legacy
+    // pre-envelope daemon returns a bare array — tolerated by shape detection
+    // and treated as carrying no boot metadata (daemonBootId omitted), which
+    // the store maps to the preserve-tabs behavior.
+    const isLegacyArray = Array.isArray(result);
+    const raw = isLegacyArray
       ? result
       : Array.isArray((result as { terminals?: unknown[] })?.terminals)
         ? (result as { terminals: unknown[] }).terminals
         : [];
+    const bootId =
+      !isLegacyArray && typeof (result as { daemonBootId?: unknown })?.daemonBootId === "string"
+        ? (result as { daemonBootId: string }).daemonBootId
+        : undefined;
     const tabs: TerminalTab[] = [];
     for (const entry of raw) {
       const tab = toTerminalTab(entry, workspaceId);
       if (tab) tabs.push(tab);
     }
-    return tabs;
+    return { terminals: tabs, ...(bootId !== undefined ? { daemonBootId: bootId } : {}) };
   }
 
   async create(params: TerminalCreateParams): Promise<MutationResult> {

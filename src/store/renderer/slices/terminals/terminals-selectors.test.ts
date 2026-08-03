@@ -22,6 +22,7 @@ function terminalState(terminals: TerminalTab[]): TerminalOverlayState {
         terminalsLoaded: true,
         isLoadingTerminals: false,
         recentlyCreatedTerminals: [],
+        daemonBootId: null,
       },
     },
   };
