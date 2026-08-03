@@ -1030,11 +1030,17 @@
   <!-- Spaces Switcher Overlay (Ctrl+Tab) -->
   <SpacesSwitcherOverlay />
 
-  <!-- Joystick Radial Prompt Picker Overlay (hardware console joystick deflection) -->
-  <RadialPromptPickerOverlay />
+  <!-- Joystick Radial Prompt Picker Overlay (hardware console joystick deflection;
+       suppressed in the HUD pop-out window, which is inert to hardware-console input) -->
+  {#if !isHudRoute}
+    <RadialPromptPickerOverlay />
+  {/if}
 
-  <!-- Encoder Cycling HUD (hardware console encoder rotation) -->
-  <EncoderCycleHud />
+  <!-- Encoder Cycling HUD (hardware console encoder rotation; suppressed in the
+       HUD pop-out window, which is inert to hardware-console input) -->
+  {#if !isHudRoute}
+    <EncoderCycleHud />
+  {/if}
 
   <!-- Usage Stats Overlay (sidebar Stats button) -->
   <StatsOverlay />

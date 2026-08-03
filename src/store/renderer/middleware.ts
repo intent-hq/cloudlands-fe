@@ -89,6 +89,7 @@ import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-u
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
 import { createDaemonHealthMiddleware } from "./middlewares/daemon-health-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
+import { isHudWindowRenderer } from "$lib/utils/navigation.client";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
 
@@ -123,6 +124,59 @@ function getReduxLoggerConfig(): { enabled: boolean; webviewName?: string } {
 }
 
 function buildMiddleware(): StoreMiddleware[] {
+  // The chrome-less HUD pop-out window must be fully inert to Codex Micro /
+  // Creator Micro 2 input: only the main window may open the device, decode
+  // input, drive LEDs, or dispatch hardware-triggered effects. Skipping the
+  // hardware-console middlewares here keeps the shared manager from ever
+  // starting in the HUD renderer (and eliminates double-execution of actions
+  // like new-workspace / stop-agent). This module loads in the renderer after
+  // the page URL is set, so `window.location` is reliable at build time; in
+  // non-window contexts the check is false and behavior is unchanged.
+  const hardwareConsoleMiddleware: StoreMiddleware[] = isHudWindowRenderer()
+    ? []
+    : [
+        // Start the shared hardware-console manager (WebHID; no-op where WebHID
+        // is unavailable) and surface connect/disconnect toasts with firmware,
+        // battery, transport, and Codex-mode readiness for supported devices.
+        createHardwareConsoleConnectionToastMiddleware(),
+        // Hydrate the hardware-console integration enable/disable flag from the
+        // shared `hardwareConsole.state` daemon settings bag, persist toggle
+        // changes (read-modify-write so sibling fields survive), and stop/start
+        // the shared manager to match the flag.
+        createHardwareConsoleIntegrationToggleMiddleware(),
+        // Hydrate the hardware-console agent-key pins from the shared
+        // `hardwareConsole.state` daemon settings bag and persist pin changes
+        // (read-modify-write so sibling fields in the bag survive).
+        createHardwareConsoleKeyPinPersistenceMiddleware(),
+        // Wire agent-key presses to workspace switching: first press navigates
+        // to the resolved workspace and lands on the first agent tab requiring
+        // attention (falling back to the current/first open tab); subsequent
+        // presses cycle through that workspace's open tabs in order.
+        createHardwareConsoleKeySwitchMiddleware(),
+        // Drive the device LEDs from store state: per-key v.oai.thstatus frames
+        // for the 6 assigned workspaces plus the v.oai.rgbcfg ambient state
+        // (breath while running, blink-amber on attention, dark when idle);
+        // frames replay on reconnect.
+        createHardwareConsoleLedStatusMiddleware(),
+        // Joystick radial prompt picker: track composer submissions in the
+        // prompt-usage tracker (persisted in the shared hardwareConsole.state
+        // bag, read-modify-write) and open a radial overlay of the top-N prompts
+        // on joystick deflection; release inserts the highlighted prompt at the
+        // cursor of the focused text input (never auto-sends).
+        createHardwareConsolePromptPickerMiddleware(),
+        // Wire action-key presses (ACT06-ACT12) to the mapped v1 actions
+        // (cycle agents, stop agent, see spec, toggle sidebar tabs, new agent,
+        // new workspace, ...); unavailable actions no-op with a subtle toast
+        // hint. The mapping hydrates from the shared hardwareConsole.state bag
+        // and persists changes (read-modify-write so sibling fields survive).
+        createHardwareConsoleActionKeyMiddleware(),
+        // Encoder behaviors: rotate cycles the active workspace by activity
+        // (one step per detent, direction honored, clamped at the list ends,
+        // small HUD while rotating); click opens the All-workspaces sidebar
+        // panel, then cycles its view mode Recent → Repo → Status.
+        createHardwareConsoleEncoderMiddleware(),
+      ];
+
   const baseMiddleware: StoreMiddleware[] = [
     // Guard must be first — reject actions tagged for the wrong store immediately
     createStoreGuardMiddleware("renderer"),
@@ -175,46 +229,8 @@ function buildMiddleware(): StoreMiddleware[] {
     // a Retry All action that redrives each failed agent via `agent.retry`.
     // Toasts update in place per group and auto-dismiss when a group empties.
     createAgentFailureToastMiddleware(),
-    // Start the shared hardware-console manager (WebHID; no-op where WebHID
-    // is unavailable) and surface connect/disconnect toasts with firmware,
-    // battery, transport, and Codex-mode readiness for supported devices.
-    createHardwareConsoleConnectionToastMiddleware(),
-    // Hydrate the hardware-console integration enable/disable flag from the
-    // shared `hardwareConsole.state` daemon settings bag, persist toggle
-    // changes (read-modify-write so sibling fields survive), and stop/start
-    // the shared manager to match the flag.
-    createHardwareConsoleIntegrationToggleMiddleware(),
-    // Hydrate the hardware-console agent-key pins from the shared
-    // `hardwareConsole.state` daemon settings bag and persist pin changes
-    // (read-modify-write so sibling fields in the bag survive).
-    createHardwareConsoleKeyPinPersistenceMiddleware(),
-    // Wire agent-key presses to workspace switching: first press navigates
-    // to the resolved workspace and lands on the first agent tab requiring
-    // attention (falling back to the current/first open tab); subsequent
-    // presses cycle through that workspace's open tabs in order.
-    createHardwareConsoleKeySwitchMiddleware(),
-    // Drive the device LEDs from store state: per-key v.oai.thstatus frames
-    // for the 6 assigned workspaces plus the v.oai.rgbcfg ambient state
-    // (breath while running, blink-amber on attention, dark when idle);
-    // frames replay on reconnect.
-    createHardwareConsoleLedStatusMiddleware(),
-    // Joystick radial prompt picker: track composer submissions in the
-    // prompt-usage tracker (persisted in the shared hardwareConsole.state
-    // bag, read-modify-write) and open a radial overlay of the top-N prompts
-    // on joystick deflection; release inserts the highlighted prompt at the
-    // cursor of the focused text input (never auto-sends).
-    createHardwareConsolePromptPickerMiddleware(),
-    // Wire action-key presses (ACT06-ACT12) to the mapped v1 actions
-    // (cycle agents, stop agent, see spec, toggle sidebar tabs, new agent,
-    // new workspace, ...); unavailable actions no-op with a subtle toast
-    // hint. The mapping hydrates from the shared hardwareConsole.state bag
-    // and persists changes (read-modify-write so sibling fields survive).
-    createHardwareConsoleActionKeyMiddleware(),
-    // Encoder behaviors: rotate cycles the active workspace by activity
-    // (one step per detent, direction honored, clamped at the list ends,
-    // small HUD while rotating); click opens the All-workspaces sidebar
-    // panel, then cycles its view mode Recent → Repo → Status.
-    createHardwareConsoleEncoderMiddleware(),
+    // Hardware-console middlewares (empty in the HUD pop-out window — see above).
+    ...hardwareConsoleMiddleware,
     // Poll system.status periodically (~10s) and listen to backend:status
     // connection events to derive tri-state daemon health (healthy/degraded/down)
     // plus stats payload for the health indicator UI.
