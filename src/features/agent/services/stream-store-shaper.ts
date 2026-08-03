@@ -33,8 +33,6 @@ export interface StreamStoreShaper {
   setAgentStreaming(agentId: string, isStreaming: boolean): void;
   /** Record an extracted agent digest. */
   updateAgentDigest(workspaceId: string, agentId: string, digest: string): void;
-  /** Mark that a new assistant message arrived (unread tracking). */
-  notifyAssistantMessage(agentId: string, workspaceId: string, isBackground: boolean): void;
   /** Append an assistant message to an agent session (restore path). */
   addAgentMessage(agentId: string, message: AgentMessage): void;
   /** Register a workspace entity (test harness). */

@@ -22,7 +22,6 @@ import {
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
   const streamingAgentIds: string[] = [];
-  const unreadAgentIds: string[] = [];
   const agentSessionsByWorkspace: Record<string, AgentSession[]> = {};
   const tasksByWorkspace: Record<string, { id: string; title: string; status: string }[]> = {};
   const diffSummaryByWorkspace: Record<string, unknown> = {};
@@ -51,7 +50,6 @@ const mocks = vi.hoisted(() => {
   return {
     dispatch,
     streamingAgentIds,
-    unreadAgentIds,
     agentSessionsByWorkspace,
     tasksByWorkspace,
     diffSummaryByWorkspace,
@@ -77,11 +75,6 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: mocks.dispatch,
   });
 });
-
-vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
-  selectUnreadAgentIds: vi.fn(() => mocks.readable(mocks.unreadAgentIds)),
-  selectUnreadAgentIdsForWorkspace: { select: vi.fn(() => mocks.unreadAgentIds) },
-}));
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: vi.fn(mocks.createWorkspaceSessionReadable),
@@ -181,7 +174,6 @@ describe('WorkspaceHoverCard', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.streamingAgentIds.length = 0;
-    mocks.unreadAgentIds.length = 0;
     for (const record of [
       mocks.agentSessionsByWorkspace,
       mocks.tasksByWorkspace,
@@ -284,7 +276,6 @@ describe('WorkspaceHoverCard', () => {
 
   it('summarizes available repo, task, PR, and combined change metadata without branch', async () => {
     mocks.streamingAgentIds.push('agent-2');
-    mocks.unreadAgentIds.push('agent-3');
     mocks.agentSessionsByWorkspace['ws-1'] = [
       { id: 'agent-1', name: 'Planner', status: 'active', messages: [] } as AgentSession,
       { id: 'agent-2', name: 'Implementor', status: 'processing', messages: [] } as AgentSession,
@@ -309,6 +300,7 @@ describe('WorkspaceHoverCard', () => {
 
     await renderHoverCard({
       agentSummary: { agentIds: ['agent-1', 'agent-2', 'agent-3'] },
+      attention: 'unread',
       activePullRequest: {
         id: 'pr-12',
         number: 12,

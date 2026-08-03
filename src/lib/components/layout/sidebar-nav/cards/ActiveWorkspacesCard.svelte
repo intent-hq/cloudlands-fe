@@ -28,11 +28,7 @@
   togglePinWorkspace,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
-  import {
-  selectUnreadAgentIds,
-  selectUnreadAgentIdsForWorkspace,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
-  import { clearWorkspaceUnread } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+  import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
   import {
   compareWorkspaceActivityDisplayTimeDesc,
   isWorkspaceActivityWithin,
@@ -43,7 +39,6 @@
 
   const workspaceItems = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
-  const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
 
   interface Props {
@@ -81,26 +76,24 @@
       .sort((a, b) => compareWorkspaceActivityDisplayTimeDesc(a.workspace, b.workspace));
   });
 
-  // Unread workspaces (not streaming, has unread, updated within last day)
+  // Unread workspaces (not streaming, BE attention flag raised, updated within last day)
   const unreadWorkspaces = $derived.by(() => {
     void activeStreamsVersion;
-    void $unreadAgentIds$;
     const now = Date.now();
-    const state = appStore.state;
     return $workspaceItems
       .filter((w) => {
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
           return false;
         const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(w.id);
         if (streamingIds.length > 0) return false; // already in running
-        const wsUnreadIds = selectUnreadAgentIdsForWorkspace.select(state, w.id);
-        if (wsUnreadIds.length === 0) return false;
+        if (w.attention !== 'unread') return false;
         // Only show unread if display activity is within the last day.
         return isWorkspaceActivityWithin(w, now, ONE_DAY_MS);
       })
       .map((w) => ({
         workspace: w,
-        unreadIds: selectUnreadAgentIdsForWorkspace.select(state, w.id),
+        // Attention is workspace-level; show member agents as the unread set.
+        unreadIds: w.agentSummary?.agentIds ?? [],
       }))
       .sort((a, b) => compareWorkspaceActivityDisplayTimeDesc(a.workspace, b.workspace));
   });
@@ -108,7 +101,6 @@
   // Pinned workspaces (not already in running or unread)
   const pinnedWorkspaces = $derived.by(() => {
     void activeStreamsVersion;
-    void $unreadAgentIds$;
     const runningIds = new Set(runningWorkspaces.map((r) => r.workspace.id));
     const unreadIds = new Set(unreadWorkspaces.map((u) => u.workspace.id));
     return $pinnedIds$
@@ -187,13 +179,14 @@
     keyboardNavActive = false;
     highlightedIndex = -1;
     appStore.dispatch(closeAll(false));
-    appStore.dispatch(clearWorkspaceUnread(workspaceId));
     goto(route);
   }
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    appStore.dispatch(clearWorkspaceUnread(workspaceId));
+    // Daemon round-trip (`workspace.markSeen`, §5.1): the resulting
+    // `workspace:attention-changed` event clears the dot on all clients.
+    markWorkspaceSeen(workspaceId);
   }
 
   function handleTogglePin(e: MouseEvent, workspaceId: string) {

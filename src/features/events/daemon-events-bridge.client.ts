@@ -128,7 +128,7 @@ import type {
   TaskStatus,
   Workspace,
 } from '$shared/types';
-import { WorkspaceStatus, isWorkspaceDisplayStatus } from '$shared/types';
+import { WorkspaceStatus, isWorkspaceAttention, isWorkspaceDisplayStatus } from '$shared/types';
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
 import { eventReceived } from '$store/renderer/slices/workspace-events/workspace-events-slice';
@@ -163,6 +163,7 @@ import {
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
+import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-seen';
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
@@ -1176,6 +1177,31 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
 }
 
 /**
+ * `workspace:attention-changed` (PROTOCOL §6.5 / §9.9) carries the
+ * self-sufficient payload `{ workspaceId, attention }` — the daemon emits it
+ * only on an actual change, so the FE mirrors the new value directly into the
+ * workspace entity without a follow-up `workspace.get`. The wire values are
+ * snake_case and match the FE type exactly, so no mapping is needed. The
+ * HUD consumes this same event through its own subscription
+ * (`hud-subscription.ts`) with independent bucket semantics — this handler
+ * only feeds the workspace entity store.
+ */
+function handleAttentionChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const attention = data.attention;
+  if (!isWorkspaceAttention(attention)) return;
+  appStore.dispatch(
+    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { attention })]),
+  );
+  // An unread raise for the workspace the user is currently viewing is marked
+  // seen immediately (fire-and-forget `workspace.markSeen`, §5.1) — no
+  // self-blue-dot while the user is looking at it. The daemon answers with a
+  // fresh attention-changed (`none`) that flows back through this handler.
+  if (attention === 'unread') markWorkspaceSeenIfViewing(workspaceId);
+}
+
+/**
  * Reconcile workspace.activity when a missed edge is detected. The daemon only
  * emits `workspace:activity-changed` on the 0↔1 edge; for coordinator-only
  * workspaces that edge can fire before the FE bridge subscribed or before the
@@ -1245,8 +1271,9 @@ async function reconcileWorkspaceActivity(
  * `WorkspaceProgressCard`'s `listenSync`, but never touched Redux).
  *
  * The wire delta is whitelisted against the applied-delta shape rather than
- * blind-spread, so unknown fields (e.g. `attention`, which has no FE
- * `Workspace` field) are dropped rather than leaking into the entity. Field
+ * blind-spread, so unknown fields are dropped rather than leaking into the
+ * entity (`attention` is deliberately absent from the whitelist — its changes
+ * arrive via the dedicated `workspace:attention-changed` event). Field
  * names match FE `Workspace` camelCase 1:1 with the daemon struct.
  *
  * The legacy `relayLegacyIpcEvent` re-emit (case `"workspace:updated"`) stays
@@ -1864,6 +1891,12 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'workspace:displayStatus-changed') {
     handleDisplayStatusChangedEvent(event, workspaceId);
   }
+  // `workspace:attention-changed` (§6.5 / §9.9) — merge the BE-owned
+  // dismissible attention flag onto the workspace entity so unread indicators
+  // update live without a refetch. Side effect, never an early return.
+  if (type === 'workspace:attention-changed') {
+    handleAttentionChangedEvent(event, workspaceId);
+  }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
@@ -2231,6 +2264,9 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   // current-cycle display status transitions so the sidebar grouping updates
   // without a refetch.
   'workspace:displayStatus-changed',
+  // `workspace:attention-changed` (§6.5 / §9.9) — self-sufficient dismissible
+  // attention flag changes so unread indicators update without a refetch.
+  'workspace:attention-changed',
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',

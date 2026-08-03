@@ -1,14 +1,11 @@
 /**
  * Types for the unread-tracking Redux slice.
  *
- * Manages unread state for agent messages. An agent is marked as "unread" when
- * a new assistant message arrives AND the user is not currently viewing that agent.
- * State is persisted to localStorage via saga for survival across app refreshes.
+ * Only the currently viewed agent is tracked here (it gates the chat stream
+ * lifecycle). Unread state is backend-owned via `workspace.attention`.
  */
 
 export type UnreadTrackingState = {
-  /** Ordered list of agent IDs with unread messages (FIFO insertion order). */
-  unreadAgentIds: string[];
   /** The agent currently being viewed (e.g. open in drawer/panel). */
   currentlyViewedAgentId: string | null;
 };
