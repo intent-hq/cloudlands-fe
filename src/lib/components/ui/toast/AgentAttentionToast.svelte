@@ -2,6 +2,7 @@
   import Fa from 'svelte-fa';
   import { faComments, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
+  import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -14,11 +15,13 @@
     kind: 'discussion' | 'blocker';
     /** ISO timestamp when the request was raised — renders a live "X ago". */
     timestamp?: string;
+    /** Resolved 0-based micro key slot of the workspace (badge hidden when null). */
+    keySlot?: number | null;
     onSwitchTo: () => void;
     onClose: () => void;
   }
 
-  let { title, reason, kind, timestamp, onSwitchTo, onClose }: Props = $props();
+  let { title, reason, kind, timestamp, keySlot = null, onSwitchTo, onClose }: Props = $props();
 </script>
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
@@ -31,12 +34,17 @@
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
-    <p class="text-sm font-medium text-foreground">
-      {title}
-      {#if timestamp}
-        <RelativeTime date={timestamp} class="text-xs font-normal text-muted-foreground ml-1" />
+    <div class="flex items-center gap-1.5">
+      {#if keySlot != null}
+        <MicroKeySlotSquare slot={keySlot} />
       {/if}
-    </p>
+      <p class="text-sm font-medium text-foreground">
+        {title}
+        {#if timestamp}
+          <RelativeTime date={timestamp} class="text-xs font-normal text-muted-foreground ml-1" />
+        {/if}
+      </p>
+    </div>
     <p class="text-sm text-muted-foreground line-clamp-3 mt-0.5">{reason}</p>
 
     <!-- Action buttons -->

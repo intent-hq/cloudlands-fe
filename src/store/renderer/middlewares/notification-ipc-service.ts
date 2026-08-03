@@ -61,6 +61,12 @@ async function handleNotificationShow(data?: NotificationShowEvent): Promise<voi
  * notification title/body whose "Open" action routes through the shared
  * `handleNotificationNavigate` (same routing as `notification:navigate`,
  * including the chief → Assistant panel case) and dismisses.
+ *
+ * When a micro is connected AND the target workspace resolves to a key slot,
+ * the toast renders through a custom component that carries the slot square
+ * (a plain `toast(...)` cannot); otherwise the plain toast is unchanged. Both
+ * the resolver and the component are lazy-imported per middleware
+ * conventions.
  */
 async function showNavigateToast(
   data: NotificationShowEvent,
@@ -68,11 +74,34 @@ async function showNavigateToast(
 ): Promise<void> {
   try {
     const { toast } = await import("svelte-sonner");
-    toast(data.title ?? data.body ?? "", {
-      description: data.title ? data.body : undefined,
-      action: {
-        label: m.notifications_toast_open_label(),
-        onClick: () => void handleNotificationNavigate(navigateTarget),
+    const { resolveConnectedWorkspaceKeySlot } = await import(
+      "$features/hardware-console/assignment/connected-key-slot"
+    );
+    const keySlot = resolveConnectedWorkspaceKeySlot(navigateTarget.workspaceId);
+    if (keySlot === null) {
+      toast(data.title ?? data.body ?? "", {
+        description: data.title ? data.body : undefined,
+        action: {
+          label: m.notifications_toast_open_label(),
+          onClick: () => void handleNotificationNavigate(navigateTarget),
+        },
+      });
+      return;
+    }
+    const { default: NotificationNavigateToast } = await import(
+      "$lib/components/ui/toast/NotificationNavigateToast.svelte"
+    );
+    let toastId: string | number | undefined;
+    toastId = toast.custom(NotificationNavigateToast, {
+      componentProps: {
+        title: data.title ?? data.body ?? "",
+        description: data.title ? data.body : undefined,
+        keySlot,
+        actionLabel: m.notifications_toast_open_label(),
+        onAction: () => {
+          if (toastId !== undefined) toast.dismiss(toastId);
+          void handleNotificationNavigate(navigateTarget);
+        },
       },
     });
   } catch {

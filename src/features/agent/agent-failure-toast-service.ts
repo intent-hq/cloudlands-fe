@@ -101,6 +101,19 @@ function getToastComponent() {
   return toastComponentPromise;
 }
 
+/** Lazily pull the connected key-slot resolver (imports the store/selectors). */
+let keySlotResolverPromise: Promise<
+  (typeof import('$features/hardware-console/assignment/connected-key-slot'))['resolveConnectedWorkspaceKeySlot']
+> | null = null;
+function getKeySlotResolver() {
+  if (!keySlotResolverPromise) {
+    keySlotResolverPromise = import(
+      '$features/hardware-console/assignment/connected-key-slot'
+    ).then((module) => module.resolveConnectedWorkspaceKeySlot);
+  }
+  return keySlotResolverPromise;
+}
+
 /** One-time agent-name read off `appStore.state` (no selector imports). */
 function resolveAgentName(agentId: string): string | undefined {
   const state = appStore.state as {
@@ -124,7 +137,11 @@ function truncate(text: string, maxChars: number): string {
   return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
 }
 
-function buildToastProps(entry: AgentFailureEntry, state: AgentToastState) {
+function buildToastProps(
+  entry: AgentFailureEntry,
+  state: AgentToastState,
+  resolveKeySlot: (workspaceId: string | undefined) => number | null,
+) {
   const agentName = resolveAgentName(entry.agentId);
   const workspaceName = resolveWorkspaceName(entry.workspaceId);
   const title = agentName
@@ -144,6 +161,7 @@ function buildToastProps(entry: AgentFailureEntry, state: AgentToastState) {
       : m.agent_failureToast_retry_label(),
     retrying: state.retrying,
     retryNote: state.retryNote,
+    keySlot: resolveKeySlot(entry.workspaceId),
     onRetry: () => void retryAgent(entry.agentId),
     onSwitchTo: () => void switchToAgent(entry.agentId),
     onClose: () => void closeAgentToast(entry.agentId),
@@ -158,7 +176,11 @@ function buildToastProps(entry: AgentFailureEntry, state: AgentToastState) {
  */
 async function renderEntries(entries: AgentFailureEntry[]): Promise<void> {
   const generation = ++renderGeneration;
-  const [toast, AgentFailureToast] = await Promise.all([getToast(), getToastComponent()]);
+  const [toast, AgentFailureToast, resolveKeySlot] = await Promise.all([
+    getToast(),
+    getToastComponent(),
+    getKeySlotResolver(),
+  ]);
   if (generation !== renderGeneration) return;
 
   const liveAgentIds = new Set(entries.map((entry) => entry.agentId));
@@ -185,7 +207,7 @@ async function renderEntries(entries: AgentFailureEntry[]): Promise<void> {
 
     toast.custom(AgentFailureToast, {
       id: agentFailureToastId(entry.agentId),
-      componentProps: buildToastProps(entry, state),
+      componentProps: buildToastProps(entry, state, resolveKeySlot),
       duration: Number.POSITIVE_INFINITY,
       class: WRAPPER_CLASS,
     });
@@ -203,10 +225,14 @@ function rerenderAgent(agentId: string): void {
 }
 
 async function renderSingleEntry(entry: AgentFailureEntry, state: AgentToastState): Promise<void> {
-  const [toast, AgentFailureToast] = await Promise.all([getToast(), getToastComponent()]);
+  const [toast, AgentFailureToast, resolveKeySlot] = await Promise.all([
+    getToast(),
+    getToastComponent(),
+    getKeySlotResolver(),
+  ]);
   toast.custom(AgentFailureToast, {
     id: agentFailureToastId(entry.agentId),
-    componentProps: buildToastProps(entry, state),
+    componentProps: buildToastProps(entry, state, resolveKeySlot),
     duration: Number.POSITIVE_INFINITY,
     class: WRAPPER_CLASS,
   });

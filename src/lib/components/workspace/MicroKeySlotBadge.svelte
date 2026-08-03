@@ -7,6 +7,7 @@
    * auto-fills). Rendered only while a micro is connected — the parent
    * gates on `microConnectedReadable()`.
    */
+  import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { store as appStore } from '$store/renderer/store';
@@ -75,14 +76,16 @@
   }
 </script>
 
+<!-- The interactive click target composes the shared non-interactive square
+     (identical visual to the toast surfaces); hover states ride the square. -->
 <button
   type="button"
-  class="micro-key-slot-badge flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-border/60 bg-muted/40 text-[10px] font-medium leading-none text-subtle transition-colors hover:bg-muted hover:text-foreground a11y-ignore"
+  class="micro-key-slot-badge shrink-0 cursor-pointer a11y-ignore"
   aria-label={m.workspace_microKeyBadge_ariaLabel({ number: formatInteger(slot + 1) })}
   title={m.workspace_microKeyBadge_tooltip({ number: formatInteger(slot + 1) })}
   onclick={handleClick}
 >
-  {formatInteger(slot + 1)}
+  <MicroKeySlotSquare {slot} class="transition-colors hover:bg-muted hover:text-foreground" />
 </button>
 
 {#if menu}

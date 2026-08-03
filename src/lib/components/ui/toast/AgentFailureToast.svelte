@@ -2,6 +2,7 @@
   import Fa from 'svelte-fa';
   import { faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
+  import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -17,6 +18,8 @@
     retrying: boolean;
     /** Brief note when the retry failed (entry kept in the registry). */
     retryNote?: string;
+    /** Resolved 0-based micro key slot of the workspace (badge hidden when null). */
+    keySlot?: number | null;
     onRetry: () => void;
     /** Navigate to the agent WITHOUT retrying. */
     onSwitchTo: () => void;
@@ -30,6 +33,7 @@
     retryLabel,
     retrying,
     retryNote,
+    keySlot = null,
     onRetry,
     onSwitchTo,
     onClose,
@@ -46,7 +50,12 @@
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
-    <p class="text-sm font-medium text-foreground">{title}</p>
+    <div class="flex items-center gap-1.5">
+      {#if keySlot != null}
+        <MicroKeySlotSquare slot={keySlot} />
+      {/if}
+      <p class="text-sm font-medium text-foreground">{title}</p>
+    </div>
     <p class="text-sm text-muted-foreground line-clamp-2 mt-0.5">{errorSummary}</p>
 
     {#if contextLine}

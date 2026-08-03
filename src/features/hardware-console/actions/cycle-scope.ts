@@ -30,10 +30,19 @@ export type CycleScopeFamilyId = (typeof CYCLE_SCOPE_FAMILY_IDS)[number];
 /** `all` = top-level + sub-agents; `top-level` = foreground agents only. */
 export type CycleScope = 'all' | 'top-level';
 
-/** Factory defaults: everything cycles sub-agents too, except idle. */
+/**
+ * Factory defaults: only failed cycles sub-agents too; in-progress,
+ * attention, and idle walk top-level agents only.
+ *
+ * No hydration migration is needed when these defaults change:
+ * `cycleScopeByFamily` is only written back to the settings bag after an
+ * explicit `setCycleScope` toggle (see the action-key persistence
+ * middleware), so never-toggled users have no persisted record and
+ * `normalizeCycleScopeByFamily` seeds the current defaults for them.
+ */
 export const DEFAULT_CYCLE_SCOPES: Record<CycleScopeFamilyId, CycleScope> = {
-  'cycle-in-progress-agents': 'all',
-  'cycle-attention-agents': 'all',
+  'cycle-in-progress-agents': 'top-level',
+  'cycle-attention-agents': 'top-level',
   'cycle-idle-agents': 'top-level',
   'cycle-failed-agents': 'all',
 };

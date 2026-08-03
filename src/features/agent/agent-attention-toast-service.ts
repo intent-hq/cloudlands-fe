@@ -82,6 +82,19 @@ function getToastComponent() {
   return toastComponentPromise;
 }
 
+/** Lazily pull the connected key-slot resolver (imports the store/selectors). */
+let keySlotResolverPromise: Promise<
+  (typeof import('$features/hardware-console/assignment/connected-key-slot'))['resolveConnectedWorkspaceKeySlot']
+> | null = null;
+function getKeySlotResolver() {
+  if (!keySlotResolverPromise) {
+    keySlotResolverPromise = import(
+      '$features/hardware-console/assignment/connected-key-slot'
+    ).then((module) => module.resolveConnectedWorkspaceKeySlot);
+  }
+  return keySlotResolverPromise;
+}
+
 function truncate(text: string, maxChars: number): string {
   return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
 }
@@ -112,7 +125,11 @@ export async function switchToAttentionAgent(workspaceId: string, agentId: strin
  * blocker. Never auto-dismisses (`duration: Infinity`).
  */
 export async function showAgentAttentionToast(request: AgentAttentionRequest): Promise<void> {
-  const [toast, AgentAttentionToast] = await Promise.all([getToast(), getToastComponent()]);
+  const [toast, AgentAttentionToast, resolveConnectedWorkspaceKeySlot] = await Promise.all([
+    getToast(),
+    getToastComponent(),
+    getKeySlotResolver(),
+  ]);
   const { workspaceId, agentId, agentName, kind, reason, timestamp } = request;
   const title =
     kind === 'blocker'
@@ -125,6 +142,7 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
       reason: truncate(reason, REASON_MAX_CHARS),
       kind,
       timestamp,
+      keySlot: resolveConnectedWorkspaceKeySlot(workspaceId),
       onSwitchTo: () => void switchToAttentionAgent(workspaceId, agentId),
       onClose: () => void dismissAgentAttentionToast(agentId),
     },

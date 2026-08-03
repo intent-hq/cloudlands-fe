@@ -54,6 +54,8 @@ export interface HardwareConsoleState {
   radialPrompt: RadialPromptPickerState;
   /** Workspace targeted by the encoder-rotate HUD; `null` = HUD hidden. */
   encoderHudWorkspaceId: string | null;
+  /** Label of the last-fired cycle action key shown by the action HUD; `null` = HUD hidden. */
+  actionHudLabel: string | null;
   /**
    * Per-model 7-slot action-key mappings (slot 0 = action key ACT06),
    * keyed by device model so a customized CM2 layout never bleeds into the
