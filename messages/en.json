@@ -2336,6 +2336,8 @@
   "hud_card_attnBlocker_label": "Blocker: {text}",
   "hud_card_attnDiscussion_label": "Request Discussion: {text}",
   "hud_card_attnPending_label": "Q: awaiting your answer",
+  "hud_card_attnFailed_label": "ERR: {text}",
+  "hud_card_attnFailedPending_label": "ERR: agent failed",
   "hud_card_open_ariaLabel": "Open workspace {title}",
   "hud_grid_empty_label": "NO WORKSPACES",
   "hud_filter_allWorkspaces_label": "All workspaces",

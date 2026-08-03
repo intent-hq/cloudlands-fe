@@ -7,7 +7,6 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     selectHudAgentStateCounts,
-    selectHudAttnCount,
     selectHudWorkspaceStateBars,
   } from '$store/renderer/slices/hud/hud-selectors';
   import HudPanel from './HudPanel.svelte';
@@ -20,10 +19,6 @@
 
   const agentCounts$ = selectHudAgentStateCounts();
   const workspaceBars$ = selectHudWorkspaceStateBars();
-  // Blink the WORKSPACE-STATS attention row yellow while any workspace needs
-  // input — gated on the SAME card-derived count the header ATTN counter uses
-  // (top-level, non-background; no blink at zero).
-  const attnCount$ = selectHudAttnCount();
 
   const agentTotal = $derived(
     $agentCounts$.running +
@@ -74,11 +69,14 @@
       count: $workspaceBars$.progress,
       color: HUD_STATE_COLORS.running,
     },
+    // ATTENTION and FAILED blink on their OWN displayed counts (like the
+    // footer's hud-stat-blink gating) — static at zero, so a failed fleet
+    // pulses the FAILED row, not ATTENTION.
     {
       label: m.hud_workspaceState_attention_label(),
       count: $workspaceBars$.attention,
       color: HUD_STATE_COLORS.attention,
-      blink: $attnCount$ > 0,
+      blink: $workspaceBars$.attention > 0,
       testId: 'hud-workspace-bar-attention',
     },
     {
@@ -95,6 +93,8 @@
       label: m.hud_workspaceState_failed_label(),
       count: $workspaceBars$.failed,
       color: HUD_STATE_COLORS.failed,
+      blink: $workspaceBars$.failed > 0,
+      testId: 'hud-workspace-bar-failed',
     },
     {
       label: m.hud_workspaceState_completed_label(),

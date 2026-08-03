@@ -2335,6 +2335,8 @@
   "hud_card_attnBlocker_label": "阻礙：{text}",
   "hud_card_attnDiscussion_label": "請求討論：{text}",
   "hud_card_attnPending_label": "問：等待您的回答",
+  "hud_card_attnFailed_label": "ERR：{text}",
+  "hud_card_attnFailedPending_label": "ERR：代理失敗",
   "hud_card_open_ariaLabel": "開啟工作區 {title}",
   "hud_grid_empty_label": "無工作區",
   "hud_filter_allWorkspaces_label": "所有工作區",

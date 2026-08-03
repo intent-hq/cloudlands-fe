@@ -2335,6 +2335,8 @@
   "hud_card_attnBlocker_label": "차단 요인: {text}",
   "hud_card_attnDiscussion_label": "논의 요청: {text}",
   "hud_card_attnPending_label": "질문: 답변 대기 중",
+  "hud_card_attnFailed_label": "ERR: {text}",
+  "hud_card_attnFailedPending_label": "ERR: 에이전트 실패",
   "hud_card_open_ariaLabel": "작업 공간 {title} 열기",
   "hud_grid_empty_label": "작업 공간 없음",
   "hud_filter_allWorkspaces_label": "모든 작업 공간",
