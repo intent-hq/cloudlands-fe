@@ -3,9 +3,10 @@
    * Fleet HUD — standalone chrome-less window shell.
    *
    * Mission-control frame (min 1280x720) faithful to the Fleet HUD v3 mock:
-   * dotted-grid background + scanline sweep, header (logo / clock / fleet
-   * stats / TOK/MIN chart), and the 296px / 1fr / 316px column grid. The
-   * left column renders the SYSTEM / AGENTS / WORKSPACES panels; the center
+   * dotted-grid background + scanline sweep, header (logo / clock), the
+   * 296px / 1fr / 316px column grid, and a bottom footer bar (connection
+   * status / workspace state counters / version info). The left column
+   * renders the SYSTEM / AGENTS / WORKSPACES panels; the center
    * grid and right column are mount slots for their own tasks. Opened from
    * the sidebar HUD button via WINDOW.OPEN_NEW. Windowed by default; the
    * header control enters native full-screen and the EXIT button (only
@@ -21,6 +22,7 @@
   import Fa from 'svelte-fa';
   import { startHudSubscription } from '$features/hud';
   import { HudWorkspaceGrid } from '$features/hud/grid';
+  import HudFooter from '$features/hud/components/HudFooter.svelte';
   import HudHeader from '$features/hud/components/HudHeader.svelte';
   import HudLeftColumn from '$features/hud/components/HudLeftColumn.svelte';
   import RightColumn from '$features/hud/right-column/RightColumn.svelte';
@@ -113,6 +115,9 @@
       <RightColumn />
     </div>
   </main>
+
+  <!-- Bottom bar: connection status / workspace counters / versions -->
+  <HudFooter />
 
   <!-- Event takeover spotlight (queue-sequenced, above everything) -->
   <HudTakeoverOverlay {nowMs} />

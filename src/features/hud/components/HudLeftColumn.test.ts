@@ -114,3 +114,38 @@ describe('HudLeftColumn WORKSPACES-BY-STATE attention blink gating', () => {
     expect(attnRow().classList.contains('hud-state-bar-blink')).toBe(false);
   });
 });
+
+describe('HudLeftColumn AGENTS-BY-STATE rows', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(hudActivated());
+  });
+  afterEach(() => {
+    cleanup();
+    appStore.dispose();
+  });
+
+  it('renders only the RUNNING / FAILED / IDLE bars (no NEEDS ATTENTION or DONE)', () => {
+    render(HudLeftColumn, { props: { nowMs: NOW_MS } });
+
+    appStore.dispatch(
+      setWorkspaceEntity(
+        workspaceWithAgents('ws-1', [
+          { id: 'a-0', status: 'active' },
+          { id: 'a-1', status: 'completed' },
+          { id: 'a-2', status: 'error' },
+        ]),
+      ),
+    );
+    flushSync();
+
+    const agentPanel = screen.getByText('AGENTS BY STATE').closest('.hud-panel') as HTMLElement;
+    const labels = Array.from(agentPanel.querySelectorAll('.hud-state-bar-label')).map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(labels).toEqual(['RUNNING', 'FAILED', 'IDLE']);
+    expect(labels).not.toContain('NEEDS ATTENTION');
+    expect(labels).not.toContain('DONE');
+    expect(screen.queryByTestId('hud-agent-bar-needs-attention')).toBeNull();
+  });
+});

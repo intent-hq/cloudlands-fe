@@ -1,9 +1,10 @@
 <script lang="ts">
   /**
    * SYSTEM panel — intentd online row (pulsing dot), live-ticking uptime,
-   * total agents, and workspace count. Uptime extrapolates from the last
-   * `system.status` snapshot (`uptimeSeconds` + elapsed since fetch) so it
-   * ticks without re-polling; it freezes while the daemon is offline.
+   * total agents, and workspace count. `selectHudSystem` reads the
+   * daemon-health slice (10s `system.status` poll; 'down' → OFFLINE). Uptime
+   * extrapolates from the last poll (`uptimeSeconds` + elapsed since fetch)
+   * so it ticks between polls; it freezes while the daemon is offline.
    */
   import { m } from '$shared/paraglide/messages.js';
   import { selectHudSystem } from '$store/renderer/slices/hud/hud-selectors';

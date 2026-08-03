@@ -14,14 +14,15 @@
   import HudStateBars from './HudStateBars.svelte';
   import HudSystemPanel from './HudSystemPanel.svelte';
   import AttentionPanel from '../right-column/AttentionPanel.svelte';
+  import { HUD_STATE_COLORS } from '../grid/hud-card-meta';
 
   let { nowMs }: { nowMs: number } = $props();
 
   const agentCounts$ = selectHudAgentStateCounts();
   const workspaceBars$ = selectHudWorkspaceStateBars();
-  // Blink the WORKSPACES-BY-STATE attention row yellow while any workspace
-  // needs input — gated on the SAME card-derived count the header ATTN
-  // counter uses (top-level, non-background; no blink at zero).
+  // Blink the WORKSPACE-STATS attention row yellow while any workspace needs
+  // input — gated on the SAME card-derived count the header ATTN counter uses
+  // (top-level, non-background; no blink at zero).
   const attnCount$ = selectHudAttnCount();
 
   const agentTotal = $derived(
@@ -32,62 +33,73 @@
       $agentCounts$.idle,
   );
 
-  // Mock palette: RUNNING primary, NEEDS ATTENTION warning (blinking while
-  // non-zero, like the workspace attention bar), DONE ring, FAILED
-  // destructive, IDLE ghost.
+  // AGENTS BY STATE shows only the live-agent buckets — RUNNING, FAILED, IDLE;
+  // the NEEDS ATTENTION and DONE rows moved to the workspace-level rollups.
+  // Colors come from the canonical HUD_STATE_COLORS table (hud-card-meta).
   const agentBars = $derived([
     {
       label: m.hud_agentState_running_label(),
       count: $agentCounts$.running,
-      color: 'hsl(var(--primary))',
+      color: HUD_STATE_COLORS.running,
     },
-    {
-      label: m.hud_agentState_needsAttention_label(),
-      count: $agentCounts$['needs-attention'],
-      color: 'hsl(var(--warning))',
-      blink: $agentCounts$['needs-attention'] > 0,
-      testId: 'hud-agent-bar-needs-attention',
-    },
-    { label: m.hud_agentState_done_label(), count: $agentCounts$.done, color: 'hsl(var(--ring))' },
     {
       label: m.hud_agentState_failed_label(),
       count: $agentCounts$.failed,
-      color: 'hsl(var(--destructive-foreground))',
+      color: HUD_STATE_COLORS.failed,
     },
     {
       label: m.hud_agentState_idle_label(),
       count: $agentCounts$.idle,
-      color: 'hsl(var(--text-ghost))',
+      color: HUD_STATE_COLORS.idle,
     },
   ]);
 
+  // WORKSPACE STATS — the SAME buckets the header counters use (IDLE,
+  // PROGRESS, ATTENTION, PR OPEN, PR MERGED, FAILED, COMPLETED) so header,
+  // left bars, and grid all agree — canonical HUD_STATE_COLORS tokens.
   const workspaceBars = $derived([
+    {
+      label: m.hud_workspaceState_idle_label(),
+      count: $workspaceBars$.idle,
+      color: HUD_STATE_COLORS.idle,
+    },
+    {
+      label: m.hud_workspaceState_unread_label(),
+      count: $workspaceBars$.unread,
+      color: HUD_STATE_COLORS.unread,
+      testId: 'hud-workspace-bar-unread',
+    },
     {
       label: m.hud_workspaceState_progress_label(),
       count: $workspaceBars$.progress,
-      color: 'hsl(var(--primary))',
-    },
-    {
-      label: m.hud_workspaceState_prOpen_label(),
-      count: $workspaceBars$.prOpen,
-      color: 'hsl(var(--ring))',
-    },
-    {
-      label: m.hud_workspaceState_prMerged_label(),
-      count: $workspaceBars$.prMerged,
-      color: 'hsl(262 60% 62%)',
+      color: HUD_STATE_COLORS.running,
     },
     {
       label: m.hud_workspaceState_attention_label(),
       count: $workspaceBars$.attention,
-      color: 'hsl(var(--warning))',
+      color: HUD_STATE_COLORS.attention,
       blink: $attnCount$ > 0,
       testId: 'hud-workspace-bar-attention',
     },
     {
-      label: m.hud_workspaceState_idle_label(),
-      count: $workspaceBars$.idle,
-      color: 'hsl(var(--text-ghost))',
+      label: m.hud_workspaceState_prOpen_label(),
+      count: $workspaceBars$.prOpen,
+      color: HUD_STATE_COLORS.pr,
+    },
+    {
+      label: m.hud_workspaceState_prMerged_label(),
+      count: $workspaceBars$.prMerged,
+      color: HUD_STATE_COLORS.prMerged,
+    },
+    {
+      label: m.hud_workspaceState_failed_label(),
+      count: $workspaceBars$.failed,
+      color: HUD_STATE_COLORS.failed,
+    },
+    {
+      label: m.hud_workspaceState_completed_label(),
+      count: $workspaceBars$.completed,
+      color: HUD_STATE_COLORS.done,
     },
   ]);
 </script>
@@ -96,7 +108,9 @@
   <HudPanel title={m.hud_system_title()}>
     {#snippet meta()}
       <span class="hud-system-meta">
-        {$workspaceBars$.attention > 0 || agentBars[3].count > 0
+        {$workspaceBars$.attention > 0 ||
+        $workspaceBars$.failed > 0 ||
+        $agentCounts$.failed > 0
           ? m.hud_system_fail_label()
           : m.hud_system_pass_label()}
       </span>
