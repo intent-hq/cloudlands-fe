@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   mockSettingsUpdate: vi.fn(),
   mockCapabilities: vi.fn(),
   mockDispatch: vi.fn(),
+  // Picker service seam: invoke openModal (remote-modal case) so tests drive
+  // selection through the mocked DirectoryPickerModal.
+  pickDirectory: vi.fn(async ({ openModal }: { openModal: () => void }) => openModal()),
+  pickFile: vi.fn(async ({ openModal }: { openModal: () => void }) => openModal()),
 }));
 
 vi.mock('$lib/client', () => ({
@@ -31,6 +35,24 @@ vi.mock('$store/renderer/store', () => ({
 
 vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', () => ({
   refreshAutoCommitSettings: () => ({ type: 'workspaceSettings/refreshAutoCommitSettings' }),
+}));
+
+vi.mock('$lib/directory-picker-service', () => ({
+  pickDirectory: mocks.pickDirectory,
+  pickFile: mocks.pickFile,
+}));
+
+vi.mock('svelte-fa', async () => {
+  const MockFa = (await import('../ui/__tests__/mocks/Fa.svelte')).default;
+  return { default: MockFa, Fa: MockFa };
+});
+
+// The real modal reads directory listings from the store; stub it with the
+// existing mock that renders a "mock select" button reporting /Users/me/src.
+vi.mock('$features/onboarding/messages/DirectoryPickerModal.svelte', async () => ({
+  default: (
+    await import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte')
+  ).default,
 }));
 
 const GIT_CRED_PATH = 'sourceControl.github.exposeGitCredentialToChildren';
@@ -290,6 +312,135 @@ describe('GitWorkspaceSettings — resetToDefaults', () => {
         { path: 'workspace.cowIsolation', value: false },
       ]);
       expect(toggle.checked).toBe(false);
+    });
+  });
+});
+
+
+describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () => {
+  const REDACTED = '********';
+  const withValues = (overrides: Record<string, unknown>) =>
+    baseSettings.map((setting) =>
+      setting.path in overrides ? { ...setting, value: overrides[setting.path] } : setting,
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.mockCapabilities.mockResolvedValue({});
+    mocks.mockSettingsUpdate.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('worktrees location: confirm-OK opens the directory picker and writes the picked path', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    render(GitWorkspaceSettings);
+
+    const browse = await waitFor(() => screen.getByRole('button', { name: 'Choose folder' }));
+    await fireEvent.click(browse);
+
+    // New-workspaces-only warning is shown before any picker opens.
+    expect(screen.getByText(/applies only to newly created workspaces/)).toBeTruthy();
+    expect(mocks.pickDirectory).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await waitFor(() => expect(mocks.pickDirectory).toHaveBeenCalledOnce());
+
+    await fireEvent.click(screen.getByTestId('mock-picker-select'));
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'workspace.worktreesLocation', value: '/Users/me/src' },
+      ]);
+    });
+  });
+
+  it('worktrees location: confirm-Cancel opens no picker and writes nothing', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    render(GitWorkspaceSettings);
+
+    const browse = await waitFor(() => screen.getByRole('button', { name: 'Choose folder' }));
+    await fireEvent.click(browse);
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/applies only to newly created workspaces/)).toBeNull();
+    });
+    expect(mocks.pickDirectory).not.toHaveBeenCalled();
+    expect(mocks.pickFile).not.toHaveBeenCalled();
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('worktrees location: clear writes an empty value', async () => {
+    mocks.mockSettingsList.mockResolvedValue(
+      withValues({ 'workspace.worktreesLocation': '/data/worktrees' }),
+    );
+    render(GitWorkspaceSettings);
+
+    await waitFor(() => screen.getByRole('button', { name: 'Choose folder' }));
+    const [clearWorktrees] = screen.getAllByRole('button', {
+      name: 'Clear path and restore default',
+    });
+    await fireEvent.click(clearWorktrees);
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'workspace.worktreesLocation', value: '' },
+      ]);
+    });
+  });
+
+  it('ssh key path: file picker opens without confirm, hinting ~/.ssh, and writes the picked path', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    render(GitWorkspaceSettings);
+
+    const browse = await waitFor(() => screen.getByRole('button', { name: 'Choose file' }));
+    await fireEvent.click(browse);
+
+    await waitFor(() => expect(mocks.pickFile).toHaveBeenCalledOnce());
+    expect(mocks.pickFile.mock.calls[0][0]).toMatchObject({ defaultPath: '~/.ssh' });
+    // No confirm dialog for the SSH key field.
+    expect(screen.queryByRole('button', { name: 'OK' })).toBeNull();
+
+    await fireEvent.click(screen.getByTestId('mock-picker-select'));
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'workspace.sshKeyPath', value: '/Users/me/src' },
+      ]);
+    });
+  });
+
+  it('ssh key path: clear writes an empty value (not the redacted placeholder)', async () => {
+    mocks.mockSettingsList.mockResolvedValue(withValues({ 'workspace.sshKeyPath': REDACTED }));
+    render(GitWorkspaceSettings);
+
+    await waitFor(() => screen.getByRole('button', { name: 'Choose file' }));
+    const [, clearSsh] = screen.getAllByRole('button', {
+      name: 'Clear path and restore default',
+    });
+    await fireEvent.click(clearSsh);
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'workspace.sshKeyPath', value: '' },
+      ]);
+    });
+  });
+
+  it('never writes the redacted sshKeyPath back when saving an unrelated change', async () => {
+    mocks.mockSettingsList.mockResolvedValue(withValues({ 'workspace.sshKeyPath': REDACTED }));
+    render(GitWorkspaceSettings);
+
+    const autoFetch = await waitFor(() =>
+      screen.getByRole('checkbox', { name: /Auto-fetch updates/ }),
+    );
+    await fireEvent.click(autoFetch);
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'workspace.autoFetch', value: true },
+      ]);
     });
   });
 });
