@@ -275,6 +275,7 @@
       handleLink(anchor.href, {
         workspaceId: $activeWorkspaceId ?? undefined,
         event,
+        rawHref: anchor.getAttribute('href') ?? undefined,
       });
       return;
     }

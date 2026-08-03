@@ -9,6 +9,9 @@ export interface ModifierFlags {
 export interface LinkHandlerOptions {
   /** Workspace ID for panel layout manager lookup. When undefined, HTTP/HTTPS links fall back to the external browser. */
   workspaceId?: WorkspaceId;
+  /** The raw (unresolved) `href` attribute of the clicked anchor, e.g. `src/main.rs`.
+   *  Used to detect schemeless path-like targets that the DOM resolves against the app's own origin. */
+  rawHref?: string;
   /** The original MouseEvent (used to detect Cmd+Click) */
   event?: MouseEvent;
   /** Extracted modifier flags — alternative to passing the full event */
