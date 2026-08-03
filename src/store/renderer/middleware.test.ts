@@ -1,4 +1,5 @@
 import {
+  afterEach,
   beforeEach,
   describe,
   expect,
@@ -978,6 +979,81 @@ describe("store middleware Redux logging gating", () => {
       mocks.specialistsMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
+  });
+});
+
+describe("hardware-console middleware gating in the HUD window", () => {
+  const hardwareConsoleFactories = [
+    mocks.createHardwareConsoleConnectionToastMiddleware,
+    mocks.createHardwareConsoleIntegrationToggleMiddleware,
+    mocks.createHardwareConsoleKeyPinPersistenceMiddleware,
+    mocks.createHardwareConsoleKeySwitchMiddleware,
+    mocks.createHardwareConsoleLedStatusMiddleware,
+    mocks.createHardwareConsolePromptPickerMiddleware,
+    mocks.createHardwareConsoleActionKeyMiddleware,
+    mocks.createHardwareConsoleEncoderMiddleware,
+  ];
+
+  const hardwareConsoleMiddlewares = [
+    mocks.hardwareConsoleConnectionToastMiddleware,
+    mocks.hardwareConsoleIntegrationToggleMiddleware,
+    mocks.hardwareConsoleKeyPinPersistenceMiddleware,
+    mocks.hardwareConsoleKeySwitchMiddleware,
+    mocks.hardwareConsoleLedStatusMiddleware,
+    mocks.hardwareConsolePromptPickerMiddleware,
+    mocks.hardwareConsoleActionKeyMiddleware,
+    mocks.hardwareConsoleEncoderMiddleware,
+  ];
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv("DEV", false);
+    vi.clearAllMocks();
+    setLocalStorageEntries({});
+    delete (window as Window & { intentFlags?: unknown }).intentFlags;
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, "", "/");
+  });
+
+  it("skips all hardware-console middlewares in the HUD renderer (/hud)", async () => {
+    window.history.pushState({}, "", "/hud");
+
+    const { middleware } = await import("./middleware");
+
+    for (const factory of hardwareConsoleFactories) {
+      expect(factory).not.toHaveBeenCalled();
+    }
+    for (const hardwareConsoleMiddleware of hardwareConsoleMiddlewares) {
+      expect(middleware).not.toContain(hardwareConsoleMiddleware);
+    }
+    // The surrounding middlewares close the gap: agent-failure toast is
+    // immediately followed by daemon health.
+    expect(middleware.indexOf(mocks.daemonHealthMiddleware)).toBe(
+      middleware.indexOf(mocks.agentFailureToastMiddleware) + 1,
+    );
+  });
+
+  it("includes all hardware-console middlewares outside the HUD renderer", async () => {
+    window.history.pushState({}, "", "/workspace/ws-123");
+
+    const { middleware } = await import("./middleware");
+
+    for (const factory of hardwareConsoleFactories) {
+      expect(factory).toHaveBeenCalledTimes(1);
+    }
+    const start = middleware.indexOf(mocks.hardwareConsoleConnectionToastMiddleware);
+    expect(start).toBeGreaterThan(-1);
+    expect(middleware.slice(start, start + hardwareConsoleMiddlewares.length)).toEqual(
+      hardwareConsoleMiddlewares,
+    );
+    // Placement is unchanged: between the agent-failure toast and daemon health.
+    expect(middleware.indexOf(mocks.agentFailureToastMiddleware)).toBe(start - 1);
+    expect(middleware.indexOf(mocks.daemonHealthMiddleware)).toBe(
+      start + hardwareConsoleMiddlewares.length,
+    );
   });
 });
 
