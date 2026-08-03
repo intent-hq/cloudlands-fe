@@ -7,6 +7,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import mermaid from 'mermaid';
+  import Portal from '$lib/components/ui/Portal.svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
@@ -252,30 +253,35 @@
 </div>
 
 {#if isFullscreen}
-  <div
-    class="fullscreen-overlay"
-    onclick={handleBackdropClick}
-    onkeydown={(e) => { if (e.key === 'Escape') closeFullscreen(); }}
-    tabindex="-1"
-    role="dialog"
-    aria-modal="true"
-    aria-label={m.markdown_mermaid_fullscreenView_ariaLabel()}
-    bind:this={fullscreenDialogElement}
-  >
-    <div class="fullscreen-content">
-      <button
-        class="close-button"
-        onclick={closeFullscreen}
-        title={m.markdown_mermaid_closeFullscreen_tooltip()}
-        aria-label={m.markdown_mermaid_closeFullscreen_ariaLabel()}
-      >
-        <Fa icon={faTimes} size="sm" />
-      </button>
-      <div class="fullscreen-diagram">
-        {@html fullscreenSvg}
+  <!-- Portal to body so the fixed overlay escapes any ancestor that forms a
+       containing block (e.g. transforms/masks inside collapsible group
+       sections) and covers the whole app window. -->
+  <Portal target="body" zIndex={1000}>
+    <div
+      class="fullscreen-overlay"
+      onclick={handleBackdropClick}
+      onkeydown={(e) => { if (e.key === 'Escape') closeFullscreen(); }}
+      tabindex="-1"
+      role="dialog"
+      aria-modal="true"
+      aria-label={m.markdown_mermaid_fullscreenView_ariaLabel()}
+      bind:this={fullscreenDialogElement}
+    >
+      <div class="fullscreen-content">
+        <button
+          class="close-button"
+          onclick={closeFullscreen}
+          title={m.markdown_mermaid_closeFullscreen_tooltip()}
+          aria-label={m.markdown_mermaid_closeFullscreen_ariaLabel()}
+        >
+          <Fa icon={faTimes} size="sm" />
+        </button>
+        <div class="fullscreen-diagram">
+          {@html fullscreenSvg}
+        </div>
       </div>
     </div>
-  </div>
+  </Portal>
 {/if}
 
 <style>
