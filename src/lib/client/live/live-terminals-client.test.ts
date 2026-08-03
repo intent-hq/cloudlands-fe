@@ -171,49 +171,82 @@ describe("LiveTerminalsClient wire requests (fake transport)", () => {
     });
   });
 
-  it("list forwards terminal.list and maps daemon { id, name, cwd, isExecutingCommand } entries into TerminalTab", async () => {
-    // Daemon shape per PROTOCOL §5.9 / intent-services terminal_ops::list:
+  it("list forwards terminal.list and maps the envelope's { id, name, cwd, isExecutingCommand } entries into TerminalTab, surfacing daemonBootId", async () => {
+    // Daemon envelope per PROTOCOL §5.13: { terminals, daemonBootId } —
     // `name` is the spawn-time display name (e.g. "Setup Script"),
-    // `isExecutingCommand` is the child's liveness.
+    // `isExecutingCommand` is the child's liveness, `daemonBootId` identifies
+    // the daemon boot that produced the snapshot (monorepo#1334).
     mockedRequest.mockResolvedValueOnce({
       terminals: [
         { id: "pty-0", name: "Setup Script", cwd: "/tmp/proj", isExecutingCommand: false },
         { id: "pty-1", name: "Terminal", cwd: "/tmp/proj", isExecutingCommand: true },
       ],
+      daemonBootId: "boot-1",
     });
     const client = new LiveTerminalsClient();
 
-    const tabs = await client.list("ws-1");
+    const result = await client.list("ws-1");
     expect(mockedRequest).toHaveBeenCalledWith("terminal.list", { workspaceId: "ws-1" });
-    expect(tabs).toEqual([
-      {
-        id: "pty-0",
-        name: "Setup Script",
-        workspaceId: "ws-1",
-        createdAt: undefined,
-        isConnected: true,
-        isExecuting: false,
-      },
-      {
-        id: "pty-1",
-        name: "Terminal",
-        workspaceId: "ws-1",
-        createdAt: undefined,
-        isConnected: true,
-        isExecuting: true,
-      },
-    ]);
+    expect(result).toEqual({
+      terminals: [
+        {
+          id: "pty-0",
+          name: "Setup Script",
+          workspaceId: "ws-1",
+          createdAt: undefined,
+          isConnected: true,
+          isExecuting: false,
+        },
+        {
+          id: "pty-1",
+          name: "Terminal",
+          workspaceId: "ws-1",
+          createdAt: undefined,
+          isConnected: true,
+          isExecuting: true,
+        },
+      ],
+      daemonBootId: "boot-1",
+    });
   });
 
   it("list never fabricates an id-derived label when the daemon omits name (no pty-X flicker)", async () => {
-    mockedRequest.mockResolvedValueOnce({ terminals: [{ id: "pty-7" }] });
+    mockedRequest.mockResolvedValueOnce({ terminals: [{ id: "pty-7" }], daemonBootId: "boot-1" });
     const client = new LiveTerminalsClient();
 
-    const tabs = await client.list("ws-1");
+    const { terminals } = await client.list("ws-1");
     // Empty name → display falls back to 'Terminal' in the selectors, never "Terminal pty-7".
-    expect(tabs).toEqual([
+    expect(terminals).toEqual([
       { id: "pty-7", name: "", workspaceId: "ws-1", createdAt: undefined, isConnected: true },
     ]);
+  });
+
+  it("list surfaces an authoritative same-boot empty envelope (converge-to-zero input, monorepo#1334)", async () => {
+    mockedRequest.mockResolvedValueOnce({ terminals: [], daemonBootId: "boot-1" });
+    const client = new LiveTerminalsClient();
+
+    expect(await client.list("ws-1")).toEqual({ terminals: [], daemonBootId: "boot-1" });
+  });
+
+  it("list tolerates a legacy bare-array response by shape detection (no daemonBootId)", async () => {
+    mockedRequest.mockResolvedValueOnce([{ id: "pty-0", name: "Terminal" }]);
+    const client = new LiveTerminalsClient();
+
+    const result = await client.list("ws-1");
+    expect(result).toEqual({
+      terminals: [
+        { id: "pty-0", name: "Terminal", workspaceId: "ws-1", createdAt: undefined, isConnected: true },
+      ],
+    });
+    expect("daemonBootId" in result).toBe(false);
+  });
+
+  it("list omits daemonBootId when the envelope carries a non-string value", async () => {
+    mockedRequest.mockResolvedValueOnce({ terminals: [], daemonBootId: 42 });
+    const client = new LiveTerminalsClient();
+
+    const result = await client.list("ws-1");
+    expect(result).toEqual({ terminals: [] });
   });
 
   it("list throws on transport error (STAB-24 fix: failed fetch must not clobber tabs)", async () => {

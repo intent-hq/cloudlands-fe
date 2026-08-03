@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentMessage, AgentSession } from "$shared/types";
-import type { ChatTranscript } from "$lib/client/app-client";
+import type { ChatLiveStreamPhase, ChatTranscript } from "$lib/client/app-client";
 
 // FAKE seam: chat.subscribe is stubbed so no daemon call happens; each call
 // records its handler (so tests can push §7.1-shaped reconciled transcripts)
@@ -12,6 +12,7 @@ vi.mock("$lib/client", () => {
   const subscriptions: Array<{
     agentId: string;
     handler: (transcript: ChatTranscript) => void;
+    onPhase?: (phase: string) => void;
     unsubscribe: ReturnType<typeof vi.fn>;
   }> = [];
   return {
@@ -26,11 +27,17 @@ vi.mock("$lib/client", () => {
         subscribeSnapshot: vi.fn(() =>
           Promise.resolve({ messages: [], truncated: false, totalMessages: 0 }),
         ),
-        subscribe: vi.fn((agentId: string, handler: (transcript: ChatTranscript) => void) => {
-          const unsubscribe = vi.fn();
-          subscriptions.push({ agentId, handler, unsubscribe });
-          return unsubscribe;
-        }),
+        subscribe: vi.fn(
+          (
+            agentId: string,
+            handler: (transcript: ChatTranscript) => void,
+            onPhase?: (phase: string) => void,
+          ) => {
+            const unsubscribe = vi.fn();
+            subscriptions.push({ agentId, handler, onPhase, unsubscribe });
+            return unsubscribe;
+          },
+        ),
       },
     },
     __chatSubscriptions: subscriptions,
@@ -47,9 +54,12 @@ import {
 import {
   addMessage,
   bulkUpsertSessions,
+  clearAllSessions,
   removeSession,
   updateSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
+import { selectChatLiveStreamPhase } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import {
   selectAgentMessages,
   selectAgentSession,
@@ -72,6 +82,7 @@ import { shouldShowStoppedIndicator } from "$lib/components/chat/message-display
 type FakeSubscription = {
   agentId: string;
   handler: (transcript: ChatTranscript) => void;
+  onPhase?: (phase: ChatLiveStreamPhase) => void;
   unsubscribe: ReturnType<typeof vi.fn>;
 };
 
@@ -705,6 +716,88 @@ describe("chatSubscribeService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toContain(
       "live-turn-msg",
     );
+  });
+
+  describe("live stream phase mirroring", () => {
+    const phaseOf = (agentId: string) => selectChatLiveStreamPhase.select(appStore.state, agentId);
+
+    it("mirrors onPhase reports into the chat-state slice", () => {
+      const agentId = "agent-sub-phase-mirror";
+      seedSession(agentId);
+      const sub = openChat(agentId);
+      expect(sub.onPhase).toBeDefined();
+
+      sub.onPhase!("connecting");
+      expect(phaseOf(agentId)).toBe("connecting");
+      sub.onPhase!("awaiting-snapshot");
+      expect(phaseOf(agentId)).toBe("awaiting-snapshot");
+      sub.onPhase!("live");
+      expect(phaseOf(agentId)).toBe("live");
+      sub.onPhase!("resyncing");
+      expect(phaseOf(agentId)).toBe("resyncing");
+      sub.onPhase!("delayed");
+      expect(phaseOf(agentId)).toBe("delayed");
+    });
+
+    it("resets the phase to null on every subscription teardown path", () => {
+      // removeSession (agent-deletion soft-hide).
+      const agentA = "agent-sub-phase-remove";
+      seedSession(agentA);
+      openChat(agentA).onPhase!("connecting");
+      expect(phaseOf(agentA)).toBe("connecting");
+      appStore.dispatch(removeSession(agentA));
+      expect(phaseOf(agentA)).toBeNull();
+
+      // clearAllSessions.
+      const agentB = "agent-sub-phase-clearall";
+      seedSession(agentB);
+      openChat(agentB).onPhase!("awaiting-snapshot");
+      expect(phaseOf(agentB)).toBe("awaiting-snapshot");
+      appStore.dispatch(clearAllSessions());
+      expect(phaseOf(agentB)).toBeNull();
+
+      // workspaceDeleted (drops the whole chat-state entry too).
+      const agentC = "agent-sub-phase-wsdel";
+      seedSession(agentC);
+      openChat(agentC).onPhase!("resyncing");
+      expect(phaseOf(agentC)).toBe("resyncing");
+      appStore.dispatch(workspaceDeleted(WS, [agentC]));
+      expect(phaseOf(agentC)).toBeNull();
+
+      // clearCurrentlyViewedAgent with no agent left viewed (chat close).
+      const agentD = "agent-sub-phase-clearview";
+      seedSession(agentD);
+      appStore.dispatch(markAgentAsViewed(agentD));
+      openChat(agentD).onPhase!("delayed");
+      expect(phaseOf(agentD)).toBe("delayed");
+      appStore.dispatch(clearCurrentlyViewedAgent(agentD));
+      expect(phaseOf(agentD)).toBeNull();
+    });
+
+    it("resets the phase on agent switch (markAgentAsViewed closes the other agent's stream)", () => {
+      const agentA = "agent-sub-phase-switch-a";
+      const agentB = "agent-sub-phase-switch-b";
+      seedSession(agentA);
+      seedSession(agentB);
+      openChat(agentA).onPhase!("awaiting-snapshot");
+      expect(phaseOf(agentA)).toBe("awaiting-snapshot");
+
+      appStore.dispatch(markAgentAsViewed(agentB));
+      expect(phaseOf(agentA)).toBeNull();
+    });
+
+    it("ignores phase reports from a superseded subscription entry", () => {
+      const agentId = "agent-sub-phase-stale";
+      seedSession(agentId);
+      const stale = openChat(agentId);
+      stale.onPhase!("live");
+      appStore.dispatch(removeSession(agentId));
+      expect(phaseOf(agentId)).toBeNull();
+
+      // A late report from the closed entry must not resurrect a phase.
+      stale.onPhase!("delayed");
+      expect(phaseOf(agentId)).toBeNull();
+    });
   });
 
 });

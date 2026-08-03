@@ -101,14 +101,16 @@ setTimeout(() => {
 
 // Now import everything else
 import type { BrowserWindow as BrowserWindowType } from 'electron';
-import { dialog, protocol } from 'electron';
+import { dialog, protocol, session } from 'electron';
 import * as fs from 'fs';
 
 import { Logger } from '../shared/logger';
 import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
+import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
 import { setupWebviewSecurity } from './webview-security';
+import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
 
 // No custom protocol needed - we'll use file:// protocol
@@ -355,6 +357,11 @@ process.on('SIGINT', async () => {
   await gracefulShutdown();
 });
 
+// Hard deadline for the gracefulShutdown() cleanup chain
+// (intent-hq/monorepo#1300). 10s sits comfortably above the sidecar's own
+// 5s SIGTERM→SIGKILL escalation inside stopIntentdSidecar().
+const GRACEFUL_SHUTDOWN_HARD_EXIT_MS = 10_000;
+
 async function gracefulShutdown() {
   // Prevent multiple shutdown attempts
   if (isShuttingDown) {
@@ -362,6 +369,23 @@ async function gracefulShutdown() {
   }
   isShuttingDown = true;
 
+  // Bound the cleanup chain with a hard-exit watchdog: if a cleanup step
+  // stalls and app.exit(0) is never reached, force-exit so SIGTERM/SIGINT
+  // always terminate the process.
+  await runWithHardExitTimeout(
+    performGracefulShutdown,
+    () => {
+      logger.warn(
+        // i18n-ignore (developer log message)
+        `Graceful shutdown did not complete within the ${GRACEFUL_SHUTDOWN_HARD_EXIT_MS}ms hard-exit timeout — forcing exit`,
+      );
+      app.exit(1);
+    },
+    GRACEFUL_SHUTDOWN_HARD_EXIT_MS,
+  );
+}
+
+async function performGracefulShutdown() {
   try {
     // Cleanup terminals gracefully - this properly cleans up PTY processes
     // to prevent Napi::Error crashes during shutdown
@@ -476,6 +500,10 @@ app.whenReady().then(async () => {
 
   // SECURITY: Setup webview security handlers early, before any windows are created
   setupWebviewSecurity();
+
+  // WebHID handlers for the hardware console (silent grant for supported
+  // Work Louder devices) — must be registered before any windows exist.
+  setupHardwareConsoleMain(session.defaultSession);
 
   // Keep window sessions file up-to-date so it's always available on quit/crash.
   // This debounced saver fires on window move/resize/navigate to ensure the sessions
@@ -1262,7 +1290,8 @@ app.whenReady().then(async () => {
   startupMetrics.start('criticalIPC');
 
   // Initialize specialists service BEFORE workspace IPC - this is critical!
-  // The workspace creation flow calls resolveSpecialistForAgent() which needs the store initialized.
+  // The instruction service calls formatSpecialistsForPrompt(), which needs the
+  // specialist file cache initialized.
   await initSpecialistsService();
 
   // Initialize app settings service for branch prefix and other settings

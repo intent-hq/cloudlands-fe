@@ -1110,3 +1110,128 @@ describe("LiveChatClient.subscribe (ported delta-path regressions)", () => {
     offB();
   });
 });
+
+describe("LiveChatClient.subscribe phase reporting (onPhase)", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    reset();
+  });
+
+  it("reports connecting → awaiting-snapshot → live across the happy path", async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const phases: string[] = [];
+    const off = client.subscribe("agent-1", () => {}, (p) => phases.push(p));
+
+    expect(phases).toEqual(["connecting"]);
+    await flush();
+    expect(phases).toEqual(["connecting", "awaiting-snapshot"]);
+
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+    expect(phases).toEqual(["connecting", "awaiting-snapshot", "live"]);
+    off();
+  });
+
+  it("reports resyncing on a sequence gap and live when the recovery snapshot lands", async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const phases: string[] = [];
+    const off = client.subscribe("agent-1", () => {}, (p) => phases.push(p));
+    await flush();
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+    phases.length = 0;
+
+    // seq jump: 1 expected, 5 arrives → gap → resnapshot registration.
+    deltaPush("sub-1", 5, { added: [], updated: [], removedIds: [] });
+    expect(phases).toEqual(["resyncing"]);
+    await flush();
+    // Ack of the recovery registration keeps reporting resyncing (no
+    // awaiting-snapshot flap mid-recovery).
+    expect(phases).toEqual(["resyncing"]);
+
+    snapshotPush("sub-2", 0, SEEDED_SNAPSHOT);
+    expect(phases).toEqual(["resyncing", "live"]);
+    off();
+  });
+
+  it("reports delayed when chat.subscribe rejects", async () => {
+    mockedRequest.mockImplementation(async (method: string) => {
+      if (method === "chat.subscribe") throw new Error("transport down");
+      return {};
+    });
+    const client = new LiveChatClient();
+    const phases: string[] = [];
+    const off = client.subscribe("agent-1", () => {}, (p) => phases.push(p));
+    await flush();
+
+    expect(phases).toEqual(["connecting", "delayed"]);
+    off();
+  });
+
+  it("reports delayed when the seq-0 snapshot times out, then live when it finally lands", async () => {
+    vi.useFakeTimers();
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const phases: string[] = [];
+    const off = client.subscribe("agent-1", () => {}, (p) => phases.push(p));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(phases).toEqual(["connecting", "awaiting-snapshot"]);
+
+    // SNAPSHOT_TIMEOUT_MS elapses without the seq-0 push.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(phases).toEqual(["connecting", "awaiting-snapshot", "delayed"]);
+
+    // Late snapshot still hydrates (the timer is observational only).
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+    expect(phases).toEqual(["connecting", "awaiting-snapshot", "delayed", "live"]);
+    off();
+  });
+
+  it("re-reports connecting on transport reconnect and never reports past dispose", async () => {
+    vi.useFakeTimers();
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const phases: string[] = [];
+    const off = client.subscribe("agent-1", () => {}, (p) => phases.push(p));
+    await vi.advanceTimersByTimeAsync(0);
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+    phases.length = 0;
+
+    emitReconnect();
+    expect(phases).toEqual(["connecting"]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(phases).toEqual(["connecting", "awaiting-snapshot"]);
+
+    off();
+    phases.length = 0;
+    // The armed snapshot timer must not fire a delayed report after dispose.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(phases).toEqual([]);
+  });
+
+  it("dedupes phase reports (no repeat for an unchanged phase)", async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const phases: string[] = [];
+    const off = client.subscribe("agent-1", () => {}, (p) => phases.push(p));
+    await flush();
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+    // Applied delta then a stale duplicate: both leave the phase at live.
+    deltaPush("sub-1", 1, {
+      added: [
+        {
+          messageId: "0190a200-asst",
+          role: "assistant",
+          block: { type: "text", id: "0190a200-asst:0", text: "hi" },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+    deltaPush("sub-1", 1, { added: [], updated: [], removedIds: [] });
+
+    expect(phases).toEqual(["connecting", "awaiting-snapshot", "live"]);
+    off();
+  });
+});

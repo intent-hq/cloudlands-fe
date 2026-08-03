@@ -26,7 +26,12 @@
  * `agent.getConversation` snapshot.
  */
 import type { AgentMessage, ContentBlock } from "$shared/types";
-import type { ChatClient, ChatTranscript, Unsubscribe } from "../app-client";
+import type {
+  ChatClient,
+  ChatLiveStreamPhase,
+  ChatTranscript,
+  Unsubscribe,
+} from "../app-client";
 import { backendRequest, onBackendNotification, onBackendReconnected } from "./backend-transport";
 
 /** Shape of a `chat.subscribe` seq-0 snapshot per PROTOCOL §7.1. */
@@ -410,10 +415,35 @@ export class LiveChatClient implements ChatClient {
     });
   }
 
-  subscribe(agentId: string, handler: (transcript: ChatTranscript) => void): Unsubscribe {
+  subscribe(
+    agentId: string,
+    handler: (transcript: ChatTranscript) => void,
+    onPhase?: (phase: ChatLiveStreamPhase) => void,
+  ): Unsubscribe {
     const reconciler = new ChatTranscriptReconciler();
     let disposed = false;
     let subscriptionId: string | undefined;
+    // Observational lifecycle phase (deduped). Reporting NEVER alters the
+    // subscription's behavior — registration, retry, and gap semantics are
+    // unchanged whether or not a listener is attached.
+    let phase: ChatLiveStreamPhase | undefined;
+    // Observational seq-0 ceiling after the subscribe ack: fires `delayed`
+    // when the snapshot has not applied in time. Purely a phase report — no
+    // retry is triggered (the reconnect handler remains the recovery path).
+    let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const setPhase = (next: ChatLiveStreamPhase): void => {
+      if (disposed || next === phase) return;
+      phase = next;
+      onPhase?.(next);
+    };
+
+    const clearSnapshotTimer = (): void => {
+      if (snapshotTimer !== undefined) {
+        clearTimeout(snapshotTimer);
+        snapshotTimer = undefined;
+      }
+    };
     // Registration-generation token: bumped whenever a newer registration or
     // a teardown (resnapshot, reconnect, dispose) supersedes prior in-flight
     // `chat.subscribe` requests, so an out-of-order subscribe reply is
@@ -439,6 +469,10 @@ export class LiveChatClient implements ChatClient {
       if (push.subscriptionId !== subscriptionId) return;
       if (push.kind === "snapshot") {
         awaitingResnapshot = false;
+        clearSnapshotTimer();
+        // A snapshot push (applied or a stale re-delivery on an already-live
+        // transcript) means the stream is hydrated either way.
+        setPhase("live");
         if (reconciler.applySnapshot(push.seq, push.snapshot)) emit();
       } else if (!awaitingResnapshot) {
         const outcome = reconciler.applyDelta(
@@ -456,6 +490,9 @@ export class LiveChatClient implements ChatClient {
     const register = (): void => {
       generation += 1;
       const thisGeneration = generation;
+      // A recovery registration (gap) reports `resyncing`; a first/reconnect
+      // registration reports `connecting`.
+      setPhase(awaitingResnapshot ? "resyncing" : "connecting");
       backendRequest<{ subscriptionId?: string }>("chat.subscribe", { agentId })
         .then((result) => {
           const id = result?.subscriptionId;
@@ -471,6 +508,15 @@ export class LiveChatClient implements ChatClient {
             return;
           }
           subscriptionId = id;
+          // Ack received: awaiting the seq-0 snapshot (a recovery snapshot
+          // keeps reporting `resyncing`). The timer only REPORTS `delayed` on
+          // timeout — recovery still rides the reconnect handler.
+          if (!awaitingResnapshot) setPhase("awaiting-snapshot");
+          clearSnapshotTimer();
+          snapshotTimer = setTimeout(() => {
+            snapshotTimer = undefined;
+            setPhase("delayed");
+          }, SNAPSHOT_TIMEOUT_MS);
           const matched = buffered.filter((p) => p.subscriptionId === id);
           buffered = [];
           for (const p of matched) processPush(p);
@@ -478,6 +524,7 @@ export class LiveChatClient implements ChatClient {
         .catch(() => {
           // Registration failure: the reconnect handler retries on the next
           // transport recovery; the transcript keeps its last emitted state.
+          if (generation === thisGeneration) setPhase("delayed");
         });
     };
 
@@ -515,6 +562,7 @@ export class LiveChatClient implements ChatClient {
       subscriptionId = undefined;
       awaitingResnapshot = false;
       buffered = [];
+      clearSnapshotTimer();
       reconciler.reset();
       register();
     });
@@ -523,6 +571,7 @@ export class LiveChatClient implements ChatClient {
 
     return () => {
       disposed = true;
+      clearSnapshotTimer();
       off();
       offReconnect();
       unregister();

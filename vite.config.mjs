@@ -6,15 +6,8 @@ import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 
-import { writePseudoCatalog } from './scripts/pseudo-locale-lib.mjs';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-// Regenerate the pseudo-locale catalog (messages/en-XA.json, gitignored)
-// before the Paraglide plugin reads project.inlang — it is registered there
-// but never committed.
-writePseudoCatalog(__dirname);
 
 // Read version from package.json for __APP_VERSION__
 const packageJson = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));

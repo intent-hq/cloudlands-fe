@@ -272,6 +272,24 @@ const WORKSPACE_STATE_PERSIST_ACTIONS = new Set<string>([
 ]);
 
 /**
+ * GAP-5 guard: an empty-list `loadWorkspaceTerminals` never durably
+ * overwrites a saved open state. Restart/legacy/unknown-boot empties are
+ * transient (monorepo#1330) — the reducer preserves existing live tabs and
+ * only forces isOpen=false in memory on the empty-over-empty pass. Even a
+ * same-boot authoritative empty (converge-to-zero, monorepo#1334) skips the
+ * persist: the in-memory close is enough, and keeping the saved open state
+ * lets the panel restore when terminals reappear.
+ */
+function isEmptyTerminalsHydration(action: {
+  type: string;
+  payload?: unknown;
+}): boolean {
+  if (action.type !== loadWorkspaceTerminals.type) return false;
+  const terminals = (action.payload as [string, unknown[], ...unknown[]])[1];
+  return Array.isArray(terminals) && terminals.length === 0;
+}
+
+/**
  * Middleware restoring terminal persistence behaviors from the deleted
  * terminals/sagas/persistence-saga.ts and workspace-init-saga.ts.
  * Hydration runs once at factory time; persistence runs after each mutating
@@ -287,18 +305,19 @@ export function createTerminalPersistenceMiddleware(): StoreMiddleware {
       // Intercept loadWorkspaceTerminals to restore saved state from localStorage
       // (lifecycle-read-service dispatches it without savedState)
       if (action?.type === loadWorkspaceTerminals.type) {
-        const [wsId, terminals, savedState] = action.payload as [
+        const [wsId, terminals, savedState, daemonBootId] = action.payload as [
           string,
           unknown[],
-          PersistedWorkspaceState | null | undefined
+          PersistedWorkspaceState | null | undefined,
+          string | undefined
         ];
         // If savedState is not already provided, load it from localStorage
         if (savedState === undefined) {
           const loadedState = loadWorkspaceState(wsId);
-          // Re-dispatch with the loaded state
+          // Re-dispatch with the loaded state, keeping the envelope's boot id
           return next({
             ...action,
-            payload: [wsId, terminals, loadedState],
+            payload: [wsId, terminals, loadedState, daemonBootId],
           });
         }
       }
@@ -342,8 +361,12 @@ export function createTerminalPersistenceMiddleware(): StoreMiddleware {
         removeTerminalMetadataFromStorage(termId, wsId);
       }
 
-      // GAP 5: Persist per-workspace overlay state
-      if (WORKSPACE_STATE_PERSIST_ACTIONS.has(action.type)) {
+      // GAP 5: Persist per-workspace overlay state (except transient
+      // empty-list hydrations — see isEmptyTerminalsHydration)
+      if (
+        WORKSPACE_STATE_PERSIST_ACTIONS.has(action.type) &&
+        !isEmptyTerminalsHydration(action)
+      ) {
         const wsId = (action.payload as [string, ...unknown[]])[0];
         if (!wsId) return result;
         const state = api.getState() as StoreState;

@@ -45,6 +45,12 @@ export interface ContentBlock {
    * `meta.kind` ("interruption" | "discussion-request" | "blocker-report").
    */
   meta?: Record<string, unknown>;
+  /**
+   * Opaque delivery metadata folded onto persisted wake-tagged user text
+   * blocks by the daemon (e.g. `{ type: 'hook_wake', hookId, hookName,
+   * reason }`, PROTOCOL §5.40).
+   */
+  messageMetadata?: Record<string, unknown>;
 
   // Navigation link fields
   /** Structured block kind for app navigation links */

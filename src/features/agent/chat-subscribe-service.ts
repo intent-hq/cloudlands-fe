@@ -56,6 +56,7 @@ import type { ChatTranscript, Unsubscribe } from "$lib/client/app-client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
+  chatLiveStreamPhaseChanged,
   initializeChatRequested,
   transcriptHydrationSettled,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
@@ -190,24 +191,34 @@ export function openChatSubscription(agentId: string, wsId?: string): void {
   };
   subscriptions.set(agentId, entry);
   try {
-    entry.unsubscribe = appClient.chat.subscribe(agentId, (transcript) => {
-      // The entry may have been superseded by teardown while a push was in
-      // flight — only the registered entry may write.
-      if (subscriptions.get(agentId) !== entry) return;
-      // Deletion became pending after the subscription opened: tear down
-      // instead of resurrecting the soft-hidden session.
-      if (isAgentDeletionPending(agentId)) {
-        closeChatSubscription(agentId);
-        return;
-      }
-      entry.hasEmitted = true;
-      entry.lastTranscript = transcript;
-      try {
-        applyTranscript(agentId, entry, transcript);
-      } catch (error) {
-        logger.error("Failed to apply chat.subscribe transcript", error);
-      }
-    });
+    entry.unsubscribe = appClient.chat.subscribe(
+      agentId,
+      (transcript) => {
+        // The entry may have been superseded by teardown while a push was in
+        // flight — only the registered entry may write.
+        if (subscriptions.get(agentId) !== entry) return;
+        // Deletion became pending after the subscription opened: tear down
+        // instead of resurrecting the soft-hidden session.
+        if (isAgentDeletionPending(agentId)) {
+          closeChatSubscription(agentId);
+          return;
+        }
+        entry.hasEmitted = true;
+        entry.lastTranscript = transcript;
+        try {
+          applyTranscript(agentId, entry, transcript);
+        } catch (error) {
+          logger.error("Failed to apply chat.subscribe transcript", error);
+        }
+      },
+      (phase) => {
+        // Mirror the live client's observational phase reports (already
+        // deduped there) into the chat-state slice. Same superseded-entry
+        // guard as the transcript path.
+        if (subscriptions.get(agentId) !== entry) return;
+        appStore.dispatch(chatLiveStreamPhaseChanged(agentId, phase));
+      },
+    );
   } catch (error) {
     subscriptions.delete(agentId);
     logger.error("Failed to open chat subscription", error);
@@ -248,6 +259,13 @@ export function closeChatSubscription(agentId: string): void {
     entry.unsubscribe();
   } catch (error) {
     logger.error("Failed to close chat subscription", error);
+  }
+  try {
+    // No subscription ⇒ no phase: a closed stream must never leave a stale
+    // pre-live phase behind (it would re-show the hydration indicator).
+    appStore.dispatch(chatLiveStreamPhaseChanged(agentId, null));
+  } catch (error) {
+    logger.error("Failed to reset live stream phase", error);
   }
   try {
     clearStaleStreamingMessageFlags(agentId);

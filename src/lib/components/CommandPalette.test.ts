@@ -19,6 +19,8 @@ const {
   gotoMock,
   navigateToSettingsMock,
   invokeMock,
+  openMessageMock,
+  backendRequestMock,
   workspaceItemsState,
   sessionSessions,
   reduxDispatchMock,
@@ -42,6 +44,8 @@ const {
     gotoMock: vi.fn(),
     navigateToSettingsMock: vi.fn(),
     invokeMock: vi.fn().mockResolvedValue({ files: [] }),
+    openMessageMock: vi.fn().mockResolvedValue(undefined),
+    backendRequestMock: vi.fn(async () => ({ files: [], matches: [] })),
     workspaceItemsState: { value: [] as any[] },
     sessionSessions: { value: [] as any[] },
     reduxDispatchMock: vi.fn(),
@@ -55,6 +59,18 @@ const {
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: navigateToSettingsMock }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: invokeMock }));
+vi.mock('$lib/utils/open-message', () => ({ openMessage: openMessageMock }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: backendRequestMock,
+  backendSubscribe: vi.fn(),
+  backendUnsubscribe: vi.fn(),
+  isBackendAvailable: vi.fn(() => false),
+  detectLiveStateCapability: vi.fn(async () => false),
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
+  BackendError: class BackendError extends Error {},
+  electronAPI: {},
+}));
 vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
   selectBrowserRecentUrls: Object.assign(
     vi.fn((workspaceIdArg: any) =>
@@ -210,6 +226,8 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faPlus: { iconName: 'plus' },
   faGlobe: { iconName: 'globe' },
   faPlay: { iconName: 'play' },
+  faRobot: { iconName: 'robot' },
+  faUser: { iconName: 'user' },
 }));
 
 import CommandPalette from './CommandPalette.svelte';
@@ -358,5 +376,111 @@ describe('CommandPalette workspace activity recency', () => {
     expect(newer.compareDocumentPosition(old) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(old.textContent).toContain('Jan 15');
     expect(old.textContent).not.toContain('just now');
+  });
+});
+
+describe('CommandPalette chat message rows', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    workspaceItemsState.value = [];
+    browserRecentUrls.value = [];
+    sessionSessions.value = [];
+    paletteMruEntries.value = [];
+    paletteFileMru.value = {};
+    backendRequestMock.mockImplementation(async () => ({ files: [], matches: [] }));
+  });
+
+  it('renders workspace title and owner/repo on the title line, degrading gracefully', async () => {
+    workspaceItemsState.value = [
+      {
+        id: 'ws-repo',
+        title: 'Repo overview',
+        repositoryOwner: 'panghy',
+        repositoryName: 'chinese-fonts',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'ws-noowner',
+        title: 'Local space',
+        repositoryName: 'tools',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      },
+    ];
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'search.messages') {
+        return {
+          matches: [
+            {
+              agentId: 'ag-1',
+              messageId: 'msg-1',
+              preview: 'hello from coordinator',
+              workspaceId: 'ws-repo',
+              agentName: 'Coordinator',
+              role: 'assistant',
+              timestamp: '2025-06-01T00:00:00.000Z',
+            },
+            {
+              agentId: 'ag-2',
+              messageId: 'msg-2',
+              preview: 'hello from local',
+              workspaceId: 'ws-noowner',
+              agentName: 'Local Agent',
+              role: 'user',
+              timestamp: '2025-06-01T00:00:00.000Z',
+            },
+            {
+              agentId: 'ag-3',
+              messageId: 'msg-3',
+              preview: 'hello from nowhere',
+              workspaceId: 'ws-gone',
+              agentName: 'Ghost Agent',
+              role: 'user',
+              timestamp: '2025-06-01T00:00:00.000Z',
+            },
+          ],
+        };
+      }
+      return { files: [] };
+    });
+
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+
+    const input = screen.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'hello' } });
+
+    // Assert the wire request matches PROTOCOL §5.15 (search.messages)
+    await waitFor(
+      () =>
+        expect(backendRequestMock).toHaveBeenCalledWith('search.messages', {
+          query: 'hello',
+          limit: 10,
+          preferWorkspaceId: 'ws-1',
+        }),
+      { timeout: 3000 },
+    );
+
+    // Full metadata: Agent · Workspace · owner/repo
+    const coordinator = await screen.findByRole(
+      'button',
+      { name: /Coordinator/ },
+      { timeout: 3000 },
+    );
+    expect(coordinator.textContent).toMatch(
+      /Coordinator\s*·\s*Repo overview\s*·\s*panghy\/chinese-fonts/,
+    );
+    expect(coordinator.textContent).toContain('hello from coordinator');
+
+    // No owner: Agent · Workspace · repo-name only
+    const local = screen.getByRole('button', { name: /Local Agent/ });
+    expect(local.textContent).toMatch(/Local Agent\s*·\s*Local space\s*·\s*tools/);
+    expect(local.textContent).not.toContain('panghy');
+
+    // Unknown workspace: no segments, no dangling separators, no "undefined"
+    const ghost = screen.getByRole('button', { name: /Ghost Agent/ });
+    expect(ghost.textContent).not.toContain('undefined');
+    expect(ghost.textContent).not.toContain('·');
+    expect(ghost.textContent).toContain('hello from nowhere');
   });
 });

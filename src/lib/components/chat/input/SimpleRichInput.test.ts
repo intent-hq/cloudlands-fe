@@ -136,13 +136,24 @@ vi.mock('$features/agent/agent.client', () => ({
   },
 }));
 
+const enhancePromptMock = vi.hoisted(() => vi.fn());
+
+vi.mock('$lib/client/live/live-prompt-enhancement', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$lib/client/live/live-prompt-enhancement')>();
+  return { ...actual, enhancePrompt: enhancePromptMock };
+});
+
 // Mock Redux store bridge — the component reads agent sessions from Redux
 const mockReduxState = vi.hoisted(
   (): {
     workspaceAgents: { byWorkspaceId: Record<string, any> };
+    providerSettings: { activeProviderId: string };
     providerCatalog?: unknown;
   } => ({
     workspaceAgents: { byWorkspaceId: {} },
+    // Unset active provider — the §5.31 gate treats this as auggie (default)
+    providerSettings: { activeProviderId: '' },
   }),
 );
 const mockReduxDispatch = vi.hoisted(() => vi.fn());
@@ -761,5 +772,92 @@ describe('SimpleRichInput Stop-button visibility', () => {
     await fireEvent.click(btn!);
 
     expect(onstop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SimpleRichInput enhance-button provider gate (§5.31)', () => {
+  const baseProps = () => ({
+    value: 'make this prompt better',
+    contextItems: [],
+    workspace: {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any,
+    agentId: 'agent-1',
+    selectedModel: 'gpt5.4',
+  });
+
+  // The mocked Button strips aria-label — locate the enhance affordance via
+  // the Fa icon mock's data-icon attribute (faMagicWandSparkles → magic-wand).
+  function enhanceButton(): HTMLButtonElement | null {
+    const icon = document.body.querySelector('[data-icon="magic-wand"]');
+    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    enhancePromptMock.mockResolvedValue({
+      enhanced: 'enhanced prompt',
+      original: 'make this prompt better',
+      mode: 'enhance',
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    addMockSession('ws-1', createSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    mockReduxState.providerSettings.activeProviderId = '';
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('shows the enhance button when the active provider is auggie', () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    render(SimpleRichInput, { props: baseProps() });
+
+    expect(enhanceButton()).not.toBeNull();
+  });
+
+  it('shows the enhance button when no active provider is set (daemon default is auggie)', () => {
+    mockReduxState.providerSettings.activeProviderId = '';
+    render(SimpleRichInput, { props: baseProps() });
+
+    expect(enhanceButton()).not.toBeNull();
+  });
+
+  it('hides the enhance button when the active provider is not auggie', () => {
+    mockReduxState.providerSettings.activeProviderId = 'codex';
+    render(SimpleRichInput, { props: baseProps() });
+
+    expect(enhanceButton()).toBeNull();
+  });
+
+  it('ignores the Cmd+/ enhance shortcut when the active provider is not auggie', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'codex';
+    render(SimpleRichInput, { props: baseProps() });
+
+    window.dispatchEvent(new CustomEvent('chat:enhance-prompt'));
+
+    await waitFor(() => {
+      expect(enhancePromptMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it('runs the Cmd+/ enhance shortcut when the active provider is auggie', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    render(SimpleRichInput, { props: baseProps() });
+
+    window.dispatchEvent(new CustomEvent('chat:enhance-prompt'));
+
+    await waitFor(() => {
+      expect(enhancePromptMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

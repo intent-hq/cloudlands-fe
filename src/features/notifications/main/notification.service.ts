@@ -125,6 +125,18 @@ function pickNotificationClickTarget(workspaceWindows: BrowserWindow[]): Browser
   return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !isHudWindow(w));
 }
 
+/**
+ * Click-navigation target attached to `notification:show` when the OS banner
+ * was skipped because the app was frontmost (electron#51885). The renderer
+ * shows a clickable in-app toast that routes through the same navigation as
+ * `notification:navigate`.
+ */
+interface NotificationNavigateTarget {
+  workspaceId: string;
+  chief?: boolean;
+  agentId?: string;
+}
+
 export class NotificationService {
   private started = false;
   private subscriptionId?: string;
@@ -423,6 +435,29 @@ export class NotificationService {
         return;
       }
 
+      // Frontmost gate: under Electron 42's UNUserNotificationCenter backend,
+      // `click` never fires for banners presented while the app is frontmost
+      // on macOS (electron#51885). Skip the OS banner and deliver an in-app
+      // clickable toast instead — `navigateTarget` mirrors the banner
+      // click-payload so the renderer routes the same way.
+      const appFrontmost = BrowserWindow.getFocusedWindow() !== null;
+      if (appFrontmost) {
+        logger.debug('App is frontmost, delivering in-app toast instead of OS banner', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        const navigateTarget: NotificationNavigateTarget =
+          workspaceId === CHIEF_WORKSPACE_ID
+            ? {
+                workspaceId,
+                chief: true,
+                ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
+              }
+            : { workspaceId };
+        this.sendShowEvent(content, workspaceId, navigateTarget);
+        return;
+      }
+
       // Show notification — prefer a window with the workspace open for
       // click-to-focus; otherwise fall back to the focused (or any) window,
       // which navigates to the workspace on click. The HUD pop-out is never
@@ -500,13 +535,20 @@ export class NotificationService {
    * notification sound. Sent regardless of window focus or banner suppression.
    * Delivered to windows with the event's workspace open; when none exist
    * (workspace not open anywhere) it falls back to the focused (or any)
-   * window so the sound still plays.
+   * window so the sound still plays. `navigateTarget` is present only when
+   * the OS banner was skipped because the app was frontmost (electron#51885)
+   * — the renderer then shows a clickable in-app toast.
    */
-  private sendShowEvent(content: NotificationContent, workspaceId?: string): void {
+  private sendShowEvent(
+    content: NotificationContent,
+    workspaceId?: string,
+    navigateTarget?: NotificationNavigateTarget,
+  ): void {
     const payload = {
       title: content.title,
       body: content.body,
       timestamp: new Date().toISOString(),
+      ...(navigateTarget ? { navigateTarget } : {}),
     };
     if (workspaceId && getWindowIdsForWorkspace(workspaceId).length > 0) {
       sendToWorkspaceWindows(workspaceId, 'notification:show', payload);

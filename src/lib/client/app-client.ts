@@ -374,16 +374,25 @@ export interface AgentsClient {
    * the newest slice. `nextToken` is opaque and walks backward to older pages
    * (`null` once the oldest message has been returned). Callers that want the
    * full transcript must page until `nextToken` is null.
+   *
+   * Seek (§5.5 `aroundMessageId`, additive): when given, it takes precedence
+   * over any token and resolves to the page CONTAINING that message (an
+   * unknown id is rejected daemon-side with -32602). Seek pages additionally
+   * carry `prevToken` — an opaque FORWARD cursor toward the live tail (pass
+   * it back as the `pageToken` input to fetch the next newer page); it is
+   * normalized to `null` on legacy backward pages, which never carry the key.
    */
   getConversation(
     agentId: string,
     limit?: number,
     pageToken?: string,
+    aroundMessageId?: string,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
     totalMessages: number;
     nextToken: string | null;
+    prevToken: string | null;
   }>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
@@ -613,6 +622,22 @@ export interface ChatTranscript {
   isStreaming: boolean;
 }
 
+/**
+ * Lifecycle phase of a standing `chat.subscribe` stream (Track B only — no
+ * daemon-internal stages, no history-paging progress). Drives the per-agent
+ * live-hydration indicator: `connecting` (subscribe sent, ack pending),
+ * `awaiting-snapshot` (ack received, seq-0 snapshot pending), `live`
+ * (snapshot applied — indicator hidden), `resyncing` (sequence gap, recovery
+ * resnapshot in flight), `delayed` (subscribe failed or the seq-0 snapshot
+ * timed out, retry pending).
+ */
+export type ChatLiveStreamPhase =
+  | "connecting"
+  | "awaiting-snapshot"
+  | "live"
+  | "resyncing"
+  | "delayed";
+
 export interface ChatClient {
   /**
    * One-shot seq-0 snapshot from the `chat.subscribe` channel (PROTOCOL §7.1).
@@ -633,8 +658,14 @@ export interface ChatClient {
    * Self-healing: a sequence gap resnapshots via a fresh registration, a
    * transport reconnect re-registers, and pushes racing the subscribe reply
    * are buffered pre-ack. Returns the disposer (sends `chat.unsubscribe`).
+   * Optional `onPhase` observes the stream's lifecycle phase transitions
+   * (deduped; purely observational — it never alters subscription behavior).
    */
-  subscribe(agentId: string, handler: (transcript: ChatTranscript) => void): Unsubscribe;
+  subscribe(
+    agentId: string,
+    handler: (transcript: ChatTranscript) => void,
+    onPhase?: (phase: ChatLiveStreamPhase) => void,
+  ): Unsubscribe;
 }
 
 /** Parameters for `terminal.create` (PROTOCOL §5.13). `command` omitted ⇒ default shell. */
@@ -678,8 +709,21 @@ export interface TerminalEventHandlers {
   onTitle?(event: TerminalTitleEvent): void;
 }
 
+/**
+ * `terminal.list` result envelope (PROTOCOL §5.13). `daemonBootId` identifies
+ * the daemon boot that produced the snapshot, letting the store distinguish an
+ * authoritative same-boot empty list (every PTY genuinely gone — converge to
+ * zero tabs) from a post-restart empty (PTYs respawn via auto-reconnect —
+ * preserve tabs). Absent when a legacy pre-envelope daemon returned a bare
+ * array.
+ */
+export interface TerminalListResult {
+  terminals: TerminalTab[];
+  daemonBootId?: string;
+}
+
 export interface TerminalsClient {
-  list(workspaceId: string): Promise<TerminalTab[]>;
+  list(workspaceId: string): Promise<TerminalListResult>;
   /**
    * `terminal.create` (PROTOCOL §5.13). On success the daemon-assigned
    * terminalId is surfaced as `MutationResult.id`.
@@ -1368,11 +1412,25 @@ export interface SpecialistDef {
   source: "project" | "user" | "bundled";
   isCustomized?: boolean;
   path?: string;
+  /**
+   * Daemon-computed default-model preview (additive, PROTOCOL §5.11): the
+   * model a no-model `agent.create` with this specialist would pin, resolved
+   * by the daemon's single creation-time resolver in the request's `provider`
+   * context. Both fields are omitted when resolution yields the provider CLI
+   * default (clients render "Provider default").
+   */
+  resolvedModel?: string;
+  resolvedProvider?: string;
 }
 
 export interface SpecialistsClient {
-  /** Merged bundled + user + project definitions (`specialist.list`, PROTOCOL §5.11). */
-  list(): Promise<SpecialistDef[]>;
+  /**
+   * Merged bundled + user + project definitions (`specialist.list`, PROTOCOL
+   * §5.11). The optional `provider` supplies the resolution context for the
+   * `resolvedModel`/`resolvedProvider` preview fields (defaults to the
+   * daemon's default provider; unknown provider → -32602).
+   */
+  list(provider?: string): Promise<SpecialistDef[]>;
   subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe;
   /**
    * Create a new specialist definition (`specialist.create`, PROTOCOL §5.11).

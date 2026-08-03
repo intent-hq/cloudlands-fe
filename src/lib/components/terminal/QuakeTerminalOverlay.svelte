@@ -60,6 +60,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptWithState } from '$features/scripts/types';
+  import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -72,10 +73,10 @@
   import {
   refreshScripts,
   initializeScripts,
-  disposeScripts,
   removeScript,
 } from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
+  import { createLogger } from '$lib/utils/client-logger';
   import {
   ListContainer,
   ListItem,
@@ -101,6 +102,8 @@
   }
 
   let { workspaceId: propWorkspaceId }: Props = $props();
+
+  const logger = createLogger('QuakeTerminalOverlay');
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpen();
@@ -180,6 +183,17 @@
       } else {
         toast.success(summary);
       }
+      const skippedRunning = result.skippedRunning ?? [];
+      if (skippedRunning.length > 0) {
+        toast.warning(
+          skippedRunning.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
+            : m.scripts_detect_skippedRunning_many({
+                count: skippedRunning.length,
+                names: skippedRunning.join(', '),
+              }),
+        );
+      }
     } finally {
       isDetectingScripts = false;
     }
@@ -188,7 +202,8 @@
   // Script Actions
   function getStatusColor(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return 'bg-green-500';
+    // Live statuses (running/restarting) reuse the running treatment.
+    if (isLiveScriptStatus(status)) return 'bg-green-500';
     if (status === 'idle') return 'bg-muted-foreground/40';
     if (exitCode === 0 || exitCode === null || exitCode === undefined)
       return 'bg-muted-foreground/40';
@@ -198,7 +213,8 @@
 
   function getStatusLabel(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return m.terminal_quakeOverlay_status_running();
+    // Live statuses (running/restarting) reuse the running treatment.
+    if (isLiveScriptStatus(status)) return m.terminal_quakeOverlay_status_running();
     if (status === 'idle') return m.terminal_quakeOverlay_status_idle();
     if (exitCode === 0) return m.terminal_quakeOverlay_status_exitedZero();
     if (exitCode !== null && exitCode !== undefined) {
@@ -211,8 +227,8 @@
 
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
     return [...scripts].sort((a, b) => {
-      // Priority: running > exited > idle
-      const statusPriority = { running: 0, exited: 1, idle: 2 };
+      // Priority: live (running/restarting) > exited > idle
+      const statusPriority = { running: 0, restarting: 0, exited: 1, idle: 2 };
       const aPriority = statusPriority[a.runtime.status] ?? 3;
       const bPriority = statusPriority[b.runtime.status] ?? 3;
 
@@ -230,7 +246,7 @@
       tooltip?: string;
       onClick: (e: MouseEvent) => void;
     }> = [];
-    if (script.runtime.status === 'running') {
+    if (isLiveScriptStatus(script.runtime.status)) {
       actions.push({
         icon: faStop,
         label: m.terminal_quakeOverlay_stop_label(),
@@ -319,8 +335,13 @@
     if (isEditingScriptName && selectedScript && selectedScriptId) {
       const trimmed = editedScriptName.trim();
       if (trimmed && trimmed !== selectedScript.name) {
-        scriptsClient.update(workspaceId!, selectedScriptId, { name: trimmed });
-        appStore.dispatch(refreshScripts(workspaceId!));
+        void scriptsClient
+          .update(workspaceId!, selectedScriptId, { name: trimmed })
+          .then((result) => {
+            if (!result.success && result.error) toast.warning(result.error);
+          })
+          .catch((error) => logger.error('Script update failed', error))
+          .finally(() => appStore.dispatch(refreshScripts(workspaceId!)));
       }
     }
     isEditingScriptName = false;
@@ -360,8 +381,13 @@
       const updates: Record<string, any> = {};
       if (editedScriptCommand !== selectedScript.command) updates.command = editedScriptCommand;
       if (Object.keys(updates).length > 0) {
-        scriptsClient.update(workspaceId!, selectedScriptId, updates);
-        appStore.dispatch(refreshScripts(workspaceId!));
+        void scriptsClient
+          .update(workspaceId!, selectedScriptId, updates)
+          .then((result) => {
+            if (!result.success && result.error) toast.warning(result.error);
+          })
+          .catch((error) => logger.error('Script update failed', error))
+          .finally(() => appStore.dispatch(refreshScripts(workspaceId!)));
       }
     }
     showScriptEditPanel = false;
@@ -379,9 +405,9 @@
       });
   }
 
-  // Running scripts shown as tabs in the bottom bar
+  // Live scripts (running/restarting) shown as tabs in the bottom bar
   const runningScripts = $derived(
-    $scriptEntries$.filter((s) => s.runtime.status === 'running'),
+    $scriptEntries$.filter((s) => isLiveScriptStatus(s.runtime.status)),
   );
 
   // Constants
@@ -391,14 +417,15 @@
   // Effects
   // ============================================================================
 
-  // Initialize scripts store at overlay level (persists across panel open/close)
+  // Initialize scripts store at overlay level. Scripts state is intentionally
+  // NOT disposed on unmount or workspace switch: it is workspace-keyed in the
+  // store and must survive overlay remounts, mirroring terminals
+  // (intent-hq/monorepo#1330). Lifecycle hydration reconciles it on the next
+  // workspaceMounted.
   $effect(() => {
     if (isRealWorkspace && workspaceId) {
       untrack(() => appStore.dispatch(initializeScripts(workspaceId)));
     }
-    return () => {
-      if (isRealWorkspace && workspaceId) appStore.dispatch(disposeScripts(workspaceId));
-    };
   });
 
   // Update CSS custom property for layout bottom padding
@@ -519,10 +546,15 @@
 
   function finishEditingScriptTab() {
     if (editingScriptTabId && editingScriptTabValue.trim()) {
-      scriptsClient.update(workspaceId!, editingScriptTabId, {
-        name: editingScriptTabValue.trim(),
-      });
-      appStore.dispatch(refreshScripts(workspaceId!));
+      void scriptsClient
+        .update(workspaceId!, editingScriptTabId, {
+          name: editingScriptTabValue.trim(),
+        })
+        .then((result) => {
+          if (!result.success && result.error) toast.warning(result.error);
+        })
+        .catch((error) => logger.error('Script update failed', error))
+        .finally(() => appStore.dispatch(refreshScripts(workspaceId!)));
     }
     editingScriptTabId = null;
     editingScriptTabValue = '';
@@ -866,7 +898,7 @@
 
             <!-- Script Controls -->
             <div class="flex items-center gap-0.5 flex-shrink-0">
-              {#if selectedScriptRuntime.status === 'running'}
+              {#if isLiveScriptStatus(selectedScriptRuntime.status)}
                 <Button
                   variant="ghost-light"
                   size="icon-xs"

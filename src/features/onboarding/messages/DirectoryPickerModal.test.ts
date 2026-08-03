@@ -263,3 +263,96 @@ describe('DirectoryPickerModal editable path input', () => {
     expect(loadCalls()).toHaveLength(1);
   });
 });
+
+describe('DirectoryPickerModal directory mode (default)', () => {
+  const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
+
+  it('hides files from the listing', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.queryByRole('option', { name: /notes\.txt/ })).toBeNull();
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+  });
+
+  it('the select button is enabled and commits the current directory', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    const select = screen.getByRole('button', { name: 'Select folder' }) as HTMLButtonElement;
+    expect(select.disabled).toBe(false);
+    await fireEvent.click(select);
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me');
+  });
+});
+
+describe('DirectoryPickerModal file mode', () => {
+  const baseProps = { open: true, mode: 'file' as const, onSelect: vi.fn(), onClose: vi.fn() };
+
+  const selectButton = (): HTMLButtonElement =>
+    screen.getByRole('button', { name: 'Select file' }) as HTMLButtonElement;
+
+  it('lists files alongside directories', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.getByRole('option', { name: /notes\.txt/ })).toBeTruthy();
+    expect(screen.getAllByRole('option')).toHaveLength(3);
+  });
+
+  it('disables the select button until a file is chosen', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(selectButton().disabled).toBe(true);
+
+    await fireEvent.click(screen.getByRole('option', { name: /notes\.txt/ }));
+    await flush();
+
+    expect(selectButton().disabled).toBe(false);
+  });
+
+  it('clicking a file then Select commits the file path', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /notes\.txt/ }));
+    await flush();
+    await fireEvent.click(selectButton());
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('/Users/me/notes.txt');
+  });
+
+  it('clicking a directory still navigates and clears the chosen file', async () => {
+    const onSelect = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onSelect } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('option', { name: /notes\.txt/ }));
+    await flush();
+    expect(selectButton().disabled).toBe(false);
+
+    await fireEvent.click(screen.getByRole('option', { name: /code/ }));
+    await flush();
+
+    const calls = loadCalls();
+    expect(calls).toHaveLength(2);
+    expect(requestedPath(calls[1])).toBe('/Users/me/code');
+    expect(selectButton().disabled).toBe(true);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('clicking a file does not dispatch a navigation', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+    expect(loadCalls()).toHaveLength(1);
+
+    await fireEvent.click(screen.getByRole('option', { name: /notes\.txt/ }));
+    await flush();
+
+    expect(loadCalls()).toHaveLength(1);
+  });
+});

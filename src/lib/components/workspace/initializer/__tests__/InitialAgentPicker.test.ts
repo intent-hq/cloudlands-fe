@@ -2,10 +2,10 @@
  * @vitest-environment jsdom
  *
  * Covers the reactive, data-gated stale-model-override clearing in
- * InitialAgentPicker: a persisted override is only compared to the specialist
- * default once file specialists, available models, and initializer hydration
- * are all ready; overrides made in the current session are never cleared; and
- * stale values re-applied after mount (parent hydration) are cleared too.
+ * InitialAgentPicker: a persisted override is only compared to the daemon's
+ * resolved default once file specialists and initializer hydration are ready;
+ * overrides made in the current session are never cleared; and stale values
+ * re-applied after mount (parent hydration) are cleared too.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,8 +37,17 @@ const mocks = vi.hoisted(() => {
     readable,
     fileSpecialistsLoaded$: writable(false),
     hydrated$: writable(true),
-    availableModels$: writable<{ value: string; label: string }[]>([]),
-    effectiveModel: 'fable-5',
+    // Store view of specialists carrying the daemon's resolvedModel preview
+    // (PROTOCOL §5.11) in the default-provider context.
+    specialists$: writable<
+      Array<{ id: string; name: string; description: string; resolvedModel?: string }>
+    >([]),
+    // `specialist.list(provider)` refetch used for per-provider previews.
+    specialistsList: vi.fn(() =>
+      Promise.resolve([
+        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+      ]),
+    ),
     getProviderAvailability: vi.fn(() => new Promise(() => {})),
   };
 });
@@ -63,18 +72,21 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
-  selectSpecialists: () => mocks.readable([]),
+  selectSpecialists: () => mocks.specialists$,
   selectCustomSpecialistsLoaded: () => mocks.readable(true),
   selectFileSpecialistsLoaded: () => mocks.fileSpecialistsLoaded$,
   selectUserOverrides: () => mocks.readable({ modelOverrides: {} }),
-  selectEffectiveModel: { select: () => mocks.effectiveModel },
-  selectEffectiveCodingAgent: { select: () => 'auggie' },
   filterPickableSpecialists: (specialists: unknown[]) => specialists,
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectSelectedModel: () => mocks.readable(''),
-  selectAvailableModels: () => mocks.availableModels$,
+}));
+
+vi.mock('$lib/client', () => ({
+  appClient: {
+    specialists: { list: mocks.specialistsList },
+  },
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
@@ -115,8 +127,6 @@ vi.mock('svelte-fa', async () => ({
 
 import InitialAgentPicker from '../InitialAgentPicker.svelte';
 
-const FABLE = { value: 'fable-5', label: 'Fable 5' };
-
 /** The team-mode card renders first; its picker is index 0. */
 function teamPickerSelected(): string {
   return screen.getAllByTestId('picker-selected')[0].textContent ?? '';
@@ -135,7 +145,12 @@ describe('InitialAgentPicker stale model override clearing', () => {
     vi.clearAllMocks();
     mocks.fileSpecialistsLoaded$.set(false);
     mocks.hydrated$.set(true);
-    mocks.availableModels$.set([]);
+    mocks.specialists$.set([]);
+    mocks.specialistsList.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+      ]),
+    );
   });
 
   afterEach(() => {
@@ -158,8 +173,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
     expect(onModelChange).not.toHaveBeenCalled();
     expect(teamPickerSelected()).toBe('opus4.6');
 
-    // Data arrives: file specialists + models load, specialist default resolves to fable-5
-    mocks.availableModels$.set([FABLE]);
+    // Data arrives: file specialists load; the daemon resolvedModel preview
+    // (fable-5) is fetched per provider via specialist.list.
     mocks.fileSpecialistsLoaded$.set(true);
 
     await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
@@ -171,7 +186,6 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
   it('does not clear a persisted override until the parent form state is hydrated', async () => {
     mocks.hydrated$.set(false);
-    mocks.availableModels$.set([FABLE]);
     mocks.fileSpecialistsLoaded$.set(true);
 
     const onModelChange = vi.fn();
@@ -193,7 +207,6 @@ describe('InitialAgentPicker stale model override clearing', () => {
   });
 
   it('preserves an override the user made in the current session', async () => {
-    mocks.availableModels$.set([FABLE]);
     mocks.fileSpecialistsLoaded$.set(true);
 
     const onModelChange = vi.fn();
@@ -210,7 +223,6 @@ describe('InitialAgentPicker stale model override clearing', () => {
     await waitFor(() => expect(onModelChange).toHaveBeenCalledWith('user-picked-model'));
 
     // Churn the gated dependencies — the fresh session override must survive
-    mocks.availableModels$.set([FABLE, { value: 'other-model', label: 'Other' }]);
     mocks.fileSpecialistsLoaded$.set(false);
     mocks.fileSpecialistsLoaded$.set(true);
     await flush();
@@ -220,7 +232,6 @@ describe('InitialAgentPicker stale model override clearing', () => {
   });
 
   it('normalizes a degenerate persisted state (override flag set with no model) once data is ready', async () => {
-    mocks.availableModels$.set([FABLE]);
     mocks.fileSpecialistsLoaded$.set(true);
 
     const onModelChange = vi.fn();
@@ -244,7 +255,6 @@ describe('InitialAgentPicker stale model override clearing', () => {
   });
 
   it('clears a stale override re-applied after mount (parent hydration)', async () => {
-    mocks.availableModels$.set([FABLE]);
     mocks.fileSpecialistsLoaded$.set(true);
 
     const onModelChange = vi.fn();
@@ -267,5 +277,53 @@ describe('InitialAgentPicker stale model override clearing', () => {
       expect(teamPickerSelected()).toBe('');
       expect(teamPickerDefault()).toBe('fable-5');
     });
+  });
+
+  it('invalidates cached per-provider previews when the store specialist view refreshes', async () => {
+    mocks.fileSpecialistsLoaded$.set(true);
+
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
+      },
+    });
+
+    await waitFor(() => expect(teamPickerDefault()).toBe('fable-5'));
+    expect(mocks.specialistsList).toHaveBeenCalledTimes(1);
+
+    // Specialist defaults change on disk: the daemon emits specialists:changed
+    // and the list subscription refreshes the store view. The cached
+    // per-provider preview must be dropped and refetched.
+    mocks.specialistsList.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'sonnet-4.6' },
+      ]),
+    );
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'sonnet-4.6' },
+    ]);
+
+    await waitFor(() => expect(teamPickerDefault()).toBe('sonnet-4.6'));
+    expect(mocks.specialistsList).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to the store resolvedModel until the per-provider fetch lands', async () => {
+    // Per-provider fetch never resolves — the store view (daemon default
+    // provider context) must drive the preview.
+    mocks.specialistsList.mockImplementation(() => new Promise(() => {}));
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'store-model' },
+    ]);
+    mocks.fileSpecialistsLoaded$.set(true);
+
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
+      },
+    });
+
+    await waitFor(() => expect(teamPickerDefault()).toBe('store-model'));
   });
 });

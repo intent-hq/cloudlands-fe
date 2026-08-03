@@ -46,18 +46,22 @@ export class LiveSpecialistsClient implements SpecialistsClient {
    * public `list()` folds errors to an empty list (picker falls back to the
    * hardcoded `SPECIALISTS`); event-driven refetches use this directly so a
    * transient failure keeps the last known-good view instead of wiping the
-   * store (#610).
+   * store (#610). The optional `provider` supplies the resolution context for
+   * the additive `resolvedModel`/`resolvedProvider` preview fields.
    */
-  private async fetchList(): Promise<SpecialistDef[]> {
-    const result = await backendRequest<{ specialists?: unknown[] }>("specialist.list");
+  private async fetchList(provider?: string): Promise<SpecialistDef[]> {
+    const result = await backendRequest<{ specialists?: unknown[] }>(
+      "specialist.list",
+      provider ? { provider } : undefined,
+    );
     return Array.isArray(result?.specialists)
       ? (result.specialists as SpecialistDef[])
       : [];
   }
 
-  async list(): Promise<SpecialistDef[]> {
+  async list(provider?: string): Promise<SpecialistDef[]> {
     try {
-      return await this.fetchList();
+      return await this.fetchList(provider);
     } catch {
       return [];
     }

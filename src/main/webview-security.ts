@@ -33,6 +33,7 @@ import {
   focusHudWindow,
   registerHudWindow,
 } from './hud-window';
+import { isTrustedHidOrigin } from '../features/hardware-console/main/hardware-console.ipc';
 import { Logger } from '../shared/logger';
 
 const logger = new Logger('WebviewSecurity');
@@ -507,9 +508,15 @@ function setupPermissionHandlers(ses: Electron.Session): void {
   });
 
 
-  ses.setPermissionCheckHandler((_webContents, permission, _requestingOrigin, _details) => {
+  ses.setPermissionCheckHandler((_webContents, permission, requestingOrigin, _details) => {
     if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
       return true;
+    }
+    // WebHID for the hardware console (Creator Micro 2 / Codex Micro): the
+    // app shell may enumerate HID devices; the actual device grant is scoped
+    // to supported VID/PIDs by the feature's device permission handler.
+    if (permission === 'hid') {
+      return isTrustedHidOrigin(requestingOrigin);
     }
     return false;
   });

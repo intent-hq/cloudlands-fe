@@ -153,6 +153,21 @@ export const WorkspaceSchema = z.object({
   cowSupported: z.boolean().optional(),
   /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout (skip-isolation/direct, remote, …). */
   checkoutMode: z.enum(['cow', 'worktree']).optional(),
+  /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until first computation completes. */
+  diskUsage: z
+    .object({
+      bytes: z.number().int().nonnegative(),
+      fileCount: z.number().int().nonnegative(),
+      computedAt: z.string().datetime({ offset: true }),
+      breakdown: z.array(
+        z.object({
+          name: z.string(),
+          bytes: z.number().int().nonnegative(),
+          fileCount: z.number().int().nonnegative(),
+        }),
+      ),
+    })
+    .optional(),
 });
 
 // SSH configuration schema for remote workspaces

@@ -5,6 +5,7 @@
 
 import {
   fuzzyScore,
+  type PaletteFilter,
   type WorkspaceObject,
   type WorkspaceObjectType,
 } from './command-palette-utils';
@@ -29,7 +30,7 @@ export interface WorkspaceItem {
 
 export interface ComputeResultsInput {
   query: string;
-  activeFilter: WorkspaceObjectType | 'workspace' | null;
+  activeFilter: PaletteFilter | null;
   workspaceId: string | undefined;
   agents: WorkspaceObject[];
   notes: WorkspaceObject[];
@@ -40,6 +41,8 @@ export interface ComputeResultsInput {
   files: any[];
   commands: PaletteCommand[];
   workspaceItems: WorkspaceItem[];
+  /** Chat transcript matches from `search.messages` (already query-driven and capped). */
+  messages?: any[];
 }
 
 const MAX_ITEMS_PER_GROUP = 3;
@@ -62,6 +65,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
     files,
     commands,
     workspaceItems,
+    messages = [],
   } = input;
 
   const flat: any[] = [];
@@ -71,7 +75,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
     items: any[],
     groupLabel?: string,
     shortcutKey?: string,
-    itemType?: WorkspaceObjectType,
+    itemType?: WorkspaceObjectType | 'message',
   ) => {
     if (groupLabel && items.length > 0) {
       flat.push({ _groupLabel: groupLabel, _shortcutKey: shortcutKey, _idx: idx++ });
@@ -96,6 +100,12 @@ export function computeResults(input: ComputeResultsInput): any[] {
 
   // Searching: show filtered results across all types
   if (q) {
+    // With the message filter active, show only the transcript matches.
+    if (activeFilter === 'message') {
+      addItems(messages, m.layout_commandPalette_messages_group(), '?', 'message');
+      return flat;
+    }
+
     const allItems = [
       ...commands.filter((c) => c.id !== 'new-workspace' && (workspaceId || c.id !== 'new-file')),
       ...agents,
@@ -119,6 +129,11 @@ export function computeResults(input: ComputeResultsInput): any[] {
       .slice(0, 20);
 
     addItems(filtered);
+    // Transcript matches are already query-driven (FTS) — append as their own
+    // labeled group rather than re-filtering them through fuzzyScore.
+    if (messages.length > 0) {
+      addItems(messages, m.layout_commandPalette_messages_group(), '?', 'message');
+    }
     return flat;
   }
 
@@ -152,6 +167,8 @@ export function computeResults(input: ComputeResultsInput): any[] {
     addItems(browserUrls, m.layout_commandPalette_browser_group(), '^', 'browser');
   if (files.length > 0 && (!activeFilter || activeFilter === 'file'))
     addItems(files, m.layout_commandPalette_files_group(), '/', 'file');
+  if (messages.length > 0 && (!activeFilter || activeFilter === 'message'))
+    addItems(messages, m.layout_commandPalette_messages_group(), '?', 'message');
 
   if (!activeFilter || activeFilter === 'workspace') {
     if (workspaceItems.length > 0) {

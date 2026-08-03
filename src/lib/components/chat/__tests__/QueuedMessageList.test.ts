@@ -442,6 +442,76 @@ describe('QueuedMessageList', () => {
     });
   });
 
+  describe('hook wake messages (messageMetadata.type === "hook_wake")', () => {
+    const HOOK_WAKE_METADATA = {
+      type: 'hook_wake',
+      hookId: 'hook-1',
+      hookName: 'ci-watch',
+      reason: 'dispatched',
+    };
+
+    it('renders bolt + hook name attribution with the prefix stripped, no Edit', () => {
+      const { container } = render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              content: '[Background hook "ci-watch"] CI is red',
+              messageMetadata: HOOK_WAKE_METADATA,
+            }),
+          ],
+        },
+      });
+
+      expect(screen.getByText('ci-watch')).toBeTruthy();
+      expect(screen.getByTestId('queued-hook-wake-icon')).toBeTruthy();
+      expect(screen.getByText(/CI is red/)).toBeTruthy();
+      expect(screen.queryByText(/\[Background hook/)).toBeNull();
+
+      const tooltips = buttonTooltips(container);
+      expect(tooltips).not.toContain('Edit');
+      expect(tooltips).toContain('Remove');
+      expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
+    });
+
+    it('falls back to "Hook" when hookName is absent', () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              content: 'wake up',
+              messageMetadata: { type: 'hook_wake', hookId: 'hook-2' },
+            }),
+          ],
+        },
+      });
+
+      expect(screen.getByText('Hook')).toBeTruthy();
+    });
+
+    it('editLastMessage() skips a trailing hook wake and edits the last user message', async () => {
+      const { component, container } = render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({ id: 'q-1', content: 'normal message', position: 0 }),
+            queued({
+              id: 'q-2',
+              content: '[Background hook "ci-watch"] CI is red',
+              position: 1,
+              messageMetadata: HOOK_WAKE_METADATA,
+            }),
+          ],
+        },
+      });
+
+      expect(component.editLastMessage()).toBe(true);
+      await tick();
+
+      const textarea = container.querySelector('textarea');
+      expect(textarea).toBeTruthy();
+      expect(textarea?.value).toBe('normal message');
+    });
+  });
+
   describe('image thumbnails', () => {
     const IMAGE_BLOCKS: NonNullable<QueuedMessage['imageBlocks']> = [
       { type: 'image', data: 'AAAA', mimeType: 'image/png' },

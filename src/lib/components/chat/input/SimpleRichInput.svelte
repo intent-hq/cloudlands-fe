@@ -14,7 +14,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   selectNormalizedProviderId,
   selectProviderDisplayName,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
+  import {
+    enhancePrompt,
+    EnhancePromptUnavailableError,
+    isEnhancePromptAvailable,
+  } from '$lib/client/live/live-prompt-enhancement';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
 
@@ -56,6 +61,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   const logger = createLogger('SimpleRichInput');
 
   const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const activeProviderId$ = selectActiveProviderId();
 
   // Catalog-backed local shims for the legacy provider-config helpers.
   function normalizeProviderId(providerId: string): string {
@@ -171,6 +177,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     onHistoryPrev,
     onHistoryNext,
   }: Props = $props();
+
+  // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
+  const enhanceAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
 
   // Track if enhancement is in progress
   let isEnhancing = $state(false);
@@ -630,6 +639,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   async function handleEnhancePrompt() {
+    if (!enhanceAvailable) return;
     if (!value.trim() || isEnhancing) return;
 
     isEnhancing = true;
@@ -658,9 +668,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       }
       logger.error('Failed to enhance prompt:', error);
       toast.error(
-        error instanceof Error && error.message
-          ? m.chat_richInput_enhanceFailedDetail_error({ detail: error.message })
-          : m.chat_richInput_enhanceFailed_error(),
+        error instanceof EnhancePromptUnavailableError
+          ? m.chat_richInput_enhanceUnavailable_error()
+          : error instanceof Error && error.message
+            ? m.chat_richInput_enhanceFailedDetail_error({ detail: error.message })
+            : m.chat_richInput_enhanceFailed_error(),
       );
     } finally {
       // Only reset isEnhancing if this request wasn't cancelled
@@ -1215,30 +1227,32 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         </Button>
       </TooltipShortcut>
 
-      {#if isEnhancing}
-        <TooltipShortcut label={m.chat_richInput_stopEnhancing_label()} side="top">
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            onclick={handleCancelEnhance}
-            aria-label={m.chat_richInput_stopEnhancing_label()}
-            class="text-destructive-foreground"
-          >
-            <Fa icon={faStop} size="sm" />
-          </Button>
-        </TooltipShortcut>
-      {:else}
-        <TooltipShortcut label={m.chat_richInput_enhancePrompt_label()} shortcut="cmd+/" side="top">
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            onclick={handleEnhancePrompt}
-            disabled={disabled || !value.trim()}
-            aria-label={m.chat_richInput_enhancePrompt_label()}
-          >
-            <Fa icon={faMagicWandSparkles} size="sm" />
-          </Button>
-        </TooltipShortcut>
+      {#if enhanceAvailable}
+        {#if isEnhancing}
+          <TooltipShortcut label={m.chat_richInput_stopEnhancing_label()} side="top">
+            <Button
+              variant="ghost-light"
+              size="icon-sm"
+              onclick={handleCancelEnhance}
+              aria-label={m.chat_richInput_stopEnhancing_label()}
+              class="text-destructive-foreground"
+            >
+              <Fa icon={faStop} size="sm" />
+            </Button>
+          </TooltipShortcut>
+        {:else}
+          <TooltipShortcut label={m.chat_richInput_enhancePrompt_label()} shortcut="cmd+/" side="top">
+            <Button
+              variant="ghost-light"
+              size="icon-sm"
+              onclick={handleEnhancePrompt}
+              disabled={disabled || !value.trim()}
+              aria-label={m.chat_richInput_enhancePrompt_label()}
+            >
+              <Fa icon={faMagicWandSparkles} size="sm" />
+            </Button>
+          </TooltipShortcut>
+        {/if}
       {/if}
 
       {#if showStopButton}

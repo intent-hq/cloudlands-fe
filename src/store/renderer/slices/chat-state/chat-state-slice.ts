@@ -5,6 +5,7 @@ import type {
   ChatStateSlice,
   StatusEvent,
   LastAttemptedMessage,
+  LiveStreamPhase,
   QueuedRetryRecord,
   SendMessagePayload,
   InitializeChatOptions,
@@ -40,6 +41,7 @@ export const emptyChatAgentState: ChatAgentState = {
   isRebinding: false,
   lastMessageTime: 0,
   lastChunkReceivedAt: 0,
+  liveStreamPhase: null,
 };
 
 export const initialState: ChatStateSlice = {
@@ -611,6 +613,16 @@ export const chatTrackedWorkspaceSet = createAction<[agentId: string, trackedWsI
   'chatState/trackedWorkspaceSet',
 );
 
+/**
+ * Standing `chat.subscribe` lifecycle phase report (observational, deduped
+ * at the live client). Dispatched by chat-subscribe-service from the
+ * client's onPhase callback; `null` on subscription teardown so a closed
+ * stream never leaves a stale pre-live phase behind.
+ */
+export const chatLiveStreamPhaseChanged = createAction<
+  [agentId: string, phase: LiveStreamPhase | null]
+>('chatState/liveStreamPhaseChanged');
+
 // --- Transcript hydration tracking actions ---
 
 /** Transcript load started for an agent */
@@ -814,6 +826,12 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(chatTrackedWorkspaceSet, (state, { payload: [agentId, trackedWsId] }) =>
     updateAgent(state, agentId, { trackedWorkspaceId: trackedWsId }),
   )
+  .with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, phase] }) => {
+    // Teardown reset (null) on a chat never opened must not materialize an
+    // entry; a real phase report may (mid-turn open precedes chatInitialized).
+    if (phase === null && !state.byAgentId[agentId]) return state;
+    return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
+  })
   .with(transcriptHydrationStarted, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, { agentId, transcriptHydration: 'loading' }),
   )

@@ -42,11 +42,16 @@
 
   // State model: two independent booleans
   // - isExpanded: user wants full content (no cylinder)
-  // - showCylinder: cylinder preview is visible (during/after streaming)
+  // - showCylinder: cylinder preview is visible (during/after streaming).
+  //   For the last group (or while streaming) it stays true on collapse, so
+  //   "collapse" lands on the semi-open preview instead of fully closing.
   let isExpanded = $state(isLast && !isStreaming);
   let showCylinder = $state(isLast && !isStreaming);
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
+  // Tracks a manual collapse so the streaming-end effect doesn't force the
+  // last group back to fully expanded (non-reactive by design).
+  let userCollapsed = false;
 
   // Track previous streaming state to detect streaming→not-streaming edge
   let prevStreaming = $state(false);
@@ -65,9 +70,10 @@
       prevStreaming = false;
 
       if (isLast) {
-        // Last group stays fully expanded after streaming ends
-        isExpanded = true;
+        // Last group can never fully close; if the user collapsed it
+        // mid-stream, land on semi-open instead of force-expanding
         showCylinder = true;
+        if (!userCollapsed) isExpanded = true;
       } else {
         isExpanded = false;
         // After streaming ends, collapse after delay
@@ -99,8 +105,7 @@
       const startHeight = Number.isFinite(el.offsetHeight) ? el.offsetHeight : 0;
 
       // Toggle state
-      isExpanded = !isExpanded;
-      if (!isExpanded) showCylinder = false;
+      applyToggle();
 
       // After Svelte updates the DOM, animate from old height to new height
       requestAnimationFrame(() => {
@@ -126,9 +131,16 @@
         }
       });
     } else {
-      isExpanded = !isExpanded;
-      if (!isExpanded) showCylinder = false;
+      applyToggle();
     }
+  }
+
+  function applyToggle() {
+    isExpanded = !isExpanded;
+    userCollapsed = !isExpanded;
+    // Last/streaming groups can never fully close — collapsing them lands
+    // on the semi-open cylinder preview
+    if (!isExpanded) showCylinder = isLast || isStreaming;
   }
 
   // Compute stats from blocks
@@ -215,10 +227,14 @@
     >
       <Fa icon={faRectangleList} size={12} class="text-ghost" />
     </div>
-    <span class="font-semibold text-foreground shrink-0">{name}</span>
-    {#if textSnippet}
-      <span class="text-sm text-subtle truncate min-w-0">{textSnippet}</span>
-    {/if}
+    <!-- Name and snippet share one line box so their text baselines coincide;
+         a flex sibling with `truncate` (overflow: hidden) would synthesize its
+         baseline from the box edge and sit visibly raised. -->
+    <span class="min-w-0 truncate">
+      <span class="font-semibold text-foreground">{name}</span>{#if textSnippet}<span
+          class="text-sm text-subtle ml-2.5">{textSnippet}</span
+        >{/if}
+    </span>
     <div class="flex items-center gap-1.5 ml-auto shrink-0 opacity-40">
       {#each stats.icons.slice(0, 5) as icon, i (icon)}
         <span class="icon-animate-in" style="animation-delay: {i * 50}ms">

@@ -10,10 +10,6 @@
 //   - `_one` / `_many` plural key pairs are complete (checked per catalog,
 //     including the base).
 //
-// The generated pseudo-locale (en-XA) is exempt: it is derived mechanically
-// from en.json by scripts/generate-pseudo-locale.mjs, gitignored, and complete
-// by construction.
-//
 // Exits 1 with a diff-style report on any violation. Chained into
 // `pnpm run lint` (like check-hardcoded-strings.mjs), so it runs in CI.
 //
@@ -24,7 +20,6 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
-const PSEUDO_LOCALE = 'en-XA';
 const PLACEHOLDER_RE = /\{[a-zA-Z_$][\w$]*\}/g;
 
 // Cap per-category key listings so a massively incomplete catalog reports a
@@ -75,12 +70,11 @@ export function checkCompleteness(rootDir) {
   const baseCatalog = JSON.parse(readFileSync(basePath, 'utf8'));
   const baseKeys = messageKeys(baseCatalog);
 
-  // Registration ↔ file cross-check (pseudo catalog is generated on demand).
+  // Registration ↔ file cross-check.
   const onDisk = readdirSync(join(rootDir, 'messages'))
     .filter((name) => name.endsWith('.json'))
     .map((name) => name.slice(0, -'.json'.length));
   for (const locale of registered) {
-    if (locale === PSEUDO_LOCALE) continue;
     if (!onDisk.includes(locale)) {
       problems.push(
         `${locale}: registered in project.inlang/settings.json but messages/${locale}.json does not exist`,
@@ -88,7 +82,6 @@ export function checkCompleteness(rootDir) {
     }
   }
   for (const locale of onDisk) {
-    if (locale === PSEUDO_LOCALE) continue;
     if (!registered.includes(locale)) {
       problems.push(
         `${locale}: messages/${locale}.json exists but is not registered in project.inlang/settings.json`,
@@ -107,7 +100,7 @@ export function checkCompleteness(rootDir) {
 
   // Non-base catalogs: exact key parity + placeholder parity + plural pairing.
   for (const locale of registered) {
-    if (locale === baseLocale || locale === PSEUDO_LOCALE) continue;
+    if (locale === baseLocale) continue;
     const catalogPath = join(rootDir, `messages/${locale}.json`);
     if (!existsSync(catalogPath)) continue; // already reported above
     const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'));

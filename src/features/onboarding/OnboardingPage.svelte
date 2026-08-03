@@ -14,7 +14,12 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
-  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
+  import {
+    enhancePrompt,
+    EnhancePromptUnavailableError,
+    isEnhancePromptAvailable,
+  } from '$lib/client/live/live-prompt-enhancement';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { v4 as uuidv4 } from 'uuid';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -84,7 +89,11 @@
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
     debounceWorkspaceInitializerOnboardingFormState,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-  import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import {
+    selectWorkspaceInitializerHydrated,
+    selectWorkspaceInitializerOnboardingFormState,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { selectModel } from '$store/renderer/slices/model/model-slice';
   import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
@@ -287,6 +296,10 @@
   let promptStepRef: OnboardingPromptStep | null = $state(null);
   let isOnboardingEnhancing = $state(false);
 
+  // §5.31 gate — enhance is auggie-only; unset active provider defaults to auggie
+  const activeProviderId$ = selectActiveProviderId();
+  const enhancePromptAvailable = $derived(isEnhancePromptAvailable($activeProviderId$));
+
   /** Get the RichTextarea from the prompt step sub-component. */
   function getOnboardingRichTextarea(): RichTextarea | null {
     return promptStepRef?.getRichTextarea() ?? null;
@@ -350,6 +363,35 @@
   let setupScriptName = $state('Custom');
   let isCustomSetupScript = $state(false);
 
+  // User-picked model for the initial Coordinator agent (step 3 picker).
+  // undefined + false means the auto-resolved default applies (behavior
+  // identical to before the picker existed).
+  let onboardingSelectedModel = $state<string | undefined>(undefined);
+  let onboardingModelWasOverridden = $state(false);
+
+  // One-time restore of a persisted mid-onboarding model pick once the
+  // workspace-initializer state has hydrated (mirrors how the persisted form
+  // state round-trips setupScript et al.).
+  let onboardingModelRestoreApplied = false;
+  $effect(() => {
+    if (!isOnboarding || !$workspaceInitializerHydrated$ || onboardingModelRestoreApplied) return;
+    onboardingModelRestoreApplied = true;
+    const persisted = selectWorkspaceInitializerOnboardingFormState.select(appStore.state);
+    if (persisted?.modelWasOverridden && persisted.selectedModel) {
+      onboardingSelectedModel = persisted.selectedModel;
+      onboardingModelWasOverridden = true;
+    }
+  });
+
+  /** User picked a model in the prompt-step picker: it also becomes the
+   * global default (the model-selection persistence middleware owns writing
+   * it to the daemon settings catalog and any provider switch). */
+  function handleOnboardingModelChange(model: string) {
+    onboardingSelectedModel = model;
+    onboardingModelWasOverridden = true;
+    appStore.dispatch(selectModel(model));
+  }
+
   // Repo-committed setup script from <repo>/.intent/config.json (local repos
   // read the file over IPC; GitHub repos use `github.repoConfig.get`).
   // Cached alongside the repo it was fetched for so stale results are never applied.
@@ -357,6 +399,19 @@
   let repoConfigScriptRepo = $state<string | null>(null);
   // True while the repo-config probe is in flight (spinner on the setup-script control).
   let isRepoConfigLoading = $state(false);
+
+  // Hide the setup-script disclosure while the probe is in flight and while
+  // the unedited repo-config script is the active default — the committed
+  // .intent/config.json applies silently (mirrors the submit-time
+  // isUneditedRepoConfigScript check). Any user customization shows the row.
+  const hideSetupScriptControl = $derived(
+    isRepoConfigLoading ||
+      (repoConfigScript !== null &&
+        repoConfigScriptRepo === projectSelection?.repoPath &&
+        setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
+        !isCustomSetupScript &&
+        setupScript.trim() === repoConfigScript.trim()),
+  );
 
   // Helper to restore the default setup script for a repo.
   // Priority: repo-committed `.intent/config.json` setupScript > last used for
@@ -383,6 +438,8 @@
     const script = setupScript;
     const scriptName = setupScriptName;
     const customScript = isCustomSetupScript;
+    const pickedModel = onboardingSelectedModel;
+    const modelOverridden = onboardingModelWasOverridden;
 
     if (!isOnboarding || !$workspaceInitializerHydrated$) return;
     if (!(selection || skipIso || script || (step !== 'requirements' && step !== 'welcome')))
@@ -405,6 +462,8 @@
         setupScript: script,
         setupScriptName: scriptName,
         isCustomSetupScript: customScript,
+        selectedModel: pickedModel,
+        modelWasOverridden: modelOverridden,
         step,
       }),
     );
@@ -669,6 +728,7 @@
   }
 
   async function handleOnboardingEnhancePrompt() {
+    if (!enhancePromptAvailable) return;
     if (!onboardingInputValue.trim() || isOnboardingEnhancing) return;
     isOnboardingEnhancing = true;
     try {
@@ -680,9 +740,11 @@
     } catch (error) {
       logger.error('Failed to enhance prompt', error);
       toast.error(
-        error instanceof Error && error.message
-          ? m.onboarding_page_enhanceFailedWithMessage_error({ message: error.message })
-          : m.onboarding_page_enhanceFailed_error(),
+        error instanceof EnhancePromptUnavailableError
+          ? m.onboarding_page_enhanceUnavailable_error()
+          : error instanceof Error && error.message
+            ? m.onboarding_page_enhanceFailedWithMessage_error({ message: error.message })
+            : m.onboarding_page_enhanceFailed_error(),
       );
     } finally {
       isOnboardingEnhancing = false;
@@ -745,7 +807,10 @@
         model: effectiveModel,
         behaviorPrompt,
         specialistId,
-      } = await resolveOnboardingModel(reduxState);
+      } = await resolveOnboardingModel(
+        reduxState,
+        onboardingModelWasOverridden ? onboardingSelectedModel : undefined,
+      );
       const agentType = createAgentTypeId('workspace');
 
       // Parse context from the rich textarea
@@ -1229,11 +1294,15 @@
                           repoConfigScript={repoConfigScriptRepo === projectSelection?.repoPath
                             ? repoConfigScript
                             : null}
-                          {isRepoConfigLoading}
+                          {hideSetupScriptControl}
                           {visibleSuggestions}
                           bind:focusedSuggestionIndex
+                          selectedModel={onboardingSelectedModel}
+                          modelWasOverridden={onboardingModelWasOverridden}
+                          onModelChange={handleOnboardingModelChange}
                           onSubmit={handleOnboardingSubmit}
                           onEnhancePrompt={handleOnboardingEnhancePrompt}
+                          {enhancePromptAvailable}
                           onContentChange={handleOnboardingContentChange}
                           onFocus={handleOnboardingFocus}
                           onKeydown={handleOnboardingKeydown}

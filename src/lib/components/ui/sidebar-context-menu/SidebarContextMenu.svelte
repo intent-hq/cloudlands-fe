@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
+  import { faCheck, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import {
   isSeparator,
   type SidebarMenuEntry,
@@ -61,6 +62,24 @@
 
   function handleItemClick(item: SidebarMenuItem) {
     if (item.disabled) return;
+    if (item.submenu) {
+      openSubmenuId = openSubmenuId === item.id ? null : item.id;
+      return;
+    }
+    item.onClick();
+    onClickOutside?.();
+  }
+
+  // Flyout submenu: opens on hover/click of the parent item, closes when the
+  // pointer moves to another top-level item.
+  let openSubmenuId: string | null = $state(null);
+
+  function handleItemMouseEnter(item: SidebarMenuItem) {
+    openSubmenuId = item.submenu && !item.disabled ? item.id : null;
+  }
+
+  function handleSubmenuItemClick(item: SidebarMenuItem) {
+    if (item.disabled) return;
     item.onClick();
     onClickOutside?.();
   }
@@ -96,20 +115,49 @@
       {#if isSeparator(entry)}
         <div class="h-px bg-border my-0.5"></div>
       {:else}
-        <button
-          type="button"
-          class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent
-            {entry.disabled ? 'text-muted-foreground cursor-not-allowed' : 'text-foreground hover:bg-accent cursor-pointer'}
-            {entry.destructive && !entry.disabled ? 'text-destructive-foreground hover:text-destructive-foreground' : ''}"
-          onclick={() => handleItemClick(entry)}
-          disabled={entry.disabled}
-          role="menuitem"
-        >
-          {#if entry.icon}
-            <Fa icon={entry.icon} class="w-2.5 h-2.5 opacity-60" />
+        <div class="relative" onmouseenter={() => handleItemMouseEnter(entry)} role="presentation">
+          <button
+            type="button"
+            class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent
+              {entry.disabled ? 'text-muted-foreground cursor-not-allowed' : 'text-foreground hover:bg-accent cursor-pointer'}
+              {entry.destructive && !entry.disabled ? 'text-destructive-foreground hover:text-destructive-foreground' : ''}"
+            onclick={() => handleItemClick(entry)}
+            disabled={entry.disabled}
+            role="menuitem"
+            aria-haspopup={entry.submenu ? 'menu' : undefined}
+            aria-expanded={entry.submenu ? openSubmenuId === entry.id : undefined}
+          >
+            {#if entry.icon}
+              <Fa icon={entry.icon} class="w-2.5 h-2.5 opacity-60" />
+            {/if}
+            <span class="flex-1">{entry.label}</span>
+            {#if entry.submenu}
+              <Fa icon={faChevronRight} class="w-2 h-2 opacity-60" />
+            {/if}
+          </button>
+          {#if entry.submenu && openSubmenuId === entry.id}
+            <div
+              class="absolute left-full top-0 -mt-0.5 bg-popover border border-border shadow-lg py-0.5 min-w-32"
+              role="menu"
+            >
+              {#each entry.submenu as subitem (subitem.id)}
+                <button
+                  type="button"
+                  class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent
+                    {subitem.disabled ? 'text-muted-foreground cursor-not-allowed' : 'text-foreground hover:bg-accent cursor-pointer'}"
+                  onclick={() => handleSubmenuItemClick(subitem)}
+                  disabled={subitem.disabled}
+                  role="menuitem"
+                >
+                  <span class="flex-1">{subitem.label}</span>
+                  {#if subitem.checked}
+                    <Fa icon={faCheck} class="w-2.5 h-2.5 opacity-60" />
+                  {/if}
+                </button>
+              {/each}
+            </div>
           {/if}
-          {entry.label}
-        </button>
+        </div>
       {/if}
     {/each}
   </div>

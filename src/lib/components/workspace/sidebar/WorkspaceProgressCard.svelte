@@ -905,7 +905,10 @@
             {/if}
           </button>
         </Tooltip>
-        <CheckoutModePill checkoutMode={$workspace?.checkoutMode} />
+        {#if $workspace?.checkoutMode}
+          <span class="mx-1">·</span>
+        {/if}
+        <CheckoutModePill workspace={$workspace} />
         {#if $workspace?.branch}
           <span class="mx-1">·</span>
           <span>{$workspace.branch}</span>
@@ -1075,7 +1078,10 @@
             {/if}
           </button>
         </Tooltip>
-        <CheckoutModePill checkoutMode={$workspace?.checkoutMode} />
+        {#if $workspace?.checkoutMode}
+          <span class="mx-1">·</span>
+        {/if}
+        <CheckoutModePill workspace={$workspace} />
       </div>
     </div>
 

@@ -1153,7 +1153,9 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
   })
   .with(updateAgentDigest, (state, { payload: [, agentId, digest] }) => {
     const session = getSession(state, agentId);
-    if (!session || session.digest === digest) return state;
+    // Normalize undefined vs null so clearing an already-absent digest is a
+    // true no-op (the turn-boundary clear fires once per turn, digest or not).
+    if (!session || (session.digest ?? null) === digest) return state;
     return setSession(state, agentId, { ...session, digest: digest ?? undefined });
   })
   .with(renameAgent, (state, { payload: [, agentId, name] }) => {

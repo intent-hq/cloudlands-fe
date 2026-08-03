@@ -94,9 +94,7 @@ describe('AgentCard live preview precedence', () => {
       isStreaming: true,
       messages: [assistantMessage('character-level buffer text', { isStreaming: true })],
     });
-    appStore.dispatch(
-      updateSession(agentId, { lastAgentResponse: 'coarser activity preview' }),
-    );
+    appStore.dispatch(updateSession(agentId, { lastAgentResponse: 'coarser activity preview' }));
 
     render(AgentCard, { props: { agentId } });
 
@@ -296,5 +294,73 @@ describe('AgentCard user-message-newest preview (freshness wins)', () => {
 
     await screen.findByText('Watched Agent');
     expect(screen.queryByTestId('agent-card-preview')).toBeNull();
+  });
+});
+
+describe('AgentCard this-turn live text vs previous-turn report (monorepo#1327)', () => {
+  beforeEach(() => {
+    appStore.init();
+    agentId = `agent-preview-${++testAgentSeq}`;
+  });
+
+  afterEach(() => {
+    appStore.dispatch(removeSession(agentId));
+  });
+
+  it('lets this-turn live text outrank the previous turn completion report while responding', async () => {
+    // Regression: a delegated agent finished a task (reportToParent left a
+    // completionReport in metadata), then picked up a queued follow-up. Once
+    // the new turn streams text (per-turn receivedFirstChunk flip + push-
+    // applied lastAgentResponse), the preview must show the new turn's text,
+    // not the stale report.
+    seedSession({
+      isStreaming: true,
+      messages: [],
+      metadata: {
+        completionReport: 'old completion report from turn one',
+      } as AgentSession['metadata'],
+    });
+    appStore.dispatch(streamActivityReceived(agentId, true));
+    appStore.dispatch(updateSession(agentId, { lastAgentResponse: 'fresh second-turn text' }));
+
+    render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    expect(preview.textContent).toContain('fresh second-turn text');
+    expect(screen.queryByText('old completion report from turn one')).toBeNull();
+  });
+
+  it('keeps the previous-turn report before any this-turn text streams (pre-first-token fallback)', async () => {
+    // The stale report remains the last-resort fallback while responding
+    // until fresher content exists (no receivedFirstChunk flip yet).
+    seedSession({
+      isStreaming: true,
+      messages: [],
+      metadata: { completionReport: 'report from the last turn' } as AgentSession['metadata'],
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    expect(await screen.findByText('report from the last turn')).toBeTruthy();
+    expect(screen.queryByTestId('agent-card-preview')).toBeNull();
+  });
+
+  it('still shows the last completion report for an idle agent (no fresher content)', async () => {
+    // Idle between turns: a leftover lastAgentResponse must not displace the
+    // report — liveResponseLine only exists while the agent is responding.
+    seedSession({
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      messages: [],
+      metadata: {
+        completionReport: 'final report of the finished task',
+      } as AgentSession['metadata'],
+      lastAgentResponse: 'leftover mid-turn text',
+    });
+
+    render(AgentCard, { props: { agentId } });
+
+    expect(await screen.findByText('final report of the finished task')).toBeTruthy();
+    expect(screen.queryByText(/leftover mid-turn text/)).toBeNull();
   });
 });

@@ -1010,6 +1010,40 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(page.nextToken).toBeNull();
   });
 
+  it('getConversation forwards aroundMessageId (§5.5 seek) and surfaces prevToken', async () => {
+    backend.onRequest('agent.getConversation', () => ({
+      messages: [{ id: 'msg-target' }],
+      truncated: true,
+      totalMessages: 900,
+      nextToken: 'older-tok',
+      prevToken: 'newer-tok',
+    }));
+    const client = new LiveAgentsClient();
+
+    const page = await client.getConversation('agent-1', 200, undefined, 'msg-target');
+
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getConversation',
+      params: { agentId: 'agent-1', limit: 200, aroundMessageId: 'msg-target' },
+    });
+    expect(page.nextToken).toBe('older-tok');
+    expect(page.prevToken).toBe('newer-tok');
+    expect(page.messages).toHaveLength(1);
+  });
+
+  it('getConversation normalizes a missing prevToken to null (legacy backward pages)', async () => {
+    backend.onRequest('agent.getConversation', () => ({
+      messages: [],
+      truncated: false,
+      totalMessages: 0,
+      nextToken: null,
+    }));
+    const client = new LiveAgentsClient();
+
+    const page = await client.getConversation('agent-1');
+    expect(page.prevToken).toBeNull();
+  });
+
   describe('retry', () => {
     it('calls agent.retry with correct params and returns ok:true on success', async () => {
       backend.onRequest('agent.retry', (params) => {

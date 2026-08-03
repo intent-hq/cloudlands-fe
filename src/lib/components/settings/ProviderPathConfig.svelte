@@ -11,6 +11,7 @@
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import PathSettingField from './PathSettingField.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
   const logger = createLogger('ProviderPathConfig');
@@ -69,14 +70,8 @@
   }: Props = $props();
 
   let dropdownOpen = $state(false);
-  let inputValue = $state(configuredPath);
 
-  // Sync input value when configuredPath changes
-  $effect(() => {
-    inputValue = configuredPath;
-  });
-
-  async function savePath() {
+  async function savePath(path: string) {
     try {
       // The daemon owns provider path overrides (providers.paths, PROTOCOL
       // §5.12), keyed by provider id: host.checkAuggie reads
@@ -89,27 +84,14 @@
           ? (entry.value as Record<string, unknown>)
           : {};
       await appClient.settings.update([
-        { path: 'providers.paths', value: { ...existing, [providerId]: inputValue } },
+        { path: 'providers.paths', value: { ...existing, [providerId]: path } },
       ]);
-      onPathChange?.(inputValue);
+      onPathChange?.(path);
       toast.success(m.settings_providerPath_saved());
-      logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, inputValue);
+      logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, path);
     } catch (error) {
       logger.error(`[ProviderPathConfig] Failed to save ${providerId} path:`, error);
       toast.error(m.settings_providerPath_saveError());
-    }
-  }
-
-  function handleBlur() {
-    if (inputValue !== configuredPath) {
-      savePath();
-    }
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      savePath();
     }
   }
 
@@ -149,19 +131,17 @@
         </p>
       </div>
 
-      <!-- Path input -->
-      <div class="flex gap-2">
-        <input
-          type="text"
-          bind:value={inputValue}
-          onblur={handleBlur}
-          onkeydown={handleKeydown}
-          placeholder={placeholderText}
-          class="flex-1 px-2.5 py-1.5 bg-background border border-border rounded-md text-xs text-foreground
-            placeholder:text-muted-foreground/60 transition-all
-            focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-        />
-      </div>
+      <!-- Path picker: read-only field + file picker (native openFile locally,
+           remote modal file mode otherwise); clear removes the override, same
+           empty-value semantics as the old free-text input. -->
+      <PathSettingField
+        mode="file"
+        value={configuredPath}
+        placeholder={placeholderText}
+        ariaLabel={m.settings_providerPath_header({ name: providerName })}
+        pickerTitle={m.settings_providerPath_pickerTitle({ command: cliCommand })}
+        onchange={savePath}
+      />
 
       <!-- Status indicator: full (wrapped) auto-detected paths; the primary
            row stays visible when an override is configured, marked as

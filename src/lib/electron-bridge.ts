@@ -289,8 +289,8 @@ export function off(event: string, _handler: (...args: any[]) => void): void {
 }
 
 // File dialog replacements. Native invokes route through
-// native-dialog-bridge-seeder; openDirectory returns null when native dialogs
-// are unavailable so callers can present an in-app fallback.
+// native-dialog-bridge-seeder; openDirectory/openFile return null when native
+// dialogs are unavailable so callers can present an in-app fallback.
 export const dialog = {
   async message(
     message: string,
@@ -311,6 +311,17 @@ export const dialog = {
     if (!hasCapability('nativeDialogs')) return null;
 
     const paths = await invoke<string[] | null>(IPC_CHANNELS.DIALOG.OPEN, options);
+    return paths?.[0] ?? null;
+  },
+  async openFile(
+    options: { title?: string; defaultPath?: string } = {},
+  ): Promise<string | null> {
+    if (!hasCapability('nativeDialogs')) return null;
+
+    const paths = await invoke<string[] | null>(IPC_CHANNELS.DIALOG.OPEN, {
+      ...options,
+      mode: 'file',
+    });
     return paths?.[0] ?? null;
   },
 };

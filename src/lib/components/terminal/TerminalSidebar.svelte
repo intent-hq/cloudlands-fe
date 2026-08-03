@@ -6,6 +6,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import type { ScriptCategory,
   ScriptMode,
   ScriptWithState } from '$features/scripts/types';
+  import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
@@ -137,14 +138,29 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       let addedCount = 0;
       let updatedCount = 0;
       let removedCount = 0;
-
+      const scriptEntries = selectScriptEntries.select(appStore.state);
       const autoDetectedIds = new Set(
-        selectScriptEntries.select(appStore.state).filter((s) => s.source === 'auto-detected').map((s) => s.id),
+        scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
       );
+      const entriesById = new Map(scriptEntries.map((s) => [s.id, s]));
+      // A Set so a script skipped by both the remove and update branches (or
+      // duplicated in the agent output) is reported at most once.
+      const skippedRunning = new Set<string>();
 
       if (Array.isArray(parsed.remove)) {
         for (const scriptId of parsed.remove) {
           if (typeof scriptId === 'string' && autoDetectedIds.has(scriptId)) {
+            // Removing a running script kills its live PTY group daemon-side —
+            // skip it and surface the skip so the user can stop + re-detect.
+            const target = entriesById.get(scriptId);
+            if (target?.runtime?.status === 'running') {
+              skippedRunning.add(target.name);
+              logger.info('Skipping script.remove for running script', {
+                name: target.name,
+                scriptId,
+              });
+              continue;
+            }
             await scriptsClient.remove(workspaceId, scriptId);
             appStore.dispatch(removeScript(workspaceId, scriptId));
             removedCount++;
@@ -155,14 +171,25 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       if (Array.isArray(parsed.update)) {
         for (const entry of parsed.update) {
           if (entry.id && typeof entry.id === 'string' && autoDetectedIds.has(entry.id)) {
+            // The update rides the §5.8 script.create scriptId upsert, which
+            // tears down the live PTY group — never send it for a running row.
+            const target = entriesById.get(entry.id);
+            if (target?.runtime?.status === 'running') {
+              skippedRunning.add(target.name);
+              logger.info('Skipping script.update for running script', {
+                name: target.name,
+                scriptId: entry.id,
+              });
+              continue;
+            }
             const updates: Record<string, string> = {};
             if (entry.name) updates.name = entry.name;
             if (entry.command) updates.command = entry.command;
             if (entry.mode && validModes.has(entry.mode)) updates.mode = entry.mode;
             if (entry.category && validCategories.has(entry.category))
               updates.category = entry.category;
-            await scriptsClient.update(workspaceId, entry.id, updates);
-            updatedCount++;
+            const updateResult = await scriptsClient.update(workspaceId, entry.id, updates);
+            if (updateResult.success) updatedCount++;
           }
         }
       }
@@ -228,6 +255,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         });
       } else {
         toast.info(m.terminal_sidebar_noScriptChanges_info());
+      }
+      if (skippedRunning.size > 0) {
+        const skippedNames = [...skippedRunning];
+        toast.warning(
+          skippedNames.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: skippedNames[0] })
+            : m.scripts_detect_skippedRunning_many({
+                count: skippedNames.length,
+                names: skippedNames.join(', '),
+              }),
+        );
       }
       return;
     }
@@ -363,6 +401,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       } else {
         toast.info(m.terminal_sidebar_noScriptsLocally_info());
       }
+      const skippedRunning = result.skippedRunning ?? [];
+      if (skippedRunning.length > 0) {
+        toast.warning(
+          skippedRunning.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
+            : m.scripts_detect_skippedRunning_many({
+                count: skippedRunning.length,
+                names: skippedRunning.join(', '),
+              }),
+        );
+      }
       logger.info('Local detection complete', {
         totalScripts: selectScriptEntries.select(appStore.state).length,
         detectedCount,
@@ -451,8 +500,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // ---- Sort function ----
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
     return [...scripts].sort((a, b) => {
-      // Priority: running > exited > idle
-      const statusPriority = { running: 0, exited: 1, idle: 2 };
+      // Priority: live (running/restarting) > exited > idle
+      const statusPriority = { running: 0, restarting: 0, exited: 1, idle: 2 };
       const aPriority = statusPriority[a.runtime.status] ?? 3;
       const bPriority = statusPriority[b.runtime.status] ?? 3;
 
@@ -466,7 +515,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // ---- Status dot helpers ----
   function getStatusColor(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return 'bg-green-500';
+    // Live statuses (running/restarting) reuse the running treatment.
+    if (isLiveScriptStatus(status)) return 'bg-green-500';
     if (status === 'idle') return 'bg-muted-foreground/40';
     // exited
     if (exitCode === 0 || exitCode === null || exitCode === undefined)
@@ -477,7 +527,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function getStatusLabel(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return m.terminal_quakeOverlay_status_running();
+    if (isLiveScriptStatus(status)) return m.terminal_quakeOverlay_status_running();
     if (status === 'idle') return m.terminal_quakeOverlay_status_idle();
     if (exitCode === 0) return m.terminal_quakeOverlay_status_exitedZero();
     if (exitCode !== null && exitCode !== undefined) {
@@ -496,7 +546,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       tooltip?: string;
       onClick: (e: MouseEvent) => void;
     }> = [];
-    if (script.runtime.status === 'running') {
+    if (isLiveScriptStatus(script.runtime.status)) {
       actions.push({
         icon: faStop,
         label: m.terminal_quakeOverlay_stop_label(),
@@ -726,8 +776,13 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function finishEditingScript() {
     if (editingScriptId && editingScriptName.trim()) {
-      scriptsClient.update(workspaceId, editingScriptId, { name: editingScriptName.trim() });
-      appStore.dispatch(refreshScripts(workspaceId));
+      void scriptsClient
+        .update(workspaceId, editingScriptId, { name: editingScriptName.trim() })
+        .then((result) => {
+          if (!result.success && result.error) toast.warning(result.error);
+        })
+        .catch((error) => logger.error('Script update failed', error))
+        .finally(() => appStore.dispatch(refreshScripts(workspaceId)));
     }
     editingScriptId = null;
     editingScriptName = '';
@@ -1087,7 +1142,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     </button>
                   {:else}
                     <!-- Single-select actions -->
-                    {#if script.runtime.status === 'running'}
+                    {#if isLiveScriptStatus(script.runtime.status)}
                       <button
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"

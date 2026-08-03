@@ -145,6 +145,9 @@
     portal?: boolean;
     triggerClass?: string;
     defaultModelId?: string;
+    // Trigger label when no explicit model and no defaultModelId resolve
+    // (e.g. "Provider default" for daemon-resolved specialist previews).
+    defaultModelLabel?: string;
     showDefaultOption?: boolean;
     // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
@@ -173,6 +176,7 @@
     portal = true,
     triggerClass = '',
     defaultModelId,
+    defaultModelLabel,
     showDefaultOption = false,
     updateGlobalStore = false,
     updateGlobalDefault = false,
@@ -541,29 +545,31 @@
       localModel !== 'default',
   );
 
-  // Get the label for a model ID from available models list
+  // Get the label for a model ID from available models list; undefined when
+  // the id resolves to no loaded model (callers pick the fallback).
   function getModelLabel(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
     for (const models of Object.values(allProviderModels)) {
       const found = models.find((m) => m.value === modelId);
       if (found) return found.label;
     }
-    return (
-      availableModels.find((m) => m.value === modelId)?.label ||
-      parseCompoundModelId(modelId).modelId
-    );
+    return availableModels.find((m) => m.value === modelId)?.label;
   }
 
   const currentModelLabel = $derived.by(() => {
     if (hasExplicitModel) {
       return localModel
         ? (getModelLabel(localModel) ?? parseCompoundModelId(localModel).modelId)
-        : m.chat_modelPicker_defaultModel_label();
+        : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
     }
 
+    // Unresolvable defaultModelId (models not loaded yet): prefer the caller's
+    // defaultModelLabel (e.g. "Provider default"), then the bare model id.
     return defaultModelId
-      ? (getModelLabel(defaultModelId) ?? m.chat_modelPicker_defaultModel_label())
-      : m.chat_modelPicker_defaultModel_label();
+      ? (getModelLabel(defaultModelId) ??
+          defaultModelLabel ??
+          parseCompoundModelId(defaultModelId).modelId)
+      : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
   });
 
   const triggerProviderId = $derived.by(() => {

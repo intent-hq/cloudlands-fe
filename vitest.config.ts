@@ -5,16 +5,10 @@ import { readFileSync } from 'fs';
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
   const { paraglideVitePlugin } = await import('@inlang/paraglide-js');
-  const { writePseudoCatalog } = await import('./scripts/pseudo-locale-lib.mjs');
 
   // Mirror vite.config.mjs's __APP_VERSION__ define so components that render
   // the app version (e.g. HudFooter) resolve it under vitest.
   const packageJson = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
-
-  // The pseudo-locale catalog (messages/en-XA.json) is registered in
-  // project.inlang but gitignored — regenerate it before the Paraglide
-  // plugin compiles the project.
-  writePseudoCatalog(__dirname);
 
   return {
     plugins: [

@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  matchLocale,
-  PSEUDO_LOCALE,
-  resolveLocale,
-  SYSTEM_LANGUAGE_PREFERENCE,
-} from './locale-matcher';
+import { matchLocale, resolveLocale, SYSTEM_LANGUAGE_PREFERENCE } from './locale-matcher';
 
 // Simulated catalog set — the matcher must stay catalog-driven, so the
 // spec's negotiation cases are asserted against a multi-locale list, not
@@ -152,23 +147,5 @@ describe('resolveLocale', () => {
 
   it('treats empty preference as system', () => {
     expect(resolveLocale('', ['de-AT'], CATALOGS, BASE)).toBe('de');
-  });
-
-  describe('pseudo-locale (en-XA)', () => {
-    const WITH_PSEUDO = [...CATALOGS, PSEUDO_LOCALE];
-
-    it('is selectable by explicit preference', () => {
-      expect(resolveLocale(PSEUDO_LOCALE, ['en-US'], WITH_PSEUDO, BASE)).toBe(PSEUDO_LOCALE);
-    });
-
-    it('never wins system best-matching, even for English system locales', () => {
-      expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['en-US'], WITH_PSEUDO, BASE)).toBe('en');
-      expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['en-XA'], WITH_PSEUDO, BASE)).toBe('en');
-      expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['ja-JP'], WITH_PSEUDO, BASE)).toBe(BASE);
-    });
-
-    it('an unavailable explicit preference does not fall through to it', () => {
-      expect(resolveLocale('fr', ['en-GB'], WITH_PSEUDO, BASE)).toBe('en');
-    });
   });
 });

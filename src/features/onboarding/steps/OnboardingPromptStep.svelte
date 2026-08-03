@@ -18,7 +18,6 @@
   faMagicWandSparkles,
   faArrowsRotate,
   faCodeBranch,
-  faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
@@ -27,9 +26,22 @@
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SetupScriptModal from '$lib/components/modals/SetupScriptModal.svelte';
   import IssueSuggestions from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
+  import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import WorkspaceCreationError from '$features/onboarding/steps/WorkspaceCreationError.svelte';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectCatalogDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { appClient } from '$lib/client';
+  import { createLogger } from '$lib/utils/client-logger';
+
+  const COORDINATOR_SPECIALIST_ID = 'spec-writer';
+
+  const logger = createLogger('OnboardingPromptStep');
+  const defaultProviderId$ = selectCatalogDefaultProviderId();
+  const activeProviderId$ = selectActiveProviderId();
+  const specialists$ = selectSpecialists();
 
   interface Props {
     // Input state
@@ -55,8 +67,20 @@
     isCustomSetupScript: boolean;
     /** Repo-committed `.intent/config.json` script, forwarded to SetupScriptModal. */
     repoConfigScript: string | null;
-    /** True while the repo-config probe is in flight (spinner on the setup-script control). */
-    isRepoConfigLoading?: boolean;
+    /**
+     * Hide the setup-script disclosure row: the repo-config probe is in
+     * flight, or the unedited repo-config script is the active default (it
+     * applies silently without a visible control).
+     */
+    hideSetupScriptControl?: boolean;
+
+    // Model picker (initial Coordinator agent)
+    /** User-picked model — undefined means use the Coordinator's auto-resolved default. */
+    selectedModel?: string | undefined;
+    /** Whether the user explicitly overrode the model (vs the resolved default). */
+    modelWasOverridden?: boolean;
+    /** Callback when the user picks a model. */
+    onModelChange?: (model: string) => void;
 
     // Suggestions
     visibleSuggestions: string[];
@@ -65,6 +89,8 @@
     // Handlers
     onSubmit: () => void;
     onEnhancePrompt: () => void;
+    /** §5.31 gate — enhance button hidden when the active provider is not auggie */
+    enhancePromptAvailable?: boolean;
 
     onContentChange: () => void;
     onFocus: () => void;
@@ -95,11 +121,15 @@
     setupScriptName = $bindable(),
     isCustomSetupScript = $bindable(),
     repoConfigScript,
-    isRepoConfigLoading = false,
+    hideSetupScriptControl = false,
+    selectedModel = undefined,
+    modelWasOverridden = false,
+    onModelChange = () => {},
     visibleSuggestions,
     focusedSuggestionIndex = $bindable(),
     onSubmit,
     onEnhancePrompt,
+    enhancePromptAvailable = true,
 
     onContentChange,
     onFocus,
@@ -118,6 +148,51 @@
   let onboardingRichTextarea: RichTextarea | null = $state(null);
   let onboardingFileInput: HTMLInputElement | null = $state(null);
   let richTextareaWrapper: HTMLDivElement | null = $state(null);
+
+  // Daemon-resolved default-model preview for the Coordinator (PROTOCOL
+  // §5.11): `specialist.list` with the onboarding provider context returns
+  // additive `resolvedModel` fields computed by the same resolver a no-model
+  // create uses, so the picker displays exactly what the daemon would pin.
+  // Absent resolvedModel means "Provider default". The store's specialist
+  // view (daemon-default-provider context) is the fallback until the
+  // per-provider fetch lands. Mirrors InitialAgentPicker.
+  const onboardingProvider = $derived($activeProviderId$ || $defaultProviderId$);
+  let resolvedModelsByProvider = $state<Record<string, Record<string, string | undefined>>>({});
+
+  // Bumped on every store specialist-view refresh; in-flight fetches from an
+  // older generation are dropped so they can't overwrite fresher previews.
+  let previewsGeneration = 0;
+
+  // Invalidate cached previews whenever the store's specialist view refreshes
+  // (daemon `specialists:changed` → list subscription refetch).
+  $effect(() => {
+    void $specialists$;
+    previewsGeneration += 1;
+    resolvedModelsByProvider = {};
+  });
+
+  $effect(() => {
+    const provider = onboardingProvider;
+    if (!provider || provider in resolvedModelsByProvider) return;
+    const generation = previewsGeneration;
+    void (async () => {
+      try {
+        const defs = await appClient.specialists.list(provider);
+        if (generation !== previewsGeneration || defs.length === 0) return;
+        const byId: Record<string, string | undefined> = {};
+        for (const def of defs) byId[def.id] = def.resolvedModel;
+        resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: byId };
+      } catch (error) {
+        logger.debug('Failed to fetch resolved-model previews:', { provider, error });
+      }
+    })();
+  });
+
+  const coordinatorDefaultModel = $derived.by(() => {
+    const providerView = resolvedModelsByProvider[onboardingProvider];
+    if (providerView) return providerView[COORDINATOR_SPECIALIST_ID];
+    return $specialists$.find((s) => s.id === COORDINATOR_SPECIALIST_ID)?.resolvedModel;
+  });
 
   // Expose the RichTextarea ref so the parent can call methods on it
   export function getRichTextarea(): RichTextarea | null {
@@ -332,22 +407,24 @@
           />
 
           <div class="absolute top-2 right-2.5 flex items-center">
-            <Button
-              type="button"
-              onclick={onEnhancePrompt}
-              size="icon-xs"
-              variant="ghost-light"
-              disabled={!onboardingInputValue.trim() && !isOnboardingEnhancing}
-              tooltip={m.onboarding_promptStep_enhancePrompt_tooltip()}
-            >
-              {#if isOnboardingEnhancing}
-                <div class="animate-spin">
-                  <Fa icon={faArrowsRotate} size="xs" />
-                </div>
-              {:else}
-                <Fa icon={faMagicWandSparkles} size="xs" />
-              {/if}
-            </Button>
+            {#if enhancePromptAvailable}
+              <Button
+                type="button"
+                onclick={onEnhancePrompt}
+                size="icon-xs"
+                variant="ghost-light"
+                disabled={!onboardingInputValue.trim() && !isOnboardingEnhancing}
+                tooltip={m.onboarding_promptStep_enhancePrompt_tooltip()}
+              >
+                {#if isOnboardingEnhancing}
+                  <div class="animate-spin">
+                    <Fa icon={faArrowsRotate} size="xs" />
+                  </div>
+                {:else}
+                  <Fa icon={faMagicWandSparkles} size="xs" />
+                {/if}
+              </Button>
+            {/if}
 
             <Button
               type="button"
@@ -451,27 +528,24 @@
 
       <!-- Setup script disclosure -->
       {#if projectSelection?.repoPath && projectSelection?.type !== 'new'}
-        <div
-          class="flex items-center gap-0.5 text-sm"
-          in:fly={{ y: 10, duration: 200, easing: cubicOut }}
-        >
-          <button
-            type="button"
-            class="flex items-center whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            onclick={() => onShowSetupScriptChange(!showSetupScript)}
+        {#if !hideSetupScriptControl}
+          <div
+            class="flex items-center gap-0.5 text-sm"
+            in:fly={{ y: 10, duration: 200, easing: cubicOut }}
           >
-            <span>{m.onboarding_promptStep_setupEnvWith_before()}</span>
-            {#if isRepoConfigLoading}
-              <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
-              <span class="sr-only">{m.onboarding_promptStep_detectingSetupScript_label()}</span>
-            {:else}
+            <button
+              type="button"
+              class="flex items-center whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              onclick={() => onShowSetupScriptChange(!showSetupScript)}
+            >
+              <span>{m.onboarding_promptStep_setupEnvWith_before()}</span>
               <span class="bg-card/50 px-1.5 py-0.5 font-medium"
                 >{setupScriptName}</span
               >
               <span class="text-muted-foreground">{m.onboarding_promptStep_setupEnvWith_after()}</span>
-            {/if}
-          </button>
-        </div>
+            </button>
+          </div>
+        {/if}
         <SetupScriptModal
           bind:open={showSetupScript}
           repoPath={projectSelection.repoPath}
@@ -482,6 +556,26 @@
           onClose={() => onShowSetupScriptChange(false)}
         />
       {/if}
+
+      <!-- Model picker (initial Coordinator agent) -->
+      <div
+        class="flex items-center gap-0.5 text-sm"
+        in:fly={{ y: 10, duration: 200, easing: cubicOut }}
+      >
+        <span class="text-muted-foreground">{m.onboarding_promptStep_usingModel_before()}</span>
+        {#key coordinatorDefaultModel}
+          <ModelPicker
+            selectedModel={modelWasOverridden ? selectedModel : undefined}
+            {onModelChange}
+            variant="ghost"
+            size="xs"
+            triggerClass="pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30 text-sm"
+            defaultModelId={coordinatorDefaultModel}
+            defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+            silentFallback
+          />
+        {/key}
+      </div>
     </div>
 
     <!-- Use PR branch suggestion -->

@@ -2,22 +2,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
 
 // Use vi.hoisted to ensure mocks are available before module resolution
-const { mockAppStore, mockState, mockIsElectron, mockPlayNotificationSound } = vi.hoisted(() => {
-  const mockState = {
-    userPreferences: {
-      enabled: true,
-      soundEnabled: true,
-      soundOnlyWhenUnfocused: false,
-      volume: 0.5,
-    },
-  };
-  return {
-    mockState,
-    mockAppStore: { state: mockState, dispatch: vi.fn() },
-    mockIsElectron: vi.fn(() => true),
-    mockPlayNotificationSound: vi.fn(() => Promise.resolve()),
-  };
-});
+const { mockAppStore, mockState, mockIsElectron, mockPlayNotificationSound, mockToast } =
+  vi.hoisted(() => {
+    const mockState = {
+      userPreferences: {
+        enabled: true,
+        soundEnabled: true,
+        soundOnlyWhenUnfocused: false,
+        volume: 0.5,
+      },
+    };
+    return {
+      mockState,
+      mockAppStore: { state: mockState, dispatch: vi.fn() },
+      mockIsElectron: vi.fn(() => true),
+      mockPlayNotificationSound: vi.fn(() => Promise.resolve()),
+      mockToast: vi.fn(),
+    };
+  });
 
 vi.mock('$store/renderer/store', () => ({
   store: mockAppStore,
@@ -31,8 +33,24 @@ vi.mock('$lib/utils/notification-sound', () => ({
   playNotificationSound: mockPlayNotificationSound,
 }));
 
+vi.mock('svelte-sonner', () => ({
+  toast: mockToast,
+}));
+
+// Wrap the real navigation routing in a spy so tests can assert the exact
+// payload handed to handleNotificationNavigate while keeping its behavior.
+vi.mock('$features/notifications/notification-navigation', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$features/notifications/notification-navigation')>();
+  return {
+    ...actual,
+    handleNotificationNavigate: vi.fn(actual.handleNotificationNavigate),
+  };
+});
+
 // Import after mocking
 import { createNotificationIpcMiddleware } from './notification-ipc-service';
+import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   openPanel,
@@ -136,6 +154,104 @@ describe('createNotificationIpcMiddleware', () => {
       const { showHandler } = setupMiddleware();
 
       await expect(showHandler({ title: 'Agent' })).resolves.toBeUndefined();
+    });
+  });
+
+  describe('notification:show (frontmost in-app toast)', () => {
+    const clickToastAction = async () => {
+      const options = mockToast.mock.calls[0][1] as {
+        action: { label: string; onClick: () => void };
+      };
+      options.action.onClick();
+      await vi.mocked(handleNotificationNavigate).mock.results[0].value;
+    };
+
+    it('shows a toast with the notification title/body when navigateTarget is present', async () => {
+      const { showHandler } = setupMiddleware();
+
+      await showHandler({
+        title: 'Agent',
+        body: 'Finished',
+        timestamp: 't',
+        navigateTarget: { workspaceId: 'ws-123' },
+      });
+
+      expect(mockToast).toHaveBeenCalledTimes(1);
+      expect(mockToast).toHaveBeenCalledWith(
+        'Agent',
+        expect.objectContaining({
+          description: 'Finished',
+          action: expect.objectContaining({
+            label: expect.any(String),
+            onClick: expect.any(Function),
+          }),
+        }),
+      );
+      expect(mockPlayNotificationSound).toHaveBeenCalledWith(0.5);
+    });
+
+    it('does not show a toast when navigateTarget is absent', async () => {
+      const { showHandler } = setupMiddleware();
+
+      await showHandler({ title: 'Agent', body: 'Finished', timestamp: 't' });
+
+      expect(mockToast).not.toHaveBeenCalled();
+      expect(mockPlayNotificationSound).toHaveBeenCalledWith(0.5);
+    });
+
+    it('clicking the toast action navigates with the exact payload', async () => {
+      const { showHandler } = setupMiddleware();
+
+      await showHandler({
+        title: 'Agent',
+        body: 'Finished',
+        timestamp: 't',
+        navigateTarget: { workspaceId: 'ws-123' },
+      });
+      await clickToastAction();
+
+      expect(handleNotificationNavigate).toHaveBeenCalledWith({ workspaceId: 'ws-123' });
+      expect(goto).toHaveBeenCalledWith('/workspace/ws-123');
+    });
+
+    it('clicking a chief toast opens the Assistant panel with the thread selected', async () => {
+      const { showHandler } = setupMiddleware();
+
+      await showHandler({
+        title: 'Assistant',
+        body: 'Finished',
+        timestamp: 't',
+        navigateTarget: {
+          workspaceId: CHIEF_WORKSPACE_ID,
+          chief: true,
+          agentId: 'chief-agent-1',
+        },
+      });
+      await clickToastAction();
+
+      expect(handleNotificationNavigate).toHaveBeenCalledWith({
+        workspaceId: CHIEF_WORKSPACE_ID,
+        chief: true,
+        agentId: 'chief-agent-1',
+      });
+      expect(mockAppStore.dispatch).toHaveBeenCalledWith(setChiefActiveAgentId('chief-agent-1'));
+      expect(mockAppStore.dispatch).toHaveBeenCalledWith(openPanel('chief'));
+      expect(goto).not.toHaveBeenCalled();
+    });
+
+    it('still shows the toast when the sound gate suppresses the sound', async () => {
+      mockState.userPreferences.soundEnabled = false;
+      const { showHandler } = setupMiddleware();
+
+      await showHandler({
+        title: 'Agent',
+        body: 'Finished',
+        timestamp: 't',
+        navigateTarget: { workspaceId: 'ws-123' },
+      });
+
+      expect(mockPlayNotificationSound).not.toHaveBeenCalled();
+      expect(mockToast).toHaveBeenCalledTimes(1);
     });
   });
 

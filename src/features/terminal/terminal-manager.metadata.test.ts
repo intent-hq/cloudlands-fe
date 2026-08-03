@@ -44,6 +44,7 @@ function stateWith(terminals: TerminalTab[]): unknown {
           terminalsLoaded: true,
           isLoadingTerminals: false,
           recentlyCreatedTerminals: [],
+          daemonBootId: null,
         },
       },
     },
