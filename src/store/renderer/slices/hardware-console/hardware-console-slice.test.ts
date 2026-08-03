@@ -5,13 +5,16 @@ import {
   encoderHudShown,
   hardwareConsoleReducer,
   hydrateHardwareConsoleActionMapping,
+  hydrateHardwareConsoleCycleScopes,
   hydrateHardwareConsoleEnabled,
   hydrateHardwareConsoleKeyPins,
   hydrateHardwareConsolePrompts,
   initialState,
+  keyPinsReconciled,
   markKeySlotUnassigned,
   pinWorkspaceToKey,
   setActionKeyMapping,
+  setCycleScope,
   setHardwareConsoleEnabled,
   setPromptPickerLimit,
   promptUsageRecorded,
@@ -34,7 +37,36 @@ describe("hardwareConsoleReducer", () => {
     const state = hardwareConsoleReducer(initialState, hydrateHardwareConsoleKeyPins(["ws-1"]));
 
     expect(state.keyPins).toEqual(["ws-1", null, null, null, null, null]);
+    expect(state.excludedWorkspaceIds).toEqual([]);
     expect(state.hydrated).toBe(true);
+  });
+
+  it("hydrates the auto-fill exclusion list (deduplicated, strings only)", () => {
+    const state = hardwareConsoleReducer(
+      initialState,
+      hydrateHardwareConsoleKeyPins([], ["ws-x", "ws-x", "", UNASSIGNED_KEY_PIN, "ws-y"]),
+    );
+
+    expect(state.excludedWorkspaceIds).toEqual(["ws-x", "ws-y"]);
+    expect(state.hydrated).toBe(true);
+  });
+
+  it("applies a reconciled pin array without touching exclusions", () => {
+    const hydrated = hardwareConsoleReducer(
+      initialState,
+      hydrateHardwareConsoleKeyPins([], ["ws-x"]),
+    );
+    const state = hardwareConsoleReducer(hydrated, keyPinsReconciled(["ws-1", "ws-2"]));
+
+    expect(state.keyPins).toEqual(["ws-1", "ws-2", null, null, null, null]);
+    expect(state.excludedWorkspaceIds).toEqual(["ws-x"]);
+  });
+
+  it("returns the same state for a no-op reconcile", () => {
+    const pinned = hardwareConsoleReducer(initialState, pinWorkspaceToKey(0, "ws-1"));
+    const state = hardwareConsoleReducer(pinned, keyPinsReconciled(["ws-1"]));
+
+    expect(state).toBe(pinned);
   });
 
   it("pins a workspace to a slot", () => {
@@ -69,30 +101,58 @@ describe("hardwareConsoleReducer", () => {
     expect(hardwareConsoleReducer(initialState, pinWorkspaceToKey(6, "ws-1"))).toBe(initialState);
   });
 
-  it("unpins a workspace from its slot", () => {
+  it("unpins a workspace from its slot and excludes it from auto-fill", () => {
     const pinned = hardwareConsoleReducer(initialState, pinWorkspaceToKey(5, "ws-1"));
     const state = hardwareConsoleReducer(pinned, unpinWorkspaceFromKeys("ws-1"));
 
     expect(state.keyPins).toEqual([null, null, null, null, null, null]);
+    expect(state.excludedWorkspaceIds).toEqual(["ws-1"]);
   });
 
-  it("returns the same state when unpinning an unpinned workspace", () => {
+  it("unpinning an unpinned workspace still records the exclusion", () => {
     const state = hardwareConsoleReducer(initialState, unpinWorkspaceFromKeys("ws-x"));
 
-    expect(state).toBe(initialState);
+    expect(state.keyPins).toEqual(initialState.keyPins);
+    expect(state.excludedWorkspaceIds).toEqual(["ws-x"]);
+  });
+
+  it("returns the same state when unpinning an already-excluded workspace", () => {
+    const excluded = hardwareConsoleReducer(initialState, unpinWorkspaceFromKeys("ws-x"));
+    const state = hardwareConsoleReducer(excluded, unpinWorkspaceFromKeys("ws-x"));
+
+    expect(state).toBe(excluded);
+  });
+
+  it("pinning a workspace clears its auto-fill exclusion", () => {
+    const excluded = hardwareConsoleReducer(initialState, unpinWorkspaceFromKeys("ws-1"));
+    const state = hardwareConsoleReducer(excluded, pinWorkspaceToKey(2, "ws-1"));
+
+    expect(state.keyPins).toEqual([null, null, "ws-1", null, null, null]);
+    expect(state.excludedWorkspaceIds).toEqual([]);
+  });
+
+  it("re-pinning to the same slot clears a stale exclusion", () => {
+    const pinned = hardwareConsoleReducer(initialState, pinWorkspaceToKey(3, "ws-1"));
+    const excluded = { ...pinned, excludedWorkspaceIds: ["ws-1"] };
+    const state = hardwareConsoleReducer(excluded, pinWorkspaceToKey(3, "ws-1"));
+
+    expect(state.keyPins).toEqual(pinned.keyPins);
+    expect(state.excludedWorkspaceIds).toEqual([]);
   });
 
   it("marks a slot sticky-unassigned", () => {
     const state = hardwareConsoleReducer(initialState, markKeySlotUnassigned(2));
 
     expect(state.keyPins).toEqual([null, null, UNASSIGNED_KEY_PIN, null, null, null]);
+    expect(state.excludedWorkspaceIds).toEqual([]);
   });
 
-  it("marking a pinned slot unassigned replaces the pin", () => {
+  it("marking a pinned slot unassigned replaces the pin and excludes the evicted workspace", () => {
     const pinned = hardwareConsoleReducer(initialState, pinWorkspaceToKey(1, "ws-1"));
     const state = hardwareConsoleReducer(pinned, markKeySlotUnassigned(1));
 
     expect(state.keyPins).toEqual([null, UNASSIGNED_KEY_PIN, null, null, null, null]);
+    expect(state.excludedWorkspaceIds).toEqual(["ws-1"]);
   });
 
   it("pinning over a sticky-unassigned slot reclaims it", () => {
@@ -215,7 +275,7 @@ describe("hardwareConsoleReducer", () => {
       "switch-window-layouts",
       "cycle-in-progress-agents",
       "cycle-workspace-agents",
-      "cycle-unread-agents",
+      "cycle-attention-agents",
     ]);
     expect(initialState.actionMappingByModel["codex-micro"]).toEqual([
       "cycle-in-progress-agents",
@@ -242,7 +302,7 @@ describe("hardwareConsoleReducer", () => {
       "switch-window-layouts",
       "cycle-in-progress-agents",
       "cycle-workspace-agents",
-      "cycle-unread-agents",
+      "cycle-attention-agents",
     ]);
     expect(state.actionMappingByModel["codex-micro"]).toEqual(
       initialState.actionMappingByModel["codex-micro"],
@@ -285,6 +345,41 @@ describe("hardwareConsoleReducer", () => {
     ).toBe(initialState);
     expect(
       hardwareConsoleReducer(initialState, setActionKeyMapping("creator-micro-2", 2, "see-spec")),
+    ).toBe(initialState);
+  });
+
+  it("defaults the cycle scopes to all except idle", () => {
+    expect(initialState.cycleScopeByFamily).toEqual({
+      "cycle-in-progress-agents": "all",
+      "cycle-attention-agents": "all",
+      "cycle-idle-agents": "top-level",
+      "cycle-failed-agents": "all",
+    });
+  });
+
+  it("hydrates cycle scopes, filling missing families with defaults", () => {
+    const state = hardwareConsoleReducer(
+      initialState,
+      hydrateHardwareConsoleCycleScopes({ "cycle-failed-agents": "top-level" }),
+    );
+    expect(state.cycleScopeByFamily).toEqual({
+      "cycle-in-progress-agents": "all",
+      "cycle-attention-agents": "all",
+      "cycle-idle-agents": "top-level",
+      "cycle-failed-agents": "top-level",
+    });
+  });
+
+  it("sets one family's cycle scope and no-ops on repeats", () => {
+    const state = hardwareConsoleReducer(
+      initialState,
+      setCycleScope("cycle-idle-agents", "all"),
+    );
+    expect(state.cycleScopeByFamily["cycle-idle-agents"]).toBe("all");
+    expect(state.cycleScopeByFamily["cycle-in-progress-agents"]).toBe("all");
+    expect(hardwareConsoleReducer(state, setCycleScope("cycle-idle-agents", "all"))).toBe(state);
+    expect(
+      hardwareConsoleReducer(initialState, setCycleScope("cycle-in-progress-agents", "all")),
     ).toBe(initialState);
   });
 });

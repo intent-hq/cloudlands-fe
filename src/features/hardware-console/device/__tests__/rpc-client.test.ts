@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { Logger } from '../../../../shared/logger';
 import { HardwareRpcClient, type RpcMessagePort, type RpcNotification } from '../rpc-client';
 import { flushMicrotasks } from './fake-hid';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 class FakePort implements RpcMessagePort {
   readonly sent: unknown[] = [];
@@ -77,9 +82,11 @@ describe('HardwareRpcClient calls', () => {
     await expect(client.call('sys.version')).rejects.toThrow(/disposed/);
   });
 
-  it('ignores responses for unknown ids', () => {
+  it('drops responses for unknown or stale ids quietly (no warn)', () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn');
     const { client } = makeClient();
     expect(() => client.handleMessage({ id: 99, result: null })).not.toThrow();
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
@@ -122,12 +129,27 @@ describe('HardwareRpcClient device-originated requests', () => {
   });
 
   it('replies method-not-found for unhandled device requests', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn');
     const { port, client } = makeClient();
     client.handleMessage({ method: 'host.unknown', params: null, id: 5 });
     await flushMicrotasks();
     expect(port.sent).toEqual([
       { id: 5, error: { code: -32601, message: 'Method not found: host.unknown' } },
     ]);
+    expect(warn).toHaveBeenCalledWith('No handler for device request', { method: 'host.unknown' });
+  });
+
+  it('answers looped-back host methods (rgbcfg/thstatus) without warn spam', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn');
+    const { port, client } = makeClient();
+    client.handleMessage({ method: 'v.oai.rgbcfg', params: { keys: {} }, id: 721 });
+    client.handleMessage({ method: 'v.oai.thstatus', params: [], id: 722 });
+    await flushMicrotasks();
+    expect(port.sent).toEqual([
+      { id: 721, error: { code: -32601, message: 'Method not found: v.oai.rgbcfg' } },
+      { id: 722, error: { code: -32601, message: 'Method not found: v.oai.thstatus' } },
+    ]);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('replies with an error when the handler throws', async () => {

@@ -45,6 +45,7 @@ export class HardwareConsoleManager {
   private readonly rawMessageListeners = new Set<(message: unknown) => void>();
   private readonly logListeners = new Set<(text: string) => void>();
   private started = false;
+  private opening = false;
 
   constructor(
     private readonly platform: HidPlatform | null = createWebHidPlatform(),
@@ -163,39 +164,48 @@ export class HardwareConsoleManager {
   }
 
   private async openDevice(device: HidDeviceLike): Promise<void> {
-    if (this.device) return;
-    this.setStatus('connecting');
+    // `opening` closes the async gap between this guard and `this.device`
+    // being assigned below: without it, a hotplug arrival racing an in-flight
+    // open would attach a SECOND transport whose subscription is never torn
+    // down (duplicate clients → "unknown or stale id" warnings).
+    if (this.device || this.opening) return;
+    this.opening = true;
     try {
-      if (!device.opened) await device.open();
-    } catch (error) {
-      logger.warn('Failed to open device', { error: String(error) });
-      this.setStatus('disconnected');
-      return;
+      this.setStatus('connecting');
+      try {
+        if (!device.opened) await device.open();
+      } catch (error) {
+        logger.warn('Failed to open device', { error: String(error) });
+        this.setStatus('disconnected');
+        return;
+      }
+      const transport = new VendorChannelTransport(device);
+      const client = new HardwareRpcClient(
+        { sendMessage: (message) => transport.sendRpcMessage(message) },
+        { requestTimeoutMs: this.options.requestTimeoutMs },
+      );
+      const focusedAppProvider = this.options.focusedAppProvider ?? (() => ({ name: 'Intent' }));
+      client.setRequestHandler('host.focused_app', () => focusedAppProvider());
+      this.connectionUnsubs = [
+        transport.onRpcMessage((message) => {
+          for (const listener of this.rawMessageListeners) listener(message);
+          client.handleMessage(message);
+        }),
+        client.onNotification((notification) => {
+          for (const listener of this.notificationListeners) listener(notification);
+        }),
+        transport.onLog((text) => {
+          for (const listener of this.logListeners) listener(text);
+        }),
+      ];
+      transport.attach();
+      this.device = device;
+      this.transport = transport;
+      this.rpcClient = client;
+      this.setStatus('connected');
+    } finally {
+      this.opening = false;
     }
-    const transport = new VendorChannelTransport(device);
-    const client = new HardwareRpcClient(
-      { sendMessage: (message) => transport.sendRpcMessage(message) },
-      { requestTimeoutMs: this.options.requestTimeoutMs },
-    );
-    const focusedAppProvider = this.options.focusedAppProvider ?? (() => ({ name: 'Intent' }));
-    client.setRequestHandler('host.focused_app', () => focusedAppProvider());
-    this.connectionUnsubs = [
-      transport.onRpcMessage((message) => {
-        for (const listener of this.rawMessageListeners) listener(message);
-        client.handleMessage(message);
-      }),
-      client.onNotification((notification) => {
-        for (const listener of this.notificationListeners) listener(notification);
-      }),
-      transport.onLog((text) => {
-        for (const listener of this.logListeners) listener(text);
-      }),
-    ];
-    transport.attach();
-    this.device = device;
-    this.transport = transport;
-    this.rpcClient = client;
-    this.setStatus('connected');
   }
 
   private async teardown(reason: string): Promise<void> {

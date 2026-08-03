@@ -24,7 +24,7 @@ import type { AgentKeyLedState, AmbientLedState, HardwareLedSnapshot } from './f
 /** The narrow slice of the app store state the LED derivation reads. */
 export interface LedSnapshotState {
   workspace: { workspaces: Collection<Workspace, 'id'> };
-  hardwareConsole: { keyPins: (string | null)[] };
+  hardwareConsole: { keyPins: (string | null)[]; excludedWorkspaceIds?: readonly string[] };
   workspaceAgents: {
     byWorkspaceId: Record<string, { foregroundAgentIds: readonly (string | number)[] }>;
   };
@@ -118,7 +118,11 @@ export function buildHardwareLedSnapshot(state: LedSnapshotState): HardwareLedSn
   const byId = new Map<string, Workspace>();
   for (const workspace of workspaces) byId.set(workspace.id, workspace);
 
-  const slots = resolveKeySlots(state.hardwareConsole.keyPins, workspaces);
+  const slots = resolveKeySlots(
+    state.hardwareConsole.keyPins,
+    workspaces,
+    state.hardwareConsole.excludedWorkspaceIds ?? [],
+  );
   const keys: AgentKeyLedState[] = slots.map((workspaceId) => {
     const workspace = workspaceId === null ? undefined : byId.get(workspaceId);
     if (!workspace) return 'unassigned';
