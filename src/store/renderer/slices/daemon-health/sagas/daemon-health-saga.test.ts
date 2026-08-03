@@ -66,6 +66,12 @@ function startHealthSaga() {
   return { input, dispatched, task };
 }
 
+function statusActions(dispatched: unknown[]) {
+  return dispatched.filter(
+    (action) => (action as { type?: string }).type === connectionStatusChanged.type,
+  );
+}
+
 describe('daemonHealthSaga', () => {
   let statusHandler: ((payload: unknown) => void) | undefined;
   let invoke: ReturnType<typeof vi.fn>;
@@ -126,10 +132,7 @@ describe('daemonHealthSaga', () => {
     await settle();
     await vi.advanceTimersByTimeAsync(0);
 
-    const statusActions = dispatched.filter(
-      (action) => (action as { type?: string }).type === connectionStatusChanged.type,
-    );
-    expect(statusActions).toEqual([
+    expect(statusActions(dispatched)).toEqual([
       connectionStatusChanged('connected', {
         mode: 'external-uds',
         versionMismatch: true,
@@ -143,6 +146,62 @@ describe('daemonHealthSaga', () => {
     ]);
     expect(mocks.backendRequest).toHaveBeenCalledWith('system.status');
     expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('dedupes repeated down status signals while preserving meaningful transitions and extras', async () => {
+    const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
+    invoke.mockImplementation((channel: string) => {
+      if (channel === BACKEND.GET_STATUS)
+        return Promise.resolve({ status: 'disconnected', transport });
+      return Promise.resolve(undefined);
+    });
+    const { dispatched, task } = startHealthSaga();
+    await settle();
+
+    statusHandler!({ status: 'disconnected', transport, reason: 'ECONNREFUSED' });
+    statusHandler!({ status: 'connecting', transport });
+    statusHandler!({ status: 'disconnected', transport });
+    statusHandler!({
+      status: 'disconnected',
+      transport,
+      sidecarGaveUp: true,
+      reason: 'restart limit',
+    });
+    statusHandler!({
+      status: 'disconnected',
+      transport,
+      sidecarGaveUp: true,
+      reason: 'restart limit',
+    });
+    statusHandler!({ status: 'connected', transport });
+    statusHandler!({ status: 'connected', reconnected: true, transport });
+    statusHandler!({ status: 'disconnected', transport, reason: 'lost' });
+    await settle();
+
+    expect(statusActions(dispatched)).toEqual([
+      connectionStatusChanged('disconnected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+      connectionStatusChanged('disconnected', transport, {
+        sidecarGaveUp: true,
+        sidecarStartupFailed: undefined,
+        reason: 'restart limit',
+      }),
+      connectionStatusChanged('connected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: undefined,
+      }),
+      connectionStatusChanged('disconnected', transport, {
+        sidecarGaveUp: undefined,
+        sidecarStartupFailed: undefined,
+        reason: 'lost',
+      }),
+    ]);
     task.cancel();
     await task.toPromise();
   });

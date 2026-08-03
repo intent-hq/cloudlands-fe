@@ -97,6 +97,57 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
   });
 }
 
+interface StatusSignal {
+  status: string;
+  transport: string;
+  sidecarGaveUp: boolean;
+  sidecarStartupFailed: boolean;
+  reason: string | null;
+}
+
+function transportSignature(transport: BackendTransportInfo | undefined): string {
+  if (!transport || typeof transport !== 'object') return String(transport ?? '');
+  return [
+    transport.mode,
+    transport.target ?? '',
+    transport.daemonVersion ?? '',
+    transport.versionMismatch === true ? 'true' : 'false',
+  ].join('\u0000');
+}
+
+function statusBucket(status: string): string {
+  return status === 'connecting' || status === 'disconnected' ? 'down' : status;
+}
+
+function statusSignal(payload: BackendStatusPayload, snapshot: boolean): StatusSignal {
+  const sidecarGaveUp = payload.sidecarGaveUp === true;
+  const sidecarStartupFailed = payload.sidecarStartupFailed === true;
+  const reason =
+    sidecarGaveUp || sidecarStartupFailed
+      ? ((snapshot
+          ? (payload as BackendStatusSnapshot).sidecarStartupFailedReason
+          : payload.reason) ?? null)
+      : null;
+  return {
+    status: statusBucket(payload.status),
+    transport: transportSignature(payload.transport),
+    sidecarGaveUp,
+    sidecarStartupFailed,
+    reason,
+  };
+}
+
+function sameStatusSignal(a: StatusSignal | null, b: StatusSignal): boolean {
+  return (
+    !!a &&
+    a.status === b.status &&
+    a.transport === b.transport &&
+    a.sidecarGaveUp === b.sidecarGaveUp &&
+    a.sidecarStartupFailed === b.sidecarStartupFailed &&
+    a.reason === b.reason
+  );
+}
+
 function* maybeNotifyVersionMismatch(
   transport: BackendTransportInfo | undefined,
   alreadyNotified: boolean,
@@ -116,12 +167,15 @@ export function* daemonStatusSaga() {
     },
   );
   let versionMismatchNotified = false;
+  let lastStatusSignal: StatusSignal | null = null;
   try {
     // The channel is installed before GET_STATUS so a push racing the snapshot
     // is buffered and applied after the older boot snapshot.
     try {
       const snapshot = yield* call(invokeGetBackendStatus);
+      const signal = statusSignal(snapshot, true);
       yield* put(statusAction(snapshot, true));
+      lastStatusSignal = signal;
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
         snapshot.transport,
@@ -134,7 +188,11 @@ export function* daemonStatusSaga() {
     while (true) {
       const payload: BackendStatusPayload = yield* take(channel);
       if (payload === (END as unknown as BackendStatusPayload)) break;
-      yield* put(statusAction(payload, false));
+      const signal = statusSignal(payload, false);
+      if (!sameStatusSignal(lastStatusSignal, signal)) {
+        yield* put(statusAction(payload, false));
+        lastStatusSignal = signal;
+      }
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
         payload.transport,
