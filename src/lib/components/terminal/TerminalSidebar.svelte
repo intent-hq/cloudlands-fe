@@ -6,6 +6,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import type { ScriptCategory,
   ScriptMode,
   ScriptWithState } from '$features/scripts/types';
+  import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
@@ -499,8 +500,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // ---- Sort function ----
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
     return [...scripts].sort((a, b) => {
-      // Priority: running > exited > idle
-      const statusPriority = { running: 0, exited: 1, idle: 2 };
+      // Priority: live (running/restarting) > exited > idle
+      const statusPriority = { running: 0, restarting: 0, exited: 1, idle: 2 };
       const aPriority = statusPriority[a.runtime.status] ?? 3;
       const bPriority = statusPriority[b.runtime.status] ?? 3;
 
@@ -514,7 +515,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   // ---- Status dot helpers ----
   function getStatusColor(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return 'bg-green-500';
+    // Live statuses (running/restarting) reuse the running treatment.
+    if (isLiveScriptStatus(status)) return 'bg-green-500';
     if (status === 'idle') return 'bg-muted-foreground/40';
     // exited
     if (exitCode === 0 || exitCode === null || exitCode === undefined)
@@ -525,7 +527,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function getStatusLabel(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return m.terminal_quakeOverlay_status_running();
+    if (isLiveScriptStatus(status)) return m.terminal_quakeOverlay_status_running();
     if (status === 'idle') return m.terminal_quakeOverlay_status_idle();
     if (exitCode === 0) return m.terminal_quakeOverlay_status_exitedZero();
     if (exitCode !== null && exitCode !== undefined) {
@@ -544,7 +546,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       tooltip?: string;
       onClick: (e: MouseEvent) => void;
     }> = [];
-    if (script.runtime.status === 'running') {
+    if (isLiveScriptStatus(script.runtime.status)) {
       actions.push({
         icon: faStop,
         label: m.terminal_quakeOverlay_stop_label(),
@@ -1140,7 +1142,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     </button>
                   {:else}
                     <!-- Single-select actions -->
-                    {#if script.runtime.status === 'running'}
+                    {#if isLiveScriptStatus(script.runtime.status)}
                       <button
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
