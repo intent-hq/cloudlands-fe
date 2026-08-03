@@ -262,7 +262,9 @@ describe('handleActionKeyPress', () => {
     mockState.agentSessions.byAgentId = {
       'a-1': { id: 'a-1', status: 'Completed', messages: [] } as never,
     };
-    mockState.unreadTracking = { unreadAgentIds: ['a-1'] };
+    mockState.workspace.workspaces = createCollection('id', [
+      { id: 'ws-1', attention: 'unread' } as never,
+    ]);
     const result = handleActionKeyPress('ACT10', {}, 'codex-micro');
     expect(result).toBe('cycle-unread-agents');
     expect(dispatched).toContainEqual(
