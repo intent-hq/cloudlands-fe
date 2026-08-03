@@ -26,6 +26,7 @@
   import DigestCard from './DigestCard.svelte';
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
   import ChatWorkspaceCard from './ChatWorkspaceCard.svelte';
+  import ChatReferenceBlock from './ChatReferenceBlock.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
@@ -194,6 +195,7 @@
   // Handle file opening
   function handleOpenFile(detail: {
     path: string;
+    line?: number;
     openInAdjacentPanel?: boolean;
     sourcePanelId?: string;
   }) {
@@ -201,6 +203,7 @@
     if (!workspaceId) return;
     appStore.dispatch(
       openWorkspaceFile(workspaceId, detail.path, {
+        line: detail.line,
         openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
         sourcePanelId: detail.sourcePanelId,
       }),
@@ -370,6 +373,8 @@
       patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
       label={patchData.description || patchData.filePath}
     />
+  {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
+    <ChatReferenceBlock reference={parsedBlock.metadata.referenceData} onOpenFile={handleOpenFile} />
   {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
     <ChatCliBlock command={parsedBlock.metadata.cliData.command} />
   {:else if parsedBlock.type === 'detected_scripts' && parsedBlock.metadata?.detectedScriptsData}
