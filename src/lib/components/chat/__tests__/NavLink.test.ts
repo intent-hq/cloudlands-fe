@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   goto: vi.fn(() => Promise.resolve()),
+  handleIntentLink: vi.fn(() => Promise.resolve(true)),
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -16,10 +17,14 @@ vi.mock('$store/renderer/store', () => ({
     state: {},
   },
 }));
+vi.mock('$lib/utils/workspaces-link-handler', () => ({
+  handleIntentLink: mocks.handleIntentLink,
+}));
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
   mocks.goto.mockClear();
+  mocks.handleIntentLink.mockClear();
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
     return 0;
@@ -58,6 +63,29 @@ describe('NavLink', () => {
         payload: ['unknown-target'],
       }),
     );
+  });
+
+  it('routes intent:// targets through the workspaces link handler instead of goto', async () => {
+    const NavLink = (await import('../NavLink.svelte')).default;
+    const target = 'intent://local/ws-123/note/note-456';
+    render(NavLink, { props: { target, label: 'Open note' } });
+
+    await fireEvent.click(screen.getByRole('link', { name: /Open note/ }));
+
+    await waitFor(() => expect(mocks.handleIntentLink).toHaveBeenCalledWith(target));
+    expect(mocks.goto).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('routes short-form intent:// note targets through the workspaces link handler', async () => {
+    const NavLink = (await import('../NavLink.svelte')).default;
+    const target = 'intent://local/note/spec';
+    render(NavLink, { props: { target, label: 'Spec' } });
+
+    await fireEvent.click(screen.getByRole('link', { name: /Spec/ }));
+
+    await waitFor(() => expect(mocks.handleIntentLink).toHaveBeenCalledWith(target));
+    expect(mocks.goto).not.toHaveBeenCalled();
   });
 
   it('renders as plain text (no anchor) when the target does not resolve', async () => {
