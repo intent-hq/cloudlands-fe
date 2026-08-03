@@ -15,7 +15,9 @@ import type { FileContentEntry } from '$store/renderer/slices/files/files-types'
 // upserting through `script.create` (scriptId upsert) so repeat clicks don't
 // duplicate rows, and MUST NOT send the upsert (nor `script.remove` for a
 // stale row) when the target script's runtime status is `running` — both
-// tear down the live PTY group daemon-side (§5.8).
+// tear down the live PTY group daemon-side (§5.8). update() rides the same
+// scriptId upsert and MUST apply the same running-script guard: refuse with
+// an error instead of sending script.create.
 const {
   scriptsList,
   scriptsCreate,
@@ -173,6 +175,62 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
     const result = await scriptsClient.saveToRepo('ws-1');
 
     expect(result).toEqual({ success: false, error: 'daemon offline' });
+  });
+});
+
+describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('merges partial updates into the existing definition and upserts via script.create with the existing scriptId', async () => {
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+      }),
+    ]);
+    scriptsCreate.mockResolvedValueOnce({ success: true });
+
+    const result = await scriptsClient.update('ws-1', 'script-auto-dev', { command: 'pnpm dev' });
+
+    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsCreate).toHaveBeenCalledTimes(1);
+    expect(scriptsCreate).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({
+        scriptId: 'script-auto-dev',
+        name: 'dev',
+        command: 'pnpm dev',
+        mode: 'service',
+        category: 'dev',
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('refuses the upsert when the target script is running — no script.create goes out on the wire', async () => {
+    // The scriptId upsert tears down the live PTY group daemon-side (§5.8),
+    // so update() must return a failure envelope naming the script instead
+    // of sending script.create.
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        source: 'auto-detected',
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+    ]);
+
+    const result = await scriptsClient.update('ws-1', 'script-auto-dev', { name: 'renamed' });
+
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('"dev"');
   });
 });
 

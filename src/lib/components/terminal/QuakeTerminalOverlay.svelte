@@ -75,6 +75,7 @@
   removeScript,
 } from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
+  import { createLogger } from '$lib/utils/client-logger';
   import {
   ListContainer,
   ListItem,
@@ -100,6 +101,8 @@
   }
 
   let { workspaceId: propWorkspaceId }: Props = $props();
+
+  const logger = createLogger('QuakeTerminalOverlay');
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpen();
@@ -329,8 +332,13 @@
     if (isEditingScriptName && selectedScript && selectedScriptId) {
       const trimmed = editedScriptName.trim();
       if (trimmed && trimmed !== selectedScript.name) {
-        scriptsClient.update(workspaceId!, selectedScriptId, { name: trimmed });
-        appStore.dispatch(refreshScripts(workspaceId!));
+        void scriptsClient
+          .update(workspaceId!, selectedScriptId, { name: trimmed })
+          .then((result) => {
+            if (!result.success && result.error) toast.warning(result.error);
+          })
+          .catch((error) => logger.error('Script update failed', error))
+          .finally(() => appStore.dispatch(refreshScripts(workspaceId!)));
       }
     }
     isEditingScriptName = false;
@@ -370,8 +378,13 @@
       const updates: Record<string, any> = {};
       if (editedScriptCommand !== selectedScript.command) updates.command = editedScriptCommand;
       if (Object.keys(updates).length > 0) {
-        scriptsClient.update(workspaceId!, selectedScriptId, updates);
-        appStore.dispatch(refreshScripts(workspaceId!));
+        void scriptsClient
+          .update(workspaceId!, selectedScriptId, updates)
+          .then((result) => {
+            if (!result.success && result.error) toast.warning(result.error);
+          })
+          .catch((error) => logger.error('Script update failed', error))
+          .finally(() => appStore.dispatch(refreshScripts(workspaceId!)));
       }
     }
     showScriptEditPanel = false;
@@ -530,10 +543,15 @@
 
   function finishEditingScriptTab() {
     if (editingScriptTabId && editingScriptTabValue.trim()) {
-      scriptsClient.update(workspaceId!, editingScriptTabId, {
-        name: editingScriptTabValue.trim(),
-      });
-      appStore.dispatch(refreshScripts(workspaceId!));
+      void scriptsClient
+        .update(workspaceId!, editingScriptTabId, {
+          name: editingScriptTabValue.trim(),
+        })
+        .then((result) => {
+          if (!result.success && result.error) toast.warning(result.error);
+        })
+        .catch((error) => logger.error('Script update failed', error))
+        .finally(() => appStore.dispatch(refreshScripts(workspaceId!)));
     }
     editingScriptTabId = null;
     editingScriptTabValue = '';

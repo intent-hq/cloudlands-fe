@@ -116,6 +116,16 @@ export const scriptsClient = {
     if (!existing) {
       return { success: false, error: m.scripts_client_notFound_error({ scriptId }) };
     }
+    // The §5.8 scriptId upsert tears down the script's live PTY group
+    // daemon-side — never issue it against a running script. Refuse and let
+    // the caller surface it so the user can stop the script first.
+    if (existing.runtime?.status === 'running') {
+      logger.info('Refusing script.create upsert for running script', {
+        name: existing.name,
+        scriptId,
+      });
+      return { success: false, error: m.scripts_client_updateRunning_error({ name: existing.name }) };
+    }
     const result = await appClient.scripts.create(workspaceId, {
       scriptId,
       name: updates.name ?? existing.name,

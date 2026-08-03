@@ -4707,6 +4707,7 @@
   "diffs_service_stopTrackingFailed_error": "Impossible d'arrêter le suivi de l'exécution de l'agent",
   "scripts_client_statusFailed_error": "Impossible de lire le statut du script",
   "scripts_client_notFound_error": "Script introuvable : {scriptId}",
+  "scripts_client_updateRunning_error": "« {name} » est en cours d'exécution — les modifications n'ont pas été appliquées. Arrêtez-le et réessayez.",
   "scripts_detect_skippedRunning_one": "« {name} » est en cours d'exécution — les modifications détectées n'ont pas été appliquées. Arrêtez-le puis relancez la détection pour le mettre à jour.",
   "scripts_detect_skippedRunning_many": "{count} scripts en cours d'exécution ({names}) n'ont pas été mis à jour avec les modifications détectées. Arrêtez-les puis relancez la détection.",
   "context_types_addNote_description": "Ajouter une nouvelle note",
