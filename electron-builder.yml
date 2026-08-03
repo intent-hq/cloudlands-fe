@@ -12,6 +12,11 @@ afterSign: scripts/notarize.js
 
 files:
   - dist/**/*
+  # Incremental-compile state for tsc (build:main / build:preload); lives in
+  # dist so `rm -rf dist` also clears it, but must not ship in the package.
+  - "!dist/*.tsbuildinfo"
+  # Dev-startup readiness sentinels (scripts/dev-ready.js); dev-only.
+  - "!dist/.dev-ready-*"
   - package.json
   - node_modules/**/*
   - resources/**/*

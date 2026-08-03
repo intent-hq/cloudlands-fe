@@ -11,6 +11,8 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/tsconfig.preload.tsbuildinfo",
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
