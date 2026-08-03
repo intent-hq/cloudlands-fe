@@ -137,7 +137,6 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       let addedCount = 0;
       let updatedCount = 0;
       let removedCount = 0;
-
       const scriptEntries = selectScriptEntries.select(appStore.state);
       const autoDetectedIds = new Set(
         scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
@@ -188,8 +187,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             if (entry.mode && validModes.has(entry.mode)) updates.mode = entry.mode;
             if (entry.category && validCategories.has(entry.category))
               updates.category = entry.category;
-            await scriptsClient.update(workspaceId, entry.id, updates);
-            updatedCount++;
+            const updateResult = await scriptsClient.update(workspaceId, entry.id, updates);
+            if (updateResult.success) updatedCount++;
           }
         }
       }
@@ -775,8 +774,12 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
   function finishEditingScript() {
     if (editingScriptId && editingScriptName.trim()) {
-      scriptsClient.update(workspaceId, editingScriptId, { name: editingScriptName.trim() });
-      appStore.dispatch(refreshScripts(workspaceId));
+      void scriptsClient
+        .update(workspaceId, editingScriptId, { name: editingScriptName.trim() })
+        .then((result) => {
+          if (!result.success && result.error) toast.warning(result.error);
+          appStore.dispatch(refreshScripts(workspaceId));
+        });
     }
     editingScriptId = null;
     editingScriptName = '';

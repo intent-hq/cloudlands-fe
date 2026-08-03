@@ -4708,6 +4708,7 @@
   "diffs_service_stopTrackingFailed_error": "Failed to stop agent execution tracking",
   "scripts_client_statusFailed_error": "Failed to read script status",
   "scripts_client_notFound_error": "Script not found: {scriptId}",
+  "scripts_client_updateRunning_error": "\"{name}\" is running — changes were not applied. Stop it and try again.",
   "scripts_detect_skippedRunning_one": "\"{name}\" is running — detected changes were not applied. Stop it and re-run detection to update it.",
   "scripts_detect_skippedRunning_many": "{count} running scripts ({names}) were not updated with detected changes. Stop them and re-run detection.",
   "context_types_addNote_description": "Add a new note",
