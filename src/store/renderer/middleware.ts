@@ -64,7 +64,6 @@ import { createBackgroundHooksMiddleware } from "$features/hooks/background-hook
 import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
 import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
-import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-tracking-persistence-service";
 import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-persistence-service";
 import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav-persistence-service";
 import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
@@ -382,10 +381,6 @@ function buildMiddleware(): StoreMiddleware[] {
     // sizes / group layouts / collapsed state read on mount and persist on change
     // across sessions via localStorage again.
     createUiLayoutPersistenceMiddleware(),
-    // Give the (post-saga) unread-tracking triggers real handlers so unread state
-    // hydrates/persists across sessions and `clearWorkspaceUnread` clears the
-    // workspace's agents via `clearAgentsUnread` again.
-    createUnreadTrackingPersistenceMiddleware(),
     // Give the (post-saga) tab-state persistence triggers real handlers so the
     // workspace-tab strip (order/pin/active tab) and per-tab scroll positions
     // hydrate on boot and persist on change across sessions via localStorage.

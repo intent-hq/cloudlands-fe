@@ -37,10 +37,6 @@ vi.mock('$store/renderer/renderer-store-bridge', () => ({
   }),
 }));
 
-vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-slice', () => ({
-  newAssistantMessage: vi.fn((...payload) => ({ type: 'newAssistantMessage', payload })),
-}));
-
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   removeWorkspaceAgentState: vi.fn((...payload) => ({ type: 'removeWorkspaceAgentState', payload })),
 }));

@@ -59,15 +59,10 @@
   toggleStatsOverlay,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
-  import {
-  selectUnreadAgentIds,
-  selectUnreadAgentIdsForWorkspace,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import { isWorkspaceActivityWithin } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
 
   const workspaceItems = selectWorkspaceItems();
-  const unreadAgentIds$ = selectUnreadAgentIds();
   const panelItem$ = selectPanelItem();
   const activeCard$ = selectActiveCard();
   const onboardingActive$ = selectOnboardingActive();
@@ -88,20 +83,17 @@
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
   const unreadCount = $derived.by(() => {
-    // Read shared version counters so this re-runs when streams/unread state changes
+    // Read shared version counters so this re-runs when streams state changes
     void activeStreamsVersion;
-    // Reading unreadAgentIds$ triggers re-evaluation when unread state changes
-    void $unreadAgentIds$;
     const now = Date.now();
-    const state = appStore.state;
     let count = 0;
     for (const ws of $workspaceItems) {
       if (ws.status === WorkspaceStatusEnum.Archived || ws.status === WorkspaceStatusEnum.Deleted)
         continue;
       // Skip if currently streaming (not "unread")
       if (activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id).length > 0) continue;
-      const unreadIds = selectUnreadAgentIdsForWorkspace.select(state, ws.id);
-      if (unreadIds.length > 0 && isWorkspaceActivityWithin(ws, now, ONE_DAY_MS)) count++;
+      // BE-owned attention flag (blue dot)
+      if (ws.attention === 'unread' && isWorkspaceActivityWithin(ws, now, ONE_DAY_MS)) count++;
     }
     return count;
   });

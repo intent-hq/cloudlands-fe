@@ -249,6 +249,12 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return runMutation("workspace.unarchive", { workspaceId: id });
   }
 
+  // `workspace.markSeen` (§5.1) clears the unread `attention` flag only; the
+  // daemon's `workspace:attention-changed` event drives the reactive clear.
+  async markSeen(id: string): Promise<MutationResult> {
+    return runMutation("workspace.markSeen", { workspaceId: id });
+  }
+
   async setActive(id: string): Promise<MutationResult> {
     return runMutation("workspace.setActive", { workspaceId: id });
   }

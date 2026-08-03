@@ -33,7 +33,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { type Workspace } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
-import { type Collection } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItems, type Collection } from '$lib/store-shim/utils/collections/collection-utils';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -78,7 +78,6 @@ export interface ActionKeyState {
     >;
   };
   agentSessions: { byAgentId: Record<string, StoredAgentSession> };
-  unreadTracking: { unreadAgentIds: readonly string[] };
   hardwareConsole: { cycleScopeByFamily: Record<CycleScopeFamilyId, CycleScope> };
   sidebarNav: {
     multiSelectTabOrder: string[];
@@ -291,10 +290,19 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     getLabel: () => m.hardwareConsole_actionKey_cycleUnreadAgents_label(),
     getEmptyHint: () => m.hardwareConsole_actionKey_noUnreadAgents_message(),
     getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
-    collect: (state) =>
-      collectCycleAgents(state, (_session, agentId) =>
-        state.unreadTracking.unreadAgentIds.includes(agentId),
-      ),
+    collect: (state) => {
+      // Unread is workspace-level (BE-owned `workspace.attention`); walk the
+      // top-level agents of each unread workspace.
+      const unreadWorkspaceIds = new Set<string>(
+        getItems(state.workspace.workspaces)
+          .filter((workspace) => workspace.attention === 'unread')
+          .map((workspace) => workspace.id),
+      );
+      if (unreadWorkspaceIds.size === 0) return [];
+      return collectCycleAgents(state, isSessionCyclable).filter((entry) =>
+        unreadWorkspaceIds.has(entry.wsId),
+      );
+    },
   }),
   makeGlobalCycleAction({
     id: 'cycle-failed-agents',

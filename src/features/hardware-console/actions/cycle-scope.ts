@@ -4,9 +4,9 @@
  * top-level agents only.
  *
  * Only the status-filtered families are togglable. `cycle-unread-agents`
- * has no scope: unread tracking is top-level by nature (the
- * `newAssistantMessage` reducer in unread-tracking-slice gates out
- * background agents), so a sub-agent can never be unread.
+ * has no scope: unread attention is workspace-level and backend-owned
+ * (`workspace.attention === 'unread'`), so the family walks each unread
+ * workspace's top-level agents.
  * `cycle-workspace-agents` keeps its fixed top-level walk.
  *
  * Persisted as the `cycleScopeByFamily` field of the shared

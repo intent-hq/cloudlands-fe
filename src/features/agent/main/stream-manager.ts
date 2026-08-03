@@ -22,7 +22,6 @@ import { createMessageId, WorkspaceId } from '../../../shared/types/branded-ids'
 import { createAppMessageId } from '$shared/utils/app-message-id';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
-import { newAssistantMessage } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { removeWorkspaceAgentState } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   addMessage as addAgentSessionMessage,
@@ -830,15 +829,6 @@ export class StreamManager extends EventEmitter implements IDisposable {
     // Emit complete event
     this.emit('stream:complete', { streamId: session.streamId, message });
     this.emit(`stream:${session.streamId}:complete`, message);
-
-    // Mark agent as having unread messages (if user isn't currently viewing it)
-    // Pass isBackground to skip unread tracking for background agents
-    const agentSession = lookupAgentSession(appStore.state, session.config.agentId);
-    const isBackgroundAgent =
-      agentSession?.isBackground || agentSession?.metadata?.isBackground || false;
-    appStore.dispatch(
-      newAssistantMessage(session.config.agentId, session.config.workspaceId, isBackgroundAgent),
-    );
 
     // Update metrics
     this.metrics.activeStreams--;

@@ -16,8 +16,8 @@ import {
   type CycleScopeFamilyId,
 } from '../cycle-scope';
 
-function makeWorkspace(id: string): Workspace {
-  return { id } as unknown as Workspace;
+function makeWorkspace(id: string, attention?: 'unread'): Workspace {
+  return { id, attention } as unknown as Workspace;
 }
 
 function makeSession(
@@ -43,7 +43,7 @@ interface StateOptions {
   >;
   inProgressAgentIds?: string[];
   sessionOverrides?: Record<string, Record<string, unknown>>;
-  unreadAgentIds?: string[];
+  unreadWorkspaceIds?: string[];
   selectedTabs?: Record<string, string[]>;
   cycleScopes?: Partial<Record<CycleScopeFamilyId, CycleScope>>;
 }
@@ -71,11 +71,15 @@ function makeState(options: StateOptions = {}): ActionKeyState {
     workspace: {
       activeWorkspaceId:
         options.activeWorkspaceId === undefined ? 'ws-1' : options.activeWorkspaceId,
-      workspaces: createCollection('id', workspaceIds.map(makeWorkspace)),
+      workspaces: createCollection(
+        'id',
+        workspaceIds.map((id) =>
+          makeWorkspace(id, options.unreadWorkspaceIds?.includes(id) ? 'unread' : undefined),
+        ),
+      ),
     },
     workspaceAgents: { byWorkspaceId },
     agentSessions: { byAgentId },
-    unreadTracking: { unreadAgentIds: options.unreadAgentIds ?? [] },
     hardwareConsole: {
       cycleScopeByFamily: { ...DEFAULT_CYCLE_SCOPES, ...options.cycleScopes },
     },
@@ -240,17 +244,22 @@ describe('global cycle family', () => {
     );
   });
 
-  it('cycle-unread-agents cycles only agents marked unread', () => {
+  it('cycle-unread-agents cycles only agents of workspaces marked unread', () => {
     const state = makeState({
-      agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null } },
-      unreadAgentIds: ['a-2'],
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: null },
+        'ws-2': { ids: ['a-2'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-2'],
     });
-    const { context, dispatch } = makeContext(state);
+    const { context, dispatch, navigate } = makeContext(state);
     const definition = getActionKeyDefinition('cycle-unread-agents');
     expect(definition.isAvailable(context)).toBe(true);
     definition.execute(context);
+    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-1', 'a-2'] }),
+      expect.objectContaining({ type: 'workspaceAgents/setActiveAgentId', payload: ['ws-2', 'a-2'] }),
     );
   });
 
@@ -288,7 +297,7 @@ describe('global cycle family', () => {
   it('cycle actions focus the target agent chat composer', () => {
     const state = makeState({
       agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: null } },
-      unreadAgentIds: ['a-1'],
+      unreadWorkspaceIds: ['ws-1'],
     });
     const { context, focusComposer } = makeContext(state);
     getActionKeyDefinition('cycle-unread-agents').execute(context);
@@ -543,7 +552,7 @@ describe('single-candidate toast', () => {
       ['cycle-idle-agents', {}, m.hardwareConsole_actionKey_noOtherIdleAgents_message()],
       [
         'cycle-unread-agents',
-        { unreadAgentIds: ['a-1'] },
+        { unreadWorkspaceIds: ['ws-1'] },
         m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
       ],
       [

@@ -34,10 +34,6 @@
   import type { LayoutPresetId } from '$lib/components/layout/panel-system/types';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import {
-  selectUnreadAgentIds,
-  selectUnreadAgentIdsForWorkspace,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
 
   import { writable } from 'svelte/store';
   import { WorkspaceStatusEnum } from '$shared/types';
@@ -68,7 +64,6 @@
   const zoomFactor = selectZoomFactor();
   const counterScale = selectCounterScale();
   const workspaceItems = selectWorkspaceItems();
-  const unreadAgentIds$ = selectUnreadAgentIds();
 
   // Detect platform for conditional styling and shortcuts
   const isMac = $derived.by(() => {
@@ -155,22 +150,17 @@
   const workspacesWithActivity = $derived.by(() => {
     // Touch reactive versions
     void activeStreamsVersion;
-    // Reading unreadAgentIds$ triggers re-evaluation when unread state changes
-    void $unreadAgentIds$;
 
     const allWorkspaces = $workspaceItems.filter(
       (w) => w.status !== WorkspaceStatusEnum.Archived && w.id !== workspaceId,
     );
 
-    const state = appStore.state;
     return allWorkspaces
       .map((ws) => {
         const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
         const streaming = streamingAgentIds.length > 0;
-        const hasUnread =
-          selectUnreadAgentIdsForWorkspace
-            .select(state, ws.id)
-            .filter((id) => !streamingAgentIds.includes(id)).length > 0;
+        // BE-owned attention flag; streaming takes precedence over unread.
+        const hasUnread = !streaming && ws.attention === 'unread';
 
         return { workspace: ws, streaming, hasUnread };
       })

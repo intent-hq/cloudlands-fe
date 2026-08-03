@@ -342,6 +342,7 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
         'workspace:context-changed',
         'workspace:activity-changed',
         'workspace:displayStatus-changed',
+        'workspace:attention-changed',
         'workspace:updated',
         'workspace:created',
         'workspace:deleted',
@@ -2298,6 +2299,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         'workspace:context-changed',
         'workspace:activity-changed',
         'workspace:displayStatus-changed',
+        'workspace:attention-changed',
         'workspace:updated',
         'workspace:created',
         'workspace:deleted',
@@ -4873,6 +4875,166 @@ describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', 
     // Activity should remain unchanged (still idle)
     ws = await readWorkspace();
     expect(ws.activity).toBe('idle');
+  });
+});
+
+describe('daemonEventsBridge (workspace:attention-changed → workspace slice)', () => {
+  const WS_ATT = 'ws-attention-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_ATT,
+        title: 'Attention ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    attention?: 'none' | 'unread' | 'review_required';
+  }> {
+    const { getItem } = await import('$lib/store-shim/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_ATT) ?? {}) as never;
+  }
+
+  function attentionChangedNotification(attention: 'none' | 'unread' | 'review_required') {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-attention-1',
+          workspaceId: WS_ATT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:attention-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_ATT,
+            attention,
+          },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:attention-changed in the bridge firehose filter', async () => {
+    await primeBridge();
+    expect(backendRequestSpy).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: expect.arrayContaining(['workspace:attention-changed']),
+    });
+  });
+
+  it('merges attention=unread onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('unread'));
+
+    const ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+  });
+
+  it('merges attention=none onto the workspace entity (markSeen round-trip)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('unread'));
+    let ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+
+    handler(attentionChangedNotification('none'));
+    ws = await readWorkspace();
+    expect(ws.attention).toBe('none');
+  });
+
+  it('merges attention=review_required onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('review_required'));
+
+    const ws = await readWorkspace();
+    expect(ws.attention).toBe('review_required');
+  });
+
+  it('is a no-op when the attention value is invalid', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('unread'));
+    let ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-attention-bad',
+          workspaceId: WS_ATT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:attention-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_ATT,
+            attention: 'invalid_value',
+          },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+  });
+
+  it('is a no-op when data or attention is missing', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(attentionChangedNotification('unread'));
+    let ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-attention-no-data',
+          workspaceId: WS_ATT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:attention-changed',
+          actor: { type: 'system' },
+          data: {},
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.attention).toBe('unread');
   });
 });
 

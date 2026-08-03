@@ -324,6 +324,13 @@ export interface WorkspacesClient {
   archive(id: string): Promise<MutationResult>;
   /** Unarchive a workspace (`workspace.unarchive`, §5.1) — the archive-undo path. */
   unarchive(id: string): Promise<MutationResult>;
+  /**
+   * Mark a workspace seen (`workspace.markSeen`, §5.1) — clears the unread
+   * `attention` flag only (unlike `workspace.dismissAttention`, which also
+   * clears `review_required`). The daemon returns `{ workspace }` and emits
+   * `workspace:attention-changed`, which drives the reactive UI clear.
+   */
+  markSeen(id: string): Promise<MutationResult>;
   setActive(id: string): Promise<MutationResult>;
   recentViews(): Promise<Record<string, number>>;
   /**

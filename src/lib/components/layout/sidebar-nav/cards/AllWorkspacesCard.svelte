@@ -20,11 +20,7 @@
   selectPinnedWorkspaceIds,
   selectAllSpacesViewMode,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-  import {
-  selectUnreadAgentIds,
-  selectUnreadAgentIdsForWorkspace,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
-  import { clearWorkspaceUnread } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+  import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
 
   import {
   closeAll,
@@ -46,7 +42,6 @@
 
   const workspaceItems = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
-  const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const viewMode$ = selectAllSpacesViewMode();
 
@@ -202,15 +197,15 @@
   }
 
   function getUnreadAgentIds(ws: Workspace): string[] {
-    void $unreadAgentIds$;
-    return selectUnreadAgentIdsForWorkspace.select(appStore.state, ws.id);
+    // Attention is workspace-level (BE-owned); show member agents as the unread set.
+    return ws.attention === 'unread' ? (ws.agentSummary?.agentIds ?? []) : [];
   }
 
   function _isUnread(ws: Workspace): boolean {
     void activeStreamsVersion;
     const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
     if (streamingIds.length > 0) return false;
-    return getUnreadAgentIds(ws).length > 0;
+    return ws.attention === 'unread';
   }
 
   async function handleClick(workspaceId: string, event?: MouseEvent | KeyboardEvent) {
@@ -235,7 +230,9 @@
 
   function handleMarkAsRead(e: MouseEvent, workspaceId: string) {
     e.stopPropagation();
-    appStore.dispatch(clearWorkspaceUnread(workspaceId));
+    // Daemon round-trip (`workspace.markSeen`, §5.1): the resulting
+    // `workspace:attention-changed` event clears the dot on all clients.
+    markWorkspaceSeen(workspaceId);
   }
 
   // Flat ordered list of workspace IDs matching the current view mode's display order

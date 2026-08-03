@@ -25,7 +25,6 @@ const mockState: {
   },
   workspaceAgents: { byWorkspaceId: {} },
   agentSessions: { byAgentId: {} },
-  unreadTracking: { unreadAgentIds: [] },
   sidebarNav: { multiSelectTabOrder: [], multiSelectSelectedTabIdsByWorkspaceId: {} },
 };
 
@@ -99,9 +98,9 @@ beforeEach(() => {
   mockState.hardwareConsole.actionMappingByModel = normalizeActionMappingsByModel(undefined);
   mockState.hardwareConsole.cycleScopeByFamily = normalizeCycleScopeByFamily(undefined);
   mockState.workspace.activeWorkspaceId = 'ws-1';
+  mockState.workspace.workspaces = createCollection('id', [{ id: 'ws-1' } as never]);
   mockState.workspaceAgents.byWorkspaceId = {};
   mockState.agentSessions.byAgentId = {};
-  mockState.unreadTracking = { unreadAgentIds: [] };
   resetActionKeyCycleCursors();
   vi.clearAllMocks();
 });
@@ -226,7 +225,9 @@ describe('handleActionKeyPress', () => {
     mockState.agentSessions.byAgentId = {
       'a-1': { id: 'a-1', status: 'Completed', messages: [] } as never,
     };
-    mockState.unreadTracking = { unreadAgentIds: ['a-1'] };
+    mockState.workspace.workspaces = createCollection('id', [
+      { id: 'ws-1', attention: 'unread' } as never,
+    ]);
     const focusComposer = vi.fn();
     const result = handleActionKeyPress('ACT10', { focusComposer }, 'codex-micro');
     expect(result).toBe('cycle-unread-agents');
@@ -261,7 +262,9 @@ describe('handleActionKeyPress', () => {
     mockState.agentSessions.byAgentId = {
       'a-1': { id: 'a-1', status: 'Completed', messages: [] } as never,
     };
-    mockState.unreadTracking = { unreadAgentIds: ['a-1'] };
+    mockState.workspace.workspaces = createCollection('id', [
+      { id: 'ws-1', attention: 'unread' } as never,
+    ]);
     const result = handleActionKeyPress('ACT10', {}, 'codex-micro');
     expect(result).toBe('cycle-unread-agents');
     expect(dispatched).toContainEqual(

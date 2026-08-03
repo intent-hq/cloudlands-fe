@@ -62,11 +62,6 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => mocks.readable(() => mocks.workspaces),
 }));
 
-vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
-  selectUnreadAgentIds: () => mocks.readable(() => []),
-  selectUnreadAgentIdsForWorkspace: { select: vi.fn(() => []) },
-}));
-
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
   selectWorkspaceTasksByWorkspaceId: Object.assign(
     () => mocks.readable(() => ({})),

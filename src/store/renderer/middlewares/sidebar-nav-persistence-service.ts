@@ -4,7 +4,7 @@
  * pinned workspaces and other sidebar UI state never loaded on boot or persisted
  * on change.
  *
- * Like `tab-state-persistence-service` and `unread-tracking-persistence-service`,
+ * Like `tab-state-persistence-service`,
  * this reconnects the path WITHOUT re-adding a saga and WITHOUT changing any call site:
  *   - On creation it hydrates sidebar-nav state from localStorage once.
  *   - After any mutating action it writes the affected state back.

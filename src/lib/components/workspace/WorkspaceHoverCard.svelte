@@ -24,10 +24,6 @@
   faCodeMerge,
   faCodePullRequest,
 } from '@fortawesome/free-solid-svg-icons';
-  import {
-  selectUnreadAgentIds,
-  selectUnreadAgentIdsForWorkspace,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -307,8 +303,6 @@
     return agentIds.map((agentId) => agentsById.get(agentId)!);
   }
 
-  // Subscribe to unread state via Redux selector for reactivity
-  const unreadAgentIds$ = selectUnreadAgentIds();
   const workspaceAgentSessions$ = selectAllWorkspaceAgents(workspaceIdStore);
   const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
   const workspaceTaskDisplayList$ = selectWorkspaceTaskDisplayList(workspaceIdStore);
@@ -344,12 +338,10 @@
     return workspace ? activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspace.id) : [];
   });
 
-  let unreadAgentIds = $derived.by(() => {
-    void $unreadAgentIds$; // triggers re-evaluation on unread state changes
-    return workspace
-      ? selectUnreadAgentIdsForWorkspace.select(appStore.state, workspace.id)
-      : [];
-  });
+  // Attention is workspace-level (BE-owned); treat all member agents as unread.
+  let unreadAgentIds = $derived(
+    workspace?.attention === 'unread' ? (workspace.agentSummary?.agentIds ?? []) : [],
+  );
 
   // Filter out streaming agents from unread list
   let unreadOnlyAgentIds = $derived(unreadAgentIds.filter((id) => !streamingAgentIds.includes(id)));

@@ -350,6 +350,52 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
     expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
     expect(workspaces[0]?.displayStatus).toBeUndefined();
   });
+
+  it("passes the BE-owned attention flag through normalization (PROTOCOL §5.1 / §9.9)", async () => {
+    // The daemon serves `attention` on every `workspace.*` Workspace payload
+    // (snake_case wire values `none`/`unread`/`review_required`); the
+    // normalizer must retain it verbatim so unread indicators can render it.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          title: "Unread ws",
+          branch: "intent/unread",
+          status: "Active",
+          attention: "unread",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(workspaces[0]).toMatchObject({
+      id: "55555555-5555-4555-8555-555555555555",
+      attention: "unread",
+    });
+  });
+
+  it("leaves attention undefined when an older daemon omits the field", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "66666666-6666-4666-8666-666666666666",
+          title: "Legacy attention ws",
+          branch: "intent/legacy-attention",
+          status: "Active",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(workspaces[0]?.attention).toBeUndefined();
+  });
 });
 
 
