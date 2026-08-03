@@ -126,6 +126,9 @@ function cleanToolName(name: string | undefined | null): string {
   // Strip MCP prefixes like "mcp__workspace-mcp__" or "mcp__some-server__"
   name = name.replace(/^mcp__[^_]+__/, '');
 
+  // Strip dot-separated MCP prefixes like "mcp.workspace-mcp." (server segment has no dots)
+  name = name.replace(/^mcp\.[^.]+\./, '');
+
   // Strip common MCP server name prefixes (e.g., "workspace-mcp_read_note" → "read_note")
   const lowerForPrefix = name.toLowerCase();
   for (const prefix of CLEAN_PREFIXES_TO_STRIP) {
@@ -325,6 +328,12 @@ export function extractMcpSource(rawName: string | undefined | null): string | u
   const mcpPrefixMatch = rawName.match(/^mcp__([^_]+)__/);
   if (mcpPrefixMatch) {
     return mcpPrefixMatch[1].toLowerCase();
+  }
+
+  // Check for dot-separated mcp.<server>.<tool> form (server segment has no dots)
+  const mcpDotMatch = rawName.match(/^mcp\.([^.]+)\./);
+  if (mcpDotMatch) {
+    return mcpDotMatch[1].toLowerCase();
   }
 
   // Check known prefixes (case-insensitive via lowercase comparison)
