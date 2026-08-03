@@ -97,12 +97,19 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
         }),
       ),
     ).toBeNull();
-    // Unknown statuses bucket idle too — same AGENT IDLE chip, same suppression.
+    // Legacy Inactive is an idle twin too (case-insensitive allowlist).
+    expect(
+      mapEventToFeedEntry(
+        wireEvent("agent:status-changed", { agentId: "agent-1", status: "Inactive" }),
+      ),
+    ).toBeNull();
+    // Unknown future statuses are NOT suppressed — the daemon emitted a
+    // distinct status-changed on purpose; only the explicit idle twins fold.
     expect(
       mapEventToFeedEntry(
         wireEvent("agent:status-changed", { agentId: "agent-1", status: "someday-status" }),
       ),
-    ).toBeNull();
+    ).not.toBeNull();
     // The canonical agent:idle row still renders — GREY (canonical table:
     // IDLE is grey, never green).
     expect(

@@ -1678,7 +1678,9 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.agents.map((a) => [a.id, a.depth, a.treePrefix])).toEqual([
       ['root', 0, ''],
       ['child-b', 1, '├─'],
-      ['grandchild', 2, '│ ├─'],
+      // grandchild is child-b's LAST (only) child — closing connector, even
+      // though it is not the last row overall.
+      ['grandchild', 2, '│ └─'],
       ['child-a', 1, '└─'],
     ]);
   });

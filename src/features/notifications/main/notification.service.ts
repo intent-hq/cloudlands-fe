@@ -118,7 +118,7 @@ interface NotificationContent {
  * windows are live; the click handler then opens a fresh main window instead.
  */
 function pickNotificationClickTarget(workspaceWindows: BrowserWindow[]): BrowserWindow | undefined {
-  const nonHudWorkspaceWindow = workspaceWindows.find((w) => !isHudWindow(w));
+  const nonHudWorkspaceWindow = workspaceWindows.find((w) => !w.isDestroyed() && !isHudWindow(w));
   if (nonHudWorkspaceWindow) return nonHudWorkspaceWindow;
   const focused = BrowserWindow.getFocusedWindow();
   if (focused && !focused.isDestroyed() && !isHudWindow(focused)) return focused;

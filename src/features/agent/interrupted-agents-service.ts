@@ -92,6 +92,7 @@ export async function resolveInterruptedAgents(
   abandonIds: string[],
 ): Promise<void> {
   notifyInterruptedAgentsModalClosed();
+  if (resumeIds.length === 0 && abandonIds.length === 0) return;
   const abandonOnly = resumeIds.length === 0;
   try {
     const params: { resume?: string[]; abandon?: string[] } = {};

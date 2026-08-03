@@ -15,6 +15,7 @@ import {
   installInterruptedAgentsService,
   notifyInterruptedAgentUpdated,
   notifyInterruptedAgentsModalClosed,
+  resolveInterruptedAgents,
 } from "./interrupted-agents-service";
 import type { InterruptedAgent } from "$lib/client/app-client";
 
@@ -336,6 +337,14 @@ describe("interrupted-agents-service", () => {
 
       expect(showHandler).toHaveBeenCalledTimes(1);
       expect(showHandler).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe("resolveInterruptedAgents", () => {
+    it("does not send the RPC when both resume and abandon are empty", async () => {
+      const resolveInterrupted = vi.fn();
+      await resolveInterruptedAgents({ agents: { resolveInterrupted } }, [], []);
+      expect(resolveInterrupted).not.toHaveBeenCalled();
     });
   });
 });

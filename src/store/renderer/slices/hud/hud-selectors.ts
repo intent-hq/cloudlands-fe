@@ -842,14 +842,24 @@ function keepLiveWithAncestors(agents: HudCardAgent[]): HudCardAgent[] {
     }
     return false;
   });
-  return kept.map((agent, index, arr) => ({
-    ...agent,
-    treePrefix:
-      agent.depth === 0
-        ? ''
-        : // i18n-ignore (box-drawing tree connector glyphs)
-          (agent.depth >= 2 ? '│ ' : '') + (index === arr.length - 1 ? '└─' : '├─'),
-  }));
+  return kept.map((agent, index, arr) => {
+    if (agent.depth === 0) return { ...agent, treePrefix: '' };
+    // Last sibling = no later kept row at the same depth before the walk
+    // leaves this parent's subtree (depth drops below the agent's).
+    let lastSibling = true;
+    for (let next = index + 1; next < arr.length; next++) {
+      if (arr[next].depth < agent.depth) break;
+      if (arr[next].depth === agent.depth) {
+        lastSibling = false;
+        break;
+      }
+    }
+    return {
+      ...agent,
+      // i18n-ignore (box-drawing tree connector glyphs)
+      treePrefix: (agent.depth >= 2 ? '│ ' : '') + (lastSibling ? '└─' : '├─'),
+    };
+  });
 }
 
 /**

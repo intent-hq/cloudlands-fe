@@ -14,7 +14,6 @@ import type {
 import {
   HUD_UNREAD_ATTENTION_VALUE,
   isHudAttentionValue,
-  isWaitingWireStatus,
   toHudAgentStateBucket,
 } from '$store/renderer/slices/hud/hud-types';
 
@@ -145,12 +144,16 @@ function textFor(type: string, data: Record<string, unknown>): string {
  * event the daemon emits at the same instant (§6.5) — both would render an
  * AGENT IDLE chip, in different colors. Suppress the status-changed twin;
  * the specific chips (RUNNING / WAITING / DONE / FAILED) still render.
- * Mirrors `agentStatusChipLabel`'s default-case grouping.
+ * Explicit idle allowlist — NOT `toHudAgentStateBucket`'s default fallback,
+ * which would also swallow unknown future statuses the daemon intentionally
+ * emits a status-changed for.
  */
+const IDLE_WIRE_STATUSES = new Set(['idle', 'inactive']);
+
 function isIdleStatusChange(type: string, data: Record<string, unknown>): boolean {
   if (type !== 'agent:status-changed') return false;
-  const status = str(data.status) ?? '';
-  return toHudAgentStateBucket(status) === 'idle' && !isWaitingWireStatus(status);
+  const status = (str(data.status) ?? '').toLowerCase();
+  return IDLE_WIRE_STATUSES.has(status);
 }
 
 /**
