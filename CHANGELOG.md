@@ -4,6 +4,30 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.15.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.14.0...v2.15.0) (2026-08-03)
+
+
+### 🚀 Features
+
+* add flush queued messages toggle to agent settings ([#678](https://github.com/intent-hq/cloudlands-fe/issues/678)) ([f1a112a](https://github.com/intent-hq/cloudlands-fe/commit/f1a112a92af49b9e5dce3a405227dd0a5ac4c87b))
+* clear hardware-console lighting on app shutdown ([#677](https://github.com/intent-hq/cloudlands-fe/issues/677)) ([04d5a97](https://github.com/intent-hq/cloudlands-fe/commit/04d5a97742309421c9c1a77d85fbb7efdbb87258))
+* hardware-console cycling, toast badges, hook-aware LEDs, cycle HUD, CM2 defaults ([#679](https://github.com/intent-hq/cloudlands-fe/issues/679)) ([8102f26](https://github.com/intent-hq/cloudlands-fe/commit/8102f26bb4e40bfd29718f8edefc523ee3c1cd7b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar pin to 0.4.1 ([#684](https://github.com/intent-hq/cloudlands-fe/issues/684)) ([e6e318a](https://github.com/intent-hq/cloudlands-fe/commit/e6e318a3406427aab70a04e20aaa63ef164eb0d0))
+* chat rich-block affordances (nav-link, mermaid lightbox, CLI copy, reference open) ([#675](https://github.com/intent-hq/cloudlands-fe/issues/675)) ([299995c](https://github.com/intent-hq/cloudlands-fe/commit/299995cb36ed124b19da9ed6b2801f0105f643f3))
+* drive workspace unread indicators from daemon attention flag ([#680](https://github.com/intent-hq/cloudlands-fe/issues/680)) ([bc14f73](https://github.com/intent-hq/cloudlands-fe/commit/bc14f73539f6613c26d76d3a3763d8f665d7ee12))
+* HUD failed-card errors, sidebar blink gating, /hud nav guard, deleted-agent refresh ([#676](https://github.com/intent-hq/cloudlands-fe/issues/676)) ([6b7a9b0](https://github.com/intent-hq/cloudlands-fe/commit/6b7a9b095124c7b6f0129f756c5ad5e2800c321d))
+* hydrate unknown agent sessions on stream events for live footer previews ([#682](https://github.com/intent-hq/cloudlands-fe/issues/682)) ([16e348c](https://github.com/intent-hq/cloudlands-fe/commit/16e348ce1efbe8accf58b0efaee28dd8446fdea0))
+* make the HUD window inert to hardware-console input ([#681](https://github.com/intent-hq/cloudlands-fe/issues/681)) ([6810a3f](https://github.com/intent-hq/cloudlands-fe/commit/6810a3fd42542976d088e31707ac240ce7528ed6))
+
+
+### ⚡ Performance
+
+* speed up dev startup with warm vite cache, incremental tsc, and overlapped builds ([#672](https://github.com/intent-hq/cloudlands-fe/issues/672)) ([c406696](https://github.com/intent-hq/cloudlands-fe/commit/c4066969db9045f559c1074c6e292d061f40d791))
+
 ## [2.14.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.13.0...v2.14.0) (2026-08-03)
 
 
