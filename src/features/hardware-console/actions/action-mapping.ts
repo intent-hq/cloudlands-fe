@@ -76,9 +76,9 @@ export const CODEX_MIC_LINKED_SLOT = 5;
  * Per-model default mappings on ACT06–ACT12.
  *
  * CM2 (7 discrete keys): creation/navigation actions first, then the
- * agent-cycling actions, ending with cycle-attention-agents on ACT12
- * (Settings-graphic row 4, key 3); `stop-agent` and `toggle-sidebar-tabs`
- * ship unassigned.
+ * agent-cycling actions on ACT10–ACT12 (Settings-graphic row 4) —
+ * in-progress, attention, unread; `cycle-workspace-agents`, `stop-agent`,
+ * and `toggle-sidebar-tabs` ship unassigned (all stay assignable).
  *
  * Codex Micro (6 printed caps): row 3 = lightning (ACT06), checkmark
  * (ACT07), x-mark (ACT08), branching (ACT09); row 4 = the linked 2U Mic
@@ -94,8 +94,8 @@ export const DEFAULT_ACTION_MAPPINGS: Record<
     'see-spec',
     'switch-window-layouts',
     'cycle-in-progress-agents',
-    'cycle-workspace-agents',
     'cycle-attention-agents',
+    'cycle-unread-agents',
   ],
   'codex-micro': [
     'cycle-in-progress-agents',
@@ -123,8 +123,29 @@ export const LEGACY_CM2_DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] = [
 ];
 
 /**
- * Migrate a persisted CM2 mapping that still equals the pre-attention
- * defaults (never customized) to the current defaults. Whole-mapping
+ * CM2 defaults before row 4 became in-progress / attention / unread (this
+ * generation still carried `cycle-workspace-agents` on slot 5 = ACT11).
+ * Used only by the one-shot hydration migration below.
+ */
+export const PREVIOUS_CM2_DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] = [
+  'new-workspace',
+  'new-agent',
+  'see-spec',
+  'switch-window-layouts',
+  'cycle-in-progress-agents',
+  'cycle-workspace-agents',
+  'cycle-attention-agents',
+];
+
+/** Every prior CM2 default generation the migration recognizes. */
+const PRIOR_CM2_DEFAULT_ACTION_MAPPINGS: readonly (readonly ActionKeyActionId[])[] = [
+  LEGACY_CM2_DEFAULT_ACTION_MAPPING,
+  PREVIOUS_CM2_DEFAULT_ACTION_MAPPING,
+];
+
+/**
+ * Migrate a persisted CM2 mapping that still equals a prior default
+ * generation (never customized) to the current defaults. Whole-mapping
  * equality keeps user-customized mappings untouched — a user who changed
  * any slot keeps their layout and can pick up the new default via
  * reset-to-defaults. Returns true when the record was changed.
@@ -133,10 +154,10 @@ export function migrateLegacyCm2DefaultActionMapping(
   mappings: Record<HardwareDeviceModel, ActionKeyActionId[]>,
 ): boolean {
   const cm2 = mappings['creator-micro-2'];
-  const isLegacyDefault =
-    cm2.length === LEGACY_CM2_DEFAULT_ACTION_MAPPING.length &&
-    cm2.every((id, slot) => id === LEGACY_CM2_DEFAULT_ACTION_MAPPING[slot]);
-  if (!isLegacyDefault) return false;
+  const isPriorDefault = PRIOR_CM2_DEFAULT_ACTION_MAPPINGS.some(
+    (prior) => cm2.length === prior.length && cm2.every((id, slot) => id === prior[slot]),
+  );
+  if (!isPriorDefault) return false;
   mappings['creator-micro-2'] = [...DEFAULT_ACTION_MAPPINGS['creator-micro-2']];
   return true;
 }

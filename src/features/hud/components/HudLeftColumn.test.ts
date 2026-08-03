@@ -1,8 +1,9 @@
 /**
- * HudLeftColumn WORKSPACES-BY-STATE attention-row blink gating — the row
- * blinks yellow (hud-state-bar-blink) only when a workspace needs input,
- * gated on the SAME card-derived count as the header ATTN counter
- * (selectHudAttnCount: top-level, non-background). No blink at zero.
+ * HudLeftColumn WORKSPACES-BY-STATE blink gating — each row blinks
+ * (hud-state-bar-blink) only when its OWN displayed count is non-zero,
+ * matching the footer's hud-stat-blink gating: ATTENTION blinks yellow when
+ * the ATTENTION bucket > 0, FAILED blinks red when the FAILED bucket > 0.
+ * No blink at zero, and a failed fleet never pulses ATTENTION.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
@@ -25,13 +26,17 @@ interface SummaryAgent {
   parentAgentId?: string;
 }
 
-function workspaceWithAgents(id: string, agents: SummaryAgent[]): Workspace {
+function workspaceWithAgents(
+  id: string,
+  agents: SummaryAgent[],
+  displayStatus = 'in_progress',
+): Workspace {
   const entries = agents.map((agent) => ({ name: agent.id, ...agent }));
   return {
     id: id as WorkspaceId,
     title: `Workspace ${id}`,
     branch: 'main',
-    displayStatus: 'in_progress',
+    displayStatus,
     changesets: [],
     timeline: [],
     conversationInfo: [],
@@ -64,7 +69,15 @@ function attnRow(): HTMLElement {
   return screen.getByTestId('hud-workspace-bar-attention');
 }
 
-describe('HudLeftColumn WORKSPACES-BY-STATE attention blink gating', () => {
+function failedRow(): HTMLElement {
+  return screen.getByTestId('hud-workspace-bar-failed');
+}
+
+function blinks(row: HTMLElement): boolean {
+  return row.classList.contains('hud-state-bar-blink');
+}
+
+describe('HudLeftColumn WORKSPACES-BY-STATE blink gating', () => {
   beforeEach(() => {
     appStore.init();
     appStore.dispatch(hudActivated());
@@ -74,7 +87,7 @@ describe('HudLeftColumn WORKSPACES-BY-STATE attention blink gating', () => {
     appStore.dispose();
   });
 
-  it('does not blink the attention row at zero (no workspace needs input)', () => {
+  it('blinks neither row at zero counts (no attention, no failures)', () => {
     render(HudLeftColumn, { props: { nowMs: NOW_MS } });
 
     appStore.dispatch(
@@ -82,22 +95,38 @@ describe('HudLeftColumn WORKSPACES-BY-STATE attention blink gating', () => {
     );
     flushSync();
 
-    expect(attnRow().classList.contains('hud-state-bar-blink')).toBe(false);
+    expect(blinks(attnRow())).toBe(false);
+    expect(blinks(failedRow())).toBe(false);
   });
 
-  it('blinks the attention row when a top-level agent needs input', () => {
+  it('blinks only ATTENTION for an attention-only fleet (FAILED stays static)', () => {
     render(HudLeftColumn, { props: { nowMs: NOW_MS } });
 
     appStore.dispatch(
-      setWorkspaceEntity(workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'active' }])),
+      setWorkspaceEntity(
+        workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'active' }], 'needs_attention'),
+      ),
     );
     trackSession('a-0', { attentionRequestKind: 'discussion' });
     flushSync();
 
-    expect(attnRow().classList.contains('hud-state-bar-blink')).toBe(true);
+    expect(blinks(attnRow())).toBe(true);
+    expect(blinks(failedRow())).toBe(false);
   });
 
-  it('does not blink for delegated/background agents (same gating as the header)', () => {
+  it('blinks only FAILED for a failed-only fleet (ATTENTION stays static)', () => {
+    render(HudLeftColumn, { props: { nowMs: NOW_MS } });
+
+    appStore.dispatch(
+      setWorkspaceEntity(workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'error' }])),
+    );
+    flushSync();
+
+    expect(blinks(failedRow())).toBe(true);
+    expect(blinks(attnRow())).toBe(false);
+  });
+
+  it('does not blink ATTENTION for delegated/background agents (same gating as the cards)', () => {
     render(HudLeftColumn, { props: { nowMs: NOW_MS } });
 
     appStore.dispatch(
@@ -111,7 +140,7 @@ describe('HudLeftColumn WORKSPACES-BY-STATE attention blink gating', () => {
     trackSession('a-1', { attentionRequestKind: 'blocker' });
     flushSync();
 
-    expect(attnRow().classList.contains('hud-state-bar-blink')).toBe(false);
+    expect(blinks(attnRow())).toBe(false);
   });
 });
 

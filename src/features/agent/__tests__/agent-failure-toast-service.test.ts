@@ -11,14 +11,21 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { toastCustomMock, toastDismissMock, navigateToRouteMock, dispatchMock } = vi.hoisted(
-  () => ({
-    toastCustomMock: vi.fn(),
-    toastDismissMock: vi.fn(),
-    navigateToRouteMock: vi.fn(async () => {}),
-    dispatchMock: vi.fn(),
-  }),
-);
+const {
+  toastCustomMock,
+  toastDismissMock,
+  navigateToRouteMock,
+  dispatchMock,
+  microStatusMock,
+  resolvedKeySlotSelectMock,
+} = vi.hoisted(() => ({
+  toastCustomMock: vi.fn(),
+  toastDismissMock: vi.fn(),
+  navigateToRouteMock: vi.fn(async () => {}),
+  dispatchMock: vi.fn(),
+  microStatusMock: { value: 'disconnected' },
+  resolvedKeySlotSelectMock: vi.fn((_state: unknown, _workspaceId: string): number | null => null),
+}));
 
 vi.mock('svelte-sonner', () => ({
   toast: {
@@ -50,6 +57,17 @@ vi.mock('$store/renderer/slices/app-layout/app-layout-slice', () => ({
     type: 'appLayout/openAgentTabRequested',
     args: [wsId, detail],
   }),
+}));
+
+// Seams of the connected key-slot resolver (badge gating): manager status +
+// the resolved-slot selector, so the real gate logic in
+// resolveConnectedWorkspaceKeySlot is exercised.
+vi.mock('$features/hardware-console/instance', () => ({
+  getHardwareConsoleManager: () => ({ status: microStatusMock.value }),
+}));
+
+vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
+  selectWorkspaceResolvedKeySlot: { select: resolvedKeySlotSelectMock },
 }));
 
 let mockState: Record<string, unknown> = {};
@@ -103,6 +121,8 @@ function lastCustomCallFor(
 describe('agent-failure-toast-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    microStatusMock.value = 'disconnected';
+    resolvedKeySlotSelectMock.mockImplementation(() => null);
     resetMockIpcRouter();
     clearAgentFailureRegistry();
     __resetAgentFailureToastsForTests();
@@ -172,6 +192,55 @@ describe('agent-failure-toast-service', () => {
     expect(props.title).toBe('Agent failed');
     expect(props.retryLabel).toBe('Retry');
     expect(props.contextLine).toBeUndefined();
+  });
+
+  describe('micro key-slot badge', () => {
+    it('carries the resolved key slot when the micro is connected and the workspace holds a slot', async () => {
+      microStatusMock.value = 'connected';
+      resolvedKeySlotSelectMock.mockImplementation(() => 4);
+
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+      await flush();
+
+      expect(resolvedKeySlotSelectMock).toHaveBeenCalledWith(expect.anything(), 'ws-1');
+      expect(lastCustomCallFor(agentFailureToastId('agent-1'))!.componentProps.keySlot).toBe(4);
+    });
+
+    it('carries no key slot when the micro is disconnected, even if the workspace holds one', async () => {
+      microStatusMock.value = 'disconnected';
+      resolvedKeySlotSelectMock.mockImplementation(() => 4);
+
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+      await flush();
+
+      expect(resolvedKeySlotSelectMock).not.toHaveBeenCalled();
+      expect(lastCustomCallFor(agentFailureToastId('agent-1'))!.componentProps.keySlot).toBeNull();
+    });
+
+    it('carries no key slot when connected but the workspace holds no slot', async () => {
+      microStatusMock.value = 'connected';
+      resolvedKeySlotSelectMock.mockImplementation(() => null);
+
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+      await flush();
+
+      expect(lastCustomCallFor(agentFailureToastId('agent-1'))!.componentProps.keySlot).toBeNull();
+    });
+
+    it('still shows the toast (badge-less) when slot resolution throws', async () => {
+      microStatusMock.value = 'connected';
+      resolvedKeySlotSelectMock.mockImplementation(() => {
+        throw new Error('resolver boom');
+      });
+
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+      await flush();
+
+      const call = lastCustomCallFor(agentFailureToastId('agent-1'));
+      expect(call).toBeDefined();
+      expect(call!.componentProps.title).toBe('Implementor failed');
+      expect(call!.componentProps.keySlot).toBeNull();
+    });
   });
 
   it('toasts only registry entries — delegated failures (parentAgentId on the wire) never enter the registry', async () => {

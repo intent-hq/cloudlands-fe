@@ -463,11 +463,16 @@ export interface HudCardAgent {
  * the no-text fallback for a wire `needs_attention` rollup whose reason the
  * HUD never captured (e.g. the question was asked before the window opened —
  * the slice is live-only) — the component renders a generic localized line
- * instead of leaving the workspace status text in place.
+ * instead of leaving the workspace status text in place. `failed` carries
+ * the failing agent's §5.5 `stopReason` (empty text when none is tracked —
+ * the component renders a generic failed line, never the status message).
  */
 export interface HudCardAttentionSnippet {
-  kind: 'question' | 'blocker' | 'discussion' | 'pending';
-  /** Question/reason text (agent content; i18n-exempt); empty for `pending`. */
+  kind: 'question' | 'blocker' | 'discussion' | 'pending' | 'failed';
+  /**
+   * Question/reason/error text (agent content; i18n-exempt); empty for
+   * `pending` and for `failed` without a known stopReason.
+   */
   text: string;
 }
 
@@ -484,7 +489,7 @@ export interface HudWorkspaceCard {
   attention: string | null;
   /** Workspace status message (agent content; i18n-exempt), null when empty. */
   statusMessage: string | null;
-  /** Attention-reason strip content; null outside `wait`/`blocked` or when no reason is known. */
+  /** Attention-reason strip content; null outside `wait`/`blocked`/`failed` or when no reason is known. */
   attentionSnippet: HudCardAttentionSnippet | null;
   prNumber: number | null;
   /** BE-owned task rollup (`task.list` stats; zeros until loaded). */
@@ -560,6 +565,11 @@ function cardStateKey(
  * never mask pending attention. Null when the attention came from the
  * workspace-level flag alone (review_required — the strip falls back to the
  * status message there).
+ *
+ * A `failed` card always gets a `failed` snippet: the first failed-bucket
+ * agent's §5.5 `stopReason` (read from the tracked session) is the error the
+ * user needs, and when no stopReason is known the empty text renders a
+ * generic failed line — never the workspace status message.
  */
 function cardAttentionSnippet(
   state: StoreState,
@@ -567,6 +577,14 @@ function cardAttentionSnippet(
   stateKey: HudCardStateKey,
   agents: HudCardAgent[],
 ): HudCardAttentionSnippet | null {
+  if (stateKey === 'failed') {
+    const failed = agents.find((agent) => agent.bucket === 'failed');
+    const stopReason = failed ? state.agentSessions?.byAgentId[failed.id]?.stopReason : null;
+    return {
+      kind: 'failed',
+      text: typeof stopReason === 'string' && stopReason.length > 0 ? stopReason : '',
+    };
+  }
   if (stateKey !== 'wait' && stateKey !== 'blocked') return null;
   const gated = agents.filter((agent) => agent.topLevel && !agent.isBackground);
   for (const agent of gated) {

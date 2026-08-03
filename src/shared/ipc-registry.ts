@@ -824,6 +824,16 @@ export const IPC_CHANNELS = {
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
     GET_SIDECAR_RUN_LOG: 'backend:get-sidecar-run-log',
   },
+
+  // Hardware console (Codex Micro / Creator Micro 2)
+  HARDWARE_CONSOLE: {
+    // Main → renderer: ask the renderer to send the lighting off-frame
+    // during graceful shutdown.
+    CLEAR_LIGHTING: 'hardware-console:clear-lighting',
+    // Renderer → main one-way ack once lighting is cleared (or there was
+    // nothing to do).
+    CLEAR_LIGHTING_DONE: 'hardware-console:clear-lighting-done',
+  },
 } as const;
 
 // Event channels that are sent from main to renderer
@@ -996,6 +1006,8 @@ export const EVENT_CHANNELS = [
   // and connection-status changes pushed from the main-process client.
   'backend:notification',
   'backend:status',
+  // Hardware console shutdown handshake (main → renderer)
+  'hardware-console:clear-lighting',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

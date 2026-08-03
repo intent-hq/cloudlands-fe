@@ -235,7 +235,7 @@ export const createWorkspacesLinkClickHandler = createIntentLinkClickHandler;
  */
 async function navigateToNote(info: WorkspacesLinkInfo): Promise<void> {
   const { navigateToNote: navigateToNoteUtil } = await import('./workspace-navigation');
-  const { goto } = await import('$app/navigation');
+  const { navigateToRoute } = await import('./navigation.client');
 
   const currentWorkspace = selectCurrentWorkspace.select(appStore.state);
 
@@ -257,7 +257,8 @@ async function navigateToNote(info: WorkspacesLinkInfo): Promise<void> {
 
     if (isCrossWorkspace) {
       // Navigate to the target workspace and note
-      await goto(`/workspace/${info.workspaceId}?note=${info.resourceId}`);
+      // (navigateToRoute no-ops in the HUD pop-out window — never leaves /hud)
+      await navigateToRoute(`/workspace/${info.workspaceId}?note=${info.resourceId}`);
     } else {
       // Same workspace - navigate to the note directly
       await navigateToNoteUtil(info.resourceId);

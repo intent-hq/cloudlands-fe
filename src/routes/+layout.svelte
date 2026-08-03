@@ -41,6 +41,7 @@
   import SpacesSwitcherOverlay from '$features/workspace/SpacesSwitcherOverlay.svelte';
   import RadialPromptPickerOverlay from '$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte';
   import EncoderCycleHud from '$features/hardware-console/encoder/EncoderCycleHud.svelte';
+  import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import HudChromelessMain from '$features/hud/components/HudChromelessMain.svelte';
@@ -1036,6 +1037,9 @@
   <!-- Encoder Cycling HUD (hardware console encoder rotation) -->
   <EncoderCycleHud />
 
+  <!-- Action-key HUD (hardware console cycle action keys; paints over the encoder HUD) -->
+  <ActionKeyHud />
+
   <!-- Usage Stats Overlay (sidebar Stats button) -->
   <StatsOverlay />
 
@@ -1048,8 +1052,10 @@
   <!-- Auggie Setup Gate -->
   <AuggieSetupGate />
 
-  <!-- Toast Notifications -->
-  <Toast />
+  <!-- Toast Notifications (suppressed in the HUD pop-out window) -->
+  {#if !isHudRoute}
+    <Toast />
+  {/if}
 
   <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
   <LinkTooltip />

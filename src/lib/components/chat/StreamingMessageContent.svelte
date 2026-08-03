@@ -26,11 +26,13 @@
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
   import ChatDiffViewer from './ChatDiffViewer.svelte';
   import ChatWorkspaceCard from './ChatWorkspaceCard.svelte';
+  import ChatReferenceBlock from './ChatReferenceBlock.svelte';
   import { PatchBlockContent } from '$lib/components/ui/diff';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import Fa from 'svelte-fa';
-  import { faCode, faTerminal, faRobot } from '@fortawesome/free-solid-svg-icons';
+  import { faRobot } from '@fortawesome/free-solid-svg-icons';
+  import ChatCliBlock from './ChatCliBlock.svelte';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
@@ -291,6 +293,7 @@
   // Handle file opening from AugmentCodeSnippet
   function handleOpenFile(detail: {
     path: string;
+    line?: number;
     openInAdjacentPanel?: boolean;
     sourcePanelId?: string;
   }) {
@@ -298,6 +301,7 @@
     if (!workspaceId) return;
     appStore.dispatch(
       openWorkspaceFile(workspaceId, detail.path, {
+        line: detail.line,
         openInAdjacentPanel: detail.openInAdjacentPanel ?? false,
         sourcePanelId: detail.sourcePanelId,
       }),
@@ -606,40 +610,10 @@
       label={parsedBlock.metadata.navLinkData.label}
     />
   {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
-    {@const refData = parsedBlock.metadata.referenceData}
-    {@const refFileName = refData.filePath?.split('/').pop() ||
-      refData.semanticId ||
-      m.chat_messageContent_reference_fallback()}
-    <div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
-      <div class="flex items-center gap-2 px-3 py-1.5">
-        <Fa icon={faCode} size="xs" class="flex-none text-ghost" />
-        <span class="text-sm font-medium truncate">{refFileName}</span>
-        {#if refData.filePath && refData.filePath !== refFileName}
-          <span class="text-sm text-subtle truncate flex-1 min-w-0">
-            {refData.filePath}
-          </span>
-        {/if}
-      </div>
-      {#if refData.snapshot?.code}
-        <div class="border-t border-border">
-          <CodeBlock
-            code={refData.snapshot.code}
-            language={refData.snapshot.languageId || 'plaintext'}
-            showLineNumbers={true}
-            noBorder={true}
-            noMargin={true}
-          />
-        </div>
-      {/if}
-    </div>
+    <ChatReferenceBlock reference={parsedBlock.metadata.referenceData} onOpenFile={handleOpenFile} />
   {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
     {@const cliData = parsedBlock.metadata.cliData}
-    <div class="my-1.5 flex items-center gap-2">
-      <Fa icon={faTerminal} size="sm" class="text-ghost flex-none" />
-      <code class="font-mono text-sm text-subtle flex-1 min-w-0 truncate">
-        {cliData.command}
-      </code>
-    </div>
+    <ChatCliBlock command={cliData.command} />
   {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
     {@const actionData = parsedBlock.metadata.agentActionData}
     <div class="my-1.5 flex items-center gap-2">

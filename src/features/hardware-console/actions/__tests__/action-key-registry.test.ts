@@ -303,14 +303,48 @@ describe('global cycle family', () => {
     getActionKeyDefinition('cycle-unread-agents').execute(context);
     expect(focusComposer).toHaveBeenCalledWith('a-1');
   });
+
+  it('a successful cycle step shows the action HUD with the action label', () => {
+    const cases = [
+      ['cycle-workspace-agents', {}, m.hardwareConsole_actionKey_cycleWorkspaceAgents_label()],
+      [
+        'cycle-in-progress-agents',
+        { inProgressAgentIds: ['a-1', 'a-2'] },
+        m.hardwareConsole_actionKey_cycleInProgressAgents_label(),
+      ],
+    ] as const;
+    for (const [id, options, label] of cases) {
+      resetActionKeyCycleCursors();
+      const state = makeState({
+        agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: 'a-1' } },
+        ...options,
+      });
+      const { context, dispatch } = makeContext(state);
+      getActionKeyDefinition(id).execute(context);
+      expect(dispatch, id).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'hardwareConsole/actionHudShown',
+          payload: [label],
+        }),
+      );
+    }
+  });
 });
 
 describe('cycle scope (sub-agents)', () => {
-  it('in-progress, attention, and failed default to including sub-agents', () => {
+  it('failed defaults to including sub-agents', () => {
+    const state = makeState({
+      agentsByWorkspace: { 'ws-1': { ids: [], subAgentIds: ['sub-1'], activeAgentId: null } },
+      sessionOverrides: { 'sub-1': { status: 'error' } },
+    });
+    const { context } = makeContext(state);
+    expect(getActionKeyDefinition('cycle-failed-agents').isAvailable(context)).toBe(true);
+  });
+
+  it('in-progress and attention default to top-level only', () => {
     const cases = [
       ['cycle-in-progress-agents', {}, true],
       ['cycle-attention-agents', { attentionRequestKind: 'blocker', status: 'Completed' }, false],
-      ['cycle-failed-agents', { status: 'error' }, false],
     ] as const;
     for (const [id, overrides, inProgress] of cases) {
       const state = makeState({
@@ -319,7 +353,24 @@ describe('cycle scope (sub-agents)', () => {
         sessionOverrides: { 'sub-1': { ...overrides } },
       });
       const { context } = makeContext(state);
-      expect(getActionKeyDefinition(id).isAvailable(context)).toBe(true);
+      expect(getActionKeyDefinition(id).isAvailable(context), id).toBe(false);
+    }
+  });
+
+  it("a family set to 'all' includes sub-agents in its walk", () => {
+    const cases = [
+      ['cycle-in-progress-agents', {}, true],
+      ['cycle-attention-agents', { attentionRequestKind: 'blocker', status: 'Completed' }, false],
+    ] as const;
+    for (const [id, overrides, inProgress] of cases) {
+      const state = makeState({
+        agentsByWorkspace: { 'ws-1': { ids: [], subAgentIds: ['sub-1'], activeAgentId: null } },
+        inProgressAgentIds: inProgress ? ['sub-1'] : [],
+        sessionOverrides: { 'sub-1': { ...overrides } },
+        cycleScopes: { [id]: 'all' },
+      });
+      const { context } = makeContext(state);
+      expect(getActionKeyDefinition(id).isAvailable(context), id).toBe(true);
     }
   });
 

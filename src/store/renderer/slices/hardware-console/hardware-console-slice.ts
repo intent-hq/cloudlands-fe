@@ -42,6 +42,7 @@ export const initialState: HardwareConsoleState = {
   promptsHydrated: false,
   radialPrompt: closedRadialPrompt,
   encoderHudWorkspaceId: null,
+  actionHudLabel: null,
   actionMappingByModel: normalizeActionMappingsByModel(undefined),
   actionMappingHydrated: false,
   cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
@@ -123,6 +124,12 @@ export const encoderHudShown = createAction<[workspaceId: string]>(
 );
 /** Cycling HUD timed out (or device disconnected): hide it. */
 export const encoderHudHidden = createAction("hardwareConsole/encoderHudHidden");
+/** A cycle action key stepped the walk: show the action HUD with its label. */
+export const actionHudShown = createAction<[label: string]>(
+  "hardwareConsole/actionHudShown",
+);
+/** Action HUD timed out: hide it. */
+export const actionHudHidden = createAction("hardwareConsole/actionHudHidden");
 /** Boot-time hydration of the per-model action-key mappings from the daemon settings bag. */
 export const hydrateHardwareConsoleActionMapping = createAction<
   [actionMappingByModel: Partial<Record<HardwareDeviceModel, ActionKeyActionId[]>>]
@@ -237,6 +244,14 @@ export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initia
   .with(encoderHudHidden, (state) => {
     if (state.encoderHudWorkspaceId === null) return state;
     return { ...state, encoderHudWorkspaceId: null };
+  })
+  .with(actionHudShown, (state, { payload: [label] }) => {
+    if (!label || state.actionHudLabel === label) return state;
+    return { ...state, actionHudLabel: label };
+  })
+  .with(actionHudHidden, (state) => {
+    if (state.actionHudLabel === null) return state;
+    return { ...state, actionHudLabel: null };
   })
   .with(hydrateHardwareConsoleActionMapping, (state, { payload: [actionMappingByModel] }) => {
     return {

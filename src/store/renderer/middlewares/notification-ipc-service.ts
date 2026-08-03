@@ -61,13 +61,28 @@ async function handleNotificationShow(data?: NotificationShowEvent): Promise<voi
  * notification title/body whose "Open" action routes through the shared
  * `handleNotificationNavigate` (same routing as `notification:navigate`,
  * including the chief → Assistant panel case) and dismisses.
+ *
+ * When a micro is connected AND the target workspace resolves to a key slot,
+ * the toast renders through a custom component that carries the slot square
+ * (a plain `toast(...)` cannot); otherwise the plain toast is unchanged. Both
+ * the resolver and the component are lazy-imported per middleware
+ * conventions. The badge path is best-effort: any failure in it (resolver
+ * import/resolution, custom component import/render) falls back to the plain
+ * toast — only a missing toast lib drops the toast entirely.
  */
 async function showNavigateToast(
   data: NotificationShowEvent,
   navigateTarget: NotificationNavigatePayload,
 ): Promise<void> {
+  let toast: (typeof import("svelte-sonner"))["toast"];
   try {
-    const { toast } = await import("svelte-sonner");
+    ({ toast } = await import("svelte-sonner"));
+  } catch {
+    // Toast not available - not critical
+    return;
+  }
+
+  const showPlainToast = () => {
     toast(data.title ?? data.body ?? "", {
       description: data.title ? data.body : undefined,
       action: {
@@ -75,8 +90,40 @@ async function showNavigateToast(
         onClick: () => void handleNotificationNavigate(navigateTarget),
       },
     });
+  };
+
+  try {
+    const { resolveConnectedWorkspaceKeySlot } = await import(
+      "$features/hardware-console/assignment/connected-key-slot"
+    );
+    const keySlot = resolveConnectedWorkspaceKeySlot(navigateTarget.workspaceId);
+    if (keySlot === null) {
+      showPlainToast();
+      return;
+    }
+    const { default: NotificationNavigateToast } = await import(
+      "$lib/components/ui/toast/NotificationNavigateToast.svelte"
+    );
+    let toastId: string | number | undefined;
+    toastId = toast.custom(NotificationNavigateToast, {
+      componentProps: {
+        title: data.title ?? data.body ?? "",
+        description: data.title ? data.body : undefined,
+        keySlot,
+        actionLabel: m.notifications_toast_open_label(),
+        onAction: () => {
+          if (toastId !== undefined) toast.dismiss(toastId);
+          void handleNotificationNavigate(navigateTarget);
+        },
+      },
+    });
   } catch {
-    // Toast not available - not critical
+    // Badge path failed - degrade to the badge-less plain toast
+    try {
+      showPlainToast();
+    } catch {
+      // Toast not available - not critical
+    }
   }
 }
 

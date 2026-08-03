@@ -160,6 +160,7 @@ import {
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import {
   bulkUpdateWorkspaceEntities,
+  setWorkspaceEntity,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
@@ -1259,6 +1260,31 @@ async function reconcileWorkspaceActivity(
 }
 
 /**
+ * Refresh the workspace entity's BE-owned `agentSummary` aggregate (PROTOCOL
+ * §5.1) after an `agent:deleted` event. The HUD card agent rows are built
+ * from `workspace.agentSummary.agents` (`agentInfosOf` in hud-selectors.ts),
+ * which the `agent.list` hydration path does NOT touch — without this
+ * refetch a deleted agent lingers on its card until an unrelated workspace
+ * refetch. Fetch `workspace.get` and merge the fresh entity via
+ * `setWorkspaceEntity` (the `mergeWorkspaceEnrichment` path takes the
+ * incoming `agentSummary` when present). Best-effort like
+ * `reconcileWorkspaceActivity`: errors (workspace itself deleted, transport)
+ * are swallowed.
+ */
+async function reconcileWorkspaceAgentSummary(workspaceId: string): Promise<void> {
+  try {
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      | { workspace?: Workspace }
+      | undefined;
+    const workspace = response?.workspace;
+    if (!workspace) return;
+    appStore.dispatch(setWorkspaceEntity(workspace));
+  } catch (_error) {
+    // Workspace might have been deleted or transport error; no-op is safe.
+  }
+}
+
+/**
  * `workspace:updated` (PROTOCOL §6.5 / §7) carries `{ workspaceId, changes }`
  * where `changes` is the applied `WorkspaceUpdate` delta — the fields the
  * caller actually asked to mutate, with `Option::is_none` fields skipped in
@@ -1910,9 +1936,10 @@ function handleNotification(method: string, params: unknown): void {
     refreshWorkspaceSubscriptionEntries(workspaceId);
   }
 
-  // STAB-9: Agent lifecycle events (status-changed, idle) should refresh the
-  // agent list so the sidebar shows live status/last-activity updates.
-  if (type === 'agent:status-changed' || type === 'agent:idle') {
+  // STAB-9: Agent lifecycle events (status-changed, idle, deleted) should
+  // refresh the agent list so the sidebar shows live status/last-activity
+  // updates and drops deleted agents without an unrelated refetch.
+  if (type === 'agent:status-changed' || type === 'agent:idle' || type === 'agent:deleted') {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
   }
 
@@ -1943,6 +1970,11 @@ function handleNotification(method: string, params: unknown): void {
       // bounded by live agents.
       previewTurnMessageIdByAgent.delete(data.agentId);
     }
+    // Refresh the workspace entity's BE-owned `agentSummary` aggregate so the
+    // HUD card rows drop the deleted agent immediately — the `agent.list`
+    // hydration above does not touch it. Fire-and-forget side effect, falls
+    // through to the timeline dispatch below.
+    void reconcileWorkspaceAgentSummary(workspaceId);
   }
 
   // monorepo#1106: a redrive that bypasses chat-send-service — coordinator
