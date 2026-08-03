@@ -143,7 +143,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
       );
       const entriesById = new Map(scriptEntries.map((s) => [s.id, s]));
-      const skippedRunning: string[] = [];
+      // A Set so a script skipped by both the remove and update branches (or
+      // duplicated in the agent output) is reported at most once.
+      const skippedRunning = new Set<string>();
 
       if (Array.isArray(parsed.remove)) {
         for (const scriptId of parsed.remove) {
@@ -152,7 +154,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             // skip it and surface the skip so the user can stop + re-detect.
             const target = entriesById.get(scriptId);
             if (target?.runtime?.status === 'running') {
-              skippedRunning.push(target.name);
+              skippedRunning.add(target.name);
               logger.info('Skipping script.remove for running script', {
                 name: target.name,
                 scriptId,
@@ -173,7 +175,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             // tears down the live PTY group — never send it for a running row.
             const target = entriesById.get(entry.id);
             if (target?.runtime?.status === 'running') {
-              skippedRunning.push(target.name);
+              skippedRunning.add(target.name);
               logger.info('Skipping script.update for running script', {
                 name: target.name,
                 scriptId: entry.id,
@@ -254,13 +256,14 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       } else {
         toast.info(m.terminal_sidebar_noScriptChanges_info());
       }
-      if (skippedRunning.length > 0) {
+      if (skippedRunning.size > 0) {
+        const skippedNames = [...skippedRunning];
         toast.warning(
-          skippedRunning.length === 1
-            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
+          skippedNames.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: skippedNames[0] })
             : m.scripts_detect_skippedRunning_many({
-                count: skippedRunning.length,
-                names: skippedRunning.join(', '),
+                count: skippedNames.length,
+                names: skippedNames.join(', '),
               }),
         );
       }
