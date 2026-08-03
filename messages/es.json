@@ -4658,6 +4658,7 @@
   "mcp_oauth_registerFailed_error": "Error al registrar el cliente OAuth. Configure los encabezados de autenticación manualmente.",
   "notifications_web_permissionNotGranted_error": "No se concedió el permiso de notificaciones",
   "notifications_web_unknown_error": "Error desconocido",
+  "notifications_toast_open_label": "Abrir",
   "workspace_ops_space_fallback": "espacio",
   "workspace_ops_archiveFailed_error": "Error al archivar el espacio",
   "workspace_ops_archived_toast": "Espacio {title} archivado",

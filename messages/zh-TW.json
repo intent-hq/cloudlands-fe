@@ -4658,6 +4658,7 @@
   "mcp_oauth_registerFailed_error": "註冊 OAuth 客戶端失敗。請手動設定身分驗證請求標頭。",
   "notifications_web_permissionNotGranted_error": "未授予通知權限",
   "notifications_web_unknown_error": "未知錯誤",
+  "notifications_toast_open_label": "開啟",
   "workspace_ops_space_fallback": "空間",
   "workspace_ops_archiveFailed_error": "歸檔空間失敗",
   "workspace_ops_archived_toast": "已歸檔空間 {title}",
