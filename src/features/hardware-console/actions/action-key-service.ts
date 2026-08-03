@@ -32,7 +32,9 @@ import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { m } from '$shared/paraglide/messages.js';
 import {
   hydrateHardwareConsoleActionMapping,
+  hydrateHardwareConsoleCycleScopes,
   setActionKeyMapping,
+  setCycleScope,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import type { HardwareConsoleManager } from '../device/device-manager';
@@ -42,9 +44,11 @@ import type { HardwareDeviceModel, LogicalKeyId } from '../input/types';
 import { HARDWARE_CONSOLE_SETTINGS_PATH } from '../assignment/key-pin-persistence-service';
 import {
   actionKeyToSlot,
+  migrateLegacyCm2DefaultActionMapping,
   normalizeActionMappingsByModel,
   type ActionKeyActionId,
 } from './action-mapping';
+import { normalizeCycleScopeByFamily } from './cycle-scope';
 import { getActionKeyDefinition, type ActionKeyContext } from './action-key-registry';
 
 const logger = createLogger('HardwareConsoleActionKeys');
@@ -130,6 +134,7 @@ function buildContext(deps: ActionKeyDeps): ActionKeyContext {
     dispatch: (action) => appStore.dispatch(action as { type: string }),
     navigate: deps.navigate ?? navigateToRoute,
     focusComposer: deps.focusComposer ?? focusAgentComposer,
+    showHint: deps.showUnavailableHint ?? ((hint: string) => void showUnavailableToast(hint)),
   };
 }
 
@@ -154,9 +159,7 @@ export function handleActionKeyPress(
     const message =
       definition.getUnavailableHint?.(context) ??
       m.hardwareConsole_actionKey_unavailable_message({ label: definition.label });
-    const showHint =
-      deps.showUnavailableHint ?? ((hint: string) => void showUnavailableToast(hint));
-    showHint(message);
+    context.showHint(message);
     return null;
   }
   try {
@@ -234,6 +237,16 @@ async function persistActionMapping(
   ]);
 }
 
+/** Read-modify-write: replace only `cycleScopeByFamily`, preserving sibling fields. */
+async function persistCycleScopes(
+  cycleScopeByFamily: Record<string, string>,
+): Promise<void> {
+  const bag = (await readBag()) ?? {};
+  await appClient.settings.update([
+    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, cycleScopeByFamily } },
+  ]);
+}
+
 async function hydrateOnce(): Promise<boolean> {
   try {
     const bag = await readBag();
@@ -243,17 +256,23 @@ async function hydrateOnce(): Promise<boolean> {
       );
     }
     const legacy = Array.isArray(bag.actionMapping) ? bag.actionMapping : undefined;
+    const mappings = normalizeActionMappingsByModel(bag.actionMappingByModel, legacy);
+    // One-shot default migration: a persisted CM2 mapping still exactly equal
+    // to the pre-attention defaults (never customized) picks up the changed
+    // slot-6 default and is written back.
+    const migrated = migrateLegacyCm2DefaultActionMapping(mappings);
+    appStore.dispatch(hydrateHardwareConsoleActionMapping(mappings));
     appStore.dispatch(
-      hydrateHardwareConsoleActionMapping(
-        normalizeActionMappingsByModel(bag.actionMappingByModel, legacy),
-      ),
+      hydrateHardwareConsoleCycleScopes(normalizeCycleScopeByFamily(bag.cycleScopeByFamily)),
     );
+    if (migrated) await persistActionMapping(mappings);
     return true;
   } catch (error) {
     logger.error('Action-mapping hydration failed; dispatching defaults', { error });
     appStore.dispatch(
       hydrateHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined)),
     );
+    appStore.dispatch(hydrateHardwareConsoleCycleScopes(normalizeCycleScopeByFamily(undefined)));
     return false;
   }
 }
@@ -271,6 +290,7 @@ export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
   let hydrationStarted = false;
   let hydrationSettled = false;
   let persistQueued = false;
+  let persistScopesQueued = false;
 
   const persist = (): void => {
     void persistActionMapping(appStore.state.hardwareConsole.actionMappingByModel).catch(
@@ -281,12 +301,28 @@ export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
     );
   };
 
+  const persistScopes = (): void => {
+    void persistCycleScopes(appStore.state.hardwareConsole.cycleScopeByFamily).catch((error) =>
+      logger.error(`Failed to persist ${HARDWARE_CONSOLE_SETTINGS_PATH} cycleScopeByFamily`, {
+        error,
+      }),
+    );
+  };
+
   const schedulePersist = (): void => {
     if (!hydrationSettled) {
       persistQueued = true;
       return;
     }
     persist();
+  };
+
+  const schedulePersistScopes = (): void => {
+    if (!hydrationSettled) {
+      persistScopesQueued = true;
+      return;
+    }
+    persistScopes();
   };
 
   return () => (next) => (action) => {
@@ -303,8 +339,11 @@ export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
         .then((hydrated) => {
           hydrationSettled = true;
           const shouldFlush = persistQueued && hydrated;
+          const shouldFlushScopes = persistScopesQueued && hydrated;
           persistQueued = false;
+          persistScopesQueued = false;
           if (shouldFlush) persist();
+          if (shouldFlushScopes) persistScopes();
         });
     }
 
@@ -312,6 +351,10 @@ export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
 
     if (action && action.type === setActionKeyMapping.type) {
       schedulePersist();
+    }
+
+    if (action && action.type === setCycleScope.type) {
+      schedulePersistScopes();
     }
 
     if (action && action.type === openAgentTabRequested.type && consumeArmedComposerFocus()) {

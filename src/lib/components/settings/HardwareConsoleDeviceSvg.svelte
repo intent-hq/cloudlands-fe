@@ -55,8 +55,9 @@
    * fixed (non-configurable) behavior. While `agentKeysInteractive` (a
    * device is connected), the agent keys show numbered slot badges (binding
    * numbering: second row = slots 1-4, top row = slots 5-6 — matching
-   * AGENT_KEY_IDS) and clicking an assigned key invokes `onActivateAgentKey`
-   * — the same behavior as pressing the physical key.
+   * AGENT_KEY_IDS) and clicking an assigned key pops a workspace-info card
+   * anchored next to the key (name plus the LED status meaning) — it does
+   * not navigate; unassigned keys are inert.
    */
   import { formatInteger } from '$lib/i18n/format';
   import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
@@ -79,8 +80,12 @@
     agentSlots?: readonly AgentKeySlot[];
     /** Whether the agent keys are interactive (a device is connected). */
     agentKeysInteractive?: boolean;
-    /** Activating an assigned agent key — same behavior as the physical key. */
-    onActivateAgentKey?: (slot: number, workspaceId: string) => void;
+    /**
+     * Localized status line for an assigned key's workspace-info popover
+     * (the LED status meaning for that slot); read once when the popover
+     * opens. Null omits the status line.
+     */
+    agentKeyStatusLabel?: (slot: number) => string | null;
   }
 
   let {
@@ -89,7 +94,7 @@
     onSelectKey,
     agentSlots,
     agentKeysInteractive = false,
-    onActivateAgentKey,
+    agentKeyStatusLabel,
   }: Props = $props();
 
   const codex = $derived(model === 'codex-micro');
@@ -163,6 +168,7 @@
   let joystickEl = $state<SVGGElement | null>(null);
 
   function toggleExplainer(which: 'knob' | 'joystick') {
+    openAgentKeySlot = null;
     openExplainer = openExplainer === which ? null : which;
   }
 
@@ -174,7 +180,10 @@
   }
 
   function handleWindowKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') openExplainer = null;
+    if (event.key === 'Escape') {
+      openExplainer = null;
+      openAgentKeySlot = null;
+    }
   }
 
   const explainerLabel = $derived(
@@ -184,16 +193,22 @@
   );
 
   function handleWindowPointerdown(event: PointerEvent) {
-    if (openExplainer === null) return;
     const target = event.target as Node;
-    if (
-      explainerEl?.contains(target) ||
-      knobEl?.contains(target) ||
-      joystickEl?.contains(target)
-    ) {
-      return;
+    if (openExplainer !== null) {
+      if (
+        !explainerEl?.contains(target) &&
+        !knobEl?.contains(target) &&
+        !joystickEl?.contains(target)
+      ) {
+        openExplainer = null;
+      }
     }
-    openExplainer = null;
+    if (openAgentKeySlot !== null) {
+      const element = target instanceof Element ? target : null;
+      if (!agentKeyPopoverEl?.contains(target) && !element?.closest('[data-agent-key]')) {
+        openAgentKeySlot = null;
+      }
+    }
   }
 
   function agentKeyAriaLabel(slot: number, assignment: AgentKeySlot | null): string {
@@ -207,12 +222,43 @@
     });
   }
 
-  function handleAgentKeydown(event: KeyboardEvent, slot: number, workspaceId: string) {
+  function handleAgentKeydown(event: KeyboardEvent, slot: number) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      onActivateAgentKey?.(slot, workspaceId);
+      toggleAgentKeyPopover(slot);
     }
   }
+
+  // Assigned agent-key workspace-info popover, anchored next to the key.
+  let openAgentKeySlot = $state<number | null>(null);
+  let agentKeyPopoverStatus = $state<string | null>(null);
+  let agentKeyPopoverEl = $state<HTMLElement | null>(null);
+
+  function toggleAgentKeyPopover(slot: number) {
+    if (openAgentKeySlot === slot) {
+      openAgentKeySlot = null;
+      return;
+    }
+    openExplainer = null;
+    agentKeyPopoverStatus = agentKeyStatusLabel?.(slot) ?? null;
+    openAgentKeySlot = slot;
+  }
+
+  const agentKeyPopoverName = $derived(
+    openAgentKeySlot === null
+      ? ''
+      : agentSlots?.[openAgentKeySlot]?.name || m.workspace_links_untitled_label(),
+  );
+  // Anchor beside the clicked key, flipping to the key's left in the right
+  // half of the 292-unit viewBox; percentages track the scaled square SVG.
+  const agentKeyPopoverStyle = $derived.by(() => {
+    if (openAgentKeySlot === null) return '';
+    const key = agentKeyCells[openAgentKeySlot];
+    const top = `top: ${((key.y / 292) * 100).toFixed(2)}%;`;
+    return key.x + KEY_SIZE / 2 > 146
+      ? `${top} right: ${(((292 - key.x + 6) / 292) * 100).toFixed(2)}%;`
+      : `${top} left: ${(((key.x + KEY_SIZE + 6) / 292) * 100).toFixed(2)}%;`;
+  });
 
   /** SVG transform centering a FontAwesome icon path at (cx, cy) at `size`. */
   function iconTransform(icon: IconDefinition, cx: number, cy: number, size: number): string {
@@ -309,14 +355,16 @@
         <g
           role="button"
           tabindex="0"
+          data-agent-key={slot}
           aria-label={agentKeyAriaLabel(slot, assignment)}
           aria-disabled={workspaceId === null ? true : undefined}
+          aria-haspopup={workspaceId !== null ? 'dialog' : undefined}
+          aria-expanded={workspaceId !== null ? openAgentKeySlot === slot : undefined}
+          aria-controls={workspaceId !== null ? 'hardware-console-agent-key-popover' : undefined}
           class={workspaceId !== null ? 'cursor-pointer outline-none group' : 'outline-none'}
-          onclick={workspaceId !== null
-            ? () => onActivateAgentKey?.(slot, workspaceId)
-            : undefined}
+          onclick={workspaceId !== null ? () => toggleAgentKeyPopover(slot) : undefined}
           onkeydown={workspaceId !== null
-            ? (event) => handleAgentKeydown(event, slot, workspaceId)
+            ? (event) => handleAgentKeydown(event, slot)
             : undefined}
         >
           {#if assignment?.workspaceId}
@@ -474,6 +522,25 @@
       <p class="text-xs text-subtle/70 mt-2 italic">
         {m.settings_hardware_explainer_fixed_description()}
       </p>
+    </div>
+  {/if}
+
+  <!-- Assigned agent-key workspace-info popover -->
+  {#if openAgentKeySlot !== null}
+    <div
+      bind:this={agentKeyPopoverEl}
+      id="hardware-console-agent-key-popover"
+      role="dialog"
+      aria-label={m.settings_hardware_agentKeyPopover_ariaLabel({
+        number: formatInteger(openAgentKeySlot + 1),
+      })}
+      style={agentKeyPopoverStyle}
+      class="absolute z-20 w-[200px] rounded-lg border border-border bg-popover p-3 shadow-lg"
+    >
+      <p class="text-xs font-medium text-foreground truncate">{agentKeyPopoverName}</p>
+      {#if agentKeyPopoverStatus}
+        <p class="text-xs text-subtle mt-1">{agentKeyPopoverStatus}</p>
+      {/if}
     </div>
   {/if}
 </div>

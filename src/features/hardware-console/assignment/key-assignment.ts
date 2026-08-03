@@ -8,9 +8,17 @@
  * slots auto-fill with the most recently active assignable workspaces
  * (activity ordering per `compareWorkspaceActivityDisplayTimeDesc`:
  * lastActivity → createdAt → updatedAt fallback), skipping workspaces
- * already placed on a pinned slot — so when an assigned workspace is
- * archived/deleted its slot backfills immediately with the next unslotted
- * workspace.
+ * already placed on a pinned slot and workspaces on the exclusion list —
+ * so when an assigned workspace is archived/deleted its slot backfills
+ * immediately with the next unslotted workspace.
+ *
+ * Assignments are STICKY: {@link reconcileKeyPins} promotes auto-filled
+ * slots into pins so the persistence layer can write them back. Once a
+ * workspace lands on a key it keeps that key regardless of later activity
+ * changes; the slot is released only when the workspace stops being
+ * assignable (archived/deleted). Manually unassigning a key puts its
+ * workspace on the exclusion list so auto-fill never brings it back;
+ * manually pinning a workspace clears it from the list.
  *
  * Slot numbering (binding): slots 1–4 (indexes 0–3) are the second row
  * (AG02–AG05, left→right); slots 5–6 (indexes 4–5) are the top row
@@ -94,11 +102,45 @@ export function normalizeKeyPins(pins: readonly (string | null)[] | undefined): 
 }
 
 /**
+ * Normalize a persisted excluded-workspace list: non-empty strings only
+ * (the {@link UNASSIGNED_KEY_PIN} sentinel is rejected), deduplicated.
+ * Tolerant of arbitrary persisted values (non-arrays yield an empty list).
+ */
+export function normalizeExcludedWorkspaceIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return [];
+  const result: string[] = [];
+  for (const id of ids) {
+    if (
+      typeof id === 'string' &&
+      id.length > 0 &&
+      id !== UNASSIGNED_KEY_PIN &&
+      !result.includes(id)
+    ) {
+      result.push(id);
+    }
+  }
+  return result;
+}
+
+/** Whether two 6-slot pin arrays hold identical entries. */
+export function keyPinsEqual(
+  a: readonly (string | null)[],
+  b: readonly (string | null)[],
+): boolean {
+  for (let slot = 0; slot < AGENT_KEY_COUNT; slot += 1) {
+    if ((a[slot] ?? null) !== (b[slot] ?? null)) return false;
+  }
+  return true;
+}
+
+/**
  * Resolve the 6 key slots to workspace ids (null = key unassigned).
  *
  * @param keyPins    6-slot pin array (tolerant of shorter/longer input).
  * @param workspaces Assignable workspaces (already filtered via
  *                   {@link isKeyAssignableWorkspace}); order irrelevant.
+ * @param excludedWorkspaceIds Workspaces auto-fill must skip (manually
+ *                   unassigned). Explicit pins still win over exclusion.
  *
  * Rules:
  * - A sticky-unassigned slot ({@link UNASSIGNED_KEY_PIN}) always resolves to
@@ -106,13 +148,14 @@ export function normalizeKeyPins(pins: readonly (string | null)[] | undefined): 
  * - A pinned slot shows its pinned workspace when that workspace is present;
  *   a pin referencing a missing workspace leaves the slot to auto-fill.
  * - A workspace pinned to several slots occupies only the lowest one.
- * - Remaining slots fill in ascending order with unplaced workspaces sorted
- *   by activity (most recent first), so every workspace has a slot whenever
- *   capacity allows.
+ * - Remaining slots fill in ascending order with unplaced, non-excluded
+ *   workspaces sorted by activity (most recent first), so every workspace
+ *   has a slot whenever capacity allows.
  */
 export function resolveKeySlots<T extends KeyAssignableWorkspace>(
   keyPins: readonly (string | null)[],
   workspaces: readonly T[],
+  excludedWorkspaceIds: readonly string[] = [],
 ): (string | null)[] {
   const pins = normalizeKeyPins(keyPins);
   const byId = new Map<string, T>();
@@ -129,8 +172,9 @@ export function resolveKeySlots<T extends KeyAssignableWorkspace>(
     }
   }
 
+  const excluded = new Set(excludedWorkspaceIds);
   const remaining = workspaces
-    .filter((workspace) => !placed.has(workspace.id))
+    .filter((workspace) => !placed.has(workspace.id) && !excluded.has(workspace.id))
     .slice()
     .sort(compareWorkspaceActivityDisplayTimeDesc);
 
@@ -142,4 +186,23 @@ export function resolveKeySlots<T extends KeyAssignableWorkspace>(
   }
 
   return slots;
+}
+
+/**
+ * Reconcile the pin array against the current workspaces: the sticky
+ * write-back form of {@link resolveKeySlots}. Auto-filled slots are
+ * promoted into pins (so assignments survive activity changes), pins whose
+ * workspace is gone are released (and backfilled by the resolver), and
+ * sticky-unassigned slots keep their sentinel. Persisting the returned
+ * array is what makes assignments sticky; on first run it snapshots the
+ * previously activity-derived layout into persisted assignments.
+ */
+export function reconcileKeyPins<T extends KeyAssignableWorkspace>(
+  keyPins: readonly (string | null)[],
+  workspaces: readonly T[],
+  excludedWorkspaceIds: readonly string[] = [],
+): KeyPin[] {
+  const pins = normalizeKeyPins(keyPins);
+  const resolved = resolveKeySlots(keyPins, workspaces, excludedWorkspaceIds);
+  return pins.map((pin, slot) => (pin === UNASSIGNED_KEY_PIN ? UNASSIGNED_KEY_PIN : resolved[slot]));
 }

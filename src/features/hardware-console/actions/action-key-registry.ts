@@ -51,12 +51,14 @@ import type { ActionKeyActionId } from './action-mapping';
 import {
   collectCycleAgents,
   compareLastIdleDesc,
+  isSessionCyclable,
   isSessionIdle,
   isSessionInProgress,
   sessionHasFailed,
   sessionNeedsAttention,
   type CycleAgentEntry,
 } from './agent-cycle';
+import type { CycleScope, CycleScopeFamilyId } from './cycle-scope';
 
 /** The narrow slice of the app store state the action registry reads. */
 export interface ActionKeyState {
@@ -67,11 +69,16 @@ export interface ActionKeyState {
   workspaceAgents: {
     byWorkspaceId: Record<
       string,
-      { foregroundAgentIds: readonly string[]; activeAgentId: string | null }
+      {
+        agentIds: readonly string[];
+        foregroundAgentIds: readonly string[];
+        activeAgentId: string | null;
+      }
     >;
   };
   agentSessions: { byAgentId: Record<string, StoredAgentSession> };
   unreadTracking: { unreadAgentIds: readonly string[] };
+  hardwareConsole: { cycleScopeByFamily: Record<CycleScopeFamilyId, CycleScope> };
   sidebarNav: {
     multiSelectTabOrder: string[];
     multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
@@ -86,6 +93,8 @@ export interface ActionKeyContext {
   navigate: (route: string) => Promise<void>;
   /** Focus the chat composer of an agent's (open or opening) conversation tab. */
   focusComposer: (agentId: string) => void;
+  /** Show a subtle toast hint (same surface as the unavailable-action hint). */
+  showHint: (message: string) => void;
 }
 
 export interface ActionKeyDefinition {
@@ -117,17 +126,30 @@ function activeWorkspaceId(state: ActionKeyState): string | null {
   return wsId;
 }
 
-function foregroundAgentIds(state: ActionKeyState, wsId: string): readonly string[] {
-  return state.workspaceAgents.byWorkspaceId[wsId]?.foregroundAgentIds ?? [];
-}
-
 function workspaceActiveAgentId(state: ActionKeyState, wsId: string): string | null {
   return state.workspaceAgents.byWorkspaceId[wsId]?.activeAgentId ?? null;
 }
 
-/** In-progress top-level agents everywhere, most-recently-idle first. */
+/** The globally focused agent: the active workspace's active agent id. */
+function focusedAgentId(state: ActionKeyState): string | null {
+  const wsId = activeWorkspaceId(state);
+  const current = wsId === null ? null : workspaceActiveAgentId(state, wsId);
+  return current === null ? null : String(current);
+}
+
+/** The configured scope of a togglable cycle family (see cycle-scope.ts). */
+function familyScope(state: ActionKeyState, familyId: CycleScopeFamilyId): CycleScope {
+  return state.hardwareConsole.cycleScopeByFamily[familyId];
+}
+
+/** In-progress agents everywhere (per scope), most-recently-idle first. */
 function inProgressAgents(state: ActionKeyState): CycleAgentEntry[] {
-  return collectCycleAgents(state, isSessionInProgress, compareLastIdleDesc);
+  return collectCycleAgents(
+    state,
+    isSessionInProgress,
+    compareLastIdleDesc,
+    familyScope(state, 'cycle-in-progress-agents'),
+  );
 }
 
 /**
@@ -140,6 +162,22 @@ function focusAgent(context: ActionKeyContext, wsId: string, agentId: string): v
   context.focusComposer(agentId);
 }
 
+/**
+ * Per-family round-robin cursor: the agent id a cycle action last stepped
+ * to. The state-derived anchor (active workspace + its active agent) lags
+ * after a cross-workspace hop — `navigate()` resolves before the route
+ * mounts and dispatches `setActiveWorkspaceId`, and the workspace loader
+ * may re-point `activeAgentId` — so anchoring on it alone re-entered the
+ * walk at the same position press after press. Transient UI-only state
+ * (like `layoutPresetCursor` below).
+ */
+const lastCycledAgentByAction = new Map<ActionKeyActionId, string>();
+
+/** Reset the cycle cursors (test isolation). */
+export function resetActionKeyCycleCursors(): void {
+  lastCycledAgentByAction.clear();
+}
+
 /** One entry of the global cross-workspace cycle family. */
 interface GlobalCycleSpec {
   id: ActionKeyActionId;
@@ -147,13 +185,21 @@ interface GlobalCycleSpec {
   getLabel(): string;
   /** Specific empty-state toast shown when the list is empty. */
   getEmptyHint(): string;
+  /** Toast shown when the only candidate is already the focused agent. */
+  getSingleCandidateHint(): string;
   collect(state: ActionKeyState): CycleAgentEntry[];
 }
 
 /**
  * Shared shape of the global cycle actions: collect the matching agents,
- * step to the entry after the currently focused one (wrapping), switch
- * workspace when needed, and focus the agent's tab + composer.
+ * step to the entry after the walk anchor (the family's own cursor when it
+ * is still a candidate, else the focused agent, wrapping), switch workspace
+ * when needed, and focus the agent's tab + composer. The cursor is
+ * preferred because the state anchor can lag or be re-pointed between
+ * presses (async navigation, workspace loaders) — anchoring on it alone is
+ * what trapped the walk on one agent. When the only candidate is already
+ * focused there is nothing to switch between — a toast says so instead of
+ * a silent no-op.
  */
 function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
   return {
@@ -173,13 +219,20 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       const { state } = context;
       const entries = spec.collect(state);
       if (entries.length === 0) return;
-      const wsId = activeWorkspaceId(state);
-      const current = wsId === null ? null : workspaceActiveAgentId(state, wsId);
-      const index = entries.findIndex(
-        (entry) => entry.wsId === wsId && entry.agentId === String(current),
-      );
+      const focused = focusedAgentId(state);
+      if (entries.length === 1 && entries[0].agentId === focused) {
+        lastCycledAgentByAction.set(spec.id, entries[0].agentId);
+        context.showHint(spec.getSingleCandidateHint());
+        return;
+      }
+      const cursor = lastCycledAgentByAction.get(spec.id);
+      let index = cursor === undefined ? -1 : entries.findIndex((e) => e.agentId === cursor);
+      if (index === -1 && focused !== null) {
+        index = entries.findIndex((e) => e.agentId === focused);
+      }
       const next = entries[(index + 1) % entries.length];
-      if (next.wsId !== wsId) {
+      lastCycledAgentByAction.set(spec.id, next.agentId);
+      if (next.wsId !== activeWorkspaceId(state)) {
         void context.navigate(`/workspace/${next.wsId}`);
       }
       focusAgent(context, next.wsId, next.agentId);
@@ -189,38 +242,20 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
 
 /** The registry, in spec order. `none` is last (explicit unassigned entry). */
 export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
-  {
+  makeGlobalCycleAction({
     id: 'cycle-workspace-agents',
-    get label() {
-      return m.hardwareConsole_actionKey_cycleWorkspaceAgents_label();
-    },
     icon: faArrowsRotate,
-    isAvailable({ state }) {
-      const wsId = activeWorkspaceId(state);
-      return wsId !== null && foregroundAgentIds(state, wsId).length > 0;
-    },
-    getUnavailableHint({ state }) {
-      // Specific empty-state hint only when a workspace is active but has no
-      // agents; without an active workspace the generic hint applies.
-      if (activeWorkspaceId(state) === null) return null;
-      return m.hardwareConsole_actionKey_noActiveAgents_message();
-    },
-    execute(context) {
-      const { state } = context;
-      const wsId = activeWorkspaceId(state);
-      if (wsId === null) return;
-      const ids = foregroundAgentIds(state, wsId).map(String);
-      if (ids.length === 0) return;
-      const current = workspaceActiveAgentId(state, wsId);
-      const index = current === null ? -1 : ids.indexOf(String(current));
-      focusAgent(context, wsId, ids[(index + 1) % ids.length]);
-    },
-  },
+    getLabel: () => m.hardwareConsole_actionKey_cycleWorkspaceAgents_label(),
+    getEmptyHint: () => m.hardwareConsole_actionKey_noAgents_message(),
+    getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherAgents_message(),
+    collect: (state) => collectCycleAgents(state, isSessionCyclable),
+  }),
   makeGlobalCycleAction({
     id: 'cycle-in-progress-agents',
     icon: faPersonRunning,
     getLabel: () => m.hardwareConsole_actionKey_cycleInProgressAgents_label(),
-    getEmptyHint: () => m.hardwareConsole_actionKey_noActiveAgents_message(),
+    getEmptyHint: () => m.hardwareConsole_actionKey_noInProgressAgents_message(),
+    getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherInProgressAgents_message(),
     collect: inProgressAgents,
   }),
   makeGlobalCycleAction({
@@ -228,20 +263,30 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     icon: faBell,
     getLabel: () => m.hardwareConsole_actionKey_cycleAttentionAgents_label(),
     getEmptyHint: () => m.hardwareConsole_actionKey_noAttentionAgents_message(),
-    collect: (state) => collectCycleAgents(state, sessionNeedsAttention),
+    getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherAttentionAgents_message(),
+    collect: (state) =>
+      collectCycleAgents(
+        state,
+        sessionNeedsAttention,
+        undefined,
+        familyScope(state, 'cycle-attention-agents'),
+      ),
   }),
   makeGlobalCycleAction({
     id: 'cycle-idle-agents',
     icon: faMoon,
     getLabel: () => m.hardwareConsole_actionKey_cycleIdleAgents_label(),
     getEmptyHint: () => m.hardwareConsole_actionKey_noIdleAgents_message(),
-    collect: (state) => collectCycleAgents(state, isSessionIdle),
+    getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherIdleAgents_message(),
+    collect: (state) =>
+      collectCycleAgents(state, isSessionIdle, undefined, familyScope(state, 'cycle-idle-agents')),
   }),
   makeGlobalCycleAction({
     id: 'cycle-unread-agents',
     icon: faEnvelope,
     getLabel: () => m.hardwareConsole_actionKey_cycleUnreadAgents_label(),
     getEmptyHint: () => m.hardwareConsole_actionKey_noUnreadAgents_message(),
+    getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
     collect: (state) =>
       collectCycleAgents(state, (_session, agentId) =>
         state.unreadTracking.unreadAgentIds.includes(agentId),
@@ -252,7 +297,14 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     icon: faCircleXmark,
     getLabel: () => m.hardwareConsole_actionKey_cycleFailedAgents_label(),
     getEmptyHint: () => m.hardwareConsole_actionKey_noFailedAgents_message(),
-    collect: (state) => collectCycleAgents(state, sessionHasFailed),
+    getSingleCandidateHint: () => m.hardwareConsole_actionKey_noOtherFailedAgents_message(),
+    collect: (state) =>
+      collectCycleAgents(
+        state,
+        sessionHasFailed,
+        undefined,
+        familyScope(state, 'cycle-failed-agents'),
+      ),
   }),
   {
     id: 'stop-agent',
