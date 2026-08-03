@@ -18,6 +18,7 @@
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import {
+    faFile,
     faFolder,
     faFolderOpen,
     faArrowUp,
@@ -51,20 +52,29 @@
     title?: string;
     /** Path to open initially. Empty/undefined opens the daemon-host home. */
     initialPath?: string;
-    /** Submit-button label. Defaults to "Select folder". */
+    /** Submit-button label. Defaults to "Select folder" / "Select file" per mode. */
     selectLabel?: string;
+    /**
+     * What the picker selects. `directory` (default) lists folders only and
+     * the select button commits the current directory; `file` also lists
+     * files, selection commits a clicked file path, and the select button is
+     * disabled until a file is chosen.
+     */
+    mode?: 'directory' | 'file';
     onSelect: (path: string) => void;
     onClose: () => void;
   }
 
-  let {
-    open,
-    title = m.onboarding_dirPicker_selectFolder_label(),
-    initialPath,
-    selectLabel = m.onboarding_dirPicker_selectFolder_label(),
-    onSelect,
-    onClose,
-  }: Props = $props();
+  let { open, title, initialPath, selectLabel, mode = 'directory', onSelect, onClose }: Props =
+    $props();
+
+  const modeDefaultLabel = $derived(
+    mode === 'file'
+      ? m.onboarding_dirPicker_selectFile_label()
+      : m.onboarding_dirPicker_selectFolder_label(),
+  );
+  const resolvedTitle = $derived(title ?? modeDefaultLabel);
+  const resolvedSelectLabel = $derived(selectLabel ?? modeDefaultLabel);
 
   // Selector readables — captured at component init per the store rules. The
   // read-service middleware updates these stores in response to the dispatches
@@ -82,9 +92,12 @@
   let listContainerRef = $state<HTMLDivElement | null>(null);
   /** Track which path was loaded so re-opening the modal re-fetches a fresh listing. */
   let loadedFor = $state<string | null>(null);
+  /** File-mode only: path of the currently chosen file, cleared on navigation. */
+  let selectedFilePath = $state<string | null>(null);
 
   function requestDirectory(path: string | undefined) {
     focusedIndex = 0;
+    selectedFilePath = null;
     loadedFor = path ?? '';
     appStore.dispatch(loadDirectoryRequested(path));
     // Defer scroll-into-view until DOM updates with the new listing.
@@ -110,18 +123,30 @@
   $effect(() => {
     if (!open) {
       loadedFor = null;
+      selectedFilePath = null;
       appStore.dispatch(resetDirectoryPicker());
     }
   });
 
+  // File mode requires an explicitly chosen file; directory mode commits the
+  // currently listed directory.
+  const canSelect = $derived(mode === 'file' ? selectedFilePath !== null : listing !== null);
+
   function handleSelect() {
+    if (mode === 'file') {
+      if (selectedFilePath) onSelect(selectedFilePath);
+      return;
+    }
     if (!listing) return;
     onSelect(listing.path);
   }
 
-  function navigateInto(entry: DirectoryPickerEntry) {
-    if (!entry.isDirectory) return;
-    requestDirectory(entry.path);
+  function activateEntry(entry: DirectoryPickerEntry) {
+    if (entry.isDirectory) {
+      requestDirectory(entry.path);
+    } else if (mode === 'file') {
+      selectedFilePath = entry.path;
+    }
   }
 
   function navigateUp() {
@@ -133,7 +158,11 @@
     requestDirectory(undefined);
   }
 
-  const directoryEntries = $derived(listing?.entries.filter((e) => e.isDirectory) ?? []);
+  const visibleEntries = $derived(
+    mode === 'file'
+      ? (listing?.entries ?? [])
+      : (listing?.entries.filter((e) => e.isDirectory) ?? []),
+  );
 
   // Escape layer: registered only while open so stacked overlays dismiss one
   // at a time in LIFO order. Declines when the path input is focused — it
@@ -152,7 +181,7 @@
     // cancel, plain text editing incl. Backspace) — never treat its keystrokes
     // as list navigation or modal close.
     if (pathInputRef && e.target === pathInputRef) return;
-    const list = directoryEntries;
+    const list = visibleEntries;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       focusedIndex = Math.min(focusedIndex + 1, Math.max(list.length - 1, 0));
@@ -163,7 +192,7 @@
       const entry = list[focusedIndex];
       if (entry) {
         e.preventDefault();
-        navigateInto(entry);
+        activateEntry(entry);
       }
     } else if (e.key === 'Backspace') {
       if (listing?.parent) {
@@ -291,7 +320,7 @@
       tabindex="-1"
       role="dialog"
       aria-modal="true"
-      aria-label={title}
+      aria-label={resolvedTitle}
       class="w-full max-w-xl mx-4 rounded-xl border border-border/50 bg-card shadow-2xl overflow-hidden focus:outline-none"
       transition:fly={{ y: 8, duration: 160 }}
     >
@@ -299,7 +328,7 @@
       <div class="flex items-center justify-between px-4 py-3 border-b border-border/40">
         <div class="flex items-center gap-2 min-w-0">
           <Fa icon={faFolderOpen} class="text-muted-foreground shrink-0" />
-          <h2 class="text-sm font-medium truncate">{title}</h2>
+          <h2 class="text-sm font-medium truncate">{resolvedTitle}</h2>
         </div>
         <button
           type="button"
@@ -382,32 +411,37 @@
             <p class="font-medium mb-1">{m.onboarding_dirPicker_readError_title()}</p>
             <p class="text-xs text-muted-foreground break-all">{error}</p>
           </div>
-        {:else if directoryEntries.length === 0}
+        {:else if visibleEntries.length === 0}
           <div class="px-4 py-8 text-center text-sm text-muted-foreground">
-            {m.onboarding_dirPicker_noSubfolders_description({ label: selectLabel })}
+            {#if mode === 'file'}
+              {m.onboarding_dirPicker_emptyDirectory_description()}
+            {:else}
+              {m.onboarding_dirPicker_noSubfolders_description({ label: resolvedSelectLabel })}
+            {/if}
           </div>
         {:else}
           <ul class="divide-y divide-border/10">
-            {#each directoryEntries as entry, index (entry.path)}
+            {#each visibleEntries as entry, index (entry.path)}
               {@const isFocused = index === focusedIndex}
+              {@const isSelected = mode === 'file' && entry.path === selectedFilePath}
               <li>
                 <button
                   type="button"
                   role="option"
-                  aria-selected={isFocused}
+                  aria-selected={mode === 'file' ? isSelected : isFocused}
                   class={cn(
                     'w-full flex items-center gap-2.5 px-4 py-2 text-left cursor-pointer transition-colors',
-                    isFocused ? 'bg-muted/40' : 'hover:bg-muted/30',
+                    isSelected ? 'bg-muted/60' : isFocused ? 'bg-muted/40' : 'hover:bg-muted/30',
                   )}
                   onclick={() => {
                     focusedIndex = index;
-                    navigateInto(entry);
+                    activateEntry(entry);
                   }}
                   onmousemove={() => (focusedIndex = index)}
-                  ondblclick={() => navigateInto(entry)}
+                  ondblclick={() => activateEntry(entry)}
                 >
                   <Fa
-                    icon={faFolder}
+                    icon={entry.isDirectory ? faFolder : faFile}
                     class={entry.isGitRepo ? 'text-amber-500' : 'text-muted-foreground'}
                     size="sm"
                   />
@@ -422,7 +456,7 @@
         {/if}
       </div>
 
-      <!-- Footer: cancel + select-current-directory -->
+      <!-- Footer: cancel + select (current directory, or chosen file in file mode) -->
       <div class="flex items-center justify-end gap-2 px-4 py-3 border-t border-border/40 bg-muted/10">
         <button
           type="button"
@@ -435,12 +469,12 @@
           type="button"
           class={cn(
             'text-sm px-3 py-1.5 rounded-md transition-colors',
-            listing ? 'bg-foreground text-background hover:bg-foreground/90 cursor-pointer' : 'bg-muted/30 text-muted-foreground/60 cursor-not-allowed',
+            canSelect ? 'bg-foreground text-background hover:bg-foreground/90 cursor-pointer' : 'bg-muted/30 text-muted-foreground/60 cursor-not-allowed',
           )}
-          disabled={!listing || loading}
+          disabled={!canSelect || loading}
           onclick={handleSelect}
         >
-          {selectLabel}
+          {resolvedSelectLabel}
         </button>
       </div>
     </div>
