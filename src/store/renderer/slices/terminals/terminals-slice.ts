@@ -54,6 +54,13 @@ export interface WorkspaceTerminalState {
   terminalsLoaded: boolean;
   isLoadingTerminals: boolean;
   recentlyCreatedTerminals: string[];
+  /**
+   * Daemon boot id from the last `terminal.list` snapshot (PROTOCOL §5.13
+   * envelope). Lets the reducer tell a same-boot authoritative empty list
+   * (converge to zero tabs) from a post-restart empty (preserve tabs — the
+   * PTYs respawn via auto-reconnect). `null` until a boot id is seen.
+   */
+  daemonBootId: string | null;
 }
 
 /** Persisted subset of workspace state (terminals are loaded from terminalManager) */
@@ -78,6 +85,7 @@ export const emptyWorkspaceState: WorkspaceTerminalState = {
   terminalsLoaded: false,
   isLoadingTerminals: false,
   recentlyCreatedTerminals: [],
+  daemonBootId: null,
 };
 
 const initialState: TerminalOverlayState = {
@@ -137,11 +145,17 @@ export const saveTerminalMetadata = createAction<[
   createdAt: string,
 ]>("terminals/saveTerminalMetadata");
 
-/** Load workspace terminals data (dispatched by sagas after loading from storage) */
+/**
+ * Load workspace terminals data (dispatched by the hydration paths after a
+ * `terminal.list` fetch). `daemonBootId` is the envelope's boot id (PROTOCOL
+ * §5.13); omitted for legacy bare-array responses, which the reducer treats
+ * as carrying no boot metadata (empty lists then preserve existing tabs).
+ */
 export const loadWorkspaceTerminals = createAction<[
   wsId: string,
   terminals: TerminalTab[],
   savedState?: PersistedWorkspaceState | null,
+  daemonBootId?: string,
 ]>("terminals/loadWorkspaceTerminals");
 
 /** Hydrate height from localStorage (dispatched by init saga) */
@@ -333,8 +347,12 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
 
     return setWs(state, wsId, { ...ws, terminals });
   })
-  .with(loadWorkspaceTerminals, (state, { payload: [wsId, terminals, savedState] }) => {
+  .with(loadWorkspaceTerminals, (state, { payload: [wsId, terminals, savedState, daemonBootId] }) => {
     const collection = createCollection<TerminalTab, "id">("id", terminals);
+    const prior = getWs(state, wsId);
+    // Adopt the incoming boot id when present; a legacy bare-array response
+    // carries none, so the last-seen boot id is kept.
+    const nextBootId = daemonBootId ?? prior.daemonBootId;
     let wsState: WorkspaceTerminalState;
 
     if (terminals.length > 0) {
@@ -351,17 +369,47 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
         activeId = collection.ids[0];
       }
 
-      wsState = { terminals: collection, isOpen, activeTerminalId: activeId, terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [] };
-    } else {
-      // An empty successful list over existing live tabs is treated as
-      // transient (daemon restart re-registration, PTY spawn still in
-      // flight around a workspace switch) — replacing state here would
-      // drop the tabs and force the panel closed (monorepo#1330).
-      // Preserve them; genuinely-gone terminals converge via the
-      // heartbeat/auto-reconnect path and the next non-empty hydration
-      // (PTYs lost to a daemon restart emit no `terminal:exit` event).
-      if (getWs(state, wsId).terminals.ids.length > 0) return state;
+      wsState = { terminals: collection, isOpen, activeTerminalId: activeId, terminalsLoaded: false, isLoadingTerminals: false, recentlyCreatedTerminals: [], daemonBootId: nextBootId };
+    } else if (prior.terminals.ids.length > 0) {
+      // Empty list over existing live tabs. Converge to zero ONLY when the
+      // snapshot is authoritative for the boot we already know: the daemon
+      // that produced it is the same instance that owned the tabs, so every
+      // PTY is genuinely gone (killed externally, e.g. via the sitter). A
+      // different or unknown boot id means a daemon restart (PTYs respawn
+      // via auto-reconnect) or a legacy/transient response (monorepo#1330)
+      // — preserve the tabs and only adopt the new boot id.
+      const sameBootAuthoritativeEmpty =
+        daemonBootId !== undefined &&
+        prior.daemonBootId !== null &&
+        daemonBootId === prior.daemonBootId;
 
+      if (!sameBootAuthoritativeEmpty) {
+        if (nextBootId === prior.daemonBootId) return state;
+        return setWs(state, wsId, { ...prior, daemonBootId: nextBootId });
+      }
+
+      // Tabs whose spawn is still in flight (`terminal.create` acked but not
+      // yet listed) must survive the converge — the racing list snapshot
+      // predates them.
+      const kept = prior.terminals.ids
+        .filter((id) => prior.recentlyCreatedTerminals.includes(id))
+        .map((id) => getItem(prior.terminals, id))
+        .filter((tab): tab is TerminalTab => tab !== undefined);
+      const keptCollection = createCollection<TerminalTab, "id">("id", kept);
+      const activeId =
+        prior.activeTerminalId && getItem(keptCollection, prior.activeTerminalId)
+          ? prior.activeTerminalId
+          : keptCollection.ids[0] ?? null;
+      wsState = {
+        ...prior,
+        terminals: keptCollection,
+        activeTerminalId: activeId,
+        // The panel requires activeTerminalId to render — never leave
+        // isOpen:true with no terminals (stuck state).
+        isOpen: keptCollection.ids.length > 0 ? prior.isOpen : false,
+        daemonBootId: nextBootId,
+      };
+    } else {
       // Don't restore isOpen when there are no terminals — the panel
       // requires activeTerminalId to render, so isOpen:true with no
       // terminals creates a stuck state where the toggle appears broken
@@ -374,6 +422,7 @@ export const terminalsReducer = createReducer<TerminalOverlayState>(initialState
         terminalsLoaded: false,
         isLoadingTerminals: false,
         recentlyCreatedTerminals: [],
+        daemonBootId: nextBootId,
       };
     }
 
