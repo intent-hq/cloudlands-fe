@@ -133,7 +133,11 @@
   import { startGitStatusSubscription } from '$features/git/git-status-subscription';
   import { startWorkspaceListSubscription } from '$features/workspace/workspace-list-subscription';
   import { startSpecialistsListSubscription } from '$features/specialists/specialists-list-subscription';
-  import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
+  import {
+    installInterruptedAgentsService,
+    notifyInterruptedAgentsModalClosed,
+    resolveInterruptedAgents,
+  } from '$features/agent/interrupted-agents-service';
   import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
@@ -354,7 +358,9 @@
     const appClient = new LiveAppClient();
     const disposeInterruptedAgents = installInterruptedAgentsService(appClient, (agents) => {
       interruptedAgents = agents;
-      showInterruptedAgentsModal = true;
+      // An empty list is the cross-window reconciliation closing the modal
+      // silently (all agents resolved elsewhere) — no toast.
+      showInterruptedAgentsModal = agents.length > 0;
     });
 
     // Initialize release notes store to detect version changes and show release notes
@@ -814,49 +820,11 @@
   });
 
   async function handleResumeSelectedAgents(resumeIds: string[], abandonIds: string[]) {
-    const appClient = new LiveAppClient();
-    try {
-      // Omit empty arrays per intentd router contract (PROTOCOL.md)
-      const params: { resume?: string[]; abandon?: string[] } = {};
-      if (resumeIds.length > 0) params.resume = resumeIds;
-      if (abandonIds.length > 0) params.abandon = abandonIds;
-
-      const result = await appClient.agents.resolveInterrupted(params);
-      logger.info('Resolved interrupted agents', { result });
-      // Import toast lazily
-      import('svelte-sonner').then(({ toast }) => {
-        const resumed = result.resumed.length;
-        const failed = result.failed.length;
-        if (resumed > 0) toast.success(resumed === 1 ? m.layout_appShell_resumedAgents_one({ count: resumed }) : m.layout_appShell_resumedAgents_many({ count: resumed }));
-        if (failed > 0) toast.error(failed === 1 ? m.layout_appShell_resolveFailedCount_one({ count: failed }) : m.layout_appShell_resolveFailedCount_many({ count: failed }));
-      }).catch(() => {});
-    } catch (error) {
-      logger.error('Failed to resolve interrupted agents', { error });
-      import('svelte-sonner').then(({ toast }) => {
-        toast.error(m.layout_appShell_resolveInterruptedFailed_error());
-      }).catch(() => {});
-    }
+    await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
   }
 
   async function handleAbandonAllAgents(abandonIds: string[]) {
-    const appClient = new LiveAppClient();
-    try {
-      // Omit empty arrays per intentd router contract (PROTOCOL.md)
-      const params: { abandon?: string[] } = {};
-      if (abandonIds.length > 0) params.abandon = abandonIds;
-
-      const result = await appClient.agents.resolveInterrupted(params);
-      logger.info('Abandoned all interrupted agents', { result });
-      import('svelte-sonner').then(({ toast }) => {
-        const abandoned = result.abandoned.length;
-        toast.info(abandoned === 1 ? m.layout_appShell_abandonedAgents_one({ count: abandoned }) : m.layout_appShell_abandonedAgents_many({ count: abandoned }));
-      }).catch(() => {});
-    } catch (error) {
-      logger.error('Failed to abandon interrupted agents', { error });
-      import('svelte-sonner').then(({ toast }) => {
-        toast.error(m.layout_appShell_abandonInterruptedFailed_error());
-      }).catch(() => {});
-    }
+    await resolveInterruptedAgents(new LiveAppClient(), [], abandonIds);
   }
 
   function handleGitHubAuthSuccess() {
@@ -1150,6 +1118,7 @@
     onAbandonAll={handleAbandonAllAgents}
     onClose={() => {
       showInterruptedAgentsModal = false;
+      notifyInterruptedAgentsModalClosed();
     }}
   />
 

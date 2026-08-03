@@ -165,6 +165,7 @@ import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-view
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
+import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import { hasLiveChatSubscription } from '$features/agent/chat-subscribe-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
 import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
@@ -665,6 +666,11 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
   void ensureAgentSession(agentId);
+  // Cross-window InterruptedAgentsModal reconciliation (§5.35):
+  // agent.resolveInterrupted emits agent:updated per resolved agent, so an
+  // open modal listing this agent re-checks agent.listInterrupted (debounced;
+  // no-op when the modal is closed or the agent is not listed).
+  notifyInterruptedAgentUpdated(agentId);
 }
 
 /**

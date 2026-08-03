@@ -6,9 +6,16 @@
  * - Initial connection listener (install before connect)
  * - Reconnect listener
  * - Per-epoch deduplication prevents double-showing the modal
+ * - Cross-window reconciliation: agent:updated for a listed agent debounces a
+ *   listInterrupted re-query that prunes resolved rows / closes silently
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installInterruptedAgentsService } from "./interrupted-agents-service";
+import {
+  INTERRUPTED_RECONCILE_DEBOUNCE_MS,
+  installInterruptedAgentsService,
+  notifyInterruptedAgentUpdated,
+  notifyInterruptedAgentsModalClosed,
+} from "./interrupted-agents-service";
 import type { InterruptedAgent } from "$lib/client/app-client";
 
 describe("interrupted-agents-service", () => {
@@ -217,5 +224,118 @@ describe("interrupted-agents-service", () => {
     localDispose();
 
     expect(mockElectronAPI.offById).toHaveBeenCalled();
+  });
+
+  describe("cross-window reconciliation (agent:updated → listInterrupted re-query)", () => {
+    function interrupted(agentId: string): InterruptedAgent {
+      return {
+        agentId,
+        workspaceId: "ws-1",
+        workspaceName: "Workspace One",
+        agentName: `Agent ${agentId}`,
+        prevStatus: "active",
+        interruptedAt: "2026-08-01T00:00:00Z",
+      };
+    }
+
+    /** Install with the modal open on the given agents; returns after catch-up. */
+    async function installWithOpenModal(agents: InterruptedAgent[]): Promise<void> {
+      mockElectronAPI.invoke.mockResolvedValueOnce({ status: "connected" });
+      mockAppClient.agents.listInterrupted.mockResolvedValueOnce(agents);
+      dispose = installInterruptedAgentsService(mockAppClient, showHandler);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(showHandler).toHaveBeenCalledWith(agents);
+      showHandler.mockClear();
+      mockAppClient.agents.listInterrupted.mockClear();
+    }
+
+    async function flushDebounce(): Promise<void> {
+      await new Promise((resolve) =>
+        setTimeout(resolve, INTERRUPTED_RECONCILE_DEBOUNCE_MS + 30),
+      );
+    }
+
+    it("prunes rows resolved elsewhere after a listed agent:updated", async () => {
+      const a1 = interrupted("agent-1");
+      const a2 = interrupted("agent-2");
+      await installWithOpenModal([a1, a2]);
+
+      // Another window resolved agent-1; the re-query only returns agent-2.
+      mockAppClient.agents.listInterrupted.mockResolvedValue([a2]);
+      notifyInterruptedAgentUpdated("agent-1");
+      await flushDebounce();
+
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(1);
+      expect(showHandler).toHaveBeenCalledWith([a2]);
+    });
+
+    it("closes the modal silently (empty list) when all agents were resolved elsewhere", async () => {
+      const a1 = interrupted("agent-1");
+      await installWithOpenModal([a1]);
+
+      mockAppClient.agents.listInterrupted.mockResolvedValue([]);
+      notifyInterruptedAgentUpdated("agent-1");
+      await flushDebounce();
+
+      expect(showHandler).toHaveBeenCalledWith([]);
+    });
+
+    it("ignores agent:updated for agents not listed by the modal", async () => {
+      await installWithOpenModal([interrupted("agent-1")]);
+
+      notifyInterruptedAgentUpdated("agent-unrelated");
+      await flushDebounce();
+
+      expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it("debounces a burst of agent:updated into a single re-query", async () => {
+      const a1 = interrupted("agent-1");
+      const a2 = interrupted("agent-2");
+      const a3 = interrupted("agent-3");
+      await installWithOpenModal([a1, a2, a3]);
+
+      mockAppClient.agents.listInterrupted.mockResolvedValue([a3]);
+      notifyInterruptedAgentUpdated("agent-1");
+      notifyInterruptedAgentUpdated("agent-2");
+      notifyInterruptedAgentUpdated("agent-1");
+      await flushDebounce();
+
+      expect(mockAppClient.agents.listInterrupted).toHaveBeenCalledTimes(1);
+      expect(showHandler).toHaveBeenCalledTimes(1);
+      expect(showHandler).toHaveBeenCalledWith([a3]);
+    });
+
+    it("no-ops once the modal closed locally (local resolve path unchanged)", async () => {
+      await installWithOpenModal([interrupted("agent-1")]);
+
+      notifyInterruptedAgentsModalClosed();
+      notifyInterruptedAgentUpdated("agent-1");
+      await flushDebounce();
+
+      expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
+      expect(showHandler).not.toHaveBeenCalled();
+    });
+
+    it("a reconnect-epoch re-check replaces the open list instead of double-showing", async () => {
+      const a1 = interrupted("agent-1");
+      const a2 = interrupted("agent-2");
+      await installWithOpenModal([a1, a2]);
+
+      // During the outage everything was resolved: the reconnect check
+      // returns an empty list, which must close the stale modal silently.
+      mockAppClient.agents.listInterrupted.mockResolvedValue([]);
+      const statusListeners = mockElectronAPI.on.mock.calls
+        .filter(([channel]) => channel === "backend:status")
+        .map(([, handler]) => handler);
+      statusListeners.forEach((listener) => {
+        listener({ status: "connected", reconnected: true });
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(showHandler).toHaveBeenCalledTimes(1);
+      expect(showHandler).toHaveBeenCalledWith([]);
+    });
   });
 });
