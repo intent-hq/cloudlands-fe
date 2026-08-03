@@ -38,7 +38,7 @@ const mockedSubscribe = vi.mocked(backendSubscribe);
 const mockedUnsubscribe = vi.mocked(backendUnsubscribe);
 const mockedOnNotification = vi.mocked(onBackendNotification);
 
-/** PROTOCOL §5.40 Hook wire shape (`code` arrives from hook.list only). */
+/** PROTOCOL §5.40 Hook wire shape (`code`/`lastLogs` arrive from hook.list only). */
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
   return {
     hookId: 'hook-1',
@@ -52,6 +52,7 @@ function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
     lastRunAt: '2026-07-31T10:05:00Z',
     nextRunAt: '2026-07-31T10:06:00Z',
     runCount: 6,
+    lastLogs: 'checking CI\nall green',
     ...overrides,
   };
 }
@@ -117,13 +118,14 @@ describe('foldHookEvent (§6.5 hook:* lifecycle)', () => {
   });
 
   it.each(['hook:scheduled', 'hook:run-started', 'hook:run-completed'])(
-    '%s retains the code captured from hook.list (events never carry it)',
+    '%s retains the code and lastLogs captured from hook.list (events never carry them)',
     (type) => {
       const { hooks } = foldHookEvent([makeHook()], type, {
         hookId: 'hook-1',
         nextRunAt: '2026-07-31T10:07:00Z',
       });
       expect(hooks[0].code).toBe('const status = await ws.ci.status();');
+      expect(hooks[0].lastLogs).toBe('checking CI\nall green');
     },
   );
 });
@@ -178,7 +180,7 @@ describe('subscribeBackgroundHooks (hook:* events.subscribe + fold)', () => {
   it('registers a workspace-scoped hook:* subscription, seeds from hook.list, folds events', async () => {
     mockedRequest.mockResolvedValue({ hooks: [makeHook()] });
     const seen: BackgroundHook[][] = [];
-    const dispose = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
+    const { dispose } = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
     await flush();
 
     expect(mockedSubscribe).toHaveBeenCalledWith({ eventTypes: ['hook:*'], workspaceId: 'ws-1' });
@@ -210,7 +212,7 @@ describe('subscribeBackgroundHooks (hook:* events.subscribe + fold)', () => {
   it('ignores foreign-workspace and foreign-subscription events', async () => {
     mockedRequest.mockResolvedValue({ hooks: [makeHook()] });
     const seen: BackgroundHook[][] = [];
-    const dispose = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
+    const { dispose } = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
     await flush();
     const baseline = seen.length;
 
@@ -237,7 +239,7 @@ describe('subscribeBackgroundHooks (hook:* events.subscribe + fold)', () => {
       .mockResolvedValueOnce({ hooks: [] })
       .mockResolvedValueOnce({ hooks: [makeHook({ hookId: 'hook-9' })] });
     const seen: BackgroundHook[][] = [];
-    const dispose = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
+    const { dispose } = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
     await flush();
 
     notify?.({
@@ -251,6 +253,28 @@ describe('subscribeBackgroundHooks (hook:* events.subscribe + fold)', () => {
 
     expect(mockedRequest).toHaveBeenCalledTimes(2);
     expect(seen.at(-1)).toEqual([makeHook({ hookId: 'hook-9' })]);
+    dispose();
+  });
+
+  it('refetch() re-runs hook.list and emits the fresh list (lastLogs arrives on hook.list only)', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ hooks: [makeHook()] })
+      .mockResolvedValueOnce({
+        hooks: [makeHook({ runCount: 7, lastLogs: 'run 7: rechecked CI\nstill green' })],
+      });
+    const seen: BackgroundHook[][] = [];
+    const { refetch, dispose } = subscribeBackgroundHooks('ws-1', (hooks) => seen.push(hooks));
+    await flush();
+    expect(seen.at(-1)?.[0].lastLogs).toBe('checking CI\nall green');
+
+    refetch();
+    await flush();
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'hook.list', { workspaceId: 'ws-1' });
+    expect(seen.at(-1)).toEqual([
+      makeHook({ runCount: 7, lastLogs: 'run 7: rechecked CI\nstill green' }),
+    ]);
     dispose();
   });
 });

@@ -6,9 +6,10 @@
    * hooks (PROTOCOL §5.40): one small chip per scheduled/running hook with a
    * shrinking time-to-next-run bar (pure CSS animation derived from
    * `nextRunAt` — no polling timers) and a spinner while a run is in flight.
-   * Clicking a chip opens a popover offering "Run now" (`hook.runNow`) and
-   * "Cancel" (`hook.cancel`). Hidden entirely when the agent has no active
-   * hooks.
+   * Clicking a chip opens a popover offering "Run now" (`hook.runNow`),
+   * "View script" (opens `HookScriptModal`), and "Cancel" (`hook.cancel`);
+   * the hover card offers the same "View script" affordance. Hidden entirely
+   * when the agent has no active hooks.
    *
    * All wire traffic lives in the `backgroundHooks` slice + its companion
    * read middleware (`background-hooks-read-service`): this component only
@@ -17,13 +18,14 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faBolt, faPlay, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faBolt, faCode, faPlay, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
+  import HookScriptModal from '$lib/components/chat/HookScriptModal.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatTime } from '$lib/i18n/format';
   import type { BackgroundHook } from '$features/hooks/background-hooks-service';
@@ -95,13 +97,12 @@
     appStore.dispatch(cancelBackgroundHookRequested(hook.workspaceId, hook.hookId));
   }
 
-  /** Max characters of hook code shown in the hover card. */
-  const CODE_PREVIEW_MAX = 300;
+  // Hook whose script/logs modal is open; null when closed.
+  let viewingHookId = $state<string | null>(null);
 
-  function codePreview(hook: BackgroundHook): string {
-    const code = hook.code ?? '';
-    if (code.length <= CODE_PREVIEW_MAX) return code;
-    return code.slice(0, CODE_PREVIEW_MAX) + '…';
+  function handleViewScript(hook: BackgroundHook, close?: () => void) {
+    close?.();
+    viewingHookId = hook.hookId;
   }
 
   function stateLabel(hook: BackgroundHook): string {
@@ -126,7 +127,13 @@
     {#each agentHooks as hook (hook.hookId)}
       <DropdownMenu side="top" align="start">
         {#snippet trigger({ toggle }: { toggle: () => void })}
-          <Tooltip side="top" align="start" delayDuration={300} contentClass="max-w-sm">
+          <Tooltip
+            side="top"
+            align="start"
+            delayDuration={300}
+            disableHoverableContent={false}
+            contentClass="max-w-sm"
+          >
             {#snippet content()}
               <div class="flex flex-col gap-1 text-xs" data-testid="background-hook-hover-card">
                 <div class="flex items-center gap-1.5 font-medium">
@@ -149,12 +156,14 @@
                     >
                   {/if}
                 </div>
-                {#if hook.code}
-                  <pre
-                    class="mt-0.5 max-h-40 overflow-hidden whitespace-pre-wrap break-all rounded bg-muted/40 p-1.5 font-mono text-xs leading-snug text-subtle">{codePreview(
-                      hook,
-                    )}</pre>
-                {/if}
+                <button
+                  type="button"
+                  class="mt-0.5 self-start cursor-pointer text-primary underline hover:text-primary/80"
+                  data-testid="background-hook-view-script-link"
+                  onclick={() => handleViewScript(hook)}
+                >
+                  {m.chat_backgroundHooks_viewScript_label()}
+                </button>
               </div>
             {/snippet}
             <button
@@ -201,6 +210,16 @@
               variant="ghost-light"
               size="xs"
               class="justify-start"
+              data-testid="background-hook-view-script-item"
+              onclick={() => handleViewScript(hook, close)}
+            >
+              <Fa icon={faCode} class="w-2.5 h-2.5" />
+              {m.chat_backgroundHooks_viewScript_label()}
+            </Button>
+            <Button
+              variant="ghost-light"
+              size="xs"
+              class="justify-start"
               onclick={() => handleCancel(hook, close)}
             >
               <Fa icon={faXmark} class="w-2.5 h-2.5" />
@@ -211,6 +230,10 @@
       </DropdownMenu>
     {/each}
   </div>
+{/if}
+
+{#if viewingHookId !== null}
+  <HookScriptModal {workspaceId} hookId={viewingHookId} onClose={() => (viewingHookId = null)} />
 {/if}
 
 <style>

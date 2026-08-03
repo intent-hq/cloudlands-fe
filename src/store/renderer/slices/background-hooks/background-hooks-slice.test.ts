@@ -8,6 +8,7 @@ import type { BackgroundHook } from "$features/hooks/background-hooks-service";
 import {
   backgroundHooksCleared,
   backgroundHooksReducer,
+  backgroundHooksRefetchRequested,
   backgroundHooksUpdated,
   initialState,
 } from "./background-hooks-slice";
@@ -40,6 +41,23 @@ describe("backgroundHooksReducer", () => {
     expect(ws).toBeDefined();
     expect(getItems(ws.hooks)).toEqual(hooks);
     expect(ws.hooks.map["hook-2"].state).toBe("running");
+  });
+
+  it("backgroundHooksUpdated stores lastLogs from the hook.list wire shape (§5.40)", () => {
+    const lastLogs = "checking CI\nall green";
+    const state = backgroundHooksReducer(
+      initialState,
+      backgroundHooksUpdated("ws-1", [makeHook({ lastLogs })]),
+    );
+    expect(state.byWorkspaceId["ws-1"].hooks.map["hook-1"].lastLogs).toBe(lastLogs);
+  });
+
+  it("backgroundHooksRefetchRequested is a pure trigger with no reducer case", () => {
+    const state = backgroundHooksReducer(
+      initialState,
+      backgroundHooksUpdated("ws-1", [makeHook()]),
+    );
+    expect(backgroundHooksReducer(state, backgroundHooksRefetchRequested("ws-1"))).toBe(state);
   });
 
   it("backgroundHooksUpdated preserves code captured from hook.list across folds", () => {
