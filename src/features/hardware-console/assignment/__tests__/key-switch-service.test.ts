@@ -58,6 +58,7 @@ vi.mock('$store/renderer/store', () => ({
 
 vi.mock('$lib/utils/navigation.client', () => ({
   navigateToRoute: vi.fn(() => Promise.resolve()),
+  isHudWindowRenderer: () => false,
 }));
 
 import { navigateToRoute } from '$lib/utils/navigation.client';

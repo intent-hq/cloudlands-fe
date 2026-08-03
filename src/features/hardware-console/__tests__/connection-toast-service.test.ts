@@ -28,6 +28,7 @@ vi.mock('svelte-sonner', () => ({
 
 vi.mock('$lib/utils/navigation.client', () => ({
   navigateToRoute: navigateToRouteMock,
+  isHudWindowRenderer: () => false,
 }));
 
 import { installHardwareConsoleConnectionToasts } from '../connection-toast-service';
