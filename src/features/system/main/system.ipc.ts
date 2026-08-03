@@ -822,11 +822,27 @@ export function setupSystemIPC() {
    * Create a new BrowserWindow with standard app configuration.
    * All new windows should use this to avoid config drift.
    * Keep in sync with createWindow / createWindowForSession in main/index.ts.
+   *
+   * The HUD pop-out (`/hud`) is a singleton: when a live HUD window already
+   * exists it is restored/focused and returned instead of creating a second
+   * one (see main/hud-window.ts).
    */
   async function createAppWindow(route?: string): Promise<BrowserWindow> {
     const { BrowserWindow } = await import('electron');
     const path = await import('path');
     const { forwardRendererConsoleToMainLog } = await import('../../../main/window');
+    const { HUD_ROUTE_PREFIX, findExistingHudWindow, focusHudWindow, registerHudWindow } =
+      await import('../../../main/hud-window');
+
+    const isHudRoute = typeof route === 'string' && route.startsWith(HUD_ROUTE_PREFIX);
+    if (isHudRoute) {
+      const existing = findExistingHudWindow();
+      if (existing) {
+        focusHudWindow(existing);
+        logger.info('Reusing existing HUD window (singleton)', { windowId: existing.id });
+        return existing;
+      }
+    }
 
     const isDarkMode = nativeTheme.shouldUseDarkColors;
     const newWindow = new BrowserWindow({
@@ -852,6 +868,12 @@ export function setupSystemIPC() {
       backgroundColor: isDarkMode ? '#0a0a0a' : '#ffffff',
     });
     forwardRendererConsoleToMainLog(newWindow);
+
+    // Register BEFORE loadURL so a concurrent HUD-open request reuses this
+    // window even while its URL is still about:blank (mid-navigation race).
+    if (isHudRoute) {
+      registerHudWindow(newWindow);
+    }
 
     newWindow.once('ready-to-show', () => {
       newWindow.show();

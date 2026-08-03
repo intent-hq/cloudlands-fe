@@ -15,6 +15,7 @@
  */
 
 import { app, BrowserWindow, Notification, screen } from 'electron';
+import { isHudWindow } from '../../../main/hud-window';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
@@ -110,27 +111,10 @@ interface NotificationContent {
 }
 
 /**
- * Whether a window is the HUD pop-out. The HUD is opened via
- * `WINDOW_CHANNELS.OPEN_NEW` with the `/hud` route and carries no other tag,
- * so the loaded URL's pathname is the identifier (dev `http:` and production
- * `app:` URLs both put the route in the pathname). Notification clicks must
- * never navigate the HUD window.
- */
-function isHudWindow(window: BrowserWindow): boolean {
-  try {
-    if (window.isDestroyed() || window.webContents.isDestroyed()) return false;
-    const url = window.webContents.getURL();
-    if (!url) return false;
-    return new URL(url).pathname.startsWith('/hud');
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Pick the window a notification click should focus/navigate: prefer a
  * window with the workspace open, then the focused window, then any other
- * window — never the HUD pop-out. Returns undefined when only HUD (or no)
+ * window — never the HUD pop-out (detected by the shared `isHudWindow`
+ * helper in main/hud-window.ts). Returns undefined when only HUD (or no)
  * windows are live; the click handler then opens a fresh main window instead.
  */
 function pickNotificationClickTarget(workspaceWindows: BrowserWindow[]): BrowserWindow | undefined {
