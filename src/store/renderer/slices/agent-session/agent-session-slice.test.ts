@@ -700,6 +700,349 @@ describe('agent-session-slice reducer', () => {
       });
     });
 
+    it('a running agent:status-changed clears the parked completion-watch state', () => {
+      // Live HUD bug: the coordinator's previous turn ended waiting on
+      // children (`agent:idle` froze isWaitingForOtherAgents: true), then the
+      // user messaged it. The daemon's turn-start `agent:status-changed`
+      // carries ONLY { agentId, status: "active", isActive: true } (§6.5/§6.7
+      // persist_status — no liveness flags, no waiting fields), so the stale
+      // waiting flag kept the card square grey for the whole turn while the
+      // feed showed AGENT RUNNING off the same event. Running-after-waiting
+      // must end the wait.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-running',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('active');
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(false);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual([]);
+    });
+
+    it('a status-changed snapshot carrying explicit waiting fields stays verbatim', () => {
+      // The clear only fires when the waiting keys are ABSENT — a payload
+      // that carries them (e.g. an enriched snapshot) folds verbatim.
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-snapshot',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'active',
+            isActive: true,
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    it('a between-turns active overshoot (isActive false) does not clear the wait', () => {
+      // Parked coordinators can carry a lagging `status: "active"` with
+      // `isActive: false` — that is not a turn start and must not end the wait.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-overshoot',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: false },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    it('folds the agent:idle isWaitingForOtherAgents flag onto the session', () => {
+      // §6.5: agent:idle freezes the completion-watch waiting flag into the
+      // payload at emit time — a coordinator that ended its turn to wait on
+      // children must land waiting (so HUD cards keep its row visible).
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-idle-waiting',
+          type: 'agent:idle',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'idle',
+            isWaitingForOtherAgents: true,
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
+    });
+
+    it('folds the agent:subscriptions-changed waiting snapshot onto the session', () => {
+      // §6.5: { agentId, isWaitingForOtherAgents, waitingForAgentIds } — the
+      // refreshed completion-watch snapshot after a watch is added/consumed.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true } as any)),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-subs-1',
+          type: 'agent:subscriptions-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1', 'child-2'],
+          },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1', 'child-2']);
+
+      // Watch consumed: the cleared snapshot must fold too (the wait ended).
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-subs-2',
+          type: 'agent:subscriptions-changed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            isWaitingForOtherAgents: false,
+            waitingForAgentIds: [],
+          },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(false);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual([]);
+    });
+
+    it('a hint-only subscriptions-changed (no snapshot fields) does not clobber waiting state', () => {
+      // Some emitters send only { agentId, subscriptionVersion, reason } —
+      // absent waiting fields must not overwrite the tracked values.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-subs-hint',
+          type: 'agent:subscriptions-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', subscriptionVersion: 3 },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
+      expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    it('a hydration whose only change is waitingForAgentIds is not swallowed as a no-op', () => {
+      // agent.list re-hydration (AgentLite §5.5) after the awaited set changed
+      // must produce new state — the comparison snapshot includes the list.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1', 'child-2'],
+          } as any),
+        ),
+      );
+
+      const next = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-2'],
+          } as any),
+        ),
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.byAgentId['a1'].waitingForAgentIds).toEqual(['child-2']);
+    });
+
+    it('a hydration whose only change is turnInFlight is not swallowed as a no-op', () => {
+      // STAB-125 turn-liveness (§5.5): the STAB-9 mid-turn agent.list
+      // re-hydration can differ from the stored session ONLY by
+      // turnInFlight flipping — the HUD bucket gate reads it, so the upsert
+      // must produce new state in both directions.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      const midTurn = agentSessionReducer(
+        state,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+            turnInFlight: true,
+          } as any),
+        ),
+      );
+      expect(midTurn).not.toBe(state);
+      expect((midTurn.byAgentId['a1'] as any).turnInFlight).toBe(true);
+
+      const postTurn = agentSessionReducer(
+        midTurn,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+            turnInFlight: false,
+          } as any),
+        ),
+      );
+      expect(postTurn).not.toBe(midTurn);
+      expect((postTurn.byAgentId['a1'] as any).turnInFlight).toBe(false);
+    });
+
+    it('a running status-changed opens the sticky liveTurnOpen slot; a racy turnInFlight:false hydration cannot close it', () => {
+      // 3rd live repro: the daemon emits the turn-start event BEFORE opening
+      // the STAB-125 live-turn slot (try_begin → persist_status(Active) →
+      // begin_live_turn), so the STAB-9 refetch fired off that event can
+      // resolve with turnInFlight: false mid-turn. The FE-owned sticky slot
+      // must survive such a snapshot — only isActive: false or a terminal
+      // status closes it.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(
+          makeSession('a1', 'ws-1', {
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+          } as any),
+        ),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-running',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+
+      // The racy snapshot: watches pending, slot not yet visible to agent.list.
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            status: 'active',
+            isActive: true,
+            isWaitingForOtherAgents: true,
+            waitingForAgentIds: ['child-1'],
+            turnInFlight: false,
+          } as any),
+        ]),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+
+      // agent:idle closes the slot.
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-idle',
+          type: 'agent:idle',
+          timestamp: '2024-01-01T00:05:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'idle', isWaitingForOtherAgents: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(false);
+    });
+
+    it('a hydration with isActive:false or a terminal status closes the sticky liveTurnOpen slot', () => {
+      // Snapshot-only close path: if the idle event is missed, the
+      // authoritative isActive: false hydration must still end the turn.
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1')),
+      );
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-running',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', status: 'active', isActive: true },
+        } as any),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBe(true);
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            status: 'idle',
+            isActive: false,
+            turnInFlight: false,
+          } as any),
+        ]),
+      );
+      expect(state.byAgentId['a1'].liveTurnOpen).toBeUndefined();
+    });
+
     it('adds cross-client user messages from canonical workspace events', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
 

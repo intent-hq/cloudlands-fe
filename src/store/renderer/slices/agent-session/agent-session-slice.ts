@@ -261,10 +261,39 @@ type CanonicalAgentSessionUpdates = {
   sessionCorrupted?: boolean;
   lastAgentResponse?: string;
   processQueueHint?: AgentSession['processQueueHint'];
+  isWaitingForOtherAgents?: boolean;
+  waitingForAgentIds?: string[];
+  liveTurnOpen?: boolean;
 };
+
+/** Wire statuses that mean a turn is running (lowercase IPC + PascalCase enum). */
+const RUNNING_STATUSES: ReadonlySet<string> = new Set([
+  'active',
+  'Active',
+  'processing',
+  'Processing',
+  'responding',
+  'Responding',
+]);
+
+/**
+ * Wire statuses that mean the turn/session ended (lowercase IPC + PascalCase
+ * enum) — no runtime .toLowerCase() transformation.
+ */
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  'idle',
+  'Idle',
+  'completed',
+  'Completed',
+  'failed',
+  'error',
+  'deleted',
+]);
 
 type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
   lastResponseSummary?: unknown;
+  isWaitingForOtherAgents?: unknown;
+  waitingForAgentIds?: unknown;
 };
 
 function canonicalSessionUpdates(
@@ -308,20 +337,54 @@ function canonicalSessionUpdates(
   if (typeof fields.lastResponseSummary === 'string' && fields.lastResponseSummary.trim()) {
     updates.lastAgentResponse = fields.lastResponseSummary;
   }
+  // Completion-watch waiting state: `agent:idle` freezes
+  // `isWaitingForOtherAgents` into its payload at emit time (§6.5), and
+  // `agent:subscriptions-changed` carries the refreshed snapshot with the
+  // awaited `waitingForAgentIds` set — fold both verbatim so a waiting
+  // coordinator (and the agents it awaits) stays visible on HUD cards
+  // between turns without a refetch.
+  if (typeof fields.isWaitingForOtherAgents === 'boolean') {
+    updates.isWaitingForOtherAgents = fields.isWaitingForOtherAgents;
+  }
+  if (Array.isArray(fields.waitingForAgentIds)) {
+    updates.waitingForAgentIds = fields.waitingForAgentIds.filter(
+      (id): id is string => typeof id === 'string',
+    );
+  }
+
+  // A live running transition ends the parked completion-watch state. The
+  // daemon's turn-start `agent:status-changed` carries ONLY
+  // `{ agentId, status: "active", isActive: true }` (§6.5/§6.7
+  // `persist_status`) — no liveness flags and no waiting fields — so without
+  // this a coordinator whose previous turn ended waiting on children
+  // (`agent:idle` froze `isWaitingForOtherAgents: true`) would keep bucketing
+  // idle on HUD cards for its ENTIRE next turn while the feed shows AGENT
+  // RUNNING off the same event. In event order running-after-waiting means
+  // the wait ended (the wake started a turn); the turn-end `agent:idle` /
+  // `agent:subscriptions-changed` re-freeze the flag when watches still
+  // pend. Guarded on the waiting keys being ABSENT from the payload so
+  // snapshots that carry both stay verbatim, and on `isActive: true` so the
+  // between-turns status overshoot (parked coordinators are isActive: false)
+  // never clears a genuine wait.
+  const isRunningTransition =
+    fields.isActive === true &&
+    typeof fields.status === 'string' &&
+    RUNNING_STATUSES.has(fields.status);
+  if (isRunningTransition && typeof fields.isWaitingForOtherAgents !== 'boolean') {
+    updates.isWaitingForOtherAgents = false;
+    if (!Array.isArray(fields.waitingForAgentIds)) updates.waitingForAgentIds = [];
+  }
+  // Sticky FE turn-liveness: the daemon emits this turn-start event BEFORE
+  // opening the STAB-125 live-turn slot (agent_manager: try_begin →
+  // persist_status(Active) → run_prompt_turn → begin_live_turn), so the
+  // STAB-9 refetch fired off this very event can resolve with
+  // `turnInFlight: false` mid-turn and re-park a watch-holding coordinator
+  // grey. Open the FE-owned slot here; only an explicit close signal (a
+  // terminal status / isActive: false, below or via hydration) clears it.
+  if (isRunningTransition) updates.liveTurnOpen = true;
 
   // When the status indicates a terminal/idle state, default streaming flags
   // to false unless the caller explicitly provided them.
-  // Compare against both AgentStatus enum values (PascalCase) and lowercase
-  // variants from IPC events — no runtime .toLowerCase() transformation.
-  const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
-    'idle',
-    'Idle',
-    'completed',
-    'Completed',
-    'failed',
-    'error',
-    'deleted',
-  ]);
   if (
     fields.isActive === false ||
     (typeof fields.status === 'string' && TERMINAL_STATUSES.has(fields.status))
@@ -329,6 +392,7 @@ function canonicalSessionUpdates(
     updates.isStreaming = fields.isStreaming ?? false;
     updates.isProcessing = fields.isProcessing ?? false;
     updates.isResponding = fields.isResponding ?? false;
+    updates.liveTurnOpen = false;
   }
 
   // Defensively clear processQueueHint when agent transitions to normal running state
@@ -403,6 +467,14 @@ function canonicalFieldsFromWorkspaceEvent(event: {
     ];
   }
   if (event.type === 'agent:status-changed' || event.type === 'agent:session-updated') {
+    return [agentId, data];
+  }
+  if (event.type === 'agent:subscriptions-changed') {
+    // Refreshed completion-watch snapshot for the parent (§6.5):
+    // `{ agentId, isWaitingForOtherAgents, waitingForAgentIds }`. Passed
+    // through verbatim — `canonicalSessionUpdates` folds only the waiting
+    // fields (no status/activity keys on this payload), so hint-only
+    // variants without the snapshot no-op.
     return [agentId, data];
   }
   return null;
@@ -521,6 +593,9 @@ type SessionComparisonSnapshot = Pick<
   sandboxId: string | undefined;
   sandboxPath: string | undefined;
   sandboxBranch: string | undefined;
+  waitingForAgentIdsKey: string | undefined;
+  turnInFlight: boolean | undefined;
+  liveTurnOpen: boolean | undefined;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
@@ -580,6 +655,23 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     sandboxPath: typeof metadata?.sandboxPath === 'string' ? metadata.sandboxPath : undefined,
     sandboxBranch:
       typeof metadata?.sandboxBranch === 'string' ? metadata.sandboxBranch : undefined,
+    // Awaited-children set (§5.5 `waitingForAgentIds`) — the HUD card keeps
+    // the awaited agents' rows visible, so a re-hydration whose only change
+    // is this list must not be swallowed as a no-op. Joined to a scalar for
+    // the shallow comparison.
+    waitingForAgentIdsKey: Array.isArray(session.waitingForAgentIds)
+      ? session.waitingForAgentIds.join(',')
+      : undefined,
+    // STAB-125 turn-liveness (§5.5, additive — not declared on AgentSession):
+    // the HUD bucket gate reads it to defeat the waiting check mid-turn, so a
+    // re-hydration whose only change is this flag flipping must not be
+    // swallowed as a no-op (the STAB-9 refetch on agent:status-changed is the
+    // only path that updates it for HUD summary-only sessions).
+    turnInFlight:
+      (session as { turnInFlight?: unknown }).turnInFlight === true ? true : undefined,
+    // FE-owned sticky turn slot — an upsert whose only change is this flag
+    // (e.g. the hydration close on isActive: false) must not be swallowed.
+    liveTurnOpen: session.liveTurnOpen === true ? true : undefined,
     messageCount: messages.length,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
     // The daemon can append trailing blocks to an already-stored message
@@ -688,6 +780,20 @@ function applySessionUpsert(
       !Object.prototype.hasOwnProperty.call(session, 'lastAgentResponse')
     ) {
       finalSession.lastAgentResponse = existing.lastAgentResponse;
+    }
+
+    // Sticky FE turn slot (liveTurnOpen): hydration snapshots never carry
+    // this FE-owned flag, and the daemon opens the STAB-125 live-turn slot
+    // only AFTER emitting the turn-start event (try_begin →
+    // persist_status(Active) → begin_live_turn) — so the STAB-9 refetch that
+    // event triggers can land with `turnInFlight: false` mid-turn. Keep the
+    // slot open across such snapshots; only an authoritative close —
+    // `isActive: false` or a terminal status on the fresh session — ends it.
+    if (existing.liveTurnOpen === true && finalSession.liveTurnOpen === undefined) {
+      const incomingClosed =
+        session.isActive === false ||
+        (typeof session.status === 'string' && TERMINAL_STATUSES.has(session.status));
+      if (!incomingClosed) finalSession.liveTurnOpen = true;
     }
   }
 
