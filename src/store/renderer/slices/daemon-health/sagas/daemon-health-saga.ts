@@ -100,97 +100,6 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
   });
 }
 
-interface DisconnectedBackoffState {
-  lastDispatchedSignature: string | null;
-  nextDelayMs: number;
-  pendingPayload: BackendStatusPayload | null;
-  pendingTask: Task | null;
-}
-
-function transportSignature(transport: BackendTransportInfo | undefined): string {
-  if (!transport || typeof transport !== 'object') return String(transport ?? '');
-  return [
-    transport.mode,
-    transport.target ?? '',
-    transport.daemonVersion ?? '',
-    transport.versionMismatch === true ? 'true' : 'false',
-  ].join('\u0000');
-}
-
-function createDisconnectedBackoffState(): DisconnectedBackoffState {
-  return {
-    lastDispatchedSignature: null,
-    nextDelayMs: INITIAL_DISCONNECTED_BACKOFF_MS,
-    pendingPayload: null,
-    pendingTask: null,
-  };
-}
-
-function disconnectedSignature(payload: BackendStatusPayload, snapshot: boolean): string {
-  return [
-    transportSignature(payload.transport),
-    snapshot
-      ? ((payload as BackendStatusSnapshot).sidecarStartupFailedReason ?? '')
-      : (payload.reason ?? ''),
-  ].join('\u0000');
-}
-
-function resetDisconnectedBackoff(state: DisconnectedBackoffState) {
-  state.lastDispatchedSignature = null;
-  state.nextDelayMs = INITIAL_DISCONNECTED_BACKOFF_MS;
-}
-
-function recordStatusDispatch(
-  state: DisconnectedBackoffState,
-  payload: BackendStatusPayload,
-  snapshot: boolean,
-) {
-  if (payload.status !== 'disconnected') {
-    resetDisconnectedBackoff(state);
-    return;
-  }
-  const signature = disconnectedSignature(payload, snapshot);
-  if (state.lastDispatchedSignature !== signature) {
-    state.nextDelayMs = INITIAL_DISCONNECTED_BACKOFF_MS;
-  }
-  state.lastDispatchedSignature = signature;
-}
-
-function shouldBackoffDisconnected(state: DisconnectedBackoffState, payload: BackendStatusPayload) {
-  return (
-    payload.status === 'disconnected' &&
-    payload.sidecarGaveUp !== true &&
-    payload.sidecarStartupFailed !== true &&
-    state.lastDispatchedSignature === disconnectedSignature(payload, false)
-  );
-}
-
-function* cancelPendingDisconnected(state: DisconnectedBackoffState) {
-  if (state.pendingTask) {
-    yield* cancel(state.pendingTask);
-    state.pendingTask = null;
-  }
-  state.pendingPayload = null;
-}
-
-function* flushPendingDisconnected(state: DisconnectedBackoffState) {
-  const delayMs = state.nextDelayMs;
-  yield* delay(delayMs);
-  const payload = state.pendingPayload;
-  state.pendingPayload = null;
-  state.pendingTask = null;
-  if (!payload) return;
-  yield* put(statusAction(payload, false));
-  state.lastDispatchedSignature = disconnectedSignature(payload, false);
-  state.nextDelayMs = Math.min(delayMs * 2, MAX_DISCONNECTED_BACKOFF_MS);
-}
-
-function* backoffDisconnected(state: DisconnectedBackoffState, payload: BackendStatusPayload) {
-  state.pendingPayload = payload;
-  if (state.pendingTask) return;
-  state.pendingTask = yield* fork(flushPendingDisconnected, state);
-}
-
 function* maybeNotifyVersionMismatch(
   transport: BackendTransportInfo | undefined,
   alreadyNotified: boolean,
@@ -210,14 +119,16 @@ export function* daemonStatusSaga() {
     },
   );
   let versionMismatchNotified = false;
-  const disconnectedBackoff = createDisconnectedBackoffState();
+  let lastStatus: string | null = null;
+  let disconnectedBackoffMs = INITIAL_DISCONNECTED_BACKOFF_MS;
+  let pendingDisconnectedTask: Task | null = null;
   try {
     // The channel is installed before GET_STATUS so a push racing the snapshot
     // is buffered and applied after the older boot snapshot.
     try {
       const snapshot = yield* call(invokeGetBackendStatus);
       yield* put(statusAction(snapshot, true));
-      recordStatusDispatch(disconnectedBackoff, snapshot, true);
+      lastStatus = snapshot.status;
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
         snapshot.transport,
@@ -230,13 +141,23 @@ export function* daemonStatusSaga() {
     while (true) {
       const payload: BackendStatusPayload = yield* take(channel);
       if (payload === (END as unknown as BackendStatusPayload)) break;
-      if (shouldBackoffDisconnected(disconnectedBackoff, payload)) {
-        yield* backoffDisconnected(disconnectedBackoff, payload);
+      if (payload.status === 'disconnected' && lastStatus === 'disconnected') {
+        if (pendingDisconnectedTask) yield* cancel(pendingDisconnectedTask);
+        const delayMs = disconnectedBackoffMs;
+        disconnectedBackoffMs = Math.min(delayMs * 2, MAX_DISCONNECTED_BACKOFF_MS);
+        pendingDisconnectedTask = yield* fork(function* delayedDisconnectedStatus() {
+          yield* delay(delayMs);
+          yield* put(statusAction(payload, false));
+        });
       } else {
-        yield* cancelPendingDisconnected(disconnectedBackoff);
+        if (pendingDisconnectedTask) {
+          yield* cancel(pendingDisconnectedTask);
+          pendingDisconnectedTask = null;
+        }
         yield* put(statusAction(payload, false));
-        recordStatusDispatch(disconnectedBackoff, payload, false);
+        if (payload.status !== 'disconnected') disconnectedBackoffMs = INITIAL_DISCONNECTED_BACKOFF_MS;
       }
+      lastStatus = payload.status;
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
         payload.transport,
@@ -244,7 +165,7 @@ export function* daemonStatusSaga() {
       );
     }
   } finally {
-    yield* cancelPendingDisconnected(disconnectedBackoff);
+    if (pendingDisconnectedTask) yield* cancel(pendingDisconnectedTask);
     channel.close();
   }
 }

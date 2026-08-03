@@ -161,7 +161,6 @@ describe('daemonHealthSaga', () => {
     await settle();
 
     statusHandler!({ status: 'disconnected', transport });
-    statusHandler!({ status: 'disconnected', transport });
     await settle();
     expect(statusActions(dispatched)).toHaveLength(1);
 
@@ -199,9 +198,8 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
-  it('cancels and resets disconnected backoff on meaningful status changes', async () => {
+  it('processes non-disconnected transitions immediately and resets backoff', async () => {
     const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
-    const newTransport = { mode: 'external-uds' as const, target: '/tmp/intentd-next.sock' };
     invoke.mockImplementation((channel: string) => {
       if (channel === BACKEND.GET_STATUS)
         return Promise.resolve({ status: 'disconnected', transport });
@@ -214,10 +212,7 @@ describe('daemonHealthSaga', () => {
     await settle();
     await vi.advanceTimersByTimeAsync(500);
     statusHandler!({ status: 'connected', transport });
-    statusHandler!({ status: 'connected', reconnected: true, transport });
-    statusHandler!({ status: 'connecting', transport });
     await settle();
-    await vi.advanceTimersByTimeAsync(1_000);
     expect(statusActions(dispatched)).toEqual([
       connectionStatusChanged('disconnected', transport, {
         sidecarGaveUp: undefined,
@@ -225,32 +220,25 @@ describe('daemonHealthSaga', () => {
         reason: undefined,
       }),
       connectionStatusChanged('connected', transport, {
-        sidecarGaveUp: undefined,
-        sidecarStartupFailed: undefined,
-        reason: undefined,
-      }),
-      connectionStatusChanged('connected', transport, {
-        sidecarGaveUp: undefined,
-        sidecarStartupFailed: undefined,
-        reason: undefined,
-      }),
-      connectionStatusChanged('connecting', transport, {
         sidecarGaveUp: undefined,
         sidecarStartupFailed: undefined,
         reason: undefined,
       }),
     ]);
-
-    statusHandler!({ status: 'disconnected', transport, reason: 'lost' });
-    statusHandler!({ status: 'disconnected', transport: newTransport });
-    statusHandler!({
-      status: 'disconnected',
-      transport: newTransport,
-      sidecarGaveUp: true,
-      reason: 'restart limit',
-    });
+    await vi.advanceTimersByTimeAsync(1_000);
     await settle();
-    await vi.advanceTimersByTimeAsync(2_000);
+    expect(statusActions(dispatched)).toHaveLength(2);
+
+    statusHandler!({ status: 'disconnected', transport });
+    await settle();
+    expect(statusActions(dispatched)).toHaveLength(3);
+
+    statusHandler!({ status: 'disconnected', transport });
+    await settle();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(statusActions(dispatched)).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
 
     expect(statusActions(dispatched)).toEqual([
       connectionStatusChanged('disconnected', transport, {
@@ -263,12 +251,7 @@ describe('daemonHealthSaga', () => {
         sidecarStartupFailed: undefined,
         reason: undefined,
       }),
-      connectionStatusChanged('connected', transport, {
-        sidecarGaveUp: undefined,
-        sidecarStartupFailed: undefined,
-        reason: undefined,
-      }),
-      connectionStatusChanged('connecting', transport, {
+      connectionStatusChanged('disconnected', transport, {
         sidecarGaveUp: undefined,
         sidecarStartupFailed: undefined,
         reason: undefined,
@@ -276,17 +259,7 @@ describe('daemonHealthSaga', () => {
       connectionStatusChanged('disconnected', transport, {
         sidecarGaveUp: undefined,
         sidecarStartupFailed: undefined,
-        reason: 'lost',
-      }),
-      connectionStatusChanged('disconnected', newTransport, {
-        sidecarGaveUp: undefined,
-        sidecarStartupFailed: undefined,
         reason: undefined,
-      }),
-      connectionStatusChanged('disconnected', newTransport, {
-        sidecarGaveUp: true,
-        sidecarStartupFailed: undefined,
-        reason: 'restart limit',
       }),
     ]);
     task.cancel();
