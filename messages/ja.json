@@ -4658,6 +4658,7 @@
   "mcp_oauth_registerFailed_error": "OAuth クライアントを登録できませんでした。認証ヘッダーを手動で設定してください。",
   "notifications_web_permissionNotGranted_error": "通知の許可が付与されませんでした",
   "notifications_web_unknown_error": "不明なエラー",
+  "notifications_toast_open_label": "開く",
   "workspace_ops_space_fallback": "スペース",
   "workspace_ops_archiveFailed_error": "スペースをアーカイブできませんでした",
   "workspace_ops_archived_toast": "スペース {title} をアーカイブしました",
