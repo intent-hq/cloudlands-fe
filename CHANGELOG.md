@@ -4,6 +4,35 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.14.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.13.0...v2.14.0) (2026-08-03)
+
+
+### 🚀 Features
+
+* add New Folder to the remote directory browser ([#660](https://github.com/intent-hq/cloudlands-fe/issues/660)) ([c84d4ae](https://github.com/intent-hq/cloudlands-fe/commit/c84d4ae5ac44e65b8773f1ff9937c28bb8b6aa0e))
+* connect to the intentd daemon via named pipe on win32 ([#650](https://github.com/intent-hq/cloudlands-fe/issues/650)) ([acbb040](https://github.com/intent-hq/cloudlands-fe/commit/acbb0408d2c6d5703e0e62c00a75d8f15636e774))
+* Fleet HUD v3 — pop-out fleet ops window, data layer, grid, takeover overlay, and live-feedback hardening ([#659](https://github.com/intent-hq/cloudlands-fe/issues/659)) ([c38ca9f](https://github.com/intent-hq/cloudlands-fe/commit/c38ca9fc8836309c1d2b072a97728cfc7be70926))
+* hardware console post-ship fixes and UX refinements ([#661](https://github.com/intent-hq/cloudlands-fe/issues/661)) ([c4a70de](https://github.com/intent-hq/cloudlands-fe/commit/c4a70de0f0f114e2de7d205a20defdccb491d216))
+* hook script viewer modal with script and last-run logs tabs ([#648](https://github.com/intent-hq/cloudlands-fe/issues/648)) ([cb5daee](https://github.com/intent-hq/cloudlands-fe/commit/cb5daee651d994771584fafdf3e37aa5be7276d6))
+* settings path fields use OS/remote pickers instead of free-text ([#658](https://github.com/intent-hq/cloudlands-fe/issues/658)) ([d82fd92](https://github.com/intent-hq/cloudlands-fe/commit/d82fd92675b98c07620af73ee3d9e413f566a604))
+
+
+### 🐛 Bug Fixes
+
+* bump bundled intentd sidecar to 0.4.0 ([#673](https://github.com/intent-hq/cloudlands-fe/issues/673)) ([9fb3edd](https://github.com/intent-hq/cloudlands-fe/commit/9fb3edd1b8e9225f6bcd2152001e12ce88e2d16c))
+* **ci:** gate sourcemaps on mac/win release legs and raise heap cap to 12288 ([#644](https://github.com/intent-hq/cloudlands-fe/issues/644)) ([63477cd](https://github.com/intent-hq/cloudlands-fe/commit/63477cd44da4d60f6c7f9c368f59311d919ecc7e))
+* **ci:** per-arch heap caps on Linux release legs (x64 hosted runner OOM) ([cde6141](https://github.com/intent-hq/cloudlands-fe/commit/cde6141010a19ca46daa7e0dd1ba6b5fd0272709))
+* **ci:** raise Linux x64 release heap cap to 10240 (boundary-flaky at 8192) ([0f1ca6f](https://github.com/intent-hq/cloudlands-fe/commit/0f1ca6f6fa6c258453c8259f2a6213dc01ada6e1))
+* **ci:** route release Linux x64 to self-hosted tinybox and mac to macos-latest ([#649](https://github.com/intent-hq/cloudlands-fe/issues/649)) ([f410182](https://github.com/intent-hq/cloudlands-fe/commit/f410182610655c51ed274b20921ff1a7e763d559))
+* converge terminal tabs to zero on authoritative same-boot empty list ([#656](https://github.com/intent-hq/cloudlands-fe/issues/656)) ([bb300ee](https://github.com/intent-hq/cloudlands-fe/commit/bb300ee0588ee4942cfc92c35104fc25ba2fed35))
+* guard scriptsClient.update against running scripts ([#655](https://github.com/intent-hq/cloudlands-fe/issues/655)) ([eef830b](https://github.com/intent-hq/cloudlands-fe/commit/eef830bf4975cdf327c94be7b4749993b30d7170))
+* never remove or update running scripts during detect ([#654](https://github.com/intent-hq/cloudlands-fe/issues/654)) ([1f2b852](https://github.com/intent-hq/cloudlands-fe/commit/1f2b852f29af1a5b8149ec79f9058e34e0fd4d1d))
+* normalize dot-separated MCP tool names in tool classifier ([#669](https://github.com/intent-hq/cloudlands-fe/issues/669)) ([c28e4e7](https://github.com/intent-hq/cloudlands-fe/commit/c28e4e7e91f281b745d150e3a360692c8142efc1))
+* restore notification click navigation via in-app toast when frontmost ([#657](https://github.com/intent-hq/cloudlands-fe/issues/657)) ([59ce5ea](https://github.com/intent-hq/cloudlands-fe/commit/59ce5ea5efdbedb19df993e7e124d1293223e106))
+* route path-like chat links to the workspace file viewer instead of the browser panel ([#670](https://github.com/intent-hq/cloudlands-fe/issues/670)) ([5752cf6](https://github.com/intent-hq/cloudlands-fe/commit/5752cf6f7f04b3b2c33521024c7311372ecf0077))
+* **scripts:** broaden detect upsert guard to all live script statuses ([#653](https://github.com/intent-hq/cloudlands-fe/issues/653)) ([e511c78](https://github.com/intent-hq/cloudlands-fe/commit/e511c78d36131ddfd34b1059dcf23943a069ec10))
+* send image-only messages instead of silently dropping them ([#671](https://github.com/intent-hq/cloudlands-fe/issues/671)) ([a830d61](https://github.com/intent-hq/cloudlands-fe/commit/a830d610fa1c4cbc3ad5cd5906dcad59b3c45156))
+
 ## [2.13.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.12.0...v2.13.0) (2026-08-02)
 
 
