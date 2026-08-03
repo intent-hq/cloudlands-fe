@@ -17,6 +17,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { store as appStore } from "$store/renderer/store";
 import {
+  createDirectoryRequested,
   loadDirectoryRequested,
   navigateToPathRequested,
   resetDirectoryPicker,
@@ -270,5 +271,136 @@ describe("directoryPickerReadService (fake backend, real store)", () => {
 
     expect(backendRequestMock).toHaveBeenCalledTimes(1);
     expect(appStore.state.directoryPicker.listing?.path).toBe("/x");
+  });
+
+  it("calls host.createDirectory with `{ path }` and navigates into the created folder", async () => {
+    backendRequestMock.mockImplementation(((method: string, params: unknown) => {
+      if (method === "host.createDirectory") {
+        const path = (params as { path: string }).path;
+        return Promise.resolve({ path });
+      }
+      if (method === "host.listDirectory") {
+        return Promise.resolve(listing("/Users/me/new-folder"));
+      }
+      return Promise.resolve(undefined);
+    }) as never);
+
+    appStore.dispatch(createDirectoryRequested("/Users/me/new-folder"));
+
+    // Loading flips immediately from the reducer.
+    expect(appStore.state.directoryPicker.loading).toBe(true);
+    await flush();
+    await flush();
+
+    expect(backendRequestMock).toHaveBeenCalledWith("host.createDirectory", {
+      path: "/Users/me/new-folder",
+    });
+    // Success feeds back into the read path: list the created directory.
+    expect(backendRequestMock).toHaveBeenCalledWith("host.listDirectory", {
+      path: "/Users/me/new-folder",
+    });
+
+    const state = appStore.state.directoryPicker;
+    expect(state.loading).toBe(false);
+    expect(state.createError).toBeNull();
+    expect(state.listing?.path).toBe("/Users/me/new-folder");
+  });
+
+  it("navigates to the daemon-echoed created path when it differs from the request", async () => {
+    // The daemon echoes the fully expanded created path (e.g. `~` expansion);
+    // the follow-up listing must use the echoed path, not the requested one.
+    backendRequestMock.mockImplementation(((method: string) => {
+      if (method === "host.createDirectory") {
+        return Promise.resolve({ path: "/Users/me/expanded" });
+      }
+      if (method === "host.listDirectory") {
+        return Promise.resolve(listing("/Users/me/expanded"));
+      }
+      return Promise.resolve(undefined);
+    }) as never);
+
+    appStore.dispatch(createDirectoryRequested("~/expanded"));
+    await flush();
+    await flush();
+
+    expect(backendRequestMock).toHaveBeenCalledWith("host.listDirectory", {
+      path: "/Users/me/expanded",
+    });
+    expect(appStore.state.directoryPicker.listing?.path).toBe("/Users/me/expanded");
+  });
+
+  it.each([
+    ["missing path", {}],
+    ["non-string path", { path: 42 }],
+    ["empty path", { path: "" }],
+    ["null response", null],
+  ])(
+    "fails closed without navigating when createDirectory resolves with %s",
+    async (_label, createdResponse) => {
+      // Seed a loaded listing first so the guard's failure path provably
+      // keeps it.
+      backendRequestMock.mockImplementation(((method: string) => {
+        if (method === "host.listDirectory") {
+          return Promise.resolve(listing("/Users/me"));
+        }
+        if (method === "host.createDirectory") {
+          return Promise.resolve(createdResponse);
+        }
+        return Promise.resolve(undefined);
+      }) as never);
+
+      appStore.dispatch(loadDirectoryRequested("/Users/me"));
+      await flush();
+      expect(appStore.state.directoryPicker.listing?.path).toBe("/Users/me");
+
+      appStore.dispatch(createDirectoryRequested("/Users/me/new-folder"));
+      await flush();
+      await flush();
+
+      // No follow-up navigation: exactly the one seed listDirectory call.
+      const hostListDirectoryCalls = backendRequestMock.mock.calls.filter(
+        ([method]) => method === "host.listDirectory",
+      );
+      expect(hostListDirectoryCalls).toHaveLength(1);
+
+      const state = appStore.state.directoryPicker;
+      expect(state.loading).toBe(false);
+      expect(state.createError).toBe(
+        "An unexpected error occurred. Please check the logs for details.",
+      );
+      expect(state.error).toBeNull();
+      expect(state.listing?.path).toBe("/Users/me");
+    },
+  );
+
+  it("keeps the current listing and records createError when creation fails", async () => {
+    // Seed a loaded listing first, then fail the creation.
+    backendRequestMock.mockImplementation(((method: string, params: unknown) => {
+      if (method === "host.listDirectory") {
+        return Promise.resolve(listing("/Users/me"));
+      }
+      if (method === "host.createDirectory") {
+        const path = (params as { path: string }).path;
+        return Promise.reject(new Error(`failed to create ${path}: Permission denied (os error 13)`));
+      }
+      return Promise.resolve(undefined);
+    }) as never);
+
+    appStore.dispatch(loadDirectoryRequested("/Users/me"));
+    await flush();
+    expect(appStore.state.directoryPicker.listing?.path).toBe("/Users/me");
+
+    appStore.dispatch(createDirectoryRequested("/Users/me/denied"));
+    await flush();
+    await flush();
+
+    const state = appStore.state.directoryPicker;
+    expect(state.loading).toBe(false);
+    expect(state.createError).toBe(
+      "failed to create /Users/me/denied: Permission denied (os error 13)",
+    );
+    expect(state.error).toBeNull();
+    // The pre-creation listing survives so the picker stays where it was.
+    expect(state.listing?.path).toBe("/Users/me");
   });
 });
