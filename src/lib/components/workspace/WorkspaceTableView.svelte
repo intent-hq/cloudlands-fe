@@ -1,6 +1,5 @@
 <script lang="ts">
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { selectUnreadAgentIdsByWorkspace } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
 
   import {
   selectAgentIsResponding,
@@ -94,9 +93,8 @@
     onRemoveRepo,
   }: Props = $props();
 
-  // Track streaming state for reactivity. Unread state comes from a Redux selector readable.
+  // Track streaming state for reactivity. Unread state comes from workspace.attention (BE-owned).
   let activeStreamsVersion = $state(0);
-  const unreadAgentIdsByWorkspace$ = selectUnreadAgentIdsByWorkspace();
 
   onMount(() => {
     // Start polling for active streams (if not already started)
@@ -119,7 +117,8 @@
 
     return getWorkspaceAgentDisplayInfos({
       memberAgentIds: ws.agentSummary?.agentIds ?? [],
-      unreadAgentIds: $unreadAgentIdsByWorkspace$[ws.id] ?? [],
+      // Attention is workspace-level; treat all member agents as unread.
+      unreadAgentIds: ws.attention === 'unread' ? (ws.agentSummary?.agentIds ?? []) : [],
       workspaceActivity: ws.activity,
       getAgentSnapshot: (agentId) => {
         const loadedSession = selectAgentSession.select(reduxState, agentId);

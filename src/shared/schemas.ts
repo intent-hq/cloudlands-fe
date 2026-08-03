@@ -115,6 +115,7 @@ export const WorkspaceSchema = z.object({
   statusMessage: WorkspaceStatusMessageSchema.optional(),
   statusImageAssetId: z.string().optional(), // Agent-authored status screenshot asset id (intent-hq/monorepo#997)
   activity: z.enum(['idle', 'agent_running']).optional(), // BE-derived in-flight agent state
+  attention: z.enum(['none', 'unread', 'review_required']).optional(), // BE-owned dismissible attention flag (PROTOCOL §5.1 / §9.9)
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   archived: z.boolean().optional(),

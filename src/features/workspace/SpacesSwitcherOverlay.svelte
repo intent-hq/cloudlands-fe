@@ -26,10 +26,6 @@
   selectAgentIsWaiting,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import {
-  selectUnreadAgentIds,
-  selectUnreadAgentIdsForWorkspace,
-} from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
 
@@ -63,7 +59,6 @@
   const switcherWorkspaceIds = selectSwitcherWorkspaceIds();
   const workspaces = selectWorkspaceItems();
   const currentWorkspaceId = selectActiveWorkspaceId();
-  const unreadAgentIds$ = selectUnreadAgentIds();
   const allPermissionRequests = selectPermissionRequests();
   const workspaceTasksByWorkspaceId$ = selectWorkspaceTasksByWorkspaceId();
   const isOpen = $derived(!$switcherState.selectionHandled);
@@ -154,12 +149,12 @@
   function getWorkspaceAgentInfo(ws: Workspace): AgentDisplayInfo[] {
     // Reference version counters for reactivity
     void activeStreamsVersion;
-    void $unreadAgentIds$;
     const reduxState = appStore.state;
     const memberAgentIds = ws.agentSummary?.agentIds ?? [];
     if (memberAgentIds.length === 0) return [];
 
-    const unreadAgentIdsForWs = new Set(selectUnreadAgentIdsForWorkspace.select(reduxState, ws.id));
+    // Attention is workspace-level (BE-owned); treat all member agents as unread.
+    const unreadAgentIdsForWs = new Set(ws.attention === 'unread' ? memberAgentIds : []);
 
     return memberAgentIds
       .map((agentId) => {

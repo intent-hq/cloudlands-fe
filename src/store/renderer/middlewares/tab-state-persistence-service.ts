@@ -5,7 +5,7 @@
  * performed. With no saga listening, the strip never restored open tabs / pin
  * / order / active tab across relaunches and scroll positions never survived.
  *
- * Like `unread-tracking-persistence-service`, this reconnects the path WITHOUT
+ * Like `ui-layout-persistence-service`, this reconnects the path WITHOUT
  * re-adding a saga and WITHOUT changing any call site:
  *   - On creation it hydrates workspace tabs + scroll positions from
  *     localStorage once (silently on missing/corrupt JSON).

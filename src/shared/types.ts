@@ -243,6 +243,23 @@ export function isWorkspaceDisplayStatus(value: unknown): value is WorkspaceDisp
   );
 }
 
+/** BE-owned dismissible attention flag values (blue dot; PROTOCOL §5.1 / §9.9).
+ *  Snake_case wire values matching `intent-core::model::WorkspaceAttention`.
+ *  Single source of truth — the union type and the runtime guard derive from
+ *  this array. */
+export const WORKSPACE_ATTENTION_VALUES = ['none', 'unread', 'review_required'] as const;
+
+export type WorkspaceAttention = (typeof WORKSPACE_ATTENTION_VALUES)[number];
+
+/** Runtime guard for BE-sent attention values. Unknown wire values (a future
+ *  daemon's new value, or a malformed one) must be treated as absent so the FE
+ *  defaults to 'none' instead of rendering an unknown state. */
+export function isWorkspaceAttention(value: unknown): value is WorkspaceAttention {
+  return (
+    typeof value === 'string' && (WORKSPACE_ATTENTION_VALUES as readonly string[]).includes(value)
+  );
+}
+
 export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system
@@ -274,6 +291,11 @@ export interface Workspace {
    *  daemon-side: open/draft PR → open tasks → merged PR → complete. Optional on
    *  decode — when absent (older daemons) the FE defaults to 'not_started'. */
   displayStatus?: WorkspaceDisplayStatus;
+  /** BE-owned dismissible attention flag (blue dot; PROTOCOL §5.1 / §9.9). The
+   *  daemon raises 'unread' when an agent finishes its work; cleared via
+   *  `workspace.markSeen` / `workspace.dismissAttention`. Optional on decode —
+   *  when absent (older daemons) the FE treats it as 'none'. */
+  attention?: WorkspaceAttention;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;

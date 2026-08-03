@@ -4,7 +4,7 @@
  * "load from localStorage"; the loading saga was removed). With no handler,
  * recent URLs never loaded on boot or persisted on change.
  *
- * Like `unread-tracking-persistence-service`, this reconnects the path WITHOUT
+ * Like `tab-state-persistence-service`, this reconnects the path WITHOUT
  * re-adding a saga and WITHOUT changing any call site:
  *   - Hydrates `recentUrls` from localStorage when `initBrowserWorkspace` is
  *     dispatched (typically on workspace mount).
