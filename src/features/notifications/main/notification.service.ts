@@ -439,8 +439,12 @@ export class NotificationService {
       // `click` never fires for banners presented while the app is frontmost
       // on macOS (electron#51885). Skip the OS banner and deliver an in-app
       // clickable toast instead — `navigateTarget` mirrors the banner
-      // click-payload so the renderer routes the same way.
-      const appFrontmost = BrowserWindow.getFocusedWindow() !== null;
+      // click-payload so the renderer routes the same way. A focused HUD
+      // pop-out does NOT count as frontmost: the HUD renders no toast UI and
+      // is never a notification target, so HUD-focused delivery stays on the
+      // OS-banner path (whose click goes through the HUD-excluding picker).
+      const focusedWindow = BrowserWindow.getFocusedWindow();
+      const appFrontmost = focusedWindow !== null && !isHudWindow(focusedWindow);
       if (appFrontmost) {
         logger.debug('App is frontmost, delivering in-app toast instead of OS banner', {
           workspaceId,

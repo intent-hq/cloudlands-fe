@@ -1325,7 +1325,9 @@ describe('NotificationService click-target selection excludes the HUD window', (
     vi.mocked(BrowserWindow.fromId).mockImplementation(
       (id: number) => ((id === 1 ? morphingWindow : id === 2 ? otherWindow : null) as never),
     );
-    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(morphingWindow as never);
+    // App not frontmost at show time — otherwise the electron#51885 gate
+    // delivers an in-app toast instead of the OS banner under test here.
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([morphingWindow, otherWindow] as never);
 
     const service = new NotificationService();
