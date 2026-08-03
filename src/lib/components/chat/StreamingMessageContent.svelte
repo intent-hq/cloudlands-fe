@@ -30,7 +30,8 @@
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import Fa from 'svelte-fa';
-  import { faCode, faTerminal, faRobot } from '@fortawesome/free-solid-svg-icons';
+  import { faCode, faRobot } from '@fortawesome/free-solid-svg-icons';
+  import ChatCliBlock from './ChatCliBlock.svelte';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
@@ -634,12 +635,7 @@
     </div>
   {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
     {@const cliData = parsedBlock.metadata.cliData}
-    <div class="my-1.5 flex items-center gap-2">
-      <Fa icon={faTerminal} size="sm" class="text-ghost flex-none" />
-      <code class="font-mono text-sm text-subtle flex-1 min-w-0 truncate">
-        {cliData.command}
-      </code>
-    </div>
+    <ChatCliBlock command={cliData.command} />
   {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
     {@const actionData = parsedBlock.metadata.agentActionData}
     <div class="my-1.5 flex items-center gap-2">

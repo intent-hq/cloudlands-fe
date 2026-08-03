@@ -28,6 +28,7 @@
   import ChatWorkspaceCard from './ChatWorkspaceCard.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
+  import ChatCliBlock from './ChatCliBlock.svelte';
   import {
     parseAgentMessage,
     parseSuggestedPrompts,
@@ -369,6 +370,8 @@
       patches={[{ filePath: patchData.filePath, diff: patchData.diff }]}
       label={patchData.description || patchData.filePath}
     />
+  {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
+    <ChatCliBlock command={parsedBlock.metadata.cliData.command} />
   {:else if parsedBlock.type === 'detected_scripts' && parsedBlock.metadata?.detectedScriptsData}
     <DetectedScriptsCard scripts={parsedBlock.metadata.detectedScriptsData} />
   {:else if parsedBlock.type === 'workspace_card' && parsedBlock.metadata?.workspaceCardData}
