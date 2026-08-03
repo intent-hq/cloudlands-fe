@@ -513,24 +513,26 @@ jobs:
       - name: Clean previous build output
         run: rm -rf dist-electron
 
-      # electron-builder's bundled fpm builds the deb by shelling out to the
-      # host `ar` (binutils) and tar — preinstalled on ubuntu-latest but not
-      # guaranteed on a bare self-hosted box. Fail fast with a clear message
-      # instead of a cryptic fpm error mid-package. AppImage needs no system
-      # packages (app-builder is self-contained — the arm64 leg already
-      # builds AppImages on self-hosted with no extra setup).
+      # electron-builder's bundled fpm builds the deb by shelling out to host
+      # tools — `ar` (binutils), tar, and xz (electron-builder defaults deb
+      # compression to xz, so fpm produces data.tar.xz via tar/xz) —
+      # preinstalled on ubuntu-latest but not guaranteed on a bare
+      # self-hosted box. Fail fast with a clear message instead of a cryptic
+      # fpm error mid-package. AppImage needs no system packages
+      # (app-builder is self-contained — the arm64 leg already builds
+      # AppImages on self-hosted with no extra setup).
       - name: Verify deb packaging prerequisites
         if: contains(matrix.targets, 'deb')
         run: |
           MISSING=""
-          for TOOL in ar tar; do
+          for TOOL in ar tar xz; do
             command -v "$TOOL" >/dev/null 2>&1 || MISSING="${MISSING:+$MISSING, }$TOOL"
           done
           if [ -n "$MISSING" ]; then
-            echo "::error::Missing tool(s) required by fpm for the deb target: ${MISSING}. Install binutils/tar on this runner (labels: self-hosted, Linux, X64, tinybox)."
+            echo "::error::Missing tool(s) required by fpm for the deb target: ${MISSING}. Install binutils/tar/xz-utils on this runner (labels: self-hosted, Linux, X64, tinybox)."
             exit 1
           fi
-          echo "deb packaging prerequisites present (ar, tar)"
+          echo "deb packaging prerequisites present (ar, tar, xz)"
 
       # Same rationale as the macOS job: keeps the workflow_dispatch fallback
       # able to rebuild older tags (intent-hq/monorepo#1046).
