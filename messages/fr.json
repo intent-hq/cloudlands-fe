@@ -2335,6 +2335,8 @@
   "hud_card_attnBlocker_label": "Blocage : {text}",
   "hud_card_attnDiscussion_label": "Discussion demandée : {text}",
   "hud_card_attnPending_label": "Q : en attente de votre réponse",
+  "hud_card_attnFailed_label": "ERR : {text}",
+  "hud_card_attnFailedPending_label": "ERR : l'agent a échoué",
   "hud_card_open_ariaLabel": "Ouvrir l'espace {title}",
   "hud_grid_empty_label": "AUCUN ESPACE",
   "hud_filter_allWorkspaces_label": "Tous les espaces",

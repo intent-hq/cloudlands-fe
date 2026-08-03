@@ -1048,8 +1048,10 @@
   <!-- Auggie Setup Gate -->
   <AuggieSetupGate />
 
-  <!-- Toast Notifications -->
-  <Toast />
+  <!-- Toast Notifications (suppressed in the HUD pop-out window) -->
+  {#if !isHudRoute}
+    <Toast />
+  {/if}
 
   <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
   <LinkTooltip />

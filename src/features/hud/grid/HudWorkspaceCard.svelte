@@ -58,7 +58,9 @@
    * Request Discussion: prefix over the derived snippet) wins over the
    * generic workspace status message; the `pending` fallback (daemon
    * needs_attention rollup with no captured reason) renders a generic
-   * awaiting-input line rather than leaving the status text in place.
+   * awaiting-input line rather than leaving the status text in place. On a
+   * failed card the strip shows the failing agent's stopReason (ERR: prefix)
+   * or a generic failed line when none is known — never the status message.
    */
   const attentionText = $derived.by(() => {
     const snippet = card.attentionSnippet;
@@ -72,6 +74,10 @@
         return m.hud_card_attnDiscussion_label({ text: snippet.text });
       case 'pending':
         return m.hud_card_attnPending_label();
+      case 'failed':
+        return snippet.text
+          ? m.hud_card_attnFailed_label({ text: snippet.text })
+          : m.hud_card_attnFailedPending_label();
     }
   });
 

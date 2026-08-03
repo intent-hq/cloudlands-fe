@@ -5173,6 +5173,156 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigg
     // Restore the getter to prevent leakage
     dispatchGetterSpy.mockRestore();
   });
+
+  it('agent:deleted dispatches hydrateAgentsRequested(workspaceId)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Get hydrateAgentsRequested before creating spy to avoid import timing issues
+    const hydrateAgentsRequested =
+      await import('$store/renderer/slices/workspace-agents/workspace-agents-slice').then(
+        (m) => m.hydrateAgentsRequested,
+      );
+
+    // Capture the dispatch function directly to preserve this binding
+    const originalDispatch = appStore.dispatch;
+    const dispatchSpy = vi.fn(originalDispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+
+    handler(notification('agent:deleted', { agentId: AGENT }));
+
+    expect(dispatchSpy).toHaveBeenCalledWith(hydrateAgentsRequested(WS));
+
+    // Restore the getter to prevent leakage
+    dispatchGetterSpy.mockRestore();
+  });
+});
+
+describe('daemonEventsBridge (agent:deleted → workspace agentSummary reconciliation)', () => {
+  const DELETED_AGENT = AGENT;
+  const SURVIVOR_AGENT = 'agent-bridge-2';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    backendRequestSpy.mockReset();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  /** PROTOCOL §5.1 `agentSummary` aggregate (richer `{ count, agents, agentIds }` form). */
+  function agentSummaryOf(agentIds: string[]) {
+    return {
+      count: agentIds.length,
+      agents: agentIds.map((id) => ({
+        id,
+        name: `Agent ${id}`,
+        status: 'idle',
+        isStreaming: false,
+        isResponding: false,
+      })),
+      agentIds,
+    };
+  }
+
+  function workspaceEntityOf(agentIds: string[]) {
+    return {
+      id: WS,
+      title: 'Bridge ws',
+      branch: 'main',
+      status: 'Active',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      agentSummary: agentSummaryOf(agentIds),
+    };
+  }
+
+  async function seedWorkspace(agentIds: string[]): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    appStore.dispatch(setWorkspaceEntity(workspaceEntityOf(agentIds) as never));
+  }
+
+  async function readWorkspaceAgentSummary(): Promise<
+    { agents?: Array<{ id: string }>; agentIds?: string[] } | undefined
+  > {
+    const { getItem } = await import('$lib/store-shim/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    const ws = getItem(state.workspace.workspaces as never, WS as never) as
+      | { agentSummary?: { agents?: Array<{ id: string }>; agentIds?: string[] } }
+      | undefined;
+    return ws?.agentSummary;
+  }
+
+  it('agent:deleted refetches workspace.get and merges the fresh agentSummary (deleted agent dropped)', async () => {
+    await seedWorkspace([DELETED_AGENT, SURVIVOR_AGENT]);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Fresh workspace.get response no longer lists the deleted agent. The
+    // agent:deleted handler also fires agent.list (hydrateAgentsRequested)
+    // and events.subscribe, so mock those calls too.
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'workspace.get') {
+        return { workspace: workspaceEntityOf([SURVIVOR_AGENT]) };
+      }
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      return { subscriptionId: 'sub-1' };
+    });
+
+    handler(notification('agent:deleted', { agentId: DELETED_AGENT }));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS });
+    const summary = await readWorkspaceAgentSummary();
+    expect(summary?.agents?.map((a) => a.id)).toEqual([SURVIVOR_AGENT]);
+    expect(summary?.agentIds).toEqual([SURVIVOR_AGENT]);
+  });
+
+  it('ignores workspace.get errors gracefully (agentSummary unchanged)', async () => {
+    await seedWorkspace([DELETED_AGENT, SURVIVOR_AGENT]);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'workspace.get') {
+        throw new Error('Workspace not found');
+      }
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      return { subscriptionId: 'sub-1' };
+    });
+
+    handler(notification('agent:deleted', { agentId: DELETED_AGENT }));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS });
+    const summary = await readWorkspaceAgentSummary();
+    expect(summary?.agents?.map((a) => a.id)).toEqual([DELETED_AGENT, SURVIVOR_AGENT]);
+  });
+
+  it('other agent lifecycle events do not trigger a workspace.get refetch', async () => {
+    await seedWorkspace([DELETED_AGENT, SURVIVOR_AGENT]);
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:renamed', { agentId: DELETED_AGENT, name: 'Renamed' }));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('workspace.get', expect.anything());
+  });
 });
 
 describe('daemonEventsBridge (STAB-22 — agent:message triggers transcript hydration for unopened agents)', () => {
