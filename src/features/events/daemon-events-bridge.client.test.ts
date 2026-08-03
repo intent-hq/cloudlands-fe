@@ -3405,6 +3405,200 @@ describe('daemonEventsBridge (wire contract — github:auth-changed §6.5)', () 
   });
 });
 
+// Footer sub-agent live preview: a live-stream event (`agent:stream:activity`
+// / `stream:start` / `stream:status`, PROTOCOL §7) can arrive for an agent
+// the agent-session slice does not know yet. The bridge must kick off the
+// coalesced `ensureAgentSession` hydration so the push-applied preview fields
+// (`lastAgentResponse`/`digest`) and busy flags land without a reload, while
+// the chat-state dispatches still fire unconditionally (chat-state
+// materializes entries for unknown agents by design). Already-hydrated agents
+// must never refetch.
+describe('daemonEventsBridge (stream events hydrate unknown agent sessions)', () => {
+  const SUB_AGENT = 'agent-sub-stream-1';
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+    appStore.dispatch(chatReset(SUB_AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    ensureAgentSessionSpy.mockReset();
+    ensureAgentSessionSpy.mockImplementation(() => Promise.resolve());
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    // AGENT is hydrated; SUB_AGENT is deliberately absent from the slice.
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    await primeBridge();
+    ensureAgentSessionSpy.mockClear();
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it('agent:stream:activity for an unknown agent triggers the session hydration and still runs the chat-state bookkeeping', async () => {
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: SUB_AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'Working on the fix',
+      }),
+    );
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(1);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(SUB_AGENT);
+    // The chat-state dispatch is unconditional — the entry materializes for
+    // the unknown agent even before the session hydrates.
+    const chatAgent = (
+      appStore.state as { chatState?: { byAgentId: Record<string, unknown> } }
+    ).chatState?.byAgentId[SUB_AGENT];
+    expect(chatAgent).toBeDefined();
+  });
+
+  it('agent:stream:status and agent:stream:start for an unknown agent also trigger hydration', async () => {
+    const handler = capturedHandlers[0]!;
+
+    // STAT-1 pre-first-token startup phase for a sub-agent nobody hydrated
+    // yet (streamStatusReceived is chat-state-only — it never materializes an
+    // agent-session entry, so the agent stays unknown to the slice).
+    handler(
+      notification('agent:stream:status', {
+        agentId: SUB_AGENT,
+        workspaceId: WS,
+        phase: 'prompt',
+        message: 'Sent prompt',
+        level: 'info',
+        timestamp: 1_700_000_000_000,
+      }),
+    );
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(SUB_AGENT);
+
+    ensureAgentSessionSpy.mockClear();
+
+    // §6.6 harness-wake announcement for the same still-unknown agent.
+    handler(
+      notification('agent:stream:start', {
+        agentId: SUB_AGENT,
+        messageId: MESSAGE_ID,
+        reason: 'harness-wake',
+      }),
+    );
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(SUB_AGENT);
+
+    ensureAgentSessionSpy.mockClear();
+
+    // chatSendStarted (dispatched by the stream:start handler) materializes a
+    // placeholder session for the unknown agent, so subsequent stream events
+    // find a session and do NOT re-trigger the fetch — the placeholder is
+    // filled in when the in-flight ensureAgentSession lands.
+    handler(
+      notification('agent:stream:status', {
+        agentId: SUB_AGENT,
+        workspaceId: WS,
+        phase: 'session-load',
+        message: 'Resuming session',
+        level: 'info',
+        timestamp: 1_700_000_000_001,
+      }),
+    );
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+  });
+
+  it('stream events for an already-hydrated agent do NOT refetch the session', async () => {
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'Known agent text',
+      }),
+    );
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: 'prompt',
+        message: 'Sent prompt',
+        level: 'info',
+        timestamp: 1_700_000_000_000,
+      }),
+    );
+    handler(
+      notification('agent:stream:start', {
+        agentId: AGENT,
+        messageId: MESSAGE_ID,
+        reason: 'harness-wake',
+      }),
+    );
+    await flush();
+
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+    // The known agent's preview fields still push-apply as before.
+    expect(readSession()?.lastAgentResponse).toBe('Known agent text');
+  });
+
+  it('once the hydrated session lands, the next activity ping applies lastAgentResponse/digest via updateSession', async () => {
+    const handler = capturedHandlers[0]!;
+    // Simulate the read-service store hydration (what the real
+    // ensureAgentSession does on a successful agent.get fetch).
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      appStore.dispatch(
+        bulkUpsertSessions([
+          {
+            id: SUB_AGENT,
+            backendSessionId: null,
+            workspaceId: WS,
+            name: 'Delegated Sub-Agent',
+            status: AgentStatus.Active,
+            messages: [],
+            createdAt: '2026-01-02T00:00:00.000Z',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+          } as AgentSession,
+        ]),
+      );
+    });
+
+    // First ping: session unknown → hydration kicks off; the preview
+    // push-apply is a no-op (updateSession ignores unknown agents).
+    handler(
+      notification('agent:stream:activity', {
+        agentId: SUB_AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'First chunk',
+        digest: 'Starting work',
+      }),
+    );
+    await flush();
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(1);
+
+    // Second ping (the daemon throttles activity to ≤1/s): the session is
+    // now known → preview fields push-apply and no further fetch fires.
+    handler(
+      notification('agent:stream:activity', {
+        agentId: SUB_AGENT,
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'Working through the fix',
+        digest: 'Fix in progress',
+      }),
+    );
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(1);
+    const state = appStore.state as {
+      agentSessions?: { byAgentId: Record<string, AgentSession> };
+    };
+    const session = state.agentSessions?.byAgentId[SUB_AGENT];
+    expect(session?.lastAgentResponse).toBe('Working through the fix');
+    expect(session?.digest).toBe('Fix in progress');
+  });
+});
+
 describe('daemonEventsBridge (session lifecycle — agent:created/renamed/updated §5.5)', () => {
   const CREATED_AGENT = 'agent-created-1';
 
