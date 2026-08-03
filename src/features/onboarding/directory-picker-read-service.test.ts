@@ -329,6 +329,50 @@ describe("directoryPickerReadService (fake backend, real store)", () => {
     expect(appStore.state.directoryPicker.listing?.path).toBe("/Users/me/expanded");
   });
 
+  it.each([
+    ["missing path", {}],
+    ["non-string path", { path: 42 }],
+    ["empty path", { path: "" }],
+    ["null response", null],
+  ])(
+    "fails closed without navigating when createDirectory resolves with %s",
+    async (_label, createdResponse) => {
+      // Seed a loaded listing first so the guard's failure path provably
+      // keeps it.
+      backendRequestMock.mockImplementation(((method: string) => {
+        if (method === "host.listDirectory") {
+          return Promise.resolve(listing("/Users/me"));
+        }
+        if (method === "host.createDirectory") {
+          return Promise.resolve(createdResponse);
+        }
+        return Promise.resolve(undefined);
+      }) as never);
+
+      appStore.dispatch(loadDirectoryRequested("/Users/me"));
+      await flush();
+      expect(appStore.state.directoryPicker.listing?.path).toBe("/Users/me");
+
+      appStore.dispatch(createDirectoryRequested("/Users/me/new-folder"));
+      await flush();
+      await flush();
+
+      // No follow-up navigation: exactly the one seed listDirectory call.
+      const hostListDirectoryCalls = backendRequestMock.mock.calls.filter(
+        ([method]) => method === "host.listDirectory",
+      );
+      expect(hostListDirectoryCalls).toHaveLength(1);
+
+      const state = appStore.state.directoryPicker;
+      expect(state.loading).toBe(false);
+      expect(state.createError).toBe(
+        "An unexpected error occurred. Please check the logs for details.",
+      );
+      expect(state.error).toBeNull();
+      expect(state.listing?.path).toBe("/Users/me");
+    },
+  );
+
   it("keeps the current listing and records createError when creation fails", async () => {
     // Seed a loaded listing first, then fail the creation.
     backendRequestMock.mockImplementation(((method: string, params: unknown) => {

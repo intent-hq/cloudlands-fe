@@ -139,6 +139,14 @@ async function createDirectoryAt(path: string): Promise<void> {
       "host.createDirectory",
       { path },
     );
+    // Fail closed on a malformed response: dispatching a non-string path
+    // would leave the picker stuck loading (the middleware ignores it), so
+    // surface the same inline hint as an RPC failure instead.
+    if (typeof created?.path !== "string" || created.path.length === 0) {
+      logger.warn("host.createDirectory returned no valid path", { path, created });
+      appStore.dispatch(createDirectoryFailed(path, m.dialog_unexpected_error()));
+      return;
+    }
     appStore.dispatch(loadDirectoryRequested(created.path));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
