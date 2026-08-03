@@ -60,6 +60,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptWithState } from '$features/scripts/types';
+  import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -201,7 +202,8 @@
   // Script Actions
   function getStatusColor(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return 'bg-green-500';
+    // Live statuses (running/restarting) reuse the running treatment.
+    if (isLiveScriptStatus(status)) return 'bg-green-500';
     if (status === 'idle') return 'bg-muted-foreground/40';
     if (exitCode === 0 || exitCode === null || exitCode === undefined)
       return 'bg-muted-foreground/40';
@@ -211,7 +213,8 @@
 
   function getStatusLabel(script: ScriptWithState): string {
     const { status, exitCode } = script.runtime;
-    if (status === 'running') return m.terminal_quakeOverlay_status_running();
+    // Live statuses (running/restarting) reuse the running treatment.
+    if (isLiveScriptStatus(status)) return m.terminal_quakeOverlay_status_running();
     if (status === 'idle') return m.terminal_quakeOverlay_status_idle();
     if (exitCode === 0) return m.terminal_quakeOverlay_status_exitedZero();
     if (exitCode !== null && exitCode !== undefined) {
@@ -224,8 +227,8 @@
 
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
     return [...scripts].sort((a, b) => {
-      // Priority: running > exited > idle
-      const statusPriority = { running: 0, exited: 1, idle: 2 };
+      // Priority: live (running/restarting) > exited > idle
+      const statusPriority = { running: 0, restarting: 0, exited: 1, idle: 2 };
       const aPriority = statusPriority[a.runtime.status] ?? 3;
       const bPriority = statusPriority[b.runtime.status] ?? 3;
 
@@ -243,7 +246,7 @@
       tooltip?: string;
       onClick: (e: MouseEvent) => void;
     }> = [];
-    if (script.runtime.status === 'running') {
+    if (isLiveScriptStatus(script.runtime.status)) {
       actions.push({
         icon: faStop,
         label: m.terminal_quakeOverlay_stop_label(),
@@ -402,9 +405,9 @@
       });
   }
 
-  // Running scripts shown as tabs in the bottom bar
+  // Live scripts (running/restarting) shown as tabs in the bottom bar
   const runningScripts = $derived(
-    $scriptEntries$.filter((s) => s.runtime.status === 'running'),
+    $scriptEntries$.filter((s) => isLiveScriptStatus(s.runtime.status)),
   );
 
   // Constants
@@ -895,7 +898,7 @@
 
             <!-- Script Controls -->
             <div class="flex items-center gap-0.5 flex-shrink-0">
-              {#if selectedScriptRuntime.status === 'running'}
+              {#if isLiveScriptStatus(selectedScriptRuntime.status)}
                 <Button
                   variant="ghost-light"
                   size="icon-xs"

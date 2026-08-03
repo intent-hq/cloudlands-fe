@@ -37,7 +37,7 @@ export type ScriptSource = 'auto-detected' | 'user';
 /**
  * Runtime status of a script process.
  */
-export type ScriptStatus = 'idle' | 'running' | 'exited';
+export type ScriptStatus = 'idle' | 'running' | 'restarting' | 'exited';
 
 /**
  * A workspace script definition — persisted to .workspace/scripts.json.

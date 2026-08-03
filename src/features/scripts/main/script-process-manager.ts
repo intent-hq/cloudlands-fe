@@ -43,7 +43,7 @@ export interface WorkspaceScript {
 }
 
 export interface ScriptRuntimeState {
-  status: 'idle' | 'running' | 'exited';
+  status: 'idle' | 'running' | 'restarting' | 'exited';
   pid?: number;
   exitCode?: number | null;
   startedAt?: string;
@@ -104,7 +104,9 @@ function parseDaemonState(data: Record<string, unknown> | undefined): ScriptRunt
   const restartCount = data?.restartCount;
   return {
     status:
-      status === 'running' || status === 'exited' || status === 'idle' ? status : 'idle',
+      status === 'running' || status === 'restarting' || status === 'exited' || status === 'idle'
+        ? status
+        : 'idle',
     pid: typeof data?.pid === 'number' ? (data.pid as number) : undefined,
     exitCode:
       typeof data?.exitCode === 'number' || data?.exitCode === null

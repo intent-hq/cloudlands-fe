@@ -26,7 +26,7 @@ export const ScriptCategorySchema = z.enum([
 
 export const ScriptSourceSchema = z.enum(['auto-detected', 'user']);
 
-export const ScriptStatusSchema = z.enum(['idle', 'running', 'exited']);
+export const ScriptStatusSchema = z.enum(['idle', 'running', 'restarting', 'exited']);
 
 // ============================================================================
 // Core Schemas
