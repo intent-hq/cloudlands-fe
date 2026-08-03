@@ -4,6 +4,7 @@
    *
    * Daemon-side agent configuration:
    * - agents.maxConcurrent: concurrent agent session cap
+   * - agents.flushQueuedMessages: batch-deliver queued messages when a turn ends
    */
 
   import { appClient } from '$lib/client';
@@ -11,13 +12,16 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { Input } from '$lib/components/ui/input';
+  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
 
   // Settings state
   let maxConcurrent = $state(0);
   let inputValue = $state('');
+  let flushQueuedMessages = $state(true);
   let settingsError = $state('');
 
   const SETTING_PATH = 'agents.maxConcurrent';
+  const FLUSH_SETTING_PATH = 'agents.flushQueuedMessages';
 
   onMount(async () => {
     await loadSettings();
@@ -25,15 +29,32 @@
 
   async function loadSettings() {
     try {
-      const entry = await appClient.settings.get(SETTING_PATH);
+      const [entry, flushEntry] = await Promise.all([
+        appClient.settings.get(SETTING_PATH),
+        appClient.settings.get(FLUSH_SETTING_PATH),
+      ]);
       const value = typeof entry?.value === 'number' ? entry.value : 0;
       maxConcurrent = value;
       // Display empty for 0 (Auto)
       inputValue = value === 0 ? '' : String(value);
+      // Default on: only an explicit `false` turns the flush off.
+      flushQueuedMessages = flushEntry?.value !== false;
       settingsError = '';
     } catch (error) {
       settingsError = m.settings_agentBackend_loadError();
       console.error('Failed to load agent settings:', error);
+    }
+  }
+
+  async function handleFlushToggle() {
+    const newValue = !flushQueuedMessages;
+    try {
+      await appClient.settings.update([{ path: FLUSH_SETTING_PATH, value: newValue }]);
+      flushQueuedMessages = newValue;
+      settingsError = '';
+    } catch (error) {
+      settingsError = m.settings_agentBackend_saveError();
+      console.error('Failed to save agent settings:', error);
     }
   }
 
@@ -120,5 +141,25 @@
         class="h-9 text-sm"
       />
     </div>
+  </div>
+
+  <!-- Flush Queued Messages -->
+  <div class="flex items-center justify-between gap-4">
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-medium text-foreground">
+        {m.settings_agentBackend_flushQueuedMessages_label()}
+      </p>
+      <p class="text-xs text-subtle mt-0.5">
+        {m.settings_agentBackend_flushQueuedMessages_description()}
+      </p>
+    </div>
+    <Toggle
+      pressed={flushQueuedMessages}
+      onclick={handleFlushToggle}
+      variant="indicator"
+      size="xs"
+      class="mb-auto"
+      ariaLabel={m.settings_agentBackend_flushQueuedMessages_label()}
+    />
   </div>
 </div>

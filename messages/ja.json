@@ -90,6 +90,8 @@
   "settings_agentBackend_autoPlaceholder": "自動",
   "settings_agentBackend_maxConcurrent_label": "最大同時実行エージェント数",
   "settings_agentBackend_maxConcurrent_description": "現在: {current}。0 または空欄で自動（システム RAM に基づく）、または 1〜200 を指定します。変更はデーモンの再起動時に適用されます。",
+  "settings_agentBackend_flushQueuedMessages_label": "キュー内のメッセージをまとめて送信",
+  "settings_agentBackend_flushQueuedMessages_description": "ターン終了時に、キューに入ったすべてのメッセージを 1 件ずつではなく 1 つのプロンプトにまとめてエージェントに渡します。",
   "settings_notifications_desktop_label": "デスクトップ通知",
   "settings_notifications_desktop_description": "タスク完了時にシステム通知を表示します",
   "settings_notifications_sound_label": "サウンド",
