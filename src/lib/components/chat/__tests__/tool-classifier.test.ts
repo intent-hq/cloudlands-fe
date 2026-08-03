@@ -11,7 +11,7 @@ import {
   it,
   expect,
 } from 'vitest';
-import { classifyTool } from '../tool-classifier';
+import { classifyTool, extractMcpSource } from '../tool-classifier';
 
 describe('tool-classifier', () => {
   describe('file operations', () => {
@@ -409,6 +409,43 @@ describe('tool-classifier', () => {
 
       // After stripping, "snapshot" should classify as browser
       expect(result.category).toBe('browser');
+    });
+  });
+
+  describe('dot-separated MCP names (mcp.<server>.<tool>)', () => {
+    it('should classify mcp.workspace-mcp.workspace_api using the summary as verb', () => {
+      const result = classifyTool('mcp.workspace-mcp.workspace_api', {
+        code: 'return await ws.workspace.setAgentName("x")',
+        summary: 'Name workspace and inspect repository context',
+      });
+
+      expect(result.verb).toBe('Name workspace and inspect repository context');
+    });
+
+    it('should extract the server name from mcp.<server>.<tool>', () => {
+      expect(extractMcpSource('mcp.workspace-mcp.workspace_api')).toBe('workspace-mcp');
+      expect(extractMcpSource('mcp.Some-Server.read_note')).toBe('some-server');
+    });
+
+    it('should treat a dot-separated _acpTitle as a raw name so the summary wins', () => {
+      const result = classifyTool('mcp.workspace-mcp.workspace_api', {
+        code: 'return await ws.note.read("spec")',
+        summary: 'Reading spec note',
+        _acpTitle: 'mcp.workspace-mcp.workspace_api',
+      });
+
+      expect(result.category).toBe('note');
+      expect(result.verb).toBe('Reading spec note');
+    });
+
+    it('should classify mcp.some-server.read_note like mcp__some-server__read_note', () => {
+      const dotResult = classifyTool('mcp.some-server.read_note', { noteId: 'spec' });
+      const underscoreResult = classifyTool('mcp__some-server__read_note', { noteId: 'spec' });
+
+      expect(dotResult.category).toBe(underscoreResult.category);
+      expect(dotResult.verb).toBe(underscoreResult.verb);
+      expect(dotResult.mcpSource).toBe('some-server');
+      expect(underscoreResult.mcpSource).toBe('some-server');
     });
   });
 
