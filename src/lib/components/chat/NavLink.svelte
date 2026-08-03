@@ -32,6 +32,14 @@
     event.preventDefault();
     if (!target) return;
 
+    // intent:// URLs are not SvelteKit routes; route them through the
+    // workspaces link handler (same path note links in notes use).
+    if (target.trim().startsWith('intent://')) {
+      const { handleIntentLink } = await import('$lib/utils/workspaces-link-handler');
+      await handleIntentLink(target.trim());
+      return;
+    }
+
     await goto(target);
     const highlightId = getHighlightIdFromTarget(target);
     if (highlightId) {
