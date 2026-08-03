@@ -28,6 +28,7 @@
   faCog,
   faBell,
   faChartColumn,
+  faGaugeHigh,
   faWandMagicSparkles,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -119,6 +120,7 @@
     { id: 'active', icon: faBell, label: m.layout_sidebarNav_active_label(), badge: () => unreadCount },
     { id: 'all-workspaces', icon: faLayerGroup, label: m.layout_sidebarNav_all_label() },
     { id: 'chief', icon: faWandMagicSparkles, label: m.layout_sidebarNav_assistant_label() },
+    { id: 'hud', icon: faGaugeHigh, label: m.layout_sidebarNav_hud_label() },
     { id: 'stats', icon: faChartColumn, label: m.layout_sidebarNav_stats_label() },
     { id: 'settings', icon: faCog, label: m.layout_sidebarNav_settings_label() },
   ];
@@ -175,8 +177,8 @@
       return;
     }
 
-    // Home, stats, and settings don't have hover cards — skip
-    if (item === 'home' || item === 'stats' || item === 'settings') return;
+    // Home, HUD, stats, and settings don't have hover cards — skip
+    if (item === 'home' || item === 'hud' || item === 'stats' || item === 'settings') return;
 
     // Otherwise delay hover card appearance
     hoverTimeout = setTimeout(() => {
@@ -229,6 +231,13 @@
     } else if (id === 'stats') {
       appStore.dispatch(closeAll(false));
       appStore.dispatch(toggleStatsOverlay());
+    } else if (id === 'hud') {
+      appStore.dispatch(closeAll(false));
+      // Open the Fleet HUD in its own window
+      invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/hud' }).catch(() => {
+        // Fallback to navigation in current window if IPC fails
+        goto('/hud');
+      });
     } else if (id === 'new-workspace') {
       appStore.dispatch(closeAll(false));
       // Command-click (or Ctrl-click on non-Mac) opens in new window

@@ -26,7 +26,10 @@ const mockState = {
     activeWorkspaceId: 'ws-other' as string | null,
     workspaces: createCollection('id', [{ id: 'ws-1' } as never]),
   },
-  hardwareConsole: { keyPins: [null, null, null, null, null, null] as (string | null)[] },
+  hardwareConsole: {
+    keyPins: [null, null, null, null, null, null] as (string | null)[],
+    excludedWorkspaceIds: [] as string[],
+  },
   panelLayout: {
     byWorkspaceId: {} as Record<
       string,
@@ -34,6 +37,9 @@ const mockState = {
     >,
   },
   agentSessions: { byAgentId: {} as Record<string, MockSession> },
+  workspaceAgents: {
+    byWorkspaceId: {} as Record<string, { foregroundAgentIds: string[] }>,
+  },
 };
 
 const dispatched: { type: string; payload?: unknown }[] = [];
@@ -56,6 +62,8 @@ vi.mock('$lib/utils/navigation.client', () => ({
 
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { focusWorkspaceSlot, handleAgentKeyEvent } from '../key-switch-service';
+
+const focusComposer = vi.fn();
 
 const WS = 'ws-1';
 
@@ -120,6 +128,7 @@ beforeEach(() => {
   mockState.hardwareConsole.keyPins = [null, null, null, null, null, null];
   mockState.panelLayout.byWorkspaceId = {};
   mockState.agentSessions.byAgentId = {};
+  mockState.workspaceAgents.byWorkspaceId = {};
   vi.clearAllMocks();
 });
 
@@ -197,11 +206,33 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
     ]);
   });
 
-  it('only navigates when the workspace has no open tabs', () => {
-    focusWorkspaceSlot(WS);
+  it('opens the first top-level agent when the workspace has no open tabs', () => {
+    mockState.workspaceAgents.byWorkspaceId[WS] = {
+      foregroundAgentIds: ['agent-a', 'agent-b'],
+    };
+
+    focusWorkspaceSlot(WS, { focusComposer });
+
+    expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(dispatched).toEqual([
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: [WS, 'agent-a'],
+      }),
+      expect.objectContaining({
+        type: 'appLayout/openAgentTabRequested',
+        payload: [WS, { agentId: 'agent-a' }],
+      }),
+    ]);
+    expect(focusComposer).toHaveBeenCalledWith('agent-a');
+  });
+
+  it('only navigates when the workspace has no open tabs and no agents', () => {
+    focusWorkspaceSlot(WS, { focusComposer });
 
     expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
     expect(dispatched).toHaveLength(0);
+    expect(focusComposer).not.toHaveBeenCalled();
   });
 });
 
@@ -254,11 +285,33 @@ describe('focusWorkspaceSlot — subsequent presses (workspace active)', () => {
     ]);
   });
 
-  it('no-ops when the workspace has no open tabs', () => {
-    focusWorkspaceSlot(WS);
+  it('opens the first top-level agent when the workspace has no open tabs', () => {
+    mockState.workspaceAgents.byWorkspaceId[WS] = {
+      foregroundAgentIds: ['agent-a', 'agent-b'],
+    };
+
+    focusWorkspaceSlot(WS, { focusComposer });
+
+    expect(navigateToRoute).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([
+      expect.objectContaining({
+        type: 'workspaceAgents/setActiveAgentId',
+        payload: [WS, 'agent-a'],
+      }),
+      expect.objectContaining({
+        type: 'appLayout/openAgentTabRequested',
+        payload: [WS, { agentId: 'agent-a' }],
+      }),
+    ]);
+    expect(focusComposer).toHaveBeenCalledWith('agent-a');
+  });
+
+  it('no-ops when the workspace has no open tabs and no agents', () => {
+    focusWorkspaceSlot(WS, { focusComposer });
 
     expect(navigateToRoute).not.toHaveBeenCalled();
     expect(dispatched).toHaveLength(0);
+    expect(focusComposer).not.toHaveBeenCalled();
   });
 });
 

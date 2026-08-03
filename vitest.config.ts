@@ -1,9 +1,14 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
+import { readFileSync } from 'fs';
 
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
   const { paraglideVitePlugin } = await import('@inlang/paraglide-js');
+
+  // Mirror vite.config.mjs's __APP_VERSION__ define so components that render
+  // the app version (e.g. HudFooter) resolve it under vitest.
+  const packageJson = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
   return {
     plugins: [
@@ -119,6 +124,9 @@ export default defineConfig(async () => {
       },
       conditions: ['import', 'module', 'browser', 'default'],
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
+    },
+    define: {
+      __APP_VERSION__: JSON.stringify(packageJson.version),
     },
   };
 });

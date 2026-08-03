@@ -709,8 +709,21 @@ export interface TerminalEventHandlers {
   onTitle?(event: TerminalTitleEvent): void;
 }
 
+/**
+ * `terminal.list` result envelope (PROTOCOL §5.13). `daemonBootId` identifies
+ * the daemon boot that produced the snapshot, letting the store distinguish an
+ * authoritative same-boot empty list (every PTY genuinely gone — converge to
+ * zero tabs) from a post-restart empty (PTYs respawn via auto-reconnect —
+ * preserve tabs). Absent when a legacy pre-envelope daemon returned a bare
+ * array.
+ */
+export interface TerminalListResult {
+  terminals: TerminalTab[];
+  daemonBootId?: string;
+}
+
 export interface TerminalsClient {
-  list(workspaceId: string): Promise<TerminalTab[]>;
+  list(workspaceId: string): Promise<TerminalListResult>;
   /**
    * `terminal.create` (PROTOCOL §5.13). On success the daemon-assigned
    * terminalId is surfaced as `MutationResult.id`.

@@ -67,6 +67,7 @@ async function buildState() {
         workspace('ws-b', 'Beta', '2026-08-01T11:00:00Z'),
       ] as never[]),
     },
+    workspaceAgents: { byWorkspaceId: {} },
   };
 }
 
@@ -81,7 +82,7 @@ describe('HardwareConsoleSettings agent keys', () => {
     cleanup();
   });
 
-  it('clicking an assigned key calls focusWorkspaceSlot with the resolved workspace', async () => {
+  it('clicking an assigned key opens the workspace-info popover and does not navigate', async () => {
     mocks.state.current = await buildState();
     const HardwareConsoleSettings = (await import('./HardwareConsoleSettings.svelte')).default;
     const { m } = await import('$shared/paraglide/messages.js');
@@ -93,7 +94,13 @@ describe('HardwareConsoleSettings agent keys', () => {
         name: m.settings_hardware_agentKey_ariaLabel({ number: '2', name: 'Beta' }),
       }),
     );
-    expect(mocks.focusWorkspaceSlot).toHaveBeenCalledExactlyOnceWith('ws-b');
+    const popover = result.getByRole('dialog', {
+      name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '2' }),
+    });
+    expect(popover.textContent).toContain('Beta');
+    // Idle workspace (no agents, no activity) surfaces the idle LED meaning.
+    expect(popover.textContent).toContain(m.settings_hardware_ledStatus_idle_label());
+    expect(mocks.focusWorkspaceSlot).not.toHaveBeenCalled();
   });
 
   it('agent keys are not interactive while disconnected', async () => {

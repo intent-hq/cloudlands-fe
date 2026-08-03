@@ -479,17 +479,18 @@ function hydrateWorkspaceAgents(wsId: string): void {
  * Hydrate a workspace's terminals on mount, mirroring the boot
  * `terminals-scripts-seeder` terminal section. A successful non-empty fetch
  * dispatches `loadWorkspaceTerminals` to converge the store; an empty list
- * over existing live tabs is treated as transient by the reducer and
- * preserved (monorepo#1330) — genuinely-gone terminals converge via the
- * heartbeat/auto-reconnect path and the next non-empty hydration. A failed
+ * over existing live tabs converges to zero tabs only when the envelope's
+ * `daemonBootId` matches the boot that owned them (authoritative same-boot
+ * empty) — a restart/legacy/unknown-boot empty preserves the tabs
+ * (monorepo#1330/#1334), which then respawn via auto-reconnect. A failed
  * fetch is swallowed by the coalesce wrapper and leaves prior tab state
  * intact, so transient errors during workspace switches do NOT clobber live
  * terminals (STAB-24).
  */
 function hydrateWorkspaceTerminals(wsId: string): void {
   coalesce(`terminals:${wsId}`, async () => {
-    const terminals = await appClient.terminals.list(wsId);
-    appStore.dispatch(loadWorkspaceTerminals(wsId, terminals));
+    const { terminals, daemonBootId } = await appClient.terminals.list(wsId);
+    appStore.dispatch(loadWorkspaceTerminals(wsId, terminals, undefined, daemonBootId));
   });
 }
 

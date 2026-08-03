@@ -118,11 +118,11 @@ describe('HardwareConsoleDeviceSvg', () => {
     expect(badgeNumbers).toEqual(['1', '2', '3', '4', '5', '6']);
   });
 
-  it('invokes onActivateAgentKey with the slot workspace on click; unassigned is a no-op', async () => {
+  it('clicking an assigned key opens the workspace-info popover; unassigned is a no-op', async () => {
     const { HardwareConsoleDeviceSvg, m } = await loadComponent();
-    const onActivateAgentKey = vi.fn();
+    const agentKeyStatusLabel = vi.fn(() => 'Agent running');
     const result = render(HardwareConsoleDeviceSvg, {
-      props: { agentSlots: SIX_SLOTS, agentKeysInteractive: true, onActivateAgentKey },
+      props: { agentSlots: SIX_SLOTS, agentKeysInteractive: true, agentKeyStatusLabel },
     });
 
     await fireEvent.click(
@@ -130,14 +130,86 @@ describe('HardwareConsoleDeviceSvg', () => {
         name: m.settings_hardware_agentKey_ariaLabel({ number: '3', name: 'Gamma' }),
       }),
     );
-    expect(onActivateAgentKey).toHaveBeenCalledExactlyOnceWith(2, 'ws-3');
+    const popover = result.getByRole('dialog', {
+      name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '3' }),
+    });
+    expect(popover.textContent).toContain('Gamma');
+    expect(popover.textContent).toContain('Agent running');
+    expect(agentKeyStatusLabel).toHaveBeenCalledExactlyOnceWith(2);
 
+    // Unassigned key: no popover, popover state untouched.
     await fireEvent.click(
       result.getByRole('button', {
         name: m.settings_hardware_agentKeyUnassigned_ariaLabel({ number: '6' }),
       }),
     );
-    expect(onActivateAgentKey).toHaveBeenCalledTimes(1);
+    expect(
+      result.getByRole('dialog', {
+        name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '3' }),
+      }),
+    ).toBeTruthy();
+  });
+
+  it('keyboard-activating an assigned key opens the popover; Escape dismisses it', async () => {
+    const { HardwareConsoleDeviceSvg, m } = await loadComponent();
+    const result = render(HardwareConsoleDeviceSvg, {
+      props: { agentSlots: SIX_SLOTS, agentKeysInteractive: true },
+    });
+
+    const key = result.getByRole('button', {
+      name: m.settings_hardware_agentKey_ariaLabel({ number: '1', name: 'Alpha' }),
+    });
+    expect(key.getAttribute('aria-haspopup')).toBe('dialog');
+    await fireEvent.keyDown(key, { key: 'Enter' });
+    expect(key.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      result.getByRole('dialog', {
+        name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '1' }),
+      }).textContent,
+    ).toContain('Alpha');
+
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(
+      result.queryByRole('dialog', {
+        name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '1' }),
+      }),
+    ).toBeNull();
+    expect(key.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('clicking another key moves the popover; outside pointerdown dismisses it', async () => {
+    const { HardwareConsoleDeviceSvg, m } = await loadComponent();
+    const result = render(HardwareConsoleDeviceSvg, {
+      props: { agentSlots: SIX_SLOTS, agentKeysInteractive: true },
+    });
+
+    await fireEvent.click(
+      result.getByRole('button', {
+        name: m.settings_hardware_agentKey_ariaLabel({ number: '1', name: 'Alpha' }),
+      }),
+    );
+    await fireEvent.click(
+      result.getByRole('button', {
+        name: m.settings_hardware_agentKey_ariaLabel({ number: '2', name: 'Beta' }),
+      }),
+    );
+    expect(
+      result.queryByRole('dialog', {
+        name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '1' }),
+      }),
+    ).toBeNull();
+    expect(
+      result.getByRole('dialog', {
+        name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '2' }),
+      }).textContent,
+    ).toContain('Beta');
+
+    await fireEvent.pointerDown(document.body);
+    expect(
+      result.queryByRole('dialog', {
+        name: m.settings_hardware_agentKeyPopover_ariaLabel({ number: '2' }),
+      }),
+    ).toBeNull();
   });
 
   it('renders agent keys inert (no buttons, no badges) when not interactive', async () => {

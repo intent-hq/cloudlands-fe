@@ -12,7 +12,10 @@
  *   needs attention, the workspace's current tab (or first open tab) is
  *   shown;
  * - subsequent presses (workspace already active): cycle through the
- *   workspace's open tabs in order, wrapping around.
+ *   workspace's open tabs in order, wrapping around;
+ * - no open tabs (either case): open the workspace's first top-level
+ *   agent as a tab and focus its composer, reusing the action-key flow
+ *   (`setActiveAgentId` + `openAgentTabRequested` + composer focus).
  *
  * A fresh decoder is created per connection so the Mic-coalescing device
  * model always matches the connected device.
@@ -40,13 +43,18 @@ import {
   focusPanel,
   setActiveTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { sessionNeedsAttention } from '../actions/agent-cycle';
+import { focusAgentComposer } from '../actions/action-key-service';
 
 const logger = createLogger('HardwareConsoleKeySwitch');
 
 export interface KeySwitchDeps {
   /** Navigate the app to a route. Defaults to `navigateToRoute`. */
   navigate?: (route: string) => Promise<void>;
+  /** Focus an agent tab's chat composer. Defaults to `focusAgentComposer`. */
+  focusComposer?: (agentId: string) => void;
 }
 
 function resolveSlotWorkspaceId(slot: number): string | null {
@@ -54,7 +62,13 @@ function resolveSlotWorkspaceId(slot: number): string | null {
   const workspaces = getItems(state.workspace.workspaces).filter(
     (workspace) => workspace.id !== CHIEF_WORKSPACE_ID && isKeyAssignableWorkspace(workspace),
   );
-  return resolveKeySlots(state.hardwareConsole.keyPins, workspaces)[slot] ?? null;
+  return (
+    resolveKeySlots(
+      state.hardwareConsole.keyPins,
+      workspaces,
+      state.hardwareConsole.excludedWorkspaceIds,
+    )[slot] ?? null
+  );
 }
 
 /** One open tab in the workspace's flattened panel order. */
@@ -104,12 +118,28 @@ function findFirstAttentionTab(tabs: readonly OrderedTab[]): OrderedTab | null {
 }
 
 /**
+ * With no open tabs, open the workspace's first top-level agent as a tab
+ * and focus its composer (the action-key focusAgent flow). No-op (returns
+ * false) when the workspace has no top-level agents.
+ */
+function openFirstTopLevelAgent(workspaceId: string, deps: KeySwitchDeps): boolean {
+  const agentId =
+    appStore.state.workspaceAgents.byWorkspaceId[workspaceId]?.foregroundAgentIds[0] ?? null;
+  if (agentId === null) return false;
+  appStore.dispatch(setActiveAgentId(workspaceId, agentId));
+  appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
+  (deps.focusComposer ?? focusAgentComposer)(agentId);
+  return true;
+}
+
+/**
  * Focus the workspace behind a hardware key slot. Reusable behavior shared
  * with the Settings device graphic:
  * - workspace not active: navigate to it and land on the first agent tab
  *   requiring attention; with none pending, keep the workspace's current
  *   tab (or activate the first open tab when no tab is active yet);
- * - workspace already active: cycle to the next open tab in order (wrap).
+ * - workspace already active: cycle to the next open tab in order (wrap);
+ * - no open tabs (either case): open the first top-level agent as a tab.
  */
 export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}): void {
   const tabs = listOpenTabsInOrder(workspaceId);
@@ -122,17 +152,24 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
     void navigate(`/workspace/${workspaceId}`).catch((error: unknown) => {
       logger.warn('Failed to switch workspace from agent key', { workspaceId, error });
     });
+    if (tabs.length === 0) {
+      openFirstTopLevelAgent(workspaceId, deps);
+      return;
+    }
     const attentionTab = findFirstAttentionTab(tabs);
     if (attentionTab) {
       focusTab(workspaceId, attentionTab);
-    } else if (activeTabId === null && tabs.length > 0) {
+    } else if (activeTabId === null) {
       focusTab(workspaceId, tabs[0]);
     }
     return;
   }
 
   // Already active: cycle through the open tabs in order, wrapping around.
-  if (tabs.length === 0) return;
+  if (tabs.length === 0) {
+    openFirstTopLevelAgent(workspaceId, deps);
+    return;
+  }
   const currentIndex = tabs.findIndex(
     (tab) => tab.panelId === focusedPanelId && tab.tabId === activeTabId,
   );

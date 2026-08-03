@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearCreateDirectoryError,
   clearPathNavigationError,
+  createDirectoryFailed,
+  createDirectoryRequested,
   directoryListingFailed,
   directoryListingLoaded,
   directoryPickerReducer,
@@ -38,6 +41,7 @@ describe("directoryPickerReducer", () => {
       error: null,
       requestedPath: "/Users/me/code",
       pathError: null,
+      createError: null,
     });
   });
 
@@ -138,6 +142,7 @@ describe("directoryPickerReducer", () => {
       error: null,
       requestedPath: "/some/path",
       pathError: null,
+      createError: null,
     };
 
     expect(directoryPickerReducer(populated, resetDirectoryPicker())).toEqual(
@@ -220,6 +225,85 @@ describe("directoryPickerReducer", () => {
       );
 
       expect(next.pathError).toBeNull();
+      expect(next.listing?.path).toBe("/Users/me");
+    });
+  });
+
+  describe("directory creation", () => {
+    const populated = {
+      ...initialState,
+      listing: listing("/Users/me"),
+      requestedPath: "/Users/me",
+    };
+
+    it("flips to loading and clears a stale hint on createDirectoryRequested", () => {
+      const next = directoryPickerReducer(
+        { ...populated, createError: "stale hint" },
+        createDirectoryRequested("/Users/me/new-folder"),
+      );
+
+      expect(next.loading).toBe(true);
+      expect(next.createError).toBeNull();
+      expect(next.requestedPath).toBe("/Users/me/new-folder");
+      // The current listing stays visible while the creation is in flight.
+      expect(next.listing?.path).toBe("/Users/me");
+    });
+
+    it("records the hint and keeps the listing on createDirectoryFailed", () => {
+      const loading = directoryPickerReducer(
+        populated,
+        createDirectoryRequested("/Users/me/new-folder"),
+      );
+
+      const next = directoryPickerReducer(
+        loading,
+        createDirectoryFailed("/Users/me/new-folder", "Permission denied"),
+      );
+
+      expect(next.loading).toBe(false);
+      expect(next.createError).toBe("Permission denied");
+      expect(next.listing?.path).toBe("/Users/me");
+      expect(next.error).toBeNull();
+    });
+
+    it("ignores a stale createDirectoryFailed whose requestedPath does not match", () => {
+      const loading = directoryPickerReducer(
+        populated,
+        createDirectoryRequested("/Users/me/new"),
+      );
+
+      const next = directoryPickerReducer(
+        loading,
+        createDirectoryFailed("/Users/me/old", "boom"),
+      );
+
+      expect(next.loading).toBe(true);
+      expect(next.createError).toBeNull();
+    });
+
+    it("clears the hint when a matching listing loads (post-create navigation)", () => {
+      const failed = {
+        ...populated,
+        requestedPath: "/Users/me/new-folder",
+        createError: "Permission denied",
+      };
+
+      const next = directoryPickerReducer(
+        failed,
+        directoryListingLoaded("/Users/me/new-folder", listing("/Users/me/new-folder")),
+      );
+
+      expect(next.createError).toBeNull();
+      expect(next.listing?.path).toBe("/Users/me/new-folder");
+    });
+
+    it("clears the hint on clearCreateDirectoryError", () => {
+      const next = directoryPickerReducer(
+        { ...populated, createError: "Permission denied" },
+        clearCreateDirectoryError(),
+      );
+
+      expect(next.createError).toBeNull();
       expect(next.listing?.path).toBe("/Users/me");
     });
   });

@@ -90,8 +90,8 @@ registerMockSeeder("terminals-scripts", async ({ store, client }) => {
 
     // ── Terminals ──
     try {
-      const terminals = await client.terminals.list(wsId);
-      store.dispatch(loadWorkspaceTerminals(wsId, terminals));
+      const { terminals, daemonBootId } = await client.terminals.list(wsId);
+      store.dispatch(loadWorkspaceTerminals(wsId, terminals, undefined, daemonBootId));
     } catch (err) {
       console.warn(`Mock seeder: failed to load terminals for workspace ${wsId}`, err);
     }

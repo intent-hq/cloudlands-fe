@@ -21,6 +21,7 @@
     faFile,
     faFolder,
     faFolderOpen,
+    faFolderPlus,
     faArrowUp,
     faSpinner,
     faXmark,
@@ -33,7 +34,9 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { store as appStore } from '$store/renderer/store';
   import {
+    clearCreateDirectoryError,
     clearPathNavigationError,
+    createDirectoryRequested,
     loadDirectoryRequested,
     navigateToPathRequested,
     resetDirectoryPicker,
@@ -41,6 +44,7 @@
     type DirectoryPickerListing,
   } from '$store/renderer/slices/directory-picker/directory-picker-slice';
   import {
+    selectDirectoryPickerCreateError,
     selectDirectoryPickerError,
     selectDirectoryPickerListing,
     selectDirectoryPickerLoading,
@@ -83,10 +87,12 @@
   const loading$ = selectDirectoryPickerLoading();
   const error$ = selectDirectoryPickerError();
   const pathError$ = selectDirectoryPickerPathError();
+  const createError$ = selectDirectoryPickerCreateError();
   const listing: DirectoryPickerListing | null = $derived($listing$);
   const loading: boolean = $derived($loading$);
   const error: string | null = $derived($error$);
   const pathError: string | null = $derived($pathError$);
+  const createError: string | null = $derived($createError$);
 
   let focusedIndex = $state(0);
   let listContainerRef = $state<HTMLDivElement | null>(null);
@@ -165,22 +171,26 @@
   );
 
   // Escape layer: registered only while open so stacked overlays dismiss one
-  // at a time in LIFO order. Declines when the path input is focused — it
-  // owns its own Escape (cancel edit) via handlePathInputKeydown.
+  // at a time in LIFO order. Declines when the path input or the new-folder
+  // name input is focused — each owns its own Escape (cancel edit) via its
+  // keydown handler.
   $effect(() => {
     if (!open) return;
     return pushEscapeLayer((e) => {
       if (pathInputRef && e.target === pathInputRef) return false;
+      if (newFolderInputRef && e.target === newFolderInputRef) return false;
       onClose();
     });
   });
 
   function handleKeydown(e: KeyboardEvent) {
     if (!open) return;
-    // The path input owns its own keyboard handling (Enter commit, Escape
-    // cancel, plain text editing incl. Backspace) — never treat its keystrokes
-    // as list navigation or modal close.
+    // The path input and the new-folder name input own their own keyboard
+    // handling (Enter commit, Escape cancel, plain text editing incl.
+    // Backspace) — never treat their keystrokes as list navigation or modal
+    // close.
     if (pathInputRef && e.target === pathInputRef) return;
+    if (newFolderInputRef && e.target === newFolderInputRef) return;
     const list = visibleEntries;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -231,10 +241,55 @@
       if (path !== lastListingPath) {
         lastListingPath = path;
         pathEditing = false;
+        // Any navigation (including into a just-created folder) dismisses the
+        // new-folder name input.
+        newFolderOpen = false;
+        newFolderName = '';
       }
       if (!pathEditing) pathDraft = dp;
     });
   });
+
+  // --- New Folder (directory mode only) --------------------------------------
+  // The footer's "New Folder" button reveals an inline name input: Enter
+  // commits (dispatching `createDirectoryRequested` with currentPath + name),
+  // Escape cancels. On success the read service navigates into the created
+  // folder, which closes the input via the listing-path effect above; on
+  // failure `createError` renders as an inline hint and the typed name is
+  // kept for correction.
+  let newFolderOpen = $state(false);
+  let newFolderName = $state('');
+  let newFolderInputRef = $state<HTMLInputElement | null>(null);
+
+  function openNewFolder() {
+    newFolderOpen = true;
+    // Defer focus until the input is in the DOM.
+    queueMicrotask(() => newFolderInputRef?.focus());
+  }
+
+  function commitNewFolder() {
+    if (!listing || loading) return;
+    const name = newFolderName.trim();
+    if (!name) return;
+    const base = listing.path.endsWith('/') ? listing.path : listing.path + '/';
+    appStore.dispatch(createDirectoryRequested(base + name));
+  }
+
+  function cancelNewFolder() {
+    newFolderOpen = false;
+    newFolderName = '';
+    if (createError) appStore.dispatch(clearCreateDirectoryError());
+  }
+
+  function handleNewFolderKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitNewFolder();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelNewFolder();
+    }
+  }
 
   /**
    * Expand a leading `~` to the daemon-host home before hitting the wire.
@@ -456,11 +511,59 @@
         {/if}
       </div>
 
-      <!-- Footer: cancel + select (current directory, or chosen file in file mode) -->
-      <div class="flex items-center justify-end gap-2 px-4 py-3 border-t border-border/40 bg-muted/10">
+      <!-- Inline hint for a failed folder creation -->
+      {#if createError}
+        <div
+          class="px-3 py-1.5 text-xs text-destructive-foreground/90 border-t border-border/30 bg-destructive/10"
+          role="alert"
+        >
+          {createError}
+        </div>
+      {/if}
+
+      <!-- Footer: new folder (directory mode) + cancel + select -->
+      <div class="flex items-center gap-2 px-4 py-3 border-t border-border/40 bg-muted/10">
+        {#if mode === 'directory'}
+          {#if newFolderOpen}
+            <div class="flex items-center gap-1.5 flex-1 min-w-0">
+              <Fa icon={faFolderPlus} class="text-muted-foreground shrink-0" size="sm" />
+              <input
+                bind:this={newFolderInputRef}
+                bind:value={newFolderName}
+                type="text"
+                class={cn(
+                  'flex-1 min-w-0 px-2 py-1 text-sm rounded bg-background text-foreground',
+                  'border border-border focus:outline-none',
+                  createError && 'border-destructive/60',
+                )}
+                placeholder={m.onboarding_dirPicker_newFolderName_placeholder()}
+                aria-label={m.onboarding_dirPicker_newFolderName_ariaLabel()}
+                aria-invalid={createError ? true : undefined}
+                spellcheck="false"
+                autocomplete="off"
+                onkeydown={handleNewFolderKeydown}
+              />
+            </div>
+          {:else}
+            <button
+              type="button"
+              class={cn(
+                'flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors',
+                listing && !loading
+                  ? 'hover:bg-muted/50 text-muted-foreground hover:text-foreground cursor-pointer'
+                  : 'text-muted-foreground/40 cursor-not-allowed',
+              )}
+              disabled={!listing || loading}
+              onclick={openNewFolder}
+            >
+              <Fa icon={faFolderPlus} size="sm" />
+              {m.onboarding_dirPicker_newFolder_label()}
+            </button>
+          {/if}
+        {/if}
         <button
           type="button"
-          class="text-sm px-3 py-1.5 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground cursor-pointer"
+          class="ml-auto text-sm px-3 py-1.5 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground cursor-pointer"
           onclick={onClose}
         >
           {m.onboarding_dirPicker_cancel_label()}

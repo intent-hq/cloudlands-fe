@@ -17,28 +17,35 @@
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { Select } from '$lib/components/ui/select';
   import Button from '$lib/components/ui/button/button.svelte';
+  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
   import { store as appStore } from '$store/renderer/store';
   import {
     setActionKeyMapping,
+    setCycleScope,
     setHardwareConsoleEnabled,
     setPromptPickerLimit,
   } from '$store/renderer/slices/hardware-console/hardware-console-slice';
   import {
     selectHardwareConsoleActionMappingsByModel,
+    selectHardwareConsoleCycleScopes,
     selectHardwareConsoleEnabled,
     selectHardwareConsoleKeySlots,
     selectPromptPickerLimit,
   } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { focusWorkspaceSlot } from '$features/hardware-console/assignment/key-switch-service';
+  import { buildHardwareLedSnapshot } from '$features/hardware-console/led';
   import { ACTION_KEY_REGISTRY } from '$features/hardware-console/actions/action-key-registry';
   import {
     CODEX_MIC_LINKED_SLOT,
     getDefaultActionMapping,
     type ActionKeyActionId,
   } from '$features/hardware-console/actions/action-mapping';
+  import {
+    CYCLE_SCOPE_FAMILY_IDS,
+    type CycleScopeFamilyId,
+  } from '$features/hardware-console/actions/cycle-scope';
   import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
   import type { HardwareConsoleStatus } from '$features/hardware-console/device/device-manager';
@@ -58,8 +65,18 @@
   const enabled$ = selectHardwareConsoleEnabled();
   const promptPickerLimit$ = selectPromptPickerLimit();
   const actionMappingsByModel$ = selectHardwareConsoleActionMappingsByModel();
+  const cycleScopes$ = selectHardwareConsoleCycleScopes();
   const keySlots$ = selectHardwareConsoleKeySlots();
   const workspaceItems$ = selectWorkspaceItems();
+
+  // Cycle-scope checkbox rows: one per togglable family, labeled with the
+  // family's action label from the registry (locale-reactive getter).
+  const cycleScopeFamilies = CYCLE_SCOPE_FAMILY_IDS.map((familyId) => ({
+    familyId,
+    get label() {
+      return ACTION_KEY_REGISTRY.find((entry) => entry.id === familyId)?.label ?? familyId;
+    },
+  }));
 
   // Web-build Connect button: only where WebHID exists and outside Electron
   // (Electron auto-grants; no user gesture is needed there).
@@ -129,6 +146,10 @@
     appStore.dispatch(setActionKeyMapping(deviceModel, selectedSlot, value as ActionKeyActionId));
   }
 
+  function handleCycleScopeChange(familyId: CycleScopeFamilyId, includeSubAgents: boolean) {
+    appStore.dispatch(setCycleScope(familyId, includeSubAgents ? 'all' : 'top-level'));
+  }
+
   function handleResetMapping() {
     const current =
       selectHardwareConsoleActionMappingsByModel.select(appStore.state)[deviceModel] ?? [];
@@ -165,9 +186,23 @@
   );
   const agentKeysInteractive = $derived(connectionStatus === 'connected');
 
-  function handleActivateAgentKey(_slot: number, workspaceId: string) {
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous navigation/tab-focus helper (store dispatch + route navigate), not a domain data fetch; rule misfires on the '-service' import source.
-    focusWorkspaceSlot(workspaceId);
+  // Status line for the key's workspace-info popover: the same per-slot
+  // state the LED engine surfaces (one-time read at popover open).
+  function agentKeyStatusLabel(slot: number): string | null {
+    switch (buildHardwareLedSnapshot(appStore.state).keys[slot]) {
+      case 'idle':
+        return m.settings_hardware_ledStatus_idle_label();
+      case 'running':
+        return m.settings_hardware_ledStatus_running_label();
+      case 'complete':
+        return m.settings_hardware_ledStatus_complete_label();
+      case 'attention':
+        return m.settings_hardware_ledStatus_attention_label();
+      case 'failed':
+        return m.settings_hardware_ledStatus_failed_label();
+      default:
+        return null;
+    }
   }
 
   const actionMapping = $derived($actionMappingsByModel$[deviceModel] ?? []);
@@ -314,7 +349,7 @@
           onSelectKey={(slot) => (selectedSlot = slot)}
           {agentSlots}
           {agentKeysInteractive}
-          onActivateAgentKey={handleActivateAgentKey}
+          {agentKeyStatusLabel}
         />
         <div class="w-full sm:w-[240px] shrink-0">
           {#if selectedSlot !== null}
@@ -357,6 +392,31 @@
         >
           {m.settings_hardware_actionKeys_reset_button()}
         </Button>
+      </div>
+    </section>
+
+    <!-- Cycle scope: which cycle actions include sub-agents -->
+    <section class="px-6 py-5">
+      <p class="text-sm font-medium text-foreground">
+        {m.settings_hardware_cycleScope_label()}
+      </p>
+      <p class="text-xs text-subtle mt-1 mb-3">
+        {m.settings_hardware_cycleScope_description()}
+      </p>
+      <div class="flex flex-col gap-2">
+        {#each cycleScopeFamilies as family (family.familyId)}
+          <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer w-fit">
+            <Checkbox
+              checked={$cycleScopes$[family.familyId] === 'all'}
+              onCheckedChange={(checked) => handleCycleScopeChange(family.familyId, checked)}
+              size="sm"
+              ariaLabel={m.settings_hardware_cycleScope_include_ariaLabel({
+                action: family.label,
+              })}
+            />
+            <span>{family.label}</span>
+          </label>
+        {/each}
       </div>
     </section>
 

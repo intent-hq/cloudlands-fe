@@ -8,10 +8,12 @@ import {
   expect,
 } from 'vitest';
 import {
+  deriveAgentPreviewLine,
   getLastMeaningfulLine,
   getLastSentence,
   extractTextFromBlocks,
   getAgentSummaryText,
+  stripUserMessagePrefixes,
 } from '../text-utils';
 
 describe('text-utils', () => {
@@ -116,6 +118,93 @@ describe('text-utils', () => {
         { role: 'assistant', contentBlocks: [{ type: 'tool_use', name: 'read_file' }] },
       ];
       expect(getAgentSummaryText(messages)).toBe('Using read_file...');
+    });
+  });
+
+  describe('stripUserMessagePrefixes', () => {
+    it('strips bracket prefixes and @context mentions', () => {
+      expect(stripUserMessagePrefixes('[Currently viewing: foo.ts] Fix the bug')).toBe(
+        'Fix the bug',
+      );
+      expect(stripUserMessagePrefixes('[a] [b] Do it @context[abc|def] now')).toBe('Do it  now');
+      expect(stripUserMessagePrefixes('plain text')).toBe('plain text');
+    });
+  });
+
+  describe('deriveAgentPreviewLine', () => {
+    it('returns null when no source has text', () => {
+      expect(deriveAgentPreviewLine({})).toBeNull();
+      expect(deriveAgentPreviewLine({ lastAgentResponse: '', lastUserMessage: '' })).toBeNull();
+    });
+
+    it('shows the live response line while responding', () => {
+      expect(
+        deriveAgentPreviewLine({
+          isResponding: true,
+          lastAgentResponse: 'Running tests\nvitest: 12 passed',
+          lastUserMessage: 'Please run the tests',
+          lastMessageRole: 'assistant',
+        }),
+      ).toBe('vitest: 12 passed');
+    });
+
+    it('newest user message wins when lastMessageRole is user and no live line', () => {
+      expect(
+        deriveAgentPreviewLine({
+          isResponding: false,
+          lastAgentResponse: 'Old summary',
+          lastUserMessage: '[Currently viewing: a.ts] Fix the panel\nsecond line',
+          lastMessageRole: 'user',
+        }),
+      ).toBe('Fix the panel');
+    });
+
+    it('user role wins pre-first-token; assistant role hands back to the live line', () => {
+      // While lastMessageRole is still "user" the in-flight turn has no
+      // derivable streamed text yet (the daemon overlays "assistant" once it
+      // does) — lastAgentResponse is the PREVIOUS turn's text, so the user
+      // message previews even mid-turn.
+      expect(
+        deriveAgentPreviewLine({
+          isResponding: true,
+          lastAgentResponse: 'Previous turn summary',
+          lastUserMessage: 'Fix the panel',
+          lastMessageRole: 'user',
+        }),
+      ).toBe('Fix the panel');
+      expect(
+        deriveAgentPreviewLine({
+          isResponding: true,
+          lastAgentResponse: 'Editing hud-selectors.ts',
+          lastUserMessage: 'Fix the panel',
+          lastMessageRole: 'assistant',
+        }),
+      ).toBe('Editing hud-selectors.ts');
+    });
+
+    it('digest and completion report outrank the persisted response', () => {
+      expect(
+        deriveAgentPreviewLine({
+          digest: 'Wrapping up the selector fix',
+          lastAgentResponse: 'A long old response',
+        }),
+      ).toBe('Wrapping up the selector fix');
+      expect(
+        deriveAgentPreviewLine({
+          completionReport: 'Fixed the bucket overshoot; 65 tests pass.',
+          lastAgentResponse: 'A long old response',
+        }),
+      ).toBe('Fixed the bucket overshoot; 65 tests pass.');
+    });
+
+    it('falls back to the persisted response line, then the user message', () => {
+      expect(
+        deriveAgentPreviewLine({
+          lastAgentResponse: 'First line\nLast meaningful line\n```\n',
+          lastMessageRole: 'assistant',
+        }),
+      ).toBe('Last meaningful line');
+      expect(deriveAgentPreviewLine({ lastUserMessage: 'only user text' })).toBe('only user text');
     });
   });
 });

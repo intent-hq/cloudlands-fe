@@ -448,8 +448,8 @@ export class TerminalAdapter {
    */
   private async findBackendTerminal(): Promise<TerminalTab | null> {
     try {
-      const list = await this.terminals.list(this.workspaceId);
-      return list.find((t) => t.id === this.terminalId) ?? null;
+      const { terminals } = await this.terminals.list(this.workspaceId);
+      return terminals.find((t) => t.id === this.terminalId) ?? null;
     } catch (error) {
       logger.warn('Could not check terminal existence:', error);
       return null;

@@ -72,6 +72,19 @@ export interface AgentSessionLaunchOptions {
  */
 export type StoredAgentSession = Omit<AgentSession, "messages"> & {
   messages: AgentMessage[];
+  /**
+   * FE-owned sticky turn-liveness. Set by the event fold when a live running
+   * transition lands (`agent:status-changed` with a running status and
+   * `isActive: true`), cleared only by an explicit close signal (a
+   * terminal/idle status or `isActive: false` — event or hydration snapshot).
+   *
+   * Exists because the daemon emits the turn-start event BEFORE opening the
+   * STAB-125 live-turn slot (agent_manager: try_begin → persist_status(Active)
+   * → run_prompt_turn → begin_live_turn), so the STAB-9 `agent.list` refetch
+   * fired off that very event can resolve with `turnInFlight: false` mid-turn
+   * — the HUD waiting gate must not trust that single racy snapshot field.
+   */
+  liveTurnOpen?: boolean;
 };
 
 /**

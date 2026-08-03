@@ -278,6 +278,31 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
     });
   });
 
+  it("passes the 'idle' wire value through normalization (intentd#793)", async () => {
+    // intentd#793 folds live agent activity into the derivation: a quiet
+    // task-stage rollup reaches the wire as `idle`, consumed verbatim.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          title: "Quiet ws",
+          branch: "intent/quiet",
+          status: "Active",
+          displayStatus: "idle",
+          activity: "idle",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          updatedAt: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(workspaces[0]?.displayStatus).toBe("idle");
+  });
+
   it("passes a needs_attention snapshot through normalization verbatim", async () => {
     // Step-0 attention rollup (PROTOCOL §5.1): `needs_attention` outranks
     // every other displayStatus, including `in_progress`. The list snapshot
@@ -286,7 +311,7 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
     mockedRequest.mockResolvedValueOnce({
       workspaces: [
         {
-          id: "33333333-3333-4333-8333-333333333333",
+          id: "44444444-4444-4444-8444-444444444444",
           title: "Attention ws",
           branch: "intent/attention",
           status: "Active",
@@ -302,7 +327,7 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
 
     expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
     expect(workspaces[0]).toMatchObject({
-      id: "33333333-3333-4333-8333-333333333333",
+      id: "44444444-4444-4444-8444-444444444444",
       displayStatus: "needs_attention",
     });
   });

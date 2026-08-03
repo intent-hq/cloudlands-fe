@@ -1104,6 +1104,10 @@ export const WindowSetOpenWorkspaceTabsSchema = z.object({
   workspaceIds: z.array(z.string()),
 });
 
+export const WindowSetFullScreenSchema = z.object({
+  fullScreen: z.boolean(),
+});
+
 export const WindowSetBrowserFocusedSchema = z.object({
   browserFocused: z.boolean(),
 });

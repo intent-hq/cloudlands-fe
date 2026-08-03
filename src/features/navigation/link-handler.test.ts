@@ -12,19 +12,38 @@ import {
   createLinkClickHandler,
 } from './link-handler';
 import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import type { Workspace } from '$shared/types';
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
+const TEST_WORKTREE_ROOT = '/repo/root';
 
 // Mock the dynamic imports used by handleLink
 vi.mock('$lib/utils/workspaces-link-handler', () => ({
   handleIntentLink: vi.fn().mockResolvedValue(true),
 }));
 
+const openBrowserPanelMock = vi.hoisted(() => vi.fn());
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: vi.fn().mockReturnValue({
-    openBrowserPanel: vi.fn(),
+    openBrowserPanel: openBrowserPanelMock,
   }),
+}));
+
+const invokeIpcMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('../../shared/generated/ipc-client', () => ({
+  invoke: invokeIpcMock,
+}));
+
+// Workspace entity lookup used to relativize absolute paths
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceById: {
+    select: (_state: unknown, wsId: string) =>
+      wsId === 'ws-1'
+        ? ({ id: 'ws-1', worktreePath: '/repo/root' } as unknown as Workspace)
+        : undefined,
+  },
 }));
 
 // Mock the tooltip handler so createGlobalLinkClickHandler doesn't fail
@@ -215,3 +234,171 @@ describe('createLinkClickHandler (deprecated) – click-path regression', () => 
   });
 });
 
+// ---------------------------------------------------------------------------
+// Path-like link targets → workspace file viewer
+// ---------------------------------------------------------------------------
+
+describe('handleLink – path-like targets → workspace file viewer', () => {
+  const resolvedUrl = (rawHref: string) => new URL(rawHref, window.location.href).href;
+
+  beforeEach(() => {
+    reduxDispatchMock.mockClear();
+    openBrowserPanelMock.mockClear();
+    invokeIpcMock.mockClear();
+    (window as unknown as { electronAPI?: object }).electronAPI = {};
+  });
+
+  it('should route a relative raw href to openWorkspaceFile', async () => {
+    const rawHref = 'src/main.rs';
+    const result = await handleLink(resolvedUrl(rawHref), {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref,
+    });
+
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        line: undefined,
+        openInAdjacentPanel: false,
+      }),
+    );
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('should relativize an absolute raw href under the worktree root', async () => {
+    const rawHref = `${TEST_WORKTREE_ROOT}/src/lib.rs`;
+    const result = await handleLink(resolvedUrl(rawHref), {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref,
+    });
+
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'src/lib.rs', {
+        line: undefined,
+        openInAdjacentPanel: false,
+      }),
+    );
+  });
+
+  it('should open absolute paths outside the worktree root in the external editor', async () => {
+    const rawHref = '/other/place/file.rs';
+    const result = await handleLink(resolvedUrl(rawHref), {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref,
+    });
+
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', {
+      url: 'vscode://file//other/place/file.rs',
+    });
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('should route self-origin resolved URLs without rawHref to the file viewer, not the browser panel', async () => {
+    const result = await handleLink(`${window.location.origin}/src/main.rs`, {
+      workspaceId: TEST_WORKSPACE_ID,
+    });
+
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        line: undefined,
+        openInAdjacentPanel: false,
+      }),
+    );
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('should map a trailing #L<n> fragment to the line option', async () => {
+    const rawHref = 'src/main.rs#L42';
+    const result = await handleLink(resolvedUrl(rawHref), {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref,
+    });
+
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        line: 42,
+        openInAdjacentPanel: false,
+      }),
+    );
+  });
+
+  it('should map Cmd/Ctrl+Click to openInAdjacentPanel', async () => {
+    const rawHref = 'src/main.rs';
+    const result = await handleLink(resolvedUrl(rawHref), {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref,
+      modifiers: { metaKey: true, ctrlKey: true },
+    });
+
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        line: undefined,
+        openInAdjacentPanel: true,
+      }),
+    );
+  });
+
+  it('should return false without a workspaceId and never open the browser panel', async () => {
+    const rawHref = 'src/main.rs';
+    const result = await handleLink(resolvedUrl(rawHref), { rawHref });
+
+    expect(result).toBe(false);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('should not capture in-page fragment-only hrefs', async () => {
+    const result = await handleLink(`${window.location.href}#heading`, {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref: '#heading',
+    });
+
+    // Current behavior preserved: self-origin http URL goes to the browser panel
+    expect(result).toBe(true);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).toHaveBeenCalled();
+  });
+
+  it('should keep external https links routed to the browser panel', async () => {
+    const url = 'https://example.com/docs';
+    const result = await handleLink(url, {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref: url,
+    });
+
+    expect(result).toBe(true);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
+  });
+
+  it('should route relative hrefs through createGlobalLinkClickHandler clicks', async () => {
+    const container = document.createElement('div');
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', 'src/main.rs');
+    anchor.textContent = 'main.rs';
+    container.appendChild(anchor);
+    document.body.appendChild(container);
+
+    const cleanup = createGlobalLinkClickHandler(container, { workspaceId: TEST_WORKSPACE_ID });
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    await vi.waitFor(() => {
+      expect(reduxDispatchMock).toHaveBeenCalled();
+    });
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        line: undefined,
+        openInAdjacentPanel: false,
+      }),
+    );
+
+    cleanup();
+    document.body.innerHTML = '';
+  });
+});
