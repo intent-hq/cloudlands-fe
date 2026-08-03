@@ -90,6 +90,8 @@
   "settings_agentBackend_autoPlaceholder": "Automático",
   "settings_agentBackend_maxConcurrent_label": "Máx. de agentes simultáneos",
   "settings_agentBackend_maxConcurrent_description": "Actual: {current}. Establezca 0 o déjelo vacío para automático (según la RAM del sistema), o especifique 1-200. Los cambios se aplican al reiniciar el daemon.",
+  "settings_agentBackend_flushQueuedMessages_label": "Entregar juntos los mensajes en cola",
+  "settings_agentBackend_flushQueuedMessages_description": "Al terminar un turno, entrega todos los mensajes en cola al agente como una única solicitud combinada en lugar de uno por uno.",
   "settings_notifications_desktop_label": "Notificaciones de escritorio",
   "settings_notifications_desktop_description": "Mostrar notificaciones del sistema cuando se completen las tareas",
   "settings_notifications_sound_label": "Sonido",
