@@ -7,14 +7,14 @@ import AgentBackendSettings from './AgentBackendSettings.svelte';
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
 const mocks = vi.hoisted(() => ({
-  mockSettingsGet: vi.fn(),
+  mockSettingsList: vi.fn(),
   mockSettingsUpdate: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
   appClient: {
     settings: {
-      get: mocks.mockSettingsGet,
+      list: mocks.mockSettingsList,
       update: mocks.mockSettingsUpdate,
     },
   },
@@ -24,16 +24,15 @@ const MAX_CONCURRENT_PATH = 'agents.maxConcurrent';
 const FLUSH_PATH = 'agents.flushQueuedMessages';
 const FLUSH_LABEL = /Flush queued messages together/;
 
-/** Path-aware settings.get mock; `flush: undefined` = daemon has no value (null). */
+/** settings.list mock; `flush: undefined` = daemon does not report the setting. */
 function mockSettings({
   maxConcurrent = 0,
   flush,
 }: { maxConcurrent?: number; flush?: boolean } = {}) {
-  mocks.mockSettingsGet.mockImplementation(async (path: string) => {
-    if (path === MAX_CONCURRENT_PATH) return { path, value: maxConcurrent };
-    if (path === FLUSH_PATH) return flush === undefined ? null : { path, value: flush };
-    return null;
-  });
+  mocks.mockSettingsList.mockResolvedValue([
+    { path: MAX_CONCURRENT_PATH, value: maxConcurrent },
+    ...(flush === undefined ? [] : [{ path: FLUSH_PATH, value: flush }]),
+  ]);
 }
 
 describe('AgentBackendSettings', () => {
@@ -162,7 +161,8 @@ describe('AgentBackendSettings', () => {
   });
 
   it('displays error message on load failure', async () => {
-    mocks.mockSettingsGet.mockRejectedValue(new Error('Network error'));
+    // The live client folds read failures to an empty list rather than throwing.
+    mocks.mockSettingsList.mockResolvedValue([]);
 
     render(AgentBackendSettings);
 
@@ -252,6 +252,43 @@ describe('AgentBackendSettings — flush queued messages toggle', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Failed to save agent settings.')).toBeTruthy();
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+    });
+  });
+
+  it('keeps the current value and shows an error when the daemon does not apply the path', async () => {
+    mockSettings({ flush: true });
+    mocks.mockSettingsUpdate.mockResolvedValue([]);
+
+    render(AgentBackendSettings);
+
+    const toggle = await waitFor(
+      () => screen.getByRole('switch', { name: FLUSH_LABEL }) as HTMLButtonElement,
+    );
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to save agent settings.')).toBeTruthy();
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+    });
+  });
+
+  it('commits the daemon-applied value rather than the requested one', async () => {
+    mockSettings({ flush: true });
+    // Daemon acknowledges the path but reports it kept the setting on.
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: true }]);
+
+    render(AgentBackendSettings);
+
+    const toggle = await waitFor(
+      () => screen.getByRole('switch', { name: FLUSH_LABEL }) as HTMLButtonElement,
+    );
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: FLUSH_PATH, value: false },
+      ]);
       expect(toggle.getAttribute('aria-checked')).toBe('true');
     });
   });

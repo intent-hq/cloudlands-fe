@@ -28,29 +28,40 @@
   });
 
   async function loadSettings() {
-    try {
-      const [entry, flushEntry] = await Promise.all([
-        appClient.settings.get(SETTING_PATH),
-        appClient.settings.get(FLUSH_SETTING_PATH),
-      ]);
-      const value = typeof entry?.value === 'number' ? entry.value : 0;
-      maxConcurrent = value;
-      // Display empty for 0 (Auto)
-      inputValue = value === 0 ? '' : String(value);
-      // Default on: only an explicit `false` turns the flush off.
-      flushQueuedMessages = flushEntry?.value !== false;
-      settingsError = '';
-    } catch (error) {
+    // The live client folds read failures to an empty list rather than
+    // throwing, so an empty result is the load-failure signal (the daemon
+    // always reports its setting catalog) — same pattern as
+    // GitWorkspaceSettings.
+    const settings = await appClient.settings.list();
+    if (settings.length === 0) {
       settingsError = m.settings_agentBackend_loadError();
-      console.error('Failed to load agent settings:', error);
+      return;
     }
+    settingsError = '';
+    const byPath = new Map(settings.map((entry) => [entry.path, entry.value]));
+    const value = byPath.get(SETTING_PATH);
+    maxConcurrent = typeof value === 'number' ? value : 0;
+    // Display empty for 0 (Auto)
+    inputValue = maxConcurrent === 0 ? '' : String(maxConcurrent);
+    // Default on: only an explicit `false` turns the flush off.
+    flushQueuedMessages = byPath.get(FLUSH_SETTING_PATH) !== false;
   }
 
   async function handleFlushToggle() {
-    const newValue = !flushQueuedMessages;
+    const requested = !flushQueuedMessages;
     try {
-      await appClient.settings.update([{ path: FLUSH_SETTING_PATH, value: newValue }]);
-      flushQueuedMessages = newValue;
+      const applied = await appClient.settings.update([
+        { path: FLUSH_SETTING_PATH, value: requested },
+      ]);
+      // Only commit local state from the daemon-acknowledged value; a success
+      // response that did not apply this path (e.g. an older daemon) keeps the
+      // current state and surfaces the save error.
+      const entry = applied.find((change) => change.path === FLUSH_SETTING_PATH);
+      if (!entry) {
+        settingsError = m.settings_agentBackend_saveError();
+        return;
+      }
+      flushQueuedMessages = entry.value !== false;
       settingsError = '';
     } catch (error) {
       settingsError = m.settings_agentBackend_saveError();
