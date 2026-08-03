@@ -27,6 +27,12 @@ import {
   BROWSER_PANEL_PARTITION,
   BROWSER_PROTOCOLS,
 } from '../shared/constants';
+import {
+  HUD_ROUTE_PREFIX,
+  findExistingHudWindow,
+  focusHudWindow,
+  registerHudWindow,
+} from './hud-window';
 import { isTrustedHidOrigin } from '../features/hardware-console/main/hardware-console.ipc';
 import { Logger } from '../shared/logger';
 
@@ -100,6 +106,17 @@ function isInternalUrl(parsed: URL): boolean {
 
 function isExternalHttpUrl(parsed: URL): boolean {
   return BROWSER_PROTOCOLS.EXTERNAL.includes(parsed.protocol);
+}
+
+/**
+ * Whether an internal URL targets the HUD pop-out route. The HUD is a
+ * singleton: window.open()-style popups (e.g. the renderer's
+ * window:open-new → window.open bridge) must reuse the live HUD window
+ * instead of materializing a second one, mirroring the createAppWindow
+ * funnel in system.ipc.ts.
+ */
+function isHudRouteUrl(parsed: URL): boolean {
+  return parsed.pathname.startsWith(HUD_ROUTE_PREFIX);
 }
 
 function getSecureWindowPreferences(): Electron.BrowserWindowConstructorOptions {
@@ -400,6 +417,20 @@ export function setupWebviewSecurity(): void {
       try {
         const parsed = new URL(url);
         if (isInternalUrl(parsed)) {
+          // HUD singleton: a popup targeting /hud (renderer window.open,
+          // including the window:open-new → window.open bridge fallback)
+          // must reuse the live HUD window instead of creating a second one
+          // — the same rule createAppWindow enforces for the IPC path.
+          if (isHudRouteUrl(parsed)) {
+            const existing = findExistingHudWindow();
+            if (existing) {
+              focusHudWindow(existing);
+              logger.info('Reusing existing HUD window for popup (singleton)', {
+                windowId: existing.id,
+              });
+              return { action: 'deny' };
+            }
+          }
           return {
             action: 'allow',
             overrideBrowserWindowOptions: getSecureWindowPreferences(),
@@ -428,6 +459,23 @@ export function setupWebviewSecurity(): void {
     if (contents.getType() === 'webview') {
       contents.on('did-create-window', (popupWindow) => {
         trackWebviewPopup(popupWindow);
+      });
+    } else {
+      // App-window popups: register a newly allowed /hud popup as THE HUD
+      // singleton immediately (its URL is still loading, so the URL-scan
+      // fallback would miss it — same mid-navigation race createAppWindow
+      // guards against by registering before loadURL).
+      contents.on('did-create-window', (popupWindow, details) => {
+        try {
+          if (isHudRouteUrl(new URL(details.url))) {
+            registerHudWindow(popupWindow);
+            logger.info('Registered HUD popup window as singleton', {
+              windowId: popupWindow.id,
+            });
+          }
+        } catch {
+          // invalid URL — nothing to register
+        }
       });
     }
   });

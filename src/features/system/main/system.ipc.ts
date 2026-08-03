@@ -36,6 +36,7 @@ import {
   WindowSetInWorkspaceSchema,
   WindowSetOpenWorkspaceTabsSchema,
   WindowSetBrowserFocusedSchema,
+  WindowSetFullScreenSchema,
   XcodeOpenSchema,
 } from '../../../main/ipc-schemas';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
@@ -288,6 +289,14 @@ app.on('browser-window-created', (_event, window) => {
     // rebuild, cache trim, notification-service reconciliation) so services
     // for workspaces no longer open anywhere are torn down.
     app.emit('window-workspace-state-changed');
+  });
+  // Keep each window's renderer in sync with its native full-screen state,
+  // including OS-gesture transitions (green traffic-light, Cmd+Ctrl+F).
+  window.on('enter-full-screen', () => {
+    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', true);
+  });
+  window.on('leave-full-screen', () => {
+    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', false);
   });
 });
 
@@ -813,11 +822,27 @@ export function setupSystemIPC() {
    * Create a new BrowserWindow with standard app configuration.
    * All new windows should use this to avoid config drift.
    * Keep in sync with createWindow / createWindowForSession in main/index.ts.
+   *
+   * The HUD pop-out (`/hud`) is a singleton: when a live HUD window already
+   * exists it is restored/focused and returned instead of creating a second
+   * one (see main/hud-window.ts).
    */
   async function createAppWindow(route?: string): Promise<BrowserWindow> {
     const { BrowserWindow } = await import('electron');
     const path = await import('path');
     const { forwardRendererConsoleToMainLog } = await import('../../../main/window');
+    const { HUD_ROUTE_PREFIX, findExistingHudWindow, focusHudWindow, registerHudWindow } =
+      await import('../../../main/hud-window');
+
+    const isHudRoute = typeof route === 'string' && route.startsWith(HUD_ROUTE_PREFIX);
+    if (isHudRoute) {
+      const existing = findExistingHudWindow();
+      if (existing) {
+        focusHudWindow(existing);
+        logger.info('Reusing existing HUD window (singleton)', { windowId: existing.id });
+        return existing;
+      }
+    }
 
     const isDarkMode = nativeTheme.shouldUseDarkColors;
     const newWindow = new BrowserWindow({
@@ -843,6 +868,12 @@ export function setupSystemIPC() {
       backgroundColor: isDarkMode ? '#0a0a0a' : '#ffffff',
     });
     forwardRendererConsoleToMainLog(newWindow);
+
+    // Register BEFORE loadURL so a concurrent HUD-open request reuses this
+    // window even while its URL is still about:blank (mid-navigation race).
+    if (isHudRoute) {
+      registerHudWindow(newWindow);
+    }
 
     newWindow.once('ready-to-show', () => {
       newWindow.show();
@@ -908,6 +939,36 @@ export function setupSystemIPC() {
         }
       },
       WINDOW_CHANNELS.OPEN_NEW,
+    ),
+  );
+
+  // Set the calling window's native full-screen state (HUD full-screen toggle)
+  ipcMain.handle(
+    WINDOW_CHANNELS.SET_FULL_SCREEN,
+    createSafeValidatedHandler(
+      WindowSetFullScreenSchema,
+      async (event, validated) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (!window) {
+          return { success: false, fullScreen: false };
+        }
+        window.setFullScreen(validated.fullScreen);
+        return { success: true, fullScreen: window.isFullScreen() };
+      },
+      WINDOW_CHANNELS.SET_FULL_SCREEN,
+    ),
+  );
+
+  // Get the calling window's native full-screen state
+  ipcMain.handle(
+    WINDOW_CHANNELS.GET_FULL_SCREEN,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async (event) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        return { success: true, fullScreen: window ? window.isFullScreen() : false };
+      },
+      WINDOW_CHANNELS.GET_FULL_SCREEN,
     ),
   );
 

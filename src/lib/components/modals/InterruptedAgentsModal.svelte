@@ -3,6 +3,7 @@
    * Modal for resuming or abandoning interrupted agents after intentd restart.
    * Grouped by workspace with checkboxes (all checked by default).
    */
+  import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faExclamationTriangle, faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -50,9 +51,20 @@
   // All agents checked by default
   let checkedAgents = $state<Set<string>>(new Set(agents.map((a) => a.agentId)));
 
-  // Reset checked state when agents change
+  // Reconcile checked state when agents change: survivors of a cross-window
+  // prune keep their checkbox state; agents not previously listed default to
+  // checked.
+  let knownAgentIds = new Set(agents.map((a) => a.agentId));
   $effect(() => {
-    checkedAgents = new Set(agents.map((a) => a.agentId));
+    const checked = untrack(() => checkedAgents);
+    const next = new Set<string>();
+    for (const agent of agents) {
+      if (!knownAgentIds.has(agent.agentId) || checked.has(agent.agentId)) {
+        next.add(agent.agentId);
+      }
+    }
+    knownAgentIds = new Set(agents.map((a) => a.agentId));
+    checkedAgents = next;
   });
 
   function close() {

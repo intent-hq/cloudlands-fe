@@ -43,6 +43,7 @@
   import EncoderCycleHud from '$features/hardware-console/encoder/EncoderCycleHud.svelte';
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
+  import HudChromelessMain from '$features/hud/components/HudChromelessMain.svelte';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
@@ -134,7 +135,11 @@
   import { startGitStatusSubscription } from '$features/git/git-status-subscription';
   import { startWorkspaceListSubscription } from '$features/workspace/workspace-list-subscription';
   import { startSpecialistsListSubscription } from '$features/specialists/specialists-list-subscription';
-  import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
+  import {
+    installInterruptedAgentsService,
+    notifyInterruptedAgentsModalClosed,
+    resolveInterruptedAgents,
+  } from '$features/agent/interrupted-agents-service';
   import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
@@ -294,6 +299,10 @@
     (window as any).__app_goto = goto;
   }
 
+  // Chrome-less HUD pop-out window: suppress SidebarNav/SidebarPanel and the
+  // rounded main chrome (see HudChromelessMain).
+  const isHudRoute = $derived($page.url.pathname === '/hud');
+
   // Track last non-settings path for cmd+, toggle behavior
   let lastNonSettingsPath = $state('/');
 
@@ -351,7 +360,9 @@
     const appClient = new LiveAppClient();
     const disposeInterruptedAgents = installInterruptedAgentsService(appClient, (agents) => {
       interruptedAgents = agents;
-      showInterruptedAgentsModal = true;
+      // An empty list is the cross-window reconciliation closing the modal
+      // silently (all agents resolved elsewhere) — no toast.
+      showInterruptedAgentsModal = agents.length > 0;
     });
 
     // Initialize release notes store to detect version changes and show release notes
@@ -811,49 +822,11 @@
   });
 
   async function handleResumeSelectedAgents(resumeIds: string[], abandonIds: string[]) {
-    const appClient = new LiveAppClient();
-    try {
-      // Omit empty arrays per intentd router contract (PROTOCOL.md)
-      const params: { resume?: string[]; abandon?: string[] } = {};
-      if (resumeIds.length > 0) params.resume = resumeIds;
-      if (abandonIds.length > 0) params.abandon = abandonIds;
-
-      const result = await appClient.agents.resolveInterrupted(params);
-      logger.info('Resolved interrupted agents', { result });
-      // Import toast lazily
-      import('svelte-sonner').then(({ toast }) => {
-        const resumed = result.resumed.length;
-        const failed = result.failed.length;
-        if (resumed > 0) toast.success(resumed === 1 ? m.layout_appShell_resumedAgents_one({ count: resumed }) : m.layout_appShell_resumedAgents_many({ count: resumed }));
-        if (failed > 0) toast.error(failed === 1 ? m.layout_appShell_resolveFailedCount_one({ count: failed }) : m.layout_appShell_resolveFailedCount_many({ count: failed }));
-      }).catch(() => {});
-    } catch (error) {
-      logger.error('Failed to resolve interrupted agents', { error });
-      import('svelte-sonner').then(({ toast }) => {
-        toast.error(m.layout_appShell_resolveInterruptedFailed_error());
-      }).catch(() => {});
-    }
+    await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
   }
 
   async function handleAbandonAllAgents(abandonIds: string[]) {
-    const appClient = new LiveAppClient();
-    try {
-      // Omit empty arrays per intentd router contract (PROTOCOL.md)
-      const params: { abandon?: string[] } = {};
-      if (abandonIds.length > 0) params.abandon = abandonIds;
-
-      const result = await appClient.agents.resolveInterrupted(params);
-      logger.info('Abandoned all interrupted agents', { result });
-      import('svelte-sonner').then(({ toast }) => {
-        const abandoned = result.abandoned.length;
-        toast.info(abandoned === 1 ? m.layout_appShell_abandonedAgents_one({ count: abandoned }) : m.layout_appShell_abandonedAgents_many({ count: abandoned }));
-      }).catch(() => {});
-    } catch (error) {
-      logger.error('Failed to abandon interrupted agents', { error });
-      import('svelte-sonner').then(({ toast }) => {
-        toast.error(m.layout_appShell_abandonInterruptedFailed_error());
-      }).catch(() => {});
-    }
+    await resolveInterruptedAgents(new LiveAppClient(), [], abandonIds);
   }
 
   function handleGitHubAuthSuccess() {
@@ -998,16 +971,19 @@
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
-    <!-- Title bar at top -->
-    <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
-
-    <!-- Update indicator (top-right corner) -->
-    <div class="absolute top-2 right-3 z-10">
-      <UpdateDownloadIndicator />
-    </div>
+    <!-- Title bar + update indicator (suppressed on the HUD route: its own header is the only top chrome and carries the drag region) -->
+    {#if !isHudRoute}
+      <WindowTitleBar workspaceId={$activeWorkspaceId || undefined} />
+      <div class="absolute top-2 right-3 z-10">
+        <UpdateDownloadIndicator />
+      </div>
+    {/if}
 
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
+      {#if isHudRoute}
+        <HudChromelessMain resolvedLocale={$resolvedLocale$} {children} />
+      {:else}
       <div class="flex flex-1 min-h-0">
         <!-- Global Sidebar Nav Rail -->
         <SidebarNav />
@@ -1028,6 +1004,7 @@
           <RootQuakeTerminalOverlay />
         </main>
       </div>
+      {/if}
     </ErrorBoundary>
   </div>
 
@@ -1149,6 +1126,7 @@
     onAbandonAll={handleAbandonAllAgents}
     onClose={() => {
       showInterruptedAgentsModal = false;
+      notifyInterruptedAgentsModalClosed();
     }}
   />
 
