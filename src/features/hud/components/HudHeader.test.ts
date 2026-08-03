@@ -13,7 +13,7 @@ import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
 import { ThemeManager } from '$lib/utils/theme';
-import { __resetThemeMutationForTests } from '../../theme/theme-service';
+import { __resetThemeMutationForTests } from '$features/theme/theme-service';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 

@@ -26,7 +26,7 @@ import {
   selectHudWorkspaceCards,
   selectHudWorkspaceStateBars,
 } from './hud-selectors';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceTask } from '$shared/types';
 import {
   agentSessionReducer,

@@ -23,7 +23,7 @@
  * selector imports — state is read directly off `appStore.state`; the toast
  * lib is imported lazily.
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
@@ -409,22 +409,25 @@ export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
     }
 
     const result = next(action);
+		const type = typeof (action as { type?: unknown })?.type === 'string'
+			? (action as { type: string }).type
+			: '';
 
-    if (action && action.type === setActionKeyMapping.type) {
+		if (type === setActionKeyMapping.type) {
       schedulePersist();
     }
 
-    if (action && action.type === setCycleScope.type) {
+		if (type === setCycleScope.type) {
       schedulePersistScopes();
     }
 
-    if (action && action.type === actionHudShown.type) {
+		if (type === actionHudShown.type) {
       armHudTimer();
-    } else if (action && action.type === actionHudHidden.type) {
+		} else if (type === actionHudHidden.type) {
       clearHudTimer();
     }
 
-    if (action && action.type === openAgentTabRequested.type && consumeArmedComposerFocus()) {
+		if (type === openAgentTabRequested.type && consumeArmedComposerFocus()) {
       // New-agent press armed a one-shot: this tab open is the created
       // agent's — focus its composer.
       const detail = (action as ReturnType<typeof openAgentTabRequested>).payload[1];

@@ -10,7 +10,7 @@
  * selector imports — state is read via the pure snapshot derivation.
  */
 
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { store as appStore } from '$store/renderer/store';
 import type { HardwareConsoleManager } from '../device/device-manager';
 import { getHardwareConsoleManager } from '../instance';
@@ -39,7 +39,10 @@ export function installHardwareConsoleLedStatus(
   const getState = deps.getState ?? ((): LedSnapshotState => appStore.state);
   const subscribe =
     deps.subscribe ??
-    ((listener: () => void) => appStore.getReadableState().subscribe(listener));
+		((listener: () => void) => {
+			const state$ = appStore.createSelector((state) => state)();
+			return state$.subscribe(() => listener());
+		});
 
   const refresh = (): void => {
     engine.update(buildHardwareLedSnapshot(getState()));

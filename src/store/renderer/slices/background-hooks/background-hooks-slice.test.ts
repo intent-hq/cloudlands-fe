@@ -2,7 +2,7 @@
  * backgroundHooks slice reducer tests (PROTOCOL §5.40 chip-row state).
  */
 import { describe, expect, it } from "vitest";
-import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
 import type { BackgroundHook } from "$features/hooks/background-hooks-service";
 import {

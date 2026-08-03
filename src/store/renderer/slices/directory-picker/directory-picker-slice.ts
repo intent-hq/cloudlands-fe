@@ -53,6 +53,8 @@ export type DirectoryPickerState = {
    * intact so the user can correct the typed path without losing context.
    */
   pathError: string | null;
+	/** Inline failure hint for creating a typed folder. */
+	createError: string | null;
 };
 
 export const initialState: DirectoryPickerState = {
@@ -61,6 +63,7 @@ export const initialState: DirectoryPickerState = {
   error: null,
   requestedPath: null,
   pathError: null,
+	createError: null,
 };
 
 /**
@@ -104,6 +107,21 @@ export const clearPathNavigationError = createAction(
   "directoryPicker/clearPathNavigationError",
 );
 
+/** Trigger: ask the saga to create `path`, then navigate to it on success. */
+export const createDirectoryRequested = createAction<[path: string]>(
+	"directoryPicker/createDirectoryRequested",
+);
+
+/** Service → reducer: creating `requestedPath` failed; current listing survives. */
+export const createDirectoryFailed = createAction<[requestedPath: string, error: string]>(
+	"directoryPicker/createDirectoryFailed",
+);
+
+/** Clear the create-directory inline hint. */
+export const clearCreateDirectoryError = createAction(
+	"directoryPicker/clearCreateDirectoryError",
+);
+
 /** Reset back to the initial state — dispatched when the modal closes. */
 export const resetDirectoryPicker = createAction("directoryPicker/reset");
 
@@ -133,6 +151,7 @@ directoryPickerReducer.with(
       loading: false,
       error: null,
       pathError: null,
+		createError: null,
       listing,
     };
   },
@@ -160,5 +179,26 @@ directoryPickerReducer.with(pathNavigationFailed, (state, { payload: [requestedP
 directoryPickerReducer.with(clearPathNavigationError, (state) => ({
   ...state,
   pathError: null,
+}));
+directoryPickerReducer.with(createDirectoryRequested, (state, { payload: [path] }) => ({
+	...state,
+	loading: true,
+	error: null,
+	pathError: null,
+	createError: null,
+	requestedPath: path,
+}));
+directoryPickerReducer.with(createDirectoryFailed, (state, { payload: [requestedPath, error] }) => {
+	if (state.requestedPath !== requestedPath) return state;
+	return {
+		...state,
+		loading: false,
+		createError: error,
+		error: null,
+	};
+});
+directoryPickerReducer.with(clearCreateDirectoryError, (state) => ({
+	...state,
+	createError: null,
 }));
 directoryPickerReducer.with(resetDirectoryPicker, () => initialState);

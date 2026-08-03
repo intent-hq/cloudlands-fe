@@ -1,6 +1,7 @@
 import type { StoreMiddleware } from '@augmentcode/themis/types';
 
 import { createChatSubscribeMiddleware } from '$features/agent/chat-subscribe-service';
+import { createThemeMutationMiddleware } from '$features/theme/theme-service';
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { createStoreGuardMiddleware } from '../../store/utils/store-guard-middleware';
 import {
@@ -45,6 +46,7 @@ function buildMiddleware(): StoreMiddleware[] {
     createStoreGuardMiddleware('renderer'),
     createBatchingMiddleware([]),
     createChatSubscribeMiddleware(),
+    createThemeMutationMiddleware(),
   ];
   const debugMiddleware: StoreMiddleware[] = [];
 

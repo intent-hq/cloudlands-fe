@@ -19,7 +19,7 @@
  * Dependency-light middleware module per src/store/renderer/AGENTS.md: no
  * selector imports — state is read directly off `appStore.state`.
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
@@ -124,8 +124,11 @@ export function createHardwareConsoleIntegrationToggleMiddleware(): StoreMiddlew
     }
 
     const result = next(action);
+		const type = typeof (action as { type?: unknown })?.type === 'string'
+			? (action as { type: string }).type
+			: '';
 
-    if (action && action.type === setHardwareConsoleEnabled.type) {
+		if (type === setHardwareConsoleEnabled.type) {
       applyManagerLifecycle(appStore.state.hardwareConsole.enabled);
       schedulePersist();
     }

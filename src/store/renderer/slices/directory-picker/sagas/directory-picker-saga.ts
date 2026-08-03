@@ -7,6 +7,8 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   directoryListingFailed,
   directoryListingLoaded,
+	createDirectoryFailed,
+	createDirectoryRequested,
   loadDirectoryRequested,
   navigateToPathRequested,
   pathNavigationFailed,
@@ -69,16 +71,46 @@ function* navigateToTypedPath(path: string): SagaGenerator<void> {
   }
 }
 
+function* createDirectory(path: string): SagaGenerator<void> {
+	try {
+		yield* call(backendRequest, 'host.createDirectory', { path });
+		yield* put(loadDirectoryRequested(path));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		logger.warn('host.createDirectory failed', { path, error: message });
+		yield* put(createDirectoryFailed(path, message));
+	}
+}
+
 export function* directoryPickerSaga(): SagaGenerator<void> {
   const loadTasks = new Map<string, TrackedTask>();
   let navigationTask: TrackedTask | undefined;
+	let createTask: TrackedTask | undefined;
 
   try {
     while (true) {
       const action: { type: string; payload?: unknown } = yield* take([
         loadDirectoryRequested,
         navigateToPathRequested,
+			createDirectoryRequested,
       ]);
+
+		if (action.type === createDirectoryRequested.type) {
+			const path = requestedPathOf(action);
+			if (!path) continue;
+			if (createTask) yield* cancel(createTask.task);
+
+			const token = Symbol(path);
+			const task = yield* fork(function* () {
+				try {
+					yield* call(createDirectory, path);
+				} finally {
+					if (createTask?.token === token) createTask = undefined;
+				}
+			});
+			createTask = { task, token };
+			continue;
+		}
 
       if (action.type === navigateToPathRequested.type) {
         const path = requestedPathOf(action);
@@ -113,6 +145,7 @@ export function* directoryPickerSaga(): SagaGenerator<void> {
     }
   } finally {
     if (navigationTask) yield* cancel(navigationTask.task);
+		if (createTask) yield* cancel(createTask.task);
     for (const tracked of loadTasks.values()) yield* cancel(tracked.task);
     loadTasks.clear();
   }

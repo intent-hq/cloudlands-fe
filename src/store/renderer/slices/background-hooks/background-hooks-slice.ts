@@ -12,12 +12,12 @@
  * (`runBackgroundHookRequested` / `cancelBackgroundHookRequested`) have no
  * reducer case — the daemon's `hook:*` events converge the list.
  */
-import { createAction } from "$lib/store-shim/utils/store/create-action";
-import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import {
   createCollection,
   type Collection,
-} from "$lib/store-shim/utils/collections/collection-utils";
+} from "@augmentcode/themis/utils/collections/collection-utils";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
 import type { BackgroundHook } from "$features/hooks/background-hooks-service";
