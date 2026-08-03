@@ -26,6 +26,7 @@ import {
   startIntentdSidecar,
 } from './intentd-sidecar';
 import { __resetConnectionModeForTesting } from './connection-mode';
+import { windowsPipeName } from './intentd-pipe-name';
 
 const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs');
 
@@ -97,10 +98,7 @@ describe('shouldSpawnSidecar', () => {
   });
 
   it('prioritizes transport overrides over INTENTD_SIDECAR=1 (packaged)', () => {
-    const decision = shouldSpawnSidecar(
-      { INTENTD_SIDECAR: '1', INTENTD_SOCKET: '/x.sock' },
-      true,
-    );
+    const decision = shouldSpawnSidecar({ INTENTD_SIDECAR: '1', INTENTD_SOCKET: '/x.sock' }, true);
     expect(decision.shouldSpawn).toBe(false);
     expect(decision.reason).toContain('INTENTD_SOCKET');
   });
@@ -249,15 +247,25 @@ describe('resolveSocketPath', () => {
     );
     expect(socketPath).toBe(expected);
   });
+
+  it('on win32 returns the named pipe derived from INTENTD_DATA_DIR\\intentd.sock', () => {
+    const target = resolveSocketPath({ INTENTD_DATA_DIR: 'C:\\dev-seat' }, 'win32');
+    expect(target).toBe(windowsPipeName('C:\\dev-seat\\intentd.sock'));
+    expect(target).toMatch(/^\\\\\.\\pipe\\intentd-[0-9a-f]{16}$/);
+  });
+
+  it('on win32 without INTENTD_DATA_DIR mirrors the daemon default (%APPDATA%\\intentd\\data)', () => {
+    const target = resolveSocketPath({ APPDATA: 'C:\\Users\\alice\\AppData\\Roaming' }, 'win32');
+    // Pinned cross-check vector — see backend-connection.test.ts and intentd-pipe-name.ts.
+    expect(target).toBe('\\\\.\\pipe\\intentd-4f8c75c28cfa6e92');
+  });
 });
 
 /** Start a mock UDS daemon that answers system.status with the given result. */
 function startMockDaemon(
   socketPath: string,
   behavior:
-    | { kind: 'result'; result: Record<string, unknown> }
-    | { kind: 'garbage' }
-    | { kind: 'silent' },
+    { kind: 'result'; result: Record<string, unknown> } | { kind: 'garbage' } | { kind: 'silent' },
 ): Promise<net.Server> {
   const server = net.createServer((conn) => {
     conn.on('data', () => {
@@ -321,6 +329,13 @@ describe('probeDaemonVersion', () => {
   it('returns not alive when the socket file does not exist', async () => {
     const probe = await probeDaemonVersion(path.join(tmpDir, 'missing.sock'));
     expect(probe).toEqual({ alive: false });
+  });
+
+  it('skips the fs.existsSync pre-check for win32 pipe paths (pipes are not files)', async () => {
+    mockExistsSync.mockClear();
+    const probe = await probeDaemonVersion('\\\\.\\pipe\\intentd-0000000000000000', 500);
+    expect(probe).toEqual({ alive: false });
+    expect(mockExistsSync).not.toHaveBeenCalled();
   });
 
   it('returns not alive when the socket exists but nothing accepts connections', async () => {

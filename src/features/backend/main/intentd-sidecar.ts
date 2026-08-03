@@ -24,6 +24,7 @@ import * as path from 'node:path';
 
 import { Logger } from '$shared/logger';
 import { RestartPolicy } from './restart-policy';
+import { defaultWindowsSocketPath, isWindowsPipePath, windowsPipeName } from './intentd-pipe-name';
 import { setConnectionMode, setDaemonVersionInfo } from './connection-mode';
 import { compareToPinnedVersion, readPinnedVersion } from './intentd-version-pin';
 // Re-export from the policy module so existing importers keep working; consumers
@@ -332,17 +333,29 @@ export function resolveIntentdBinaryPath(
 }
 
 /**
- * Resolve the UDS socket path the daemon will use.
+ * Resolve the local connect target for the daemon the sidecar manages.
  *
- * If `INTENTD_DATA_DIR` is set, returns `$INTENTD_DATA_DIR/intentd.sock`.
- * Otherwise returns the platform default (macOS: `~/Library/Application Support/intentd/intentd.sock`).
+ * If `INTENTD_DATA_DIR` is set, the socket is `$INTENTD_DATA_DIR/intentd.sock`;
+ * otherwise the platform default (macOS: `~/Library/Application Support/intentd/intentd.sock`,
+ * Windows: `%APPDATA%\intentd\data\intentd.sock`) — both per intentd's
+ * `Config::resolve` (crates/intent-core/src/config.rs). On win32 the daemon
+ * serves a named pipe derived from that socket path, so this returns the pipe
+ * name (see `intentd-pipe-name.ts` for the contract).
  */
-export function resolveSocketPath(env: NodeJS.ProcessEnv): string {
+export function resolveSocketPath(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): string {
   const dataDir = env.INTENTD_DATA_DIR?.trim();
+  if (platform === 'win32') {
+    const socketPath = dataDir
+      ? path.win32.join(dataDir, 'intentd.sock')
+      : defaultWindowsSocketPath(env);
+    return windowsPipeName(socketPath);
+  }
   if (dataDir) {
     return path.join(dataDir, 'intentd.sock');
   }
-  // Default per intentd's Config::resolve (crates/intent-core/src/config.rs)
   // i18n-ignore (filesystem path)
   return path.join(os.homedir(), 'Library', 'Application Support', 'intentd', 'intentd.sock');
 }
@@ -367,7 +380,9 @@ export async function probeDaemonVersion(
   socketPath: string,
   timeoutMs = 3000,
 ): Promise<DaemonVersionProbeResult> {
-  if (!fs.existsSync(socketPath)) return { alive: false };
+  // Named pipes live in the win32 pipe namespace, not the filesystem —
+  // `fs.existsSync` is meaningless there, so only pre-check real socket files.
+  if (!isWindowsPipePath(socketPath) && !fs.existsSync(socketPath)) return { alive: false };
 
   return new Promise<DaemonVersionProbeResult>((resolve) => {
     const client = net.connect({ path: socketPath });
@@ -437,7 +452,8 @@ export async function probeDaemonVersion(
  * @param timeoutMs - Timeout in milliseconds (default: 3000)
  */
 export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Promise<boolean> {
-  if (!fs.existsSync(socketPath)) return false;
+  // See probeDaemonVersion: pipe paths are not filesystem entries.
+  if (!isWindowsPipePath(socketPath) && !fs.existsSync(socketPath)) return false;
 
   return new Promise<boolean>((resolve) => {
     const client = net.connect({ path: socketPath });
