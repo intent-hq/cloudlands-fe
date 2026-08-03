@@ -1,14 +1,24 @@
 /**
  * Key-pin persistence for the hardware console — hydrates the 6-slot pin
- * array from the shared `hardwareConsole.state` daemon settings bag on the
- * first dispatched action and writes it back after each pin mutation.
+ * array plus the auto-fill exclusion list from the shared
+ * `hardwareConsole.state` daemon settings bag on the first dispatched
+ * action and writes them back after each pin mutation.
+ *
+ * Assignments are STICKY: once hydration has succeeded and the workspace
+ * list has loaded, the middleware reconciles the pin array against the
+ * current workspaces (`reconcileKeyPins`) — auto-filled slots are promoted
+ * into persisted pins so they never shuffle with activity, and pins whose
+ * workspace was archived/deleted are released (and backfilled). The first
+ * reconcile after boot doubles as the migration snapshot: a pre-sticky
+ * activity-derived layout is captured into persisted assignments.
  *
  * The bag is shared with other hardware-console state, so writes are
- * read-modify-write on the whole bag with only the `keyPins` field replaced
- * (pin changes are rare; a fresh read per write keeps sibling fields safe).
- * Persists that fire before hydration settles are deferred and flushed once
- * after a successful hydrate, mirroring the workspace-initializer service,
- * so boot-time default state never clobbers the persisted daemon bag.
+ * read-modify-write on the whole bag with only the `keyPins` and
+ * `excludedWorkspaceIds` fields replaced (pin changes are rare; a fresh
+ * read per write keeps sibling fields safe). Persists that fire before
+ * hydration settles are deferred and flushed once after a successful
+ * hydrate, mirroring the workspace-initializer service, so boot-time
+ * default state never clobbers the persisted daemon bag.
  *
  * Dependency-light per src/store/renderer/AGENTS.md: imports only the
  * AppClient seam, the configured store, and slice actions — no selectors.
@@ -19,11 +29,20 @@ import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   hydrateHardwareConsoleKeyPins,
+  keyPinsReconciled,
   markKeySlotUnassigned,
   pinWorkspaceToKey,
   unpinWorkspaceFromKeys,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-import { normalizeKeyPins } from './key-assignment';
+import { getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import {
+  isKeyAssignableWorkspace,
+  keyPinsEqual,
+  normalizeExcludedWorkspaceIds,
+  normalizeKeyPins,
+  reconcileKeyPins,
+} from './key-assignment';
 
 const logger = createLogger('HardwareConsoleKeyPinPersistence');
 
@@ -46,11 +65,14 @@ async function readBag(): Promise<Record<string, unknown> | null> {
   return isRecord(setting.value) ? setting.value : {};
 }
 
-/** Read-modify-write: replace only `keyPins`, preserving sibling fields. */
-async function persistKeyPins(keyPins: (string | null)[]): Promise<void> {
+/** Read-modify-write: replace only `keyPins` + `excludedWorkspaceIds`, preserving sibling fields. */
+async function persistKeyPins(
+  keyPins: (string | null)[],
+  excludedWorkspaceIds: string[],
+): Promise<void> {
   const bag = (await readBag()) ?? {};
   await appClient.settings.update([
-    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, keyPins } },
+    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, keyPins, excludedWorkspaceIds } },
   ]);
 }
 
@@ -62,7 +84,12 @@ async function hydrateOnce(): Promise<boolean> {
         `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed`,
       );
     }
-    appStore.dispatch(hydrateHardwareConsoleKeyPins(parseKeyPins(bag.keyPins)));
+    appStore.dispatch(
+      hydrateHardwareConsoleKeyPins(
+        parseKeyPins(bag.keyPins),
+        normalizeExcludedWorkspaceIds(bag.excludedWorkspaceIds),
+      ),
+    );
     return true;
   } catch (error) {
     logger.error('Key-pin hydration failed; dispatching defaults', { error });
@@ -71,19 +98,50 @@ async function hydrateOnce(): Promise<boolean> {
   }
 }
 
+/**
+ * Promote the current auto-fill layout into pins when it diverges from the
+ * stored pin array (sticky assignments). Dispatches `keyPinsReconciled`
+ * only on an actual change (callers persist afterwards), and only once the
+ * workspace list has loaded — reconciling against an empty boot-time list
+ * would wrongly release every assignment.
+ */
+function reconcileNow(): boolean {
+  const state = appStore.state;
+  if (!state.workspace.hasLoaded) return false;
+  const workspaces = getItems(state.workspace.workspaces).filter(
+    (workspace) => workspace.id !== CHIEF_WORKSPACE_ID && isKeyAssignableWorkspace(workspace),
+  );
+  const reconciled = reconcileKeyPins(
+    state.hardwareConsole.keyPins,
+    workspaces,
+    state.hardwareConsole.excludedWorkspaceIds,
+  );
+  if (keyPinsEqual(normalizeKeyPins(state.hardwareConsole.keyPins), reconciled)) return false;
+  appStore.dispatch(keyPinsReconciled(reconciled));
+  return true;
+}
+
 export function createHardwareConsoleKeyPinPersistenceMiddleware(): StoreMiddleware {
   let hydrationStarted = false;
   let hydrationSettled = false;
+  let hydrationSucceeded = false;
   let persistQueued = false;
+
+  const persistNow = (): void => {
+    void persistKeyPins(
+      appStore.state.hardwareConsole.keyPins,
+      appStore.state.hardwareConsole.excludedWorkspaceIds,
+    ).catch((error) =>
+      logger.error(`Failed to persist ${HARDWARE_CONSOLE_SETTINGS_PATH} keyPins`, { error }),
+    );
+  };
 
   const schedulePersist = (): void => {
     if (!hydrationSettled) {
       persistQueued = true;
       return;
     }
-    void persistKeyPins(appStore.state.hardwareConsole.keyPins).catch((error) =>
-      logger.error(`Failed to persist ${HARDWARE_CONSOLE_SETTINGS_PATH} keyPins`, { error }),
-    );
+    persistNow();
   };
 
   return () => (next) => (action) => {
@@ -93,27 +151,39 @@ export function createHardwareConsoleKeyPinPersistenceMiddleware(): StoreMiddlew
         .catch(() => false)
         .then((hydrated) => {
           hydrationSettled = true;
+          hydrationSucceeded = hydrated;
           const shouldFlush = persistQueued && hydrated;
           persistQueued = false;
-          if (shouldFlush) {
-            void persistKeyPins(appStore.state.hardwareConsole.keyPins).catch((error) =>
-              logger.error(`Failed to persist ${HARDWARE_CONSOLE_SETTINGS_PATH} keyPins`, {
-                error,
-              }),
-            );
+          // First reconcile = migration snapshot: the previously
+          // activity-derived layout becomes persisted sticky assignments.
+          if (hydrated && reconcileNow()) {
+            persistNow();
+            return;
           }
+          if (shouldFlush) persistNow();
         });
     }
 
     const result = next(action);
 
-    if (
-      action &&
-      (action.type === pinWorkspaceToKey.type ||
-        action.type === unpinWorkspaceFromKeys.type ||
-        action.type === markKeySlotUnassigned.type)
-    ) {
+    const type = typeof action?.type === 'string' ? action.type : '';
+    const isPinMutation =
+      type === pinWorkspaceToKey.type ||
+      type === unpinWorkspaceFromKeys.type ||
+      type === markKeySlotUnassigned.type;
+    const canReconcile = hydrationSettled && hydrationSucceeded;
+
+    if (isPinMutation) {
+      // A pin mutation can also change auto-fill (e.g. unpinning frees a
+      // slot for the next workspace); reconcile first so a single write
+      // persists the final layout.
+      if (canReconcile) reconcileNow();
       schedulePersist();
+    } else if (canReconcile && type.startsWith('workspace/')) {
+      // Sticky reconciliation: promote auto-filled slots into pins and
+      // release archived/deleted workspaces as workspace state changes.
+      // reconcileNow() only dispatches on an actual pin-array change.
+      if (reconcileNow()) persistNow();
     }
 
     return result;

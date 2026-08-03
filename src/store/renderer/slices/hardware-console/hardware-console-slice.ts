@@ -2,6 +2,8 @@ import { createAction } from "$lib/store-shim/utils/store/create-action";
 import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import {
   AGENT_KEY_COUNT,
+  keyPinsEqual,
+  normalizeExcludedWorkspaceIds,
   normalizeKeyPins,
   UNASSIGNED_KEY_PIN,
 } from "$features/hardware-console/assignment/key-assignment";
@@ -16,6 +18,11 @@ import {
   normalizeActionMappingsByModel,
   type ActionKeyActionId,
 } from "$features/hardware-console/actions/action-mapping";
+import {
+  normalizeCycleScopeByFamily,
+  type CycleScope,
+  type CycleScopeFamilyId,
+} from "$features/hardware-console/actions/cycle-scope";
 import type { HardwareDeviceModel } from "$features/hardware-console/input/types";
 import type {
   HardwareConsoleState,
@@ -29,6 +36,7 @@ export const initialState: HardwareConsoleState = {
   enabledHydrated: false,
   keyPins: new Array<string | null>(AGENT_KEY_COUNT).fill(null),
   hydrated: false,
+  excludedWorkspaceIds: [],
   promptUsage: [],
   promptPickerLimit: DEFAULT_PROMPT_PICKER_LIMIT,
   promptsHydrated: false,
@@ -36,11 +44,21 @@ export const initialState: HardwareConsoleState = {
   encoderHudWorkspaceId: null,
   actionMappingByModel: normalizeActionMappingsByModel(undefined),
   actionMappingHydrated: false,
+  cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
 };
 
 /** Boot-time hydration from the `hardwareConsole.state` daemon settings bag. */
-export const hydrateHardwareConsoleKeyPins = createAction<[keyPins: (string | null)[]]>(
-  "hardwareConsole/hydrateKeyPins",
+export const hydrateHardwareConsoleKeyPins = createAction<
+  [keyPins: (string | null)[], excludedWorkspaceIds?: string[]]
+>("hardwareConsole/hydrateKeyPins");
+/**
+ * Sticky write-back from the persistence middleware: auto-filled slots
+ * promoted into pins / vanished workspaces released (see `reconcileKeyPins`
+ * in `$features/hardware-console/assignment/key-assignment`). The
+ * middleware persists the reconciled array itself.
+ */
+export const keyPinsReconciled = createAction<[keyPins: (string | null)[]]>(
+  "hardwareConsole/keyPinsReconciled",
 );
 /** Boot-time hydration of the integration-enabled flag from the daemon settings bag. */
 export const hydrateHardwareConsoleEnabled = createAction<[enabled: boolean]>(
@@ -54,15 +72,24 @@ export const setHardwareConsoleEnabled = createAction<[enabled: boolean]>(
 export const setPromptPickerLimit = createAction<[limit: number]>(
   "hardwareConsole/setPromptPickerLimit",
 );
-/** Pin a workspace to an agent-key slot (0-based). Clears the workspace from any other slot. */
+/**
+ * Pin a workspace to an agent-key slot (0-based). Clears the workspace from
+ * any other slot and from the auto-fill exclusion list.
+ */
 export const pinWorkspaceToKey = createAction<[slot: number, workspaceId: string]>(
   "hardwareConsole/pinWorkspaceToKey",
 );
-/** Remove a workspace's pin from whichever slot holds it (no-op when unpinned). */
+/**
+ * Remove a workspace's pin from whichever slot holds it and exclude it from
+ * future auto-fill (unassign = exclude; re-pinning clears the exclusion).
+ */
 export const unpinWorkspaceFromKeys = createAction<[workspaceId: string]>(
   "hardwareConsole/unpinWorkspaceFromKeys",
 );
-/** Mark a slot sticky-unassigned (0-based): it stays empty and never auto-fills. */
+/**
+ * Mark a slot sticky-unassigned (0-based): it stays empty and never
+ * auto-fills. The evicted workspace (if any) joins the exclusion list.
+ */
 export const markKeySlotUnassigned = createAction<[slot: number]>(
   "hardwareConsole/markKeySlotUnassigned",
 );
@@ -104,14 +131,32 @@ export const hydrateHardwareConsoleActionMapping = createAction<
 export const setActionKeyMapping = createAction<
   [model: HardwareDeviceModel, slot: number, actionId: ActionKeyActionId]
 >("hardwareConsole/setActionKeyMapping");
+/** Boot-time hydration of the per-family cycle scopes from the daemon settings bag. */
+export const hydrateHardwareConsoleCycleScopes = createAction<
+  [cycleScopeByFamily: Partial<Record<CycleScopeFamilyId, CycleScope>>]
+>("hardwareConsole/hydrateCycleScopes");
+/** Set one cycle family's scope (Settings checkbox: include sub-agents or not). */
+export const setCycleScope = createAction<
+  [familyId: CycleScopeFamilyId, scope: CycleScope]
+>("hardwareConsole/setCycleScope");
 
 function isValidSlot(slot: number): boolean {
   return Number.isInteger(slot) && slot >= 0 && slot < AGENT_KEY_COUNT;
 }
 
 export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initialState)
-  .with(hydrateHardwareConsoleKeyPins, (state, { payload: [keyPins] }) => {
-    return { ...state, keyPins: normalizeKeyPins(keyPins), hydrated: true };
+  .with(hydrateHardwareConsoleKeyPins, (state, { payload: [keyPins, excludedWorkspaceIds] }) => {
+    return {
+      ...state,
+      keyPins: normalizeKeyPins(keyPins),
+      excludedWorkspaceIds: normalizeExcludedWorkspaceIds(excludedWorkspaceIds),
+      hydrated: true,
+    };
+  })
+  .with(keyPinsReconciled, (state, { payload: [keyPins] }) => {
+    const normalized = normalizeKeyPins(keyPins);
+    if (keyPinsEqual(state.keyPins, normalized)) return state;
+    return { ...state, keyPins: normalized };
   })
   .with(hydrateHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
     return { ...state, enabled: enabled !== false, enabledHydrated: true };
@@ -127,21 +172,40 @@ export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initia
   })
   .with(pinWorkspaceToKey, (state, { payload: [slot, workspaceId] }) => {
     if (!isValidSlot(slot) || !workspaceId) return state;
-    if (state.keyPins[slot] === workspaceId) return state;
+    const excludedWorkspaceIds = state.excludedWorkspaceIds.includes(workspaceId)
+      ? state.excludedWorkspaceIds.filter((id) => id !== workspaceId)
+      : state.excludedWorkspaceIds;
+    if (state.keyPins[slot] === workspaceId) {
+      if (excludedWorkspaceIds === state.excludedWorkspaceIds) return state;
+      return { ...state, excludedWorkspaceIds };
+    }
     const keyPins = state.keyPins.map((pin) => (pin === workspaceId ? null : pin));
     keyPins[slot] = workspaceId;
-    return { ...state, keyPins };
+    return { ...state, keyPins, excludedWorkspaceIds };
   })
   .with(unpinWorkspaceFromKeys, (state, { payload: [workspaceId] }) => {
-    if (!workspaceId || !state.keyPins.includes(workspaceId)) return state;
-    const keyPins = state.keyPins.map((pin) => (pin === workspaceId ? null : pin));
-    return { ...state, keyPins };
+    if (!workspaceId) return state;
+    const pinned = state.keyPins.includes(workspaceId);
+    const excluded = state.excludedWorkspaceIds.includes(workspaceId);
+    if (!pinned && excluded) return state;
+    const keyPins = pinned
+      ? state.keyPins.map((pin) => (pin === workspaceId ? null : pin))
+      : state.keyPins;
+    const excludedWorkspaceIds = excluded
+      ? state.excludedWorkspaceIds
+      : [...state.excludedWorkspaceIds, workspaceId];
+    return { ...state, keyPins, excludedWorkspaceIds };
   })
   .with(markKeySlotUnassigned, (state, { payload: [slot] }) => {
     if (!isValidSlot(slot) || state.keyPins[slot] === UNASSIGNED_KEY_PIN) return state;
+    const evicted = state.keyPins[slot];
     const keyPins = state.keyPins.slice();
     keyPins[slot] = UNASSIGNED_KEY_PIN;
-    return { ...state, keyPins };
+    const excludedWorkspaceIds =
+      evicted !== null && !state.excludedWorkspaceIds.includes(evicted)
+        ? [...state.excludedWorkspaceIds, evicted]
+        : state.excludedWorkspaceIds;
+    return { ...state, keyPins, excludedWorkspaceIds };
   })
   .with(hydrateHardwareConsolePrompts, (state, { payload: [promptUsage, promptPickerLimit] }) => {
     return {
@@ -193,5 +257,16 @@ export const hardwareConsoleReducer = createReducer<HardwareConsoleState>(initia
     return {
       ...state,
       actionMappingByModel: { ...state.actionMappingByModel, [model]: normalized },
+    };
+  })
+  .with(hydrateHardwareConsoleCycleScopes, (state, { payload: [cycleScopeByFamily] }) => {
+    return { ...state, cycleScopeByFamily: normalizeCycleScopeByFamily(cycleScopeByFamily) };
+  })
+  .with(setCycleScope, (state, { payload: [familyId, scope] }) => {
+    if (state.cycleScopeByFamily[familyId] === undefined) return state;
+    if (state.cycleScopeByFamily[familyId] === scope) return state;
+    return {
+      ...state,
+      cycleScopeByFamily: { ...state.cycleScopeByFamily, [familyId]: scope },
     };
   });

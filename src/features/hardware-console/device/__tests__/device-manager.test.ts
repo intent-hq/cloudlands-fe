@@ -162,6 +162,34 @@ describe('HardwareConsoleManager', () => {
     ]);
   });
 
+  it('does not attach a duplicate transport when hotplug races an in-flight open', async () => {
+    const { hid, manager } = makeManager();
+    const device = new FakeHidDevice(CM2.vendorId, CM2.productId);
+    const resolvers: (() => void)[] = [];
+    device.open = () =>
+      new Promise((resolve) => {
+        resolvers.push(() => {
+          device.opened = true;
+          resolve();
+        });
+      });
+    hid.devices = [device];
+    const startPromise = manager.start();
+    await flushMicrotasks();
+    // Same device "arrives" via hotplug while the first open() is pending.
+    hid.emitConnect(device);
+    await flushMicrotasks();
+    for (const resolve of resolvers) resolve();
+    await startPromise;
+    await flushMicrotasks();
+    expect(manager.status).toBe('connected');
+    const raw: unknown[] = [];
+    manager.onRawMessage((m) => raw.push(m));
+    device.emitRpc({ a: 0.5, d: 0 });
+    // A duplicate transport subscription would deliver the message twice.
+    expect(raw).toEqual([{ a: 0.5, d: 0 }]);
+  });
+
   it('ignores hotplug of unsupported devices', async () => {
     const { hid, manager } = makeManager();
     await manager.start();

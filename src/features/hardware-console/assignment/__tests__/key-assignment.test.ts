@@ -4,7 +4,10 @@ import {
   AGENT_KEY_IDS,
   agentKeyToSlot,
   isKeyAssignableWorkspace,
+  keyPinsEqual,
+  normalizeExcludedWorkspaceIds,
   normalizeKeyPins,
+  reconcileKeyPins,
   resolveKeySlots,
   UNASSIGNED_KEY_PIN,
 } from '../key-assignment';
@@ -160,5 +163,93 @@ describe('resolveKeySlots', () => {
     const pins = [null, 'gone', null, null, null, null];
     const workspaces = [ws('a', '2026-07-30T00:00:00Z'), ws('b', '2026-07-29T00:00:00Z')];
     expect(resolveKeySlots(pins, workspaces)).toEqual(['a', 'b', null, null, null, null]);
+  });
+
+  it('never auto-fills an excluded workspace', () => {
+    const workspaces = [ws('a', '2026-07-30T00:00:00Z'), ws('b', '2026-07-29T00:00:00Z')];
+    expect(resolveKeySlots(noPins, workspaces, ['a'])).toEqual([
+      'b',
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it('an explicit pin still wins over exclusion', () => {
+    const workspaces = [ws('a', '2026-07-30T00:00:00Z')];
+    const pins = ['a', null, null, null, null, null];
+    expect(resolveKeySlots(pins, workspaces, ['a'])).toEqual(['a', null, null, null, null, null]);
+  });
+});
+
+describe('normalizeExcludedWorkspaceIds', () => {
+  it('keeps non-empty strings, deduplicated, rejecting the sentinel', () => {
+    expect(normalizeExcludedWorkspaceIds(['a', 'a', '', UNASSIGNED_KEY_PIN, 'b', 7])).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  it('returns an empty list for non-array input', () => {
+    expect(normalizeExcludedWorkspaceIds(undefined)).toEqual([]);
+    expect(normalizeExcludedWorkspaceIds('a')).toEqual([]);
+    expect(normalizeExcludedWorkspaceIds({ 0: 'a' })).toEqual([]);
+  });
+});
+
+describe('keyPinsEqual', () => {
+  it('compares 6-slot arrays entry-wise, tolerating short input', () => {
+    expect(keyPinsEqual(['a', null, null, null, null, null], ['a'])).toBe(true);
+    expect(keyPinsEqual(['a', null, null, null, null, null], ['b'])).toBe(false);
+    expect(keyPinsEqual([], [])).toBe(true);
+  });
+});
+
+describe('reconcileKeyPins', () => {
+  const noPins = new Array<string | null>(AGENT_KEY_COUNT).fill(null);
+
+  it('promotes auto-filled slots into pins (sticky snapshot)', () => {
+    const workspaces = [ws('old', '2026-07-01T00:00:00Z'), ws('new', '2026-07-30T00:00:00Z')];
+    expect(reconcileKeyPins(noPins, workspaces)).toEqual(['new', 'old', null, null, null, null]);
+  });
+
+  it('keeps existing pins on their slots regardless of activity', () => {
+    const pins = ['old', 'new', null, null, null, null];
+    const workspaces = [ws('old', '2026-07-01T00:00:00Z'), ws('new', '2026-07-30T00:00:00Z')];
+    expect(reconcileKeyPins(pins, workspaces)).toEqual(['old', 'new', null, null, null, null]);
+  });
+
+  it('releases a pin whose workspace disappeared and backfills it', () => {
+    const pins = ['gone', 'kept', null, null, null, null];
+    const workspaces = [ws('kept', '2026-07-01T00:00:00Z'), ws('next', '2026-07-30T00:00:00Z')];
+    expect(reconcileKeyPins(pins, workspaces)).toEqual(['next', 'kept', null, null, null, null]);
+  });
+
+  it('preserves sticky-unassigned sentinels', () => {
+    const pins = [UNASSIGNED_KEY_PIN, null, null, null, null, null];
+    const workspaces = [ws('a', '2026-07-30T00:00:00Z')];
+    expect(reconcileKeyPins(pins, workspaces)).toEqual([
+      UNASSIGNED_KEY_PIN,
+      'a',
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it('does not fill excluded workspaces into freed slots', () => {
+    const pins = ['gone', null, null, null, null, null];
+    const workspaces = [ws('excluded', '2026-07-30T00:00:00Z'), ws('ok', '2026-07-01T00:00:00Z')];
+    expect(reconcileKeyPins(pins, workspaces, ['excluded'])).toEqual([
+      'ok',
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
   });
 });

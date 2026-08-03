@@ -76,8 +76,9 @@ export const CODEX_MIC_LINKED_SLOT = 5;
  * Per-model default mappings on ACT06–ACT12.
  *
  * CM2 (7 discrete keys): creation/navigation actions first, then the
- * agent-cycling actions; `stop-agent` and `toggle-sidebar-tabs` ship
- * unassigned.
+ * agent-cycling actions, ending with cycle-attention-agents on ACT12
+ * (Settings-graphic row 4, key 3); `stop-agent` and `toggle-sidebar-tabs`
+ * ship unassigned.
  *
  * Codex Micro (6 printed caps): row 3 = lightning (ACT06), checkmark
  * (ACT07), x-mark (ACT08), branching (ACT09); row 4 = the linked 2U Mic
@@ -94,7 +95,7 @@ export const DEFAULT_ACTION_MAPPINGS: Record<
     'switch-window-layouts',
     'cycle-in-progress-agents',
     'cycle-workspace-agents',
-    'cycle-unread-agents',
+    'cycle-attention-agents',
   ],
   'codex-micro': [
     'cycle-in-progress-agents',
@@ -106,6 +107,39 @@ export const DEFAULT_ACTION_MAPPINGS: Record<
     'new-agent',
   ],
 };
+
+/**
+ * CM2 defaults before `cycle-attention-agents` landed on slot 6 (ACT12).
+ * Used only by the one-shot hydration migration below.
+ */
+export const LEGACY_CM2_DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] = [
+  'new-workspace',
+  'new-agent',
+  'see-spec',
+  'switch-window-layouts',
+  'cycle-in-progress-agents',
+  'cycle-workspace-agents',
+  'cycle-unread-agents',
+];
+
+/**
+ * Migrate a persisted CM2 mapping that still equals the pre-attention
+ * defaults (never customized) to the current defaults. Whole-mapping
+ * equality keeps user-customized mappings untouched — a user who changed
+ * any slot keeps their layout and can pick up the new default via
+ * reset-to-defaults. Returns true when the record was changed.
+ */
+export function migrateLegacyCm2DefaultActionMapping(
+  mappings: Record<HardwareDeviceModel, ActionKeyActionId[]>,
+): boolean {
+  const cm2 = mappings['creator-micro-2'];
+  const isLegacyDefault =
+    cm2.length === LEGACY_CM2_DEFAULT_ACTION_MAPPING.length &&
+    cm2.every((id, slot) => id === LEGACY_CM2_DEFAULT_ACTION_MAPPING[slot]);
+  if (!isLegacyDefault) return false;
+  mappings['creator-micro-2'] = [...DEFAULT_ACTION_MAPPINGS['creator-micro-2']];
+  return true;
+}
 
 /** CM2 defaults — the legacy single-model seam, kept for existing consumers. */
 export const DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] =

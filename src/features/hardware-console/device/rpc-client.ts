@@ -22,6 +22,15 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 2000;
 const METHOD_NOT_FOUND = -32601;
 const HANDLER_FAILED = -32000;
 
+/**
+ * Host-originated command methods (we call these on the device). Seeing one
+ * arrive as a device request means our own outbound request was looped back
+ * to an inputreport (e.g. echoed across another granted collection of the
+ * same device). Still answered with method-not-found so no id is left
+ * dangling, but logged at debug to avoid per-frame warn spam.
+ */
+const KNOWN_HOST_METHODS = new Set(['v.oai.rgbcfg', 'v.oai.thstatus']);
+
 export interface RpcMessagePort {
   sendMessage(message: unknown): Promise<void>;
 }
@@ -167,7 +176,9 @@ export class HardwareRpcClient {
   private handleResponse(id: number, record: Record<string, unknown>): void {
     const entry = this.pending.get(id);
     if (!entry) {
-      logger.warn('Ignoring response for unknown or stale id', { id });
+      // Stale (timed out / pre-reconnect) or foreign (another client's)
+      // response — drop quietly; debug-level to avoid warn spam.
+      logger.debug('Dropping response for unknown or stale id', { id });
       return;
     }
     clearTimeout(entry.timer);
@@ -182,7 +193,11 @@ export class HardwareRpcClient {
   private handleDeviceRequest(method: string, params: unknown, id: unknown): void {
     const handler = this.requestHandlers.get(method);
     if (!handler) {
-      logger.warn('No handler for device request', { method });
+      if (KNOWN_HOST_METHODS.has(method)) {
+        logger.debug('No handler for looped-back host method', { method });
+      } else {
+        logger.warn('No handler for device request', { method });
+      }
       this.reply({ id, error: { code: METHOD_NOT_FOUND, message: `Method not found: ${method}` } });
       return;
     }
