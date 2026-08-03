@@ -322,7 +322,9 @@ function extractSubscriptionId(params: unknown): string | undefined {
  * `agent:stream:activity` / terminal `agent:stream:end` (intentd#792) into
  * the agent-session slice — no RPC, no client-side debounce (the daemon
  * already throttles the activity signal to 1s leading-edge). The `updateSession`
- * reducer is a no-op for unknown agents, so this never conjures a session.
+ * reducer is a no-op for unknown agents, so this never conjures a session —
+ * the stream handlers instead kick off `hydrateSessionIfUnknown` so the
+ * fields land via the next ping once the fetched session arrives.
  * Empty/whitespace values are dropped (the daemon omits fields until
  * derivable; an empty string would only arise from a contract regression).
  * The viewed agent's standing `chat.subscribe` buffer stays the authoritative
@@ -345,6 +347,23 @@ function applyStreamPreviewFields(
 }
 
 /**
+ * A live-stream event can arrive for an agent the agent-session slice does
+ * not know yet — e.g. a delegated sub-agent whose session was never hydrated
+ * in this window. `updateSession` no-ops for unknown agents, so the
+ * push-applied preview fields (`lastAgentResponse`/`digest`) and busy flags
+ * would be silently dropped until an unrelated refetch. Kick off the
+ * read-service hydration instead: `ensureAgentSession` coalesces concurrent
+ * calls per agent via its in-flight map and the daemon throttles activity to
+ * ≤1/s, so this cannot stampede. Already-hydrated agents never refetch. The
+ * callers still dispatch their chat-state actions unconditionally (chat-state
+ * materializes entries for unknown agents by design).
+ */
+function hydrateSessionIfUnknown(agentId: string): void {
+  if (appStore.state.agentSessions?.byAgentId[agentId]) return;
+  void ensureAgentSession(agentId);
+}
+
+/**
  * `agent:stream:activity` (PROTOCOL §7) is the content-free liveness ping —
  * no raw transcript content, leading-edge throttled per agent (first ping of
  * a turn immediate, then ≤1/s until the turn ends). The standing
@@ -364,9 +383,10 @@ function handleStreamActivityEvent(event: WorkspaceEvent): void {
   if (!data) return;
   const agentId = data.agentId;
   const messageId = data.messageId;
-  if (typeof agentId !== 'string' || typeof messageId !== 'string') {
+  if (typeof agentId !== 'string' || agentId.length === 0 || typeof messageId !== 'string') {
     return;
   }
+  hydrateSessionIfUnknown(agentId);
   const lastAgentResponse =
     typeof data.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined;
   const digest = typeof data.digest === 'string' ? data.digest : undefined;
@@ -519,6 +539,7 @@ function handleStreamStatusEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || agentId.length === 0 || typeof phase !== 'string') {
     return;
   }
+  hydrateSessionIfUnknown(agentId);
   const message = typeof data.message === 'string' ? data.message : '';
   const levelRaw = data.level;
   const level: 'info' | 'warn' | 'error' =
@@ -569,6 +590,7 @@ function handleStreamStartEvent(event: WorkspaceEvent, workspaceId: string): voi
   ) {
     return;
   }
+  hydrateSessionIfUnknown(agentId);
   if (wakeTurnMessageIdByAgent.get(agentId) === messageId) return;
   wakeTurnMessageIdByAgent.set(agentId, messageId);
   appStore.dispatch(chatSendStarted(agentId, workspaceId));
