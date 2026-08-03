@@ -126,14 +126,7 @@ jobs:
   # dist-electron release assets as a workflow artifact for the publish job.
   build-macos:
     needs: resolve
-    # TEMPORARY: routed to GitHub-hosted macos-latest while the self-hosted
-    # m1mac runner is offline (intent-hq/monorepo#1342); revert to
-    # [self-hosted, macOS, ARM64, m1mac] when it is back online. Hosted
-    # macos-latest is also Apple silicon (arm64), so the sidecar target and
-    # dist:mac output are unchanged. The self-hosted-hygiene steps below
-    # (temp keychain, cleanup, per-runner pnpm dest) are harmless no-ops on
-    # an ephemeral hosted runner and are kept for the revert.
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, m1mac]
     timeout-minutes: 90
 
     steps:
@@ -232,11 +225,7 @@ jobs:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
           # (this leg passed at 12288 on m1mac in the v2.13.0 rebuild, run
-          # 30764745052 — don't drop below ~10240). Hosted macos-latest has
-          # only 7 GB RAM (3-core M1), so the ~8-9 GB peak overshoots
-          # physical memory; unlike the Linux hosted leg there is no OOM
-          # killer to trip — macOS compressed memory/swap absorbs it at some
-          # speed cost (monorepo#1342).
+          # 30764745052 — don't drop below ~10240).
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
