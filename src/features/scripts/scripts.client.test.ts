@@ -13,9 +13,9 @@ import type { FileContentEntry } from '$store/renderer/slices/files/files-types'
 // setupScript in monorepo PR #270), and treat an empty list as a no-op.
 // detect() MUST diff manifest candidates against the live script.list before
 // upserting through `script.create` (scriptId upsert) so repeat clicks don't
-// duplicate rows, and MUST NOT send the upsert when the target script's
-// runtime status is `running` — the daemon-side upsert tears down the live
-// PTY group (§5.8).
+// duplicate rows, and MUST NOT send the upsert (nor `script.remove` for a
+// stale row) when the target script's runtime status is `running` — both
+// tear down the live PTY group daemon-side (§5.8).
 const {
   scriptsList,
   scriptsCreate,
@@ -338,6 +338,53 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     expect(scriptsRemove).toHaveBeenCalledTimes(1);
     expect(scriptsRemove).toHaveBeenCalledWith('ws-1', 'script-auto-stale');
     expect(result).toMatchObject({ detected: 1, added: 0, removed: 1 });
+  });
+
+  it('never sends script.remove for a stale row that is running — skips and reports it, still removing stale idle rows', async () => {
+    // Both rows are auto-detected and stale (no manifest produces their
+    // names), but the running one may not be removed: script.remove kills the
+    // live PTY group daemon-side. It is reported in `skippedRunning` and not
+    // counted in `removed`; the exited row is removed as usual.
+    seedManifests({ 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'npm run dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+      }),
+      liveScript({
+        id: 'script-auto-stale-running',
+        name: 'stale-running',
+        command: 'npm run stale-running',
+        mode: 'service',
+        source: 'auto-detected',
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+      liveScript({
+        id: 'script-auto-stale-exited',
+        name: 'stale-exited',
+        command: 'npm run stale-exited',
+        mode: 'command',
+        source: 'auto-detected',
+        runtime: { status: 'exited', exitCode: 0, restartCount: 0 },
+      }),
+    ]);
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(scriptsRemove).toHaveBeenCalledTimes(1);
+    expect(scriptsRemove).toHaveBeenCalledWith('ws-1', 'script-auto-stale-exited');
+    expect(scriptsRemove).not.toHaveBeenCalledWith('ws-1', 'script-auto-stale-running');
+    expect(result).toMatchObject({
+      success: true,
+      detected: 1,
+      added: 0,
+      removed: 1,
+      skippedRunning: ['stale-running'],
+    });
   });
 
   it('surfaces a failure envelope when the manifest read throws', async () => {

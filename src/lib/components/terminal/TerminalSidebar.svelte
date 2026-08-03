@@ -138,13 +138,27 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       let updatedCount = 0;
       let removedCount = 0;
 
+      const scriptEntries = selectScriptEntries.select(appStore.state);
       const autoDetectedIds = new Set(
-        selectScriptEntries.select(appStore.state).filter((s) => s.source === 'auto-detected').map((s) => s.id),
+        scriptEntries.filter((s) => s.source === 'auto-detected').map((s) => s.id),
       );
+      const entriesById = new Map(scriptEntries.map((s) => [s.id, s]));
+      const skippedRunning: string[] = [];
 
       if (Array.isArray(parsed.remove)) {
         for (const scriptId of parsed.remove) {
           if (typeof scriptId === 'string' && autoDetectedIds.has(scriptId)) {
+            // Removing a running script kills its live PTY group daemon-side —
+            // skip it and surface the skip so the user can stop + re-detect.
+            const target = entriesById.get(scriptId);
+            if (target?.runtime?.status === 'running') {
+              skippedRunning.push(target.name);
+              logger.info('Skipping script.remove for running script', {
+                name: target.name,
+                scriptId,
+              });
+              continue;
+            }
             await scriptsClient.remove(workspaceId, scriptId);
             appStore.dispatch(removeScript(workspaceId, scriptId));
             removedCount++;
@@ -155,6 +169,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       if (Array.isArray(parsed.update)) {
         for (const entry of parsed.update) {
           if (entry.id && typeof entry.id === 'string' && autoDetectedIds.has(entry.id)) {
+            // The update rides the §5.8 script.create scriptId upsert, which
+            // tears down the live PTY group — never send it for a running row.
+            const target = entriesById.get(entry.id);
+            if (target?.runtime?.status === 'running') {
+              skippedRunning.push(target.name);
+              logger.info('Skipping script.update for running script', {
+                name: target.name,
+                scriptId: entry.id,
+              });
+              continue;
+            }
             const updates: Record<string, string> = {};
             if (entry.name) updates.name = entry.name;
             if (entry.command) updates.command = entry.command;
@@ -228,6 +253,16 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         });
       } else {
         toast.info(m.terminal_sidebar_noScriptChanges_info());
+      }
+      if (skippedRunning.length > 0) {
+        toast.warning(
+          skippedRunning.length === 1
+            ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
+            : m.scripts_detect_skippedRunning_many({
+                count: skippedRunning.length,
+                names: skippedRunning.join(', '),
+              }),
+        );
       }
       return;
     }
