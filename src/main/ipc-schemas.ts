@@ -1119,6 +1119,7 @@ export const DialogMessageSchema = z.object({
 export const DialogOpenSchema = z.object({
   title: z.string().optional(),
   defaultPath: z.string().optional(),
+  mode: z.enum(['directory', 'file']).optional(),
 });
 
 // SHELL_CHANNELS schemas

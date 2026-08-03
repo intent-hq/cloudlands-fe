@@ -79,7 +79,32 @@ describe('dialog:open IPC', () => {
     expect(electronMocks.showOpenDialog).toHaveBeenCalledExactlyOnceWith(focusedWindow, {
       title: 'Choose a folder',
       defaultPath: '/tmp',
-      properties: ['openDirectory'],
+      properties: ['openDirectory', 'createDirectory'],
+    });
+  });
+
+  it('opens a file-only native dialog when mode is file', async () => {
+    const focusedWindow = { id: 1 };
+    electronMocks.getFocusedWindow.mockReturnValue(focusedWindow);
+    electronMocks.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/tmp/key.pem'],
+    });
+
+    const result = await handlerFor(DIALOG_CHANNELS.OPEN)(
+      { sender: {} },
+      {
+        title: 'Choose a file',
+        defaultPath: '/tmp',
+        mode: 'file',
+      },
+    );
+
+    expect(result).toEqual(['/tmp/key.pem']);
+    expect(electronMocks.showOpenDialog).toHaveBeenCalledExactlyOnceWith(focusedWindow, {
+      title: 'Choose a file',
+      defaultPath: '/tmp',
+      properties: ['openFile'],
     });
   });
 
@@ -92,7 +117,7 @@ describe('dialog:open IPC', () => {
     expect(electronMocks.showOpenDialog).toHaveBeenCalledExactlyOnceWith({
       title: undefined,
       defaultPath: undefined,
-      properties: ['openDirectory'],
+      properties: ['openDirectory', 'createDirectory'],
     });
   });
 });

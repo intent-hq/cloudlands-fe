@@ -935,7 +935,7 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Native directory picker
+  // Native directory/file picker
   ipcMain.handle(
     DIALOG_CHANNELS.OPEN,
     createSafeValidatedHandler(
@@ -946,7 +946,8 @@ export function setupSystemIPC() {
         const options: Electron.OpenDialogOptions = {
           title: validated.title,
           defaultPath: validated.defaultPath,
-          properties: ['openDirectory'],
+          properties:
+            validated.mode === 'file' ? ['openFile'] : ['openDirectory', 'createDirectory'],
         };
         const result = targetWindow
           ? await dialog.showOpenDialog(targetWindow, options)
