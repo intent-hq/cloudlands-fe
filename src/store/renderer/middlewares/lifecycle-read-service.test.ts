@@ -24,7 +24,7 @@ vi.mock("$lib/client", () => ({
     skills: { list: vi.fn(() => Promise.resolve([])) },
     scripts: { list: vi.fn(() => Promise.resolve([])) },
     agents: { list: vi.fn(() => Promise.resolve([])) },
-    terminals: { list: vi.fn(() => Promise.resolve([])) },
+    terminals: { list: vi.fn(() => Promise.resolve({ terminals: [], daemonBootId: "boot-test" })) },
     git: {
       prStatus: vi.fn(() => Promise.resolve(null)),
       // Default to a benign no-PR refresh result; null means transport failure.
@@ -707,9 +707,10 @@ describe("lifecycleReadService (hydrateAgentsRequested → agents.list convergen
   describe("terminal hydration on workspace switch (monorepo#1330)", () => {
     it("hydrateTerminalsRequested fetches the list via the seam and stores tabs", async () => {
       const ws = "ws-term-hydrate";
-      terminalsApi.list.mockResolvedValueOnce([
-        { id: "pty-0", name: "Terminal", workspaceId: ws, isConnected: true },
-      ] as never);
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [{ id: "pty-0", name: "Terminal", workspaceId: ws, isConnected: true }],
+        daemonBootId: "boot-1",
+      } as never);
 
       appStore.dispatch(hydrateTerminalsRequested(ws));
       await flush();
@@ -717,16 +718,18 @@ describe("lifecycleReadService (hydrateAgentsRequested → agents.list convergen
       expect(terminalsApi.list).toHaveBeenCalledWith(ws);
       const wsState = appStore.state.terminals.workspaces[ws];
       expect(getItems(wsState.terminals).map((t) => t.id)).toEqual(["pty-0"]);
+      expect(wsState.daemonBootId).toBe("boot-1");
     });
 
-    it("live tabs survive an A -> B -> A switch with a transient empty terminal.list", async () => {
+    it("live tabs survive an A -> B -> A switch with a post-restart empty terminal.list (different boot id)", async () => {
       const wsA = "ws-term-a";
       const wsB = "ws-term-b";
 
       // Mount A: daemon lists one live PTY; the user opens the panel on it.
-      terminalsApi.list.mockResolvedValueOnce([
-        { id: "pty-a1", name: "Terminal", workspaceId: wsA, isConnected: true },
-      ] as never);
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [{ id: "pty-a1", name: "Terminal", workspaceId: wsA, isConnected: true }],
+        daemonBootId: "boot-1",
+      } as never);
       appStore.dispatch(hydrateTerminalsRequested(wsA));
       await flush();
       appStore.dispatch(openTerminalOverlay(wsA, "pty-a1"));
@@ -735,23 +738,55 @@ describe("lifecycleReadService (hydrateAgentsRequested → agents.list convergen
       expect(appStore.state.terminals.workspaces[wsA].activeTerminalId).toBe("pty-a1");
 
       // Mount B (unrelated hydration for another workspace).
-      terminalsApi.list.mockResolvedValueOnce([] as never);
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [],
+        daemonBootId: "boot-2",
+      } as never);
       appStore.dispatch(hydrateTerminalsRequested(wsB));
       await flush();
 
-      // Return to A: the daemon transiently reports an empty (but successful)
-      // list for A — e.g. the list lands before the PTY host has re-registered
-      // the workspace scope. The PTY itself is still alive on the daemon.
-      terminalsApi.list.mockResolvedValueOnce([] as never);
+      // Return to A: the daemon restarted (new boot id) and reports an empty
+      // list before A's PTYs have respawned. The tabs must be preserved so
+      // auto-reconnect can respawn them; the new boot id is adopted.
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [],
+        daemonBootId: "boot-2",
+      } as never);
       appStore.dispatch(hydrateTerminalsRequested(wsA));
       await flush();
 
-      // BUG: loadWorkspaceTerminals replaces the workspace state with the
-      // empty snapshot — tabs vanish, panel closes.
       const wsState = appStore.state.terminals.workspaces[wsA];
       expect(getItems(wsState.terminals).map((t) => t.id)).toEqual(["pty-a1"]);
       expect(wsState.activeTerminalId).toBe("pty-a1");
       expect(wsState.isOpen).toBe(true);
+      expect(wsState.daemonBootId).toBe("boot-2");
+    });
+
+    it("an authoritative same-boot empty terminal.list converges to zero tabs (monorepo#1334)", async () => {
+      const ws = "ws-term-converge";
+
+      // Hydrate one live PTY under boot-1.
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [{ id: "pty-z1", name: "Terminal", workspaceId: ws, isConnected: true }],
+        daemonBootId: "boot-1",
+      } as never);
+      appStore.dispatch(hydrateTerminalsRequested(ws));
+      await flush();
+      appStore.dispatch(openTerminalOverlay(ws, "pty-z1"));
+
+      // Same boot reports empty: every PTY is genuinely gone (e.g. killed via
+      // the sitter) — the stale tab must be dropped and the panel closed.
+      terminalsApi.list.mockResolvedValueOnce({
+        terminals: [],
+        daemonBootId: "boot-1",
+      } as never);
+      appStore.dispatch(hydrateTerminalsRequested(ws));
+      await flush();
+
+      const wsState = appStore.state.terminals.workspaces[ws];
+      expect(getItems(wsState.terminals)).toEqual([]);
+      expect(wsState.activeTerminalId).toBeNull();
+      expect(wsState.isOpen).toBe(false);
     });
   });
 });

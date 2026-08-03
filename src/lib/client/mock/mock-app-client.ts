@@ -58,8 +58,10 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   };
 
   readonly terminals: AppClient["terminals"] = {
-    list: async (workspaceId) =>
-      fx.mockTerminals.filter((terminal) => terminal.workspaceId === workspaceId),
+    list: async (workspaceId) => ({
+      terminals: fx.mockTerminals.filter((terminal) => terminal.workspaceId === workspaceId),
+      daemonBootId: "mock-boot",
+    }),
     create: async () => OK,
     write: async () => OK,
     resize: async () => OK,

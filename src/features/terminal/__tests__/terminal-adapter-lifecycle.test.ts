@@ -5,7 +5,7 @@ import type { TerminalsClient } from '$lib/client';
 /** Build a TerminalsClient stub that swallows daemon traffic for DOM-focused tests. */
 function fakeTerminalsClient(): TerminalsClient {
   return {
-    list: vi.fn(async () => []),
+    list: vi.fn(async () => ({ terminals: [], daemonBootId: 'boot-test' })),
     create: vi.fn(async () => ({ success: true, id: 'term-1' })),
     write: vi.fn(async () => ({ success: true })),
     resize: vi.fn(async () => ({ success: true })),
@@ -338,9 +338,10 @@ describe('TerminalAdapter cursor suppression on exit', () => {
     const terminals = fakeTerminalsClient();
     // Daemon terminal.list shape: already-exited PTY (isExecutingCommand: false
     // on the wire → isExecuting: false on TerminalTab).
-    terminals.list = vi.fn(async () => [
-      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false },
-    ]) as any;
+    terminals.list = vi.fn(async () => ({
+      terminals: [{ id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false }],
+      daemonBootId: 'boot-test',
+    })) as any;
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
       terminalId: 'pty-0',
@@ -363,9 +364,10 @@ describe('TerminalAdapter cursor suppression on exit', () => {
       value: () => ({ width: 800, height: 600 }),
     });
     const terminals = fakeTerminalsClient();
-    terminals.list = vi.fn(async () => [
-      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: true },
-    ]) as any;
+    terminals.list = vi.fn(async () => ({
+      terminals: [{ id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: true }],
+      daemonBootId: 'boot-test',
+    })) as any;
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
       terminalId: 'pty-0',
@@ -386,9 +388,10 @@ describe('TerminalAdapter cursor suppression on exit', () => {
       value: () => ({ width: 800, height: 600 }),
     });
     const terminals = fakeTerminalsClient();
-    terminals.list = vi.fn(async () => [
-      { id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false },
-    ]) as any;
+    terminals.list = vi.fn(async () => ({
+      terminals: [{ id: 'pty-0', name: 'Setup Script', isConnected: true, isExecuting: false }],
+      daemonBootId: 'boot-test',
+    })) as any;
     const adapter = new TerminalAdapter({
       workspaceId: 'ws-1',
       terminalId: 'pty-0',

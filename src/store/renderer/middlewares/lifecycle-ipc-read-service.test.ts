@@ -47,7 +47,7 @@ vi.mock("$lib/client", () => ({
       prRefresh: vi.fn(() => Promise.resolve({ outcome: "unchanged", pullRequests: [] })),
     },
     agents: { list: vi.fn(() => Promise.resolve([])) },
-    terminals: { list: vi.fn(() => Promise.resolve([])) },
+    terminals: { list: vi.fn(() => Promise.resolve({ terminals: [], daemonBootId: "boot-test" })) },
     files: {
       explorerTree: vi.fn(() => Promise.resolve(null)),
       gitStatusMap: vi.fn(() => Promise.resolve({})),
