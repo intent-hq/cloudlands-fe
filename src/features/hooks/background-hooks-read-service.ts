@@ -12,7 +12,10 @@
  * subscription and clears the slice. The `runBackgroundHookRequested` /
  * `cancelBackgroundHookRequested` triggers forward to `hook.runNow` /
  * `hook.cancel` fire-and-forget — the daemon's `hook:*` events converge the
- * list, so no success action is needed.
+ * list, so no success action is needed. `backgroundHooksRefetchRequested`
+ * routes to the live subscription's `refetch` (an on-demand `hook.list`
+ * re-seed) so consumers can refresh fields events never carry, e.g.
+ * `lastLogs` (§5.40).
  *
  * Keeping the wire calls here — not in the Svelte component — satisfies the
  * `intent/no-component-async-data-fetch` ESLint rule and matches the
@@ -24,6 +27,7 @@ import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
 import {
   backgroundHooksCleared,
+  backgroundHooksRefetchRequested,
   backgroundHooksSubscribeRequested,
   backgroundHooksUnsubscribeRequested,
   backgroundHooksUpdated,
@@ -34,6 +38,7 @@ import {
   cancelHook,
   runHookNow,
   subscribeBackgroundHooks,
+  type BackgroundHooksSubscription,
 } from "./background-hooks-service";
 
 const logger = createLogger("BackgroundHooksReadService");
@@ -59,7 +64,7 @@ function hookRefOf(action: { payload?: unknown }): [string, string] | null {
  */
 export function createBackgroundHooksMiddleware(): StoreMiddleware {
   /** Live subscriptions refcounted per workspace. */
-  const active = new Map<string, { count: number; dispose: () => void }>();
+  const active = new Map<string, { count: number; subscription: BackgroundHooksSubscription }>();
 
   return () => (next) => (action) => {
     const result = next(action);
@@ -72,10 +77,10 @@ export function createBackgroundHooksMiddleware(): StoreMiddleware {
         if (entry) {
           entry.count += 1;
         } else {
-          const dispose = subscribeBackgroundHooks(workspaceId, (hooks) => {
+          const subscription = subscribeBackgroundHooks(workspaceId, (hooks) => {
             appStore.dispatch(backgroundHooksUpdated(workspaceId, hooks));
           });
-          active.set(workspaceId, { count: 1, dispose });
+          active.set(workspaceId, { count: 1, subscription });
         }
       }
     } else if (action.type === backgroundHooksUnsubscribeRequested.type) {
@@ -86,11 +91,14 @@ export function createBackgroundHooksMiddleware(): StoreMiddleware {
           entry.count -= 1;
           if (entry.count <= 0) {
             active.delete(workspaceId);
-            entry.dispose();
+            entry.subscription.dispose();
             appStore.dispatch(backgroundHooksCleared(workspaceId));
           }
         }
       }
+    } else if (action.type === backgroundHooksRefetchRequested.type) {
+      const workspaceId = workspaceIdOf(action);
+      if (workspaceId) active.get(workspaceId)?.subscription.refetch();
     } else if (action.type === runBackgroundHookRequested.type) {
       const ref = hookRefOf(action);
       if (ref) {

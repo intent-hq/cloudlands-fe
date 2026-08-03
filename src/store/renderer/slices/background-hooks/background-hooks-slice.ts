@@ -56,6 +56,16 @@ export const backgroundHooksUnsubscribeRequested = createAction<[workspaceId: st
   "backgroundHooks/unsubscribeRequested",
 );
 
+/**
+ * Trigger: on-demand `hook.list` refetch for the workspace's live
+ * subscription — `hook:*` events never carry `lastLogs` (§5.40), so
+ * consumers dispatch this to refresh it. The fresh list arrives via
+ * `backgroundHooksUpdated`; no reducer case.
+ */
+export const backgroundHooksRefetchRequested = createAction<[workspaceId: string]>(
+  "backgroundHooks/refetchRequested",
+);
+
 /** Service → reducer: full hook list after a seed or event fold. */
 export const backgroundHooksUpdated = createAction<
   [workspaceId: string, hooks: BackgroundHook[]]
