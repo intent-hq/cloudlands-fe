@@ -15,6 +15,7 @@ import { formatRelativeTimeCompact } from '$lib/utils/date';
 import type { Workspace } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 
 // Folder Provider — daemon-backed via search.fileNames (PROTOCOL §5.15);
 // folders are derived from the workspace-relative file paths the daemon returns.
@@ -535,8 +536,9 @@ export class ScriptProvider implements Provider {
 
       return filtered.slice(0, 10).map((script) => {
         const status = script.runtime.status;
+        // Live statuses (running/restarting) reuse the running treatment.
         const statusLabel =
-          status === 'running'
+          isLiveScriptStatus(status)
             ? m.chat_mentions_scriptRunning_label()
             : status === 'exited'
               ? m.chat_mentions_scriptExited_label()
@@ -553,7 +555,7 @@ export class ScriptProvider implements Provider {
             workspaceId: context.workspaceId,
             command: script.command,
             status:
-              status === 'running'
+              isLiveScriptStatus(status)
                 ? ('ok' as const)
                 : status === 'exited'
                   ? ('warning' as const)

@@ -13,11 +13,14 @@ import type { FileContentEntry } from '$store/renderer/slices/files/files-types'
 // setupScript in monorepo PR #270), and treat an empty list as a no-op.
 // detect() MUST diff manifest candidates against the live script.list before
 // upserting through `script.create` (scriptId upsert) so repeat clicks don't
-// duplicate rows, and MUST NOT send the upsert (nor `script.remove` for a
-// stale row) when the target script's runtime status is `running` — both
-// tear down the live PTY group daemon-side (§5.8). update() rides the same
-// scriptId upsert and MUST apply the same running-script guard: refuse with
-// an error instead of sending script.create.
+// duplicate rows, and MUST NOT send the upsert when the target script's
+// runtime status is live — anything outside the safe-to-upsert
+// `idle`/`exited` allowlist, e.g. `running` or `restarting` — because the
+// daemon-side upsert tears down the live PTY group (§5.8). Nor may
+// `script.remove` go out for a stale `running` row, for the same reason.
+// update() rides the same scriptId upsert and MUST apply the same
+// running-script guard: refuse with an error instead of sending
+// script.create.
 const {
   scriptsList,
   scriptsCreate,
@@ -355,6 +358,41 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
         category: 'dev',
         source: 'auto-detected',
         runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+    ]);
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      detected: 1,
+      added: 0,
+      removed: 0,
+      skippedRunning: ['dev'],
+    });
+  });
+
+  it('never sends the script.create upsert when the target script is restarting — skips and reports it', async () => {
+    // Same changed-command diff, but the daemon reports the auto-detected row
+    // as `restarting` (§5.8 runtime block) — a live transitional state. The
+    // guard is an allowlist (`idle`/`exited` are the only safe-to-upsert
+    // statuses), so no script.create may go out on the wire; the script is
+    // reported back in `skippedRunning` instead.
+    seedManifests({
+      'pnpm-lock.yaml': '',
+      'package.json': JSON.stringify({ scripts: { dev: 'vite' } }),
+    });
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+        runtime: { status: 'restarting', pid: 4242, restartCount: 1 },
       }),
     ]);
 
