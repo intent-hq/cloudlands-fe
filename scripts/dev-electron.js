@@ -20,15 +20,31 @@ const devPort = process.env.DEV_PORT || '5190';
 const devInstance = process.env.DEV_INSTANCE || '';
 const devInspectPort = process.env.DEV_INSPECT_PORT || '9229';
 
-console.log(`Waiting for Vite dev server at http://127.0.0.1:${devPort}...`);
+console.log(
+  `Waiting for Vite dev server at http://127.0.0.1:${devPort} and main/preload builds...`,
+);
 
-// Wait for the dev server to be ready - use 127.0.0.1 to avoid IPv6 binding issues on Linux
+// Wait for the dev server AND the main/preload build sentinels. The sentinels
+// are cleared by dev:base before the concurrent phase starts and written by
+// build:main:dev / build:preload:dev only after their compile completes, so a
+// stale dist/main/index.js left over from a previous (incremental) build can
+// never trigger a premature Electron launch.
+// Use 127.0.0.1 to avoid IPv6 binding issues on Linux.
 const isWindows = process.platform === 'win32';
-const waitOn = spawn('npx', ['wait-on', `http://127.0.0.1:${devPort}`], {
-  cwd: rootDir,
-  stdio: 'inherit',
-  shell: isWindows,
-});
+const waitOn = spawn(
+  'npx',
+  [
+    'wait-on',
+    `http://127.0.0.1:${devPort}`,
+    join(rootDir, 'dist/.dev-ready-main'),
+    join(rootDir, 'dist/.dev-ready-preload'),
+  ],
+  {
+    cwd: rootDir,
+    stdio: 'inherit',
+    shell: isWindows,
+  },
+);
 
 waitOn.on('error', (err) => {
   console.error('Failed to wait for dev server:', err);
