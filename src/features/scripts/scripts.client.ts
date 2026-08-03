@@ -176,7 +176,9 @@ export const scriptsClient = {
    *    script's name is reported back in `skippedRunning` for the caller to
    *    surface,
    *  - removes auto-detected rows whose name is no longer produced by any
-   *    manifest,
+   *    manifest — UNLESS that row is currently `running` (removal kills the
+   *    live PTY group), in which case it is skipped and reported in
+   *    `skippedRunning`,
    *  - never touches user-created scripts, even when a manifest exposes the
    *    same name.
    *
@@ -273,6 +275,17 @@ export const scriptsClient = {
       let removed = 0;
       for (const [name, s] of existingAutoByName) {
         if (!detectedNames.has(name)) {
+          // Removing a running script kills its live PTY group daemon-side —
+          // never issue script.remove against a running row. Skip and let the
+          // caller surface it so the user can stop + re-detect.
+          if (s.runtime?.status === 'running') {
+            skippedRunning.push(name);
+            logger.info('Skipping script.remove for running stale script', {
+              name,
+              scriptId: s.id,
+            });
+            continue;
+          }
           const removeResult = await appClient.scripts.remove(workspaceId, s.id);
           if (removeResult.success) {
             removed += 1;
