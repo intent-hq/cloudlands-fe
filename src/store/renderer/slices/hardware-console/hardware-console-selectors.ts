@@ -76,6 +76,13 @@ export const selectEncoderHudWorkspaceId = store.createSelector(
   (state) => state.hardwareConsole.encoderHudWorkspaceId,
 );
 
+/** Title for the encoder-rotate HUD's current workspace target. */
+export const selectEncoderHudWorkspaceTitle = store.createSelector((state): string | null => {
+	const workspaceId = state.hardwareConsole.encoderHudWorkspaceId;
+	if (workspaceId === null) return null;
+	return selectWorkspaceItems.select(state).find((workspace) => workspace.id === workspaceId)?.title ?? null;
+});
+
 /** Label of the last-fired cycle action key shown by the action HUD; `null` = HUD hidden. */
 export const selectActionHudLabel = store.createSelector(
   (state) => state.hardwareConsole.actionHudLabel,

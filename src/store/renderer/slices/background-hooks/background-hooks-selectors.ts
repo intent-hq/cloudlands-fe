@@ -3,7 +3,7 @@
  */
 
 import { store } from "../../store";
-import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
+import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 import type { BackgroundHook } from "$features/hooks/background-hooks-service";
 
 /** All live-subscribed hooks for a workspace (every wire state), in seed order. */

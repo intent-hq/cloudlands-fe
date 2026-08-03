@@ -14,7 +14,7 @@
  * through the main-safe navigation.client seam.
  */
 
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { m } from '$shared/paraglide/messages.js';

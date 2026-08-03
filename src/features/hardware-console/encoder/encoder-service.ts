@@ -16,11 +16,11 @@
  * Dependency-light middleware module: AppClient-free, no selector imports —
  * workspace ordering reads `appStore.state` via the pure helpers.
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
-import { getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   encoderHudHidden,

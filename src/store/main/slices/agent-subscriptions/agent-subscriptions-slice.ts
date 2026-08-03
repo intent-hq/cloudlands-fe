@@ -131,11 +131,6 @@ export const markDelegationDelivered = createAction<[wsId: string, groupId: stri
   "agentSubscriptions/markDelegationDelivered"
 );
 
-// --- One-shot tracking ---
-export const markOneShotFired = createAction<[wsId: string, subscriptionId: string]>(
-  "agentSubscriptions/markOneShotFired"
-);
-
 // --- Delivery stats ---
 export const recordDeliverySuccess = createAction<
   [wsId: string, observedAt?: string],
@@ -324,7 +319,6 @@ agentSubscriptionsReducer.with(removeSubscription, (state, { payload: [wsId, sub
   return setWorkspaceState(state, wsId, {
     ...ws,
     subscriptions: rest,
-    firedOneShotSubscriptions: ws.firedOneShotSubscriptions.filter((id) => id !== subscriptionId),
   });
 });
 agentSubscriptionsReducer.with(removeAllSubscriptions, (state, { payload: [wsId, agentId] }) => {
@@ -467,15 +461,6 @@ agentSubscriptionsReducer.with(markDelegationDelivered, (state, { payload: [wsId
       ...ws.delegationGroups,
       [groupId]: { ...tracker, delivered: true },
     },
-  });
-});
-// --- One-shot tracking ---
-agentSubscriptionsReducer.with(markOneShotFired, (state, { payload: [wsId, subscriptionId] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  if (ws.firedOneShotSubscriptions.includes(subscriptionId)) return state;
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    firedOneShotSubscriptions: [...ws.firedOneShotSubscriptions, subscriptionId],
   });
 });
 // --- Delivery stats ---

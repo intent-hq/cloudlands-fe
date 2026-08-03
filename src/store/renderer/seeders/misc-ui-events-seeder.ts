@@ -14,9 +14,20 @@ import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 registerMockIpcHandler('window:open-new', async (arg) => {
   const rawRoute = (arg as { route?: unknown } | undefined)?.route;
   const route = typeof rawRoute === 'string' && rawRoute.startsWith('/') ? rawRoute : '/';
+  const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (bridge && typeof bridge.invoke === 'function') {
+    const response = (await bridge.invoke('window:open-new', { route })) as
+      | { success?: boolean; error?: string }
+      | undefined;
+    if (!response?.success) {
+      throw new Error(response?.error || 'Opening a new window is not available in this build');
+    }
+    return response;
+  }
+  const target = route.startsWith('/hud') ? 'intent-hud' : '_blank';
   const opened =
     typeof window !== 'undefined'
-      ? window.open(`${window.location.origin}${route}`, '_blank')
+      ? window.open(`${window.location.origin}${route}`, target)
       : null;
   if (!opened) {
     throw new Error('Opening a new window is not available in this build');

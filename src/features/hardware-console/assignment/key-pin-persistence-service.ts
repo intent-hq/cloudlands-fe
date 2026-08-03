@@ -23,7 +23,7 @@
  * Dependency-light per src/store/renderer/AGENTS.md: imports only the
  * AppClient seam, the configured store, and slice actions — no selectors.
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
@@ -34,7 +34,7 @@ import {
   pinWorkspaceToKey,
   unpinWorkspaceFromKeys,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-import { getItems } from '$lib/store-shim/utils/collections/collection-utils';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   isKeyAssignableWorkspace,
@@ -166,7 +166,9 @@ export function createHardwareConsoleKeyPinPersistenceMiddleware(): StoreMiddlew
 
     const result = next(action);
 
-    const type = typeof action?.type === 'string' ? action.type : '';
+		const type = typeof (action as { type?: unknown })?.type === 'string'
+			? (action as { type: string }).type
+			: '';
     const isPinMutation =
       type === pinWorkspaceToKey.type ||
       type === unpinWorkspaceFromKeys.type ||

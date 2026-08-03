@@ -7,18 +7,17 @@
    */
   import { fade } from 'svelte/transition';
   import { m } from '$shared/paraglide/messages.js';
-  import { getItem } from '$lib/store-shim/utils/collections/collection-utils';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
-  import { selectEncoderHudWorkspaceId } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
-  import { store as appStore } from '$store/renderer/store';
+	import {
+		selectEncoderHudWorkspaceId,
+		selectEncoderHudWorkspaceTitle,
+	} from '$store/renderer/slices/hardware-console/hardware-console-selectors';
 
   const hudWorkspaceId$ = selectEncoderHudWorkspaceId();
+	const hudWorkspaceTitle$ = selectEncoderHudWorkspaceTitle();
 
   const title = $derived.by(() => {
-    const workspaceId = $hudWorkspaceId$;
-    if (workspaceId === null) return null;
-    const workspace = getItem(appStore.state.workspace.workspaces, workspaceId as WorkspaceId);
-    return workspace?.title?.trim() || m.hardwareConsole_encoderHud_untitled_label();
+		if ($hudWorkspaceId$ === null) return null;
+		return $hudWorkspaceTitle$?.trim() || m.hardwareConsole_encoderHud_untitled_label();
   });
 </script>
 

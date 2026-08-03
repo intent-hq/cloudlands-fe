@@ -14,10 +14,9 @@
  * The UI localizes row labels off `kind`.
  */
 
-import { createAction } from '$lib/store-shim/utils/store/create-action';
-import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
-import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
-import { replaceWorkspaceList, setWorkspaceEntity } from '../workspace/workspace-slice';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { WorkspaceDisplayStatus } from '$shared/types';
 import {
   EMPTY_HUD_GRID_FILTER,
   isHudTrackedAttentionValue,
@@ -63,35 +62,19 @@ export interface HudFeedEntry {
   displayStatus?: string;
 }
 
-/** The consumption counters (PROTOCOL §5.36 `UsageTotals`). */
+/** The four consumption counters (PROTOCOL §5.36 `UsageTotals`). */
 export interface HudUsageTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
-  /**
-   * Reasoning ("thought") tokens — **omitted when zero or unreported** (§5.23),
-   * so an absent field means no provider broke reasoning out of `outputTokens`.
-   */
-  thoughtTokens?: number;
-}
-
-/** Sum of every consumption counter, thoughts included when reported. */
-export function sumHudUsageTotals(totals: HudUsageTotals): number {
-  return (
-    totals.inputTokens +
-    totals.outputTokens +
-    totals.cacheReadTokens +
-    totals.cacheCreationTokens +
-    (totals.thoughtTokens ?? 0)
-  );
 }
 
 /** One TOK/MIN chart sample — a trailing 24h hourly bucket. */
 export interface HudRateSample {
   /** Local-time hour label (0–23) from `byHourOfDay`. */
   hour: number;
-  /** Sum of the token counters in the bucket. */
+  /** Sum of the four token counters in the bucket. */
   tokens: number;
 }
 
@@ -105,43 +88,19 @@ export interface HudUsageState {
   fetchedAtMs: number;
 }
 
-/**
- * One TOK/MIN chart sample — the PROTOCOL §5.39 `RateSample` counters kept
- * per-kind so the chart can stack in/out/thoughts/cached segments. Use
- * `sumHudUsageTotals` wherever the bucket's single total is needed (bar
- * normalization, the ÷60 rate labels, the burn average).
- */
-export type HudRateHistorySample = {
+/** One TOK/MIN chart sample (PROTOCOL §5.39 `RateSample`, counters summed). */
+export interface HudRateHistorySample {
   /** UTC minute floor — wire ISO string, verbatim (`"2026-07-30T14:07:00Z"`). */
   bucketUtc: string;
-} & HudUsageTotals;
+  /** Sum of the four token counters in the minute bucket. */
+  tokens: number;
+}
 
 export interface HudRateHistoryState {
   /** Trailing minute samples, chronological (oldest first), gap-free. */
   samples: HudRateHistorySample[];
   /** Epoch-ms when the service fetched the history (computed at the boundary). */
   fetchedAtMs: number;
-}
-
-/** Direction of the last-5-minute burn-rate change between polls. */
-export type HudBurnTrend = 'up' | 'down' | 'none';
-
-/** Minute buckets averaged for the TOKEN BURN "…/min" readout. */
-export const HUD_BURN_RATE_WINDOW = 5;
-
-/**
- * Average per-minute token spend over the LAST 5 MINUTES (PROTOCOL §5.39
- * `RateSample` counters summed) — the mean of the last 5 one-minute buckets,
- * rounded to the displayed integer. The daemon zero-fills to exactly `limit`
- * samples, so in practice this divides the last-5-minute total by 5; the
- * `Math.min` guard keeps a partial window (fewer samples) a true mean. Zero
- * when there are no samples.
- */
-export function computeBurnRatePerMin(samples: readonly HudRateHistorySample[]): number {
-  if (samples.length === 0) return 0;
-  const window = samples.slice(-HUD_BURN_RATE_WINDOW);
-  const sum = window.reduce((total, sample) => total + sumHudUsageTotals(sample), 0);
-  return Math.round(sum / Math.min(HUD_BURN_RATE_WINDOW, window.length));
 }
 
 /** Live attention flag for one workspace (`workspace:attention-changed`). */
@@ -188,26 +147,11 @@ export interface HudState {
   attentionByWorkspaceId: Record<string, HudAttentionFlag>;
   /** Live overrides from `workspace:displayStatus-changed`. */
   displayStatusByWorkspaceId: Record<string, WorkspaceDisplayStatus>;
-  /**
-   * Ids whose live override one entity delivery has already contradicted.
-   * Second-delivery guard for the override retirement — see
-   * `reconcileDisplayStatusOverride`.
-   */
-  displayStatusOverridesContradicted: Record<string, true>;
   usage: HudUsageState | null;
   usageError: string | null;
   /** Per-minute TOK/MIN history from `stats.getRateHistory` (PROTOCOL §5.39). */
   rateHistory: HudRateHistoryState | null;
   rateHistoryError: string | null;
-  /** Last-5-minute averaged per-minute burn (rounded); the "…/min" readout. */
-  burnRatePerMin: number;
-  /**
-   * Direction of the averaged burn between the two most recent polls, compared
-   * on the ROUNDED averages so rolling-window jitter never flips the arrow.
-   * 'none' on the first load (no previous average) and when flat — the readout
-   * then renders neutral/black with no arrow glyph.
-   */
-  burnTrend: HudBurnTrend;
   /** Latest captured clarifying question per agent (§7.1 trailingBlocks). */
   questionsByAgentId: Record<string, HudCapturedQuestion>;
   /** Header FLEET OPS repo + status grid filter (shared with the center grid). */
@@ -227,13 +171,10 @@ export const initialState: HudState = {
   feed: [],
   attentionByWorkspaceId: {},
   displayStatusByWorkspaceId: {},
-  displayStatusOverridesContradicted: {},
   usage: null,
   usageError: null,
   rateHistory: null,
   rateHistoryError: null,
-  burnRatePerMin: 0,
-  burnTrend: 'none',
   questionsByAgentId: {},
   gridFilter: EMPTY_HUD_GRID_FILTER,
   takeoverRequestWorkspaceId: null,
@@ -265,13 +206,12 @@ export const hudQuestionCaptured = createAction<[question: HudCapturedQuestion]>
   'hud/questionCaptured',
 );
 /**
- * The workspace left the daemon's `needs_attention` displayStatus rollup: a
- * pending question always holds that rollup up, so leaving it means every
- * captured question in the workspace was answered or dismissed daemon-side.
+ * The agent started a new turn (`agent:status-changed` → a running status):
+ * a question hold only breaks on a user-origin delivery (PROTOCOL §7.1 — any
+ * later user message supersedes the questions), so the captured question is
+ * answered/moot and must stop pending everywhere.
  */
-export const hudQuestionsResolvedForWorkspace = createAction<[workspaceId: string]>(
-  'hud/questionsResolvedForWorkspace',
-);
+export const hudQuestionSuperseded = createAction<[agentId: string]>('hud/questionSuperseded');
 /** Header FLEET OPS repo pick (null = all workspaces). */
 export const hudGridFilterRepoPicked = createAction<[repo: string | null]>(
   'hud/gridFilterRepoPicked',
@@ -284,66 +224,6 @@ export const hudGridFilterStateToggled = createAction<[stateKey: HudCardStateKey
 export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesCleared');
 
 // ── Reducer ──
-
-/**
- * Reconcile live `displayStatus` overrides against entities that just arrived
- * carrying a BE value.
- *
- * The override bridges the gap between a `workspace:displayStatus-changed`
- * event and the entity catching up, but nothing retired it, so a dropped
- * event left a stale override winning forever. Retirement cannot simply be
- * "an entity carries a value" though: neither delivery order nor entity
- * freshness is guaranteed. The daemon derives `displayStatus` at serve time
- * (PROTOCOL §5.1), so a `workspace.list` issued BEFORE the event can resolve
- * after it and carry the older value — clearing on that response would
- * reintroduce the very staleness the override exists to cover.
- *
- * Two-strike rule: the FIRST entity delivery that disagrees with an override
- * is assumed to be that in-flight response and only marks the override
- * contradicted; a SECOND disagreeing delivery retires it (an in-flight
- * response cannot predate the event twice, so by then the entity is the
- * fresher value). An entity that AGREES with the override retires it
- * immediately — the entity has caught up and the override is redundant — and
- * also clears the contradicted mark, since agreement proves the store is
- * current as of the override.
- */
-function reconcileDisplayStatusOverride(state: HudState, workspaces: readonly Workspace[]) {
-  let overrides = state.displayStatusByWorkspaceId;
-  let contradicted = state.displayStatusOverridesContradicted;
-  let changed = false;
-
-  for (const workspace of workspaces) {
-    const id = String(workspace.id);
-    const override = overrides[id];
-    // An entity without a value carries nothing fresher — leave it alone.
-    if (override === undefined || workspace.displayStatus === undefined) continue;
-
-    const retire = workspace.displayStatus === override || contradicted[id] === true;
-    if (!retire) {
-      if (!changed) {
-        overrides = { ...overrides };
-        contradicted = { ...contradicted };
-        changed = true;
-      }
-      contradicted[id] = true;
-      continue;
-    }
-    if (!changed) {
-      overrides = { ...overrides };
-      contradicted = { ...contradicted };
-      changed = true;
-    }
-    delete overrides[id];
-    delete contradicted[id];
-  }
-
-  if (!changed) return state;
-  return {
-    ...state,
-    displayStatusByWorkspaceId: overrides,
-    displayStatusOverridesContradicted: contradicted,
-  };
-}
 
 export const hudReducer = createReducer<HudState>(initialState)
   // Activation resets to a clean slate — the feed is live-only (no backfill).
@@ -378,68 +258,20 @@ export const hudReducer = createReducer<HudState>(initialState)
       },
     };
   })
-  .with(hudDisplayStatusChanged, (state, { payload: [workspaceId, displayStatus] }) => {
-    // A newer event restarts the two-strike count: entity deliveries that
-    // contradicted the PREVIOUS override say nothing about this one.
-    const contradicted = { ...state.displayStatusOverridesContradicted };
-    delete contradicted[workspaceId];
-    return {
-      ...state,
-      displayStatusByWorkspaceId: {
-        ...state.displayStatusByWorkspaceId,
-        [workspaceId]: displayStatus,
-      },
-      displayStatusOverridesContradicted: contradicted,
-    };
-  })
-  // Entity deliveries reconcile the override (see `reconcileDisplayStatusOverride`).
-  .with(setWorkspaceEntity, (state, { payload: [workspace] }) =>
-    reconcileDisplayStatusOverride(state, [workspace]),
-  )
-  .with(replaceWorkspaceList, (state, { payload: [workspaces] }) =>
-    reconcileDisplayStatusOverride(state, workspaces),
-  )
+  .with(hudDisplayStatusChanged, (state, { payload: [workspaceId, displayStatus] }) => ({
+    ...state,
+    displayStatusByWorkspaceId: {
+      ...state.displayStatusByWorkspaceId,
+      [workspaceId]: displayStatus,
+    },
+  }))
   .with(hudUsageLoaded, (state, { payload: [usage] }) => ({ ...state, usage, usageError: null }))
   .with(hudUsageFailed, (state, { payload: [error] }) => ({ ...state, usageError: error }))
-  .with(hudRateHistoryLoaded, (state, { payload: [rateHistory] }) => {
-    // Drop stale/reordered responses: `loadRateHistory` fires independent 15s
-    // async requests, so a delayed EARLIER response can arrive after a newer
-    // one. Recency lives in the DATA, not arrival order (`fetchedAtMs` is
-    // stamped at response-processing time, so a reordered arrival still looks
-    // "new"). Compare the newest sample's `bucketUtc` (samples are
-    // chronological) against what is already stored; an incoming payload older
-    // than the stored one overwrites a more-current rate and would show a false
-    // down-trend, so ignore it entirely. Equal-or-newer proceeds as usual.
-    const incomingNewest = rateHistory.samples.at(-1)?.bucketUtc;
-    const storedNewest = state.rateHistory?.samples.at(-1)?.bucketUtc;
-    if (
-      incomingNewest !== undefined &&
-      storedNewest !== undefined &&
-      incomingNewest < storedNewest
-    ) {
-      return state;
-    }
-    const burnRatePerMin = computeBurnRatePerMin(rateHistory.samples);
-    // First load has no previous average to compare against (the slice resets
-    // `rateHistory` to null on activation) → neutral 'none'. Otherwise the arrow
-    // reflects the rounded average moving up/down since the previous poll; equal
-    // stays 'none'.
-    const burnTrend: HudBurnTrend =
-      state.rateHistory === null
-        ? 'none'
-        : burnRatePerMin > state.burnRatePerMin
-          ? 'up'
-          : burnRatePerMin < state.burnRatePerMin
-            ? 'down'
-            : 'none';
-    return {
-      ...state,
-      rateHistory,
-      rateHistoryError: null,
-      burnRatePerMin,
-      burnTrend,
-    };
-  })
+  .with(hudRateHistoryLoaded, (state, { payload: [rateHistory] }) => ({
+    ...state,
+    rateHistory,
+    rateHistoryError: null,
+  }))
   .with(hudRateHistoryFailed, (state, { payload: [error] }) => ({
     ...state,
     rateHistoryError: error,
@@ -461,11 +293,11 @@ export const hudReducer = createReducer<HudState>(initialState)
       questionsByAgentId: { ...state.questionsByAgentId, [question.agentId]: question },
     };
   })
-  .with(hudQuestionsResolvedForWorkspace, (state, { payload: [workspaceId] }) => {
-    const entries = Object.entries(state.questionsByAgentId);
-    const kept = entries.filter(([, question]) => question.workspaceId !== workspaceId);
-    if (kept.length === entries.length) return state;
-    return { ...state, questionsByAgentId: Object.fromEntries(kept) };
+  .with(hudQuestionSuperseded, (state, { payload: [agentId] }) => {
+    if (!(agentId in state.questionsByAgentId)) return state;
+    const next = { ...state.questionsByAgentId };
+    delete next[agentId];
+    return { ...state, questionsByAgentId: next };
   })
   .with(hudGridFilterRepoPicked, (state, { payload: [repo] }) =>
     state.gridFilter.repo === repo

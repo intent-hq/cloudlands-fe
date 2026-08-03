@@ -26,7 +26,7 @@
  * Dependency-light middleware module: no selector imports — reads
  * `appStore.state` directly (resolveKeySlots precedent).
  */
-import type { StoreMiddleware } from '$lib/store-shim/types';
+import type { StoreMiddleware } from '@augmentcode/themis/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
@@ -305,11 +305,14 @@ export function createHardwareConsolePromptPickerMiddleware(): StoreMiddleware {
     }
 
     const result = next(action);
+		const type = typeof (action as { type?: unknown })?.type === 'string'
+			? (action as { type: string }).type
+			: '';
 
     const text = extractSubmittedPromptText(action);
     if (text !== null) appStore.dispatch(promptUsageRecorded(text));
-    if (action && action.type === promptUsageRecorded.type) schedulePersistUsage();
-    if (action && action.type === setPromptPickerLimit.type) schedulePersistLimit();
+		if (type === promptUsageRecorded.type) schedulePersistUsage();
+		if (type === setPromptPickerLimit.type) schedulePersistLimit();
 
     return result;
   };

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '$lib/store-shim/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
 import {
