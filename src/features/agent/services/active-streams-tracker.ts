@@ -11,10 +11,7 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-import {
-  on,
-  off,
-} from '$lib/electron-bridge';
+import { on, off } from '$lib/electron-bridge';
 import { invoke as invokeIpc } from '../../../shared/generated/ipc-client';
 
 const logger = createLogger('ActiveStreamsTracker');
@@ -46,17 +43,21 @@ class ActiveStreamsTracker {
   // Version counter for reactivity
   private version = 0;
 
+  // Shared refresh state prevents overlapping full-workspace scans.
+  private inFlight: Promise<void> | null = null;
+  private pendingRefresh = false;
+
   /**
    * Start listening for stream events from the backend.
    * This replaces the old polling approach with event-driven updates.
    * @param _intervalMs - Deprecated, kept for API compatibility
    */
   startPolling(): void {
-    // Always fetch fresh state for every caller (e.g., components mounting at different times)
-    this.fetchActiveStreams();
-
     // Only set up event listeners once
     if (this.isListening) return;
+
+    // Fetch fresh state once when event listening starts
+    this.fetchActiveStreams();
 
     // Set up event listeners for stream state changes
     this.statusChangedHandler = (data: any) => {
@@ -100,11 +101,39 @@ class ActiveStreamsTracker {
   /**
    * Fetch active streams from the backend
    */
-  async fetchActiveStreams(): Promise<void> {
-    if (typeof window === 'undefined' || !window.electronAPI) return;
+  fetchActiveStreams(): Promise<void> {
+    if (typeof window === 'undefined' || !window.electronAPI) return Promise.resolve();
 
+    if (this.inFlight) {
+      this.pendingRefresh = true;
+      return this.inFlight;
+    }
+
+    const refresh = this.drainRefreshes();
+    this.inFlight = refresh;
+    refresh.then(
+      () => {
+        if (this.inFlight === refresh) this.inFlight = null;
+      },
+      () => {
+        if (this.inFlight === refresh) this.inFlight = null;
+      },
+    );
+    return refresh;
+  }
+
+  private async drainRefreshes(): Promise<void> {
+    do {
+      this.pendingRefresh = false;
+      await this.fetchActiveStreamsOnce();
+    } while (this.pendingRefresh);
+  }
+
+  private async fetchActiveStreamsOnce(): Promise<void> {
     try {
-      const result = await invokeIpc<{ success: boolean; data?: unknown }>('agent:get-active-streams');
+      const result = await invokeIpc<{ success: boolean; data?: unknown }>(
+        'agent:get-active-streams',
+      );
 
       if (result.success && Array.isArray(result.data)) {
         this.updateStreams(result.data);
