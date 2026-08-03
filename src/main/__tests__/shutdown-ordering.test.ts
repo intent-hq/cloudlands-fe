@@ -267,6 +267,26 @@ describe('gracefulShutdown call ordering (AST)', () => {
     }
   });
 
+  it('performGracefulShutdown requests the hardware-console lighting clear before any teardown or window close', () => {
+    // The console connection lives in the renderer (WebHID), so the bounded
+    // fail-soft clear-lighting request (requestHardwareConsoleLightingClear,
+    // 750ms ack timeout) must run while the windows are still alive: as the
+    // first shutdown step, before cleanupTerminals() and — critically —
+    // before mainWindow.close() / app.exit(). Moving it later would let the
+    // window die with the last lighting frame frozen on the device.
+    const sf = parseIndex();
+    const cleanup = findShutdownCleanupBody(sf);
+    const calls = callsitesIn(cleanup.body!);
+    const clearIdx = calls.findIndex((c) => c.text === 'requestHardwareConsoleLightingClear');
+    const terminalsIdx = calls.findIndex((c) => c.text === 'cleanupTerminals');
+    const closeIdx = calls.findIndex((c) => c.text === 'mainWindow.close');
+    expect(clearIdx).toBeGreaterThan(-1);
+    expect(terminalsIdx).toBeGreaterThan(-1);
+    expect(closeIdx).toBeGreaterThan(-1);
+    expect(clearIdx).toBeLessThan(terminalsIdx);
+    expect(clearIdx).toBeLessThan(closeIdx);
+  });
+
   it('confirmQuitWithRunningAgents consults the daemon, not the removed main-store stream state', () => {
     // Regression guard for the quit crash: the old prompt read
     // `agentBackendHandler.getActiveStreams()`, which reached into the removed
