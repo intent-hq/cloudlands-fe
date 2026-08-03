@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { UNASSIGNED_KEY_PIN } from "$features/hardware-console/assignment/key-assignment";
 import {
+  actionHudHidden,
+  actionHudShown,
   encoderHudHidden,
   encoderHudShown,
   hardwareConsoleReducer,
@@ -267,6 +269,27 @@ describe("hardwareConsoleReducer", () => {
     expect(hardwareConsoleReducer(initialState, encoderHudShown(""))).toBe(initialState);
   });
 
+  it("shows and hides the action-key HUD label", () => {
+    const shown = hardwareConsoleReducer(
+      initialState,
+      actionHudShown("Cycle in-progress agents"),
+    );
+    expect(shown.actionHudLabel).toBe("Cycle in-progress agents");
+
+    const relabeled = hardwareConsoleReducer(shown, actionHudShown("Cycle idle agents"));
+    expect(relabeled.actionHudLabel).toBe("Cycle idle agents");
+
+    const hidden = hardwareConsoleReducer(relabeled, actionHudHidden());
+    expect(hidden.actionHudLabel).toBeNull();
+  });
+
+  it("returns the same state for redundant action HUD updates", () => {
+    const shown = hardwareConsoleReducer(initialState, actionHudShown("Cycle idle agents"));
+    expect(hardwareConsoleReducer(shown, actionHudShown("Cycle idle agents"))).toBe(shown);
+    expect(hardwareConsoleReducer(initialState, actionHudHidden())).toBe(initialState);
+    expect(hardwareConsoleReducer(initialState, actionHudShown(""))).toBe(initialState);
+  });
+
   it("defaults the per-model action mappings to each model's layout, unhydrated", () => {
     expect(initialState.actionMappingByModel["creator-micro-2"]).toEqual([
       "new-workspace",
@@ -274,8 +297,8 @@ describe("hardwareConsoleReducer", () => {
       "see-spec",
       "switch-window-layouts",
       "cycle-in-progress-agents",
-      "cycle-workspace-agents",
       "cycle-attention-agents",
+      "cycle-unread-agents",
     ]);
     expect(initialState.actionMappingByModel["codex-micro"]).toEqual([
       "cycle-in-progress-agents",
@@ -301,8 +324,8 @@ describe("hardwareConsoleReducer", () => {
       "see-spec",
       "switch-window-layouts",
       "cycle-in-progress-agents",
-      "cycle-workspace-agents",
       "cycle-attention-agents",
+      "cycle-unread-agents",
     ]);
     expect(state.actionMappingByModel["codex-micro"]).toEqual(
       initialState.actionMappingByModel["codex-micro"],
@@ -348,10 +371,10 @@ describe("hardwareConsoleReducer", () => {
     ).toBe(initialState);
   });
 
-  it("defaults the cycle scopes to all except idle", () => {
+  it("defaults the cycle scopes to top-level except failed", () => {
     expect(initialState.cycleScopeByFamily).toEqual({
-      "cycle-in-progress-agents": "all",
-      "cycle-attention-agents": "all",
+      "cycle-in-progress-agents": "top-level",
+      "cycle-attention-agents": "top-level",
       "cycle-idle-agents": "top-level",
       "cycle-failed-agents": "all",
     });
@@ -360,13 +383,13 @@ describe("hardwareConsoleReducer", () => {
   it("hydrates cycle scopes, filling missing families with defaults", () => {
     const state = hardwareConsoleReducer(
       initialState,
-      hydrateHardwareConsoleCycleScopes({ "cycle-failed-agents": "top-level" }),
+      hydrateHardwareConsoleCycleScopes({ "cycle-in-progress-agents": "all" }),
     );
     expect(state.cycleScopeByFamily).toEqual({
       "cycle-in-progress-agents": "all",
-      "cycle-attention-agents": "all",
+      "cycle-attention-agents": "top-level",
       "cycle-idle-agents": "top-level",
-      "cycle-failed-agents": "top-level",
+      "cycle-failed-agents": "all",
     });
   });
 
@@ -376,10 +399,10 @@ describe("hardwareConsoleReducer", () => {
       setCycleScope("cycle-idle-agents", "all"),
     );
     expect(state.cycleScopeByFamily["cycle-idle-agents"]).toBe("all");
-    expect(state.cycleScopeByFamily["cycle-in-progress-agents"]).toBe("all");
+    expect(state.cycleScopeByFamily["cycle-in-progress-agents"]).toBe("top-level");
     expect(hardwareConsoleReducer(state, setCycleScope("cycle-idle-agents", "all"))).toBe(state);
     expect(
-      hardwareConsoleReducer(initialState, setCycleScope("cycle-in-progress-agents", "all")),
+      hardwareConsoleReducer(initialState, setCycleScope("cycle-failed-agents", "all")),
     ).toBe(initialState);
   });
 });

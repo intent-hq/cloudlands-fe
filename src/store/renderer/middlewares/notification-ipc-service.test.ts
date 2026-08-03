@@ -2,27 +2,61 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
 
 // Use vi.hoisted to ensure mocks are available before module resolution
-const { mockAppStore, mockState, mockIsElectron, mockPlayNotificationSound, mockToast } =
-  vi.hoisted(() => {
-    const mockState = {
-      userPreferences: {
-        enabled: true,
-        soundEnabled: true,
-        soundOnlyWhenUnfocused: false,
-        volume: 0.5,
-      },
-    };
-    return {
-      mockState,
-      mockAppStore: { state: mockState, dispatch: vi.fn() },
-      mockIsElectron: vi.fn(() => true),
-      mockPlayNotificationSound: vi.fn(() => Promise.resolve()),
-      mockToast: vi.fn(),
-    };
-  });
+const {
+  mockAppStore,
+  mockState,
+  mockIsElectron,
+  mockPlayNotificationSound,
+  mockToast,
+  mockToastCustom,
+  mockToastDismiss,
+  microStatusMock,
+  resolvedKeySlotSelectMock,
+} = vi.hoisted(() => {
+  const mockState = {
+    userPreferences: {
+      enabled: true,
+      soundEnabled: true,
+      soundOnlyWhenUnfocused: false,
+      volume: 0.5,
+    },
+  };
+  const mockToast = vi.fn() as ReturnType<typeof vi.fn> & {
+    custom: ReturnType<typeof vi.fn>;
+    dismiss: ReturnType<typeof vi.fn>;
+  };
+  mockToast.custom = vi.fn(() => 'toast-id-1');
+  mockToast.dismiss = vi.fn();
+  return {
+    mockState,
+    mockAppStore: { state: mockState, dispatch: vi.fn() },
+    mockIsElectron: vi.fn(() => true),
+    mockPlayNotificationSound: vi.fn(() => Promise.resolve()),
+    mockToast,
+    mockToastCustom: mockToast.custom,
+    mockToastDismiss: mockToast.dismiss,
+    microStatusMock: { value: 'disconnected' },
+    resolvedKeySlotSelectMock: vi.fn(
+      (_state: unknown, _workspaceId: string): number | null => null,
+    ),
+  };
+});
 
 vi.mock('$store/renderer/store', () => ({
   store: mockAppStore,
+}));
+
+// Seams of the connected key-slot resolver (badge gating): manager status +
+// the resolved-slot selector, so the real gate logic in
+// resolveConnectedWorkspaceKeySlot is exercised. The selectors module must be
+// mocked regardless — the real one calls store.createSelector at load time,
+// which the store mock above does not provide.
+vi.mock('$features/hardware-console/instance', () => ({
+  getHardwareConsoleManager: () => ({ status: microStatusMock.value }),
+}));
+
+vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
+  selectWorkspaceResolvedKeySlot: { select: resolvedKeySlotSelectMock },
 }));
 
 vi.mock('$lib/electron-bridge', () => ({
@@ -72,6 +106,9 @@ describe('createNotificationIpcMiddleware', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockToastCustom.mockReturnValue('toast-id-1');
+    microStatusMock.value = 'disconnected';
+    resolvedKeySlotSelectMock.mockImplementation(() => null);
     mockIsElectron.mockReturnValue(true);
     mockState.userPreferences.soundEnabled = true;
     mockState.userPreferences.soundOnlyWhenUnfocused = false;
@@ -252,6 +289,104 @@ describe('createNotificationIpcMiddleware', () => {
 
       expect(mockPlayNotificationSound).not.toHaveBeenCalled();
       expect(mockToast).toHaveBeenCalledTimes(1);
+    });
+
+    describe('micro key-slot badge', () => {
+      const show = async () => {
+        const { showHandler } = setupMiddleware();
+        await showHandler({
+          title: 'Agent',
+          body: 'Finished',
+          timestamp: 't',
+          navigateTarget: { workspaceId: 'ws-123' },
+        });
+      };
+
+      it('renders the badge-carrying custom toast when the micro is connected and the workspace holds a slot', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => 3);
+
+        await show();
+
+        expect(resolvedKeySlotSelectMock).toHaveBeenCalledWith(expect.anything(), 'ws-123');
+        expect(mockToast).not.toHaveBeenCalled();
+        expect(mockToastCustom).toHaveBeenCalledTimes(1);
+        const options = mockToastCustom.mock.calls[0][1] as {
+          componentProps: Record<string, unknown>;
+        };
+        expect(options.componentProps.title).toBe('Agent');
+        expect(options.componentProps.description).toBe('Finished');
+        expect(options.componentProps.keySlot).toBe(3);
+      });
+
+      it('custom-toast action dismisses the toast and navigates with the exact payload', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => 3);
+
+        await show();
+        const options = mockToastCustom.mock.calls[0][1] as {
+          componentProps: { onAction: () => void };
+        };
+        options.componentProps.onAction();
+        await vi.mocked(handleNotificationNavigate).mock.results[0].value;
+
+        expect(mockToastDismiss).toHaveBeenCalledWith('toast-id-1');
+        expect(handleNotificationNavigate).toHaveBeenCalledWith({ workspaceId: 'ws-123' });
+        expect(goto).toHaveBeenCalledWith('/workspace/ws-123');
+      });
+
+      it('keeps the plain toast when the micro is disconnected, even if the workspace holds a slot', async () => {
+        microStatusMock.value = 'disconnected';
+        resolvedKeySlotSelectMock.mockImplementation(() => 3);
+
+        await show();
+
+        expect(resolvedKeySlotSelectMock).not.toHaveBeenCalled();
+        expect(mockToastCustom).not.toHaveBeenCalled();
+        expect(mockToast).toHaveBeenCalledTimes(1);
+      });
+
+      it('keeps the plain toast when connected but the workspace holds no slot', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => null);
+
+        await show();
+
+        expect(mockToastCustom).not.toHaveBeenCalled();
+        expect(mockToast).toHaveBeenCalledTimes(1);
+      });
+
+      it('falls back to the plain toast when slot resolution throws', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => {
+          throw new Error('resolver boom');
+        });
+
+        await show();
+
+        expect(mockToastCustom).not.toHaveBeenCalled();
+        expect(mockToast).toHaveBeenCalledTimes(1);
+        expect(mockToast).toHaveBeenCalledWith(
+          'Agent',
+          expect.objectContaining({ description: 'Finished' }),
+        );
+      });
+
+      it('falls back to the plain toast when the custom toast rendering throws', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => 3);
+        mockToastCustom.mockImplementation(() => {
+          throw new Error('custom render boom');
+        });
+
+        await show();
+
+        expect(mockToast).toHaveBeenCalledTimes(1);
+        expect(mockToast).toHaveBeenCalledWith(
+          'Agent',
+          expect.objectContaining({ description: 'Finished' }),
+        );
+      });
     });
   });
 

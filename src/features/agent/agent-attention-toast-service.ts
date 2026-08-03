@@ -82,6 +82,36 @@ function getToastComponent() {
   return toastComponentPromise;
 }
 
+/**
+ * Lazily pull the connected key-slot resolver (imports the store/selectors).
+ * The badge is optional: an import or resolution failure degrades to a `null`
+ * key slot so the toast still renders (badge-less), and a failed import is
+ * not cached so a later call can retry it.
+ */
+type KeySlotResolver = (workspaceId: string | undefined) => number | null;
+let keySlotResolverPromise: Promise<KeySlotResolver> | null = null;
+function getKeySlotResolver(): Promise<KeySlotResolver> {
+  if (!keySlotResolverPromise) {
+    keySlotResolverPromise = import('$features/hardware-console/assignment/connected-key-slot')
+      .then((module): KeySlotResolver => {
+        return (workspaceId) => {
+          try {
+            return module.resolveConnectedWorkspaceKeySlot(workspaceId);
+          } catch (error) {
+            logger.warn('Key-slot resolution failed — toast renders without badge', { error });
+            return null;
+          }
+        };
+      })
+      .catch((error): KeySlotResolver => {
+        keySlotResolverPromise = null;
+        logger.warn('Key-slot resolver unavailable — toast renders without badge', { error });
+        return () => null;
+      });
+  }
+  return keySlotResolverPromise;
+}
+
 function truncate(text: string, maxChars: number): string {
   return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
 }
@@ -112,7 +142,11 @@ export async function switchToAttentionAgent(workspaceId: string, agentId: strin
  * blocker. Never auto-dismisses (`duration: Infinity`).
  */
 export async function showAgentAttentionToast(request: AgentAttentionRequest): Promise<void> {
-  const [toast, AgentAttentionToast] = await Promise.all([getToast(), getToastComponent()]);
+  const [toast, AgentAttentionToast, resolveConnectedWorkspaceKeySlot] = await Promise.all([
+    getToast(),
+    getToastComponent(),
+    getKeySlotResolver(),
+  ]);
   const { workspaceId, agentId, agentName, kind, reason, timestamp } = request;
   const title =
     kind === 'blocker'
@@ -125,6 +159,7 @@ export async function showAgentAttentionToast(request: AgentAttentionRequest): P
       reason: truncate(reason, REASON_MAX_CHARS),
       kind,
       timestamp,
+      keySlot: resolveConnectedWorkspaceKeySlot(workspaceId),
       onSwitchTo: () => void switchToAttentionAgent(workspaceId, agentId),
       onClose: () => void dismissAgentAttentionToast(agentId),
     },

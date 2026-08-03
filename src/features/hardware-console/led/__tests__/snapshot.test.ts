@@ -100,6 +100,42 @@ describe('buildHardwareLedSnapshot', () => {
     expect(snapshot.ambient).toBe('breath');
   });
 
+  it('hook-active workspace (displayStatus in_progress, agents idle) lights running + breath', () => {
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-hooks', { displayStatus: 'in_progress', activity: 'idle' })],
+    });
+    const snapshot = buildHardwareLedSnapshot(state);
+    expect(snapshot.keys[0]).toBe('running');
+    expect(snapshot.ambient).toBe('breath');
+  });
+
+  it('displayStatus idle with no activity stays idle and ambient dark', () => {
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-quiet', { displayStatus: 'idle', activity: 'idle' })],
+    });
+    const snapshot = buildHardwareLedSnapshot(state);
+    expect(snapshot.keys[0]).toBe('idle');
+    expect(snapshot.ambient).toBe('dark');
+  });
+
+  it('attention outranks hook-driven running (displayStatus in_progress)', () => {
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-1', { displayStatus: 'in_progress', activity: 'idle' })],
+      agentsByWorkspace: { 'ws-1': ['agent-1'] },
+      sessions: [makeSession('agent-1', { attentionRequestKind: 'discussion' })],
+    });
+    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('attention');
+  });
+
+  it('failed outranks hook-driven running (displayStatus in_progress)', () => {
+    const state = makeState({
+      workspaces: [makeWorkspace('ws-1', { displayStatus: 'in_progress', activity: 'idle' })],
+      agentsByWorkspace: { 'ws-1': ['agent-1'] },
+      sessions: [makeSession('agent-1', { status: AgentStatus.Error })],
+    });
+    expect(buildHardwareLedSnapshot(state).keys[0]).toBe('failed');
+  });
+
   it('attention request (discussion/blocker) turns the key yellow and outranks running', () => {
     const state = makeState({
       workspaces: [makeWorkspace('ws-1', { activity: 'agent_running' })],

@@ -37,6 +37,7 @@ import { type Collection } from '$lib/store-shim/utils/collections/collection-ut
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { actionHudShown } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { applyPreset } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   setMultiSelectSidebarSelectedTabs,
@@ -232,6 +233,9 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       }
       const next = entries[(index + 1) % entries.length];
       lastCycledAgentByAction.set(spec.id, next.agentId);
+      // Successful step: surface what the button did in the bottom-center
+      // HUD (the middleware hides it after inactivity).
+      context.dispatch(actionHudShown(spec.getLabel()));
       if (next.wsId !== activeWorkspaceId(state)) {
         void context.navigate(`/workspace/${next.wsId}`);
       }

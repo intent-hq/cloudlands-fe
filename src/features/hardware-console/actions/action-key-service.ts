@@ -31,6 +31,8 @@ import { navigateToRoute } from '$lib/utils/navigation.client';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  actionHudHidden,
+  actionHudShown,
   hydrateHardwareConsoleActionMapping,
   hydrateHardwareConsoleCycleScopes,
   setActionKeyMapping,
@@ -50,12 +52,16 @@ import {
 } from './action-mapping';
 import { normalizeCycleScopeByFamily } from './cycle-scope';
 import { getActionKeyDefinition, type ActionKeyContext } from './action-key-registry';
+import { ENCODER_HUD_HIDE_MS } from '../encoder/encoder-service';
 
 const logger = createLogger('HardwareConsoleActionKeys');
 
 /** Shared id: rapid presses update one hint toast instead of stacking. */
 const UNAVAILABLE_HINT_TOAST_ID = 'hardware-console-action-unavailable';
 const UNAVAILABLE_HINT_DURATION_MS = 2000;
+
+/** The action HUD hides after the same inactivity timeout as the encoder HUD. */
+export const ACTION_HUD_HIDE_MS = ENCODER_HUD_HIDE_MS;
 
 /**
  * Composer-focus retry delays: the target chat tab may still be opening
@@ -258,8 +264,8 @@ async function hydrateOnce(): Promise<boolean> {
     const legacy = Array.isArray(bag.actionMapping) ? bag.actionMapping : undefined;
     const mappings = normalizeActionMappingsByModel(bag.actionMappingByModel, legacy);
     // One-shot default migration: a persisted CM2 mapping still exactly equal
-    // to the pre-attention defaults (never customized) picks up the changed
-    // slot-6 default and is written back.
+    // to a prior default generation (never customized) picks up the current
+    // defaults and is written back.
     const migrated = migrateLegacyCm2DefaultActionMapping(mappings);
     appStore.dispatch(hydrateHardwareConsoleActionMapping(mappings));
     appStore.dispatch(
@@ -284,13 +290,29 @@ let installed = false;
  * key-switch middleware): starts the shared manager — idempotent, a no-op
  * without WebHID — wires action-key handling, hydrates the mapping from the
  * daemon bag, and persists mapping changes (deferred until hydration
- * settles, mirroring the key-pin persistence service).
+ * settles, mirroring the key-pin persistence service). Also drives the
+ * action-HUD inactivity timer from the `actionHudShown` action itself
+ * (mirrors the encoder-HUD timer): rapid presses re-arm it.
  */
 export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
   let hydrationStarted = false;
   let hydrationSettled = false;
   let persistQueued = false;
   let persistScopesQueued = false;
+  let hudTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearHudTimer = (): void => {
+    if (hudTimer !== null) clearTimeout(hudTimer);
+    hudTimer = null;
+  };
+
+  const armHudTimer = (): void => {
+    clearHudTimer();
+    hudTimer = setTimeout(() => {
+      hudTimer = null;
+      appStore.dispatch(actionHudHidden());
+    }, ACTION_HUD_HIDE_MS);
+  };
 
   const persist = (): void => {
     void persistActionMapping(appStore.state.hardwareConsole.actionMappingByModel).catch(
@@ -355,6 +377,12 @@ export function createHardwareConsoleActionKeyMiddleware(): StoreMiddleware {
 
     if (action && action.type === setCycleScope.type) {
       schedulePersistScopes();
+    }
+
+    if (action && action.type === actionHudShown.type) {
+      armHudTimer();
+    } else if (action && action.type === actionHudHidden.type) {
+      clearHudTimer();
     }
 
     if (action && action.type === openAgentTabRequested.type && consumeArmedComposerFocus()) {
