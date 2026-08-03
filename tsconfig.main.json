@@ -12,6 +12,8 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "bundler",
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/tsconfig.main.tsbuildinfo",
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
