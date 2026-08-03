@@ -19,9 +19,10 @@ import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('BackgroundHooksService');
 
-/** Wire `Hook` shape (PROTOCOL §5.40). `code` arrives on `hook.list` only —
- * `hook:*` event payloads never carry it, so the folds below must spread the
- * existing hook to retain it (the chip hover card renders a preview). */
+/** Wire `Hook` shape (PROTOCOL §5.40). `code` and `lastLogs` arrive on
+ * `hook.list` only — `hook:*` event payloads never carry them, so the folds
+ * below must spread the existing hook to retain them (the chip hover card
+ * renders a code preview; staleness is resolved by an on-demand refetch). */
 export interface BackgroundHook {
   hookId: string;
   workspaceId: string;
@@ -35,6 +36,7 @@ export interface BackgroundHook {
   nextRunAt?: string;
   runCount: number;
   lastError?: string;
+  lastLogs?: string;
 }
 
 /** `hook:*` event payload (§6.5): base fields plus per-type extras. */
@@ -139,17 +141,26 @@ interface HookEventNotification {
   event?: { type?: string; workspaceId?: string; data?: HookEventData };
 }
 
+/** Handle returned by {@link subscribeBackgroundHooks}. */
+export interface BackgroundHooksSubscription {
+  /** On-demand `hook.list` re-seed — e.g. to refresh `lastLogs`, which
+   * `hook:*` events never carry (§5.40). */
+  refetch: () => void;
+  /** Tear down the subscription and notification listeners. */
+  dispose: () => void;
+}
+
 /**
  * Live hook list for one workspace: registers a `hook:*` `events.subscribe`,
  * seeds via `hook.list`, folds subsequent events, and re-seeds after a
  * backend reconnect (RESUB-1). The handler receives the full list on every
- * change (all states — callers filter to the active ones). Returns a
- * disposer.
+ * change (all states — callers filter to the active ones). Returns a handle
+ * exposing an on-demand `refetch` plus the disposer.
  */
 export function subscribeBackgroundHooks(
   workspaceId: string,
   handler: (hooks: BackgroundHook[]) => void,
-): () => void {
+): BackgroundHooksSubscription {
   let disposed = false;
   let subscriptionId: string | undefined;
   let hooks: BackgroundHook[] = [];
@@ -238,10 +249,13 @@ export function subscribeBackgroundHooks(
 
   register();
 
-  return () => {
-    disposed = true;
-    offNotification();
-    offReconnected();
-    if (subscriptionId) void backendUnsubscribe(subscriptionId);
+  return {
+    refetch,
+    dispose: () => {
+      disposed = true;
+      offNotification();
+      offReconnected();
+      if (subscriptionId) void backendUnsubscribe(subscriptionId);
+    },
   };
 }
