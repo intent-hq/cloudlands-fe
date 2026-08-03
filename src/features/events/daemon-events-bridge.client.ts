@@ -383,7 +383,7 @@ function handleStreamActivityEvent(event: WorkspaceEvent): void {
   if (!data) return;
   const agentId = data.agentId;
   const messageId = data.messageId;
-  if (typeof agentId !== 'string' || typeof messageId !== 'string') {
+  if (typeof agentId !== 'string' || agentId.length === 0 || typeof messageId !== 'string') {
     return;
   }
   hydrateSessionIfUnknown(agentId);

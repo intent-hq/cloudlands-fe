@@ -3460,6 +3460,21 @@ describe('daemonEventsBridge (stream events hydrate unknown agent sessions)', ()
     expect(chatAgent).toBeDefined();
   });
 
+  it('agent:stream:activity with an empty agentId is inert — no hydration attempt', async () => {
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:stream:activity', {
+        agentId: '',
+        messageId: MESSAGE_ID,
+        lastAgentResponse: 'Should be dropped',
+      }),
+    );
+    await flush();
+
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+  });
+
   it('agent:stream:status and agent:stream:start for an unknown agent also trigger hydration', async () => {
     const handler = capturedHandlers[0]!;
 
