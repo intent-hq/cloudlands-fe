@@ -19,11 +19,14 @@
  *    in parallel; freshness comes from the daemon-events-bridge, which
  *    re-dispatches the same action on `agent:status-changed`/`agent:idle`
  *    (no polling here);
- *  - fetches the 24h `stats.getUsage` rollup (§5.36) and `system.status`
- *    (§5.7) once, polls the per-minute `stats.getRateHistory` (§5.39) every
+ *  - fetches the 24h `stats.getUsage` rollup (§5.36) once, polls the
+ *    per-minute `stats.getRateHistory` (§5.39) every
  *    HUD_RATE_HISTORY_POLL_MS for the TOK/MIN chart, and re-issues subscribe
  *    + refetches (including re-hydrating all agent lists) after a backend
- *    reconnect (RESUB-1).
+ *    reconnect (RESUB-1). The daemon ONLINE/version/uptime signal is NOT
+ *    fetched here: `selectHudSystem` reads the daemon-health slice, which the
+ *    daemon-health middleware keeps fresh with its own 10s `system.status`
+ *    poll in every renderer.
  *
  * The disposer unsubscribes best-effort, removes both listeners, stops the
  * rate-history poll, and dispatches `hudDeactivated` (clearing the feed — no
@@ -47,20 +50,26 @@ import {
   hudDisplayStatusChanged,
   hudFeedEntryReceived,
   hudQuestionCaptured,
+  hudQuestionSuperseded,
   hudRate5sBackfilled,
   hudRate5sTokensObserved,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
-  hudSystemStatusReceived,
   hudUsageFailed,
   hudUsageLoaded,
+  type HudFeedEntry,
   type HudRateHistorySample,
   type HudRateSample,
   type HudUsageTotals,
 } from '$store/renderer/slices/hud/hud-slice';
 import type { WorkspaceEvent } from '$features/events/types';
+import { toHudAgentStateBucket } from '$store/renderer/slices/hud/hud-types';
 import { createLogger } from '$lib/utils/client-logger';
-import { HUD_FEED_EVENT_TYPES, mapEventToFeedEntry } from './hud-feed-mapper';
+import {
+  HUD_AGENT_DELEGATED_FEED_KIND,
+  HUD_FEED_EVENT_TYPES,
+  mapEventToFeedEntry,
+} from './hud-feed-mapper';
 import { extractQuestionsFromStreamEnd } from './hud-question-capture';
 import { emitTakeoverTrigger } from './takeover/hud-takeover-bus';
 import type { HudTakeoverTrigger } from './takeover/hud-takeover-queue';
@@ -161,32 +170,6 @@ async function loadRateHistory(): Promise<void> {
   }
 }
 
-/** Fetch `system.status` (§5.7) and fold the online/uptime snapshot. */
-async function loadSystemStatus(): Promise<void> {
-  try {
-    const result = await backendRequest<{ uptimeSeconds?: number; version?: string }>(
-      'system.status',
-    );
-    appStore.dispatch(
-      hudSystemStatusReceived({
-        online: true,
-        uptimeSeconds: typeof result?.uptimeSeconds === 'number' ? result.uptimeSeconds : null,
-        version: typeof result?.version === 'string' ? result.version : null,
-        fetchedAtMs: Date.now(),
-      }),
-    );
-  } catch {
-    appStore.dispatch(
-      hudSystemStatusReceived({
-        online: false,
-        uptimeSeconds: null,
-        version: null,
-        fetchedAtMs: Date.now(),
-      }),
-    );
-  }
-}
-
 /**
  * Workspaces whose agent list this HUD session already requested — one
  * `agent.list` hydration per workspace per session (no polling). Cleared on
@@ -250,6 +233,30 @@ function handleTokenUsageChanged(workspaceId: string, data: Record<string, unkno
  */
 const lastStatusUpdateTextByWorkspaceId = new Map<string, string>();
 
+/**
+ * Agent ids whose first running transition this HUD session already emitted
+ * its one AGENT DELEGATED feed row. Raw `agent:created` never renders (feed
+ * noise before the agent has done anything) — the delegation row lands when
+ * the agent FIRST starts work, and later running transitions keep the normal
+ * AGENT RUNNING chip. Cleared on `startHudSubscription()` (pre-subscription
+ * starts are simply missed, same as every other feed row); deliberately NOT
+ * cleared on reconnect — a known agent must not re-announce as delegated.
+ */
+const delegatedRowEmittedAgentIds = new Set<string>();
+
+/**
+ * First running `agent:status-changed` per agent id → the one AGENT
+ * DELEGATED row (kind rewritten to the synthetic feed kind); every later
+ * running transition passes through unchanged.
+ */
+function withFirstStartRewrite(entry: HudFeedEntry): HudFeedEntry {
+  if (entry.kind !== 'agent:status-changed' || !entry.agentId) return entry;
+  if (toHudAgentStateBucket(entry.agentStatus ?? '') !== 'running') return entry;
+  if (delegatedRowEmittedAgentIds.has(entry.agentId)) return entry;
+  delegatedRowEmittedAgentIds.add(entry.agentId);
+  return { ...entry, kind: HUD_AGENT_DELEGATED_FEED_KIND };
+}
+
 /** Whether a status_update trigger repeats the workspace's last shown text. */
 function isDuplicateStatusUpdate(trigger: HudTakeoverTrigger): boolean {
   if (trigger.kind !== 'status_update') return false;
@@ -268,6 +275,21 @@ function handleEvent(event: WorkspaceEvent): void {
     // fans out below.
     for (const question of extractQuestionsFromStreamEnd(event)) {
       appStore.dispatch(hudQuestionCaptured(question));
+    }
+  }
+  if (type === 'agent:status-changed') {
+    // Question supersession (§7.1): a question hold breaks only on a
+    // user-origin delivery, and that delivery starts a turn — so a running
+    // transition means the captured question was answered (or explicitly
+    // released) and must stop pending on every HUD surface.
+    const agentId = data.agentId;
+    const status = data.status;
+    if (
+      typeof agentId === 'string' &&
+      typeof status === 'string' &&
+      toHudAgentStateBucket(status) === 'running'
+    ) {
+      appStore.dispatch(hudQuestionSuperseded(agentId));
     }
   }
   if (type === 'workspace:tokenUsage-changed') {
@@ -292,7 +314,7 @@ function handleEvent(event: WorkspaceEvent): void {
     }
   }
   const entry = mapEventToFeedEntry(event);
-  if (entry) appStore.dispatch(hudFeedEntryReceived(entry));
+  if (entry) appStore.dispatch(hudFeedEntryReceived(withFirstStartRewrite(entry)));
   // Notable events also fan out to the takeover overlay's queue (the bus is
   // a no-op until the overlay registers its listener). The name resolver
   // backfills agent display names off the live session slice so a banner
@@ -350,6 +372,7 @@ export function startHudSubscription(): () => void {
 
   lastTokenTotalsByWorkspaceId.clear();
   lastStatusUpdateTextByWorkspaceId.clear();
+  delegatedRowEmittedAgentIds.clear();
   hydratedAgentWorkspaceIds.clear();
   appStore.dispatch(hudActivated());
 
@@ -396,7 +419,6 @@ export function startHudSubscription(): () => void {
     void subscribe();
     void loadUsage();
     void loadRateHistory();
-    void loadSystemStatus();
     hydratedAgentWorkspaceIds.clear();
     hydrateVisibleWorkspaceAgents();
   });
@@ -404,7 +426,6 @@ export function startHudSubscription(): () => void {
   void subscribe();
   void loadUsage();
   void loadRateHistory();
-  void loadSystemStatus();
   hydrateVisibleWorkspaceAgents();
 
   // The workspace list hydrates asynchronously (and can grow later) — re-run

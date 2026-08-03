@@ -1,14 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bannerDelay,
+  bannerOutDelay,
   canvasBounds,
   cellNeedsPan,
   clampTakeoverPan,
   emptyCellCoords,
+  HUD_TAKEOVER_BANNER_IN_S,
   HUD_TAKEOVER_PITCH_PX,
   spiralCoords,
   takeoverFrameFrom,
   takeoverPanBounds,
 } from './hud-takeover-layout';
+import {
+  HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS,
+  HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS,
+  HUD_TAKEOVER_DWELL_MIN_MS,
+} from './hud-takeover-queue';
 
 describe('hud-takeover-layout', () => {
   it('places the first cells on the mock seed spiral', () => {
@@ -123,6 +131,43 @@ describe('hud-takeover-layout', () => {
           { left: 0, top: 0, width: 50, height: 50 },
         ),
       ).toBeNull();
+    });
+  });
+
+  describe('banner phase timeline (unfolded hold ≈ half the dwell)', () => {
+    /** Fully-unfolded hold (s) = out-delay − (in-delay + typewriter wipe). */
+    const holdS = (needsPan: boolean, index: number, dwellMs: number) =>
+      Number(bannerOutDelay(needsPan, index, dwellMs)) -
+      Number(bannerDelay(needsPan, index)) -
+      HUD_TAKEOVER_BANNER_IN_S;
+
+    it('keeps the mock unfold delays: 1.0s (3.5s when panning), +0.3s per stack', () => {
+      expect(bannerDelay(false, 0)).toBe('1.0');
+      expect(bannerDelay(false, 1)).toBe('1.3');
+      expect(bannerDelay(true, 0)).toBe('3.5');
+    });
+
+    it('routine entry: unfolded hold is exactly half the floor dwell', () => {
+      // Floor dwell 3000ms → out = 1.0 + 1.1 + 1.5 = 3.60s.
+      expect(bannerOutDelay(false, 0, HUD_TAKEOVER_DWELL_MIN_MS)).toBe('3.60');
+      expect(holdS(false, 0, HUD_TAKEOVER_DWELL_MIN_MS)).toBeCloseTo(
+        HUD_TAKEOVER_DWELL_MIN_MS / 2000,
+      );
+    });
+
+    it('attention entry: the longer dwell buys a proportionally longer hold', () => {
+      // 120-char question: dwell 4000 + 60×120 = 11200ms → out = 1.0 + 1.1 + 5.6 = 7.70s.
+      const dwellMs =
+        HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS + HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS * 120;
+      expect(bannerOutDelay(false, 0, dwellMs)).toBe('7.70');
+      expect(holdS(false, 0, dwellMs)).toBeCloseTo(dwellMs / 2000);
+    });
+
+    it('the hold stays dwell/2 across pan pre-roll and stack stagger', () => {
+      expect(holdS(true, 0, 8000)).toBeCloseTo(4);
+      expect(holdS(false, 1, 8000)).toBeCloseTo(4);
+      expect(bannerOutDelay(true, 0, 8000)).toBe('8.60'); // 3.5 + 1.1 + 4.0
+      expect(bannerOutDelay(false, 1, 8000)).toBe('6.40'); // 1.3 + 1.1 + 4.0
     });
   });
 });

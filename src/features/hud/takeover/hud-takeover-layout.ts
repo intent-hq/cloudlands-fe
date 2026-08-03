@@ -156,14 +156,44 @@ export function cellTop(y: number): string {
   return `${y * HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX / 2}px`;
 }
 
-/** Banner delay per mock: 3.5s when panning, 1.0s otherwise, +0.3s each. */
+/**
+ * Banner typewriter-wipe duration (s) — mirrors the `bannerin 1.1s` keyframe
+ * in `HudTakeoverOverlay.svelte` (kept in sync like the blink constant).
+ */
+export const HUD_TAKEOVER_BANNER_IN_S = 1.1;
+
+/**
+ * Banner phase timeline, relative to overlay mount (the `opening` phase
+ * start; delays feed the CSS `--banner-in/out-delay` vars):
+ *   - intro/spotlight: wipe-in choreography ends ~1.2s (= OPEN_MS); the
+ *     dwell window then runs [1.2s, 1.2s + dwell].
+ *   - unfold: starts at `bannerDelay` (mock 1.0s, or 3.5s when the map must
+ *     pan to a far changed cell; +0.3s per stacked banner) and takes the
+ *     1.1s typewriter wipe — fully unfolded at ~2.1s in the common no-pan
+ *     case.
+ *   - unfolded hold: ~50% OF THE ENTRY'S DWELL — `bannerOutDelay` is
+ *     dwell-proportional (in-delay + wipe + dwell/2), not the mock's fixed
+ *     5.2s/7.2s, so longer attention dwells hold the readable banner longer
+ *     instead of only extending the map-only tail.
+ *   - exit: 0.45s fade, then the map stays alone for the remaining
+ *     ~dwell/2 − 1.35s until the close wipe at 1.2s + dwell.
+ * Reduced motion renders banners with no animation at all (no unfold, no
+ * fade) — these delays are motion-only.
+ */
 export function bannerDelay(needsPan: boolean, index: number): string {
   return ((needsPan ? 3.5 : 1.0) + index * 0.3).toFixed(1);
 }
 
-/** Banner fade-out delay per mock: 7.2s when panning, 5.2s otherwise, +0.15s each. */
-export function bannerOutDelay(needsPan: boolean, index: number): string {
-  return ((needsPan ? 7.2 : 5.2) + index * 0.15).toFixed(2);
+/**
+ * Fade-out delay allocating ~half the entry's dwell to the fully-unfolded
+ * banner (see the timeline above). Derived from the SAME in-delay shape, so
+ * stacked banners stagger out as they staggered in and each holds exactly
+ * dwell/2. When the 3.5s pan pre-roll eats most of a short routine dwell the
+ * close wipe may still cut the fade off — pre-existing behavior, unchanged.
+ */
+export function bannerOutDelay(needsPan: boolean, index: number, dwellMs: number): string {
+  const inDelayS = (needsPan ? 3.5 : 1.0) + index * 0.3;
+  return (inDelayS + HUD_TAKEOVER_BANNER_IN_S + dwellMs / 2000).toFixed(2);
 }
 
 /**

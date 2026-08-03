@@ -17,7 +17,8 @@
  * name is OMITTED from the detail rather than falling back to the id.
  */
 import type { WorkspaceEvent } from '$features/events/types';
-import { getQuestionFromResourceBlock } from '$shared/types/question-resource';
+import { isHudAttentionValue } from '$store/renderer/slices/hud/hud-types';
+import { extractQuestionsFromStreamEnd } from '../hud-question-capture';
 import type { HudTakeoverKind, HudTakeoverTrigger } from './hud-takeover-queue';
 
 /**
@@ -31,6 +32,7 @@ export const HUD_TAKEOVER_TRIGGER_KINDS: Readonly<Record<string, HudTakeoverKind
   'agent:failed': 'agent_failed',
   'workspace:attention-changed': 'question_asked',
   'agent:stream:end': 'question_asked',
+  'agent:attention-requested': 'question_asked',
   'workspace:updated': 'status_update',
 };
 
@@ -66,23 +68,23 @@ function agentDisplayName(
   return resolved && !looksLikeAgentId(resolved) ? resolved : undefined;
 }
 
-/** First §7.1 question payload in the terminal event's trailingBlocks. */
-function firstTrailingQuestion(data: Record<string, unknown>) {
-  if (!Array.isArray(data.trailingBlocks)) return null;
-  for (const block of data.trailingBlocks) {
-    const question = getQuestionFromResourceBlock(block);
-    if (question) return question;
-  }
-  return null;
-}
-
 /**
  * Map one daemon event to a takeover trigger, or null when the event is not
  * a takeover family or fails its per-family gate:
  *  - `task:status-changed` only fires on `newStatus === "complete"`;
- *  - `workspace:attention-changed` only fires while raising (not "none");
+ *  - `workspace:attention-changed` only fires when raising a HUD attention
+ *    value (`isHudAttentionValue` allowlist — "none" and non-attention values
+ *    like "unread", the main app's blue dot, never take over);
  *  - `agent:stream:end` only fires when its trailingBlocks carry a §7.1
- *    question resource block (the trigger surfaces the question text);
+ *    question resource block, extracted through the SAME
+ *    `extractQuestionsFromStreamEnd` the footer/panel question capture uses
+ *    (one shared source — the banner sub-title, footer snippet, and panel
+ *    row can never show different text); the trigger carries the question
+ *    text plus the raising agent's display name and the `question` signal;
+ *  - `agent:attention-requested` (§6.5 — `requestDiscussion`/`reportBlocker`)
+ *    fires with the reason text, the agent's name, and the blocker/discussion
+ *    signal; delegated agents (non-empty `parentAgentId`) never take over —
+ *    the parent handles the request (same gate as the attention toast);
  *  - `workspace:updated` only fires when its `changes` delta carries a
  *    non-empty `statusMessage` (cleared/empty messages and other field
  *    updates never take over); the caller dedupes same-text repeats;
@@ -102,6 +104,8 @@ export function mapEventToTakeoverTrigger(
 
   let detail = '';
   let changedTaskId: string | null = null;
+  let agentName: string | null = null;
+  let signal: HudTakeoverTrigger['signal'] = null;
   switch (type) {
     case 'task:status-changed': {
       if (str(data.newStatus) !== 'complete') return null;
@@ -120,14 +124,27 @@ export function mapEventToTakeoverTrigger(
       break;
     case 'workspace:attention-changed': {
       const attention = str(data.attention);
-      if (!attention || attention === 'none') return null;
+      if (!attention || !isHudAttentionValue(attention)) return null;
       detail = attention;
       break;
     }
     case 'agent:stream:end': {
-      const question = firstTrailingQuestion(data);
+      const question = extractQuestionsFromStreamEnd(event)[0];
       if (!question) return null;
       detail = question.question;
+      agentName = agentDisplayName(data, resolveAgentName) ?? null;
+      signal = 'question';
+      break;
+    }
+    case 'agent:attention-requested': {
+      const parentAgentId = str(data.parentAgentId);
+      if (parentAgentId) return null;
+      const kindValue = str(data.kind);
+      const reason = str(data.reason);
+      if ((kindValue !== 'discussion' && kindValue !== 'blocker') || !reason) return null;
+      detail = reason;
+      agentName = agentDisplayName(data, resolveAgentName) ?? null;
+      signal = kindValue;
       break;
     }
     case 'workspace:updated': {
@@ -150,5 +167,7 @@ export function mapEventToTakeoverTrigger(
     detail,
     raisedAtMs: Number.isFinite(raisedAtMs) ? raisedAtMs : Date.now(),
     changedTaskId,
+    agentName,
+    signal,
   };
 }

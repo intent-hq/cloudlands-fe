@@ -7,6 +7,35 @@
 import { m } from '$shared/paraglide/messages.js';
 import type { HudAgentStateBucket, HudCardStateKey } from '$store/renderer/slices/hud/hud-types';
 
+/**
+ * THE canonical HUD state→color mapping. Every colored indicator (feed row
+ * dots/squares, card agent squares, card state banners, header/footer
+ * counters, state bars) resolves through these tokens — nothing forks its
+ * own color:
+ *
+ * - IDLE / NOT STARTED / WAITING  → grey
+ * - UNREAD / PR states            → blue
+ * - IN PROGRESS / RUNNING         → green (pulsing/live treatment at the
+ *                                   usage site — same green as done)
+ * - ATTENTION (question/blocker/
+ *   discussion/needs_attention)   → yellow
+ * - FAILED / BLOCKED              → red
+ * - COMPLETED / DONE              → the same green, stable (never blinking)
+ *
+ * PR MERGED keeps the mock's distinctive purple accent on top of the PR
+ * family — the one deliberate refinement of the table.
+ */
+export const HUD_STATE_COLORS = {
+  running: 'hsl(var(--primary))',
+  done: 'hsl(var(--primary))',
+  attention: 'hsl(var(--warning))',
+  failed: 'hsl(var(--destructive-foreground))',
+  idle: 'hsl(var(--text-ghost))',
+  unread: 'hsl(var(--ring))',
+  pr: 'hsl(var(--ring))',
+  prMerged: 'hsl(262 60% 62%)',
+} as const;
+
 /** Localized status-banner label for a card state key (mock `wsMeta.l`). */
 export function cardStateLabel(stateKey: HudCardStateKey): string {
   switch (stateKey) {
@@ -28,46 +57,51 @@ export function cardStateLabel(stateKey: HudCardStateKey): string {
       return m.hud_card_stateBlocked_label();
     case 'failed':
       return m.hud_card_stateFailed_label();
+    case 'unread':
+      return m.hud_card_stateUnread_label();
     case 'idle':
       return m.hud_card_stateIdle_label();
   }
 }
 
-/** Card accent color for a state key (mock `wsMeta.c`). */
+/** Card accent color for a state key (mock `wsMeta.c`) — canonical table. */
 export function cardStateColor(stateKey: HudCardStateKey): string {
   switch (stateKey) {
     case 'in_progress':
+      return HUD_STATE_COLORS.running;
     case 'complete':
-      return 'hsl(var(--primary))';
+      return HUD_STATE_COLORS.done;
     case 'pr_ready':
     case 'pr_open':
-      return 'hsl(var(--ring))';
+      return HUD_STATE_COLORS.pr;
+    case 'unread':
+      return HUD_STATE_COLORS.unread;
     case 'pr_merged':
-      return 'hsl(262 60% 62%)';
+      return HUD_STATE_COLORS.prMerged;
     case 'wait':
-      return 'hsl(var(--warning))';
+      return HUD_STATE_COLORS.attention;
     case 'blocked':
     case 'failed':
-      return 'hsl(var(--destructive-foreground))';
+      return HUD_STATE_COLORS.failed;
     case 'not_started':
     case 'idle':
-      return 'hsl(var(--text-ghost))';
+      return HUD_STATE_COLORS.idle;
   }
 }
 
-/** Live-agent dot color per HUD bucket (mock `stateMeta.c`). */
+/** Live-agent dot color per HUD bucket (mock `stateMeta.c`) — canonical table. */
 export function agentBucketColor(bucket: HudAgentStateBucket): string {
   switch (bucket) {
     case 'running':
-      return 'hsl(var(--primary))';
+      return HUD_STATE_COLORS.running;
     case 'needs-attention':
-      return 'hsl(var(--warning))';
+      return HUD_STATE_COLORS.attention;
     case 'failed':
-      return 'hsl(var(--destructive-foreground))';
+      return HUD_STATE_COLORS.failed;
     case 'done':
-      return 'hsl(var(--ring))';
+      return HUD_STATE_COLORS.done;
     case 'idle':
-      return 'hsl(var(--text-ghost))';
+      return HUD_STATE_COLORS.idle;
   }
 }
 

@@ -42,13 +42,21 @@ function questionBlock(question: string, header = 'Auth method') {
 
 describe('hud-takeover-triggers', () => {
   it('every takeover event type except the takeover-only families is also a feed type', () => {
-    const takeoverOnly = ['agent:stream:end', 'workspace:updated'];
+    const takeoverOnly = [
+      'agent:stream:end',
+      'agent:attention-requested',
+      'workspace:updated',
+      'agent:created',
+    ];
     for (const type of HUD_TAKEOVER_EVENT_TYPES) {
       if (takeoverOnly.includes(type)) continue;
       expect(HUD_FEED_EVENT_TYPES as readonly string[]).toContain(type);
     }
-    // agent:stream:end (§7.1 question trailingBlocks) and workspace:updated
-    // (statusMessage delta) are takeover-only: they never render in the feed.
+    // agent:stream:end (§7.1 question trailingBlocks), agent:attention-
+    // requested (§6.5 blocker/discussion), workspace:updated (statusMessage
+    // delta), and agent:created (raw creation is feed noise — the AGENT
+    // DELEGATED row lands on the agent's first running transition instead)
+    // are takeover-only: they never render in the feed.
     for (const type of takeoverOnly) {
       expect(HUD_FEED_EVENT_TYPES as readonly string[]).not.toContain(type);
     }
@@ -64,6 +72,8 @@ describe('hud-takeover-triggers', () => {
       detail: 'Ship it',
       raisedAtMs: TS_MS,
       changedTaskId: 'n-1',
+      agentName: null,
+      signal: null,
     });
   });
 
@@ -127,6 +137,12 @@ describe('hud-takeover-triggers', () => {
     ).toBeNull();
   });
 
+  it("ignores an 'unread' attention value (blue dot ≠ HUD attention)", () => {
+    expect(
+      mapEventToTakeoverTrigger(event('workspace:attention-changed', { attention: 'unread' })),
+    ).toBeNull();
+  });
+
   it('maps a workspace:updated statusMessage change and nothing else', () => {
     expect(
       mapEventToTakeoverTrigger(
@@ -160,17 +176,97 @@ describe('hud-takeover-triggers', () => {
   });
 
   it('surfaces the §7.1 question text from agent:stream:end trailingBlocks', () => {
+    const resolver = (agentId: string) => (agentId === AGENT_UUID ? 'Coordinator' : undefined);
     const trigger = mapEventToTakeoverTrigger(
       event('agent:stream:end', {
         agentId: AGENT_UUID,
         messageId: 'msg-1',
         trailingBlocks: [questionBlock('Which authentication method should the endpoint use?')],
       }),
+      resolver,
     );
+    // One shared source: `detail` is the same captured question text the
+    // footer snippet and panel row render; the raising agent's display name
+    // and the `question` signal ride along for the banner.
     expect(trigger).toMatchObject({
       kind: 'question_asked',
       detail: 'Which authentication method should the endpoint use?',
+      agentName: 'Coordinator',
+      signal: 'question',
     });
+  });
+
+  it('agent:stream:end question with no resolvable name omits it (never a raw UUID)', () => {
+    const trigger = mapEventToTakeoverTrigger(
+      event('agent:stream:end', {
+        agentId: AGENT_UUID,
+        messageId: 'msg-1',
+        trailingBlocks: [questionBlock('Rebuild or repin?')],
+      }),
+    );
+    expect(trigger).toMatchObject({ signal: 'question', agentName: null });
+  });
+
+  it('maps agent:attention-requested blocker/discussion with name, reason, and signal', () => {
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:attention-requested', {
+          agentId: AGENT_UUID,
+          agentName: 'Verifier',
+          kind: 'blocker',
+          reason: 'Sandbox network is down',
+        }),
+      ),
+    ).toMatchObject({
+      kind: 'question_asked',
+      detail: 'Sandbox network is down',
+      agentName: 'Verifier',
+      signal: 'blocker',
+    });
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:attention-requested', {
+          agentId: AGENT_UUID,
+          agentName: 'Coordinator',
+          kind: 'discussion',
+          reason: 'Need a call on the rollout order',
+        }),
+      ),
+    ).toMatchObject({
+      detail: 'Need a call on the rollout order',
+      agentName: 'Coordinator',
+      signal: 'discussion',
+    });
+  });
+
+  it('ignores delegated-agent attention requests and malformed payloads', () => {
+    // A non-empty parentAgentId means the parent handles it (same gate as
+    // the sticky attention toast) — no takeover.
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:attention-requested', {
+          agentId: AGENT_UUID,
+          agentName: 'Implementor',
+          kind: 'blocker',
+          reason: 'Blocked',
+          parentAgentId: 'agent-579724c1-fe68-450e-8188-43b7afb96400',
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:attention-requested', { agentId: AGENT_UUID, kind: 'blocker' }),
+      ),
+    ).toBeNull();
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:attention-requested', {
+          agentId: AGENT_UUID,
+          kind: 'other',
+          reason: 'text',
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('ignores agent:stream:end without question trailingBlocks', () => {
@@ -205,6 +301,7 @@ describe('hud-takeover-triggers', () => {
   it('trigger-kind const covers exactly the documented notable events', () => {
     expect(Object.keys(HUD_TAKEOVER_TRIGGER_KINDS).sort()).toEqual(
       [
+        'agent:attention-requested',
         'agent:created',
         'agent:failed',
         'agent:started',

@@ -8,6 +8,21 @@ vi.mock('$lib/client/live/backend-transport', async () => {
   return mod.mockBackendTransportModule;
 });
 
+// Neutralize the daemon-health middleware: its own 10s system.status poll
+// would otherwise hit the SAME mocked transport at nondeterministic times,
+// breaking the "the HUD subscription issues NO system.status request"
+// assertions below. Its slice stays real — tests dispatch the poll/connection
+// actions directly to drive the selectHudSystem view.
+vi.mock('$store/renderer/middlewares/daemon-health-service', () => ({
+  createDaemonHealthMiddleware:
+    () =>
+    () =>
+    (next: (action: unknown) => unknown) =>
+    (action: unknown) =>
+      next(action),
+  disposeDaemonHealthService: () => {},
+}));
+
 import {
   installMockBackend,
   resetMockBackend,
@@ -32,6 +47,11 @@ import {
   startHudSubscription,
 } from './hud-subscription';
 import { HUD_FEED_EVENT_TYPES } from './hud-feed-mapper';
+import {
+  connectionStatusChanged,
+  heartbeatFailed,
+  systemStatusSuccess,
+} from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   removeWorkspaceEntity,
@@ -106,18 +126,6 @@ function scriptHappyBackend(backend: MockBackendHandle) {
   backend.onSubscribe(() => ({ subscriptionId: SUB_ID }));
   backend.onRequest('stats.getUsage', () => usageResult());
   backend.onRequest('stats.getRateHistory', () => rateHistoryResult());
-  backend.onRequest('system.status', () => ({
-    running: true,
-    listenMode: 'uds',
-    transports: ['uds'],
-    clients: 1,
-    agents: 2,
-    maxAgents: 8,
-    version: '1.2.3',
-    uptimeSeconds: 4200,
-    fingerprint: 'fp',
-    protocolVersion: 3,
-  }));
 }
 
 describe('HUD subscription (mock backend, real store)', () => {
@@ -155,7 +163,7 @@ describe('HUD subscription (mock backend, real store)', () => {
     expect(selectHudActive.select(appStore.state)).toBe(true);
   });
 
-  it('fetches the 24h stats.getUsage rollup and system.status on start', async () => {
+  it('fetches the 24h stats.getUsage rollup on start — and NEVER its own system.status', async () => {
     scriptHappyBackend(backend);
     stop = startHudSubscription();
     await flush();
@@ -171,10 +179,58 @@ describe('HUD subscription (mock backend, real store)', () => {
     expect(usage?.rateSamples).toHaveLength(24);
     expect(usage?.rateSamples[23]).toEqual({ hour: 23, tokens: 175 });
 
+    // The daemon ONLINE signal comes from the daemon-health slice (the
+    // middleware's 10s poll) — the HUD adds no system.status fetch of its own.
+    expect(backend.requests.filter((r) => r.method === 'system.status')).toEqual([]);
+  });
+
+  it('derives online/version/uptime from the daemon-health slice (live, no HUD fetch)', async () => {
+    scriptHappyBackend(backend);
+    stop = startHudSubscription();
+    await flush();
+
+    // Before any health signal: down → OFFLINE, no version/uptime.
+    expect(selectHudSystem.select(appStore.state)).toEqual({
+      online: false,
+      uptimeSeconds: null,
+      version: null,
+      fetchedAtMs: null,
+    });
+
+    // The middleware's poll result folds into daemon-health → the HUD view.
+    appStore.dispatch(connectionStatusChanged('connected'));
+    appStore.dispatch(
+      systemStatusSuccess(
+        {
+          running: true,
+          listenMode: 'uds',
+          transports: ['uds'],
+          clients: 1,
+          agents: 2,
+          version: '1.2.3',
+          uptimeSeconds: 4200,
+          protocolVersion: '3',
+          host: { os: 'macos', arch: 'arm64', hasDisplay: true, locality: 'local' },
+        },
+        '2026-08-03T00:00:10.000Z',
+      ),
+    );
     const system = selectHudSystem.select(appStore.state);
     expect(system.online).toBe(true);
     expect(system.uptimeSeconds).toBe(4200);
     expect(system.version).toBe('1.2.3');
+    expect(system.fetchedAtMs).toBe(Date.parse('2026-08-03T00:00:10.000Z'));
+
+    // degraded (poll failure while connected) still renders ONLINE; only a
+    // 'down' transition flips the indicator OFFLINE — stats survive for the
+    // frozen uptime + version render.
+    appStore.dispatch(heartbeatFailed());
+    expect(selectHudSystem.select(appStore.state).online).toBe(true);
+    appStore.dispatch(connectionStatusChanged('disconnected'));
+    const downSystem = selectHudSystem.select(appStore.state);
+    expect(downSystem.online).toBe(false);
+    expect(downSystem.version).toBe('1.2.3');
+    expect(downSystem.uptimeSeconds).toBe(4200);
   });
 
   it('fetches stats.getRateHistory on start and polls it every 15s (PROTOCOL §5.39)', async () => {
@@ -288,6 +344,59 @@ describe('HUD subscription (mock backend, real store)', () => {
       question: 'Which auth flow?',
       ts: '2026-07-30T12:00:00.000Z',
     });
+
+    // Supersession (§7.1): a question hold breaks only on a user-origin
+    // delivery, which starts a turn — the running agent:status-changed drops
+    // the captured question so nothing keeps blinking after the answer.
+    backend.pushEvent({
+      type: 'agent:status-changed',
+      workspaceId: WS_ID,
+      id: 'evt-qc2',
+      subscriptionId: SUB_ID,
+      timestamp: '2026-07-30T12:01:00.000Z',
+      data: { agentId: 'agent-1', status: 'active', isActive: true },
+    });
+    await flush();
+    expect(appStore.state.hud.questionsByAgentId['agent-1']).toBeUndefined();
+
+    // A non-running transition (idle turn end) never supersedes.
+    backend.pushEvent({
+      type: 'agent:stream:end',
+      workspaceId: WS_ID,
+      id: 'evt-qc3',
+      subscriptionId: SUB_ID,
+      timestamp: '2026-07-30T12:02:00.000Z',
+      data: {
+        agentId: 'agent-1',
+        messageId: 'msg-2',
+        trailingBlocks: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'intent-question://tar-2',
+              name: 'Deploy target',
+              mimeType: 'application/vnd.intent.question+json',
+              text: JSON.stringify({
+                attachmentId: 'tar-2',
+                header: 'Deploy target',
+                question: 'Which target?',
+                multiSelect: false,
+              }),
+            },
+          },
+        ],
+      },
+    });
+    backend.pushEvent({
+      type: 'agent:status-changed',
+      workspaceId: WS_ID,
+      id: 'evt-qc4',
+      subscriptionId: SUB_ID,
+      timestamp: '2026-07-30T12:02:01.000Z',
+      data: { agentId: 'agent-1', status: 'idle', isActive: false },
+    });
+    await flush();
+    expect(appStore.state.hud.questionsByAgentId['agent-1']?.question).toBe('Which target?');
   });
 
   it('maps a PROTOCOL-shaped agent:failed event into an err feed row, newest first', async () => {
@@ -321,6 +430,76 @@ describe('HUD subscription (mock backend, real store)', () => {
       agentId: 'agent-1',
     });
     expect(feed[1]).toMatchObject({ colorClass: 'info', agentName: 'Implementor' });
+  });
+
+  it('suppresses agent:created and emits ONE AGENT DELEGATED row on the first running transition', async () => {
+    scriptHappyBackend(backend);
+    stop = startHudSubscription();
+    await flush();
+
+    // Raw creation: no feed row (the agent has not done anything yet).
+    backend.pushEvent({
+      type: 'agent:created',
+      workspaceId: WS_ID,
+      id: 'evt-c1',
+      subscriptionId: SUB_ID,
+      data: { agentId: 'agent-new', name: 'Verifier' },
+    });
+    await flush();
+    expect(selectHudFeed.select(appStore.state)).toEqual([]);
+
+    // First running transition → the one synthetic AGENT DELEGATED row.
+    backend.pushEvent({
+      type: 'agent:status-changed',
+      workspaceId: WS_ID,
+      id: 'evt-s1',
+      subscriptionId: SUB_ID,
+      data: { agentId: 'agent-new', status: 'active', isActive: true },
+    });
+    await flush();
+    let feed = selectHudFeed.select(appStore.state);
+    expect(feed).toHaveLength(1);
+    expect(feed[0]).toMatchObject({
+      id: 'evt-s1',
+      kind: 'agent:delegated',
+      colorClass: 'info',
+      agentId: 'agent-new',
+      agentStatus: 'active',
+    });
+
+    // Later running transitions keep the normal AGENT RUNNING row — never a
+    // second delegation announcement.
+    backend.pushEvent({
+      type: 'agent:status-changed',
+      workspaceId: WS_ID,
+      id: 'evt-s2',
+      subscriptionId: SUB_ID,
+      data: { agentId: 'agent-new', status: 'active', isActive: true },
+    });
+    // Non-running transitions on an unseen agent never consume its first
+    // start (waiting is not running work).
+    backend.pushEvent({
+      type: 'agent:status-changed',
+      workspaceId: WS_ID,
+      id: 'evt-s3',
+      subscriptionId: SUB_ID,
+      data: { agentId: 'agent-other', status: 'waiting', isActive: false },
+    });
+    backend.pushEvent({
+      type: 'agent:status-changed',
+      workspaceId: WS_ID,
+      id: 'evt-s4',
+      subscriptionId: SUB_ID,
+      data: { agentId: 'agent-other', status: 'active', isActive: true },
+    });
+    await flush();
+    feed = selectHudFeed.select(appStore.state);
+    expect(feed.map((e) => ({ id: e.id, kind: e.kind }))).toEqual([
+      { id: 'evt-s4', kind: 'agent:delegated' },
+      { id: 'evt-s3', kind: 'agent:status-changed' },
+      { id: 'evt-s2', kind: 'agent:status-changed' },
+      { id: 'evt-s1', kind: 'agent:delegated' },
+    ]);
   });
 
   it('fans notable events out to the takeover trigger bus (feed events do not)', async () => {
@@ -414,8 +593,62 @@ describe('HUD subscription (mock backend, real store)', () => {
         workspaceId: WS_ID,
         kind: 'question_asked',
         detail: 'Which authentication method should the endpoint use?',
+        signal: 'question',
       });
       // Terminal stream events never render in the feed.
+      expect(selectHudFeed.select(appStore.state)).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('fans agent:attention-requested out as a blocker/discussion takeover, feed-free (§6.5)', async () => {
+    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const received: unknown[] = [];
+    const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
+    try {
+      scriptHappyBackend(backend);
+      stop = startHudSubscription();
+      await flush();
+
+      backend.pushEvent({
+        type: 'agent:attention-requested',
+        workspaceId: WS_ID,
+        id: 'evt-att1',
+        subscriptionId: SUB_ID,
+        timestamp: '2026-07-30T12:00:00.000Z',
+        data: {
+          agentId: 'agent-579724c1-fe68-450e-8188-43b7afb964c6',
+          agentName: 'Verifier',
+          kind: 'blocker',
+          reason: 'Sandbox network is down',
+        },
+      });
+      // A delegated agent's request (parentAgentId) never takes over.
+      backend.pushEvent({
+        type: 'agent:attention-requested',
+        workspaceId: WS_ID,
+        id: 'evt-att2',
+        subscriptionId: SUB_ID,
+        data: {
+          agentId: 'agent-579724c1-fe68-450e-8188-43b7afb964c6',
+          agentName: 'Implementor',
+          kind: 'discussion',
+          reason: 'Which rollout order?',
+          parentAgentId: 'agent-579724c1-fe68-450e-8188-43b7afb96400',
+        },
+      });
+      await flush();
+
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({
+        workspaceId: WS_ID,
+        kind: 'question_asked',
+        detail: 'Sandbox network is down',
+        agentName: 'Verifier',
+        signal: 'blocker',
+      });
+      // Attention requests never render in the feed.
       expect(selectHudFeed.select(appStore.state)).toEqual([]);
     } finally {
       unsubscribe();
@@ -586,15 +819,11 @@ describe('HUD subscription (mock backend, real store)', () => {
     backend.onRequest('stats.getUsage', () => {
       throw new Error('daemon offline');
     });
-    backend.onRequest('system.status', () => {
-      throw new Error('daemon offline');
-    });
     stop = startHudSubscription();
     await flush();
 
     expect(selectHudUsage.select(appStore.state)).toBeNull();
     expect(selectHudUsageError.select(appStore.state)).toContain('daemon offline');
-    expect(selectHudSystem.select(appStore.state).online).toBe(false);
   });
 
   it('re-issues the subscribe and refetches rollups on reconnect (RESUB-1)', async () => {
@@ -607,7 +836,9 @@ describe('HUD subscription (mock backend, real store)', () => {
 
     expect(backend.subscribes).toHaveLength(2);
     expect(backend.requests.filter((r) => r.method === 'stats.getUsage')).toHaveLength(2);
-    expect(backend.requests.filter((r) => r.method === 'system.status')).toHaveLength(2);
+    // No HUD-owned system.status refetch — the daemon-health middleware's
+    // poll is the single source for the ONLINE/version/uptime signal.
+    expect(backend.requests.filter((r) => r.method === 'system.status')).toEqual([]);
   });
 
   it('stop() unsubscribes, removes listeners, and clears the slice (no leaks)', async () => {

@@ -4,10 +4,10 @@
  * State for the standalone Fleet HUD window: the live global event feed
  * (ring buffer, live-only — no backfill), per-workspace attention/displayStatus
  * overrides pushed by daemon events, the 24h usage rollup from `stats.getUsage`
- * (PROTOCOL §5.36), and the daemon online/uptime snapshot from `system.status`
- * (PROTOCOL §5.7). The subscription lifecycle and the event→feed mapping live
+ * (PROTOCOL §5.36). The subscription lifecycle and the event→feed mapping live
  * in `$features/hud/hud-subscription` / `hud-feed-mapper`; this slice only
- * folds the already-narrowed payloads.
+ * folds the already-narrowed payloads. Daemon online/version/uptime come from
+ * the daemon-health slice (10s poll), not from here — see `selectHudSystem`.
  *
  * Feed `text` values are composed from wire-provided identifiers (agent names,
  * statuses, task titles) — agent-generated/wire content, exempt from i18n.
@@ -19,12 +19,13 @@ import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
 import type { WorkspaceDisplayStatus } from '$shared/types';
 import {
   EMPTY_HUD_GRID_FILTER,
+  isHudTrackedAttentionValue,
   type HudCardStateKey,
   type HudGridFilter,
 } from './hud-types';
 
 /** Mock-faithful color-class token for a feed row. */
-export type HudFeedColorClass = 'ok' | 'info' | 'warn' | 'err' | 'accent';
+export type HudFeedColorClass = 'ok' | 'info' | 'warn' | 'err' | 'accent' | 'idle';
 
 export interface HudFeedEntry {
   /** Daemon event id (dedupe key across overlapping deliveries). */
@@ -47,6 +48,18 @@ export interface HudFeedEntry {
   agentId?: string;
   /** Wire agent display name when the event carried one (i18n-exempt). */
   agentName?: string;
+  /**
+   * Wire agent status for `agent:status-changed` rows (§6.5) — drives the
+   * per-state chip label (AGENT RUNNING / IDLE / FAILED …); never rendered
+   * raw.
+   */
+  agentStatus?: string;
+  /**
+   * Wire displayStatus for `workspace:displayStatus-changed` rows (§6.5) —
+   * drives the localized card-state detail label and the card color token
+   * on the row dot; never rendered raw.
+   */
+  displayStatus?: string;
 }
 
 /** The four consumption counters (PROTOCOL §5.36 `UsageTotals`). */
@@ -92,7 +105,10 @@ export interface HudRateHistoryState {
 
 /** Live attention flag for one workspace (`workspace:attention-changed`). */
 export interface HudAttentionFlag {
-  /** Wire attention value (`"unread" | "review_required" | ...`; never "none"). */
+  /**
+   * Wire attention value — tracked values only (`isHudTrackedAttentionValue`):
+   * the HUD attention allowlist plus the non-urgent `unread`; never "none".
+   */
   attention: string;
   /** Event timestamp the flag was raised at — wire ISO string, verbatim. */
   raisedAtTs: string;
@@ -137,17 +153,6 @@ export interface HudCapturedQuestion {
   ts: string;
 }
 
-export interface HudSystemState {
-  /** Whether the last `system.status` round-trip succeeded. */
-  online: boolean;
-  /** Daemon uptime at fetch time; null when unknown. */
-  uptimeSeconds: number | null;
-  /** Daemon version string; null when unknown. */
-  version: string | null;
-  /** Epoch-ms when the service fetched the status; null before first fetch. */
-  fetchedAtMs: number | null;
-}
-
 export interface HudState {
   /** Whether the HUD subscription is running (feed only accumulates then). */
   active: boolean;
@@ -162,7 +167,6 @@ export interface HudState {
   /** Per-minute TOK/MIN history from `stats.getRateHistory` (PROTOCOL §5.39). */
   rateHistory: HudRateHistoryState | null;
   rateHistoryError: string | null;
-  system: HudSystemState;
   /** Live 5s token buckets for the AGENT ACTIVITY · TOK/S chart. */
   rate5s: HudRate5sState;
   /** Latest captured clarifying question per agent (§7.1 trailingBlocks). */
@@ -193,7 +197,6 @@ export const initialState: HudState = {
   usageError: null,
   rateHistory: null,
   rateHistoryError: null,
-  system: { online: false, uptimeSeconds: null, version: null, fetchedAtMs: null },
   rate5s: { buckets: [], backfilled: false },
   questionsByAgentId: {},
   gridFilter: EMPTY_HUD_GRID_FILTER,
@@ -230,9 +233,6 @@ export const hudUsageFailed = createAction<[error: string]>('hud/usageFailed');
 export const hudRateHistoryLoaded =
   createAction<[rateHistory: HudRateHistoryState]>('hud/rateHistoryLoaded');
 export const hudRateHistoryFailed = createAction<[error: string]>('hud/rateHistoryFailed');
-export const hudSystemStatusReceived = createAction<[system: HudSystemState]>(
-  'hud/systemStatusReceived',
-);
 /** Grid-card click → ask the takeover overlay (Batch 3) to open a workspace. */
 export const hudTakeoverRequested = createAction<[workspaceId: string]>('hud/takeoverRequested');
 /** Clear the pending takeover request (overlay consumed or dismissed it). */
@@ -254,6 +254,13 @@ export const hudRate5sBackfilled = createAction<
 export const hudQuestionCaptured = createAction<[question: HudCapturedQuestion]>(
   'hud/questionCaptured',
 );
+/**
+ * The agent started a new turn (`agent:status-changed` → a running status):
+ * a question hold only breaks on a user-origin delivery (PROTOCOL §7.1 — any
+ * later user message supersedes the questions), so the captured question is
+ * answered/moot and must stop pending everywhere.
+ */
+export const hudQuestionSuperseded = createAction<[agentId: string]>('hud/questionSuperseded');
 /** Header FLEET OPS repo pick (null = all workspaces). */
 export const hudGridFilterRepoPicked = createAction<[repo: string | null]>(
   'hud/gridFilterRepoPicked',
@@ -277,7 +284,12 @@ export const hudReducer = createReducer<HudState>(initialState)
     return { ...state, feed: [entry, ...state.feed].slice(0, HUD_FEED_LIMIT) };
   })
   .with(hudAttentionChanged, (state, { payload: [workspaceId, attention, raisedAtTs] }) => {
-    if (attention === 'none') {
+    // The wire field is single-valued, so any untracked value ("none" —
+    // e.g. from `workspace.markSeen`) means no flag is currently raised:
+    // clear. Tracked values are the HUD attention allowlist plus the
+    // non-urgent `unread` (renders the blue UNREAD card state, never a
+    // call to action — urgent selectors gate on `isHudAttentionValue`).
+    if (!isHudTrackedAttentionValue(attention)) {
       if (!(workspaceId in state.attentionByWorkspaceId)) return state;
       const next = { ...state.attentionByWorkspaceId };
       delete next[workspaceId];
@@ -313,7 +325,6 @@ export const hudReducer = createReducer<HudState>(initialState)
     ...state,
     rateHistoryError: error,
   }))
-  .with(hudSystemStatusReceived, (state, { payload: [system] }) => ({ ...state, system }))
   .with(hudTakeoverRequested, (state, { payload: [workspaceId] }) =>
     state.takeoverRequestWorkspaceId === workspaceId
       ? state
@@ -366,6 +377,12 @@ export const hudReducer = createReducer<HudState>(initialState)
       ...state,
       questionsByAgentId: { ...state.questionsByAgentId, [question.agentId]: question },
     };
+  })
+  .with(hudQuestionSuperseded, (state, { payload: [agentId] }) => {
+    if (!(agentId in state.questionsByAgentId)) return state;
+    const next = { ...state.questionsByAgentId };
+    delete next[agentId];
+    return { ...state, questionsByAgentId: next };
   })
   .with(hudGridFilterRepoPicked, (state, { payload: [repo] }) =>
     state.gridFilter.repo === repo

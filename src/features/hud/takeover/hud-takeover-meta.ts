@@ -6,7 +6,7 @@
  */
 import { m } from '$shared/paraglide/messages.js';
 import type { HudAgentStateBucket } from '$store/renderer/slices/hud/hud-types';
-import type { HudTakeoverKind } from './hud-takeover-queue';
+import type { HudTakeoverKind, HudTakeoverTrigger } from './hud-takeover-queue';
 
 /** Localized banner-chip label for a takeover kind. */
 export function takeoverKindLabel(kind: HudTakeoverKind): string {
@@ -113,6 +113,99 @@ export function taskCellMeta(status: string): HudTakeoverCellMeta {
         borderStyle: 'dashed',
       };
   }
+}
+
+/**
+ * Attention-banner chip: the raising signal's name (the ATTENTION panel's
+ * chip labels — QUESTION / BLOCKED / DISCUSSION REQUIRED), so a blocker or
+ * discussion takeover never mislabels itself as a question.
+ */
+export function takeoverAttentionChipLabel(
+  signal: 'question' | 'blocker' | 'discussion',
+): string {
+  switch (signal) {
+    case 'question':
+      return m.hud_attention_kindQuestion_label();
+    case 'blocker':
+      return m.hud_attention_kindBlocked_label();
+    case 'discussion':
+      return m.hud_attention_kindDiscussion_label();
+  }
+}
+
+/**
+ * Attention-banner sub-title: the question/reason text with the CARD FOOTER's
+ * shared per-signal prefixes (`Q:` / `Blocker:` / `Request Discussion:`) so
+ * the takeover banner, footer snippet, and ATTENTION panel read identically.
+ */
+export function takeoverAttentionSubtitle(
+  signal: 'question' | 'blocker' | 'discussion',
+  text: string,
+): string {
+  switch (signal) {
+    case 'question':
+      return m.hud_card_attnQuestion_label({ text });
+    case 'blocker':
+      return m.hud_card_attnBlocker_label({ text });
+    case 'discussion':
+      return m.hud_card_attnDiscussion_label({ text });
+  }
+}
+
+/** Resolved banner content lines (see `bannerView`). */
+export interface HudTakeoverBannerView {
+  /** Dot-matrix headline text; null renders no headline. */
+  big: string | null;
+  /** Wrap the headline (long question sentences) instead of clipping. */
+  wrap: boolean;
+  /** Plain sub-title line under the headline; null renders none. */
+  status: string | null;
+  /** Uppercase mono sub-line (repo ref); null renders none. */
+  sub: string | null;
+  /** Test id for the `status` line. */
+  statusTestId: string;
+}
+
+/**
+ * Banner content per kind: status updates put the workspace name on the
+ * dot-matrix headline with the status text sub-title; attention banners
+ * (signal-carrying question/blocker/discussion) put the RAISING AGENT's name
+ * on the matrix line (workspace-title fallback — never a raw UUID) with the
+ * question/reason sub-title in the card footer's shared Q:/Blocker:/Request
+ * Discussion: prefixes; every other kind keeps the wire detail headline over
+ * the repo-ref sub-line. All text is wire/localized content routing —
+ * i18n-exempt at this join point.
+ */
+export function bannerView(
+  banner: HudTakeoverTrigger,
+  title: string,
+  repoRef: string,
+): HudTakeoverBannerView {
+  if (banner.kind === 'status_update') {
+    return {
+      big: title,
+      wrap: false,
+      status: banner.detail || null,
+      sub: null,
+      statusTestId: 'hud-takeover-banner-status',
+    };
+  }
+  if (banner.signal) {
+    return {
+      big: banner.agentName ?? title,
+      wrap: false,
+      status: takeoverAttentionSubtitle(banner.signal, banner.detail),
+      sub: null,
+      statusTestId: 'hud-takeover-banner-attention',
+    };
+  }
+  return {
+    big: banner.detail || null,
+    wrap: banner.kind === 'question_asked',
+    status: null,
+    sub: repoRef,
+    statusTestId: '',
+  };
 }
 
 /** Localized short label for an agent chip's state bucket. */

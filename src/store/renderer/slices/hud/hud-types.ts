@@ -56,6 +56,33 @@ export function isWaitingWireStatus(status: string): boolean {
 }
 
 /**
+ * HUD "needs attention" gate for the wire workspace `attention` value
+ * (`workspace:attention-changed`, §9.9): only values in this allowlist are a
+ * call to action on the HUD. `unread` is the main app's blue-dot notification
+ * — the daemon raises it on EVERY agent turn end and only `workspace.markSeen`
+ * clears it, so treating it as attention would flag genuinely idle workspaces
+ * (no pending question/blocker/discussion) as NEEDS ATTENTION. `none` clears.
+ */
+export const HUD_ATTENTION_VALUES = ['review_required'] as const;
+
+/** Whether a wire attention value constitutes HUD attention (see allowlist). */
+export function isHudAttentionValue(value: string): boolean {
+  return (HUD_ATTENTION_VALUES as readonly string[]).includes(value);
+}
+
+/** The non-urgent unread wire attention value (the main app's blue dot). */
+export const HUD_UNREAD_ATTENTION_VALUE = 'unread';
+
+/**
+ * Whether the hud slice tracks a wire attention value at all: the HUD
+ * attention allowlist plus `unread` (stored so the card can render the
+ * non-urgent blue UNREAD state — never a call to action). `none` clears.
+ */
+export function isHudTrackedAttentionValue(value: string): boolean {
+  return isHudAttentionValue(value) || value === HUD_UNREAD_ATTENTION_VALUE;
+}
+
+/**
  * Mock-faithful workspace-card state keys: the BE-owned
  * `workspace.displayStatus` wire values (`idle` is a wire value since
  * intentd#793, and doubles as the fallback for rows without a displayStatus;
@@ -63,7 +90,8 @@ export function isWaitingWireStatus(status: string): boolean {
  * the HUD attention refinements (`wait` also when the live attention flag is
  * raised, `blocked` when a top-level non-background agent's pending request
  * is specifically a blocker, `failed` when a card agent is in the failed
- * bucket).
+ * bucket, and the non-urgent `unread` blue-dot state that sits just above
+ * `idle` — it never masks urgent/active states).
  */
 export const HUD_CARD_STATE_KEYS = [
   'in_progress',
@@ -73,12 +101,27 @@ export const HUD_CARD_STATE_KEYS = [
   'wait',
   'blocked',
   'failed',
+  'unread',
   'idle',
   'not_started',
   'complete',
 ] as const;
 
 export type HudCardStateKey = (typeof HUD_CARD_STATE_KEYS)[number];
+
+/**
+ * Card state key for a wire `workspace.displayStatus` value: `needs_attention`
+ * renders as `wait` (the same fold `cardStateKey` applies), every other known
+ * value maps verbatim. Null for unknown wire values — the same
+ * treat-as-absent convention as `isWorkspaceDisplayStatus`, so consumers
+ * (e.g. the WORKSPACE STATUS feed row) never render a raw wire word.
+ */
+export function displayStatusCardStateKey(displayStatus: string): HudCardStateKey | null {
+  if (displayStatus === 'needs_attention') return 'wait';
+  return (HUD_CARD_STATE_KEYS as readonly string[]).includes(displayStatus)
+    ? (displayStatus as HudCardStateKey)
+    : null;
+}
 
 /**
  * Client-side workspace-grid filter (mock's header FLEET OPS repo menu +

@@ -53,6 +53,28 @@
     return formatHudTimer((nowMs - startedMs) / 1000);
   }
 
+  /**
+   * Attention strip text: the raising agent's reason (Q: / Blocker: /
+   * Request Discussion: prefix over the derived snippet) wins over the
+   * generic workspace status message; the `pending` fallback (daemon
+   * needs_attention rollup with no captured reason) renders a generic
+   * awaiting-input line rather than leaving the status text in place.
+   */
+  const attentionText = $derived.by(() => {
+    const snippet = card.attentionSnippet;
+    if (!snippet) return card.statusMessage;
+    switch (snippet.kind) {
+      case 'question':
+        return m.hud_card_attnQuestion_label({ text: snippet.text });
+      case 'blocker':
+        return m.hud_card_attnBlocker_label({ text: snippet.text });
+      case 'discussion':
+        return m.hud_card_attnDiscussion_label({ text: snippet.text });
+      case 'pending':
+        return m.hud_card_attnPending_label();
+    }
+  });
+
   function handleClick() {
     // Consumed by HudTakeoverOverlay: manual opens jump the takeover queue.
     appStore.dispatch(hudTakeoverRequested(card.workspaceId));
@@ -121,7 +143,12 @@
               style:background={agentColor}
             ></span>
             <span class="hud-ws-card-agent-name">{agent.name}</span>
-            <span class="hud-ws-card-agent-elapsed">{elapsedText(agent.lastActivityTs)}</span>
+            {#if agent.bucket !== 'idle'}
+              <!-- No elapsed timer on idle (grey) rows: lastActivityTs anchors
+                   to the LAST activity, so an idle "timer" would just count
+                   time since the agent stopped — meaningless. -->
+              <span class="hud-ws-card-agent-elapsed">{elapsedText(agent.lastActivityTs)}</span>
+            {/if}
           </div>
           {#if agent.line}
             <!-- Last-response line for every row (not just running): the swap
@@ -136,9 +163,9 @@
     {/if}
   </div>
 
-  {#if isAttention && card.statusMessage}
+  {#if isAttention && attentionText}
     <div class="hud-ws-card-question" style:border-color={color} style:color>
-      {card.statusMessage}
+      {attentionText}
     </div>
   {/if}
 
@@ -359,9 +386,10 @@
   .hud-anim-blink {
     animation: hudblink 1.6s step-end infinite;
   }
-  /* Takeover pre-roll flash (mock `wsflash .3s step-end 3`). */
+  /* Takeover pre-roll flash: 3 fast blinks (0.18s × 3 = 540ms, inside the
+     630ms HUD_TAKEOVER_BLINK_MS pend window — kept in sync with the queue). */
   .hud-ws-card-flash {
-    animation: hudwsflash 0.3s step-end 3;
+    animation: hudwsflash 0.18s step-end 3;
   }
   @keyframes hudwsflash {
     0%,

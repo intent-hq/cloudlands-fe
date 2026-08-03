@@ -4,9 +4,16 @@ import {
   createHudTakeoverQueue,
   dismissTakeover,
   enqueueTakeover,
+  HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS,
+  HUD_TAKEOVER_ATTENTION_DWELL_MAX_MS,
+  HUD_TAKEOVER_ATTENTION_DWELL_MIN_MS,
+  HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS,
   HUD_TAKEOVER_BLINK_MS,
   HUD_TAKEOVER_CLOSE_MS,
-  HUD_TAKEOVER_DWELL_MS,
+  HUD_TAKEOVER_DWELL_BASE_MS,
+  HUD_TAKEOVER_DWELL_MAX_MS,
+  HUD_TAKEOVER_DWELL_MIN_MS,
+  HUD_TAKEOVER_DWELL_PER_CHAR_MS,
   HUD_TAKEOVER_MAX_PENDING,
   HUD_TAKEOVER_MAX_TRIGGERS,
   HUD_TAKEOVER_OPEN_MS,
@@ -14,6 +21,7 @@ import {
   requestImmediateTakeover,
   skipTakeoverBlink,
   takeoverCountdownSeconds,
+  takeoverDwellMs,
   tickTakeoverQueue,
   type HudTakeoverTrigger,
 } from './hud-takeover-queue';
@@ -33,6 +41,13 @@ function trigger(workspaceId: string, overrides: Partial<HudTakeoverTrigger> = {
   };
 }
 
+/** The default 'Task done' trigger's scaled dwell (floor-clamped at 9 chars). */
+const DEFAULT_DWELL_MS = takeoverDwellMs({
+  workspaceId: 'ws-1',
+  triggers: [trigger('ws-1')],
+  isViewer: false,
+});
+
 describe('hud-takeover-queue', () => {
   it('starts idle with no deadline', () => {
     const state = createHudTakeoverQueue();
@@ -46,6 +61,16 @@ describe('hud-takeover-queue', () => {
     expect(state.phase).toBe('blinking');
     expect(state.active?.workspaceId).toBe('ws-1');
     expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_BLINK_MS);
+  });
+
+  it('keeps a fast pre-roll window in sync with the 3× 180ms card flash', () => {
+    // The card's `hudwsflash` runs 0.18s step-end × 3 = 540ms; the queue's
+    // blink phase must fully contain those 3 blinks (630ms window). If the CSS
+    // duration changes, bump HUD_TAKEOVER_BLINK_MS to keep them aligned.
+    const FLASH_MS = 180;
+    const BLINKS = 3;
+    expect(HUD_TAKEOVER_BLINK_MS).toBe(630);
+    expect(HUD_TAKEOVER_BLINK_MS).toBeGreaterThanOrEqual(FLASH_MS * BLINKS);
   });
 
   it('the blink elapses into the opening phase on tick', () => {
@@ -82,7 +107,7 @@ describe('hud-takeover-queue', () => {
   it('the next pending entry opens with its own pre-roll blink', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = enqueueTakeover(state, trigger('ws-2'), T0 + 10, NO_BLINK);
-    const closeEnd = T0 + HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MS + HUD_TAKEOVER_CLOSE_MS;
+    const closeEnd = T0 + HUD_TAKEOVER_OPEN_MS + DEFAULT_DWELL_MS + HUD_TAKEOVER_CLOSE_MS;
     state = tickTakeoverQueue(state, closeEnd);
     expect(state.phase).toBe('blinking');
     expect(state.active?.workspaceId).toBe('ws-2');
@@ -93,7 +118,7 @@ describe('hud-takeover-queue', () => {
     let state = enqueueTakeover(createHudTakeoverQueue(), trigger('ws-1'), T0, NO_BLINK);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     expect(state.phase).toBe('dwelling');
-    expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MS);
+    expect(state.phaseEndsAtMs).toBe(T0 + HUD_TAKEOVER_OPEN_MS + DEFAULT_DWELL_MS);
     state = tickTakeoverQueue(state, state.phaseEndsAtMs!);
     expect(state.phase).toBe('closing');
     state = tickTakeoverQueue(state, state.phaseEndsAtMs!);
@@ -108,7 +133,7 @@ describe('hud-takeover-queue', () => {
     // ws-1 must stay active through its full cycle.
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS + 10, NO_BLINK);
     expect(state.active?.workspaceId).toBe('ws-1');
-    const closeEnd = T0 + HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MS + HUD_TAKEOVER_CLOSE_MS;
+    const closeEnd = T0 + HUD_TAKEOVER_OPEN_MS + DEFAULT_DWELL_MS + HUD_TAKEOVER_CLOSE_MS;
     state = tickTakeoverQueue(state, closeEnd, NO_BLINK);
     expect(state.phase).toBe('opening');
     expect(state.active?.workspaceId).toBe('ws-2');
@@ -133,7 +158,8 @@ describe('hud-takeover-queue', () => {
     expect(state.pending).toEqual([]);
     expect(state.active?.triggers).toHaveLength(2);
     expect(activeTakeoverTrigger(state)?.kind).toBe('agent_started');
-    expect(state.phaseEndsAtMs).toBe(later + HUD_TAKEOVER_DWELL_MS);
+    // The restarted dwell scales with BOTH banners' text.
+    expect(state.phaseEndsAtMs).toBe(later + takeoverDwellMs(state.active));
   });
 
   it('coalesces into the opening display without restarting the open', () => {
@@ -208,11 +234,136 @@ describe('hud-takeover-queue', () => {
     expect(takeoverCountdownSeconds(state, T0)).toBe(0);
     state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
     expect(takeoverCountdownSeconds(state, T0 + HUD_TAKEOVER_OPEN_MS)).toBe(
-      HUD_TAKEOVER_DWELL_MS / 1000,
+      DEFAULT_DWELL_MS / 1000,
     );
     expect(takeoverCountdownSeconds(state, T0 + HUD_TAKEOVER_OPEN_MS + 2500)).toBe(
-      HUD_TAKEOVER_DWELL_MS / 1000 - 2,
+      DEFAULT_DWELL_MS / 1000 - 2,
     );
+  });
+
+  describe('takeoverDwellMs — text-length-scaled dwell', () => {
+    const entryWith = (details: string[]) => ({
+      workspaceId: 'ws-1',
+      triggers: details.map((detail) => trigger('ws-1', { detail })),
+      isViewer: false,
+    });
+
+    it('short text clamps to the floor', () => {
+      // base 2000 + 50×5 = 2250 < floor 3000.
+      expect(takeoverDwellMs(entryWith(['short']))).toBe(HUD_TAKEOVER_DWELL_MIN_MS);
+      expect(takeoverDwellMs(entryWith(['']))).toBe(HUD_TAKEOVER_DWELL_MIN_MS);
+      expect(takeoverDwellMs(null)).toBe(HUD_TAKEOVER_DWELL_MIN_MS);
+    });
+
+    it('long text scales linearly: base + perCharMs × length', () => {
+      const text = 'x'.repeat(100);
+      expect(takeoverDwellMs(entryWith([text]))).toBe(
+        HUD_TAKEOVER_DWELL_BASE_MS + HUD_TAKEOVER_DWELL_PER_CHAR_MS * 100,
+      );
+    });
+
+    it('very long text clamps to the ceiling', () => {
+      // base 2000 + 50×500 = 27000 > ceiling 12000.
+      expect(takeoverDwellMs(entryWith(['x'.repeat(500)])))
+        .toBe(HUD_TAKEOVER_DWELL_MAX_MS);
+    });
+
+    it('sums the text of every stacked banner (multi-trigger entries)', () => {
+      const a = 'x'.repeat(60);
+      const b = 'y'.repeat(40);
+      expect(takeoverDwellMs(entryWith([a, b]))).toBe(
+        HUD_TAKEOVER_DWELL_BASE_MS + HUD_TAKEOVER_DWELL_PER_CHAR_MS * 100,
+      );
+    });
+
+    it('attention takeovers use the longer ATTENTION tier scaled by the sub-title text', () => {
+      // On attention banners `detail` IS the sub-title (the question/reason
+      // text the banner renders under the agent-name matrix line) — the
+      // dwell scales with it on the attention tier's longer base/rate so a
+      // typical two-sentence question stays up comfortably long.
+      const question = 'q'.repeat(120);
+      const entry = {
+        workspaceId: 'ws-1',
+        triggers: [
+          trigger('ws-1', {
+            kind: 'question_asked' as const,
+            detail: question,
+            agentName: 'Coordinator',
+            signal: 'question' as const,
+          }),
+        ],
+        isViewer: false,
+      };
+      // 4000 + 60×120 = 11200 — vs 8000 on the routine tier.
+      expect(takeoverDwellMs(entry)).toBe(
+        HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS + HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS * 120,
+      );
+    });
+
+    const attentionEntryWith = (details: string[]) => ({
+      workspaceId: 'ws-1',
+      triggers: details.map((detail) =>
+        trigger('ws-1', {
+          kind: 'question_asked' as const,
+          detail,
+          signal: 'question' as const,
+        }),
+      ),
+      isViewer: false,
+    });
+
+    it('even a terse attention banner holds the attention floor', () => {
+      // base 4000 + 60×5 = 4300 < attention floor 8000.
+      expect(takeoverDwellMs(attentionEntryWith(['huh?!']))).toBe(
+        HUD_TAKEOVER_ATTENTION_DWELL_MIN_MS,
+      );
+      expect(HUD_TAKEOVER_ATTENTION_DWELL_MIN_MS).toBeGreaterThan(HUD_TAKEOVER_DWELL_MAX_MS / 2);
+    });
+
+    it('a very long attention banner clamps to the attention ceiling', () => {
+      // base 4000 + 60×500 = 34000 > attention ceiling 20000.
+      expect(takeoverDwellMs(attentionEntryWith(['x'.repeat(500)]))).toBe(
+        HUD_TAKEOVER_ATTENTION_DWELL_MAX_MS,
+      );
+    });
+
+    it('a stacked routine banner never shortens an attention entry to the routine tier', () => {
+      const entry = {
+        workspaceId: 'ws-1',
+        triggers: [
+          trigger('ws-1', { kind: 'task_complete' as const, detail: 'x'.repeat(50) }),
+          trigger('ws-1', {
+            kind: 'question_asked' as const,
+            detail: 'q'.repeat(70),
+            signal: 'question' as const,
+          }),
+        ],
+        isViewer: false,
+      };
+      // One signal-carrying trigger ⇒ the whole entry dwells on the
+      // attention tier over the SUMMED text: 4000 + 60×120 = 11200.
+      expect(takeoverDwellMs(entry)).toBe(
+        HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS + HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS * 120,
+      );
+    });
+
+    it('the dwell deadline set on tick uses the scaled duration (long status message)', () => {
+      const longDetail = 'x'.repeat(150); // base + 50×150 = 9500ms.
+      let state = enqueueTakeover(
+        createHudTakeoverQueue(),
+        trigger('ws-1', { kind: 'status_update', detail: longDetail }),
+        T0,
+        NO_BLINK,
+      );
+      state = tickTakeoverQueue(state, T0 + HUD_TAKEOVER_OPEN_MS);
+      expect(state.phase).toBe('dwelling');
+      expect(state.phaseEndsAtMs).toBe(
+        T0 +
+          HUD_TAKEOVER_OPEN_MS +
+          HUD_TAKEOVER_DWELL_BASE_MS +
+          HUD_TAKEOVER_DWELL_PER_CHAR_MS * 150,
+      );
+    });
   });
 
   it('does not tick past a deadline that has not elapsed', () => {

@@ -28,6 +28,7 @@
   import {
     activeTakeoverTrigger,
     takeoverCountdownSeconds,
+    takeoverDwellMs,
     type HudTakeoverTrigger,
   } from './hud-takeover-queue';
   import { createTakeoverController } from './hud-takeover-controller.svelte';
@@ -45,6 +46,8 @@
   import { createTakeoverMapDrag } from './hud-takeover-drag.svelte';
   import {
     agentBucketLabel,
+    bannerView,
+    takeoverAttentionChipLabel,
     takeoverKindColor,
     takeoverKindLabel,
     taskCellMeta,
@@ -338,15 +341,21 @@
                 </div>
               </div>
 
-              <!-- Banners: one per trigger, typewriter wipe; VIEWER renders none. -->
+              <!-- Banners: one per trigger, typewriter wipe; VIEWER renders none.
+                   The fade-out delay is dwell-proportional so the unfolded
+                   banner holds ~half the entry's dwell (see bannerOutDelay). -->
               {#if queue.active && !isViewer}
+                {@const dwellMs = takeoverDwellMs(queue.active)}
                 <div class="ov-banners">
                   {#each queue.active.triggers as banner, i (`${banner.kind}-${banner.raisedAtMs}-${i}`)}
                     {@const color = takeoverKindColor(banner.kind)}
+                    {@const bv = bannerView(banner, view.title, view.repoRef)}
                     <div
                       class="ov-banner"
                       style:--banner-in-delay={motion ? `${bannerDelay(needsPan, i)}s` : '0s'}
-                      style:--banner-out-delay={motion ? `${bannerOutDelay(needsPan, i)}s` : '0s'}
+                      style:--banner-out-delay={motion
+                        ? `${bannerOutDelay(needsPan, i, dwellMs)}s`
+                        : '0s'}
                       data-testid="hud-takeover-banner"
                     >
                       <span
@@ -355,33 +364,27 @@
                         style:border-color={color}
                         style:color
                       >
-                        {takeoverKindLabel(banner.kind)}
+                        {banner.signal
+                          ? takeoverAttentionChipLabel(banner.signal)
+                          : takeoverKindLabel(banner.kind)}
                       </span>
-                      {#if banner.kind === 'status_update'}
-                        <!-- Status updates: workspace-name headline, then the
-                             status text subtitle (wire content; i18n-exempt). -->
-                        <div class="ov-banner-big" style:color style:--banner-color={color}>
-                          {view.title}
+                      {#if bv.big}
+                        <div
+                          class="ov-banner-big"
+                          class:ov-banner-big-wrap={bv.wrap}
+                          style:color
+                          style:--banner-color={color}
+                        >
+                          {bv.big}
                         </div>
-                        {#if banner.detail}
-                          <div class="ov-banner-status" data-testid="hud-takeover-banner-status">
-                            {banner.detail}
-                          </div>
-                        {/if}
-                      {:else}
-                        {#if banner.detail}
-                          <!-- Question banners carry full sentence text (§7.1
-                               question payload): wrap instead of clipping. -->
-                          <div
-                            class="ov-banner-big"
-                            class:ov-banner-big-wrap={banner.kind === 'question_asked'}
-                            style:color
-                            style:--banner-color={color}
-                          >
-                            {banner.detail}
-                          </div>
-                        {/if}
-                        <div class="ov-banner-sub">{view.repoRef}</div>
+                      {/if}
+                      {#if bv.status}
+                        <div class="ov-banner-status" data-testid={bv.statusTestId}>
+                          {bv.status}
+                        </div>
+                      {/if}
+                      {#if bv.sub}
+                        <div class="ov-banner-sub">{bv.sub}</div>
                       {/if}
                     </div>
                   {/each}
@@ -988,7 +991,10 @@
     border-bottom: 1px solid hsl(var(--border) / 0.8);
     background: hsl(var(--app-background) / 0.88);
     padding: 14px 22px;
-    /* Mock: typewriter wipe in, then auto fade-out while the map stays up. */
+    /* Typewriter wipe in, then auto fade-out while the map stays up. The
+       out-delay is dwell-proportional (bannerOutDelay: unfolded hold ≈ half
+       the entry's dwell); the wipe duration mirrors
+       HUD_TAKEOVER_BANNER_IN_S. */
     animation:
       bannerin 1.1s steps(22) var(--banner-in-delay, 0s) both,
       ovfO 0.45s ease var(--banner-out-delay, 5.2s) both;

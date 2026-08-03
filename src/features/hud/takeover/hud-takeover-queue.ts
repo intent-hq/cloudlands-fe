@@ -17,8 +17,8 @@
  *    coalesce into it or race it, they queue behind it in pending.
  *
  * Phase timing mirrors the mock choreography: every open is preceded by a
- * card pre-roll blink (mock `ovPend`, `wsflash .3s step-end 3` inside a
- * 1050ms window — manual opens too, mock `openManual`), the wipe-in
+ * fast card pre-roll blink (`wsflash .18s step-end 3` inside a 630ms window —
+ * manual opens too, mock `openManual`), the wipe-in
  * completes at ~1.2s (content fade ends 0.86s + 0.3s), the dwell countdown
  * is 8s, and the reverse wipe runs ~0.95s (mock `ovClosing` window). The
  * caller passes `{ blink: false }` (reduced motion) to open instantly, and
@@ -48,6 +48,18 @@ export interface HudTakeoverTrigger {
   raisedAtMs: number;
   /** Task note id to highlight/pan to on the map; null when nothing changed. */
   changedTaskId: string | null;
+  /**
+   * Display name of the raising agent for attention takeovers (wire
+   * identifier; i18n-exempt) — the banner's dot-matrix line. Absent/null when
+   * unresolvable (never a raw agent UUID; the banner falls back to `detail`).
+   */
+  agentName?: string | null;
+  /**
+   * Raising attention signal — drives the sub-title's shared Q:/Blocker:/
+   * Request Discussion: prefix (the card footer's convention). Absent/null on
+   * non-attention takeovers and generic attention flags.
+   */
+  signal?: 'question' | 'blocker' | 'discussion' | null;
 }
 
 /** One queue entry: a workspace display carrying its accumulated triggers. */
@@ -80,14 +92,74 @@ export interface HudTakeoverQueueState {
   phaseEndsAtMs: number | null;
 }
 
-/** Mock card pre-roll: `wsflash .3s step-end 3` inside the 1050ms pend window. */
-export const HUD_TAKEOVER_BLINK_MS = 1050;
+/**
+ * Card pre-roll: 3 fast blinks (`wsflash .18s step-end 3` = 540ms of flashing)
+ * inside a 630ms pend window — kept in sync with the `hudwsflash` keyframe
+ * duration in `HudWorkspaceCard.svelte` so the queue phase and the CSS
+ * animation stay aligned.
+ */
+export const HUD_TAKEOVER_BLINK_MS = 630;
 /** Mock wipe-in: content fade ends at 0.86s + 0.3s ≈ 1.2s. */
 export const HUD_TAKEOVER_OPEN_MS = 1200;
-/** Auto-dismiss dwell (mock RETURN countdown ~8s of the 10.5s window). */
-export const HUD_TAKEOVER_DWELL_MS = 8000;
+/**
+ * Auto-dismiss dwell scales LINEARLY with the banner text length so long
+ * status messages stay up long enough to read:
+ * `base + perCharMs × textLength`, clamped to [min, max]. Text length is the
+ * rendered banner strings — every displayed trigger's `detail` (the overlay
+ * renders them verbatim; it clamps lines with CSS only, no JS truncation).
+ * The mock's fixed 8s dwell corresponds to ~120 chars on this curve; the
+ * constants live here as THE named place (no inline magic numbers).
+ *
+ * TWO TIERS, one shape. ATTENTION banners (signal-carrying question/blocker/
+ * discussion triggers) demand user action, so they get their own longer
+ * base/floor/cap rather than a global bump: routine banners (agent delegated,
+ * task complete, …) keep the snappy dwell below, while attention entries use
+ * the ATTENTION constants — base 4s + 60ms/char (~200 wpm at ~5 chars/word)
+ * clamped to [8s, 20s], so even a terse question holds 8s and a typical
+ * two-sentence one (~150 chars) holds ~13s. An entry is attention-tier when
+ * ANY kept trigger carries a signal (a stacked routine banner never shortens
+ * a question's dwell).
+ */
+export const HUD_TAKEOVER_DWELL_BASE_MS = 2000;
+export const HUD_TAKEOVER_DWELL_PER_CHAR_MS = 50;
+export const HUD_TAKEOVER_DWELL_MIN_MS = 3000;
+export const HUD_TAKEOVER_DWELL_MAX_MS = 12_000;
+export const HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS = 4000;
+export const HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS = 60;
+export const HUD_TAKEOVER_ATTENTION_DWELL_MIN_MS = 8000;
+export const HUD_TAKEOVER_ATTENTION_DWELL_MAX_MS = 20_000;
 /** Mock reverse wipe (`ovClosing` window ~0.95s). */
 export const HUD_TAKEOVER_CLOSE_MS = 950;
+
+/**
+ * Dwell duration for one entry: the length-scaled formula over the banner
+ * text it displays (all kept triggers' `detail` strings — the overlay stacks
+ * one banner per trigger; on attention banners `detail` IS the question/
+ * reason sub-title text, so it is counted). Entries with any signal-carrying
+ * trigger use the longer ATTENTION tier; every other kind shares the routine
+ * tier (one shared timer either way); viewers dwell without a deadline and
+ * never call this.
+ */
+export function takeoverDwellMs(entry: HudTakeoverEntry | null): number {
+  const triggers = entry?.triggers ?? [];
+  const textLength = triggers.reduce((length, trigger) => length + trigger.detail.length, 0);
+  const attention = triggers.some((trigger) => trigger.signal);
+  const [base, perCharMs, min, max] = attention
+    ? [
+        HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS,
+        HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS,
+        HUD_TAKEOVER_ATTENTION_DWELL_MIN_MS,
+        HUD_TAKEOVER_ATTENTION_DWELL_MAX_MS,
+      ]
+    : [
+        HUD_TAKEOVER_DWELL_BASE_MS,
+        HUD_TAKEOVER_DWELL_PER_CHAR_MS,
+        HUD_TAKEOVER_DWELL_MIN_MS,
+        HUD_TAKEOVER_DWELL_MAX_MS,
+      ];
+  const scaled = base + perCharMs * textLength;
+  return Math.min(max, Math.max(min, scaled));
+}
 
 /** Cap so a runaway burst cannot queue takeovers forever. */
 export const HUD_TAKEOVER_MAX_PENDING = 8;
@@ -151,7 +223,7 @@ export function enqueueTakeover(
   ) {
     const active = appendTrigger(state.active, trigger);
     return state.phase === 'dwelling'
-      ? { ...state, active, phaseEndsAtMs: nowMs + HUD_TAKEOVER_DWELL_MS }
+      ? { ...state, active, phaseEndsAtMs: nowMs + takeoverDwellMs(active) }
       : { ...state, active };
   }
   const pendingIndex = state.pending.findIndex(
@@ -262,7 +334,7 @@ export function tickTakeoverQueue(
       current = {
         ...current,
         phase: 'dwelling',
-        phaseEndsAtMs: current.active?.isViewer ? null : endedAt + HUD_TAKEOVER_DWELL_MS,
+        phaseEndsAtMs: current.active?.isViewer ? null : endedAt + takeoverDwellMs(current.active),
       };
     } else if (current.phase === 'dwelling') {
       current = { ...current, phase: 'closing', phaseEndsAtMs: endedAt + HUD_TAKEOVER_CLOSE_MS };

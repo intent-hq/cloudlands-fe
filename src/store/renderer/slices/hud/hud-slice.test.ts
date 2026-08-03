@@ -12,12 +12,12 @@ import {
   hudGridFilterStatesCleared,
   hudGridFilterStateToggled,
   hudQuestionCaptured,
+  hudQuestionSuperseded,
   hudRate5sBackfilled,
   hudRate5sTokensObserved,
   hudRateHistoryFailed,
   hudRateHistoryLoaded,
   hudReducer,
-  hudSystemStatusReceived,
   hudTakeoverRequestCleared,
   hudTakeoverRequested,
   hudUsageFailed,
@@ -49,7 +49,6 @@ describe('hud-slice reducer', () => {
     expect(initialState.active).toBe(false);
     expect(initialState.feed).toEqual([]);
     expect(initialState.usage).toBeNull();
-    expect(initialState.system.online).toBe(false);
   });
 
   it('hudActivated resets to a clean active slate (live-only feed, no backfill)', () => {
@@ -123,15 +122,26 @@ describe('hud-slice reducer', () => {
     expect(next.attentionByWorkspaceId['ws-1'].raisedAtTs).toBe('2026-07-30T12:00:00Z');
   });
 
-  it('a different attention value replaces the flag and its raise time', () => {
+  it("'unread' stores a tracked (non-urgent) flag and 'none' (markSeen) clears it", () => {
     let state = activeState();
     state = hudReducer(state, hudAttentionChanged('ws-1', 'unread', '2026-07-30T12:00:00Z'));
+    expect(state.attentionByWorkspaceId).toEqual({
+      'ws-1': { attention: 'unread', raisedAtTs: '2026-07-30T12:00:00Z' },
+    });
+    // `workspace.markSeen` emits attention-changed with "none" (§9.9): clear.
+    state = hudReducer(state, hudAttentionChanged('ws-1', 'none', '2026-07-30T12:05:00Z'));
+    expect(state.attentionByWorkspaceId).toEqual({});
+  });
+
+  it("the single-valued wire field swaps between 'unread' and 'review_required'", () => {
+    let state = activeState();
     state = hudReducer(
       state,
-      hudAttentionChanged('ws-1', 'review_required', '2026-07-30T12:05:00Z'),
+      hudAttentionChanged('ws-1', 'review_required', '2026-07-30T12:00:00Z'),
     );
+    state = hudReducer(state, hudAttentionChanged('ws-1', 'unread', '2026-07-30T12:05:00Z'));
     expect(state.attentionByWorkspaceId).toEqual({
-      'ws-1': { attention: 'review_required', raisedAtTs: '2026-07-30T12:05:00Z' },
+      'ws-1': { attention: 'unread', raisedAtTs: '2026-07-30T12:05:00Z' },
     });
   });
 
@@ -172,12 +182,6 @@ describe('hud-slice reducer', () => {
     state = hudReducer(state, hudUsageFailed('daemon offline'));
     expect(state.usage).toEqual(usage);
     expect(state.usageError).toBe('daemon offline');
-  });
-
-  it('hudSystemStatusReceived replaces the system snapshot', () => {
-    const system = { online: true, uptimeSeconds: 4200, version: '1.2.3', fetchedAtMs: 42 };
-    const state = hudReducer(activeState(), hudSystemStatusReceived(system));
-    expect(state.system).toEqual(system);
   });
 
   it('hudRateHistoryLoaded replaces the history and clears the error', () => {
@@ -307,6 +311,19 @@ describe('hud-slice question capture (§7.1 trailingBlocks)', () => {
     let state = hudReducer(activeState(), hudQuestionCaptured(QUESTION));
     state = hudReducer(state, hudDeactivated());
     expect(state.questionsByAgentId).toEqual({});
+  });
+
+  it('supersession drops the agent question (no-op when none pends)', () => {
+    // §7.1: a question hold only breaks on a user-origin delivery, so the
+    // answered agent's next running transition supersedes the question.
+    let state = hudReducer(activeState(), hudQuestionCaptured(QUESTION));
+    const other = { ...QUESTION, agentId: 'agent-2' };
+    state = hudReducer(state, hudQuestionCaptured(other));
+    state = hudReducer(state, hudQuestionSuperseded('agent-1'));
+    expect(state.questionsByAgentId).toEqual({ 'agent-2': other });
+    // Unknown agent: no state churn.
+    const repeat = hudReducer(state, hudQuestionSuperseded('agent-1'));
+    expect(repeat).toBe(state);
   });
 });
 

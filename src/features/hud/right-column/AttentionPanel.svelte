@@ -17,6 +17,7 @@
   import {
     attentionColor,
     attentionKindLabel,
+    attentionMessageText,
     attentionSourceLabel,
   } from './hud-right-column-labels';
   import { HudSlide, watchReducedMotion } from './hud-slide.svelte';
@@ -110,7 +111,11 @@
             <span class="hud-attention-src">{attentionSourceLabel(item)}</span>
             <span>{attentionKindLabel(item)}</span>
             <span class="hud-attention-spacer"></span>
-            <span>{elapsed(item)}</span>
+            {#if item.sinceTs}
+              <!-- No timer when the raise time is unknown (generic rollup
+                   rows): a frozen 00:00:00 would misread as "just raised". -->
+              <span>{elapsed(item)}</span>
+            {/if}
           </div>
           <div class="hud-attention-row-main">
             <span class="hud-attention-ws">{item.workspaceTitle}</span>
@@ -118,8 +123,8 @@
               <span class="hud-attention-agent">{item.agentName}</span>
             {/if}
           </div>
-          {#if item.message}
-            <div class="hud-attention-msg">{item.message}</div>
+          {#if item.message !== null}
+            <div class="hud-attention-msg">{attentionMessageText(item)}</div>
           {/if}
         </div>
       {/each}

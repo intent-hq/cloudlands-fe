@@ -49,7 +49,9 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
     expect(entry).toMatchObject({ colorClass: "err", text: "spawn failed", agentId: "agent-1" });
   });
 
-  it("colors agent:status-changed by target status", () => {
+  it("colors agent:status-changed by target status and carries it out-of-band", () => {
+    // The raw status word never lands in `text` — the chip label derives from
+    // the out-of-band `agentStatus` (AGENT RUNNING / IDLE / FAILED …).
     const failed = mapEventToFeedEntry(
       wireEvent("agent:status-changed", {
         agentId: "agent-1",
@@ -57,17 +59,62 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
         status: "failed",
       }),
     );
-    expect(failed).toMatchObject({ colorClass: "err", text: "failed", agentId: "agent-1" });
+    expect(failed).toMatchObject({
+      colorClass: "err",
+      text: "",
+      agentId: "agent-1",
+      agentStatus: "failed",
+    });
 
+    // Canonical table: WAITING is not running work — grey, not yellow.
     const waiting = mapEventToFeedEntry(
       wireEvent("agent:status-changed", { agentId: "agent-1", status: "waiting" }),
     );
-    expect(waiting).toMatchObject({ colorClass: "warn" });
+    expect(waiting).toMatchObject({ colorClass: "idle", text: "", agentStatus: "waiting" });
 
     const completed = mapEventToFeedEntry(
       wireEvent("agent:status-changed", { agentId: "agent-1", status: "completed" }),
     );
-    expect(completed).toMatchObject({ colorClass: "ok" });
+    expect(completed).toMatchObject({ colorClass: "ok", text: "", agentStatus: "completed" });
+
+    // RUNNING is green (the same info/live token the cards pulse).
+    const running = mapEventToFeedEntry(
+      wireEvent("agent:status-changed", { agentId: "agent-1", status: "active" }),
+    );
+    expect(running).toMatchObject({ colorClass: "info", agentStatus: "active" });
+  });
+
+  it("suppresses went-idle agent:status-changed rows (duplicate of agent:idle)", () => {
+    // The daemon emits agent:idle AND agent:status-changed → idle at the same
+    // instant; both would chip "AGENT IDLE" in different colors. Only the
+    // canonical agent:idle renders.
+    expect(
+      mapEventToFeedEntry(
+        wireEvent("agent:status-changed", {
+          agentId: "agent-1",
+          previousStatus: "responding",
+          status: "idle",
+        }),
+      ),
+    ).toBeNull();
+    // Unknown statuses bucket idle too — same AGENT IDLE chip, same suppression.
+    expect(
+      mapEventToFeedEntry(
+        wireEvent("agent:status-changed", { agentId: "agent-1", status: "someday-status" }),
+      ),
+    ).toBeNull();
+    // The canonical agent:idle row still renders — GREY (canonical table:
+    // IDLE is grey, never green).
+    expect(
+      mapEventToFeedEntry(wireEvent("agent:idle", { agentId: "agent-1", agentName: "Coordinator" })),
+    ).toMatchObject({ colorClass: "idle", kind: "agent:idle", agentId: "agent-1" });
+    // Non-idle transitions (running / waiting / done / failed chips) keep rendering.
+    expect(
+      mapEventToFeedEntry(wireEvent("agent:status-changed", { agentId: "agent-1", status: "active" })),
+    ).not.toBeNull();
+    expect(
+      mapEventToFeedEntry(wireEvent("agent:status-changed", { agentId: "agent-1", status: "pending" })),
+    ).not.toBeNull();
   });
 
   it("maps task:status-changed with noteTitle → newStatus, ok when complete", () => {
@@ -90,12 +137,20 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
         displayStatus: "pr_merged",
       }),
     );
-    expect(merged).toMatchObject({ colorClass: "ok", text: "pr_merged" });
+    // The raw wire value never renders as text — the row carries it
+    // out-of-band (`displayStatus`) for the localized card-state label.
+    expect(merged).toMatchObject({ colorClass: "ok", text: "", displayStatus: "pr_merged" });
 
     const open = mapEventToFeedEntry(
       wireEvent("workspace:displayStatus-changed", { workspaceId: WS_ID, displayStatus: "pr_open" }),
     );
-    expect(open).toMatchObject({ colorClass: "accent" });
+    expect(open).toMatchObject({ colorClass: "accent", displayStatus: "pr_open" });
+
+    // Other kinds never carry the field.
+    const other = mapEventToFeedEntry(
+      wireEvent("agent:status-changed", { agentId: "agent-1", status: "active" }),
+    );
+    expect(other?.displayStatus).toBeUndefined();
   });
 
   it("maps workspace:attention-changed to warn when raised, info when cleared", () => {
@@ -108,6 +163,13 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
       wireEvent("workspace:attention-changed", { workspaceId: WS_ID, attention: "none" }),
     );
     expect(cleared).toMatchObject({ colorClass: "info", text: "none" });
+
+    // `unread` (the main app's blue dot) is suppressed entirely — it would
+    // double-post with the `agent:idle` the daemon emits at the same turn end.
+    const unread = mapEventToFeedEntry(
+      wireEvent("workspace:attention-changed", { workspaceId: WS_ID, attention: "unread" }),
+    );
+    expect(unread).toBeNull();
   });
 
   it("maps pr:updated { prNumber, prStatus } to an accent row (§6.5 pr family)", () => {
@@ -139,6 +201,26 @@ describe("mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)", () => {
   it("returns null for non-feed event types", () => {
     expect(mapEventToFeedEntry(wireEvent("note:updated", { noteId: "spec" }))).toBeNull();
     expect(mapEventToFeedEntry(wireEvent("agent:stream:chunk", { agentId: "a" }))).toBeNull();
+  });
+
+  it("never renders agent:deleted (deletions are roster-only, no feed row)", () => {
+    expect(
+      mapEventToFeedEntry(
+        wireEvent("agent:deleted", { agentId: "agent-1", agentName: "Implementor" }),
+      ),
+    ).toBeNull();
+    // The other lifecycle kinds keep rendering.
+    for (const type of ["agent:started", "agent:completed", "agent:idle"]) {
+      expect(mapEventToFeedEntry(wireEvent(type, { agentId: "agent-1" }))).toMatchObject({
+        kind: type,
+      });
+    }
+  });
+
+  it("never renders agent:created (creation is feed noise — the AGENT DELEGATED row lands on first start)", () => {
+    expect(
+      mapEventToFeedEntry(wireEvent("agent:created", { agentId: "agent-1", name: "Implementor" })),
+    ).toBeNull();
   });
 
   it("returns null when envelope identity fields are missing", () => {

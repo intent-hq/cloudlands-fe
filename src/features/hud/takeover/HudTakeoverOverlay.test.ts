@@ -209,6 +209,144 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
   });
 });
 
+describe('HudTakeoverOverlay attention banner (question / blocker / discussion)', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+  });
+  afterEach(() => {
+    cleanup();
+    appStore.dispose();
+  });
+
+  it('question: dot-matrix headline is the raising agent name, sub-title the Q:-prefixed question', () => {
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'question_asked',
+      detail: 'Which authentication method should the endpoint use?',
+      raisedAtMs: NOW_MS,
+      changedTaskId: null,
+      agentName: 'Coordinator',
+      signal: 'question',
+    });
+    flushSync();
+
+    const banner = screen.getByTestId('hud-takeover-banner');
+    const chip = banner.querySelector('.ov-banner-chip');
+    const headline = banner.querySelector('.ov-banner-big');
+    const subtitle = screen.getByTestId('hud-takeover-banner-attention');
+    expect(chip?.textContent?.trim()).toBe('QUESTION');
+    // The dot-matrix line (`.ov-banner-big` keeps the mock's radial-gradient
+    // text treatment) renders the AGENT name, not the question text.
+    expect(headline?.textContent?.trim()).toBe('Coordinator');
+    // Sub-title = the question text with the card footer's shared Q: prefix.
+    expect(subtitle.textContent?.trim()).toBe(
+      'Q: Which authentication method should the endpoint use?',
+    );
+    // The workspace name stays visible in the overlay header.
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe(
+      'Sidecar auto-update',
+    );
+  });
+
+  it('blocker/discussion: signal chip + prefixed reason sub-title', () => {
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'question_asked',
+      detail: 'Sandbox network is down',
+      raisedAtMs: NOW_MS,
+      changedTaskId: null,
+      agentName: 'Verifier',
+      signal: 'blocker',
+    });
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'question_asked',
+      detail: 'Need a call on the rollout order',
+      raisedAtMs: NOW_MS + 1,
+      changedTaskId: null,
+      agentName: 'Coordinator',
+      signal: 'discussion',
+    });
+    flushSync();
+
+    const banners = screen.getAllByTestId('hud-takeover-banner');
+    expect(banners).toHaveLength(2);
+    const chips = banners.map((b) => b.querySelector('.ov-banner-chip')?.textContent?.trim());
+    const heads = banners.map((b) => b.querySelector('.ov-banner-big')?.textContent?.trim());
+    const subs = banners.map(
+      (b) =>
+        b.querySelector('[data-testid="hud-takeover-banner-attention"]')?.textContent?.trim(),
+    );
+    expect(chips).toEqual(['BLOCKED', 'DISCUSSION REQUIRED']);
+    expect(heads).toEqual(['Verifier', 'Coordinator']);
+    expect(subs).toEqual([
+      'Blocker: Sandbox network is down',
+      'Request Discussion: Need a call on the rollout order',
+    ]);
+  });
+
+  it('attention banner: fade-out delay allocates ~half the (attention-tier) dwell to the unfolded banner', () => {
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    // 100-char question → dwell 4000 + 60×100 = 10000ms. Unfold at 1.0s +
+    // 1.1s wipe, hold dwell/2 = 5.0s → out-delay 7.10s.
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'question_asked',
+      detail: 'q'.repeat(100),
+      raisedAtMs: NOW_MS,
+      changedTaskId: null,
+      agentName: 'Coordinator',
+      signal: 'question',
+    });
+    flushSync();
+    const banner = screen.getByTestId('hud-takeover-banner');
+    expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('1.0s');
+    expect(banner.style.getPropertyValue('--banner-out-delay')).toBe('7.10s');
+  });
+
+  it('routine banner: fade-out delay allocates ~half the (routine-tier) dwell', () => {
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    // Short detail clamps to the 3000ms routine floor dwell → hold 1.5s
+    // after the 1.0s + 1.1s unfold → out-delay 3.60s.
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'Port the fetch loop',
+      raisedAtMs: NOW_MS,
+      changedTaskId: null,
+    });
+    flushSync();
+    const banner = screen.getByTestId('hud-takeover-banner');
+    expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('1.0s');
+    expect(banner.style.getPropertyValue('--banner-out-delay')).toBe('3.60s');
+  });
+
+  it('question with no resolvable agent name falls back to the workspace title on the matrix line', () => {
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'question_asked',
+      detail: 'Rebuild or repin?',
+      raisedAtMs: NOW_MS,
+      changedTaskId: null,
+      agentName: null,
+      signal: 'question',
+    });
+    flushSync();
+
+    const banner = screen.getByTestId('hud-takeover-banner');
+    expect(banner.querySelector('.ov-banner-big')?.textContent?.trim()).toBe(
+      'Sidecar auto-update',
+    );
+    expect(screen.getByTestId('hud-takeover-banner-attention').textContent?.trim()).toBe(
+      'Q: Rebuild or repin?',
+    );
+  });
+});
+
 describe('HudTakeoverOverlay card→overlay transition', () => {
   /** Fake grid fixture: HUD shell + a source card with measurable rects. */
   function mountCardFixture(): void {
