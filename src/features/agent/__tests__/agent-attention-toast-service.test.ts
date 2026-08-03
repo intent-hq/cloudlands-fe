@@ -163,6 +163,19 @@ describe('agent-attention-toast-service', () => {
 
       expect(lastCustomCall().componentProps.keySlot).toBeNull();
     });
+
+    it('still shows the toast (badge-less) when slot resolution throws', async () => {
+      microStatusMock.value = 'connected';
+      resolvedKeySlotSelectMock.mockImplementation(() => {
+        throw new Error('resolver boom');
+      });
+
+      await showAgentAttentionToast(request);
+
+      const call = lastCustomCall();
+      expect(call.componentProps.title).toBe('Implementor requests a discussion');
+      expect(call.componentProps.keySlot).toBeNull();
+    });
   });
 
   it('re-raised requests update the same toast in place (stable id, no stacking)', async () => {

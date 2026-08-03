@@ -66,26 +66,39 @@ async function handleNotificationShow(data?: NotificationShowEvent): Promise<voi
  * the toast renders through a custom component that carries the slot square
  * (a plain `toast(...)` cannot); otherwise the plain toast is unchanged. Both
  * the resolver and the component are lazy-imported per middleware
- * conventions.
+ * conventions. The badge path is best-effort: any failure in it (resolver
+ * import/resolution, custom component import/render) falls back to the plain
+ * toast — only a missing toast lib drops the toast entirely.
  */
 async function showNavigateToast(
   data: NotificationShowEvent,
   navigateTarget: NotificationNavigatePayload,
 ): Promise<void> {
+  let toast: (typeof import("svelte-sonner"))["toast"];
   try {
-    const { toast } = await import("svelte-sonner");
+    ({ toast } = await import("svelte-sonner"));
+  } catch {
+    // Toast not available - not critical
+    return;
+  }
+
+  const showPlainToast = () => {
+    toast(data.title ?? data.body ?? "", {
+      description: data.title ? data.body : undefined,
+      action: {
+        label: m.notifications_toast_open_label(),
+        onClick: () => void handleNotificationNavigate(navigateTarget),
+      },
+    });
+  };
+
+  try {
     const { resolveConnectedWorkspaceKeySlot } = await import(
       "$features/hardware-console/assignment/connected-key-slot"
     );
     const keySlot = resolveConnectedWorkspaceKeySlot(navigateTarget.workspaceId);
     if (keySlot === null) {
-      toast(data.title ?? data.body ?? "", {
-        description: data.title ? data.body : undefined,
-        action: {
-          label: m.notifications_toast_open_label(),
-          onClick: () => void handleNotificationNavigate(navigateTarget),
-        },
-      });
+      showPlainToast();
       return;
     }
     const { default: NotificationNavigateToast } = await import(
@@ -105,7 +118,12 @@ async function showNavigateToast(
       },
     });
   } catch {
-    // Toast not available - not critical
+    // Badge path failed - degrade to the badge-less plain toast
+    try {
+      showPlainToast();
+    } catch {
+      // Toast not available - not critical
+    }
   }
 }
 

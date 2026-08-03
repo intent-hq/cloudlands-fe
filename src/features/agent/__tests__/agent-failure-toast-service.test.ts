@@ -226,6 +226,21 @@ describe('agent-failure-toast-service', () => {
 
       expect(lastCustomCallFor(agentFailureToastId('agent-1'))!.componentProps.keySlot).toBeNull();
     });
+
+    it('still shows the toast (badge-less) when slot resolution throws', async () => {
+      microStatusMock.value = 'connected';
+      resolvedKeySlotSelectMock.mockImplementation(() => {
+        throw new Error('resolver boom');
+      });
+
+      recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+      await flush();
+
+      const call = lastCustomCallFor(agentFailureToastId('agent-1'));
+      expect(call).toBeDefined();
+      expect(call!.componentProps.title).toBe('Implementor failed');
+      expect(call!.componentProps.keySlot).toBeNull();
+    });
   });
 
   it('toasts only registry entries — delegated failures (parentAgentId on the wire) never enter the registry', async () => {

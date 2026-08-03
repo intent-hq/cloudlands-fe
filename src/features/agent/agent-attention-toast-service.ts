@@ -82,15 +82,32 @@ function getToastComponent() {
   return toastComponentPromise;
 }
 
-/** Lazily pull the connected key-slot resolver (imports the store/selectors). */
-let keySlotResolverPromise: Promise<
-  (typeof import('$features/hardware-console/assignment/connected-key-slot'))['resolveConnectedWorkspaceKeySlot']
-> | null = null;
-function getKeySlotResolver() {
+/**
+ * Lazily pull the connected key-slot resolver (imports the store/selectors).
+ * The badge is optional: an import or resolution failure degrades to a `null`
+ * key slot so the toast still renders (badge-less), and a failed import is
+ * not cached so a later call can retry it.
+ */
+type KeySlotResolver = (workspaceId: string | undefined) => number | null;
+let keySlotResolverPromise: Promise<KeySlotResolver> | null = null;
+function getKeySlotResolver(): Promise<KeySlotResolver> {
   if (!keySlotResolverPromise) {
-    keySlotResolverPromise = import(
-      '$features/hardware-console/assignment/connected-key-slot'
-    ).then((module) => module.resolveConnectedWorkspaceKeySlot);
+    keySlotResolverPromise = import('$features/hardware-console/assignment/connected-key-slot')
+      .then((module): KeySlotResolver => {
+        return (workspaceId) => {
+          try {
+            return module.resolveConnectedWorkspaceKeySlot(workspaceId);
+          } catch (error) {
+            logger.warn('Key-slot resolution failed — toast renders without badge', { error });
+            return null;
+          }
+        };
+      })
+      .catch((error): KeySlotResolver => {
+        keySlotResolverPromise = null;
+        logger.warn('Key-slot resolver unavailable — toast renders without badge', { error });
+        return () => null;
+      });
   }
   return keySlotResolverPromise;
 }

@@ -355,6 +355,38 @@ describe('createNotificationIpcMiddleware', () => {
         expect(mockToastCustom).not.toHaveBeenCalled();
         expect(mockToast).toHaveBeenCalledTimes(1);
       });
+
+      it('falls back to the plain toast when slot resolution throws', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => {
+          throw new Error('resolver boom');
+        });
+
+        await show();
+
+        expect(mockToastCustom).not.toHaveBeenCalled();
+        expect(mockToast).toHaveBeenCalledTimes(1);
+        expect(mockToast).toHaveBeenCalledWith(
+          'Agent',
+          expect.objectContaining({ description: 'Finished' }),
+        );
+      });
+
+      it('falls back to the plain toast when the custom toast rendering throws', async () => {
+        microStatusMock.value = 'connected';
+        resolvedKeySlotSelectMock.mockImplementation(() => 3);
+        mockToastCustom.mockImplementation(() => {
+          throw new Error('custom render boom');
+        });
+
+        await show();
+
+        expect(mockToast).toHaveBeenCalledTimes(1);
+        expect(mockToast).toHaveBeenCalledWith(
+          'Agent',
+          expect.objectContaining({ description: 'Finished' }),
+        );
+      });
     });
   });
 
