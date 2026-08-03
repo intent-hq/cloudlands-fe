@@ -35,6 +35,13 @@ describe('markWorkspaceSeen (view/button-triggered clear path)', () => {
     expect(mockMarkSeen).not.toHaveBeenCalled();
   });
 
+  it('skips stringified undefined/null ids from transient route params', async () => {
+    markWorkspaceSeen('undefined');
+    markWorkspaceSeen('null');
+    await flushTicks();
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
   it('is error-tolerant: a rejected mutation is swallowed (fire-and-forget)', async () => {
     mockMarkSeen.mockRejectedValueOnce(new Error('daemon offline'));
     markWorkspaceSeen('ws-1');

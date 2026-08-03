@@ -15,7 +15,11 @@
 /** Route placeholders that are not real daemon workspace ids. */
 function isRealWorkspaceId(workspaceId: string): boolean {
   return (
-    workspaceId.length > 0 && workspaceId !== 'new' && !workspaceId.startsWith('optimistic-')
+    workspaceId.length > 0 &&
+    workspaceId !== 'new' &&
+    workspaceId !== 'undefined' &&
+    workspaceId !== 'null' &&
+    !workspaceId.startsWith('optimistic-')
   );
 }
 
@@ -29,7 +33,8 @@ export function isViewingWorkspace(workspaceId: string): boolean {
 
 /**
  * Fire-and-forget `workspace.markSeen`. No-op for route placeholder ids
- * (`new`, `optimistic-*`); errors are swallowed (the mutation seam already
+ * (`new`, `optimistic-*`, stringified `undefined`/`null` from transient route
+ * params); errors are swallowed (the mutation seam already
  * folds failures into `{ success: false }`, this guards the transport too).
  */
 export function markWorkspaceSeen(workspaceId: string): void {
